@@ -106,6 +106,8 @@ netscape_security_enablePrivilege(JSContext *cx, unsigned argc, jsval *vp)
     if (!getBytesArgument(cx, obj, 0, argc, JS_ARGV(cx, vp), &cap))
         return JS_FALSE;
 
+    nsAutoLockChrome lock;
+
     // Can't use nsContentUtils::GetDocumentFromCaller because that
     // depends on various XPConnect stuff that's not set up here.
     {

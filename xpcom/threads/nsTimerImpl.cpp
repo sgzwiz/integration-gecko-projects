@@ -370,6 +370,8 @@ NS_IMETHODIMP nsTimerImpl::SetCallbackZone(PRInt32 aZone)
 
   mEventTarget = thread;
   mCallbackZone = (JSZoneId) aZone;
+
+  return NS_OK;
 }
 
 NS_IMETHODIMP nsTimerImpl::Cancel()

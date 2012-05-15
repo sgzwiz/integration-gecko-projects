@@ -2749,6 +2749,8 @@ nsDocument::HasFocus(bool* aResult)
 {
   *aResult = false;
 
+  nsAutoLockChrome lock;
+
   nsIFocusManager* fm = nsFocusManager::GetFocusManager();
   if (!fm)
     return NS_ERROR_NOT_AVAILABLE;

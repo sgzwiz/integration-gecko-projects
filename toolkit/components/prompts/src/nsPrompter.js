@@ -450,7 +450,7 @@ function openTabPrompt(domWin, tabPrompt, args) {
 
         let thread = Services.tm.currentThread;
         while (args.promptActive)
-            thread.processNextEventFromScript(true);
+            thread.processNextEvent(true);
         delete args.promptActive;
 
         if (args.promptAborted)

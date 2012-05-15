@@ -52,6 +52,7 @@
 #include "nsWindowMemoryReporter.h"
 #include "nsIVariant.h"
 #include "nsGkAtoms.h"
+#include "nsThreadUtils.h"
 
 // Including 'windows.h' will #define GetClassInfo to something else.
 #ifdef XP_WIN
@@ -1100,6 +1101,8 @@ public:
    */
   nsIVariant* GetUserData(const nsAString& aKey)
   {
+    nsAutoLockChrome lock;
+
     nsCOMPtr<nsIAtom> key = do_GetAtom(aKey);
     if (!key) {
       return nsnull;

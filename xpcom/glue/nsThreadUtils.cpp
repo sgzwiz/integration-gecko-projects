@@ -202,7 +202,7 @@ NS_ProcessPendingEvents(nsIThread *thread, PRIntervalTime timeout)
   PRIntervalTime start = PR_IntervalNow();
   for (;;) {
     bool processedEvent;
-    rv = thread->ProcessNextEvent(false, &processedEvent);
+    rv = thread->ProcessNextEventUnlocked(false, &processedEvent);
     if (NS_FAILED(rv) || !processedEvent)
       break;
     if (PR_IntervalNow() - start > timeout)
@@ -253,7 +253,7 @@ NS_ProcessNextEvent(nsIThread *thread, bool mayWait)
 #endif
 
   bool val;
-  return NS_SUCCEEDED(thread->ProcessNextEvent(mayWait, &val)) && val;
+  return NS_SUCCEEDED(thread->ProcessNextEventUnlocked(mayWait, &val)) && val;
 }
 
 #ifdef MOZILLA_INTERNAL_API
@@ -825,7 +825,6 @@ static PRLock *backtraceLock = NULL;
 
 static const size_t BACKTRACE_CAPACITY = 20;
 
-#ifdef NS_DEBUG
 void
 NS_DumpBacktrace(const char *str, bool flush)
 {
@@ -881,4 +880,3 @@ NS_DumpBacktrace(const char *str, bool flush)
 
   PR_Unlock(backtraceLock);
 }
-#endif /* NS_DEBUG */

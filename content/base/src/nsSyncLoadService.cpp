@@ -258,7 +258,7 @@ nsSyncLoader::PushAsyncStream(nsIStreamListener* aListener)
         nsIThread *thread = NS_GetCurrentThread();
         while (mLoading && NS_SUCCEEDED(rv)) {
             bool processedEvent; 
-            rv = thread->ProcessNextEvent(true, &processedEvent);
+            rv = thread->ProcessNextEventUnlocked(true, &processedEvent);
             if (NS_SUCCEEDED(rv) && !processedEvent)
                 rv = NS_ERROR_UNEXPECTED;
         }

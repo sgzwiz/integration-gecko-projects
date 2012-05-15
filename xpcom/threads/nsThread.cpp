@@ -581,7 +581,7 @@ void canary_alarm_handler (int signum)
 #endif
 
 NS_IMETHODIMP
-nsThread::ProcessNextEvent(bool mayWait, bool *result)
+nsThread::ProcessNextEventUnlocked(bool mayWait, bool *result)
 {
   LOG(("THRD(%p) ProcessNextEvent [%u %u]\n", this, mayWait, mRunningEvent));
 
@@ -705,7 +705,7 @@ nsThread::ProcessNextEvent(bool mayWait, bool *result)
 }
 
 NS_IMETHODIMP
-nsThread::ProcessNextEventFromScript(bool mayWait, bool *result)
+nsThread::ProcessNextEvent(bool mayWait, bool *result)
 {
   nsAutoUnlockEverything unlock;
   return ProcessNextEvent(mayWait, result);

@@ -664,6 +664,8 @@ XPCWrappedNativeXrayTraits::resolveOwnProperty(JSContext *cx, js::Wrapper &jsWra
                                                JSObject *wrapper, JSObject *holder, jsid id,
                                                bool set, PropertyDescriptor *desc)
 {
+    nsAutoUnstickChrome unstick(cx);
+
     XPCJSRuntime* rt = nsXPConnect::GetRuntimeInstance();
     if (!WrapperFactory::IsPartiallyTransparent(wrapper) &&
         (((id == rt->GetStringID(XPCJSRuntime::IDX_BASEURIOBJECT) ||
@@ -1052,6 +1054,8 @@ XrayToString(JSContext *cx, unsigned argc, jsval *vp)
         JSObject *holder = GetHolder(wrapper);
         XPCWrappedNative *wn = GetWrappedNativeFromHolder(holder);
         JSObject *wrappednative = wn->GetFlatJSObject();
+
+        nsAutoUnstickChrome unstick(cx);
 
         XPCCallContext ccx(JS_CALLER, cx, wrappednative);
         char *wrapperStr = wn->ToString(ccx);

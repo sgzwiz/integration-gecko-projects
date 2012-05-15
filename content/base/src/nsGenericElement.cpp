@@ -740,6 +740,8 @@ nsINode::SetUserData(const nsAString &aKey, nsIVariant *aData,
 {
   *aResult = nsnull;
 
+  nsAutoLockChrome lock;
+
   nsCOMPtr<nsIAtom> key = do_GetAtom(aKey);
   if (!key) {
     return NS_ERROR_OUT_OF_MEMORY;

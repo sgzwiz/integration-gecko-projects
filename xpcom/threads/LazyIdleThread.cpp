@@ -463,8 +463,8 @@ LazyIdleThread::HasPendingEvents(bool* aHasPendingEvents)
 }
 
 NS_IMETHODIMP
-LazyIdleThread::ProcessNextEvent(bool aMayWait,
-                                 bool* aEventWasProcessed)
+LazyIdleThread::ProcessNextEventUnlocked(bool aMayWait,
+                                         bool* aEventWasProcessed)
 {
   // This is only supposed to be called from the thread itself so it's not
   // implemented here.
@@ -473,7 +473,7 @@ LazyIdleThread::ProcessNextEvent(bool aMayWait,
 }
 
 NS_IMETHODIMP
-LazyIdleThread::ProcessNextEventFromScript(bool mayWait, bool *result)
+LazyIdleThread::ProcessNextEvent(bool mayWait, bool *result)
 {
   return ProcessNextEvent(mayWait, result);
 }
