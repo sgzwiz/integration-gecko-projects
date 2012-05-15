@@ -475,13 +475,6 @@ nsThreadManager::LockZone(PRInt32 zone_, bool sticky)
     for (size_t i = 0; i < relockZones.Length(); i++)
       SaveLock(relockZones[i]);
 
-    if (zone.waiting) {
-      struct timespec ts;
-      ts.tv_sec = 0;
-      ts.tv_nsec = 400 * 1000;
-      nanosleep(&ts, &ts);
-    }
-
     PR_Lock(zone.lock);
     MOZ_ASSERT(zone.owner == NULL);
     zone.owner = current;

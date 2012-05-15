@@ -72,7 +72,7 @@ public:
 
     NS_DECL_ISUPPORTS
 
-    JSZoneId GetZone() { return mOwner->GetZone(); }
+    JSZoneId GetZone() { return mOwner ? mOwner->GetZone() : JS_ZONE_CHROME; }
 
     NS_DECL_NSIUTF8STRINGENUMERATOR
 

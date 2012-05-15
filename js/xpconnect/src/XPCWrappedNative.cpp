@@ -479,7 +479,7 @@ XPCWrappedNative::GetNewOrUsed(XPCCallContext& ccx,
     NS_ASSERTION(!Scope->GetRuntime()->GetThreadRunningGC(),
                  "XPCWrappedNative::GetNewOrUsed called during GC");
 
-    if (helper.Object() && !ccx.CheckObjectLock(helper.Object()))
+    if (!ccx.CheckObjectLock(helper.Object()))
         return NS_ERROR_XPC_CANT_GET_LOCK;
 
     nsISupports *identity = helper.GetCanonical();

@@ -674,6 +674,10 @@ nsAutoLockChromeUnstickContent::~nsAutoLockChromeUnstickContent()
 }
 
 nsAutoUnlockEverything::nsAutoUnlockEverything()
+  : mChromeDepth(0), mCount(0)
+#ifdef NS_DEBUG
+  , mSuspendedUnsticks(NULL)
+#endif
 {
   MOZ_ASSERT(NS_IsChromeOwningThread());
 
@@ -700,7 +704,6 @@ nsAutoUnlockEverything::nsAutoUnlockEverything()
   RemoveContextSticks();
 
 #ifdef NS_DEBUG
-  mSuspendedUnsticks = NULL;
   nsAutoLockChromeUnstickContent **punstick = &gUnstickList;
   while (*punstick) {
     nsAutoLockChromeUnstickContent *unstick = *punstick;
@@ -822,6 +825,7 @@ static PRLock *backtraceLock = NULL;
 
 static const size_t BACKTRACE_CAPACITY = 20;
 
+#ifdef NS_DEBUG
 void
 NS_DumpBacktrace(const char *str, bool flush)
 {
@@ -877,3 +881,4 @@ NS_DumpBacktrace(const char *str, bool flush)
 
   PR_Unlock(backtraceLock);
 }
+#endif /* NS_DEBUG */

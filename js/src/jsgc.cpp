@@ -1554,6 +1554,7 @@ ArenaLists::finalizeLater(FreeOp *fop, AllocKind thingKind)
         al->clear();
         backgroundFinalizeState[thingKind] = BFS_RUN;
     } else {
+        AutoUnlockGC unlock(fop->runtime());
         FinalizeArenas(fop, al, thingKind);
         backgroundFinalizeState[thingKind] = BFS_DONE;
     }
