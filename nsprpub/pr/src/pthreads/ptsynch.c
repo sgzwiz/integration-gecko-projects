@@ -259,7 +259,7 @@ PR_IMPLEMENT(PRBool) PR_TryLock(PRLock *lock, unsigned int timeout)
             return PR_FALSE;
         }
 #else
-        while (true) {
+        while (PR_TRUE) {
             rv = pthread_mutex_trylock(&lock->mutex);
             if (0 != rv)
                 PR_ASSERT(EBUSY == rv);

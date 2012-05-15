@@ -6852,6 +6852,10 @@ typedef HashSet<char*,
 static CodePageSet codePages;
 static bool codePagesInitialized = false;
 
+#ifndef PAGE_SIZE
+#define PAGE_SIZE 4096
+#endif
+
 JS_PUBLIC_API(JSBool)
 JS_IsJITCodeAddress(void *ptr_)
 {

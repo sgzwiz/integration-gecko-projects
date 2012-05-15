@@ -264,7 +264,7 @@ IsZoneStuck(JSContext *cx_, JSZoneId zone)
     ContextFriendFields *cx = ContextFriendFields::get(cx_);
     if (zone == JS_ZONE_CHROME)
         return cx->chromeStickState->chromeStuck;
-    return cx->contentStuckMask & (1 << zone);
+    return cx->contentStuckMask & (1 << uint64_t(zone));
 }
 
 inline void
@@ -278,7 +278,7 @@ SetZoneStuck(JSContext *cx_, JSZoneId zone)
     } else {
         if (cx->contentStuckMask == 0)
             RuntimeFriendFields::get(cx->runtime)->registerContextStick(cx_);
-        cx->contentStuckMask |= (1 << zone);
+        cx->contentStuckMask |= (1 << uint64_t(zone));
     }
 }
 
