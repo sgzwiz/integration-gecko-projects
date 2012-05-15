@@ -147,6 +147,7 @@ bool
 JSCompartment::wrap(JSContext *cx, Value *vp)
 {
     JS_ASSERT(cx->compartment == this);
+    JS_ASSERT(!cx->runtime->IsGCLocked());
 
     unsigned flags = 0;
 

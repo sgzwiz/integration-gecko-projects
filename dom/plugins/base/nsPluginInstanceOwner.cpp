@@ -431,6 +431,8 @@ nsPluginInstanceOwner::SetInstance(nsNPAPIPluginInstance *aInstance)
 
   mInstance = aInstance;
 
+  NS_StickLock(mContent);
+
   nsCOMPtr<nsIDocument> doc;
   GetDocument(getter_AddRefs(doc));
   if (doc) {

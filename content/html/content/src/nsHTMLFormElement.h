@@ -71,6 +71,8 @@ public:
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
+  JSZoneId GetZone() { return nsINode::GetZone(); }
+
   // nsIDOMNode
   NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
 
@@ -286,6 +288,7 @@ protected:
     {}
 
     NS_IMETHOD Run() {
+      NS_StickLock(mForm);
       mForm->HandleDefaultSubmitRemoval();
       return NS_OK;
     }

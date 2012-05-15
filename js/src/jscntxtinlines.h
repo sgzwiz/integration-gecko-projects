@@ -285,7 +285,7 @@ class CompartmentChecker
 
     void check(JSCompartment *c) {
         if (c && c != context->runtime->atomsCompartment) {
-            if (!context->runtime->lockCheck(compartment->zone))
+            if (context->runtime->lockCheck && !context->runtime->lockCheck(compartment->zone))
                 lockFail(compartment);
             if (c != compartment)
                 fail(compartment, c);

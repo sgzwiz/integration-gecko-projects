@@ -217,7 +217,7 @@ struct RuntimeFriendFields {
     RegisterContextOp registerContextStick;
 
     RuntimeFriendFields()
-      : interrupt(0)
+      : interrupt(0), registerContextStick(NULL)
     {}
 
     static const RuntimeFriendFields *get(const JSRuntime *rt) {

@@ -2126,7 +2126,8 @@ JSObject*
 nsJSContext::GetNativeGlobal()
 {
   // Avoid calling GetNativeContext(), as doing so may require locking content.
-  return JS_GetGlobalObject(mContext.canonicalContext());
+  JSContext *cx = mContext.canonicalContext();
+  return cx ? JS_GetGlobalObject(cx) : NULL;
 }
 
 nsresult

@@ -2280,7 +2280,7 @@ nsHTMLDocument::MaybeEditingStateChanged()
     } else if (!mInDestructor) {
       nsAutoLockChrome lock;
       nsContentUtils::AddScriptRunner(
-        NS_NewRunnableMethod(this, &nsHTMLDocument::MaybeEditingStateChanged));
+        NS_NewRunnableMethod(this, &nsHTMLDocument::MaybeEditingStateChanged, GetZone()));
     }
   }
 }
@@ -2307,6 +2307,7 @@ public:
 
   NS_IMETHOD Run() {
     if (mElement && mElement->OwnerDoc() == mDoc) {
+      NS_StickLock(mElement);
       mDoc->DeferredContentEditableCountChange(mElement);
     }
     return NS_OK;

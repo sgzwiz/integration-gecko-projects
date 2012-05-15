@@ -4369,8 +4369,10 @@ NSEvent* gLastDragMouseDownEvent = nil;
     nsCocoaUtils::InitPluginEvent(pluginEvent, cocoaEvent);
     mGeckoChild->DispatchWindowEvent(pluginEvent);
 
-    if (getFocus)
+    if (getFocus) {
+      nsAutoUnlockEverything unlock;
       [self sendFocusEvent:NS_PLUGIN_FOCUS];
+    }
   }
 
   return YES;

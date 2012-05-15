@@ -1110,6 +1110,8 @@ nsresult
 nsHTMLFormElement::AddElement(nsGenericHTMLFormElement* aChild,
                               bool aUpdateValidity, bool aNotify)
 {
+  MOZ_ASSERT(NS_IsOwningThread(GetZone()));
+
   // If an element has a @form, we can assume it *might* be able to not have
   // a parent and still be in the form.
   NS_ASSERTION(aChild->HasAttr(kNameSpaceID_None, nsGkAtoms::form) ||
@@ -1260,6 +1262,8 @@ nsresult
 nsHTMLFormElement::RemoveElement(nsGenericHTMLFormElement* aChild,
                                  bool aUpdateValidity)
 {
+  MOZ_ASSERT(NS_IsOwningThread(GetZone()));
+
   //
   // Remove it from the radio group if it's a radio button
   //
@@ -1330,6 +1334,8 @@ nsHTMLFormElement::RemoveElement(nsGenericHTMLFormElement* aChild,
 void
 nsHTMLFormElement::HandleDefaultSubmitRemoval()
 {
+  MOZ_ASSERT(NS_IsOwningThread(GetZone()));
+
   if (mDefaultSubmitElement) {
     // Already got reset somehow; nothing else to do here
     return;

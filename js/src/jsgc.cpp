@@ -3359,7 +3359,7 @@ AutoGCSession::AutoGCSession(JSRuntime *rt)
             any = true;
         }
     }
-    JS_ASSERT(any);
+    //JS_ASSERT(any);
 
     runtime->gcIsNeeded = false;
     runtime->gcInterFrameGC = true;
@@ -3719,7 +3719,7 @@ Collect(JSRuntime *rt, bool incremental, int64_t budget,
     } av(rt, restartVerify);
 #endif
 
-    if (!rt->lockEverything())
+    if (rt->lockEverything && !rt->lockEverything())
         return;
 
     int compartmentCount = 0;
@@ -3765,7 +3765,8 @@ Collect(JSRuntime *rt, bool incremental, int64_t budget,
          */
     } while (!rt->hasContexts() && rt->gcPoke);
 
-    rt->unlockEverything();
+    if (rt->unlockEverything)
+        rt->unlockEverything();
 }
 
 namespace js {

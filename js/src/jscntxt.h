@@ -1406,6 +1406,7 @@ inline void
 LockGC(JSRuntime *rt)
 {
 #ifdef JS_THREADSAFE
+    JS_ASSERT(!rt->IsGCLocked());
     PR_Lock(rt->gcLock);
 #ifdef DEBUG
     SetGCLockOwner(rt, 0, CurrentThreadId());
@@ -1417,6 +1418,7 @@ inline void
 UnlockGC(JSRuntime *rt)
 {
 #ifdef JS_THREADSAFE
+    JS_ASSERT(rt->IsGCLocked());
 #ifdef DEBUG
     SetGCLockOwner(rt, CurrentThreadId(), 0);
 #endif
@@ -1428,12 +1430,13 @@ UnlockGC(JSRuntime *rt)
 inline void
 WaitGCCondVar(JSRuntime *rt, PRCondVar *cvar)
 {
+    JS_ASSERT(rt->IsGCLocked());
 #ifdef DEBUG
-            SetGCLockOwner(rt, CurrentThreadId(), 0);
+    SetGCLockOwner(rt, CurrentThreadId(), 0);
 #endif
-            PR_WaitCondVar(cvar, PR_INTERVAL_NO_TIMEOUT);
+    PR_WaitCondVar(cvar, PR_INTERVAL_NO_TIMEOUT);
 #ifdef DEBUG
-            SetGCLockOwner(rt, 0, CurrentThreadId());
+    SetGCLockOwner(rt, 0, CurrentThreadId());
 #endif
 }
 #endif

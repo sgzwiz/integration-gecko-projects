@@ -1391,7 +1391,8 @@ AutoCheckRequestDepth::AutoCheckRequestDepth(JSContext *cx)
     : cx(cx)
 {
     JS_ASSERT(cx->thread()->requestDepth);
-    JS_ASSERT_IF(!cx->runtime->isEverythingLocked(), cx->onCorrectThread());
+    JS_ASSERT_IF(!cx->runtime->isEverythingLocked || !cx->runtime->isEverythingLocked(),
+                 cx->onCorrectThread());
     JS_ASSERT_IF(cx->runtime->lockCheck, cx->runtime->lockCheck(GetContextZone(cx)));
     cx->thread()->checkRequestDepth++;
 }

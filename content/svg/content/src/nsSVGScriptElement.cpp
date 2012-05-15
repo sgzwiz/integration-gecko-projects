@@ -72,6 +72,9 @@ public:
   // interfaces:
   
   NS_DECL_ISUPPORTS_INHERITED
+
+  JSZoneId GetZone() { return nsINode::GetZone(); }
+
   NS_DECL_NSIDOMSVGSCRIPTELEMENT
   NS_DECL_NSIDOMSVGURIREFERENCE
 

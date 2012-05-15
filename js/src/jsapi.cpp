@@ -740,6 +740,17 @@ JSRuntime::JSRuntime()
     atomsCompartment(NULL),
     cxCallback(NULL),
     destroyCompartmentCallback(NULL),
+    lockCheck(NULL),
+    zoneCheck(NULL),
+    lockDepth(NULL),
+    lockOp(NULL),
+    unlockOp(NULL),
+    tryLockOp(NULL),
+    lockEverything(NULL),
+    isEverythingLocked(NULL),
+    unlockEverything(NULL),
+    nativeStackTop(NULL),
+    canUnlockChrome(NULL),
     activityCallback(NULL),
     activityCallbackArg(NULL),
     gcSystemAvailableChunkListHead(NULL),
@@ -1047,7 +1058,8 @@ JS_SetRuntimePrivate(JSRuntime *rt, void *data)
 static void
 StartRequest(JSContext *cx)
 {
-    JS_ASSERT_IF(!cx->runtime->isEverythingLocked(), cx->onCorrectThread());
+    JS_ASSERT_IF(!cx->runtime->isEverythingLocked || !cx->runtime->isEverythingLocked(),
+                 cx->onCorrectThread());
     Thread *t = cx->thread();
 
     if (t->requestDepth) {
@@ -1065,7 +1077,8 @@ StartRequest(JSContext *cx)
 static void
 StopRequest(JSContext *cx)
 {
-    JS_ASSERT_IF(!cx->runtime->isEverythingLocked(), cx->onCorrectThread());
+    JS_ASSERT_IF(!cx->runtime->isEverythingLocked || !cx->runtime->isEverythingLocked(),
+                 cx->onCorrectThread());
     Thread *t = cx->thread();
 
     JS_ASSERT(t->requestDepth != 0);
@@ -1658,9 +1671,9 @@ JS_TransplantObject(JSContext *cx, JSObject *origobj, JSObject *target)
             AutoUnlockGC unlock(cx->runtime);
             if (!ac.enter() || !JS_WrapObject(cx, &tobj))
                 return NULL;
+            if (!origobj->swap(cx, tobj))
+                return NULL;
         }
-        if (!origobj->swap(cx, tobj))
-            return NULL;
         origobj->compartment()->crossCompartmentWrappers.put(targetv, origv);
     }
 
@@ -1739,8 +1752,12 @@ js_TransplantObjectWithWrapper(JSContext *cx,
         AutoCompartment ac(cx, wobj);
 
         JSObject *tobj = targetobj;
-        if (!ac.enter() || !wcompartment->wrap(cx, &tobj))
-            return NULL;
+
+        {
+            AutoUnlockGC unlock(cx->runtime);
+            if (!ac.enter() || !wcompartment->wrap(cx, &tobj))
+                return NULL;
+        }
 
         // Now, because we need to maintain object identity, we do a brain
         // transplant on the old object. At the same time, we update the
@@ -1758,8 +1775,11 @@ js_TransplantObjectWithWrapper(JSContext *cx,
     {
         AutoCompartment ac(cx, origobj);
         JSObject *tobj = obj;
-        if (!ac.enter() || !JS_WrapObject(cx, &tobj))
-            return NULL;
+        {
+            AutoUnlockGC unlock(cx->runtime);
+            if (!ac.enter() || !JS_WrapObject(cx, &tobj))
+                return NULL;
+        }
         if (!origwrapper->swap(cx, tobj))
             return NULL;
         origwrapper->compartment()->crossCompartmentWrappers.put(targetv,

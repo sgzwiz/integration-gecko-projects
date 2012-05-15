@@ -532,13 +532,13 @@ nsWindowMemoryReporter::CheckForGhostWindows(
   nsTHashtable<nsCStringHashKey> nonDetachedWindowDomains;
   nonDetachedWindowDomains.Init();
 
+  nsAutoCantLockNewContent cantLock;
+
   // Populate nonDetachedWindowDomains.
   GetNonDetachedWindowDomainsEnumeratorData nonDetachedEnumData =
     { &nonDetachedWindowDomains, tldService };
   windowsById->EnumerateRead(GetNonDetachedWindowDomainsEnumerator,
                              &nonDetachedEnumData);
-
-  nsAutoCantLockNewContent cantLock;
 
   // Update mDetachedWindows and write the ghost window IDs into aOutGhostIDs,
   // if it's not null.

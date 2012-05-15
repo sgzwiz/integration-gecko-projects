@@ -101,7 +101,7 @@ inline void ClearOnShutdown(SmartPtr *aPtr)
 {
   using namespace ClearOnShutdown_Internal;
 
-  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(NS_IsChromeOwningThread());
 
   MOZ_ASSERT(!sHasShutDown);
   ShutdownObserver *observer = new PointerClearer<SmartPtr>(aPtr);
@@ -114,7 +114,7 @@ inline void KillClearOnShutdown()
 {
   using namespace ClearOnShutdown_Internal;
 
-  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(NS_IsChromeOwningThread());
 
   ShutdownObserver *observer;
   while ((observer = sShutdownObservers.popFirst())) {

@@ -484,7 +484,7 @@ AutoCompartment::~AutoCompartment()
 bool
 AutoCompartment::enter()
 {
-    if (!origin || origin->zone != destination->zone) {
+    if (context->runtime->lockOp && (!origin || origin->zone != destination->zone)) {
         if (destination->zone == JS_ZONE_CHROME) {
             context->runtime->lockOp(destination->zone);
         } else if (!context->runtime->tryLockOp(destination->zone)) {
@@ -519,7 +519,7 @@ AutoCompartment::leave()
     }
     entered = false;
 
-    if (!origin || origin->zone != destination->zone)
+    if (context->runtime->lockOp && (!origin || origin->zone != destination->zone))
         context->runtime->unlockOp(destination->zone);
 }
 
@@ -758,12 +758,14 @@ struct AutoLockZone
     AutoLockZone(JSRuntime *rt, JSZoneId zone)
       : rt(rt), zone(zone)
     {
-        rt->lockOp(zone);
+        if (rt->lockOp)
+            rt->lockOp(zone);
     }
 
     ~AutoLockZone()
     {
-        rt->unlockOp(zone);
+        if (rt->lockOp)
+            rt->unlockOp(zone);
     }
 };
 

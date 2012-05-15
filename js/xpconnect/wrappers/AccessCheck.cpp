@@ -477,6 +477,8 @@ bool
 PermitIfUniversalXPConnect(JSContext *cx, jsid id, Wrapper::Action act,
                            ExposedPropertiesOnly::Permission &perm)
 {
+    nsAutoLockChrome lock;
+
     // If UniversalXPConnect is enabled, allow access even if __exposedProps__ doesn't
     // exists.
     nsIScriptSecurityManager *ssm = XPCWrapper::GetSecurityManager();

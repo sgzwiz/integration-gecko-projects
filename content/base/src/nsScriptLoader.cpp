@@ -106,6 +106,8 @@ public:
 
   NS_DECL_ISUPPORTS
 
+  JSZoneId GetZone() { return mElement ? mElement->GetZone() : JS_ZONE_CHROME; }
+
   void FireScriptAvailable(nsresult aResult)
   {
     mElement->ScriptAvailable(aResult, mElement, mIsInline, mURI, mLineNo);

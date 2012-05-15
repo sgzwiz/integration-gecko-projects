@@ -432,15 +432,19 @@ struct AutoUnlockChrome
     {
         JS_GUARD_OBJECT_NOTIFIER_INIT;
 
-        depth = runtime->lockDepth(JS_ZONE_CHROME);
-        for (size_t i = 0; i < depth; i++)
-            runtime->unlockOp(JS_ZONE_CHROME);
+        if (runtime->lockDepth) {
+            depth = runtime->lockDepth(JS_ZONE_CHROME);
+            for (size_t i = 0; i < depth; i++)
+                runtime->unlockOp(JS_ZONE_CHROME);
+        }
     }
 
     ~AutoUnlockChrome()
     {
-        for (size_t i = 0; i < depth; i++)
-            runtime->lockOp(JS_ZONE_CHROME);
+        if (runtime->lockDepth) {
+            for (size_t i = 0; i < depth; i++)
+                runtime->lockOp(JS_ZONE_CHROME);
+        }
     }
 
     JS_DECL_USE_GUARD_OBJECT_NOTIFIER
