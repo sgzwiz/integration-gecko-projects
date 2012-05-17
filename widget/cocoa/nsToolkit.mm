@@ -200,6 +200,8 @@ static CGEventRef EventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
 
+  nsAutoLockChromeUnstickContent lock;
+
   if ((type == kCGEventTapDisabledByUserInput) ||
       (type == kCGEventTapDisabledByTimeout))
     return event;

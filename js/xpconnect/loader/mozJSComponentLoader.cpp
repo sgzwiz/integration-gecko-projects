@@ -1363,7 +1363,7 @@ JSCLContextHelper::~JSCLContextHelper()
         mContextStack->Pop(nsnull);
 
         JSContext* cx = nsnull;
-        mContextStack->Peek(&cx);
+        mContextStack->PeekNoUnmark(&cx);
 
         mContextStack = nsnull;
 

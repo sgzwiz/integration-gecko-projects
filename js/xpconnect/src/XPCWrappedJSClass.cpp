@@ -1195,7 +1195,7 @@ nsXPCWrappedJSClass::CallMethod(nsXPCWrappedJS* wrapper, uint16_t methodIndex,
         return retval;
 
     XPCContext *xpcc = ccx.GetXPCContext();
-    JSContext *cx = xpc_UnmarkGrayContext(ccx.GetJSContext());
+    JSContext *cx = ccx.GetJSContext();
 
     if (!cx || !xpcc || !IsReflectable(methodIndex))
         return NS_ERROR_FAILURE;
@@ -1207,6 +1207,11 @@ nsXPCWrappedJSClass::CallMethod(nsXPCWrappedJS* wrapper, uint16_t methodIndex,
 
     if (!EnsureZoneStuck(cx, JS_GetObjectZone(obj)))
         return NS_ERROR_XPC_CANT_GET_LOCK;
+
+    if (!EnsureZoneStuck(cx, JS_GetZone(cx)))
+        return NS_ERROR_XPC_CANT_GET_LOCK;
+
+    xpc_UnmarkGrayContext(cx);
 
     JSAutoEnterCompartment ac;
     if (!ac.enter(cx, obj))

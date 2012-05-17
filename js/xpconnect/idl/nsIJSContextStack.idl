@@ -47,6 +47,7 @@ interface nsIJSContextStack : nsISupports
 {
     readonly attribute PRInt32  count;
     JSContext                   peek();
+    JSContext                   peekNoUnmark();
     JSContext                   pop();
     void                        push(in JSContext cx);
 };

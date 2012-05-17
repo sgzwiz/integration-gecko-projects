@@ -377,6 +377,8 @@ ChannelMediaResource::CopySegmentToCache(nsIInputStream *aInStream,
 {
   CopySegmentClosure* closure = static_cast<CopySegmentClosure*>(aClosure);
 
+  NS_StickLock(closure->mResource->mDecoder);
+
   closure->mResource->mDecoder->NotifyDataArrived(aFromSegment, aCount, closure->mResource->mOffset);
 
   // Keep track of where we're up to
@@ -631,6 +633,8 @@ void ChannelMediaResource::Suspend(bool aCloseImmediately)
 {
   MOZ_ASSERT(NS_IsChromeOwningThread());
 
+  NS_StickLock(mDecoder);
+
   nsHTMLMediaElement* element = mDecoder->GetMediaElement();
   if (!element) {
     // Shutting down; do nothing.
@@ -772,7 +776,7 @@ ChannelMediaResource::CacheClientNotifyDataEnded(nsresult aStatus)
 void
 ChannelMediaResource::CacheClientNotifyPrincipalChanged()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Don't call on non-main thread");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Don't call on non-main thread");
 
   mDecoder->NotifyPrincipalChanged();
 }

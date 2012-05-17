@@ -4373,35 +4373,10 @@ nsDocument::TryLockSubDocuments()
     NS_TryStickContentLock(zoneArray[i]);
 }
 
-class nsDocumentStatesChangedEvent : public nsRunnable
-{
-  // XXX need to make this a strong reference somehow. add a chrome-owned refcount to nsDocument?
-  nsDocument *mDocument;
-  nsEventStates mStateMask;
-
-public:
-  nsDocumentStatesChangedEvent(nsDocument *aDocument, nsEventStates aStateMask)
-    : mDocument(aDocument), mStateMask(aStateMask)
-  {}
-
-  NS_IMETHOD Run()
-  {
-    mDocument->DocumentStatesChanged(mStateMask);
-    return NS_OK;
-  }
-};
-
 void
 nsDocument::DocumentStatesChanged(nsEventStates aStateMask)
 {
-  // Don't try to acquire the document's lock in case we are unable to release
-  // the chrome lock (e.g. we are under a subdocument enumeration).
-  if (!NS_IsOwningThread(GetZone())) {
-    NS_DispatchToMainThread(new nsDocumentStatesChangedEvent(this, aStateMask),
-                            NS_DISPATCH_NORMAL,
-                            GetZone());
-    return;
-  }
+  MOZ_ASSERT(NS_IsOwningThread(GetZone()));
 
   // Invalidate our cached state.
   mGotDocumentState &= ~aStateMask;

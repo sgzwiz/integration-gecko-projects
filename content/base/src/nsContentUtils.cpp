@@ -2894,7 +2894,7 @@ static bool
 IsContextOnStack(nsIJSContextStack *aStack, JSContext *aContext)
 {
   JSContext *ctx = nsnull;
-  aStack->Peek(&ctx);
+  aStack->PeekNoUnmark(&ctx);
   if (!ctx)
     return false;
   if (ctx == aContext)
@@ -2916,7 +2916,9 @@ IsContextOnStack(nsIJSContextStack *aStack, JSContext *aContext)
       continue;
     }
 
-    if (nsJSUtils::GetDynamicScriptContext(ctx) && ctx == aContext)
+    // XXX if ctx is not the queried context then its zone may not be locked,
+    // due to a nested event loop on the stack.
+    if (ctx == aContext && nsJSUtils::GetDynamicScriptContext(ctx))
       return true;
   }
 
@@ -5932,7 +5934,7 @@ nsContentUtils::WrapNative(JSContext *cx, JSObject *scope, nsISupports *native,
   nsAutoUnstickChrome unstick(cx);
 
   JSContext *topJSContext;
-  nsresult rv = sThreadJSContextStack->Peek(&topJSContext);
+  nsresult rv = sThreadJSContextStack->PeekNoUnmark(&topJSContext);
   if (NS_SUCCEEDED(rv)) {
     bool push = topJSContext != cx;
     if (push) {

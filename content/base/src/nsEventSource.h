@@ -87,6 +87,8 @@ public:
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS_INHERITED(nsEventSource,
                                                                    nsDOMEventTargetHelper)
 
+  JSZoneId GetZone() { return mOwner ? mOwner->GetZone() : JS_ZONE_CHROME; }
+
   NS_DECL_NSIEVENTSOURCE
 
   // nsIJSNativeInitializer

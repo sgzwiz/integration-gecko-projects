@@ -684,6 +684,22 @@ nsDOMOfflineResourceList::FirePendingEvents()
   mPendingEvents.Clear();
 }
 
+class nsDOMOfflineResourceList::SendEventEvent : public nsRunnable
+{
+  nsRefPtr<nsDOMOfflineResourceList> mList;
+  nsString mEventName;
+
+public:
+  SendEventEvent(nsDOMOfflineResourceList *aList,
+                 const nsAString &aEventName)
+    : mList(aList), mEventName(aEventName)
+  {}
+
+  NS_IMETHOD Run() {
+    return mList->SendEvent(mEventName);
+  }
+};
+
 nsresult
 nsDOMOfflineResourceList::SendEvent(const nsAString &aEventName)
 {
@@ -692,7 +708,16 @@ nsDOMOfflineResourceList::SendEvent(const nsAString &aEventName)
     return NS_OK;
   }
 
-  if (!GetOwner()->GetDocShell()) {
+  if (!NS_TryStickLock(GetOwner())) {
+    if (GetOwner()) {
+      return NS_DispatchToMainThread(new SendEventEvent(this, aEventName),
+                                     NS_DISPATCH_NORMAL,
+                                     GetOwner()->GetZone());
+    }
+    return NS_OK;
+  }
+
+  if (!GetOwner() || !GetOwner()->GetDocShell()) {
     return NS_OK;
   }
 

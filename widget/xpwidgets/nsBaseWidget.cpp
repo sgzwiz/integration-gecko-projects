@@ -1119,6 +1119,7 @@ NS_METHOD nsBaseWidget::ResizeClient(PRInt32 aX,
   } else {
     nsContentUtils::AddScriptRunner(
       new nsResizeRepositionWidgetEvent(this, aX, aY, aWidth, aHeight, aRepaint));
+    return NS_OK;
   }
 }
 

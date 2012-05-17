@@ -230,9 +230,10 @@ nsXULContextMenuBuilder::Click(const nsAString& aGeneratedItemId)
   PRInt32 rv;
   PRInt32 idx = nsString(aGeneratedItemId).ToInteger(&rv);
   if (NS_SUCCEEDED(rv)) {
-    nsCOMPtr<nsIDOMHTMLElement> element = mElements.SafeObjectAt(idx);
-    if (element) {
-      element->Click();
+    nsIDOMHTMLElement *element = mElements.SafeObjectAt(idx);
+    if (element && NS_TryStickLock(element)) {
+      nsCOMPtr<nsIDOMHTMLElement> nelement = element;
+      nelement->Click();
     }
   }
 

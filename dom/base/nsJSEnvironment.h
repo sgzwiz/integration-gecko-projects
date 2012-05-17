@@ -73,6 +73,11 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsJSContext,
                                                          nsIScriptContext)
 
+  JSZoneId GetZone()
+  {
+    return mGlobalObjectRef ? mGlobalObjectRef->GetZone() : JS_ZONE_CHROME;
+  }
+
   virtual nsIScriptObjectPrincipal* GetObjectPrincipal();
 
   virtual void SetGlobalObject(nsIScriptGlobalObject* aGlobalObject)
@@ -316,8 +321,6 @@ private:
 
   nsJSContext *mNext;
   nsJSContext **mPrev;
-
-  JSZoneId mZone;
 
   // mGlobalObjectRef ensures that the outer window stays alive as long as the
   // context does. It is eventually collected by the cycle collector.

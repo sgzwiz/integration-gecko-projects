@@ -87,6 +87,8 @@ public:
   nsresult Init();
 
 private:
+  class SendEventEvent;
+
   nsresult SendEvent(const nsAString &aEventName);
 
   nsresult UpdateAdded(nsIOfflineCacheUpdate *aUpdate);

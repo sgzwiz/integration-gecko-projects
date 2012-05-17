@@ -12,7 +12,7 @@ namespace mozilla {
 
 nsresult FileBlockCache::Open(PRFileDesc* aFD)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Only call on main thread");
   NS_ENSURE_TRUE(aFD != nsnull, NS_ERROR_FAILURE);
   {
     MonitorAutoLock mon(mFileMonitor);
@@ -57,7 +57,7 @@ FileBlockCache::~FileBlockCache()
 
 void FileBlockCache::Close()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Only call on main thread");
   MonitorAutoLock mon(mDataMonitor);
 
   mIsOpen = false;
@@ -292,7 +292,7 @@ nsresult FileBlockCache::Read(PRInt64 aOffset,
 
 nsresult FileBlockCache::MoveBlock(PRInt32 aSourceBlockIndex, PRInt32 aDestBlockIndex)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Only call on main thread");
   MonitorAutoLock mon(mDataMonitor);
 
   if (!mIsOpen)

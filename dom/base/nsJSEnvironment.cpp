@@ -527,6 +527,9 @@ NS_ScriptErrorReporter(JSContext *cx,
           innerWindowID = innerWin->WindowID();
         }
       }
+
+      nsAutoLockChrome lock; // for script runner
+
       nsContentUtils::AddScriptRunner(
         new ScriptErrorEvent(globalObject,
                              nsJSPrincipals::get(report->originPrincipals),

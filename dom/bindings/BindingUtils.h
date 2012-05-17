@@ -32,6 +32,8 @@ Throw(JSContext* cx, nsresult rv)
 {
   using mozilla::dom::workers::exceptions::ThrowDOMExceptionForNSResult;
 
+  nsAutoUnstickChrome unstick(cx);
+
   // XXX Introduce exception machinery.
   if (mainThread) {
     XPCThrower::Throw(rv, cx);

@@ -354,7 +354,7 @@ nsBaseAppShell::OnProcessNextEvent(nsIThreadInternal *thr, bool mayWait,
 bool
 nsBaseAppShell::DispatchDummyEvent(nsIThread* aTarget)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Wrong thread!");
 
   if (!mDummyEvent)
     mDummyEvent = new nsRunnable();
@@ -366,7 +366,7 @@ void
 nsBaseAppShell::RunSyncSectionsInternal(bool aStable,
                                         PRUint32 aThreadRecursionLevel)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Wrong thread!");
   NS_ASSERTION(!mSyncSections.IsEmpty(), "Nothing to do!");
 
   // We've got synchronous sections. Run all of them that are are awaiting a
@@ -401,7 +401,7 @@ nsBaseAppShell::RunSyncSectionsInternal(bool aStable,
 void
 nsBaseAppShell::ScheduleSyncSection(nsIRunnable* aRunnable, bool aStable)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Should be on main thread.");
 
   nsIThread* thread = NS_GetCurrentThread();
 

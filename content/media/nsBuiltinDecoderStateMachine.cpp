@@ -1402,7 +1402,7 @@ void nsBuiltinDecoderStateMachine::SetVolume(double volume)
 
 void nsBuiltinDecoderStateMachine::SetAudioCaptured(bool aCaptured)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Should be on main thread.");
   ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
   if (!mAudioCaptured && aCaptured) {
     StopAudioThread();

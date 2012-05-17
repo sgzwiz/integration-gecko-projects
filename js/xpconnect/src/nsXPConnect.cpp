@@ -2384,7 +2384,7 @@ nsXPConnect::GetCount(PRInt32 *aCount)
 
 /* JSContext Peek (); */
 NS_IMETHODIMP
-nsXPConnect::Peek(JSContext * *_retval)
+nsXPConnect::PeekNoUnmark(JSContext * *_retval)
 {
     MOZ_ASSERT(_retval);
 
@@ -2395,8 +2395,16 @@ nsXPConnect::Peek(JSContext * *_retval)
         return NS_ERROR_FAILURE;
     }
 
-    *_retval = xpc_UnmarkGrayContext(data->GetJSContextStack()->Peek());
+    *_retval = (data->GetJSContextStack()->Peek());
     return NS_OK;
+}
+
+NS_IMETHODIMP
+nsXPConnect::Peek(JSContext **_retval)
+{
+    nsresult rv = PeekNoUnmark(_retval);
+    xpc_UnmarkGrayContext(*_retval);
+    return rv;
 }
 
 #ifdef MOZ_JSDEBUGGER

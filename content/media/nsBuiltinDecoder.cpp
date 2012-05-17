@@ -84,7 +84,7 @@ void nsBuiltinDecoder::SetVolume(double aVolume)
 
 void nsBuiltinDecoder::SetAudioCaptured(bool aCaptured)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Should be on main thread.");
   mInitialAudioCaptured = aCaptured;
   if (mDecoderStateMachine) {
     mDecoderStateMachine->SetAudioCaptured(aCaptured);
@@ -93,7 +93,7 @@ void nsBuiltinDecoder::SetAudioCaptured(bool aCaptured)
 
 void nsBuiltinDecoder::AddOutputStream(SourceMediaStream* aStream, bool aFinishWhenEnded)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Should be on main thread.");
 
   {
     ReentrantMonitorAutoEnter mon(mReentrantMonitor);

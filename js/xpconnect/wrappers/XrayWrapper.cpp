@@ -552,6 +552,8 @@ WrapURI(JSContext *cx, nsIURI *uri, jsval *vp)
 static JSBool
 documentURIObject_getter(JSContext *cx, JSObject *wrapper, jsid id, jsval *vp)
 {
+    nsAutoUnstickChrome unstick(cx);
+
     if (!IsWrapper(wrapper) || !WrapperFactory::IsXrayWrapper(wrapper)) {
         JS_ReportError(cx, "Unexpected object");
         return false;
@@ -577,6 +579,8 @@ documentURIObject_getter(JSContext *cx, JSObject *wrapper, jsid id, jsval *vp)
 static JSBool
 baseURIObject_getter(JSContext *cx, JSObject *wrapper, jsid id, jsval *vp)
 {
+    nsAutoUnstickChrome unstick(cx);
+
     if (!IsWrapper(wrapper) || !WrapperFactory::IsXrayWrapper(wrapper)) {
         JS_ReportError(cx, "Unexpected object");
         return false;
@@ -601,6 +605,8 @@ baseURIObject_getter(JSContext *cx, JSObject *wrapper, jsid id, jsval *vp)
 static JSBool
 nodePrincipal_getter(JSContext *cx, JSObject *wrapper, jsid id, jsval *vp)
 {
+    nsAutoUnstickChrome unstick(cx);
+
     if (!IsWrapper(wrapper) || !WrapperFactory::IsXrayWrapper(wrapper)) {
         JS_ReportError(cx, "Unexpected object");
         return false;
@@ -797,6 +803,8 @@ bool
 XPCWrappedNativeXrayTraits::enumerateNames(JSContext *cx, JSObject *wrapper, unsigned flags,
                                            JS::AutoIdVector &props)
 {
+    nsAutoUnstickChrome unstick(cx);
+
     JSObject *holder = getHolderObject(wrapper);
 
     // Enumerate expando properties first.

@@ -707,8 +707,10 @@ nsThread::ProcessNextEventUnlocked(bool mayWait, bool *result)
 NS_IMETHODIMP
 nsThread::ProcessNextEvent(bool mayWait, bool *result)
 {
-  nsAutoUnlockEverything unlock;
-  return ProcessNextEvent(mayWait, result);
+  Maybe<nsAutoUnlockEverything> unlock;
+  if (NS_IsChromeOwningThread())
+    unlock.construct();
+  return ProcessNextEventUnlocked(mayWait, result);
 }
 
 //-----------------------------------------------------------------------------

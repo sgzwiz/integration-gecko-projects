@@ -465,6 +465,8 @@ NS_IMETHODIMP
 nsCORSListenerProxy::OnStartRequest(nsIRequest* aRequest,
                                     nsISupports* aContext)
 {
+  NS_StickLock(mOuterListener);
+
   mRequestApproved = NS_SUCCEEDED(CheckRequestApproved(aRequest));
   if (!mRequestApproved) {
     if (sPreflightCache) {
@@ -639,6 +641,8 @@ nsCORSListenerProxy::OnStopRequest(nsIRequest* aRequest,
                                    nsISupports* aContext,
                                    nsresult aStatusCode)
 {
+  NS_StickLock(mOuterListener);
+
   nsresult rv = mOuterListener->OnStopRequest(aRequest, aContext, aStatusCode);
   mOuterListener = nsnull;
   mOuterNotificationCallbacks = nsnull;
@@ -655,6 +659,8 @@ nsCORSListenerProxy::OnDataAvailable(nsIRequest* aRequest,
                                      PRUint32 aOffset,
                                      PRUint32 aCount)
 {
+  NS_StickLock(mOuterListener);
+
   if (!mRequestApproved) {
     return NS_ERROR_DOM_BAD_URI;
   }
@@ -683,6 +689,8 @@ nsCORSListenerProxy::AsyncOnChannelRedirect(nsIChannel *aOldChannel,
                                             PRUint32 aFlags,
                                             nsIAsyncVerifyRedirectCallback *cb)
 {
+  NS_StickLock(mOuterListener);
+
   nsresult rv;
   if (!NS_IsInternalSameURIRedirect(aOldChannel, aNewChannel, aFlags)) {
     rv = CheckRequestApproved(aOldChannel);

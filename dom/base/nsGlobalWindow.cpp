@@ -7476,8 +7476,10 @@ nsGlobalWindow::ActivateOrDeactivate(bool aActivate)
 static bool
 NotifyDocumentTree(nsIDocument* aDocument, void* aData)
 {
-  aDocument->EnumerateSubDocuments(NotifyDocumentTree, nsnull);
-  aDocument->DocumentStatesChanged(NS_DOCUMENT_STATE_WINDOW_INACTIVE);
+  if (NS_IsOwningThread(aDocument->GetZone())) {
+    aDocument->EnumerateSubDocuments(NotifyDocumentTree, nsnull);
+    aDocument->DocumentStatesChanged(NS_DOCUMENT_STATE_WINDOW_INACTIVE);
+  }
   return true;
 }
 

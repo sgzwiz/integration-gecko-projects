@@ -216,6 +216,9 @@ nsIMEStateManager::OnInstalledMenuKeyboardListener(bool aInstalling)
 {
   sInstalledMenuKeyboardListener = aInstalling;
 
+  if (sPresContext && !NS_TryStickLock(sPresContext))
+    return;
+
   InputContextAction action(InputContextAction::CAUSE_UNKNOWN,
     aInstalling ? InputContextAction::MENU_GOT_PSEUDO_FOCUS :
                   InputContextAction::MENU_LOST_PSEUDO_FOCUS);
