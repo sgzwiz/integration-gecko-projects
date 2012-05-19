@@ -677,7 +677,7 @@ public:
 
     virtual GLContextType GetContextType() { return ContextTypeUnknown; }
 
-    virtual bool MakeCurrentImpl() = 0;
+    virtual bool MakeCurrentImpl(bool aForce) = 0;
 
     void CheckOwningThreadInDebugMode() {
 #ifdef DEBUG
@@ -701,6 +701,8 @@ public:
     }
 
     bool MakeCurrent(bool aForce = false) {
+        return MakeCurrentImpl(aForce);
+        /*
         CheckOwningThreadInDebugMode();
 
         if (!aForce &&
@@ -714,6 +716,7 @@ public:
             SetCurrentGLContext(this);
         }
         return success;
+        */
     }
 
     bool IsContextLost() { return mContextLost; }

@@ -864,6 +864,8 @@ nsJSChannel::EvaluateScript()
 void
 nsJSChannel::NotifyListener()
 {
+    NS_StickLock(mListener);
+
     mListener->OnStartRequest(this, mContext);
     mListener->OnStopRequest(this, mContext, mStatus);
 

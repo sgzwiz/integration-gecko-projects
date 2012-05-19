@@ -422,6 +422,7 @@ ResolveWorkerClasses(JSContext* aCx, JSObject* aObj, jsid aId, unsigned aFlags,
 
   for (PRUint32 i = 0; i < ID_COUNT; i++) {
     if (aId == gStringIDs[i]) {
+      nsAutoLockChrome lock;
       nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
       NS_ASSERTION(ssm, "This should never be null!");
 
@@ -586,6 +587,8 @@ RuntimeService::~RuntimeService()
 RuntimeService*
 RuntimeService::GetOrCreateService()
 {
+  nsAutoLockChrome lock;
+
   AssertIsOnMainThread();
 
   if (!gRuntimeService) {

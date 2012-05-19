@@ -1697,9 +1697,10 @@ void
 nsXMLContentSink::ContinueInterruptedParsingAsync()
 {
   nsCOMPtr<nsIRunnable> ev = NS_NewRunnableMethod(this,
-    &nsXMLContentSink::ContinueInterruptedParsingIfEnabled);
+    &nsXMLContentSink::ContinueInterruptedParsingIfEnabled,
+    GetZone());
 
-  NS_DispatchToCurrentThread(ev);
+  NS_DispatchToMainThread(ev, NS_DISPATCH_NORMAL, GetZone());
 }
 
 nsIParser*

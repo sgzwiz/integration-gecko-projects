@@ -253,6 +253,10 @@ public:
   {
     AssertIsOnMainThread();
 
+    JSZoneId zone = mWorkerPrivate->GetZone();
+    if (zone >= JS_ZONE_CONTENT_START)
+      NS_StickContentLock(zone);
+
     WorkerPrivate* parentWorker = mWorkerPrivate->GetParent();
 
     // Figure out which principal to use.

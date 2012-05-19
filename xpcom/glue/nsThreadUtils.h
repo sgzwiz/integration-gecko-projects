@@ -296,7 +296,7 @@ extern NS_COM_GLUE NS_METHOD
 NS_GetExecuteThread(JSZoneId zone, nsIThread **result);
 
 extern NS_COM_GLUE void
-NS_DumpBacktrace(const char *str, bool flush = false);
+NS_DumpBacktrace(const char *str, bool flush);
 
 /**
  * Dispatch the given event to the current thread.

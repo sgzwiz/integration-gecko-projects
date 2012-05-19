@@ -626,6 +626,9 @@ nsContentList::NodeWillBeDestroyed(const nsINode* aNode)
 NS_IMETHODIMP
 nsContentList::GetLength(PRUint32* aLength)
 {
+  // may not be called with the right lock held by proxies. fix upstream?
+  nsAutoLockChrome lock;
+
   *aLength = Length(true);
 
   return NS_OK;

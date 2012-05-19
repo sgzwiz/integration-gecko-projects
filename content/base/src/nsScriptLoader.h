@@ -66,6 +66,9 @@ public:
   virtual ~nsScriptLoader();
 
   NS_DECL_ISUPPORTS
+
+  JSZoneId GetZone() { return mDocument ? mDocument->GetZone() : JS_ZONE_CHROME; }
+
   NS_DECL_NSISTREAMLOADEROBSERVER
 
   /**

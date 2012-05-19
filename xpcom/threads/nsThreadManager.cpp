@@ -520,7 +520,7 @@ nsThreadManager::TryLockZone(PRInt32 zone_, bool sticky, bool *result)
     gTryLockContent.Bump();
 
   if (zone.stalled && zone.owner) {
-    NS_DumpBacktrace("STALL");
+    NS_DumpBacktrace("STALL", false);
     *result = false;
   } else {
     bool unlockChrome = mChromeZone.owner == current && !mCantLockNewContent;

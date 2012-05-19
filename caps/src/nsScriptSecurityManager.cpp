@@ -206,6 +206,8 @@ PushPrincipalCallback(JSContext *cx, JSPrincipals *principals)
     MOZ_ASSERT(principals ==
                JS_GetCompartmentPrincipals((js::GetContextCompartment(cx))));
 
+    EnsureZoneStuck(cx, JS_ZONE_CHROME);
+
     // Get the security manager.
     nsIScriptSecurityManager *ssm = XPCWrapper::GetSecurityManager();
     if (!ssm) {

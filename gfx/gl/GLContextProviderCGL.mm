@@ -171,7 +171,7 @@ public:
         }
     }
 
-    bool MakeCurrentImpl()
+    bool MakeCurrentImpl(bool aForce)
     {
         if (mContext) {
             [mContext makeCurrentContext];

@@ -660,6 +660,8 @@ nsTextControlFrame::ScrollOnFocusEvent::Run()
                                     nsISelectionController::SELECTION_FOCUS_REGION,
                                     nsISelectionController::SCROLL_SYNCHRONOUS);
   }
+
+  return NS_OK;
 }
 
 //IMPLEMENTING NS_IFORMCONTROLFRAME

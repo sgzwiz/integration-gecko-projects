@@ -86,6 +86,8 @@ public:
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
+  JSZoneId GetZone() { return nsContentSink::GetZone(); }
+
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_NO_UNLINK(nsXMLContentSink,
                                                      nsContentSink)
 

@@ -2447,6 +2447,7 @@ nsHTMLDocument::GetDocumentAllResult(const nsAString& aID,
 
   nsRefPtr<nsContentList> docAllList = entry->GetDocAllList();
   if (!docAllList) {
+    nsAutoLockChrome lock;
     nsCOMPtr<nsIAtom> id = do_GetAtom(aID);
 
     docAllList = new nsContentList(root, DocAllResultMatch,

@@ -215,6 +215,7 @@ private:
   nsCOMPtr<nsIURI> mScriptURI;
   nsCOMPtr<nsIPrincipal> mPrincipal;
   nsCOMPtr<nsIDocument> mDocument;
+  JSZoneId mZone;
 
   // Only used for top level workers.
   nsTArray<nsRefPtr<WorkerRunnable> > mQueuedRunnables;
@@ -467,6 +468,12 @@ public:
   {
     AssertIsOnMainThread();
     mDocument = aDocument;
+  }
+
+  JSZoneId
+  GetZone()
+  {
+    return mZone;
   }
 
   nsPIDOMWindow*

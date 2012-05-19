@@ -470,6 +470,8 @@ nsBaseChannel::SetOwner(nsISupports *aOwner)
 NS_IMETHODIMP
 nsBaseChannel::GetNotificationCallbacks(nsIInterfaceRequestor **aCallbacks)
 {
+  if (mCallbacks)
+      NS_StickLock(mCallbacks);
   NS_IF_ADDREF(*aCallbacks = mCallbacks);
   return NS_OK;
 }

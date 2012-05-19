@@ -518,10 +518,10 @@ nsEventSource::OnStartRequest(nsIRequest *aRequest,
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIRunnable> event =
-    NS_NewRunnableMethod(this, &nsEventSource::AnnounceConnection);
+    NS_NewRunnableMethod(this, &nsEventSource::AnnounceConnection, GetZone());
   NS_ENSURE_STATE(event);
 
-  rv = NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL);
+  rv = NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL, GetZone());
   NS_ENSURE_SUCCESS(rv, rv);
 
   mStatus = PARSE_STATE_BEGIN_OF_STREAM;

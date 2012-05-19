@@ -137,6 +137,11 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsContentSink)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mScriptLoader)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
+JSZoneId
+nsContentSink::GetZone()
+{
+  return mDocument ? mDocument->GetZone() : JS_ZONE_CHROME;
+}
 
 nsContentSink::nsContentSink()
 {

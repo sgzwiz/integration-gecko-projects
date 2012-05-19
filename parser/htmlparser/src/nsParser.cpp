@@ -228,8 +228,6 @@ nsParser::Initialize(bool aConstructor)
     mUnusedInput.Truncate();
   }
 
-  mZone = JS_ZONE_CHROME;
-
   mContinueEvent = nsnull;
   mCharsetSource = kCharsetUninitialized;
   mCharset.AssignLiteral("ISO-8859-1");
@@ -411,9 +409,6 @@ nsParser::SetContentSink(nsIContentSink* aSink)
 
   if (mSink) {
     mSink->SetParser(this);
-
-    MOZ_ASSERT_IF(mZone >= JS_ZONE_CONTENT_START, mZone == mSink->GetZone());
-    mZone = mSink->GetZone();
 
     nsCOMPtr<nsIHTMLContentSink> htmlSink = do_QueryInterface(mSink);
     if (htmlSink) {

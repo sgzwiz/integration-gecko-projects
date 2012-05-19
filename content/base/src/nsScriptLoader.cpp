@@ -928,9 +928,10 @@ nsScriptLoader::ProcessPendingRequestsAsync()
 {
   if (mParserBlockingRequest || !mPendingChildLoaders.IsEmpty()) {
     nsCOMPtr<nsIRunnable> ev = NS_NewRunnableMethod(this,
-      &nsScriptLoader::ProcessPendingRequests);
+      &nsScriptLoader::ProcessPendingRequests,
+      GetZone());
 
-    NS_DispatchToCurrentThread(ev);
+    NS_DispatchToMainThread(ev, NS_DISPATCH_NORMAL, GetZone());
   }
 }
 

@@ -116,7 +116,7 @@ class nsParser : public nsIParser,
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
     NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsParser, nsIParser)
 
-    JSZoneId GetZone() { return mZone; }
+    JSZoneId GetZone() { return mSink ? mSink->GetZone() : JS_ZONE_CHROME; }
 
     /**
      * default constructor
@@ -442,8 +442,6 @@ protected:
     nsCOMPtr<nsIContentSink>     mSink;
     nsIRunnable*                 mContinueEvent;  // weak ref
 
-    JSZoneId mZone;
-   
     nsTokenAllocator          mTokenAllocator;
     
     eParserCommands     mCommand;

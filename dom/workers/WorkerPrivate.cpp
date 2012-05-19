@@ -667,23 +667,31 @@ class MainThreadReleaseRunnable : public nsRunnable
 {
   nsCOMPtr<nsIThread> mThread;
   nsTArray<nsCOMPtr<nsISupports> > mDoomed;
+  JSZoneId mZone;
 
 public:
   MainThreadReleaseRunnable(nsCOMPtr<nsIThread>& aThread,
-                            nsTArray<nsCOMPtr<nsISupports> >& aDoomed)
+                            nsTArray<nsCOMPtr<nsISupports> >& aDoomed,
+                            JSZoneId aZone)
   {
     mThread.swap(aThread);
     mDoomed.SwapElements(aDoomed);
+    mZone = aZone;
   }
 
-  MainThreadReleaseRunnable(nsTArray<nsCOMPtr<nsISupports> >& aDoomed)
+  MainThreadReleaseRunnable(nsTArray<nsCOMPtr<nsISupports> >& aDoomed,
+                            JSZoneId aZone)
   {
     mDoomed.SwapElements(aDoomed);
+    mZone = aZone;
   }
 
   NS_IMETHOD
   Run()
   {
+    if (mZone >= JS_ZONE_CONTENT_START)
+      NS_StickContentLock(mZone);
+
     mDoomed.Clear();
 
     if (mThread) {
@@ -731,7 +739,7 @@ public:
     mFinishedWorker->ForgetMainThreadObjects(doomed);
 
     nsRefPtr<MainThreadReleaseRunnable> runnable =
-      new MainThreadReleaseRunnable(mThread, doomed);
+      new MainThreadReleaseRunnable(mThread, doomed, mFinishedWorker->GetZone());
     if (NS_FAILED(NS_DispatchToMainThread(runnable, NS_DISPATCH_NORMAL))) {
       NS_WARNING("Failed to dispatch, going to leak!");
     }
@@ -778,8 +786,12 @@ public:
     nsTArray<nsCOMPtr<nsISupports> > doomed;
     mFinishedWorker->ForgetMainThreadObjects(doomed);
 
+    JSZoneId zone = mFinishedWorker->GetZone();
+    if (zone >= JS_ZONE_CONTENT_START)
+      NS_StickContentLock(zone);
+
     nsRefPtr<MainThreadReleaseRunnable> runnable =
-      new MainThreadReleaseRunnable(doomed);
+      new MainThreadReleaseRunnable(doomed, zone);
     if (NS_FAILED(NS_DispatchToCurrentThread(runnable))) {
       NS_WARNING("Failed to dispatch, going to leak!");
     }
@@ -1625,7 +1637,7 @@ public:
 void
 mozilla::dom::workers::AssertIsOnMainThread()
 {
-  NS_ASSERTION(NS_IsChromeOwningThread(), "Wrong thread!");
+  MOZ_ASSERT(NS_IsExecuteThread());
 }
 
 WorkerRunnable::WorkerRunnable(WorkerPrivate* aWorkerPrivate, Target aTarget,
@@ -1758,6 +1770,12 @@ WorkerRunnable::Run()
   JSContext* cx;
   JSObject* targetCompartmentObject;
   nsIThreadJSContextStack* contextStack = nsnull;
+
+  if (NS_IsExecuteThread()) {
+    JSZoneId zone = mWorkerPrivate->GetZone();
+    if (zone >= JS_ZONE_CONTENT_START)
+      NS_StickContentLock(zone);
+  }
 
   if (mTarget == WorkerThread) {
     mWorkerPrivate->AssertIsOnWorkerThread();
@@ -1905,6 +1923,8 @@ WorkerPrivateParent<Derived>::WorkerPrivateParent(
   if (aWindow) {
     NS_ASSERTION(aWindow->IsInnerWindow(), "Should have inner window here!");
   }
+
+  mZone = aWindow ? aWindow->GetZone() : JS_ZONE_CHROME;
 
   mWindow.swap(aWindow);
   mScriptContext.swap(aScriptContext);
@@ -2257,6 +2277,7 @@ WorkerPrivateParent<Derived>::PostMessage(JSContext* aCx, jsval aMessage)
 
   nsTArray<nsCOMPtr<nsISupports> > clonedObjects;
 
+  nsAutoUnstickChrome unstick(aCx);
   JSAutoStructuredCloneBuffer buffer;
   if (!buffer.write(aCx, aMessage, callbacks, &clonedObjects)) {
     return false;
@@ -2427,6 +2448,11 @@ WorkerPrivateParent<Derived>::ParentJSContext() const
 {
   AssertIsOnParentThread();
 
+  if (mScriptContext)
+    return mScriptContext->GetNativeContext();
+  return RuntimeService::AutoSafeJSContext::GetSafeContext();
+
+  /*
   if (!mParent) {
     AssertIsOnMainThread();
 
@@ -2440,6 +2466,7 @@ WorkerPrivateParent<Derived>::ParentJSContext() const
   }
 
   return mParentJSContext;
+  */
 }
 
 WorkerPrivate::WorkerPrivate(JSContext* aCx, JSObject* aObject,
@@ -2494,6 +2521,7 @@ WorkerPrivate::Create(JSContext* aCx, JSObject* aObj, WorkerPrivate* aParent,
     domain = aParent->Domain();
   }
   else {
+    nsAutoLockChrome lock;
     AssertIsOnMainThread();
 
     nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
@@ -3373,6 +3401,7 @@ WorkerPrivate::PostMessageToParent(JSContext* aCx, jsval aMessage)
 
   nsTArray<nsCOMPtr<nsISupports> > clonedObjects;
 
+  nsAutoUnstickChrome unstick(aCx);
   JSAutoStructuredCloneBuffer buffer;
   if (!buffer.write(aCx, aMessage, callbacks, &clonedObjects)) {
     return false;

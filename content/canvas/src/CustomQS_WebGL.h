@@ -182,6 +182,8 @@ nsIDOMWebGLRenderingContext_TexImage2D(JSContext *cx, unsigned argc, jsval *vp)
     if (!obj)
         return JS_FALSE;
 
+    nsAutoUnstickChrome unstick(cx);
+
     nsresult rv;
 
     nsIDOMWebGLRenderingContext *self;
@@ -258,6 +260,8 @@ nsIDOMWebGLRenderingContext_TexSubImage2D(JSContext *cx, unsigned argc, jsval *v
     JSObject *obj = JS_THIS_OBJECT(cx, vp);
     if (!obj)
         return JS_FALSE;
+
+    nsAutoUnstickChrome unstick(cx);
 
     nsresult rv;
 

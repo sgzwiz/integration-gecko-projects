@@ -455,6 +455,8 @@ txExprParser::createFunctionCall(txExprLexer& lexer, txIParseContext* aContext,
     NS_ASSERTION(tok->mType == Token::FUNCTION_NAME_AND_PAREN,
                  "FunctionCall expected");
 
+    nsAutoLockChrome lock; // for atoms
+
     //-- compare function names
     nsCOMPtr<nsIAtom> prefix, lName;
     PRInt32 namespaceID;
