@@ -69,7 +69,9 @@ public:
 
   // nsISupports
   NS_DECL_ISUPPORTS
-  
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   // nsISelectionListener
   NS_DECL_NSISELECTIONLISTENER
   

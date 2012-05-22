@@ -125,6 +125,7 @@ public:
 
   NS_IMETHOD_(nsrefcnt) AddRef(void);
   NS_IMETHOD_(nsrefcnt) Release(void);
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
 
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(NotificationController)
 

@@ -88,6 +88,7 @@ public:
 
   NS_IMETHOD_(nsrefcnt) AddRef();
   NS_IMETHOD_(nsrefcnt) Release();
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
   NS_DECL_OWNINGTHREAD
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(nsXMLBindingSet)
 

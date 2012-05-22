@@ -60,6 +60,8 @@ public:
   // nsISupports methods
   NS_DECL_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   // nsIStreamConverter methods
   NS_DECL_NSISTREAMCONVERTER
 

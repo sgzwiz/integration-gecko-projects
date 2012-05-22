@@ -68,6 +68,9 @@ class nsWindowDataSource : public nsIRDFDataSource,
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
     NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsWindowDataSource,
                                              nsIRDFDataSource)
+
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSIOBSERVER
     NS_DECL_NSIWINDOWMEDIATORLISTENER
     NS_DECL_NSIWINDOWDATASOURCE

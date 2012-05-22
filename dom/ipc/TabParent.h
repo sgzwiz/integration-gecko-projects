@@ -172,6 +172,9 @@ public:
     JSBool GetGlobalJSObject(JSContext* cx, JSObject** globalp);
 
     NS_DECL_ISUPPORTS
+
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSIAUTHPROMPTPROVIDER
     NS_DECL_NSISECUREBROWSERUI
 

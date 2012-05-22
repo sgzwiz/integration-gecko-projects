@@ -64,6 +64,9 @@ class nsSimpleURI : public nsIURI,
 {
 public:
     NS_DECL_ISUPPORTS
+
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSIURI
     NS_DECL_NSISERIALIZABLE
     NS_DECL_NSIIPCSERIALIZABLE

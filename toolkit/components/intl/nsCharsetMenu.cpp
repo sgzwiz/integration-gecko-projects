@@ -145,6 +145,8 @@ class nsCharsetMenu : public nsIRDFDataSource, public nsICurrentCharsetListener
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsCharsetMenu, nsIRDFDataSource)
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
 private:
   static nsIRDFResource * kNC_BrowserAutodetMenuRoot;
   static nsIRDFResource * kNC_BrowserCharsetMenuRoot;

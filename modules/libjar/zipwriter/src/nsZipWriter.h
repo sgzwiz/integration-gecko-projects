@@ -75,6 +75,9 @@ class nsZipWriter : public nsIZipWriter,
 {
 public:
     NS_DECL_ISUPPORTS
+
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSIZIPWRITER
     NS_DECL_NSIREQUESTOBSERVER
 

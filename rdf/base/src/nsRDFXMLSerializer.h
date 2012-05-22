@@ -67,6 +67,9 @@ public:
     Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
 
     NS_DECL_ISUPPORTS
+
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSIRDFXMLSERIALIZER
     NS_DECL_NSIRDFXMLSOURCE
 

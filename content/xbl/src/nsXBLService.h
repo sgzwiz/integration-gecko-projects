@@ -64,6 +64,8 @@ class nsXBLService : public nsIXBLService,
 {
   NS_DECL_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   static bool IsChromeOrResourceURI(nsIURI* aURI);
 
   // This function loads a particular XBL file and installs all of the bindings

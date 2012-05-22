@@ -73,6 +73,8 @@ public:
 
     NS_DECL_ISUPPORTS
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     nsresult LoadDocument(nsIChannel* aChannel, nsIPrincipal *aLoaderPrincipal,
                           bool aChannelIsSync, bool aForceToXML,
                           nsIDOMDocument** aResult);

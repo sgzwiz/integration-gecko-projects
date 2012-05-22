@@ -147,6 +147,7 @@ public:
   // This isn't a COM class but it's reference-counted like one.
   NS_IMETHOD_(nsrefcnt) AddRef();
   NS_IMETHOD_(nsrefcnt) Release();
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
 
   void DropDocumentReference(); // notification that doc is going away
 

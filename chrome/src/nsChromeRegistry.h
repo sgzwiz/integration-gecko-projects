@@ -87,6 +87,8 @@ class nsChromeRegistry : public nsIToolkitChromeRegistry,
 public:
   NS_DECL_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   // nsIXULChromeRegistry methods:
   NS_IMETHOD ReloadChrome();
   NS_IMETHOD RefreshSkins();

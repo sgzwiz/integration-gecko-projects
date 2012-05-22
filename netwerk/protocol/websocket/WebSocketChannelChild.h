@@ -58,6 +58,8 @@ class WebSocketChannelChild : public BaseWebSocketChannel,
 
   NS_DECL_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   // nsIWebSocketChannel methods BaseWebSocketChannel didn't implement for us
   //
   NS_IMETHOD AsyncOpen(nsIURI *aURI, const nsACString &aOrigin,

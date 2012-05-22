@@ -95,6 +95,8 @@ public:
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
     NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(LocalStoreImpl, nsILocalStore)
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     // nsILocalStore interface
 
     // nsIRDFDataSource interface. Most of these are just delegated to

@@ -65,6 +65,8 @@ class nsTreeContentView : public nsINativeTreeView,
     NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsTreeContentView,
                                              nsINativeTreeView)
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSITREEVIEW
     // nsINativeTreeView: Untrusted code can use us
     NS_IMETHOD EnsureNative() { return NS_OK; }

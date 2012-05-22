@@ -434,6 +434,8 @@ class LoadStartDetectionRunnable : public nsIRunnable,
 public:
   NS_DECL_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   LoadStartDetectionRunnable(Proxy* aProxy, XMLHttpRequest* aXHRPrivate)
   : mWorkerPrivate(aProxy->mWorkerPrivate), mProxy(aProxy), mXHR(aProxy->mXHR),
     mXMLHttpRequestPrivate(aXHRPrivate), mReceivedLoadStart(false),

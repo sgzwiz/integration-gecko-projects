@@ -67,6 +67,9 @@ class nsProtocolProxyService : public nsIProtocolProxyService2
 {
 public:
     NS_DECL_ISUPPORTS
+
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSIPROTOCOLPROXYSERVICE2
     NS_DECL_NSIPROTOCOLPROXYSERVICE
     NS_DECL_NSIOBSERVER

@@ -74,11 +74,18 @@ NS_FindThreadBitmask(PRThread **pthread, bool *pchrome, PRUint64 *pcontentMask);
 extern JSBool
 NS_IsOwningThread(JSZoneId zone);
 
+extern void
+NS_DumpBacktrace(const char *str, bool flush);
+
 class nsAutoOwningThread {
 public:
     nsAutoOwningThread()
     {
       NS_FindThreadBitmask(&mThread, &mChrome, &mContent);
+      char buf[100];
+      snprintf(buf, sizeof(buf), "OBJECT %p THREAD %p CHROME %d CONTENT %llu\n",
+               this, mThread, (int) mChrome, mContent);
+      NS_DumpBacktrace(buf, false);
     }
 
     bool onCorrectThread() {
@@ -93,6 +100,10 @@ public:
       newContent &= content;
       if (newThread != mThread || newChrome != mChrome || newContent != mContent) {
         bool dead = !newThread && !newChrome && !newContent;
+        char buf[100];
+        snprintf(buf, sizeof(buf), "OBJECT %p THREAD %p CHROME %d CONTENT %llu\n",
+                 this, newThread, (int) newChrome, newContent);
+        NS_DumpBacktrace(buf, dead);
         if (dead)
           *(int*)0 = 0;
         mThread = newThread;
@@ -138,6 +149,14 @@ private:
       NS_ASSERT_OWNINGTHREAD(_class); \
     } \
   } while (0)
+#define NS_ASSERT_IN_CORRECT_ZONE(_class) \
+  do { \
+    if (!NS_IsOwningThread(GetZone())) { \
+      printf("Thread does not have correct zone locked for " #_class ": %d\n", GetZone()); \
+      /* fflush(stdout); */ \
+      /* *(int*)0 = 0; */ \
+    } \
+  } while (0)
 
 #else // !NS_DEBUG
 
@@ -145,6 +164,7 @@ private:
 #define NS_ASSERT_OWNINGTHREAD(_class)  ((void)0)
 #define NS_FIX_OWNINGTHREAD_OTHER(other, zone)  ((void)0)
 #define NS_ASSERT_OWNINGTHREAD_AND_NOT_CCTHREAD(_class)  ((void)0)
+#define NS_ASSERT_IN_CORRECT_ZONE(_class)  ((void)0)
 
 #endif // NS_DEBUG
 
@@ -452,6 +472,7 @@ public:
 NS_IMETHODIMP_(nsrefcnt) _class::AddRef(void)                                 \
 {                                                                             \
   NS_PRECONDITION(PRInt32(mRefCnt) >= 0, "illegal refcnt");                   \
+  NS_ASSERT_IN_CORRECT_ZONE(_class);                                          \
   NS_ASSERT_OWNINGTHREAD_AND_NOT_CCTHREAD(_class);                            \
   ++mRefCnt;                                                                  \
   NS_LOG_ADDREF(this, mRefCnt, #_class, sizeof(*this));                       \
@@ -495,6 +516,7 @@ NS_IMETHODIMP_(nsrefcnt) _class::AddRef(void)                                 \
 NS_IMETHODIMP_(nsrefcnt) _class::Release(void)                                \
 {                                                                             \
   NS_PRECONDITION(0 != mRefCnt, "dup release");                               \
+  NS_ASSERT_IN_CORRECT_ZONE(_class);                                          \
   NS_ASSERT_OWNINGTHREAD_AND_NOT_CCTHREAD(_class);                            \
   --mRefCnt;                                                                  \
   NS_LOG_RELEASE(this, mRefCnt, #_class);                                     \
@@ -542,6 +564,7 @@ NS_IMETHODIMP_(nsrefcnt) _class::Release(void)                                \
 NS_IMETHODIMP_(nsrefcnt) _class::AddRef(void)                                 \
 {                                                                             \
   NS_PRECONDITION(PRInt32(mRefCnt) >= 0, "illegal refcnt");                   \
+  NS_ASSERT_IN_CORRECT_ZONE(_class);                                          \
   NS_ASSERT_OWNINGTHREAD_AND_NOT_CCTHREAD(_class);                            \
   nsrefcnt count =                                                            \
     mRefCnt.incr(NS_CYCLE_COLLECTION_CLASSNAME(_class)::Upcast(this));        \
@@ -553,6 +576,7 @@ NS_IMETHODIMP_(nsrefcnt) _class::AddRef(void)                                 \
 NS_IMETHODIMP_(nsrefcnt) _class::Release(void)                                \
 {                                                                             \
   NS_PRECONDITION(0 != mRefCnt, "dup release");                               \
+  NS_ASSERT_IN_CORRECT_ZONE(_class);                                          \
   NS_ASSERT_OWNINGTHREAD_AND_NOT_CCTHREAD(_class);                            \
   nsISupports *base = NS_CYCLE_COLLECTION_CLASSNAME(_class)::Upcast(this);    \
   nsrefcnt count = mRefCnt.decr(base);                                        \

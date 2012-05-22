@@ -159,6 +159,8 @@ public:
     NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsXULTemplateQueryProcessorXML,
                                              nsIXULTemplateQueryProcessor)
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     // nsIXULTemplateQueryProcessor interface
     NS_DECL_NSIXULTEMPLATEQUERYPROCESSOR
 

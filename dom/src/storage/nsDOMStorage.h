@@ -109,6 +109,8 @@ public:
   // nsISupports
   NS_DECL_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   // nsIDOMStorageManager
   NS_DECL_NSIDOMSTORAGEMANAGER
 
@@ -351,6 +353,8 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsDOMStorage, nsIDOMStorageObsolete)
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_DECL_NSIDOMSTORAGEOBSOLETE
 
   // Helpers for implementing nsIDOMStorage
@@ -423,6 +427,8 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsDOMStorage2, nsIDOMStorage)
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   nsDOMStorage2(nsDOMStorage2& aThat);
   nsDOMStorage2();
 
@@ -470,6 +476,8 @@ public:
   // nsISupports
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsDOMStorageItem, nsIDOMStorageItem)
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
 
   // nsIDOMStorageObsolete
   NS_DECL_NSIDOMSTORAGEITEM

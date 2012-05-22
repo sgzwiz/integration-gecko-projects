@@ -131,6 +131,8 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsTextServicesDocument, nsITextServicesDocument)
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   /* nsITextServicesDocument method implementations. */
   NS_IMETHOD InitWithEditor(nsIEditor *aEditor);
   NS_IMETHOD GetDocument(nsIDOMDocument **aDoc);

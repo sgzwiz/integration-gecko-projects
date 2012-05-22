@@ -79,6 +79,9 @@ class imgRequestProxy : public imgIRequest,
 {
 public:
   NS_DECL_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_DECL_IMGIREQUEST
   NS_DECL_NSIREQUEST
   NS_DECL_NSISUPPORTSPRIORITY

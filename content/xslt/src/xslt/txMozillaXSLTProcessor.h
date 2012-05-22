@@ -91,6 +91,8 @@ public:
     NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(txMozillaXSLTProcessor,
                                              nsIXSLTProcessor)
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     // nsIXSLTProcessor interface
     NS_DECL_NSIXSLTPROCESSOR
 

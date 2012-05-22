@@ -82,6 +82,9 @@ class nsDownloadManager : public nsIDownloadManager,
 {
 public:
   NS_DECL_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_DECL_NSIDOWNLOADMANAGER
   NS_DECL_NSINAVHISTORYOBSERVER
   NS_DECL_NSIOBSERVER

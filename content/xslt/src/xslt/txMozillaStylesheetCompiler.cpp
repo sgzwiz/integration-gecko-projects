@@ -106,6 +106,9 @@ public:
     txStylesheetSink(txStylesheetCompiler* aCompiler, nsIParser* aParser);
 
     NS_DECL_ISUPPORTS
+
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSIEXPATSINK
     NS_DECL_NSISTREAMLISTENER
     NS_DECL_NSIREQUESTOBSERVER

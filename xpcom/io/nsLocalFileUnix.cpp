@@ -148,6 +148,8 @@ nsDirEnumeratorUnix : public nsISimpleEnumerator,
     // nsISupports interface
     NS_DECL_ISUPPORTS
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     // nsISimpleEnumerator interface
     NS_DECL_NSISIMPLEENUMERATOR
 

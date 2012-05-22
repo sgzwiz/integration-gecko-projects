@@ -110,6 +110,8 @@ public:
     NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(CompositeDataSourceImpl,
                                              nsIRDFCompositeDataSource)
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     // nsIRDFDataSource interface
     NS_DECL_NSIRDFDATASOURCE
 

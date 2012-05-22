@@ -77,6 +77,8 @@ public:
     // nsISupports interface
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     // nsISerializable interface
     NS_DECL_NSISERIALIZABLE
 

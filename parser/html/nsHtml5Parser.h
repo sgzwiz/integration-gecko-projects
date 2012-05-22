@@ -70,6 +70,8 @@ class nsHtml5Parser : public nsIParser,
 
     NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsHtml5Parser, nsIParser)
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     nsHtml5Parser();
     virtual ~nsHtml5Parser();
 

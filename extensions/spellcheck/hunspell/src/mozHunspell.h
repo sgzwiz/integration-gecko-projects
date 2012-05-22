@@ -87,6 +87,9 @@ class mozHunspell : public mozISpellCheckingEngine,
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_DECL_MOZISPELLCHECKINGENGINE
   NS_DECL_NSIOBSERVER
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(mozHunspell, mozISpellCheckingEngine)

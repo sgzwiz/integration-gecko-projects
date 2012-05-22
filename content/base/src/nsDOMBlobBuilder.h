@@ -174,6 +174,9 @@ public:
   {}
 
   NS_DECL_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_DECL_NSIDOMMOZBLOBBUILDER
 
   nsresult AppendVoidPtr(const void* aData, PRUint32 aLength)

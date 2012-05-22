@@ -176,6 +176,9 @@ class RasterImage : public Image
 {
 public:
   NS_DECL_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_DECL_NSIPROPERTIES
 #ifdef DEBUG
   NS_DECL_IMGICONTAINERDEBUG

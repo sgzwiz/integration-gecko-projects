@@ -286,6 +286,8 @@ public:
 
   NS_DECL_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_DECL_NSIDOMSTYLESHEETLIST
 
   // nsIDocumentObserver
@@ -455,6 +457,7 @@ protected:
         NS_ASSERTION(mRealPtr, "Expected non-null here");                    \
       }                                                                      \
       NS_DECL_ISUPPORTS                                                      \
+      NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }          \
       NS_FORWARD_NSIINTERFACEREQUESTOR(mIfReq->);                            \
       NS_FORWARD_##_allcaps(mRealPtr->);                                     \
     private:                                                                 \

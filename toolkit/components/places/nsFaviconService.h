@@ -155,6 +155,9 @@ public:
                                 const nsACString& aGUID);
 
   NS_DECL_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_DECL_NSIFAVICONSERVICE
   NS_DECL_MOZIASYNCFAVICONS
   NS_DECL_NSITIMERCALLBACK

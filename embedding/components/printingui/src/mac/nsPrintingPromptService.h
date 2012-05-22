@@ -70,6 +70,8 @@ public:
   NS_DECL_NSIWEBPROGRESSLISTENER
   NS_DECL_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
 private:
   nsCOMPtr<nsIPrintProgress> mPrintProgress;
 };

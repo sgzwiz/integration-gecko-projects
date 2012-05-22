@@ -69,6 +69,8 @@ public:
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_CLASS_AMBIGUOUS(nsDOMCSSAttributeDeclaration,
                                                      nsICSSDeclaration)
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   // If GetCSSDeclaration returns non-null, then the decl it returns
   // is owned by our current style rule.
   virtual mozilla::css::Declaration* GetCSSDeclaration(bool aAllocate);

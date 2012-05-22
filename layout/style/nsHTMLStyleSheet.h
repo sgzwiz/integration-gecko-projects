@@ -62,6 +62,8 @@ public:
 
   NS_DECL_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   // nsIStyleSheet api
   virtual nsIURI* GetSheetURI() const;
   virtual nsIURI* GetBaseURI() const;

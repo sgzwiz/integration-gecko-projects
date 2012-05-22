@@ -54,6 +54,8 @@ public:
 
   NS_DECL_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   // nsILayoutHistoryState
   NS_IMETHOD AddState(const nsCString& aKey, nsPresState* aState);
   NS_IMETHOD GetState(const nsCString& aKey, nsPresState** aState);

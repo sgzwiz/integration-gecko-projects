@@ -74,6 +74,8 @@ public:
   //nsISupports
   NS_DECL_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   //nsIDragSession and nsIDragService
   NS_DECL_NSIDRAGSERVICE
   NS_DECL_NSIDRAGSESSION

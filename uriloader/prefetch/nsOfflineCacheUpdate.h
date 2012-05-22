@@ -78,6 +78,9 @@ class nsOfflineCacheUpdateItem : public nsIDOMLoadStatus
 {
 public:
     NS_DECL_ISUPPORTS
+
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSIDOMLOADSTATUS
     NS_DECL_NSIREQUESTOBSERVER
     NS_DECL_NSISTREAMLISTENER
@@ -216,6 +219,9 @@ class nsOfflineCacheUpdate : public nsIOfflineCacheUpdate
 {
 public:
     NS_DECL_ISUPPORTS
+
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSIOFFLINECACHEUPDATE
     NS_DECL_NSIOFFLINECACHEUPDATEOBSERVER
 
@@ -319,6 +325,9 @@ class nsOfflineCacheUpdateService : public nsIOfflineCacheUpdateService
 {
 public:
     NS_DECL_ISUPPORTS
+
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSIOFFLINECACHEUPDATESERVICE
     NS_DECL_NSIOBSERVER
 

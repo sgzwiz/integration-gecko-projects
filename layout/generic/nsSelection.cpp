@@ -705,6 +705,7 @@ nsFrameSelection::nsFrameSelection()
   : mDelayedMouseEvent(false, 0, nsnull, nsMouseEvent::eReal)
 {
   PRInt32 i;
+  mZone = JS_ZONE_CHROME;
   for (i = 0;i<nsISelectionController::NUM_SELECTIONTYPES;i++){
     mDomSelections[i] = new nsTypedSelection(this);
     mDomSelections[i]->SetType(GetSelectionTypeFromIndex(i));
@@ -714,7 +715,6 @@ nsFrameSelection::nsFrameSelection()
   mNotifyFrames = true;
   mLimiter = nsnull; //no default limiter.
   mAncestorLimiter = nsnull;
-  mZone = JS_ZONE_CHROME;
 
   mMouseDoubleDownState = false;
   

@@ -73,6 +73,8 @@ class OfflineCacheUpdateGlue : public nsSupportsWeakReference
 public:
     NS_DECL_ISUPPORTS
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
 private:
     nsIOfflineCacheUpdate* EnsureUpdate();
 

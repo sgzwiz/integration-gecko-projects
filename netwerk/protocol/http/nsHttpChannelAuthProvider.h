@@ -59,6 +59,9 @@ class nsHttpChannelAuthProvider : public nsIHttpChannelAuthProvider
 {
 public:
     NS_DECL_ISUPPORTS
+
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSICANCELABLE
     NS_DECL_NSIHTTPCHANNELAUTHPROVIDER
     NS_DECL_NSIAUTHPROMPTCALLBACK

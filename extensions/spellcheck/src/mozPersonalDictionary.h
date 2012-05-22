@@ -62,6 +62,9 @@ class mozPersonalDictionary : public mozIPersonalDictionary,
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_DECL_MOZIPERSONALDICTIONARY
   NS_DECL_NSIOBSERVER
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(mozPersonalDictionary, mozIPersonalDictionary)

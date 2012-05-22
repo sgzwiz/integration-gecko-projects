@@ -54,6 +54,8 @@ class nsXBLDocumentInfo : public nsIScriptGlobalObjectOwner,
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   nsXBLDocumentInfo(nsIDocument* aDocument);
   virtual ~nsXBLDocumentInfo();
 

@@ -59,6 +59,9 @@ class nsNodeIterator : public nsIDOMNodeIterator,
 {
 public:
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSIDOMNODEITERATOR
 
     nsNodeIterator(nsINode *aRoot,

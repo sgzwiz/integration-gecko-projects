@@ -67,6 +67,9 @@ class nsPrefetchService : public nsIPrefetchService
 {
 public:
     NS_DECL_ISUPPORTS
+
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSIPREFETCHSERVICE
     NS_DECL_NSIWEBPROGRESSLISTENER
     NS_DECL_NSIOBSERVER
@@ -121,6 +124,9 @@ class nsPrefetchNode : public nsIDOMLoadStatus
 {
 public:
     NS_DECL_ISUPPORTS
+
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSIDOMLOADSTATUS
     NS_DECL_NSIREQUESTOBSERVER
     NS_DECL_NSISTREAMLISTENER

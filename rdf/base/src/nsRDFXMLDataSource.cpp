@@ -193,6 +193,8 @@ public:
     NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(RDFXMLDataSourceImpl,
                                              nsIRDFDataSource)
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     // nsIRDFDataSource
     NS_IMETHOD GetURI(char* *uri);
 

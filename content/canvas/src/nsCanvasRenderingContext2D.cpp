@@ -379,6 +379,8 @@ public:
 
     NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsCanvasRenderingContext2D, nsIDOMCanvasRenderingContext2D)
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     // nsIDOMCanvasRenderingContext2D interface
     NS_DECL_NSIDOMCANVASRENDERINGCONTEXT2D
 

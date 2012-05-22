@@ -49,6 +49,9 @@ public:
   virtual ~nsBaseDOMException();
 
   NS_DECL_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_DECL_NSIEXCEPTION
   NS_IMETHOD Init(nsresult aNSResult, const char* aName,
                   const char* aMessage, PRUint16 aCode,

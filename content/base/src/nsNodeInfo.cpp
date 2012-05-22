@@ -65,7 +65,7 @@ using namespace mozilla;
 JSZoneId
 nsINode::GetZone()
 {
-  return mNodeInfo->GetZone();
+  return mNodeInfo ? mNodeInfo->GetZone() : JS_ZONE_CHROME;
 }
 
 static const size_t kNodeInfoPoolSizes[] = {

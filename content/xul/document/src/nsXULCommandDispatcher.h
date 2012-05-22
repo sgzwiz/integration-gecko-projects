@@ -68,6 +68,8 @@ public:
     NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsXULCommandDispatcher,
                                              nsIDOMXULCommandDispatcher)
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     // nsIDOMXULCommandDispatcher interface
     NS_DECL_NSIDOMXULCOMMANDDISPATCHER
 

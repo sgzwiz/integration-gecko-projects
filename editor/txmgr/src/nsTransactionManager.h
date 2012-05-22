@@ -78,6 +78,8 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsTransactionManager,
                                            nsITransactionManager)
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   /* nsITransactionManager method implementations. */
   NS_DECL_NSITRANSACTIONMANAGER
 

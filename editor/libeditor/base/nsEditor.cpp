@@ -150,7 +150,7 @@ nsEditor::nsEditor()
 :  mPlaceHolderName(nsnull)
 ,  mSelState(nsnull)
 ,  mPhonetic(nsnull)
-,  mZone(JS_ZONE_NONE)
+,  mZone(JS_ZONE_CHROME)
 ,  mModCount(0)
 ,  mFlags(0)
 ,  mUpdateCount(0)
@@ -230,7 +230,7 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(nsEditor)
 NS_IMETHODIMP
 nsEditor::InitZone(PRInt32 zone)
 {
-  MOZ_ASSERT(mZone == JS_ZONE_NONE || mZone == zone);
+  MOZ_ASSERT(mZone == JS_ZONE_CHROME || mZone == zone);
   mZone = (JSZoneId) zone;
   return NS_OK;
 }
@@ -238,8 +238,6 @@ nsEditor::InitZone(PRInt32 zone)
 NS_IMETHODIMP
 nsEditor::Init(nsIDOMDocument *aDoc, nsIContent *aRoot, nsISelectionController *aSelCon, PRUint32 aFlags)
 {
-  MOZ_ASSERT(mZone != JS_ZONE_NONE);
-
   NS_PRECONDITION(aDoc, "bad arg");
   if (!aDoc)
     return NS_ERROR_NULL_POINTER;
