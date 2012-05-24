@@ -1759,7 +1759,6 @@ NS_INTERFACE_MAP_END
 
 nsDOMStorage2::nsDOMStorage2()
 {
-  NS_FIX_OWNINGTHREAD(JS_ZONE_CHROME);
 }
 
 nsDOMStorage2::nsDOMStorage2(nsDOMStorage2& aThat)

@@ -183,7 +183,6 @@ nsresult nsCaret::Init(nsIPresShell *inPresShell)
   NS_ASSERTION(mPresShell, "Hey, pres shell should support weak refs");
 
   mZone = inPresShell->GetZone();
-  NS_FIX_OWNINGTHREAD(mZone);
 
   // XXX we should just do this LookAndFeel consultation every time
   // we need these values.

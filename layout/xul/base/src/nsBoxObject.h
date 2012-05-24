@@ -56,6 +56,9 @@ class nsBoxObject : public nsPIBoxObject
 {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(nsBoxObject)
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
+
   NS_DECL_NSIBOXOBJECT
 
 public:
@@ -82,6 +85,7 @@ protected:
   nsAutoPtr<nsInterfaceHashtable<nsStringHashKey,nsISupports> > mPropertyTable; //[OWNER]
 
   nsIContent* mContent; // [WEAK]
+  JSZoneId mZone;
 };
 
 #endif

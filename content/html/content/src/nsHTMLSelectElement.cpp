@@ -1961,6 +1961,7 @@ nsHTMLOptionCollection::nsHTMLOptionCollection(nsHTMLSelectElement* aSelect)
   // Do not maintain a reference counted reference. When
   // the select goes away, it will let us know.
   mSelect = aSelect;
+  mZone = aSelect->GetZone();
 }
 
 nsHTMLOptionCollection::~nsHTMLOptionCollection()

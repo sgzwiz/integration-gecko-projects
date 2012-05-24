@@ -124,7 +124,6 @@ nsRefreshDriver::nsRefreshDriver(nsPresContext *aPresContext)
     mViewManagerFlushIsPending(false),
     mLastTimerInterval(0)
 {
-  NS_FIX_OWNINGTHREAD(GetZone());
   mRequests.Init();
 }
 

@@ -207,8 +207,6 @@ nsHTMLImageElement::nsHTMLImageElement(already_AddRefed<nsINodeInfo> aNodeInfo)
 {
   // We start out broken
   AddStatesSilently(NS_EVENT_STATE_BROKEN);
-
-  NS_FIX_OWNINGTHREAD(GetZone());
 }
 
 nsHTMLImageElement::~nsHTMLImageElement()

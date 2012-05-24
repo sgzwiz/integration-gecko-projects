@@ -3927,8 +3927,6 @@ nsDocument::SetScriptGlobalObject(nsIScriptGlobalObject *aScriptGlobalObject)
 
   if (window) {
     JSZoneId zone = window->GetZone();
-    if (zone >= JS_ZONE_CONTENT_START)
-      NS_FIX_OWNINGTHREAD(zone);
     mNodeInfoManager->SetZone(zone);
     UpdateWeakReferencesZone();
   }

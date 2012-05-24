@@ -329,6 +329,9 @@ NS_FindExecuteThreadZone()
 {
   GET_MANAGER();
 
+  if (!mgr)
+    return JS_ZONE_NONE;
+
   PRInt32 result;
   mgr->FindExecuteThreadZone(&result);
   return (JSZoneId) result;
@@ -409,6 +412,14 @@ NS_IsOwningThread(JSZoneId zone)
   // locks and is blocked on the collection finishing.
   return NS_IsCycleCollectorThread();
 }
+
+#ifdef NS_DEBUG
+bool
+NS_IsOwningThreadOrNonExecuteThread(JSZoneId zone)
+{
+  return !NS_IsExecuteThread() || NS_IsOwningThread(zone);
+}
+#endif
 
 uint32_t
 NS_ThreadLockDepth(JSZoneId zone)

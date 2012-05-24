@@ -175,6 +175,12 @@ nsBaseContentList::IndexOf(nsIContent* aContent)
   return IndexOf(aContent, true);
 }
 
+nsSimpleContentList::nsSimpleContentList(nsINode *aRoot)
+  : nsBaseContentList(),
+    mRoot(aRoot), mZone(aRoot->GetZone())
+{
+}
+
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsSimpleContentList)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsSimpleContentList,
                                                   nsBaseContentList)
@@ -438,6 +444,7 @@ nsContentList::nsContentList(nsINode* aRootNode,
                              bool aDeep)
   : nsBaseContentList(),
     mRootNode(aRootNode),
+    mZone(aRootNode->GetZone()),
     mMatchNameSpaceId(aMatchNameSpaceId),
     mHTMLMatchAtom(aHTMLMatchAtom),
     mXMLMatchAtom(aXMLMatchAtom),
@@ -477,6 +484,7 @@ nsContentList::nsContentList(nsINode* aRootNode,
                              bool aFuncMayDependOnAttr)
   : nsBaseContentList(),
     mRootNode(aRootNode),
+    mZone(aRootNode->GetZone()),
     mMatchNameSpaceId(aMatchNameSpaceId),
     mHTMLMatchAtom(aMatchAtom),
     mXMLMatchAtom(aMatchAtom),

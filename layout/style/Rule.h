@@ -63,12 +63,14 @@ class Rule : public nsIStyleRule {
 protected:
   Rule()
     : mSheet(nsnull),
+      mZone(JS_ZONE_NONE),
       mParentRule(nsnull)
   {
   }
 
   Rule(const Rule& aCopy)
     : mSheet(aCopy.mSheet),
+      mZone(aCopy.mZone),
       mParentRule(aCopy.mParentRule)
   {
   }
@@ -80,7 +82,7 @@ public:
   NS_IMETHOD_(nsrefcnt) AddRef();
   NS_IMETHOD_(nsrefcnt) Release();
 
-  JSZoneId GetZone();
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
 protected:
   nsAutoRefCnt mRefCnt;
@@ -144,6 +146,7 @@ public:
 
 protected:
   nsCSSStyleSheet*  mSheet;
+  JSZoneId          mZone;
   GroupRule*        mParentRule;
 };
 

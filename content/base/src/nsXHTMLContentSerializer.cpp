@@ -96,7 +96,7 @@ nsXHTMLContentSerializer::~nsXHTMLContentSerializer()
 }
 
 NS_IMETHODIMP
-nsXHTMLContentSerializer::Init(PRUint32 aFlags, PRUint32 aWrapColumn,
+nsXHTMLContentSerializer::Init(JSZoneId aZone, PRUint32 aFlags, PRUint32 aWrapColumn,
                               const char* aCharSet, bool aIsCopying,
                               bool aRewriteEncodingDeclaration)
 {
@@ -109,7 +109,7 @@ nsXHTMLContentSerializer::Init(PRUint32 aFlags, PRUint32 aWrapColumn,
   }
 
   nsresult rv;
-  rv = nsXMLContentSerializer::Init(aFlags, aWrapColumn, aCharSet, aIsCopying, aRewriteEncodingDeclaration);
+  rv = nsXMLContentSerializer::Init(aZone, aFlags, aWrapColumn, aCharSet, aIsCopying, aRewriteEncodingDeclaration);
   NS_ENSURE_SUCCESS(rv, rv);
 
   mRewriteEncodingDeclaration = aRewriteEncodingDeclaration;

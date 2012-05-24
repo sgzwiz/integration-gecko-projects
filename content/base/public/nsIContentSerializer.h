@@ -59,7 +59,7 @@ class nsIContentSerializer : public nsISupports {
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_ICONTENTSERIALIZER_IID)
 
-  NS_IMETHOD Init(PRUint32 flags, PRUint32 aWrapColumn,
+  NS_IMETHOD Init(JSZoneId aZone, PRUint32 flags, PRUint32 aWrapColumn,
                   const char* aCharSet, bool aIsCopying,
                   bool aIsWholeDocument) = 0;
 

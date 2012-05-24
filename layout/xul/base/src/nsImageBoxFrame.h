@@ -49,10 +49,13 @@ class nsImageBoxFrame;
 class nsImageBoxListener : public nsStubImageDecoderObserver
 {
 public:
-  nsImageBoxListener();
+  nsImageBoxListener(JSZoneId zone);
   virtual ~nsImageBoxListener();
 
   NS_DECL_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
+
   // imgIDecoderObserver (override nsStubImageDecoderObserver)
   NS_IMETHOD OnStartContainer(imgIRequest *request, imgIContainer *image);
   NS_IMETHOD OnStopContainer(imgIRequest *request, imgIContainer *image);
@@ -69,6 +72,7 @@ public:
 
 private:
   nsImageBoxFrame *mFrame;
+  JSZoneId mZone;
 };
 
 class nsImageBoxFrame : public nsLeafBoxFrame

@@ -268,6 +268,8 @@ class nsGenericHTMLElementTearoff : public nsIDOMElementCSSInlineStyle
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsGenericHTMLElementTearoff,
                                            nsIDOMElementCSSInlineStyle)
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mElement->GetZone(); }
+
 private:
   nsRefPtr<nsGenericHTMLElement> mElement;
 };

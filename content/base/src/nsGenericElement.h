@@ -98,13 +98,15 @@ class nsChildContentList : public nsINodeList
 {
 public:
   nsChildContentList(nsINode* aNode)
-    : mNode(aNode)
+    : mNode(aNode), mZone(aNode->GetZone())
   {
     SetIsDOMBinding();
   }
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS(nsChildContentList)
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   // nsWrapperCache
   virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
@@ -129,6 +131,7 @@ public:
 private:
   // The node whose children make up the list (weak reference)
   nsINode* mNode;
+  JSZoneId mZone;
 };
 
 /**
@@ -1100,6 +1103,8 @@ public:
   NS_FORWARD_NSIINLINEEVENTHANDLERS(mElement->)
 
   NS_DECL_CYCLE_COLLECTION_CLASS(nsInlineEventHandlersTearoff)
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mElement->GetZone(); }
 
   nsInlineEventHandlersTearoff(nsGenericElement *aElement) : mElement(aElement)
   {

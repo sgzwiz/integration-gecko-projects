@@ -2945,10 +2945,6 @@ public:
     bool onCorrectThread() const {
         return const_cast<XPCWrappedNative*>(this)->_mOwningThread.onCorrectThread();
     }
-
-    void FixZone(JSZoneId zone) {
-        _mOwningThread.fixZone(zone);
-    }
 #endif
 
 private:

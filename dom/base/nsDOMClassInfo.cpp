@@ -2142,7 +2142,6 @@ nsDOMClassInfo::ObjectIsNativeWrapper(JSContext* cx, JSObject* obj)
 
 nsDOMClassInfo::nsDOMClassInfo(nsDOMClassInfoData* aData) : mData(aData)
 {
-  NS_FIX_OWNINGTHREAD(JS_ZONE_CHROME);
 }
 
 nsDOMClassInfo::~nsDOMClassInfo()
@@ -5907,6 +5906,9 @@ public:
                          nsDOMConstructor** aResult);
 
   NS_DECL_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mWeakOwner->GetZone(); }
+
   NS_DECL_NSIDOMDOMCONSTRUCTOR
 
   nsresult PreCreate(JSContext *cx, JSObject *globalObj, JSObject **parentObj);

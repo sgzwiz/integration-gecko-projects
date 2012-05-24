@@ -125,8 +125,6 @@ nsBaseAppShell::NativeEventCallback()
     mBlockNativeEvent = true;
   }
 
-  MOZ_ASSERT(!NS_IsChromeOwningThread());
-
   ++mEventloopNestingLevel;
   EventloopNestingState prevVal = mEventloopNestingState;
   NS_ProcessPendingEvents(thread, THREAD_EVENT_STARVATION_LIMIT);
@@ -155,8 +153,6 @@ nsBaseAppShell::DoProcessMoreGeckoEvents()
 bool
 nsBaseAppShell::DoProcessNextNativeEvent(bool mayWait, PRUint32 recursionDepth)
 {
-  nsAutoUnlockEverything unlock;
-
   // The next native event to be processed may trigger our NativeEventCallback,
   // in which case we do not want it to process any thread events since we'll
   // do that when this function returns.
@@ -173,7 +169,11 @@ nsBaseAppShell::DoProcessNextNativeEvent(bool mayWait, PRUint32 recursionDepth)
 
   ++mEventloopNestingLevel;
 
-  bool result = ProcessNextNativeEvent(mayWait);
+  bool result;
+  {
+    nsAutoUnlockEverything unlock;
+    result = ProcessNextNativeEvent(mayWait);
+  }
 
   // Make sure that any sync sections registered during this most recent event
   // are run now. This is not considered a stable state because we're not back
@@ -354,7 +354,7 @@ nsBaseAppShell::OnProcessNextEvent(nsIThreadInternal *thr, bool mayWait,
 bool
 nsBaseAppShell::DispatchDummyEvent(nsIThread* aTarget)
 {
-  NS_ASSERTION(NS_IsChromeOwningThread(), "Wrong thread!");
+  MOZ_ASSERT(NS_IsChromeOwningThread());
 
   if (!mDummyEvent)
     mDummyEvent = new nsRunnable();
@@ -366,7 +366,7 @@ void
 nsBaseAppShell::RunSyncSectionsInternal(bool aStable,
                                         PRUint32 aThreadRecursionLevel)
 {
-  NS_ASSERTION(NS_IsChromeOwningThread(), "Wrong thread!");
+  MOZ_ASSERT(NS_IsChromeOwningThread());
   NS_ASSERTION(!mSyncSections.IsEmpty(), "Nothing to do!");
 
   // We've got synchronous sections. Run all of them that are are awaiting a
@@ -401,7 +401,7 @@ nsBaseAppShell::RunSyncSectionsInternal(bool aStable,
 void
 nsBaseAppShell::ScheduleSyncSection(nsIRunnable* aRunnable, bool aStable)
 {
-  NS_ASSERTION(NS_IsChromeOwningThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsChromeOwningThread());
 
   nsIThread* thread = NS_GetCurrentThread();
 

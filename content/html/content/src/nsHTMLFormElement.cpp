@@ -121,6 +121,8 @@ public:
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
+
   // nsIDOMHTMLCollection interface
   NS_DECL_NSIDOMHTMLCOLLECTION
 
@@ -158,6 +160,7 @@ public:
   }
 
   nsHTMLFormElement* mForm;  // WEAK - the form owns me
+  JSZoneId mZone;
 
   nsTArray<nsGenericHTMLFormElement*> mElements;  // Holds WEAK references - bug 36639
 
@@ -2139,6 +2142,7 @@ nsHTMLFormElement::IntrinsicState() const
 
 nsFormControlList::nsFormControlList(nsHTMLFormElement* aForm) :
   mForm(aForm),
+  mZone(aForm->GetZone()),
   // Initialize the elements list to have an initial capacity
   // of 8 to reduce allocations on small forms.
   mElements(8)

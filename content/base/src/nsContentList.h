@@ -148,14 +148,13 @@ protected:
 class nsSimpleContentList : public nsBaseContentList
 {
 public:
-  nsSimpleContentList(nsINode *aRoot) : nsBaseContentList(),
-                                        mRoot(aRoot)
-  {
-  }
+  nsSimpleContentList(nsINode *aRoot);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsSimpleContentList,
                                            nsBaseContentList)
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   virtual nsINode* GetParentObject()
   {
@@ -167,6 +166,7 @@ public:
 private:
   // This has to be a strong reference, the root might go away before the list.
   nsCOMPtr<nsINode> mRoot;
+  JSZoneId mZone;
 };
 
 // This class is used only by form element code and this is a static
@@ -242,6 +242,8 @@ class nsContentList : public nsBaseContentList,
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
+
+  JSZoneId GetZone() { return mZone; }
 
   /**
    * @param aRootNode The node under which to limit our search.
@@ -418,6 +420,7 @@ protected:
   }
 
   nsINode* mRootNode; // Weak ref
+  JSZoneId mZone;
   PRInt32 mMatchNameSpaceId;
   nsCOMPtr<nsIAtom> mHTMLMatchAtom;
   nsCOMPtr<nsIAtom> mXMLMatchAtom;

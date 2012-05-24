@@ -4473,6 +4473,8 @@ DocumentViewerImpl::SetPrintPreviewPresentation(nsIViewManager* aViewManager,
 NS_IMETHODIMP
 nsBeforeFirstPaintDispatcher::Run()
 {
+  NS_StickLock(mDocument);
+
   nsCOMPtr<nsIObserverService> observerService =
     mozilla::services::GetObserverService();
   if (observerService) {

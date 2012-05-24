@@ -707,9 +707,6 @@ nsGlobalWindow::nsGlobalWindow(nsGlobalWindow *aOuterWindow, JSZoneId zone)
     mDialogAbuseCount(0),
     mDialogDisabled(false)
 {
-  if (zone >= JS_ZONE_CONTENT_START)
-    NS_FIX_OWNINGTHREAD(zone);
-
   nsLayoutStatics::AddRef();
 
   // Initialize the PRCList (this).

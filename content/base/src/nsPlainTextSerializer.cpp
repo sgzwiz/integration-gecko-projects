@@ -99,7 +99,7 @@ nsresult NS_NewPlainTextSerializer(nsIContentSerializer** aSerializer)
 nsPlainTextSerializer::nsPlainTextSerializer()
   : kSpace(NS_LITERAL_STRING(" ")) // Init of "constant"
 {
-
+  mZone = JS_ZONE_NONE;
   mOutputString = nsnull;
   mHeadLevel = 0;
   mAtFirstColumn = true;
@@ -150,10 +150,12 @@ NS_IMPL_ISUPPORTS1(nsPlainTextSerializer,
 
 
 NS_IMETHODIMP 
-nsPlainTextSerializer::Init(PRUint32 aFlags, PRUint32 aWrapColumn,
+nsPlainTextSerializer::Init(JSZoneId aZone, PRUint32 aFlags, PRUint32 aWrapColumn,
                             const char* aCharSet, bool aIsCopying,
                             bool aIsWholeDocument)
 {
+  mZone = aZone;
+
 #ifdef DEBUG
   // Check if the major control flags are set correctly.
   if (aFlags & nsIDocumentEncoder::OutputFormatFlowed) {

@@ -698,10 +698,6 @@ XPCWrappedNative::GetNewOrUsed(XPCCallContext& ccx,
         DEBUG_ReportShadowedMembers(set, wrapper, nsnull);
     }
 
-#ifdef DEBUG
-    wrapper->FixZone(identity->GetZone());
-#endif
-
     // The strong reference was taken over by the wrapper, so make the nsCOMPtr
     // forget about it.
     helper.forgetCanonical();
@@ -861,10 +857,6 @@ XPCWrappedNative::Morph(XPCCallContext& ccx,
     nsRefPtr<XPCWrappedNative> wrapper = new XPCWrappedNative(dont_AddRef(identity), proto);
     if (!wrapper)
         return NS_ERROR_FAILURE;
-
-#ifdef DEBUG
-    wrapper->FixZone(identity->GetZone());
-#endif
 
     NS_ASSERTION(!xpc::WrapperFactory::IsXrayWrapper(js::GetObjectParent(existingJSObject)),
                  "Xray wrapper being used to parent XPCWrappedNative?");

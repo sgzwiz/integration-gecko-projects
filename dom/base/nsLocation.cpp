@@ -148,9 +148,6 @@ nsLocation::nsLocation(nsIDocShell *aDocShell)
   } else {
     mZone = JS_ZONE_CHROME;
   }
-
-  if (mZone >= JS_ZONE_CONTENT_START)
-    NS_FIX_OWNINGTHREAD(mZone);
 }
 
 nsLocation::~nsLocation()

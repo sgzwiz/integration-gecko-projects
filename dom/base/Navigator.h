@@ -114,7 +114,7 @@ public:
 
   NS_DECL_ISUPPORTS
 
-  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   NS_DECL_NSIDOMNAVIGATOR
   NS_DECL_NSIDOMCLIENTINFORMATION
@@ -167,6 +167,7 @@ private:
   nsCOMPtr<nsIDOMBluetoothAdapter> mBluetooth;
 #endif
   nsWeakPtr mWindow;
+  JSZoneId mZone;
 };
 
 } // namespace dom

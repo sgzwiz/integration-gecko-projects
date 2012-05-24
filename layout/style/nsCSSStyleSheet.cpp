@@ -1070,9 +1070,6 @@ nsCSSStyleSheet::nsCSSStyleSheet(const nsCSSStyleSheet& aCopy,
     mInner(aCopy.mInner),
     mRuleProcessors(nsnull)
 {
-  if (aDocumentToUse)
-    NS_FIX_OWNINGTHREAD(mDocument->GetZone());
-
   mInner->AddSheet(this);
 
   if (mDirty) { // CSSOM's been there, force full copy now
@@ -1297,9 +1294,6 @@ nsCSSStyleSheet::SetOwningDocument(nsIDocument* aDocument)
 { // not ref counted
   mDocument = aDocument;
 
-  if (aDocument)
-    NS_FIX_OWNINGTHREAD(mDocument->GetZone());
-
   // Now set the same document on all our child sheets....
   // XXXbz this is a little bogus; see the XXX comment where we
   // declare mFirstChild.
@@ -1360,9 +1354,6 @@ nsCSSStyleSheet::AppendStyleSheet(nsCSSStyleSheet* aSheet)
     aSheet->mParent = this;
     aSheet->mDocument = mDocument;
     DidDirty();
-
-    if (mDocument)
-      NS_FIX_OWNINGTHREAD_OTHER(aSheet, mDocument->GetZone());
   }
 }
 
@@ -1385,9 +1376,6 @@ nsCSSStyleSheet::InsertStyleSheetAt(nsCSSStyleSheet* aSheet, PRInt32 aIndex)
     aSheet->mParent = this;
     aSheet->mDocument = mDocument;
     DidDirty();
-
-    if (mDocument)
-      NS_FIX_OWNINGTHREAD_OTHER(aSheet, mDocument->GetZone());
   }
 }
 

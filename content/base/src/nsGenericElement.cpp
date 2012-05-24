@@ -2293,6 +2293,8 @@ nsGenericElement::GetClientWidth(PRInt32 *aClientWidth)
 NS_IMETHODIMP
 nsGenericElement::GetBoundingClientRect(nsIDOMClientRect** aResult)
 {
+  nsAutoLockChrome lock;
+
   // Weak ref, since we addref it below
   nsClientRect* rect = new nsClientRect();
   NS_ADDREF(*aResult = rect);

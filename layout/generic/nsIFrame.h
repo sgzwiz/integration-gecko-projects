@@ -64,6 +64,7 @@
 #include "nsAlgorithm.h"
 #include "mozilla/layout/FrameChildList.h"
 #include "FramePropertyTable.h"
+#include "nsProxyRelease.h"
 
 /**
  * New rules of reflow:
@@ -2757,8 +2758,11 @@ NS_PTR_TO_INT32(frame->Properties().Get(nsIFrame::ParagraphDepthProperty()))
    * Clear the list of child PresShells generated during the last paint
    * so that we can begin generating a new one.
    */  
-  void ClearPresShellsFromLastPaint() { 
-    PaintedPresShellList()->Clear(); 
+  void ClearPresShellsFromLastPaint() {
+    nsTArray<nsWeakPtr> * list = PaintedPresShellList();
+    for (int i = 0, l = list->Length(); i < l; i++)
+      NS_ReleaseReference(list->ElementAt(i));
+    list->Clear();
   }
   
   /**

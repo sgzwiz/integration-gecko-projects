@@ -76,7 +76,7 @@ public:
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
-  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
                                bool *triedToWrap);
@@ -163,6 +163,7 @@ private:
   nsTArray<nsRefPtr<nsHTMLOptionElement> > mElements;
   /** The select element that contains this array */
   nsHTMLSelectElement* mSelect;
+  JSZoneId mZone;
 };
 
 #define NS_SELECT_STATE_IID                        \
@@ -261,6 +262,8 @@ public:
  
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return nsINode::GetZone(); }
 
   // nsIDOMNode
   NS_FORWARD_NSIDOMNODE(nsGenericHTMLFormElement::)

@@ -87,7 +87,6 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Div)
 nsHTMLDivElement::nsHTMLDivElement(already_AddRefed<nsINodeInfo> aNodeInfo)
   : nsGenericHTMLElement(aNodeInfo)
 {
-  NS_FIX_OWNINGTHREAD(nsINode::GetZone());
 }
 
 nsHTMLDivElement::~nsHTMLDivElement()

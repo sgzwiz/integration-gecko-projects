@@ -887,8 +887,9 @@ nsJSChannel::CleanupStrongRefs()
     MOZ_ASSERT(mOriginalInnerWindow == nsnull);
 
     if (mDocumentOnloadBlockedOn) {
-        mDocumentOnloadBlockedOn->UnblockOnload(false);
-        mDocumentOnloadBlockedOn = nsnull;
+        if (NS_TryStickLock(mDocumentOnloadBlockedOn))
+            mDocumentOnloadBlockedOn->UnblockOnload(false);
+        NS_ReleaseReference(mDocumentOnloadBlockedOn);
     }
 }
 

@@ -484,8 +484,6 @@ nsXMLHttpRequest::nsXMLHttpRequest()
     mResultJSON(JSVAL_VOID),
     mResultArrayBuffer(nsnull)
 {
-  NS_FIX_OWNINGTHREAD(JS_ZONE_CHROME);
-
   nsLayoutStatics::AddRef();
 
   SetIsDOMBinding();

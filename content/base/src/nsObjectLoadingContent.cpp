@@ -121,6 +121,8 @@ static bool gClickToPlayPlugins = false;
 static void
 InitPrefCache()
 {
+  nsAutoLockChrome lock;
+
   static bool initializedPrefCache = false;
   if (!initializedPrefCache) {
     mozilla::Preferences::AddBoolVarCache(&gClickToPlayPlugins, "plugins.click_to_play");

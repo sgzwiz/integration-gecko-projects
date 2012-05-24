@@ -219,8 +219,6 @@ nsPresContext::nsPresContext(nsIDocument* aDocument, nsPresContextType aType)
   // NOTE! nsPresContext::operator new() zeroes out all members, so don't
   // bother initializing members to 0.
 
-  NS_FIX_OWNINGTHREAD(mDocument->GetZone());
-
   mDoScaledTwips = true;
 
   SetBackgroundImageDraw(true);		// always draw the background

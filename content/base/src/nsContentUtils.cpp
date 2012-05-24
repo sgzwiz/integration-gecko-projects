@@ -4368,6 +4368,7 @@ public:
     mDoc = mContent->OwnerDoc();
   }
   NS_IMETHOD Run() {
+    NS_StickLock(mContent);
     mContent->UnbindFromTree();
     return NS_OK;
   }
@@ -4826,10 +4827,10 @@ nsContentUtils::RemoveScriptBlocker()
   while (!sScriptBlockerCount && sBlockedScriptRunners->Length() > 0) {
     nsCOMPtr<nsIRunnable> runnable = (*sBlockedScriptRunners)[0];
     sBlockedScriptRunners->RemoveElementAt(0);
-    if (NS_IsEverythingLocked())
-      NS_DispatchToMainThread(runnable); // for events triggered during GC. urk.
-    else
+    if (NS_CanLockNewContent())
       runnable->Run();
+    else
+      NS_DispatchToMainThread(runnable); // for events triggered during GC. urk.
   }
 
   sScriptBlockerRemoving = false;

@@ -102,7 +102,6 @@ nsHTMLIFrameElement::nsHTMLIFrameElement(already_AddRefed<nsINodeInfo> aNodeInfo
                                          FromParser aFromParser)
   : nsGenericHTMLFrameElement(aNodeInfo, aFromParser)
 {
-  NS_FIX_OWNINGTHREAD(nsINode::GetZone());
 }
 
 nsHTMLIFrameElement::~nsHTMLIFrameElement()

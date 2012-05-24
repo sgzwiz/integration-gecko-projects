@@ -136,6 +136,8 @@ public:
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
+
   // nsIDOMNamedNodeMap interface
   NS_DECL_NSIDOMNAMEDNODEMAP
 
@@ -201,6 +203,7 @@ public:
 
 private:
   Element *mContent; // Weak reference
+  JSZoneId mZone;
 
   /**
    * Cache of nsDOMAttributes.

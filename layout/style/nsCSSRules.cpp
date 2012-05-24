@@ -89,12 +89,6 @@ namespace css {
 NS_IMPL_ADDREF(Rule)
 NS_IMPL_RELEASE(Rule)
 
-JSZoneId
-Rule::GetZone()
-{
-  return mSheet ? mSheet->GetZone() : JS_ZONE_CHROME;
-}
-
 /* virtual */ void
 Rule::SetStyleSheet(nsCSSStyleSheet* aSheet)
 {
@@ -102,6 +96,9 @@ Rule::SetStyleSheet(nsCSSStyleSheet* aSheet)
   // will tell us when it's going away or when we're detached from
   // it.
   mSheet = aSheet;
+
+  if (aSheet)
+    mZone = aSheet->GetZone();
 }
 
 nsresult

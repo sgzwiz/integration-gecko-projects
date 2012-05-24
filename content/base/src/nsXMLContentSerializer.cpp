@@ -89,7 +89,8 @@ nsresult NS_NewXMLContentSerializer(nsIContentSerializer** aSerializer)
 }
 
 nsXMLContentSerializer::nsXMLContentSerializer()
-  : mPrefixIndex(0),
+  : mZone(JS_ZONE_NONE),
+    mPrefixIndex(0),
     mColPos(0),
     mIndentOverflow(0),
     mIsIndentationAddedOnCurrentLine(false),
@@ -109,10 +110,11 @@ nsXMLContentSerializer::~nsXMLContentSerializer()
 NS_IMPL_ISUPPORTS1(nsXMLContentSerializer, nsIContentSerializer)
 
 NS_IMETHODIMP 
-nsXMLContentSerializer::Init(PRUint32 aFlags, PRUint32 aWrapColumn,
+nsXMLContentSerializer::Init(JSZoneId aZone, PRUint32 aFlags, PRUint32 aWrapColumn,
                              const char* aCharSet, bool aIsCopying,
                              bool aRewriteEncodingDeclaration)
 {
+  mZone = aZone;
   mPrefixIndex = 0;
   mColPos = 0;
   mIndentOverflow = 0;

@@ -67,7 +67,7 @@ public:
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
-  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return nsINode::GetZone(); }
 
   // nsIDOMNode interface
   NS_DECL_NSIDOMNODE

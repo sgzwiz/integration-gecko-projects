@@ -105,7 +105,6 @@ protected:
                  nsStringBuffer::FromData(mString)->StorageSize() &&
                  mString[mLength] == 0,
                  "Not initialized atom");
-    NS_FIX_OWNINGTHREAD(JS_ZONE_CHROME);
   }
 
   // We don't need a virtual destructor here because PermanentAtomImpl
@@ -330,8 +329,6 @@ NS_PurgeAtomTable()
 
 AtomImpl::AtomImpl(const nsAString& aString, PLDHashNumber aKeyHash)
 {
-  NS_FIX_OWNINGTHREAD(JS_ZONE_CHROME);
-
   mLength = aString.Length();
   nsStringBuffer* buf = nsStringBuffer::FromString(aString);
   if (buf) {
@@ -358,8 +355,6 @@ AtomImpl::AtomImpl(const nsAString& aString, PLDHashNumber aKeyHash)
 AtomImpl::AtomImpl(nsStringBuffer* aStringBuffer, PRUint32 aLength,
                    PLDHashNumber aKeyHash)
 {
-  NS_FIX_OWNINGTHREAD(JS_ZONE_CHROME);
-
   mLength = aLength;
   mString = static_cast<PRUnichar*>(aStringBuffer->Data());
   // Technically we could currently avoid doing this addref by instead making

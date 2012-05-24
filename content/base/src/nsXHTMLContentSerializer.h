@@ -58,7 +58,7 @@ class nsXHTMLContentSerializer : public nsXMLContentSerializer {
   nsXHTMLContentSerializer();
   virtual ~nsXHTMLContentSerializer();
 
-  NS_IMETHOD Init(PRUint32 flags, PRUint32 aWrapColumn,
+  NS_IMETHOD Init(JSZoneId aZone, PRUint32 flags, PRUint32 aWrapColumn,
                   const char* aCharSet, bool aIsCopying,
                   bool aRewriteEncodingDeclaration);
 

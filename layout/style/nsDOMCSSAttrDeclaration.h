@@ -69,7 +69,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_CLASS_AMBIGUOUS(nsDOMCSSAttributeDeclaration,
                                                      nsICSSDeclaration)
 
-  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   // If GetCSSDeclaration returns non-null, then the decl it returns
   // is owned by our current style rule.
@@ -84,6 +84,7 @@ protected:
   virtual nsIDocument* DocToUpdate();
 
   nsRefPtr<Element> mElement;
+  JSZoneId mZone;
 
   /* If true, this indicates that this nsDOMCSSAttributeDeclaration
    * should interact with mContent's SMIL override style rule (rather

@@ -117,7 +117,7 @@ Navigator::Init()
 }
 
 Navigator::Navigator(nsPIDOMWindow* aWindow)
-  : mWindow(do_GetWeakReference(aWindow))
+  : mWindow(do_GetWeakReference(aWindow)), mZone(aWindow->GetZone())
 {
   NS_ASSERTION(aWindow->IsInnerWindow(),
                "Navigator must get an inner window!");

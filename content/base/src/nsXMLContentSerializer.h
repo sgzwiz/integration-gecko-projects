@@ -65,7 +65,9 @@ class nsXMLContentSerializer : public nsIContentSerializer {
 
   NS_DECL_ISUPPORTS
 
-  NS_IMETHOD Init(PRUint32 flags, PRUint32 aWrapColumn,
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
+
+  NS_IMETHOD Init(JSZoneId aZone, PRUint32 flags, PRUint32 aWrapColumn,
                   const char* aCharSet, bool aIsCopying,
                   bool aRewriteEncodingDeclaration);
 
@@ -325,6 +327,8 @@ class nsXMLContentSerializer : public nsIContentSerializer {
   // Functions to check if we enter in or leave from a preformated content
   virtual void MaybeEnterInPreContent(nsIContent* aNode);
   virtual void MaybeLeaveFromPreContent(nsIContent* aNode);
+
+  JSZoneId mZone;
 
   PRInt32 mPrefixIndex;
 

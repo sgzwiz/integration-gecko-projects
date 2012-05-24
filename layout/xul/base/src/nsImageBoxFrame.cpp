@@ -218,7 +218,7 @@ nsImageBoxFrame::Init(nsIContent*      aContent,
                       nsIFrame*        aPrevInFlow)
 {
   if (!mListener) {
-    nsImageBoxListener *listener = new nsImageBoxListener();
+    nsImageBoxListener *listener = new nsImageBoxListener(aContent->GetZone());
     NS_ADDREF(listener);
     listener->SetFrame(this);
     listener->QueryInterface(NS_GET_IID(imgIDecoderObserver), getter_AddRefs(mListener));
@@ -638,7 +638,8 @@ NS_IMETHODIMP nsImageBoxFrame::FrameChanged(imgIRequest *aRequest,
 
 NS_IMPL_ISUPPORTS2(nsImageBoxListener, imgIDecoderObserver, imgIContainerObserver)
 
-nsImageBoxListener::nsImageBoxListener()
+nsImageBoxListener::nsImageBoxListener(JSZoneId zone)
+  : mZone(zone)
 {
 }
 

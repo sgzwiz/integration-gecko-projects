@@ -67,8 +67,10 @@ public:
 
   NS_DECL_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
+
   // nsIContentSerializer
-  NS_IMETHOD Init(PRUint32 flags, PRUint32 aWrapColumn,
+  NS_IMETHOD Init(JSZoneId aZone, PRUint32 flags, PRUint32 aWrapColumn,
                   const char* aCharSet, bool aIsCopying,
                   bool aIsWholeDocument);
 
@@ -139,6 +141,7 @@ protected:
   bool PopBool(nsTArray<bool>& aStack);
   
 protected:
+  JSZoneId         mZone;
   nsString         mCurrentLine;
   PRUint32         mHeadLevel;
   bool             mAtFirstColumn;

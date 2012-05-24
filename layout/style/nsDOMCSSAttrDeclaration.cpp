@@ -57,6 +57,7 @@ namespace dom = mozilla::dom;
 nsDOMCSSAttributeDeclaration::nsDOMCSSAttributeDeclaration(dom::Element* aElement,
                                                            bool aIsSMILOverride)
   : mElement(aElement)
+  , mZone(aElement->GetZone())
   , mIsSMILOverride(aIsSMILOverride)
 {
   MOZ_COUNT_CTOR(nsDOMCSSAttributeDeclaration);

@@ -101,7 +101,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 // Constructors/Destructors
 nsBoxObject::nsBoxObject(void)
-  :mContent(nsnull)
+  :mContent(nsnull), mZone(JS_ZONE_NONE)
 {
 }
 
@@ -126,6 +126,7 @@ nsresult
 nsBoxObject::Init(nsIContent* aContent)
 {
   mContent = aContent;
+  mZone = aContent->GetZone();
   return NS_OK;
 }
 

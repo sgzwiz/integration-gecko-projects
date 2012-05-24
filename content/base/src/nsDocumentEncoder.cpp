@@ -106,6 +106,9 @@ public:
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(nsDocumentEncoder)
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mDocument ? mDocument->GetZone() : JS_ZONE_NONE; }
+
   NS_DECL_NSIDOCUMENTENCODER
 
 protected:
@@ -1067,7 +1070,7 @@ nsDocumentEncoder::EncodeToString(nsAString& aOutputString)
   }
   
   bool rewriteEncodingDeclaration = !(mSelection || mRange || mNode) && !(mFlags & OutputDontRewriteEncodingDeclaration);
-  mSerializer->Init(mFlags, mWrapColumn, mCharset.get(), mIsCopying, rewriteEncodingDeclaration);
+  mSerializer->Init(GetZone(), mFlags, mWrapColumn, mCharset.get(), mIsCopying, rewriteEncodingDeclaration);
 
   if (mSelection) {
     nsCOMPtr<nsIDOMRange> range;

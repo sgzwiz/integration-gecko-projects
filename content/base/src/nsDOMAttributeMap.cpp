@@ -56,7 +56,7 @@
 //----------------------------------------------------------------------
 
 nsDOMAttributeMap::nsDOMAttributeMap(Element* aContent)
-  : mContent(aContent)
+  : mContent(aContent), mZone(aContent->GetZone())
 {
   // We don't add a reference to our content. If it goes away,
   // we'll be told to drop our reference
@@ -404,6 +404,7 @@ nsDOMAttributeMap::GetItemAt(PRUint32 aIndex, nsresult *aResult)
   if (mContent && (name = mContent->GetAttrNameAt(aIndex))) {
     // Don't use the nodeinfo even if one exists since it can
     // have the wrong owner document.
+    nsAutoLockChrome lock; // for atoms
     nsCOMPtr<nsINodeInfo> ni;
     ni = mContent->NodeInfo()->NodeInfoManager()->
       GetNodeInfo(name->LocalName(), name->GetPrefix(), name->NamespaceID(),

@@ -785,8 +785,6 @@ PresShell::Init(nsIDocument* aDocument,
   NS_ADDREF(mDocument);
   mViewManager = aViewManager;
 
-  NS_FIX_OWNINGTHREAD(mDocument->GetZone());
-
   // Create our frame constructor.
   mFrameConstructor = new nsCSSFrameConstructor(mDocument, this);
 
