@@ -196,6 +196,8 @@ public:
 
   NS_DECL_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
+
   /* nsIDOMCanvasGradient */
   NS_IMETHOD AddColorStop (float offset,
                             const nsAString& colorstr)
@@ -225,21 +227,23 @@ public:
   }
 
 protected:
-  nsCanvasGradientAzure(Type aType) : mType(aType)
+  nsCanvasGradientAzure(JSZoneId aZone, Type aType) : mZone(aZone), mType(aType)
   {}
 
   nsTArray<GradientStop> mRawStops;
   RefPtr<GradientStops> mStops;
   Type mType;
+  JSZoneId mZone;
   virtual ~nsCanvasGradientAzure() {}
 };
 
 class nsCanvasRadialGradientAzure : public nsCanvasGradientAzure
 {
 public:
-  nsCanvasRadialGradientAzure(const Point &aBeginOrigin, Float aBeginRadius,
+  nsCanvasRadialGradientAzure(JSZoneId aZone,
+                              const Point &aBeginOrigin, Float aBeginRadius,
                               const Point &aEndOrigin, Float aEndRadius)
-    : nsCanvasGradientAzure(RADIAL)
+    : nsCanvasGradientAzure(aZone, RADIAL)
     , mCenter1(aBeginOrigin)
     , mCenter2(aEndOrigin)
     , mRadius1(aBeginRadius)
@@ -256,8 +260,9 @@ public:
 class nsCanvasLinearGradientAzure : public nsCanvasGradientAzure
 {
 public:
-  nsCanvasLinearGradientAzure(const Point &aBegin, const Point &aEnd)
-    : nsCanvasGradientAzure(LINEAR)
+  nsCanvasLinearGradientAzure(JSZoneId aZone,
+                              const Point &aBegin, const Point &aEnd)
+    : nsCanvasGradientAzure(aZone, LINEAR)
     , mBegin(aBegin)
     , mEnd(aEnd)
   {
@@ -436,7 +441,7 @@ public:
 
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsCanvasRenderingContext2DAzure, nsIDOMCanvasRenderingContext2D)
 
-  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   // nsIDOMCanvasRenderingContext2D interface
   NS_DECL_NSIDOMCANVASRENDERINGCONTEXT2D
@@ -534,6 +539,7 @@ protected:
 
   // the canvas element we're a context of
   nsCOMPtr<nsIDOMHTMLCanvasElement> mCanvasElement;
+  JSZoneId mZone;
 
   // If mCanvasElement is not provided, then a docshell is
   nsCOMPtr<nsIDocShell> mDocShell;
@@ -1024,6 +1030,7 @@ nsCanvasRenderingContext2DAzure::nsCanvasRenderingContext2DAzure()
   : mValid(false), mZero(false), mOpaque(false), mResetLayer(true)
   , mIPC(false)
   , mCanvasElement(nsnull)
+  , mZone(JS_ZONE_NONE)
   , mIsEntireFrameInvalid(false)
   , mPredictManyRedrawCalls(false), mPathTransformWillUpdate(false)
   , mInvalidateCount(0)
@@ -1252,6 +1259,8 @@ nsCanvasRenderingContext2DAzure::SetDimensions(PRInt32 width, PRInt32 height)
     mZero = false;
   }
 
+  nsAutoLockChrome lock;
+
   // Check that the dimensions are sane
   IntSize size(width, height);
   if (size.width <= 0xFFFF && size.height <= 0xFFFF &&
@@ -1262,8 +1271,6 @@ nsCanvasRenderingContext2DAzure::SetDimensions(PRInt32 width, PRInt32 height)
     if (content) {
       ownerDoc = content->OwnerDoc();
     }
-
-    nsAutoLockChrome lock;
 
     nsRefPtr<LayerManager> layerManager = nsnull;
 
@@ -1510,6 +1517,9 @@ NS_IMETHODIMP
 nsCanvasRenderingContext2DAzure::SetCanvasElement(nsHTMLCanvasElement* aCanvasElement)
 {
   mCanvasElement = aCanvasElement;
+
+  if (mZone == JS_ZONE_NONE)
+    mZone = aCanvasElement ? aCanvasElement->GetZone() : JS_ZONE_CHROME;
 
   return NS_OK;
 }
@@ -1894,7 +1904,7 @@ nsCanvasRenderingContext2DAzure::CreateLinearGradient(float x0, float y0, float 
   }
 
   nsRefPtr<nsIDOMCanvasGradient> grad =
-    new nsCanvasLinearGradientAzure(Point(x0, y0), Point(x1, y1));
+    new nsCanvasLinearGradientAzure(GetZone(), Point(x0, y0), Point(x1, y1));
 
   *_retval = grad.forget().get();
   return NS_OK;
@@ -1914,7 +1924,7 @@ nsCanvasRenderingContext2DAzure::CreateRadialGradient(float x0, float y0, float 
   }
 
   nsRefPtr<nsIDOMCanvasGradient> grad =
-    new nsCanvasRadialGradientAzure(Point(x0, y0), r0, Point(x1, y1), r1);
+    new nsCanvasRadialGradientAzure(GetZone(), Point(x0, y0), r0, Point(x1, y1), r1);
 
   *_retval = grad.forget().get();
   return NS_OK;
@@ -1965,6 +1975,8 @@ nsCanvasRenderingContext2DAzure::CreatePattern(nsIDOMHTMLElement *image,
       return NS_OK;
     }
   }
+
+  nsAutoLockChrome lock; // needed for imgRequest in SurfaceFromElementResult
 
   // The canvas spec says that createPattern should use the first frame
   // of animated images
@@ -2649,6 +2661,8 @@ CreateFontStyleRule(const nsAString& aFont,
   nsIPrincipal* principal = aNode->NodePrincipal();
   nsIDocument* document = aNode->OwnerDoc();
 
+  nsAutoLockChrome lock; // for nsIURI
+
   nsIURI* docURL = document->GetDocumentURI();
   nsIURI* baseURL = document->GetDocBaseURI();
 
@@ -2793,6 +2807,8 @@ nsCanvasRenderingContext2DAzure::SetFont(const nsAString& font)
 
   bool printerFont = (presShell->GetPresContext()->Type() == nsPresContext::eContext_PrintPreview ||
                         presShell->GetPresContext()->Type() == nsPresContext::eContext_Print);
+
+  nsAutoLockChrome lock; // for nsIAtom
 
   gfxFontStyle style(fontStyle->mFont.style,
                       fontStyle->mFont.weight,
@@ -2956,6 +2972,8 @@ nsCanvasRenderingContext2DAzure::MeasureText(const nsAString& rawText,
   if (NS_FAILED(rv)) {
     return rv;
   }
+
+  nsAutoLockChrome lock; // for nsTextMetricsAzure
 
   nsRefPtr<nsIDOMTextMetrics> textMetrics = new nsTextMetricsAzure(width);
   if (!textMetrics.get()) {
@@ -3384,6 +3402,7 @@ gfxFontGroup *nsCanvasRenderingContext2DAzure::GetCurrentFontStyle()
   if (!CurrentState().fontGroup) {
     nsresult rv = SetFont(kDefaultFontStyle);
     if (NS_FAILED(rv)) {
+      nsAutoLockChrome lock;
       gfxFontStyle style;
       style.size = kDefaultFontSize;
       CurrentState().fontGroup =
@@ -3659,6 +3678,8 @@ nsCanvasRenderingContext2DAzure::DrawImage(nsIDOMElement *imgElt, float a1,
   }
 
   if (!srcSurf) {
+    nsAutoLockChrome lock; // for imgRequest in SurfaceFromElementResult
+
     // The canvas spec says that drawImage should draw the first frame
     // of animated images
     PRUint32 sfeFlags = nsLayoutUtils::SFE_WANT_FIRST_FRAME;

@@ -149,6 +149,8 @@ CanvasImageCache::NotifyDrawImage(nsIDOMElement* aImage,
                                   gfxASurface* aSurface,
                                   const gfxIntSize& aSize)
 {
+  nsAutoLockChrome lock;
+
   if (!gImageCache) {
     gImageCache = new ImageCache();
     nsContentUtils::RegisterShutdownObserver(new CanvasImageCacheShutdownObserver());

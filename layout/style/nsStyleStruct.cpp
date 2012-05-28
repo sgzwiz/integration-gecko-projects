@@ -141,9 +141,12 @@ nsStyleFont::nsStyleFont(const nsStyleFont& aSrc)
   , mScriptUnconstrainedSize(aSrc.mScriptUnconstrainedSize)
   , mScriptMinSize(aSrc.mScriptMinSize)
   , mScriptSizeMultiplier(aSrc.mScriptSizeMultiplier)
-  , mLanguage(aSrc.mLanguage)
 {
   MOZ_COUNT_CTOR(nsStyleFont);
+
+  // for nsIAtom
+  nsAutoLockChrome lock;
+  mLanguage = aSrc.mLanguage;
 }
 
 nsStyleFont::nsStyleFont(nsPresContext* aPresContext)
@@ -191,6 +194,13 @@ nsStyleFont::operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
   
 void 
 nsStyleFont::Destroy(nsPresContext* aContext) {
+
+  {
+    // for nsIAtom
+    nsAutoLockChrome lock;
+    mLanguage = nsnull;
+  }
+
   this->~nsStyleFont();
   aContext->FreeToShell(sizeof(nsStyleFont), this);
 }

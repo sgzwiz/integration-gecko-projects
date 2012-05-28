@@ -55,6 +55,7 @@
 #include "nsIWebNavigation.h"
 
 nsDOMWindowList::nsDOMWindowList(nsIDocShell *aDocShell)
+  : mZone(JS_ZONE_CHROME)
 {
   SetDocShell(aDocShell);
 }
@@ -76,6 +77,12 @@ nsDOMWindowList::SetDocShell(nsIDocShell* aDocShell)
 {
   nsCOMPtr<nsIDocShellTreeNode> docShellAsNode(do_QueryInterface(aDocShell));
   mDocShellNode = docShellAsNode; // Weak Reference
+
+  if (aDocShell) {
+    PRInt32 zone;
+    aDocShell->GetWindowZone(&zone);
+    mZone = (JSZoneId) zone;
+  }
 
   return NS_OK;
 }

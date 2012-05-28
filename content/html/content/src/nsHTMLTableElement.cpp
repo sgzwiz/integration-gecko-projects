@@ -73,6 +73,9 @@ public:
   virtual ~TableRowsCollection();
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
+
   NS_DECL_NSIDOMHTMLCOLLECTION
 
   virtual nsINode* GetParentObject()
@@ -95,12 +98,14 @@ public:
 protected:
   // Those rows that are not in table sections
   nsHTMLTableElement* mParent;
+  JSZoneId mZone;
   nsRefPtr<nsContentList> mOrphanRows;  
 };
 
 
 TableRowsCollection::TableRowsCollection(nsHTMLTableElement *aParent)
   : mParent(aParent)
+  , mZone(aParent->GetZone())
   , mOrphanRows(new nsContentList(mParent,
                                   kNameSpaceID_XHTML,
                                   nsGkAtoms::tr,

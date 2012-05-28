@@ -1047,6 +1047,11 @@ xpc_qsXPCOMObjectToJsval(XPCLazyCallContext &lccx, qsObjectHelper &aHelper,
 
     JSContext *cx = lccx.GetJSContext();
 
+    if (aHelper.Object() && !EnsureZoneStuck(cx, aHelper.Object()->GetZone())) {
+        xpc_qsThrow(cx, NS_ERROR_XPC_CANT_GET_LOCK);
+        return false;
+    }
+
     nsresult rv;
     if (!XPCConvert::NativeInterface2JSObject(lccx, rval, nsnull,
                                               aHelper, iid, iface,

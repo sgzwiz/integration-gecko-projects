@@ -524,6 +524,7 @@ nsThreadManager::TryLockZone(PRInt32 zone_, bool sticky, bool *result)
     *result = false;
   } else {
     bool unlockChrome = mChromeZone.owner == current && !mCantLockNewContent;
+    bool keepingChrome = mChromeZone.owner == current && mCantLockNewContent;
 
     SavedZone restoreChrome(&mChromeZone);
     if (unlockChrome)
@@ -532,7 +533,7 @@ nsThreadManager::TryLockZone(PRInt32 zone_, bool sticky, bool *result)
     size_t unlockCount = zone.unlockCount;
 
     zone.waiting = true;
-    bool success = PR_TryLock(zone.lock, TRY_LOCK_MILLIS * 1000);
+    bool success = PR_TryLock(zone.lock, keepingChrome ? 0 : (TRY_LOCK_MILLIS * 1000));
     zone.waiting = false;
 
     if (success) {
@@ -544,8 +545,10 @@ nsThreadManager::TryLockZone(PRInt32 zone_, bool sticky, bool *result)
         zone.sticky = true;
       *result = true;
     } else {
-      zone.stalled = true;
-      printf("ZONE %p %d STALLED %p %d\n", current, zone_, zone.owner, (int) (zone.unlockCount - unlockCount));
+      if (!keepingChrome) {
+        zone.stalled = true;
+        printf("ZONE %p %d STALLED %p %d\n", current, zone_, zone.owner, (int) (zone.unlockCount - unlockCount));
+      }
       *result = false;
     }
 

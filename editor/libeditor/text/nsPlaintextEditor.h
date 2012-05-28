@@ -71,6 +71,8 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsPlaintextEditor, nsEditor)
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return nsEditor::GetZone(); }
+
   /* below used by TypedText() */
   enum {
     eTypedText,  /* user typed text */

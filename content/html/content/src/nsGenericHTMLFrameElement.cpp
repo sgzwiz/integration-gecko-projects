@@ -67,6 +67,8 @@ nsGenericHTMLFrameElement::GetContentWindow(nsIDOMWindow** aContentWindow)
   NS_PRECONDITION(aContentWindow, "Null out param");
   *aContentWindow = nsnull;
 
+  nsAutoLockChrome lock; // for nsFrameLoader, nsIDocShell
+
   nsresult rv = EnsureFrameLoader();
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -99,6 +101,8 @@ nsGenericHTMLFrameElement::GetContentWindow(nsIDOMWindow** aContentWindow)
 nsresult
 nsGenericHTMLFrameElement::EnsureFrameLoader()
 {
+  MOZ_ASSERT(NS_IsChromeOwningThread());
+
   if (!GetParent() || !IsInDoc() || mFrameLoader) {
     // If frame loader is there, we just keep it around, cached
     return NS_OK;
@@ -138,6 +142,8 @@ nsGenericHTMLFrameElement::SwapFrameLoaders(nsIFrameLoaderOwner* aOtherOwner)
 nsresult
 nsGenericHTMLFrameElement::LoadSrc()
 {
+  nsAutoLockChrome lock; // for nsFrameLoader
+
   nsresult rv = EnsureFrameLoader();
   NS_ENSURE_SUCCESS(rv, rv);
 

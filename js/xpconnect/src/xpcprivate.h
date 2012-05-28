@@ -4328,6 +4328,8 @@ public:
     NS_DECL_NSIVARIANT
     NS_DECL_CYCLE_COLLECTION_CLASS(XPCVariant)
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
+
     // If this class ever implements nsIWritableVariant, take special care with
     // the case when mJSVal is JSVAL_STRING, since we don't own the data in
     // that case.
@@ -4396,6 +4398,7 @@ protected:
     JSBool InitializeData(XPCCallContext& ccx);
 
 protected:
+    JSZoneId             mZone;
     nsDiscriminatedUnion mData;
     jsval                mJSVal;
     bool                 mReturnRawObject : 1;

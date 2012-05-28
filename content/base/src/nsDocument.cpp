@@ -1344,6 +1344,8 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(nsDOMImplementation)
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mOwner ? mOwner->GetZone() : JS_ZONE_CHROME; }
+
   // nsIDOMDOMImplementation
   NS_DECL_NSIDOMDOMIMPLEMENTATION
 
@@ -1405,6 +1407,8 @@ nsDOMImplementation::CreateDocumentType(const nsAString& aQualifiedName,
 
   nsresult rv = nsContentUtils::CheckQName(aQualifiedName);
   NS_ENSURE_SUCCESS(rv, rv);
+
+  nsAutoLockChrome lock; // for nsIAtom
 
   nsCOMPtr<nsIAtom> name = do_GetAtom(aQualifiedName);
   NS_ENSURE_TRUE(name, NS_ERROR_OUT_OF_MEMORY);
@@ -1551,6 +1555,7 @@ nsDocument::nsDocument(const char* aContentType)
   : nsIDocument()
   , mAnimatingImages(true)
   , mVisibilityState(eHidden)
+  , mZone(JS_ZONE_CHROME)
 {
   SetContentTypeInternal(nsDependentCString(aContentType));
   
@@ -2005,6 +2010,8 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 nsresult
 nsDocument::Init()
 {
+  MOZ_ASSERT(NS_IsChromeOwningThread());
+
   if (mCSSLoader || mNodeInfoManager || mScriptLoader) {
     return NS_ERROR_ALREADY_INITIALIZED;
   }
@@ -3878,6 +3885,10 @@ nsDocument::SetScriptGlobalObject(nsIScriptGlobalObject *aScriptGlobalObject)
     mLayoutHistoryState = nsnull;
     mScopeObject = do_GetWeakReference(aScriptGlobalObject);
 
+    mZone = aScriptGlobalObject->GetZone();
+    mNodeInfoManager->SetZone(mZone);
+    UpdateWeakReferencesZone();
+
 #ifdef DEBUG
     if (!mWillReparent) {
       // We really shouldn't have a wrapper here but if we do we need to make sure
@@ -3925,12 +3936,6 @@ nsDocument::SetScriptGlobalObject(nsIScriptGlobalObject *aScriptGlobalObject)
   nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(mScriptGlobalObject);
   mWindow = window;
 
-  if (window) {
-    JSZoneId zone = window->GetZone();
-    mNodeInfoManager->SetZone(zone);
-    UpdateWeakReferencesZone();
-  }
-
   // Set our visibility state, but do not fire the event.  This is correct
   // because either we're coming out of bfcache (in which case IsVisible() will
   // still test false at this point and no state change will happen) or we're
@@ -3968,6 +3973,10 @@ nsDocument::SetScriptHandlingObject(nsIScriptGlobalObject* aScriptObject)
   NS_ASSERTION(!win || win->IsInnerWindow(), "Should have inner window here!");
   mScopeObject = mScriptObject = do_GetWeakReference(aScriptObject);
   if (aScriptObject) {
+    mZone = aScriptObject->GetZone();
+    mNodeInfoManager->SetZone(mZone);
+    UpdateWeakReferencesZone();
+
     mHasHadScriptHandlingObject = true;
   }
 }
@@ -4436,6 +4445,7 @@ NS_IMETHODIMP
 nsDocument::GetImplementation(nsIDOMDOMImplementation** aImplementation)
 {
   if (!mDOMImplementation) {
+    nsAutoLockChrome lock; // for nsIURI
     nsCOMPtr<nsIURI> uri;
     NS_NewURI(getter_AddRefs(uri), "about:blank");
     NS_ENSURE_TRUE(uri, NS_ERROR_OUT_OF_MEMORY);
@@ -7765,6 +7775,8 @@ nsDocument::SetReadyStateInternal(ReadyState rs)
   if (READYSTATE_LOADING == rs) {
     mLoadingTimeStamp = mozilla::TimeStamp::Now();
   }
+
+  nsAutoLockChrome lock;
 
   nsRefPtr<nsAsyncDOMEvent> plevent =
     new nsAsyncDOMEvent(this, NS_LITERAL_STRING("readystatechange"), false, false); 

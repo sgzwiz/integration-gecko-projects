@@ -760,10 +760,7 @@ public:
   // for radio group
   nsRadioGroupStruct* GetRadioGroup(const nsAString& aName);
 
-  JSZoneId GetZone()
-  {
-    return nsINode::GetZone();
-  }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   // nsIDOMNode
   NS_DECL_NSIDOMNODE
@@ -1106,6 +1103,7 @@ protected:
 
   nsCString mReferrer;
   nsString mLastModified;
+  JSZoneId mZone;
 
   nsTArray<nsIObserver*> mCharSetObservers;
 

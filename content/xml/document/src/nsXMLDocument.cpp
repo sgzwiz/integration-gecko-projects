@@ -104,6 +104,8 @@ NS_NewDOMDocument(nsIDOMDocument** aInstancePtrResult,
                   nsIScriptGlobalObject* aEventObject,
                   DocumentFlavor aFlavor)
 {
+  nsAutoLockChrome lock;
+
   // Note: can't require that aDocumentURI/aBaseURI/aPrincipal be non-null,
   // since at least one caller (XMLHttpRequest) doesn't have decent args to
   // pass in.

@@ -2481,6 +2481,8 @@ nsRange::GetBoundingClientRect(nsIDOMClientRect** aResult)
 {
   *aResult = nsnull;
 
+  nsAutoLockChrome lock; // for nsClientRect
+
   // Weak ref, since we addref it below
   nsClientRect* rect = new nsClientRect();
   if (!rect)
@@ -2509,6 +2511,8 @@ nsRange::GetClientRects(nsIDOMClientRectList** aResult)
 
   if (!mStartParent)
     return NS_OK;
+
+  nsAutoLockChrome lock; // for nsClientListRect
 
   nsRefPtr<nsClientRectList> rectList =
     new nsClientRectList(static_cast<nsIDOMRange*>(this));

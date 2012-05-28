@@ -733,7 +733,7 @@ nsXULTooltipListener::KillTooltipTimer()
   if (mTooltipTimer) {
     mTooltipTimer->Cancel();
     mTooltipTimer = nsnull;
-    mTargetNode = nsnull;
+    NS_ReleaseReference(mTargetNode);
   }
 }
 

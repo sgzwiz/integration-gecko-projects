@@ -121,6 +121,8 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(nsContentIterator)
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
+
   explicit nsContentIterator(bool aPre);
   virtual ~nsContentIterator();
 
@@ -196,6 +198,8 @@ protected:
   
   bool mIsDone;
   bool mPre;
+
+  JSZoneId mZone;
   
 private:
 
@@ -261,7 +265,7 @@ NS_IMPL_CYCLE_COLLECTION_4(nsContentIterator,
 
 nsContentIterator::nsContentIterator(bool aPre) :
   // don't need to explicitly initialize |nsCOMPtr|s, they will automatically be NULL
-  mCachedIndex(0), mIsDone(false), mPre(aPre)
+  mCachedIndex(0), mIsDone(false), mPre(aPre), mZone(JS_ZONE_NONE)
 {
 }
 
@@ -281,6 +285,8 @@ nsContentIterator::Init(nsINode* aRoot)
 {
   if (!aRoot) 
     return NS_ERROR_NULL_POINTER; 
+
+  mZone = aRoot->GetZone();
 
   mIsDone = false;
   mIndexes.Clear();
@@ -307,6 +313,8 @@ nsContentIterator::Init(nsIDOMRange* aDOMRange)
 {
   NS_ENSURE_ARG_POINTER(aDOMRange);
   nsRange* range = static_cast<nsRange*>(aDOMRange);
+
+  mZone = range->GetZone();
 
   mIsDone = false;
 

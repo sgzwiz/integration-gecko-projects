@@ -64,7 +64,7 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsTextEditRules, nsIEditRules)
 
-  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
               nsTextEditRules();
   virtual     ~nsTextEditRules();
@@ -242,6 +242,7 @@ protected:
 
   // data members
   nsPlaintextEditor   *mEditor;        // note that we do not refcount the editor
+  JSZoneId             mZone;
   nsString             mPasswordText;  // a buffer we use to store the real value of password editors
   nsString             mPasswordIMEText;  // a buffer we use to track the IME composition string
   PRUint32             mPasswordIMEIndex;

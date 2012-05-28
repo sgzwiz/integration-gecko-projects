@@ -53,6 +53,9 @@ public:
   virtual ~nsDOMWindowList();
 
   NS_DECL_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
+
   NS_DECL_NSIDOMWINDOWCOLLECTION
 
   //local methods
@@ -60,6 +63,7 @@ public:
 
 protected:
   nsIDocShellTreeNode* mDocShellNode; //Weak Reference
+  JSZoneId mZone;
 };
 
 #endif // nsDOMWindowList_h___

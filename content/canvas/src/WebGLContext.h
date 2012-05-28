@@ -584,7 +584,7 @@ public:
     NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(WebGLContext,
                                                            nsIDOMWebGLRenderingContext)
 
-    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return mCanvasElement ? mCanvasElement->GetZone() : JS_ZONE_NONE; }
 
     nsINode* GetParentObject() {
         return HTMLCanvasElement();
@@ -3192,10 +3192,12 @@ class WebGLMemoryMultiReporterWrapper
   public:
 
     static void AddWebGLContext(const WebGLContext* c) {
+        nsAutoLockChrome lock;
         Contexts().AppendElement(c);
     }
 
     static void RemoveWebGLContext(const WebGLContext* c) {
+        nsAutoLockChrome lock;
         ContextsArrayType & contexts = Contexts();
         contexts.RemoveElement(c);
         if (contexts.IsEmpty()) {
@@ -3205,6 +3207,7 @@ class WebGLMemoryMultiReporterWrapper
     }
 
     static PRInt64 GetTextureMemoryUsed() {
+        MOZ_ASSERT(NS_IsChromeOwningThread());
         const ContextsArrayType & contexts = Contexts();
         PRInt64 result = 0;
         for(size_t i = 0; i < contexts.Length(); ++i)
@@ -3214,6 +3217,7 @@ class WebGLMemoryMultiReporterWrapper
     }
 
     static PRInt64 GetTextureCount() {
+        MOZ_ASSERT(NS_IsChromeOwningThread());
         const ContextsArrayType & contexts = Contexts();
         PRInt64 result = 0;
         for(size_t i = 0; i < contexts.Length(); ++i)
@@ -3222,6 +3226,7 @@ class WebGLMemoryMultiReporterWrapper
     }
 
     static PRInt64 GetBufferMemoryUsed() {
+        MOZ_ASSERT(NS_IsChromeOwningThread());
         const ContextsArrayType & contexts = Contexts();
         PRInt64 result = 0;
         for(size_t i = 0; i < contexts.Length(); ++i)
@@ -3233,6 +3238,7 @@ class WebGLMemoryMultiReporterWrapper
     static PRInt64 GetBufferCacheMemoryUsed();
 
     static PRInt64 GetBufferCount() {
+        MOZ_ASSERT(NS_IsChromeOwningThread());
         const ContextsArrayType & contexts = Contexts();
         PRInt64 result = 0;
         for(size_t i = 0; i < contexts.Length(); ++i)
@@ -3241,6 +3247,7 @@ class WebGLMemoryMultiReporterWrapper
     }
 
     static PRInt64 GetRenderbufferMemoryUsed() {
+        MOZ_ASSERT(NS_IsChromeOwningThread());
         const ContextsArrayType & contexts = Contexts();
         PRInt64 result = 0;
         for(size_t i = 0; i < contexts.Length(); ++i)
@@ -3250,6 +3257,7 @@ class WebGLMemoryMultiReporterWrapper
     }
 
     static PRInt64 GetRenderbufferCount() {
+        MOZ_ASSERT(NS_IsChromeOwningThread());
         const ContextsArrayType & contexts = Contexts();
         PRInt64 result = 0;
         for(size_t i = 0; i < contexts.Length(); ++i)
@@ -3260,6 +3268,7 @@ class WebGLMemoryMultiReporterWrapper
     static PRInt64 GetShaderSize();
 
     static PRInt64 GetShaderCount() {
+        MOZ_ASSERT(NS_IsChromeOwningThread());
         const ContextsArrayType & contexts = Contexts();
         PRInt64 result = 0;
         for(size_t i = 0; i < contexts.Length(); ++i)
@@ -3268,6 +3277,7 @@ class WebGLMemoryMultiReporterWrapper
     }
 
     static PRInt64 GetContextCount() {
+        MOZ_ASSERT(NS_IsChromeOwningThread());
         return Contexts().Length();
     }
 };

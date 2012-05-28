@@ -4204,6 +4204,8 @@ nsLayoutUtils::SurfaceFromElement(dom::Element* aElement,
   nsCxPusher pusher;
   pusher.PushNull();
 
+  nsAutoLockChrome lock; // for imgIRequest
+
   nsCOMPtr<imgIRequest> imgRequest;
   rv = imageLoader->GetRequest(nsIImageLoadingContent::CURRENT_REQUEST,
                                getter_AddRefs(imgRequest));

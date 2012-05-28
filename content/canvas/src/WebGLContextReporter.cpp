@@ -155,6 +155,7 @@ WebGLMemoryMultiReporterWrapper* WebGLMemoryMultiReporterWrapper::sUniqueInstanc
 
 WebGLMemoryMultiReporterWrapper* WebGLMemoryMultiReporterWrapper::UniqueInstance()
 {
+    MOZ_ASSERT(NS_IsChromeOwningThread());
     if (!sUniqueInstance) {
         sUniqueInstance = new WebGLMemoryMultiReporterWrapper;
     }

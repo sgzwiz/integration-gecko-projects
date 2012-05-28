@@ -1680,6 +1680,7 @@ static const nsContractIDMapData kConstructorMap[] =
   nsresult                                                  \
   NS_DOM##_class##Ctor(nsISupports** aInstancePtrResult)    \
   {                                                         \
+    nsAutoLockChrome lock;                                  \
     nsIDOMEvent* e = nsnull;                                \
     nsresult rv = NS_NewDOM##_class(&e, nsnull, nsnull);    \
     *aInstancePtrResult = e;                                \
@@ -1701,6 +1702,7 @@ NS_DEFINE_EVENT_CTOR(DeviceProximityEvent)
 nsresult
 NS_DOMStorageEventCtor(nsISupports** aInstancePtrResult)
 {
+  nsAutoLockChrome lock;
   nsDOMStorageEvent* e = new nsDOMStorageEvent();
   return CallQueryInterface(e, aInstancePtrResult);
 }
@@ -5630,6 +5632,9 @@ BaseStubConstructor(nsIWeakReference* aWeakOwner,
     NS_ERROR("Failed to create the object");
     return rv;
   }
+
+  if (native->GetZone() == JS_ZONE_CHROME)
+    EnsureZoneStuck(cx, JS_ZONE_CHROME);
 
   nsCOMPtr<nsIJSNativeInitializer> initializer(do_QueryInterface(native));
   if (initializer) {

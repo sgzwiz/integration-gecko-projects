@@ -85,6 +85,7 @@ using namespace mozilla;
 
 nsTextEditRules::nsTextEditRules()
 : mEditor(nsnull)
+, mZone(JS_ZONE_NONE)
 , mPasswordText()
 , mPasswordIMEText()
 , mPasswordIMEIndex(0)
@@ -130,6 +131,7 @@ nsTextEditRules::Init(nsPlaintextEditor *aEditor)
   if (!aEditor) { return NS_ERROR_NULL_POINTER; }
 
   mEditor = aEditor;  // we hold a non-refcounted reference back to our editor
+  mZone = aEditor->GetZone();
   nsCOMPtr<nsISelection> selection;
   mEditor->GetSelection(getter_AddRefs(selection));
   NS_ASSERTION(selection, "editor cannot get selection");

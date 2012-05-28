@@ -60,8 +60,12 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(XPCVariant)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(XPCVariant)
 
 XPCVariant::XPCVariant(XPCCallContext& ccx, jsval aJSVal)
-    : mJSVal(aJSVal), mCCGeneration(0)
+    : mZone(JS_ZONE_CHROME), mJSVal(aJSVal), mCCGeneration(0)
 {
+    JSContext *cx = ccx.GetJSContext();
+    if (cx)
+        mZone = JS_GetZone(cx);
+
     nsVariant::Initialize(&mData);
     if (!JSVAL_IS_PRIMITIVE(mJSVal)) {
         JSObject *obj = JS_ObjectToInnerObject(ccx, JSVAL_TO_OBJECT(mJSVal));
