@@ -44,6 +44,7 @@
 #include "nsAutoPtr.h"
 #include "nsCycleCollectorUtils.h"
 #include "nsContentUtils.h"
+#include "xpcpublic.h"
 
 #include <sys/time.h>
 
@@ -107,7 +108,7 @@ nsThreadManager::Init()
   for (size_t i = 0; i < JS_ZONE_CONTENT_LIMIT; i++) {
     Zone &zone = mContentZones[i];
     zone.lock = PR_NewLock();
-    zone.thread = new nsThread(nsThread::GECKO_THREAD, 0);
+    zone.thread = new nsThread(nsThread::GECKO_THREAD, xpc::NATIVE_STACK_QUOTA * 5 / 4);
     zone.thread->Init();
     zone.thread->GetPRThread(&zone.prThread);
   }

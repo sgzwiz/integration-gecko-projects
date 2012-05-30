@@ -1990,12 +1990,7 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
     if (!mJSRuntime)
         NS_RUNTIMEABORT("JS_NewRuntime failed.");
 
-#ifdef MOZ_ASAN
-    // ASan requires more stack space due to redzones
-    JS_SetNativeStackQuota(mJSRuntime, 2 * 128 * sizeof(size_t) * 1024);
-#else  
-    JS_SetNativeStackQuota(mJSRuntime, 128 * sizeof(size_t) * 1024);
-#endif
+    JS_SetNativeStackQuota(mJSRuntime, xpc::NATIVE_STACK_QUOTA);
 
     JS_SetThreadCallbacks(mJSRuntime,
                           NS_IsOwningThread, IsExecuteZoneThread,

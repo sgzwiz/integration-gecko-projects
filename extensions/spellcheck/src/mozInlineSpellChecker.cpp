@@ -488,11 +488,12 @@ public:
   mozInlineSpellStatus mStatus;
   nsresult Post()
   {
-    return NS_DispatchToMainThread(this);
+    return NS_DispatchToMainThread(this, NS_DISPATCH_NORMAL, mStatus.mSpellChecker->GetZone());
   }
 
   NS_IMETHOD Run()
   {
+    NS_StickLock(mStatus.mSpellChecker);
     mStatus.mSpellChecker->ResumeCheck(&mStatus);
     return NS_OK;
   }
@@ -523,6 +524,7 @@ mozInlineSpellChecker::SpellCheckingState
   mozInlineSpellChecker::SpellCheck_Uninitialized;
 
 mozInlineSpellChecker::mozInlineSpellChecker() :
+    mZone(JS_ZONE_NONE),
     mNumWordsInSpellSelection(0),
     mMaxNumWordsInSpellSelection(250),
     mNeedsCheckAfterNavigation(false),
@@ -550,6 +552,7 @@ NS_IMETHODIMP
 mozInlineSpellChecker::Init(nsIEditor *aEditor)
 {
   mEditor = do_GetWeakReference(aEditor);
+  mZone = mEditor->GetZone();
   return NS_OK;
 }
 
@@ -1475,9 +1478,6 @@ mozInlineSpellChecker::ResumeCheck(mozInlineSpellStatus* aStatus)
                  "calling us!!");
     mFullSpellCheckScheduled = false;
   }
-
-  if (mEditor)
-    NS_StickLock(mEditor);
 
   if (! mSpellCheck)
     return NS_OK; // spell checking has been turned off

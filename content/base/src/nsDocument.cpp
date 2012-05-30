@@ -5932,6 +5932,8 @@ nsDocument::CloneNode(bool aDeep, PRUint8 aOptionalArgc, nsIDOMNode** aReturn)
   if (!aOptionalArgc) {
     aDeep = true;
   }
+
+  nsAutoLockChrome lock;
   
   return nsNodeUtils::CloneNodeImpl(this, aDeep, !mCreatingStaticClone, aReturn);
 }

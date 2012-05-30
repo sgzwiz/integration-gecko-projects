@@ -165,6 +165,26 @@ JSCompartment::createBumpPointerAllocator(JSContext *cx)
     return bumpAlloc_;
 }
 
+void
+Thread::updateNativeStackLimit()
+{
+#if JS_STACK_GROWTH_DIRECTION > 0
+    if (runtime->nativeStackQuota == 0) {
+        nativeStackLimit = UINTPTR_MAX;
+    } else {
+        JS_ASSERT(nativeStackBase <= size_t(-1) - runtime->nativeStackQuota);
+        nativeStackLimit = nativeStackBase + runtime->nativeStackQuota - 1;
+    }
+#else
+    if (runtime->nativeStackQuota == 0) {
+        nativeStackLimit = 0;
+    } else {
+        JS_ASSERT(nativeStackBase >= runtime->nativeStackQuota);
+        nativeStackLimit = nativeStackBase - (runtime->nativeStackQuota - 1);
+    }
+#endif
+}
+
 MathCache *
 Thread::createMathCache(JSContext *cx)
 {
@@ -225,22 +245,7 @@ js_CurrentThreadAndLockGC(JSRuntime *rt)
          */
         if (JS_CLIST_IS_EMPTY(&thread->contextList)) {
             thread->nativeStackBase = GetNativeStackBase();
-
-#if JS_STACK_GROWTH_DIRECTION > 0
-            if (rt->nativeStackQuota == 0) {
-                thread->nativeStackLimit = UINTPTR_MAX;
-            } else {
-                JS_ASSERT(thread->nativeStackBase <= size_t(-1) - rt->nativeStackQuota);
-                thread->nativeStackLimit = thread->nativeStackBase + rt->nativeStackQuota - 1;
-            }
-#else
-            if (rt->nativeStackQuota == 0) {
-                thread->nativeStackLimit = 0;
-            } else {
-                JS_ASSERT(thread->nativeStackBase >= rt->nativeStackQuota);
-                thread->nativeStackLimit = thread->nativeStackBase - (rt->nativeStackQuota - 1);
-            }
-#endif
+            thread->updateNativeStackLimit();
         }
     } else {
         UnlockGC(rt);

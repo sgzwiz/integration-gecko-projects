@@ -4736,6 +4736,8 @@ NS_IMETHODIMP
 nsDOMClassInfo::Enumerate(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
                           JSObject *obj, bool *_retval)
 {
+  EnsureZoneStuck(cx, JS_ZONE_CHROME);
+
 #ifdef DEBUG
   if (!sSecMan) {
     NS_ERROR("No security manager!!!");
@@ -5603,6 +5605,8 @@ BaseStubConstructor(nsIWeakReference* aWeakOwner,
                     const nsGlobalNameStruct *name_struct, JSContext *cx,
                     JSObject *obj, unsigned argc, jsval *argv, jsval *rval)
 {
+  EnsureZoneStuck(cx, JS_ZONE_CHROME);
+
   nsresult rv;
   nsCOMPtr<nsISupports> native;
   if (name_struct->mType == nsGlobalNameStruct::eTypeClassConstructor) {
@@ -5632,9 +5636,6 @@ BaseStubConstructor(nsIWeakReference* aWeakOwner,
     NS_ERROR("Failed to create the object");
     return rv;
   }
-
-  if (native->GetZone() == JS_ZONE_CHROME)
-    EnsureZoneStuck(cx, JS_ZONE_CHROME);
 
   nsCOMPtr<nsIJSNativeInitializer> initializer(do_QueryInterface(native));
   if (initializer) {

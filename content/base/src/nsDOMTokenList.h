@@ -52,6 +52,9 @@ class nsDOMTokenList : public nsIDOMDOMTokenList,
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsDOMTokenList)
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
+
   NS_DECL_NSIDOMDOMTOKENLIST
 
   nsDOMTokenList(nsGenericElement* aElement, nsIAtom* aAttrAtom);
@@ -81,6 +84,7 @@ protected:
   void RemoveInternal(const nsAttrValue* aAttr, const nsAString& aToken);
 
   nsGenericElement* mElement;
+  JSZoneId mZone;
   nsCOMPtr<nsIAtom> mAttrAtom;
 };
 

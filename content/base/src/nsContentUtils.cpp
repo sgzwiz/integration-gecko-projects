@@ -274,6 +274,7 @@ PRUint32 nsContentUtils::sDOMNodeRemovedSuppressCount = 0;
 #endif
 PRUint32 nsContentUtils::sMicroTaskLevel = 0;
 nsTArray< nsCOMPtr<nsIRunnable> >* nsContentUtils::sBlockedScriptRunners = nsnull;
+PRUint32 nsContentUtils::sRunnersCountAtFirstBlocker = 0;
 nsIInterfaceRequestor* nsContentUtils::sSameOriginChecker = nsnull;
 
 bool nsContentUtils::sIsHandlingKeyBoardEvent = false;
@@ -4805,6 +4806,11 @@ nsContentUtils::AddScriptBlocker()
 
   NS_BeginCantLockNewContent();
 
+  if (!sScriptBlockerCount) {
+    NS_ASSERTION(sRunnersCountAtFirstBlocker == 0,
+                 "Should not already have a count");
+    sRunnersCountAtFirstBlocker = sBlockedScriptRunners->Length();
+  }
   ++sScriptBlockerCount;
 }
 
@@ -4818,22 +4824,31 @@ nsContentUtils::RemoveScriptBlocker()
 
   NS_ASSERTION(sScriptBlockerCount != 0, "Negative script blockers");
   --sScriptBlockerCount;
-  if (sScriptBlockerCount || sScriptBlockerRemoving) {
+  if (sScriptBlockerCount) {
     return;
   }
 
-  sScriptBlockerRemoving = true;
+  PRUint32 firstBlocker = sRunnersCountAtFirstBlocker;
+  PRUint32 lastBlocker = sBlockedScriptRunners->Length();
+  PRUint32 originalFirstBlocker = firstBlocker;
+  PRUint32 blockersCount = lastBlocker - firstBlocker;
+  sRunnersCountAtFirstBlocker = 0;
+  NS_ASSERTION(firstBlocker <= lastBlocker,
+               "bad sRunnersCountAtFirstBlocker");
 
-  while (!sScriptBlockerCount && sBlockedScriptRunners->Length() > 0) {
-    nsCOMPtr<nsIRunnable> runnable = (*sBlockedScriptRunners)[0];
-    sBlockedScriptRunners->RemoveElementAt(0);
+  while (firstBlocker < lastBlocker) {
+    nsCOMPtr<nsIRunnable> runnable = (*sBlockedScriptRunners)[firstBlocker];
+    ++firstBlocker;
+
     if (NS_CanLockNewContent())
       runnable->Run();
     else
-      NS_DispatchToMainThread(runnable); // for events triggered during GC. urk.
+      NS_DispatchToMainThread(runnable); // for events triggered during GC, paint etc. urk.
+    NS_ASSERTION(sRunnersCountAtFirstBlocker == 0,
+                 "Bad count");
+    NS_ASSERTION(!sScriptBlockerCount, "This is really bad");
   }
-
-  sScriptBlockerRemoving = false;
+  sBlockedScriptRunners->RemoveElementsAt(originalFirstBlocker, blockersCount);
 }
 
 /* static */
@@ -4841,6 +4856,7 @@ bool
 nsContentUtils::AddScriptRunner(nsIRunnable* aRunnable)
 {
   MOZ_ASSERT(NS_IsChromeOwningThread());
+  MOZ_ASSERT_IF(sScriptBlockerCount, !NS_CanLockNewContent());
 
   if (!aRunnable) {
     return false;
@@ -5874,6 +5890,9 @@ nsContentUtils::DispatchXULCommand(nsIContent* aTarget,
   nsIDocument* doc = aTarget->OwnerDoc();
   nsCOMPtr<nsIDOMDocument> domDoc = do_QueryInterface(doc);
   NS_ENSURE_STATE(domDoc);
+
+  nsAutoLockChrome lock; // for nsIDOMEvent
+
   nsCOMPtr<nsIDOMEvent> event;
   domDoc->CreateEvent(NS_LITERAL_STRING("xulcommandevent"),
                       getter_AddRefs(event));

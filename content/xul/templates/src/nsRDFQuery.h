@@ -93,6 +93,8 @@ public:
 
     void GetQueryNode(nsIDOMNode** aQueryNode)
     {
+      if (mQueryNode)
+          NS_StickLock(mQueryNode);
        *aQueryNode = mQueryNode;
        NS_IF_ADDREF(*aQueryNode);
     }

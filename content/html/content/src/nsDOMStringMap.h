@@ -56,6 +56,8 @@ public:
   NS_DECL_NSIDOMDOMSTRINGMAP
   NS_DECL_CYCLE_COLLECTION_CLASS(nsDOMStringMap)
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
+
   nsDOMStringMap(nsGenericHTMLElement* aElement);
 
   // GetDataPropList is not defined in IDL due to difficulty
@@ -71,6 +73,7 @@ private:
 
 protected:
   nsRefPtr<nsGenericHTMLElement> mElement;
+  JSZoneId mZone;
   // Flag to guard against infinite recursion.
   bool mRemovingProp;
   bool DataPropToAttr(const nsAString& aProp, nsAString& aResult);

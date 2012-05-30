@@ -2114,6 +2114,7 @@ private:
   static PRUint32 sMicroTaskLevel;
   // Not an nsCOMArray because removing elements from those is slower
   static nsTArray< nsCOMPtr<nsIRunnable> >* sBlockedScriptRunners;
+  static PRUint32 sRunnersCountAtFirstBlocker;
 
   static nsIInterfaceRequestor* sSameOriginChecker;
 

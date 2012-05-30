@@ -49,6 +49,7 @@
 
 nsDOMTokenList::nsDOMTokenList(nsGenericElement *aElement, nsIAtom* aAttrAtom)
   : mElement(aElement),
+    mZone(aElement->GetZone()),
     mAttrAtom(aAttrAtom)
 {
   // We don't add a reference to our element. If it goes away,

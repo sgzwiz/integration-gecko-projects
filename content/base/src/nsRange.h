@@ -57,6 +57,7 @@ class nsRange : public nsIDOMRange,
 public:
   nsRange()
     : mRoot(nsnull)
+    , mZone(JS_ZONE_NONE)
     , mStartOffset(0)
     , mEndOffset(0)
     , mIsPositioned(false)
@@ -66,7 +67,7 @@ public:
   {}
   virtual ~nsRange();
 
-  JSZoneId GetZone() { return mRoot ? mRoot->GetZone() : JS_ZONE_CHROME; }
+  JSZoneId GetZone() { return mZone; }
 
   static nsresult CreateRange(nsIDOMNode* aStartParent, PRInt32 aStartOffset,
                               nsIDOMNode* aEndParent, PRInt32 aEndOffset,
@@ -256,6 +257,7 @@ protected:
   };
   
   nsCOMPtr<nsINode> mRoot;
+  JSZoneId mZone;
   nsCOMPtr<nsINode> mStartParent;
   nsCOMPtr<nsINode> mEndParent;
   PRInt32 mStartOffset;

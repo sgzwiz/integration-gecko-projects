@@ -1675,8 +1675,8 @@ nsBuiltinDecoderStateMachine::StartDecodeThread()
   if (NS_FAILED(rv)) {
     // Give up, report error to media element.
     nsCOMPtr<nsIRunnable> event =
-      NS_NewRunnableMethod(mDecoder, &nsBuiltinDecoder::DecodeError);
-    NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL);
+      NS_NewRunnableMethod(mDecoder, &nsBuiltinDecoder::DecodeError, mDecoder->GetZone());
+    NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL, mDecoder->GetZone());
     return rv;
   }
 
@@ -1809,8 +1809,8 @@ nsresult nsBuiltinDecoderStateMachine::DecodeMetadata()
     // thread during shutdown (and other state machines can run on the state
     // machine thread while the join is waiting), so it's safe to do this
     // synchronously.
-    nsCOMPtr<nsIRunnable> event =
-      NS_NewRunnableMethod(mDecoder, &nsBuiltinDecoder::DecodeError);
+    nsIRunnable *event =
+      NS_NewRunnableMethod(mDecoder, &nsBuiltinDecoder::DecodeError, mDecoder->GetZone());
     ReentrantMonitorAutoExit exitMon(mDecoder->GetReentrantMonitor());
     NS_DispatchToMainThread(event, NS_DISPATCH_SYNC);
     return NS_ERROR_FAILURE;

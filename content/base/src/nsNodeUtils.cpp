@@ -386,6 +386,8 @@ nsNodeUtils::CloneNodeImpl(nsINode *aNode, bool aDeep,
                            bool aCallUserDataHandlers,
                            nsIDOMNode **aResult)
 {
+  MOZ_ASSERT(NS_IsChromeOwningThread());
+
   *aResult = nsnull;
 
   nsCOMPtr<nsIDOMNode> newNode;

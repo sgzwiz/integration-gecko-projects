@@ -720,6 +720,8 @@ template<class LC>
 bool
 ListBase<LC>::defineProperty(JSContext *cx, JSObject *proxy, jsid id, JSPropertyDescriptor *desc)
 {
+    nsAutoUnstickChrome unstick(cx);
+
     if (hasIndexSetter) {
         int32_t index = GetArrayIndexFromId(cx, id);
         if (index >= 0) {

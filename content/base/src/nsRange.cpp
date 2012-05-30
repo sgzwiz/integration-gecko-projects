@@ -700,6 +700,9 @@ nsRange::DoSetRange(nsINode* aStartN, PRInt32 aStartOffset,
                     nsINode* aEndN, PRInt32 aEndOffset,
                     nsINode* aRoot, bool aNotInsertedYet)
 {
+  if (mZone == JS_ZONE_NONE)
+    mZone = aRoot ? aRoot->GetZone() : JS_ZONE_CHROME;
+
   NS_PRECONDITION((aStartN && aEndN && aRoot) ||
                   (!aStartN && !aEndN && !aRoot),
                   "Set all or none");

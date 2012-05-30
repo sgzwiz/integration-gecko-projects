@@ -1551,6 +1551,7 @@ nsXBLBinding::MarkForDeath()
 bool
 nsXBLBinding::ImplementsInterface(REFNSIID aIID) const
 {
+  nsAutoLockChrome lock;
   return mPrototypeBinding->ImplementsInterface(aIID) ||
     (mNextBinding && mNextBinding->ImplementsInterface(aIID));
 }

@@ -162,6 +162,7 @@ private:
   static SpellCheckingState gCanEnableSpellChecking;
 
   nsWeakPtr mEditor; 
+  JSZoneId mZone;
   nsCOMPtr<nsIEditorSpellCheck> mSpellCheck;
   nsCOMPtr<nsITextServicesDocument> mTextServicesDocument;
   nsCOMPtr<nsIDOMTreeWalker> mTreeWalker;
@@ -234,7 +235,7 @@ public:
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
-  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   NS_DECL_NSIEDITACTIONLISTENER
   NS_DECL_NSIINLINESPELLCHECKER

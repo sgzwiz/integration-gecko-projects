@@ -666,6 +666,8 @@ nsINode::Normalize()
 nsresult
 nsINode::GetDOMBaseURI(nsAString &aURI) const
 {
+  nsAutoLockChrome lock;
+
   nsCOMPtr<nsIURI> baseURI = GetBaseURI();
 
   nsCAutoString spec;
@@ -2323,6 +2325,8 @@ NS_IMETHODIMP
 nsGenericElement::GetClientRects(nsIDOMClientRectList** aResult)
 {
   *aResult = nsnull;
+
+  nsAutoLockChrome lock;
 
   nsRefPtr<nsClientRectList> rectList = new nsClientRectList(this);
 

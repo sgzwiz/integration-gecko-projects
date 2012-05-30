@@ -683,7 +683,7 @@ nsHtml5TreeOpExecutor::IsScriptEnabled()
   if (!globalObject) {
     nsCOMPtr<nsIScriptGlobalObjectOwner> owner = do_GetInterface(mDocShell);
     NS_ENSURE_TRUE(owner, true);
-    globalObject = owner->GetScriptGlobalObject(mDocument->GetZone());
+    globalObject = owner->GetScriptGlobalObject(JS_ZONE_NONE);
     NS_ENSURE_TRUE(globalObject, true);
   }
   nsIScriptContext *scriptContext = globalObject->GetContext();

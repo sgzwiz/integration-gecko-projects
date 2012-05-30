@@ -722,6 +722,8 @@ void nsHTMLMediaElement::QueueSelectResourceTask()
     return;
   mHaveQueuedSelectResource = true;
   mNetworkState = nsIDOMHTMLMediaElement::NETWORK_NO_SOURCE;
+
+  nsAutoLockChrome lock;
   AsyncAwaitStableState(this, &nsHTMLMediaElement::SelectResourceWrapper);
 }
 
@@ -3116,6 +3118,7 @@ void nsHTMLMediaElement::AddRemoveSelfReference()
       // The observer service will hold a strong reference to us. This
       // will do to keep us alive. We need to know about shutdown so that
       // we can release our self-reference.
+      nsAutoLockChrome lock;
       nsContentUtils::RegisterShutdownObserver(this);
     } else {
       // Dispatch Release asynchronously so that we don't destroy this object

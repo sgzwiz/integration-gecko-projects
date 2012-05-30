@@ -373,6 +373,7 @@ public:
 
   NS_IMETHOD Run()
   {
+    NS_StickLock(mPresContext);
     nsMouseEvent event(true, NS_XUL_POPUP_SHOWN, nsnull, nsMouseEvent::eReal);
     return nsEventDispatcher::Dispatch(mPopup, mPresContext, &event);                 
   }
@@ -497,7 +498,7 @@ nsMenuPopupFrame::LayoutPopup(nsBoxLayoutState& aState, nsIFrame* aParentMenu, b
   if (mIsOpenChanged) {
     mIsOpenChanged = false;
     nsCOMPtr<nsIRunnable> event = new nsXULPopupShownEvent(GetContent(), pc);
-    NS_DispatchToCurrentThread(event);
+    NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL, pc->GetZone());
   }
 }
 

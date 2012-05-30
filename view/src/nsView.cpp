@@ -165,8 +165,10 @@ static nsEventStatus HandleEvent(nsGUIEvent *aEvent)
     vm = view->GetViewManager();
     vm->GetDeletedViewCount(&deletedViewCount);
 
-    if (NS_TryStickLock(vm->GetPresShell()))
-      vm->GetPresShell()->GetDocument()->TryLockSubDocuments();
+    if (NS_TryStickLock(vm->GetPresShell())) {
+      if (vm->GetPresShell())
+        vm->GetPresShell()->GetDocument()->TryLockSubDocuments();
+    }
 
     vm->GetDeletedViewCount(&deletedViewCount2);
 

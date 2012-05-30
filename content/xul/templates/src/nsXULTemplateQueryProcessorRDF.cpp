@@ -337,6 +337,8 @@ nsXULTemplateQueryProcessorRDF::InitializeForBuilding(nsISupports* aDatasource,
                                                       nsIXULTemplateBuilder* aBuilder,
                                                       nsIDOMNode* aRootNode)
 {
+    MOZ_ASSERT(NS_IsChromeOwningThread());
+
     if (!mQueryProcessorRDFInited) {
         nsresult rv = InitGlobals();
         if (NS_FAILED(rv))
@@ -374,6 +376,8 @@ nsXULTemplateQueryProcessorRDF::InitializeForBuilding(nsISupports* aDatasource,
 NS_IMETHODIMP
 nsXULTemplateQueryProcessorRDF::Done()
 {
+    MOZ_ASSERT(NS_IsChromeOwningThread());
+
     if (!mQueryProcessorRDFInited)
         return NS_OK;
 
@@ -1054,6 +1058,8 @@ nsXULTemplateQueryProcessorRDF::SynchronizeAll(nsIRDFResource* aSource,
                                                nsIRDFNode* aNewTarget)
 {
     // Update each match that contains <aSource, aProperty, aOldTarget>.
+
+    MOZ_ASSERT(NS_IsChromeOwningThread());
 
     // Get all the matches whose assignments are currently supported
     // by aSource and aProperty: we'll need to recompute them.
@@ -1760,6 +1766,8 @@ nsresult
 nsXULTemplateQueryProcessorRDF::AddBindingDependency(nsXULTemplateResultRDF* aResult,
                                                      nsIRDFResource* aResource)
 {
+    MOZ_ASSERT(NS_IsChromeOwningThread());
+
     nsCOMArray<nsXULTemplateResultRDF>* arr;
     if (!mBindingDependencies.Get(aResource, &arr)) {
         arr = new nsCOMArray<nsXULTemplateResultRDF>();
@@ -1783,6 +1791,8 @@ nsresult
 nsXULTemplateQueryProcessorRDF::RemoveBindingDependency(nsXULTemplateResultRDF* aResult,
                                                         nsIRDFResource* aResource)
 {
+    MOZ_ASSERT(NS_IsChromeOwningThread());
+
     nsCOMArray<nsXULTemplateResultRDF>* arr;
     if (mBindingDependencies.Get(aResource, &arr)) {
         PRInt32 index = arr->IndexOf(aResult);

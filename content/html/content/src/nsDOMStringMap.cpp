@@ -69,6 +69,7 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(nsDOMStringMap)
 
 nsDOMStringMap::nsDOMStringMap(nsGenericHTMLElement* aElement)
   : mElement(aElement),
+    mZone(aElement->GetZone()),
     mRemovingProp(false)
 {
 }

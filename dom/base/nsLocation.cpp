@@ -590,6 +590,8 @@ nsLocation::SetHref(const nsAString& aHref)
   nsAutoString oldHref;
   nsresult rv = NS_OK;
 
+  nsAutoLockChrome lock;
+
   // Get JSContext from stack.
   nsCOMPtr<nsIJSContextStack>
     stack(do_GetService("@mozilla.org/js/xpc/ContextStack;1", &rv));

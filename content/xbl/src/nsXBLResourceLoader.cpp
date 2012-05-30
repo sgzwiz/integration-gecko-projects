@@ -240,8 +240,14 @@ nsXBLResourceLoader::NotifyBoundElements()
 
   PRUint32 eltCount = mBoundElements.Count();
   for (PRUint32 j = 0; j < eltCount; j++) {
-    nsCOMPtr<nsIContent> content = mBoundElements.ObjectAt(j);
-    
+    nsCOMPtr<nsIContent> content;
+    {
+      nsIContent *content_ = mBoundElements.ObjectAt(j);
+      if (!NS_TryStickLock(content_)) // XXX can mBoundElements change on other threads?
+        continue;
+      content = content_;
+    }
+
     bool ready = false;
     xblService->BindingReady(content, bindingURI, &ready);
 

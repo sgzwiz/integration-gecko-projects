@@ -248,6 +248,7 @@ NS_NewElement(nsIContent** aResult,
   }
 #ifdef MOZ_XTF
   if (ns > kNameSpaceID_LastBuiltin) {
+    nsAutoLockChrome lock;
     nsIXTFService* xtfService = nsContentUtils::GetXTFService();
     NS_ASSERTION(xtfService, "could not get xtf service");
     if (xtfService &&

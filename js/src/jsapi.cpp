@@ -732,6 +732,8 @@ Thread::init()
         return false;
 
     nativeStackBase = GetNativeStackBase();
+    updateNativeStackLimit();
+
     return true;
 }
 
@@ -3074,6 +3076,13 @@ JS_PUBLIC_API(void)
 JS_SetNativeStackQuota(JSRuntime *rt, size_t stackSize)
 {
     rt->nativeStackQuota = stackSize;
+
+    AutoLockGC lock(rt);
+
+    for (Thread::Map::Range r = rt->threads.all(); !r.empty(); r.popFront()) {
+        Thread *thread = r.front().value;
+        thread->updateNativeStackLimit();
+    }
 }
 
 /************************************************************************/

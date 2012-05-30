@@ -414,6 +414,8 @@ struct Thread : ThreadFriendFields
 # endif
 #endif
 
+    void updateNativeStackLimit();
+
   private:
     js::MathCache *mathCache_;
     js::MathCache *createMathCache(JSContext *cx);

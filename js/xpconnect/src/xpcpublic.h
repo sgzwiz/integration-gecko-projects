@@ -330,6 +330,13 @@ ValueToUint64(JSContext *cx, JS::Value v, uint64_t *result)
     return true;
 }
 
+#ifdef MOZ_ASAN
+// ASan requires more stack space due to redzones
+static const uint32_t NATIVE_STACK_QUOTA = 2 * 128 * sizeof(size_t) * 1024;
+#else  
+static const uint32_t NATIVE_STACK_QUOTA = 128 * sizeof(size_t) * 1024;
+#endif
+
 } // namespace xpc
 
 namespace mozilla {

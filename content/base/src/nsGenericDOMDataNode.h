@@ -148,6 +148,7 @@ public:
       aDeep = true;
     }
     
+    nsAutoLockChrome lock;
     return nsNodeUtils::CloneNodeImpl(this, aDeep, true, aReturn);
   }
 

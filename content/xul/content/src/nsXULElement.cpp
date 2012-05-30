@@ -196,7 +196,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsXULElementTearoff,
                                            nsIDOMElementCSSInlineStyle)
 
-  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mElement->GetZone(); }
 
   nsXULElementTearoff(nsXULElement *aElement)
     : mElement(aElement)
@@ -1721,6 +1721,8 @@ nsXULElement::GetDatabase(nsIRDFCompositeDataSource** aDatabase)
 NS_IMETHODIMP
 nsXULElement::GetBuilder(nsIXULTemplateBuilder** aBuilder)
 {
+    nsAutoLockChrome lock;
+
     *aBuilder = nsnull;
 
     // XXX sXBL/XBL2 issue! Owner or current document?
@@ -1821,6 +1823,8 @@ nsXULElement::IsAttributeMapped(const nsIAtom* aAttribute) const
 NS_IMETHODIMP
 nsXULElement::GetControllers(nsIControllers** aResult)
 {
+    nsAutoLockChrome lock;
+
     if (! Controllers()) {
         nsDOMSlots* slots = DOMSlots();
 
@@ -2088,6 +2092,8 @@ nsXULElement::ClickWithInputSource(PRUint16 aInputSource)
             // strong ref to PresContext so events don't destroy it
             nsRefPtr<nsPresContext> context = shell->GetPresContext();
 
+            nsAutoLockChrome lock;
+
             bool isCallerChrome = nsContentUtils::IsCallerChrome();
 
             nsMouseEvent eventDown(isCallerChrome, NS_MOUSE_BUTTON_DOWN,
@@ -2276,6 +2282,8 @@ nsresult nsXULElement::MakeHeavyweight()
 {
     if (!mPrototype)
         return NS_OK;           // already heavyweight
+
+    nsAutoLockChrome lock; // for nsXULPrototypeElement
 
     nsRefPtr<nsXULPrototypeElement> proto;
     proto.swap(mPrototype);

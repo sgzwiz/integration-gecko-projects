@@ -1409,7 +1409,8 @@ CompositeDataSourceImpl::OnAssert(nsIRDFDataSource* aDataSource,
 	}
 
     for (PRInt32 i = mObservers.Count() - 1; i >= 0; --i) {
-        mObservers[i]->OnAssert(this, aSource, aProperty, aTarget);
+        nsCOMPtr<nsIRDFObserver> obs = mObservers[i];
+        obs->OnAssert(this, aSource, aProperty, aTarget);
     }
     return NS_OK;
 }
@@ -1440,7 +1441,8 @@ CompositeDataSourceImpl::OnUnassert(nsIRDFDataSource* aDataSource,
 	}
 
     for (PRInt32 i = mObservers.Count() - 1; i >= 0; --i) {
-        mObservers[i]->OnUnassert(this, aSource, aProperty, aTarget);
+        nsCOMPtr<nsIRDFObserver> obs = mObservers[i];
+        obs->OnUnassert(this, aSource, aProperty, aTarget);
     }
     return NS_OK;
 }
@@ -1460,8 +1462,9 @@ CompositeDataSourceImpl::OnChange(nsIRDFDataSource* aDataSource,
     // variety of OnAssert or OnChange notifications, which we'll
     // ignore for now :-/.
     for (PRInt32 i = mObservers.Count() - 1; i >= 0; --i) {
-        mObservers[i]->OnChange(this, aSource, aProperty,
-                                aOldTarget, aNewTarget);
+        nsCOMPtr<nsIRDFObserver> obs = mObservers[i];
+        obs->OnChange(this, aSource, aProperty,
+                      aOldTarget, aNewTarget);
     }
     return NS_OK;
 }
@@ -1481,8 +1484,9 @@ CompositeDataSourceImpl::OnMove(nsIRDFDataSource* aDataSource,
     // variety of OnAssert or OnMove notifications, which we'll
     // ignore for now :-/.
     for (PRInt32 i = mObservers.Count() - 1; i >= 0; --i) {
-        mObservers[i]->OnMove(this, aOldSource, aNewSource,
-                              aProperty, aTarget);
+        nsCOMPtr<nsIRDFObserver> obs = mObservers[i];
+        obs->OnMove(this, aOldSource, aNewSource,
+                    aProperty, aTarget);
     }
     return NS_OK;
 }
@@ -1493,7 +1497,8 @@ CompositeDataSourceImpl::OnBeginUpdateBatch(nsIRDFDataSource* aDataSource)
 {
     if (mUpdateBatchNest++ == 0) {
         for (PRInt32 i = mObservers.Count() - 1; i >= 0; --i) {
-            mObservers[i]->OnBeginUpdateBatch(this);
+            nsCOMPtr<nsIRDFObserver> obs = mObservers[i];
+            obs->OnBeginUpdateBatch(this);
         }
     }
     return NS_OK;
@@ -1506,7 +1511,8 @@ CompositeDataSourceImpl::OnEndUpdateBatch(nsIRDFDataSource* aDataSource)
     NS_ASSERTION(mUpdateBatchNest > 0, "badly nested update batch");
     if (--mUpdateBatchNest == 0) {
         for (PRInt32 i = mObservers.Count() - 1; i >= 0; --i) {
-            mObservers[i]->OnEndUpdateBatch(this);
+            nsCOMPtr<nsIRDFObserver> obs = mObservers[i];
+            obs->OnEndUpdateBatch(this);
         }
     }
     return NS_OK;

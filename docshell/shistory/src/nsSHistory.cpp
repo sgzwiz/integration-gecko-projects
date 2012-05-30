@@ -1380,10 +1380,13 @@ nsSHistory::RemoveEntries(nsTArray<PRUint64>& aIDs, PRInt32 aStartIndex)
     --index;
   }
   if (didRemove && mRootDocShell) {
+    PRInt32 zone;
+    mRootDocShell->GetWindowZone(&zone);
     nsRefPtr<nsIRunnable> ev =
       NS_NewRunnableMethod(static_cast<nsDocShell*>(mRootDocShell),
-                           &nsDocShell::FireDummyOnLocationChange);
-    NS_DispatchToCurrentThread(ev);
+                           &nsDocShell::FireDummyOnLocationChange,
+                           (JSZoneId) zone);
+    NS_DispatchToMainThread(ev, NS_DISPATCH_NORMAL, (JSZoneId) zone);
   }
 }
 
