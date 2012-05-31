@@ -185,6 +185,8 @@ private:
   static void
   ScriptableDeallocate(NPObject* aObject);
 
+  class ScriptableHasPropertyOrMethodRunnable;
+
   static bool
   ScriptableHasMethod(NPObject* aObject,
                       NPIdentifier aName);

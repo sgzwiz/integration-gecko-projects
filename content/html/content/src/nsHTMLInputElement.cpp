@@ -574,8 +574,11 @@ nsHTMLInputElement::nsHTMLInputElement(already_AddRefed<nsINodeInfo> aNodeInfo,
 {
   mInputData.mState = new nsTextEditorState(this);
 
-  if (!gUploadLastDir)
-    nsHTMLInputElement::InitUploadLastDir();
+  {
+    nsAutoLockChrome lock;
+    if (!gUploadLastDir)
+      nsHTMLInputElement::InitUploadLastDir();
+  }
 
   // Set up our default state.  By default we're enabled (since we're
   // a control type that can be disabled but not actually disabled
@@ -1455,6 +1458,7 @@ nsHTMLInputElement::DoSetCheckedChanged(bool aCheckedChanged,
 {
   if (mType == NS_FORM_INPUT_RADIO) {
     if (mCheckedChanged != aCheckedChanged) {
+      nsAutoLockChrome lock;
       nsCOMPtr<nsIRadioVisitor> visitor =
         new nsRadioSetCheckedChangedVisitor(aCheckedChanged);
       VisitGroup(visitor, aNotify);

@@ -117,11 +117,43 @@ PluginScriptableObjectParent::ScriptableDeallocate(NPObject* aObject)
   delete object;
 }
 
+class PluginScriptableObjectParent::ScriptableHasPropertyOrMethodRunnable : public nsRunnable
+{
+  // XXX preserved by the PluginDestructionGuard wrapping this runnable's lifetime?
+  NPObject *mObject;
+  NPIdentifier mName;
+  bool mIsMethod;
+
+public:
+  bool mResult;
+
+  ScriptableHasPropertyOrMethodRunnable(NPObject* aObject, NPIdentifier aName, bool aIsMethod)
+    : mObject(aObject), mName(aName), mIsMethod(aIsMethod), mResult(false)
+  {}
+
+  NS_IMETHOD Run()
+  {
+    if (mIsMethod)
+      mResult = PluginScriptableObjectParent::ScriptableHasMethod(mObject, mName);
+    else
+      mResult = PluginScriptableObjectParent::ScriptableHasProperty(mObject, mName);
+    return NS_OK;
+  }
+};
+
 // static
 bool
 PluginScriptableObjectParent::ScriptableHasMethod(NPObject* aObject,
                                                   NPIdentifier aName)
 {
+  if (!NS_IsMainThread()) {
+    MOZ_ASSERT(NS_IsExecuteThread());
+    nsRefPtr<ScriptableHasPropertyOrMethodRunnable> runnable =
+      new ScriptableHasPropertyOrMethodRunnable(aObject, aName, true);
+    NS_DispatchToMainThread(runnable, NS_DISPATCH_SYNC);
+    return runnable->mResult;
+  }
+
   if (aObject->_class != GetClass()) {
     NS_ERROR("Don't know what kind of object this is!");
     return false;
@@ -264,6 +296,14 @@ bool
 PluginScriptableObjectParent::ScriptableHasProperty(NPObject* aObject,
                                                     NPIdentifier aName)
 {
+  if (!NS_IsMainThread()) {
+    MOZ_ASSERT(NS_IsExecuteThread());
+    nsRefPtr<ScriptableHasPropertyOrMethodRunnable> runnable =
+      new ScriptableHasPropertyOrMethodRunnable(aObject, aName, false);
+    NS_DispatchToMainThread(runnable, NS_DISPATCH_SYNC);
+    return runnable->mResult;
+  }
+
   if (aObject->_class != GetClass()) {
     NS_ERROR("Don't know what kind of object this is!");
     return false;

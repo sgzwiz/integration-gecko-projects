@@ -123,6 +123,7 @@ nsImageLoadingContent::nsImageLoadingContent()
     mCurrentRequestRegistered(false),
     mPendingRequestRegistered(false)
 {
+  nsAutoLockChrome lock;
   if (!nsContentUtils::GetImgLoader()) {
     mLoadingEnabled = false;
   }

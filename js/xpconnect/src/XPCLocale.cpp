@@ -180,6 +180,8 @@ struct XPCLocaleCallbacks : public JSLocaleCallbacks
     nsresult rv;
 
     if (!mDecoder) {
+      nsAutoLockChrome lock;
+
       // use app default locale
       nsCOMPtr<nsILocaleService> localeService =
         do_GetService(NS_LOCALESERVICE_CONTRACTID, &rv);
@@ -255,6 +257,8 @@ struct XPCLocaleCallbacks : public JSLocaleCallbacks
     nsresult rv;
 
     if (!mCollation) {
+      nsAutoLockChrome lock;
+
       nsCOMPtr<nsILocaleService> localeService =
         do_GetService(NS_LOCALESERVICE_CONTRACTID, &rv);
 

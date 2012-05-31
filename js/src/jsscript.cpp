@@ -959,6 +959,7 @@ js::SaveScriptFilename(JSContext *cx, const char *filename)
         return NULL;
 
     JSRuntime *rt = cx->runtime;
+    AutoLockGC lock(rt);
 
     ScriptFilenameTable::AddPtr p = rt->scriptFilenameTable.lookupForAdd(filename);
     if (!p) {

@@ -625,6 +625,8 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetDocument(nsIDocument* *aDocument)
   if (!aDocument)
     return NS_ERROR_NULL_POINTER;
 
+  NS_StickLock(mContent);
+
   // XXX sXBL/XBL2 issue: current doc or owner doc?
   // But keep in mind bug 322414 comment 33
   NS_IF_ADDREF(*aDocument = mContent->OwnerDoc());

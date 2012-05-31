@@ -1219,7 +1219,8 @@ nsPluginHost::TrySetUpPluginInstance(const char *aMimeType,
                                      nsIPluginInstanceOwner *aOwner)
 {
   if (!NS_IsMainThread()) {
-    return NS_DispatchToMainThread(new TrySetUpPluginInstanceEvent(this, aMimeType, aURL, aOwner));
+    return NS_DispatchToMainThread(new TrySetUpPluginInstanceEvent(this, aMimeType, aURL, aOwner),
+                                   NS_DISPATCH_SYNC);
   }
 
 #ifdef PLUGIN_LOGGING
@@ -3201,8 +3202,10 @@ public:
 nsresult
 nsPluginHost::StopPluginInstance(nsNPAPIPluginInstance* aInstance)
 {
-  if (!NS_IsMainThread())
-    return NS_DispatchToMainThread(new nsStopPluginInstanceEvent(this, aInstance));
+  if (!NS_IsMainThread()) {
+    return NS_DispatchToMainThread(new nsStopPluginInstanceEvent(this, aInstance),
+                                   NS_DISPATCH_SYNC);
+  }
 
   if (PluginDestructionGuard::DelayDestroy(aInstance)) {
     return NS_OK;
@@ -4094,7 +4097,7 @@ PRCList PluginDestructionGuard::sListHead =
 
 PluginDestructionGuard::~PluginDestructionGuard()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on the main thread");
+  MOZ_ASSERT(NS_IsChromeOwningThread());
 
   PR_REMOVE_LINK(this);
 
@@ -4113,7 +4116,7 @@ PluginDestructionGuard::~PluginDestructionGuard()
 bool
 PluginDestructionGuard::DelayDestroy(nsNPAPIPluginInstance *aInstance)
 {
-  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(NS_IsChromeOwningThread());
   NS_ASSERTION(aInstance, "Uh, I need an instance!");
 
   // Find the first guard on the stack and make it do a delayed

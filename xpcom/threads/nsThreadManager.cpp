@@ -575,7 +575,7 @@ nsThreadManager::UnlockZone(PRInt32 zone_)
     zone.unlockCount++;
     PR_Unlock(zone.lock);
 
-    int stackDummy;
+    unsigned long stackDummy;
     PRThread *current = PR_GetCurrentThread();
     if (current == mMainPRThread) {
       mMainThreadStackPosition = (uintptr_t) &stackDummy;

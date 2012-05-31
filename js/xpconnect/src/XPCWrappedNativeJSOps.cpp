@@ -904,6 +904,8 @@ XPCWrappedNativeJSClass XPC_WN_NoHelper_JSClass = {
 static JSBool
 XPC_WN_MaybeResolvingPropertyStub(JSContext *cx, JSObject *obj, jsid id, jsval *vp)
 {
+    nsAutoUnstickChrome unstick(cx);
+
     MORPH_SLIM_WRAPPER(cx, obj);
     XPCCallContext ccx(JS_CALLER, cx, obj);
     XPCWrappedNative* wrapper = ccx.GetWrapper();

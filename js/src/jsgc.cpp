@@ -1136,7 +1136,7 @@ MarkConservativeStackRoots(JSTracer *trc, bool useSavedRoots)
         ConservativeGCData *ctd = &thread->conservativeGC;
 
         if (thread->id == CurrentThreadId()) {
-            int stackDummy;
+            unsigned long stackDummy;
             ctd->nativeStackTop = (uintptr_t*) &stackDummy;
         } else {
             uintptr_t *top = (uintptr_t*) rt->nativeStackTop(thread->id);

@@ -28,6 +28,7 @@ public:
     : mWidth(aWidth)
     , mHeight(aHeight)
     , mData(&aData)
+    , mZone(JS_GetObjectZone(&aData))
   {
     MOZ_COUNT_CTOR(ImageData);
     HoldData();
@@ -42,6 +43,8 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_NSIDOMIMAGEDATA
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(ImageData)
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   uint32_t GetWidth()
   {
@@ -65,6 +68,7 @@ private:
 
   uint32_t mWidth, mHeight;
   JSObject* mData;
+  JSZoneId mZone;
 };
 
 } // namespace dom
