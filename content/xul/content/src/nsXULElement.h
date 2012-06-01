@@ -452,7 +452,7 @@ public:
     NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_NO_UNLINK(nsXULElement,
                                                        nsGenericElement)
 
-    JSZoneId GetZone() { return nsINode::GetZone(); }
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return nsINode::GetZone(); }
 
     // nsINode
     virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor);

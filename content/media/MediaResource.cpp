@@ -573,6 +573,7 @@ void ChannelMediaResource::CloseChannel()
   }
 
   if (mListener) {
+    NS_StickLock(mListener);
     mListener->Revoke();
     mListener = nsnull;
   }

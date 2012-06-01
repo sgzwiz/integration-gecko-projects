@@ -69,7 +69,7 @@ public:
   void SetDocShell(nsIDocShell *aDocShell);
   nsIDocShell *GetDocShell();
 
-  JSZoneId GetZone();
+  NS_IMETHOD_(JSZoneId) GetZone();
 
   // nsIDOMLocation
   NS_DECL_NSIDOMLOCATION

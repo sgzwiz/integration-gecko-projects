@@ -62,7 +62,7 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIDOMSVGRECTELEMENT
 
-  JSZoneId GetZone() { return nsINode::GetZone(); }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return nsINode::GetZone(); }
 
   // xxx I wish we could use virtual inheritance
   NS_FORWARD_NSIDOMNODE(nsSVGRectElementBase::)

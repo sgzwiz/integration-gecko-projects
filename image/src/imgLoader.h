@@ -387,7 +387,10 @@ public:
   NS_DECL_NSISTREAMLISTENER
   NS_DECL_NSIREQUESTOBSERVER
 
-  JSZoneId GetZone() { return mDestListener ? mDestListener->GetZone() : JS_ZONE_CHROME; }
+  NS_IMETHODIMP_(JSZoneId) GetZone()
+  {
+    return mDestListener ? mDestListener->GetZone() : JS_ZONE_CHROME;
+  }
 
 private:
   nsCOMPtr<nsIStreamListener> mDestListener;

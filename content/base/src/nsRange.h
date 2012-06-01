@@ -67,7 +67,7 @@ public:
   {}
   virtual ~nsRange();
 
-  JSZoneId GetZone() { return mZone; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   static nsresult CreateRange(nsIDOMNode* aStartParent, PRInt32 aStartOffset,
                               nsIDOMNode* aEndParent, PRInt32 aEndOffset,

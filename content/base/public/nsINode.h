@@ -407,7 +407,7 @@ public:
    */
   mozilla::dom::Element* AsElement();
 
-  virtual JSZoneId GetZone();
+  NS_IMETHOD_(JSZoneId) GetZone();
 
   virtual nsIDOMNode* AsDOMNode() = 0;
 

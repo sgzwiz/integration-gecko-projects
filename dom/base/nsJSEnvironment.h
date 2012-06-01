@@ -73,7 +73,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsJSContext,
                                                          nsIScriptContext)
 
-  JSZoneId GetZone()
+  NS_IMETHODIMP_(JSZoneId) GetZone()
   {
     return mGlobalObjectRef ? mGlobalObjectRef->GetZone() : JS_ZONE_CHROME;
   }

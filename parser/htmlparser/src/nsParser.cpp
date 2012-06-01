@@ -155,6 +155,7 @@ public:
 
   NS_IMETHOD Run()
   {
+    NS_StickLock(mParser);
     mParser->HandleParserContinueEvent(this);
     return NS_OK;
   }
@@ -321,7 +322,7 @@ nsParser::PostContinueEvent()
     // This creates a reference cycle between this and the event that is
     // broken when the event fires.
     nsCOMPtr<nsIRunnable> event = new nsParserContinueEvent(this);
-    if (NS_FAILED(NS_DispatchToCurrentThread(event))) {
+    if (NS_FAILED(NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL, GetZone()))) {
         NS_WARNING("failed to dispatch parser continuation event");
     } else {
         mFlags |= NS_PARSER_FLAG_PENDING_CONTINUE_EVENT;

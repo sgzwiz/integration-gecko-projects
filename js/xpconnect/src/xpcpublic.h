@@ -383,7 +383,7 @@ class JSContextMUX
 
     JSContext *getContext(PRThread *thread) {
         for (size_t i = 0; i < mContexts.Length(); i++) {
-            if (mContexts[i] && (PRThread *) JS_GetContextThread(mContexts[i]) == thread) {
+            if (mContexts[i] && (PRThread *) js::GetContextThread(mContexts[i]) == thread) {
                 mCanonical = i;
                 return mContexts[i];
             }
@@ -408,7 +408,7 @@ class JSContextMUX
     void addContext(JSContext *cx) {
 #ifdef NS_DEBUG
         for (size_t i = 0; i < mContexts.Length(); i++)
-            MOZ_ASSERT(JS_GetContextThread(cx) != JS_GetContextThread(mContexts[i]));
+            MOZ_ASSERT(js::GetContextThread(cx) != js::GetContextThread(mContexts[i]));
 #endif
         for (size_t i = 0; i < mContexts.Length(); i++) {
             if (!mContexts[i]) {

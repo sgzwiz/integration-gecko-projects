@@ -55,6 +55,9 @@ public:
   virtual ~TaskbarTabPreview();
 
   NS_DECL_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_DECL_NSITASKBARTABPREVIEW
   NS_FORWARD_NSITASKBARPREVIEW(TaskbarPreview::)
 

@@ -223,7 +223,7 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(nsFrameSelection)
 
-  JSZoneId GetZone() { return mZone; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   /** Init will initialize the frame selector with the necessary pres shell to 
    *  be used by most of the methods

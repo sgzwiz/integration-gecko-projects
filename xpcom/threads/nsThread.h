@@ -171,10 +171,7 @@ struct NSAutoreleasePool;
 
 class ScopedNSAutoreleasePool {
  public:
-#if 0 // XXX how to test for OSX?
-  ScopedNSAutoreleasePool() {}
-  void Recycle() { }
-#else
+#ifdef XP_MACOSX
   ScopedNSAutoreleasePool();
   ~ScopedNSAutoreleasePool();
 
@@ -185,7 +182,10 @@ class ScopedNSAutoreleasePool {
   void Recycle();
  private:
   NSAutoreleasePool* autorelease_pool_;
-#endif
+#else // XP_MACOSX
+  ScopedNSAutoreleasePool() {}
+  void Recycle() { }
+#endif // XP_MACOSX
 };
 
 #endif  // nsThread_h__

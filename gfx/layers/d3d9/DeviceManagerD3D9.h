@@ -117,6 +117,7 @@ public:
   DeviceManagerD3D9();
   NS_IMETHOD_(nsrefcnt) AddRef(void);
   NS_IMETHOD_(nsrefcnt) Release(void);
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
 protected:
   nsAutoRefCnt mRefCnt;
   NS_DECL_OWNINGTHREAD

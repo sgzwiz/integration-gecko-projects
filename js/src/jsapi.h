@@ -5574,9 +5574,6 @@ extern JS_PUBLIC_API(JSBool)
 JS_ThrowStopIteration(JSContext *cx);
 
 extern JS_PUBLIC_API(uintptr_t)
-JS_GetContextThread(JSContext *cx);
-
-extern JS_PUBLIC_API(uintptr_t)
 JS_SetContextThread(JSContext *cx);
 
 extern JS_PUBLIC_API(uintptr_t)

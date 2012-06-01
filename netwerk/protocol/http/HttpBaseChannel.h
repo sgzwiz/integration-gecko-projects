@@ -95,7 +95,7 @@ public:
 
   virtual nsresult Init(nsIURI *aURI, PRUint8 aCaps, nsProxyInfo *aProxyInfo);
 
-  JSZoneId GetZone() { return mZone; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   // nsIRequest
   NS_IMETHOD GetName(nsACString& aName);

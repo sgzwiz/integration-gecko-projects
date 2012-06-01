@@ -84,7 +84,10 @@ public:
 
   nsBaseChannel();
 
-  JSZoneId GetZone() { return mListener ? mListener->GetZone() : JS_ZONE_CHROME; }
+  NS_IMETHODIMP_(JSZoneId) GetZone()
+  {
+    return mListener ? mListener->GetZone() : JS_ZONE_CHROME;
+  }
 
   // This method must be called to initialize the basechannel instance.
   nsresult Init() {

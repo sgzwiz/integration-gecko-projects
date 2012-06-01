@@ -75,7 +75,7 @@ private:
 public:
   NS_DECL_ISUPPORTS_INHERITED
 
-  JSZoneId GetZone() { return nsINode::GetZone(); }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return nsINode::GetZone(); }
 };
 
 NS_IMPL_ISUPPORTS_INHERITED3(nsGenConImageContent, nsXMLElement,

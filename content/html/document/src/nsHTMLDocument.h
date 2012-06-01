@@ -82,7 +82,7 @@ public:
   NS_IMETHOD_(nsrefcnt) AddRef(void);
   NS_IMETHOD_(nsrefcnt) Release(void);
 
-  JSZoneId GetZone() { return nsDocument::GetZone(); }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return nsDocument::GetZone(); }
 
   virtual void Reset(nsIChannel* aChannel, nsILoadGroup* aLoadGroup);
   virtual void ResetToURI(nsIURI* aURI, nsILoadGroup* aLoadGroup,

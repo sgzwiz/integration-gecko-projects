@@ -83,7 +83,7 @@ public:
     // nsISupports interface
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
-    JSZoneId GetZone() { return mZone; }
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
     // nsIScriptGlobalObject methods
     virtual void OnFinalize(JSObject* aObject);

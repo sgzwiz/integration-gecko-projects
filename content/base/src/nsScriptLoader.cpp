@@ -106,7 +106,10 @@ public:
 
   NS_DECL_ISUPPORTS
 
-  JSZoneId GetZone() { return mElement ? mElement->GetZone() : JS_ZONE_CHROME; }
+  NS_IMETHODIMP_(JSZoneId) GetZone()
+  {
+    return mElement ? mElement->GetZone() : JS_ZONE_CHROME;
+  }
 
   void FireScriptAvailable(nsresult aResult)
   {

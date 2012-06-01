@@ -697,7 +697,6 @@ static const JSSecurityCallbacks NullSecurityCallbacks = { };
 
 Thread::Thread(JSRuntime *runtime, uintptr_t id)
   : runtime(runtime),
-    id(id),
     tempLifoAlloc(TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
     interpreterFrames(NULL),
     suspendCount(0),
@@ -710,6 +709,7 @@ Thread::Thread(JSRuntime *runtime, uintptr_t id)
     pendingProxyOperation(NULL),
     autoGCRooters(NULL)
 {
+    this->id = id;
     JS_INIT_CLIST(&contextList);
 }
 

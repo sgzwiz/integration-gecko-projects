@@ -3103,7 +3103,7 @@ public:
                           const XPTMethodDescriptor *info,
                           nsXPTCMiniVariant* params);
 
-    JSZoneId GetZone()
+    NS_IMETHODIMP_(JSZoneId) GetZone()
     {
         nsISupports *native = GetAggregatedNativeObject();
         return native ? native->GetZone() : JS_ZONE_CHROME;

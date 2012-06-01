@@ -950,7 +950,8 @@ NS_IMPL_ISUPPORTS2(nsExternalResourceMap::PendingLoad,
                    nsIStreamListener,
                    nsIRequestObserver)
 
-JSZoneId nsExternalResourceMap::PendingLoad::GetZone()
+NS_IMETHODIMP_(JSZoneId)
+nsExternalResourceMap::PendingLoad::GetZone()
 {
   return mDisplayDocument->GetZone();
 }

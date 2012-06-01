@@ -312,7 +312,7 @@ public:
     return mDocument;
   }
 
-  JSZoneId GetZone()
+  NS_IMETHODIMP_(JSZoneId) GetZone()
   {
     return mOwnerManager->GetZone();
   }

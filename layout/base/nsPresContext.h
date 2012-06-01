@@ -177,8 +177,9 @@ public:
 
   nsPresContext(nsIDocument* aDocument, nsPresContextType aType) NS_HIDDEN;
 
-  JSZoneId GetZone() {
-    return mDocument->GetZone();
+  NS_IMETHODIMP_(JSZoneId) GetZone()
+  {
+    return mDocument ? mDocument->GetZone() : JS_ZONE_CHROME;
   }
 
   /**

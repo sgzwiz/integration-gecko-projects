@@ -46,8 +46,6 @@
 #include "nsContentUtils.h"
 #include "xpcpublic.h"
 
-#include <sys/time.h>
-
 using namespace mozilla;
 
 #ifdef XP_WIN

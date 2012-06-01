@@ -420,7 +420,7 @@ public:
         return true;
     }
 
-    bool MakeCurrentImpl() {
+    bool MakeCurrentImpl(bool aForce) {
         bool succeeded = true;
 
         // Assume that EGL has the same problem as WGL does,

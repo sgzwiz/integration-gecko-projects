@@ -183,7 +183,7 @@ nsLocation::SetDocShell(nsIDocShell *aDocShell)
 #endif
 }
 
-JSZoneId
+NS_IMETHODIMP_(JSZoneId)
 nsLocation::GetZone()
 {
   return mZone;

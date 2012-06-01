@@ -835,7 +835,7 @@ struct ChildSheetListBuilder {
   }
 };
 
-JSZoneId
+NS_IMETHODIMP_(JSZoneId)
 nsCSSStyleSheet::GetZone()
 {
   return mDocument ? mDocument->GetZone() : JS_ZONE_CHROME;

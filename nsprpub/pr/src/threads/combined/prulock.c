@@ -324,6 +324,52 @@ retry:
 #endif  /* _PR_GLOBAL_THREADS_ONLY */
 }
 
+PR_IMPLEMENT(PRBool) PR_TryLock(PRLock *lock, unsigned int timeout)
+{
+#ifndef _PR_GLOBAL_THREADS_ONLY
+    #error "OH NO"
+#endif
+
+    PRThread *me = _PR_MD_CURRENT_THREAD();
+    PRIntn is;
+    PRThread *t;
+    PRCList *q;
+    PRBool rv;
+
+    PR_ASSERT(me != suspendAllThread); 
+    PR_ASSERT(!(me->flags & _PR_IDLE_THREAD));
+    PR_ASSERT(lock != NULL);
+    PR_ASSERT(lock->owner != me);
+
+    /* Convert microseconds to milliseconds. */
+    timeout /= 1000;
+
+    if (timeout)
+    {
+        while (PR_TRUE) {
+            rv = _PR_MD_TEST_AND_LOCK(&lock->ilock);
+            if (rv)
+                break;
+
+            if (timeout == 0)
+                return PR_FALSE;
+            Sleep(1);
+            timeout--;
+        }
+    }
+    else
+    {
+        rv = _PR_MD_TEST_AND_LOCK(&lock->ilock);
+        if (!rv)
+            return PR_FALSE;
+    }
+
+    PR_ASSERT(rv);
+    lock->owner = me;
+
+    return PR_TRUE;
+} /* PR_TryLock */
+
 /*
 ** Unlock the lock.
 */

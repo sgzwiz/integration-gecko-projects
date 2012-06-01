@@ -174,7 +174,7 @@ public:
   // nsISupports
   NS_DECL_ISUPPORTS
 
-  JSZoneId GetZone() { return mZone; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   // nsIWeakReference
   NS_DECL_NSIWEAKREFERENCE

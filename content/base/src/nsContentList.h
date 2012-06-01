@@ -243,7 +243,7 @@ class nsContentList : public nsBaseContentList,
 public:
   NS_DECL_ISUPPORTS_INHERITED
 
-  JSZoneId GetZone() { return mZone; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   /**
    * @param aRootNode The node under which to limit our search.

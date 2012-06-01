@@ -68,7 +68,7 @@ public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSIEXPATSINK
 
-    JSZoneId GetZone() { return mZone; }
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
     // nsIContentSink
     NS_IMETHOD WillParse(void) { return NS_OK; }

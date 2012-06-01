@@ -68,7 +68,7 @@ class nsCaret : public nsISelectionListener
 
     NS_DECL_ISUPPORTS
 
-    JSZoneId GetZone() { return mZone; }
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
     nsresult    Init(nsIPresShell *inPresShell);
     void    Terminate();

@@ -82,7 +82,7 @@ public:
   nsMediaDecoder();
   virtual ~nsMediaDecoder();
 
-  JSZoneId GetZone();
+  NS_IMETHOD_(JSZoneId) GetZone();
 
   // Create a new decoder of the same type as this one.
   virtual nsMediaDecoder* Clone() = 0;

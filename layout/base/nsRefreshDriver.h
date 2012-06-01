@@ -87,7 +87,7 @@ public:
   // nsISupports implementation
   NS_DECL_ISUPPORTS
 
-  JSZoneId GetZone() { return mZone; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   // nsITimerCallback implementation
   NS_DECL_NSITIMERCALLBACK

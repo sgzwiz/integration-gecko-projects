@@ -91,7 +91,7 @@ public:
   nsHTMLImageElement(already_AddRefed<nsINodeInfo> aNodeInfo);
   virtual ~nsHTMLImageElement();
 
-  JSZoneId GetZone() { return nsINode::GetZone(); }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return nsINode::GetZone(); }
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED

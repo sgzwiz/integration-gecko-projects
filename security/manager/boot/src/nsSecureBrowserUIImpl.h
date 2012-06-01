@@ -87,7 +87,7 @@ public:
   
   NS_DECL_ISUPPORTS
 
-  JSZoneId GetZone() { return mZone; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   NS_DECL_NSIWEBPROGRESSLISTENER
   NS_DECL_NSISECUREBROWSERUI

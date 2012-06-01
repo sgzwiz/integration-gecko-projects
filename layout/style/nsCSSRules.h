@@ -84,7 +84,7 @@ public:
 
   NS_DECL_ISUPPORTS_INHERITED
 
-  JSZoneId GetZone() { return mozilla::css::Rule::GetZone(); }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mozilla::css::Rule::GetZone(); }
 
   // nsIStyleRule methods
 #ifdef DEBUG
@@ -132,7 +132,7 @@ public:
 
   NS_DECL_ISUPPORTS_INHERITED
 
-  JSZoneId GetZone() { return mozilla::css::Rule::GetZone(); }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mozilla::css::Rule::GetZone(); }
 
   // nsIStyleRule methods
 #ifdef DEBUG
@@ -231,7 +231,7 @@ public:
 
   NS_DECL_ISUPPORTS_INHERITED
 
-  JSZoneId GetZone() { return mozilla::css::Rule::GetZone(); }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mozilla::css::Rule::GetZone(); }
 
   // nsIStyleRule methods
 #ifdef DEBUG
@@ -297,7 +297,7 @@ private:
 public:
   NS_DECL_ISUPPORTS_INHERITED
 
-  JSZoneId GetZone() { return mozilla::css::Rule::GetZone(); }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mozilla::css::Rule::GetZone(); }
 
   DECL_STYLE_RULE_INHERIT
 
@@ -376,7 +376,7 @@ private:
 public:
   NS_DECL_ISUPPORTS_INHERITED
 
-  JSZoneId GetZone() { return mozilla::css::Rule::GetZone(); }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mozilla::css::Rule::GetZone(); }
 
   // nsIStyleRule methods
 #ifdef DEBUG
@@ -422,7 +422,7 @@ private:
 public:
   NS_DECL_ISUPPORTS_INHERITED
 
-  JSZoneId GetZone() { return mozilla::css::Rule::GetZone(); }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mozilla::css::Rule::GetZone(); }
 
   // nsIStyleRule methods
 #ifdef DEBUG

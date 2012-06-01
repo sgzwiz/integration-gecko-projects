@@ -121,7 +121,7 @@ class nsContentSink : public nsICSSLoaderObserver,
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsContentSink,
                                            nsICSSLoaderObserver)
 
-  JSZoneId GetZone();
+  NS_IMETHOD_(JSZoneId) GetZone();
 
     // nsITimerCallback
   NS_DECL_NSITIMERCALLBACK

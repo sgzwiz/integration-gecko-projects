@@ -191,14 +191,17 @@ namespace js {
 
 struct ThreadFriendFields
 {
+    uintptr_t id;
+
     /* Base address of the native stack for the current thread. */
-    uintptr_t           nativeStackBase;
+    uintptr_t nativeStackBase;
 
     /* Limit pointer for checking native stack consumption. */
-    uintptr_t           nativeStackLimit;
+    uintptr_t nativeStackLimit;
 
     ThreadFriendFields()
-      : nativeStackBase(0),
+      : id(0),
+        nativeStackBase(0),
         nativeStackLimit(0)
     {}
 
@@ -264,7 +267,7 @@ IsZoneStuck(JSContext *cx_, JSZoneId zone)
     ContextFriendFields *cx = ContextFriendFields::get(cx_);
     if (zone == JS_ZONE_CHROME)
         return cx->chromeStickState->chromeStuck;
-    return cx->contentStuckMask & (1 << uint64_t(zone));
+    return cx->contentStuckMask & (1ULL << uint64_t(zone));
 }
 
 inline void
@@ -278,7 +281,7 @@ SetZoneStuck(JSContext *cx_, JSZoneId zone)
     } else {
         if (cx->contentStuckMask == 0)
             RuntimeFriendFields::get(cx->runtime)->registerContextStick(cx_);
-        cx->contentStuckMask |= (1 << uint64_t(zone));
+        cx->contentStuckMask |= (1ULL << uint64_t(zone));
     }
 }
 
@@ -581,6 +584,12 @@ IsObjectInContextCompartment(const JSObject *obj, const JSContext *cx);
 #define JSITER_OWNONLY    0x8   /* iterate over obj's own properties only */
 #define JSITER_HIDDEN     0x10  /* also enumerate non-enumerable properties */
 #define JSITER_FOR_OF     0x20  /* harmony for-of loop */
+
+inline uintptr_t
+GetContextThread(JSContext *cx)
+{
+    return ThreadFriendFields::get(ContextFriendFields::get(cx)->thread_)->id;
+}
 
 inline uintptr_t
 GetNativeStackLimit(JSContext *cx)

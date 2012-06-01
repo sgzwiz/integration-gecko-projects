@@ -108,7 +108,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsHTMLMediaElement,
                                            nsGenericHTMLElement)
 
-  JSZoneId GetZone() { return nsINode::GetZone(); }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return nsINode::GetZone(); }
 
   virtual bool ParseAttribute(PRInt32 aNamespaceID,
                                 nsIAtom* aAttribute,

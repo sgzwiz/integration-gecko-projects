@@ -116,7 +116,10 @@ class nsParser : public nsIParser,
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
     NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsParser, nsIParser)
 
-    JSZoneId GetZone() { return mSink ? mSink->GetZone() : JS_ZONE_CHROME; }
+    NS_IMETHODIMP_(JSZoneId) GetZone()
+    {
+        return mSink ? mSink->GetZone() : JS_ZONE_CHROME;
+    }
 
     /**
      * default constructor

@@ -88,7 +88,7 @@ class nsPIDOMWindow : public nsIDOMWindowInternal
 public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_PIDOMWINDOW_IID)
 
-  JSZoneId GetZone() { return mZone; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   virtual nsPIDOMWindow* GetPrivateRoot() = 0;
 

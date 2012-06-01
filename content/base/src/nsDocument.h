@@ -400,7 +400,7 @@ protected:
 
     NS_DECL_ISUPPORTS
 
-    JSZoneId GetZone();
+    NS_IMETHOD_(JSZoneId) GetZone();
 
     NS_DECL_NSISTREAMLISTENER
     NS_DECL_NSIREQUESTOBSERVER

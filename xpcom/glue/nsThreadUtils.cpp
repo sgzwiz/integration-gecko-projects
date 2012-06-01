@@ -602,7 +602,7 @@ ContextStickInfo *gContextSticks = NULL;
 
 void NS_RegisterContextStick(JSContext *cx)
 {
-  MOZ_ASSERT(JS_GetContextThread(cx) == (uintptr_t) PR_GetCurrentThread());
+  MOZ_ASSERT(js::GetContextThread(cx) == (uintptr_t) PR_GetCurrentThread());
 
   nsAutoLockChrome lock;
 
@@ -649,7 +649,7 @@ RemoveContextSticks()
   ContextStickInfo **pstick = &gContextSticks;
   while (*pstick) {
     ContextStickInfo *stick = *pstick;
-    if (JS_GetContextThread(stick->cx) == (uintptr_t) thread) {
+    if (js::GetContextThread(stick->cx) == (uintptr_t) thread) {
       js::RemoveStickContent(stick->cx);
       *pstick = stick->next;
       delete stick;
@@ -812,6 +812,13 @@ nsAutoUnstickChrome::~nsAutoUnstickChrome()
   js::ContextFriendFields::get(mCx)->chromeStickState = mStuck.prev;
 }
 
+#ifdef _MSC_VER
+
+void
+NS_DumpBacktrace(const char *str, bool flush) {}
+
+#else // _MSC_VER
+
 #include <execinfo.h>
 #include <stdio.h>
 #include <dlfcn.h>
@@ -891,3 +898,5 @@ NS_DumpBacktrace(const char *str, bool flush)
 
   PR_Unlock(backtraceLock);
 }
+
+#endif // _MSC_VER

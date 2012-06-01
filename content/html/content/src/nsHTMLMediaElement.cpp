@@ -275,7 +275,7 @@ public:
     NS_ABORT_IF_FALSE(mElement, "Must pass an element to call back");
   }
 
-  JSZoneId GetZone() { return mZone; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
 private:
   nsRefPtr<nsHTMLMediaElement> mElement;

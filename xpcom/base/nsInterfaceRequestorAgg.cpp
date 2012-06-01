@@ -50,7 +50,7 @@ public:
     , mSecond(aSecond)
     , mZone(aZone) {}
 
-  JSZoneId GetZone() { return mZone; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   nsCOMPtr<nsIInterfaceRequestor> mFirst, mSecond;
   JSZoneId mZone;

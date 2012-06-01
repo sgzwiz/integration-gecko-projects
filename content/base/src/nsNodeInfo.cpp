@@ -62,7 +62,7 @@
 
 using namespace mozilla;
 
-JSZoneId
+NS_IMETHODIMP_(JSZoneId)
 nsINode::GetZone()
 {
 #ifdef NS_DEBUG

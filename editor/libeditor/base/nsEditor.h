@@ -174,7 +174,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsEditor,
                                            nsIEditor)
 
-  JSZoneId GetZone() { return mZone; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   /* ------------ utility methods   -------------- */
   already_AddRefed<nsIDOMDocument> GetDOMDocument();

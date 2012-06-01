@@ -74,7 +74,7 @@ nsMediaDecoder::~nsMediaDecoder()
   MediaMemoryReporter::RemoveMediaDecoder(this);
 }
 
-JSZoneId nsMediaDecoder::GetZone()
+NS_IMETHODIMP_(JSZoneId) nsMediaDecoder::GetZone()
 {
   return mElement ? mElement->GetZone() : JS_ZONE_CHROME;
 }

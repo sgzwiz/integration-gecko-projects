@@ -384,8 +384,6 @@ struct Thread : ThreadFriendFields
 
     JSRuntime *runtime;
 
-    uintptr_t id;
-
     /* Linked list of all contexts in use on this thread. */
     JSCList contextList;
 

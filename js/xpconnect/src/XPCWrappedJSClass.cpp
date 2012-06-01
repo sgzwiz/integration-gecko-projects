@@ -551,7 +551,7 @@ GetContextFromObject(JSObject *obj)
         JSContext *cx = xpcc->GetJSContext();
         JS_AbortIfWrongThread(JS_GetRuntime(cx), JS_GetZone(cx));
 
-        if (JS_GetContextThread(cx) != (uintptr_t) PR_GetCurrentThread())
+        if (js::GetContextThread(cx) != (uintptr_t) PR_GetCurrentThread())
             return nsnull;
 
         return cx;

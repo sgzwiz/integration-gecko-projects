@@ -128,7 +128,7 @@ public:
     NS_DECL_ISUPPORTS_INHERITED
     NS_DECL_NSISTREAMLOADEROBSERVER
 
-    JSZoneId GetZone() { return nsINode::GetZone(); }
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return nsINode::GetZone(); }
 
     // nsIDocument interface
     virtual void Reset(nsIChannel* aChannel, nsILoadGroup* aLoadGroup);

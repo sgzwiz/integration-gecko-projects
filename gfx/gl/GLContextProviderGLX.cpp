@@ -793,7 +793,7 @@ TRY_AGAIN_NO_SHARING:
         return true;
     }
 
-    bool MakeCurrentImpl()
+    bool MakeCurrentImpl(bool aForce)
     {
         bool succeeded = sGLXLibrary.xMakeCurrent(mDisplay, mDrawable, mContext);
         NS_ASSERTION(succeeded, "Failed to make GL context current!");

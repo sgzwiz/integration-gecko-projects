@@ -192,7 +192,10 @@ public:
   NS_DECL_NSISELECTION
   NS_DECL_NSISELECTIONPRIVATE
 
-  JSZoneId GetZone() { return mFrameSelection ? mFrameSelection->GetZone() : JS_ZONE_CHROME; }
+  NS_IMETHODIMP_(JSZoneId) GetZone()
+  {
+    return mFrameSelection ? mFrameSelection->GetZone() : JS_ZONE_CHROME;
+  }
 
   // utility methods for scrolling the selection into view
   nsresult      GetPresContext(nsPresContext **aPresContext);

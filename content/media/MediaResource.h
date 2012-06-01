@@ -435,7 +435,7 @@ public:
     NS_DECL_NSICHANNELEVENTSINK
     NS_DECL_NSIINTERFACEREQUESTOR
 
-    JSZoneId GetZone() { return mZone; }
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
     void Revoke() {
       MOZ_ASSERT(NS_IsChromeOwningThread()); // XXX not protected by own lock.

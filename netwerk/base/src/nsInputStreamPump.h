@@ -61,7 +61,10 @@ public:
     nsInputStreamPump(); 
     ~nsInputStreamPump();
 
-    JSZoneId GetZone() { return mListener ? mListener->GetZone() : JS_ZONE_CHROME; }
+    NS_IMETHODIMP_(JSZoneId) GetZone()
+    {
+        return mListener ? mListener->GetZone() : JS_ZONE_CHROME;
+    }
 
     static NS_HIDDEN_(nsresult)
                       Create(nsInputStreamPump  **result,

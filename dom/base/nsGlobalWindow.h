@@ -279,7 +279,7 @@ public:
   // nsISupports
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
-  JSZoneId GetZone() { return nsPIDOMWindow::GetZone(); }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return nsPIDOMWindow::GetZone(); }
 
   // nsWrapperCache
   JSObject *WrapObject(JSContext *cx, JSObject *scope, bool *triedToWrap)

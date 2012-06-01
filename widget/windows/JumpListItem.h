@@ -130,6 +130,9 @@ public:
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(JumpListShortcut, JumpListItem);
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_IMETHOD GetType(PRInt16 *aType) { return JumpListItem::GetType(aType); }
   NS_IMETHOD Equals(nsIJumpListItem *item, bool *_retval);
   NS_DECL_NSIJUMPLISTSHORTCUT

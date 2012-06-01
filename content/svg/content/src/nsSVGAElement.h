@@ -67,7 +67,7 @@ public:
   NS_DECL_NSIDOMSVGAELEMENT
   NS_DECL_NSIDOMSVGURIREFERENCE
 
-  JSZoneId GetZone() { return nsINode::GetZone(); }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return nsINode::GetZone(); }
 
   // XXX: I wish we could use virtual inheritance
   NS_FORWARD_NSIDOMNODE(nsSVGAElementBase::)

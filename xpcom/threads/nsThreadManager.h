@@ -153,19 +153,19 @@ private:
   static inline bool HasBit(PRUint64 bitmask, size_t bit)
   {
     MOZ_ASSERT(bit < 64);
-    return bitmask & (1 << bit);
+    return bitmask & (1ULL << bit);
   }
 
   static inline void SetBit(PRUint64 *pbitmask, size_t bit)
   {
     MOZ_ASSERT(bit < 64);
-    (*pbitmask) |= (1 << bit);
+    (*pbitmask) |= (1ULL << bit);
   }
 
   static inline void ClearBit(PRUint64 *pbitmask, size_t bit)
   {
     MOZ_ASSERT(bit < 64);
-    (*pbitmask) &= ~(1 << bit);
+    (*pbitmask) &= ~(1ULL << bit);
   }
 
   Zone &getZone(PRInt32 zone) {
