@@ -1,51 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set sw=2 ts=2 et tw=78: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Travis Bogard <travis@netscape.com>
- *   Brendan Eich <brendan@mozilla.org>
- *   David Hyatt (hyatt@netscape.com)
- *   Dan Rosen <dr@netscape.com>
- *   Vidur Apparao <vidur@netscape.com>
- *   Johnny Stenback <jst@netscape.com>
- *   Mark Hammond <mhammond@skippinet.com.au>
- *   Ryan Jones <sciguyryan@gmail.com>
- *   Jeff Walden <jwalden+code@mit.edu>
- *   Ben Bucksch <ben.bucksch  beonex.com>
- *   Emanuele Costa <emanuele.costa@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Needs to be first.
 #include "base/basictypes.h"
@@ -56,6 +13,7 @@
 #include "nsMimeTypeArray.h"
 #include "nsDesktopNotification.h"
 #include "nsGeolocation.h"
+#include "nsDeviceStorage.h"
 #include "nsIHttpProtocolHandler.h"
 #include "nsICachingChannel.h"
 #include "nsIDocShell.h"
@@ -84,8 +42,8 @@
 #include "TelephonyFactory.h"
 #endif
 #ifdef MOZ_B2G_BT
-#include "nsIDOMBluetoothAdapter.h"
-#include "BluetoothAdapter.h"
+#include "nsIDOMBluetoothManager.h"
+#include "BluetoothManager.h"
 #endif
 
 // This should not be in the namespace.
@@ -132,6 +90,7 @@ NS_INTERFACE_MAP_BEGIN(Navigator)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMNavigator)
   NS_INTERFACE_MAP_ENTRY(nsIDOMNavigator)
   NS_INTERFACE_MAP_ENTRY(nsIDOMClientInformation)
+  NS_INTERFACE_MAP_ENTRY(nsIDOMNavigatorDeviceStorage)
   NS_INTERFACE_MAP_ENTRY(nsIDOMNavigatorGeolocation)
   NS_INTERFACE_MAP_ENTRY(nsIDOMMozNavigatorBattery)
   NS_INTERFACE_MAP_ENTRY(nsIDOMNavigatorDesktopNotification)
@@ -677,10 +636,10 @@ VibrateWindowListener::RemoveListener()
  */
 bool
 GetVibrationDurationFromJsval(const jsval& aJSVal, JSContext* cx,
-                              PRInt32 *aOut)
+                              int32_t* aOut)
 {
   return JS_ValueToInt32(cx, aJSVal, aOut) &&
-         *aOut >= 0 && static_cast<PRUint32>(*aOut) <= sMaxVibrateMS;
+         *aOut >= 0 && static_cast<uint32_t>(*aOut) <= sMaxVibrateMS;
 }
 
 } // anonymous namespace
@@ -701,7 +660,7 @@ Navigator::MozVibrate(const jsval& aPattern, JSContext* cx)
     return NS_OK;
   }
 
-  nsAutoTArray<PRUint32, 8> pattern;
+  nsAutoTArray<uint32_t, 8> pattern;
 
   // null or undefined pattern is an error.
   if (JSVAL_IS_NULL(aPattern) || JSVAL_IS_VOID(aPattern)) {
@@ -709,7 +668,7 @@ Navigator::MozVibrate(const jsval& aPattern, JSContext* cx)
   }
 
   if (JSVAL_IS_PRIMITIVE(aPattern)) {
-    PRInt32 p;
+    int32_t p;
     if (GetVibrationDurationFromJsval(aPattern, cx, &p)) {
       pattern.AppendElement(p);
     }
@@ -727,7 +686,7 @@ Navigator::MozVibrate(const jsval& aPattern, JSContext* cx)
 
     for (PRUint32 i = 0; i < length; ++i) {
       jsval v;
-      PRInt32 pv;
+      int32_t pv;
       if (JS_GetElement(cx, obj, i, &v) &&
           GetVibrationDurationFromJsval(v, cx, &pv)) {
         pattern[i] = pv;
@@ -880,6 +839,26 @@ Navigator::MozIsLocallyAvailable(const nsAString &aURI,
 
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(channel);
   return httpChannel->GetRequestSucceeded(aIsAvailable);
+}
+
+//*****************************************************************************
+//    Navigator::nsIDOMNavigatorDeviceStorage
+//*****************************************************************************
+
+NS_IMETHODIMP Navigator::GetDeviceStorage(const nsAString &aType, nsIVariant** _retval)
+{
+  if (!Preferences::GetBool("device.storage.enabled", false)) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsPIDOMWindow> win(do_QueryReferent(mWindow));
+
+  if (!win || !win->GetOuterWindow() || !win->GetDocShell()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsDOMDeviceStorage::CreateDeviceStoragesFor(win, aType, _retval);
+  return NS_OK;
 }
 
 //*****************************************************************************
@@ -1182,15 +1161,16 @@ Navigator::GetMozMobileConnection(nsIDOMMozMobileConnection** aMobileConnection)
 //*****************************************************************************
 
 NS_IMETHODIMP
-Navigator::GetMozBluetooth(nsIDOMBluetoothAdapter** aBluetooth)
+Navigator::GetMozBluetooth(nsIDOMBluetoothManager** aBluetooth)
 {
-  nsCOMPtr<nsIDOMBluetoothAdapter> bluetooth = mBluetooth;
+  nsCOMPtr<nsIDOMBluetoothManager> bluetooth = mBluetooth;
 
   if (!bluetooth) {
     nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
     NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
-    mBluetooth = new bluetooth::BluetoothAdapter(window);
+    nsresult rv = NS_NewBluetoothManager(window, getter_AddRefs(mBluetooth));
+    NS_ENSURE_SUCCESS(rv, rv);
 
     bluetooth = mBluetooth;
   }

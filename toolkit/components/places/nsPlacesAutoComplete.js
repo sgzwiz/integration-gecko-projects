@@ -1,41 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * vim: sw=2 ts=2 sts=2 expandtab
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * the Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2008
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Shawn Wilsher <me@shawnwilsher.com> (Original Author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/Services.jsm");
@@ -1320,7 +1287,7 @@ urlInlineComplete.prototype = {
       // want to complete up to and including a URL separator.
       this.__syncQuery = this._db.createStatement(
           "/* do not warn (bug no): could index on (typed,frecency) but not worth it */ "
-        + "SELECT host || '/' "
+        + "SELECT host || '/', prefix || host || '/' "
         + "FROM moz_hosts "
         + "WHERE host BETWEEN :search_string AND :search_string || X'FFFF' "
         + "AND frecency <> 0 "
@@ -1411,11 +1378,12 @@ urlInlineComplete.prototype = {
     let lastSlashIndex = this._currentSearchString.lastIndexOf("/");
     if (lastSlashIndex == -1) {
       var hasDomainResult = false;
-      var domain;
+      var domain, untrimmedDomain;
       try {
         hasDomainResult = query.executeStep();
         if (hasDomainResult) {
           domain = query.getString(0);
+          untrimmedDomain = query.getString(1);
         }
       } finally {
         query.reset();
@@ -1423,7 +1391,9 @@ urlInlineComplete.prototype = {
 
       if (hasDomainResult) {
         // We got a match for a domain, we can add it immediately.
-        result.appendMatch(this._strippedPrefix + domain, "");
+        // TODO (bug 754265): this is a temporary solution introduced while
+        // waiting for a propert dedicated API.
+        result.appendMatch(this._strippedPrefix + domain, untrimmedDomain);
 
         this._finishSearch();
         return;
@@ -1514,7 +1484,10 @@ urlInlineComplete.prototype = {
   handleResult: function UIC_handleResult(aResultSet)
   {
     let row = aResultSet.getNextRow();
-    let url = fixupSearchText(row.getResultByIndex(0));
+    let value = row.getResultByIndex(0);
+    let url = fixupSearchText(value);
+
+    let prefix = value.slice(0, value.length - url.length);
 
     // We must complete the URL up to the next separator (which is /, ? or #).
     let separatorIndex = url.slice(this._currentSearchString.length)
@@ -1527,8 +1500,10 @@ urlInlineComplete.prototype = {
       url = url.slice(0, separatorIndex);
     }
 
-    // Add the result
-    this._result.appendMatch(this._strippedPrefix + url, "");
+    // Add the result.
+    // TODO (bug 754265): this is a temporary solution introduced while
+    // waiting for a propert dedicated API.
+    this._result.appendMatch(this._strippedPrefix + url, prefix + url);
 
     // handleCompletion() will cause the result listener to be called, and
     // will display the result in the UI.

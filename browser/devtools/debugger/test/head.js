@@ -19,9 +19,15 @@ const EXAMPLE_URL = "http://example.com/browser/browser/devtools/debugger/test/"
 const TAB1_URL = EXAMPLE_URL + "browser_dbg_tab1.html";
 const TAB2_URL = EXAMPLE_URL + "browser_dbg_tab2.html";
 const STACK_URL = EXAMPLE_URL + "browser_dbg_stack.html";
+// Enable remote debugging for the relevant tests.
+let gEnableRemote = Services.prefs.getBoolPref("devtools.debugger.remote-enabled");
+Services.prefs.setBoolPref("devtools.debugger.remote-enabled", true);
+registerCleanupFunction(function() {
+  Services.prefs.setBoolPref("devtools.debugger.remote-enabled", gEnableRemote);
+});
 
 if (!DebuggerServer.initialized) {
-  DebuggerServer.init();
+  DebuggerServer.init(function () { return true; });
   DebuggerServer.addBrowserActors();
 }
 
@@ -49,13 +55,13 @@ function removeTab(aTab) {
   gBrowser.removeTab(aTab);
 }
 
-function closeDebuggerAndFinish(aTab, aRemoteFlag) {
+function closeDebuggerAndFinish(aRemoteFlag) {
   DebuggerUI.chromeWindow.addEventListener("Debugger:Shutdown", function cleanup() {
     DebuggerUI.chromeWindow.removeEventListener("Debugger:Shutdown", cleanup, false);
     finish();
   }, false);
   if (!aRemoteFlag) {
-    DebuggerUI.getDebugger(aTab).close();
+    DebuggerUI.getDebugger().close();
   } else {
     DebuggerUI.getRemoteDebugger().close();
   }

@@ -7,6 +7,8 @@
 let Cu = Components.utils;
 let Ci = Components.interfaces;
 let Cc = Components.classes;
+
+Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const NS_PREFBRANCH_PREFCHANGE_TOPIC_ID = "nsPref:changed";
@@ -52,6 +54,9 @@ BrowserElementParent.prototype = {
 
     this._initialized = true;
 
+    this._screenshotListeners = {};
+    this._screenshotReqCounter = 0;
+
     var os = Cc["@mozilla.org/observer-service;1"].getService(Ci.nsIObserverService);
     os.addObserver(this, 'remote-browser-frame-shown', /* ownsWeak = */ true);
     os.addObserver(this, 'in-process-browser-frame-shown', /* ownsWeak = */ true);
@@ -89,8 +94,9 @@ BrowserElementParent.prototype = {
     // Messages we receive are handled by functions with parameters
     // (frameElement, data), where |data| is the message manager's data object.
 
+    let self = this;
     function addMessageListener(msg, handler) {
-      mm.addMessageListener('browser-element-api:' + msg, handler.bind(this, frameElement));
+      mm.addMessageListener('browser-element-api:' + msg, handler.bind(self, frameElement));
     }
 
     addMessageListener("hello", this._recvHello);
@@ -99,6 +105,16 @@ BrowserElementParent.prototype = {
     addMessageListener("loadend", this._fireEventFromMsg);
     addMessageListener("titlechange", this._fireEventFromMsg);
     addMessageListener("iconchange", this._fireEventFromMsg);
+    addMessageListener("get-mozapp-manifest-url", this._sendMozAppManifestURL);
+    addMessageListener("keyevent", this._fireKeyEvent);
+    mm.addMessageListener('browser-element-api:got-screenshot',
+                          this._recvGotScreenshot.bind(this));
+
+    XPCNativeWrapper.unwrap(frameElement).getScreenshot =
+      this._getScreenshot.bind(this, mm, frameElement);
+
+    XPCNativeWrapper.unwrap(frameElement).setVisible =
+      this._setVisible.bind(this, mm, frameElement);
 
     mm.loadFrameScript("chrome://global/content/BrowserElementChild.js",
                        /* allowDelayedLoad = */ true);
@@ -129,6 +145,41 @@ BrowserElementParent.prototype = {
     else {
       evt = new win.Event('mozbrowser' + evtName);
     }
+
+    frameElement.dispatchEvent(evt);
+  },
+
+  _sendMozAppManifestURL: function(frameElement, data) {
+    return frameElement.getAttribute('mozapp');
+  },
+
+  _recvGotScreenshot: function(data) {
+    var req = this._screenshotListeners[data.json.id];
+    delete this._screenshotListeners[data.json.id];
+    Services.DOMRequest.fireSuccess(req, data.json.screenshot);
+  },
+
+  _getScreenshot: function(mm, frameElement) {
+    let id = 'req_' + this._screenshotReqCounter++;
+    let req = Services.DOMRequest
+      .createRequest(frameElement.ownerDocument.defaultView);
+    this._screenshotListeners[id] = req;
+    mm.sendAsyncMessage('browser-element-api:get-screenshot', {id: id});
+    return req;
+  },
+
+   _setVisible: function(mm, frameElement, visible) {
+     mm.sendAsyncMessage('browser-element-api:set-visible', {visible: visible});
+   },
+
+  _fireKeyEvent: function(frameElement, data) {
+    let win = frameElement.ownerDocument.defaultView;
+    let evt = frameElement.ownerDocument.createEvent("KeyboardEvent");
+
+    evt.initKeyEvent(data.json.type, true, true, win,
+                     false, false, false, false, // modifiers
+                     data.json.keyCode,
+                     data.json.charCode);
 
     frameElement.dispatchEvent(evt);
   },

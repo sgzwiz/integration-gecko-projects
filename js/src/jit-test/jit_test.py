@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 
 # jit_test.py -- Python harness for JavaScript trace tests.
 
@@ -244,7 +248,7 @@ def check_output(out, err, rc, test):
     if rc != test.expect_status:
         # Allow a non-zero exit code if we want to allow OOM, but only if we
         # actually got OOM.
-        return test.allow_oom and ': out of memory' in err
+        return test.allow_oom and ': out of memory' in err and 'Assertion failure' not in err
 
     return True
 

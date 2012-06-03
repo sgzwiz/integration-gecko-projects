@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 from datetime import datetime
 import imp
 import inspect
@@ -130,14 +134,16 @@ class MarionetteTextTestRunner(unittest.TextTestRunner):
 
 class MarionetteTestRunner(object):
 
-    def __init__(self, address=None, emulator=False, homedir=None,
-                 b2gbin=None, autolog=False, revision=None, es_server=None,
+    def __init__(self, address=None, emulator=None, emulatorBinary=None, homedir=None,
+                 bin=None, profile=None, autolog=False, revision=None, es_server=None,
                  rest_server=None, logger=None, testgroup="marionette",
                  noWindow=False, logcat_dir=None):
         self.address = address
         self.emulator = emulator
+        self.emulatorBinary = emulatorBinary
         self.homedir = homedir
-        self.b2gbin = b2gbin
+        self.bin = bin
+        self.profile = profile
         self.autolog = autolog
         self.testgroup = testgroup
         self.revision = revision
@@ -182,7 +188,16 @@ class MarionetteTestRunner(object):
 
     def start_marionette(self):
         assert(self.baseurl is not None)
-        if self.address:
+        if self.bin:
+            if self.address:
+                host, port = self.address.split(':')
+            else:
+                host = 'localhost'
+                port = 2828
+            self.marionette = Marionette(host=host, port=int(port),
+                                         bin=self.bin, profile=self.profile,
+                                         baseurl=self.baseurl)
+        elif self.address:
             host, port = self.address.split(':')
             if self.emulator:
                 self.marionette = Marionette(host=host, port=int(port),
@@ -190,23 +205,19 @@ class MarionetteTestRunner(object):
                                              homedir=self.homedir,
                                              baseurl=self.baseurl,
                                              logcat_dir=self.logcat_dir)
-            if self.b2gbin:
-                self.marionette = Marionette(host=host,
-                                             port=int(port),
-                                             b2gbin=self.b2gbin,
-                                             baseurl=self.baseurl)
             else:
                 self.marionette = Marionette(host=host,
                                              port=int(port),
                                              baseurl=self.baseurl)
         elif self.emulator:
-            self.marionette = Marionette(emulator=True,
+            self.marionette = Marionette(emulator=self.emulator,
+                                         emulatorBinary=self.emulatorBinary,
                                          homedir=self.homedir,
                                          baseurl=self.baseurl,
                                          noWindow=self.noWindow,
                                          logcat_dir=self.logcat_dir)
         else:
-            raise Exception("must specify address or emulator")
+            raise Exception("must specify binary, address or emulator")
 
     def post_to_autolog(self, elapsedtime):
         self.logger.info('posting results to autolog')
@@ -261,14 +272,13 @@ class MarionetteTestRunner(object):
 
     def run_test(self, test, testtype):
         if not self.httpd:
+            print "starting httpd"
             self.start_httpd()
+        
         if not self.marionette:
             self.start_marionette()
 
-        if not os.path.isabs(test):
-            filepath = os.path.join(os.path.dirname(__file__), test)
-        else:
-            filepath = test
+        filepath = os.path.abspath(test)
 
         if os.path.isdir(filepath):
             for root, dirs, files in os.walk(filepath):
@@ -285,8 +295,8 @@ class MarionetteTestRunner(object):
         suite = unittest.TestSuite()
 
         if file_ext == '.ini':
+            testargs = { 'skip': 'false' }
             if testtype is not None:
-                testargs = {}
                 testtypes = testtype.replace('+', ' +').replace('-', ' -').split()
                 for atype in testtypes:
                     if atype.startswith('+'):
@@ -295,13 +305,10 @@ class MarionetteTestRunner(object):
                         testargs.update({ atype[1:]: 'false' })
                     else:
                         testargs.update({ atype: 'true' })
+
             manifest = TestManifest()
             manifest.read(filepath)
-
-            if testtype is None:
-                manifest_tests = manifest.get()
-            else:
-                manifest_tests = manifest.get(**testargs)
+            manifest_tests = manifest.get(**testargs)
 
             for i in manifest_tests:
                 self.run_test(i["path"], testtype)
@@ -326,7 +333,6 @@ class MarionetteTestRunner(object):
         if suite.countTestCases():
             results = MarionetteTextTestRunner(verbosity=3).run(suite)
             self.failed += len(results.failures) + len(results.errors)
-            self.todo = 0
             if hasattr(results, 'skipped'):
                 self.todo += len(results.skipped) + len(results.expectedFailures)
             self.passed += results.passed
@@ -357,9 +363,15 @@ if __name__ == "__main__":
                       action = "store", dest = "testgroup",
                       help = "testgroup names for autolog submissions")
     parser.add_option("--emulator",
-                      action = "store_true", dest = "emulator",
-                      default = False,
-                      help = "launch a B2G emulator on which to run tests")
+                      action = "store", dest = "emulator",
+                      default = None, choices = ["x86", "arm"],
+                      help = "Launch a B2G emulator on which to run tests. "
+                      "You need to specify which architecture to emulate.")
+    parser.add_option("--emulator-binary",
+                      action = "store", dest = "emulatorBinary",
+                      default = None,
+                      help = "Launch a specific emulator binary rather than "
+                      "launching from the B2G built emulator")
     parser.add_option("--no-window",
                       action = "store_true", dest = "noWindow",
                       default = False,
@@ -381,8 +393,11 @@ if __name__ == "__main__":
                       "tests from .ini files.")
     parser.add_option('--homedir', dest='homedir', action='store',
                       help='home directory of emulator files')
-    parser.add_option('--b2gbin', dest='b2gbin', action='store',
-                      help='b2g executable')
+    parser.add_option('--binary', dest='bin', action='store',
+                      help='gecko executable to launch before running the test')
+    parser.add_option('--profile', dest='profile', action='store',
+                      help='profile to use when launching the gecko process. If not '
+                      'passed, then a profile will be constructed and used.')
 
     options, tests = parser.parse_args()
 
@@ -390,9 +405,9 @@ if __name__ == "__main__":
         parser.print_usage()
         parser.exit()
 
-    if not options.emulator and not options.address:
+    if not options.emulator and not options.address and not options.bin:
         parser.print_usage()
-        print "must specify --emulator or --address"
+        print "must specify --binary, --emulator or --address"
         parser.exit()
 
     # default to storing logcat output for emulator runs
@@ -401,9 +416,11 @@ if __name__ == "__main__":
 
     runner = MarionetteTestRunner(address=options.address,
                                   emulator=options.emulator,
+                                  emulatorBinary=options.emulatorBinary,
                                   homedir=options.homedir,
                                   logcat_dir=options.logcat_dir,
-                                  b2gbin=options.b2gbin,
+                                  bin=options.bin,
+                                  profile=options.profile,
                                   noWindow=options.noWindow,
                                   revision=options.revision,
                                   testgroup=options.testgroup,

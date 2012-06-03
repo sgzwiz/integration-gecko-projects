@@ -1,42 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Steve Clark <buster@netscape.com>
- *   Dan Rosen <dr@netscape.com>
- *   Mihai Sucan <mihai.sucan@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK *****
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * This Original Code has been modified by IBM Corporation.
  * Modifications made by IBM described herein are
@@ -147,10 +112,10 @@ typedef struct CapturingContentInfo {
   nsIContent* mContent;
 } CapturingContentInfo;
 
-// d2236911-9b7c-490a-a08b-2580d5f7a6de
+// fcada634-fdea-45f5-b841-0a361d5f6a68
 #define NS_IPRESSHELL_IID \
-  { 0xd2236911, 0x9b7c, 0x490a, \
-    { 0xa0, 0x8b, 0x25, 0x80, 0xd5, 0xf7, 0xa6, 0xde } }
+  { 0xfcada634, 0xfdea, 0x45f5, \
+    { 0xb8, 0x41, 0x0a, 0x36, 0x1d, 0x5f, 0x6a, 0x68 } }
 
 // debug VerifyReflow flags
 #define VERIFY_REFLOW_ON                    0x01
@@ -197,10 +162,10 @@ class nsIPresShell : public nsIPresShell_base
 protected:
   typedef mozilla::layers::LayerManager LayerManager;
 
-  enum {
-    STATE_IGNORING_VIEWPORT_SCROLLING = 0x1,
-    STATE_USING_DISPLAYPORT = 0x2
+  enum eRenderFlag {
+    STATE_IGNORING_VIEWPORT_SCROLLING = 0x1
   };
+  typedef PRUint8 RenderFlags; // for storing the above flags
 
 public:
   virtual NS_HIDDEN_(nsresult) Init(nsIDocument* aDocument,
@@ -594,7 +559,7 @@ public:
   };
   typedef struct ScrollAxis {
     PRInt16 mWhereToScroll;
-    WhenToScroll mWhenToScroll;
+    WhenToScroll mWhenToScroll : 16;
   /**
    * @param aWhere: Either a percentage or a special value.
    *                nsIPresShell defines:
@@ -716,11 +681,6 @@ public:
    * This allows any outstanding references to the frame to be cleaned up
    */
   virtual NS_HIDDEN_(void) NotifyDestroyingFrame(nsIFrame* aFrame) = 0;
-
-  /**
-   * Get link location.
-   */
-  virtual NS_HIDDEN_(nsresult) GetLinkLocation(nsIDOMNode* aNode, nsAString& aLocation) const = 0;
 
   /**
    * Get the caret, if it exists. AddRefs it.
@@ -1333,7 +1293,7 @@ protected:
   // has been explicitly checked.  If you add any members to this class,
   // please make the ownership explicit (pinkerton, scc).
 
-  // these are the same Document and PresContext owned by the DocViewer.
+  // These are the same Document and PresContext owned by the DocViewer.
   // we must share ownership.
   nsIDocument*              mDocument;      // [STRONG]
   nsPresContext*            mPresContext;   // [STRONG]
@@ -1353,33 +1313,10 @@ protected:
   PRUint32                  mPresArenaAllocCount;
 #endif
 
-  // Count of the number of times this presshell has been painted to
-  // a window
+  // Count of the number of times this presshell has been painted to a window.
   PRUint64                  mPaintCount;
 
-  PRInt16                   mSelectionFlags;
-
-  bool                      mStylesHaveChanged;
-  bool                      mDidInitialReflow;
-  bool                      mIsDestroying;
-  bool                      mIsReflowing;
-  bool                      mPaintingSuppressed;  // For all documents we initially lock down painting.
-  bool                      mIsThemeSupportDisabled;  // Whether or not form controls should use nsITheme in this shell.
-  bool                      mIsActive;
-  bool                      mFrozen;
-
-  bool                      mIsFirstPaint;
-
-  bool                      mObservesMutationsForPrint;
-
-  bool                      mReflowScheduled; // If true, we have a reflow
-                                              // scheduled. Guaranteed to be
-                                              // false if mReflowContinueTimer
-                                              // is non-null.
-
-  bool                      mSuppressInterruptibleReflows;
-
-  bool                      mScrollPositionClampingScrollPortSizeSet;
+  nsSize                    mScrollPositionClampingScrollPortSize;
 
   // A list of weak frames. This is a pointer to the last item in the list.
   nsWeakFrame*              mWeakFrames;
@@ -1387,21 +1324,44 @@ protected:
   // Most recent canvas background color.
   nscolor                   mCanvasBackgroundColor;
 
-  // Flags controlling how our document is rendered.  These persist
-  // between paints and so are tied with retained layer pixels.
-  // PresShell flushes retained layers when the rendering state
-  // changes in a way that prevents us from being able to (usefully)
-  // re-use old pixels.
-  PRUint32                  mRenderFlags;
-
   // Used to force allocation and rendering of proportionally more or
   // less pixels in the given dimension.
   float                     mXResolution;
   float                     mYResolution;
 
-  nsSize                    mScrollPositionClampingScrollPortSize;
+  PRInt16                   mSelectionFlags;
 
-  static nsIContent* gKeyDownTarget;
+  // Flags controlling how our document is rendered.  These persist
+  // between paints and so are tied with retained layer pixels.
+  // PresShell flushes retained layers when the rendering state
+  // changes in a way that prevents us from being able to (usefully)
+  // re-use old pixels.
+  RenderFlags               mRenderFlags;
+
+  bool                      mStylesHaveChanged : 1;
+  bool                      mDidInitialReflow : 1;
+  bool                      mIsDestroying : 1;
+  bool                      mIsReflowing : 1;
+
+  // For all documents we initially lock down painting.
+  bool                      mPaintingSuppressed : 1;
+
+  // Whether or not form controls should use nsITheme in this shell.
+  bool                      mIsThemeSupportDisabled : 1;
+
+  bool                      mIsActive : 1;
+  bool                      mFrozen : 1;
+  bool                      mIsFirstPaint : 1;
+  bool                      mObservesMutationsForPrint : 1;
+
+  // If true, we have a reflow scheduled. Guaranteed to be false if
+  // mReflowContinueTimer is non-null.
+  bool                      mReflowScheduled : 1;
+
+  bool                      mSuppressInterruptibleReflows : 1;
+  bool                      mScrollPositionClampingScrollPortSizeSet : 1;
+
+  static nsIContent*        gKeyDownTarget;
 };
 
 /**

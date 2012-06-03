@@ -1,41 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Daniel Glazman <glazman@netscape.com>
- *   Mats Palmgren <matspal@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
 #include "nsPlaintextEditor.h"
@@ -427,23 +393,20 @@ nsPlaintextEditor::HandleKeyPressEvent(nsIDOMKeyEvent* aKeyEvent)
    to TypedText() to determine what action to take, but without passing
    an event.
    */
-NS_IMETHODIMP nsPlaintextEditor::TypedText(const nsAString& aString,
-                                      PRInt32 aAction)
+NS_IMETHODIMP
+nsPlaintextEditor::TypedText(const nsAString& aString, ETypingAction aAction)
 {
   nsAutoPlaceHolderBatch batch(this, nsGkAtoms::TypingTxnName);
 
-  switch (aAction)
-  {
+  switch (aAction) {
     case eTypedText:
-      {
-        return InsertText(aString);
-      }
+      return InsertText(aString);
     case eTypedBreak:
-      {
-        return InsertLineBreak();
-      } 
-  } 
-  return NS_ERROR_FAILURE; 
+      return InsertLineBreak();
+    default:
+      // eTypedBR is only for HTML
+      return NS_ERROR_FAILURE;
+  }
 }
 
 nsresult
@@ -548,14 +511,12 @@ nsPlaintextEditor::InsertBR(nsCOMPtr<nsIDOMNode>* outBRNode)
   nsCOMPtr<nsISelection> selection;
   nsresult res = GetSelection(getter_AddRefs(selection));
   NS_ENSURE_SUCCESS(res, res);
-  bool bCollapsed;
-  res = selection->GetIsCollapsed(&bCollapsed);
-  NS_ENSURE_SUCCESS(res, res);
-  if (!bCollapsed)
-  {
-    res = DeleteSelection(nsIEditor::eNone);
+
+  if (!selection->Collapsed()) {
+    res = DeleteSelection(nsIEditor::eNone, nsIEditor::eStrip);
     NS_ENSURE_SUCCESS(res, res);
   }
+
   nsCOMPtr<nsIDOMNode> selNode;
   PRInt32 selOffset;
   res = GetStartNodeAndOffset(selection, getter_AddRefs(selNode), &selOffset);
@@ -664,11 +625,9 @@ nsresult
 nsPlaintextEditor::ExtendSelectionForDelete(nsISelection *aSelection,
                                             nsIEditor::EDirection *aAction)
 {
-  nsresult result;
+  nsresult result = NS_OK;
 
-  bool bCollapsed;
-  result = aSelection->GetIsCollapsed(&bCollapsed);
-  NS_ENSURE_SUCCESS(result, result);
+  bool bCollapsed = aSelection->Collapsed();
 
   if (*aAction == eNextWord || *aAction == ePreviousWord
       || (*aAction == eNext && bCollapsed)
@@ -739,8 +698,12 @@ nsPlaintextEditor::ExtendSelectionForDelete(nsISelection *aSelection,
   return result;
 }
 
-NS_IMETHODIMP nsPlaintextEditor::DeleteSelection(nsIEditor::EDirection aAction)
+nsresult
+nsPlaintextEditor::DeleteSelection(EDirection aAction,
+                                   EStripWrappers aStripWrappers)
 {
+  MOZ_ASSERT(aStripWrappers == eStrip || aStripWrappers == eNoStrip);
+
   if (!mRules) { return NS_ERROR_NOT_INITIALIZED; }
 
   // Protect the edit rules object from dying
@@ -755,9 +718,7 @@ NS_IMETHODIMP nsPlaintextEditor::DeleteSelection(nsIEditor::EDirection aAction)
   nsAutoRules beginRulesSniffing(this, kOpDeleteSelection, aAction);
 
   // pre-process
-  nsCOMPtr<nsISelection> selection;
-  result = GetSelection(getter_AddRefs(selection));
-  NS_ENSURE_SUCCESS(result, result);
+  nsRefPtr<nsTypedSelection> selection = GetTypedSelection();
   NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
 
   // If there is an existing selection when an extended delete is requested,
@@ -765,10 +726,7 @@ NS_IMETHODIMP nsPlaintextEditor::DeleteSelection(nsIEditor::EDirection aAction)
   //  selection to the  start and then create a new selection.
   //  Platforms that use "selection-style" caret positioning just delete the
   //  existing selection without extending it.
-  bool bCollapsed;
-  result  = selection->GetIsCollapsed(&bCollapsed);
-  NS_ENSURE_SUCCESS(result, result);
-  if (!bCollapsed &&
+  if (!selection->Collapsed() &&
       (aAction == eNextWord || aAction == ePreviousWord ||
        aAction == eToBeginningOfLine || aAction == eToEndOfLine))
   {
@@ -785,12 +743,13 @@ NS_IMETHODIMP nsPlaintextEditor::DeleteSelection(nsIEditor::EDirection aAction)
 
   nsTextRulesInfo ruleInfo(kOpDeleteSelection);
   ruleInfo.collapsedAction = aAction;
+  ruleInfo.stripWrappers = aStripWrappers;
   bool cancel, handled;
   result = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   NS_ENSURE_SUCCESS(result, result);
   if (!cancel && !handled)
   {
-    result = DeleteSelectionImpl(aAction);
+    result = DeleteSelectionImpl(aAction, aStripWrappers);
   }
   if (!cancel)
   {
@@ -817,9 +776,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertText(const nsAString &aStringToInsert)
   nsAutoRules beginRulesSniffing(this, opID, nsIEditor::eNext);
 
   // pre-process
-  nsCOMPtr<nsISelection> selection;
-  nsresult result = GetSelection(getter_AddRefs(selection));
-  NS_ENSURE_SUCCESS(result, result);
+  nsRefPtr<nsTypedSelection> selection = GetTypedSelection();
   NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
   nsAutoString resultString;
   // XXX can we trust instring to outlive ruleInfo,
@@ -831,8 +788,8 @@ NS_IMETHODIMP nsPlaintextEditor::InsertText(const nsAString &aStringToInsert)
   ruleInfo.maxLength = mMaxTextLength;
 
   bool cancel, handled;
-  result = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
-  NS_ENSURE_SUCCESS(result, result);
+  nsresult res = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
+  NS_ENSURE_SUCCESS(res, res);
   if (!cancel && !handled)
   {
     // we rely on rules code for now - no default implementation
@@ -840,9 +797,9 @@ NS_IMETHODIMP nsPlaintextEditor::InsertText(const nsAString &aStringToInsert)
   if (!cancel)
   {
     // post-process 
-    result = mRules->DidDoAction(selection, &ruleInfo, result);
+    res = mRules->DidDoAction(selection, &ruleInfo, res);
   }
-  return result;
+  return res;
 }
 
 NS_IMETHODIMP nsPlaintextEditor::InsertLineBreak()
@@ -856,10 +813,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertLineBreak()
   nsAutoRules beginRulesSniffing(this, kOpInsertBreak, nsIEditor::eNext);
 
   // pre-process
-  nsCOMPtr<nsISelection> selection;
-  nsresult res;
-  res = GetSelection(getter_AddRefs(selection));
-  NS_ENSURE_SUCCESS(res, res);
+  nsRefPtr<nsTypedSelection> selection = GetTypedSelection();
   NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
 
   // Batching the selection and moving nodes out from under the caret causes
@@ -871,7 +825,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertLineBreak()
   nsTextRulesInfo ruleInfo(kOpInsertBreak);
   ruleInfo.maxLength = mMaxTextLength;
   bool cancel, handled;
-  res = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
+  nsresult res = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   NS_ENSURE_SUCCESS(res, res);
   if (!cancel && !handled)
   {
@@ -915,8 +869,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertLineBreak()
           // We want the caret to stick to whatever is past the break.  This is
           // because the break is on the same line we were on, but the next content
           // will be on the following line.
-          nsCOMPtr<nsISelectionPrivate> selPriv(do_QueryInterface(selection));
-          selPriv->SetInterlinePosition(true);
+          selection->SetInterlinePosition(true);
         }
       }
     }
@@ -1208,8 +1161,7 @@ nsPlaintextEditor::Undo(PRUint32 aCount)
   nsAutoRules beginRulesSniffing(this, kOpUndo, nsIEditor::eNone);
 
   nsTextRulesInfo ruleInfo(kOpUndo);
-  nsCOMPtr<nsISelection> selection;
-  GetSelection(getter_AddRefs(selection));
+  nsRefPtr<nsTypedSelection> selection = GetTypedSelection();
   bool cancel, handled;
   nsresult result = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   
@@ -1238,8 +1190,7 @@ nsPlaintextEditor::Redo(PRUint32 aCount)
   nsAutoRules beginRulesSniffing(this, kOpRedo, nsIEditor::eNone);
 
   nsTextRulesInfo ruleInfo(kOpRedo);
-  nsCOMPtr<nsISelection> selection;
-  GetSelection(getter_AddRefs(selection));
+  nsRefPtr<nsTypedSelection> selection = GetTypedSelection();
   bool cancel, handled;
   nsresult result = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   
@@ -1260,9 +1211,7 @@ nsPlaintextEditor::CanCutOrCopy()
   if (NS_FAILED(GetSelection(getter_AddRefs(selection))))
     return false;
 
-  bool isCollapsed;
-  selection->GetIsCollapsed(&isCollapsed);
-  return !isCollapsed;
+  return !selection->Collapsed();
 }
 
 bool
@@ -1291,7 +1240,7 @@ NS_IMETHODIMP nsPlaintextEditor::Cut()
   HandlingTrustedAction trusted(this);
 
   if (FireClipboardEvent(NS_CUT))
-    return DeleteSelection(eNone);
+    return DeleteSelection(eNone, eStrip);
   return NS_OK;
 }
 
@@ -1515,9 +1464,7 @@ nsPlaintextEditor::InsertAsQuotation(const nsAString& aQuotedText,
     quotedStuff.Append(PRUnichar('\n'));
 
   // get selection
-  nsCOMPtr<nsISelection> selection;
-  rv = GetSelection(getter_AddRefs(selection));
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsRefPtr<nsTypedSelection> selection = GetTypedSelection();
   NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
 
   nsAutoEditBatch beginBatching(this);
@@ -1569,8 +1516,7 @@ nsPlaintextEditor::SharedOutputString(PRUint32 aFlags,
   NS_ENSURE_SUCCESS(rv, rv);
   NS_ENSURE_TRUE(selection, NS_ERROR_NOT_INITIALIZED);
 
-  rv = selection->GetIsCollapsed(aIsCollapsed);
-  NS_ENSURE_SUCCESS(rv, rv);
+  *aIsCollapsed = selection->Collapsed();
 
   if (!*aIsCollapsed)
     aFlags |= nsIDocumentEncoder::OutputSelectionOnly;

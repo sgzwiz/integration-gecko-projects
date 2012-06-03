@@ -1,42 +1,8 @@
 /* -*- Mode: javascript; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ft=javascript ts=2 et sw=2 tw=80: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- *   Mozilla Foundation
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Dave Camp <dcamp@mozilla.com>
- *   Panos Astithas <past@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 /**
@@ -1112,6 +1078,10 @@ ObjectActor.prototype = {
                message: "cannot access the environment of this function." };
     }
 
+    // XXX: the following call of env.form() won't work until bug 747514 lands.
+    // We can't get to the frame that defined this function's environment,
+    // neither here, nor during ObjectActor's construction. Luckily, we don't
+    // use the 'scope' request in the debugger frontend.
     return { name: this.obj.name || null,
              scope: envActor.form(this.obj) };
   },
@@ -1231,14 +1201,7 @@ FrameActor.prototype = {
                  type: this.frame.type };
     if (this.frame.type === "call") {
       form.callee = this.threadActor.createValueGrip(this.frame.callee);
-      if (this.frame.callee.name) {
-        form.calleeName = this.frame.callee.name;
-      } else {
-        let desc = this.frame.callee.getOwnPropertyDescriptor("displayName");
-        if (desc && desc.value && typeof desc.value == "string") {
-          form.calleeName = desc.value;
-        }
-      }
+      form.calleeName = getFunctionName(this.frame.callee);
     }
 
     let envActor = this.threadActor
@@ -1369,13 +1332,13 @@ EnvironmentActor.prototype = {
 
   /**
    * Returns an environment form for use in a protocol message. Note that the
-   * requirement of passing the frame or function as a parameter is only
-   * temporary, since when bug 747514 lands, the environment will have a callee
-   * property that will contain it.
+   * requirement of passing the frame as a parameter is only temporary, since
+   * when bug 747514 lands, the environment will have a callee property that
+   * will contain it.
    *
-   * @param object aObject
-   *        The stack frame or function object whose environment bindings are
-   *        being generated.
+   * @param Debugger.Frame aObject
+   *        The stack frame object whose environment bindings are being
+   *        generated.
    */
   form: function EA_form(aObject) {
     // Debugger.Frame might be dead by the time we get here, which will cause
@@ -1387,24 +1350,29 @@ EnvironmentActor.prototype = {
     let parent;
     if (this.obj.parent) {
       let thread = this.threadActor;
-      parent = thread.createEnvironmentActor(this.obj.parent.environment,
+      parent = thread.createEnvironmentActor(this.obj.parent,
                                              this.registeredPool);
     }
+    // Deduce the frame that created the parent scope in order to pass it to
+    // parent.form(). TODO: this can be removed after bug 747514 is done.
+    let parentFrame = aObject;
+    if (this.obj.type == "declarative" && aObject.older) {
+      parentFrame = aObject.older;
+    }
     let form = { actor: this.actorID,
-                 parent: parent ? parent.form(this.obj.parent) : parent };
+                 parent: parent ? parent.form(parentFrame) : parent };
 
-    if (aObject.type == "object") {
-      if (this.obj.parent) {
-        form.type = "with";
-      } else {
-        form.type = "object";
-      }
-      form.object = this.threadActor.createValueGrip(aObject.object);
-    } else {
-      if (aObject.class == "Function") {
+    if (this.obj.type == "with") {
+      form.type = "with";
+      form.object = this.threadActor.createValueGrip(this.obj.object);
+    } else if (this.obj.type == "object") {
+      form.type = "object";
+      form.object = this.threadActor.createValueGrip(this.obj.object);
+    } else { // this.obj.type == "declarative"
+      if (aObject.callee) {
         form.type = "function";
-        form.function = this.threadActor.createValueGrip(aObject);
-        form.functionName = aObject.name;
+        form.function = this.threadActor.createValueGrip(aObject.callee);
+        form.functionName = getFunctionName(aObject.callee);
       } else {
         form.type = "block";
       }
@@ -1416,14 +1384,14 @@ EnvironmentActor.prototype = {
 
   /**
    * Return the identifier bindings object as required by the remote protocol
-   * specification. Note that the requirement of passing the frame or function
-   * as a parameter is only temporary, since when bug 747514 lands, the
-   * environment will have a callee property that will contain it.
+   * specification. Note that the requirement of passing the frame as a
+   * parameter is only temporary, since when bug 747514 lands, the environment
+   * will have a callee property that will contain it.
    *
-   * @param object aObject [optional]
-   *        The stack frame or function object whose environment bindings are
-   *        being generated. When left unspecified, the bindings do not contain
-   *        an 'arguments' property.
+   * @param Debugger.Frame aObject [optional]
+   *        The stack frame whose environment bindings are being generated. When
+   *        left unspecified, the bindings do not contain an 'arguments'
+   *        property.
    */
   _bindings: function EA_bindings(aObject) {
     let bindings = { arguments: [], variables: {} };
@@ -1507,13 +1475,15 @@ EnvironmentActor.prototype = {
    *        The protocol request object.
    */
   onAssign: function EA_onAssign(aRequest) {
-    let desc = this.obj.getVariableDescriptor(aRequest.name);
+    // TODO: enable the commented-out part when getVariableDescriptor lands
+    // (bug 725815).
+    /*let desc = this.obj.getVariableDescriptor(aRequest.name);
 
     if (!desc.writable) {
       return { error: "immutableBinding",
                message: "Changing the value of an immutable binding is not " +
                         "allowed" };
-    }
+    }*/
 
     try {
       this.obj.setVariable(aRequest.name, aRequest.value);
@@ -1546,3 +1516,22 @@ EnvironmentActor.prototype.requestTypes = {
   "assign": EnvironmentActor.prototype.onAssign,
   "bindings": EnvironmentActor.prototype.onBindings
 };
+
+/**
+ * Helper function to deduce the name of the provided function.
+ *
+ * @param Debugger.Object aFunction
+ *        The function whose name will be returned.
+ */
+function getFunctionName(aFunction) {
+  let name;
+  if (aFunction.name) {
+    name = aFunction.name;
+  } else {
+    let desc = aFunction.getOwnPropertyDescriptor("displayName");
+    if (desc && desc.value && typeof desc.value == "string") {
+      name = desc.value;
+    }
+  }
+  return name;
+}

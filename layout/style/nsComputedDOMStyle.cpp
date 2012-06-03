@@ -1,48 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:set tw=78 expandtab softtabstop=2 ts=2 sw=2: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Daniel Glazman <glazman@netscape.com>
- *   Boris Zbarsky <bzbarsky@mit.edu>
- *   Christopher A. Aillon <christopher@aillon.com>
- *   Mats Palmgren <matspal@gmail.com>
- *   Christian Biesinger <cbiesinger@web.de>
- *   Michael Ventnor <m.ventnor@gmail.com>
- *   Jonathon Jongsma <jonathon.jongsma@collabora.co.uk>, Collabora Ltd.
- *   L. David Baron <dbaron@dbaron.org>, Mozilla Corporation
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* DOM object returned from element.getComputedStyle() */
 
@@ -1323,7 +1283,7 @@ nsComputedDOMStyle::DoGetFontVariant()
 }
 
 nsIDOMCSSValue*
-nsComputedDOMStyle::DoGetMozFontFeatureSettings()
+nsComputedDOMStyle::DoGetFontFeatureSettings()
 {
   nsROCSSPrimitiveValue* val = GetROCSSPrimitiveValue();
 
@@ -1340,7 +1300,7 @@ nsComputedDOMStyle::DoGetMozFontFeatureSettings()
 }
 
 nsIDOMCSSValue*
-nsComputedDOMStyle::DoGetMozFontLanguageOverride()
+nsComputedDOMStyle::DoGetFontLanguageOverride()
 {
   nsROCSSPrimitiveValue* val = GetROCSSPrimitiveValue();
 
@@ -1772,7 +1732,7 @@ nsComputedDOMStyle::DoGetBackgroundRepeat()
 }
 
 nsIDOMCSSValue*
-nsComputedDOMStyle::DoGetMozBackgroundSize()
+nsComputedDOMStyle::DoGetBackgroundSize()
 {
   const nsStyleBackground* bg = GetStyleBackground();
 
@@ -1850,13 +1810,6 @@ nsComputedDOMStyle::DoGetMozBackgroundSize()
   }
 
   return valueList;
-}
-
-nsIDOMCSSValue*
-nsComputedDOMStyle::DoGetPadding()
-{
-  // return null per spec.
-  return nsnull;
 }
 
 nsIDOMCSSValue*
@@ -1942,13 +1895,6 @@ nsComputedDOMStyle::DoGetTableLayout()
 }
 
 nsIDOMCSSValue*
-nsComputedDOMStyle::DoGetBorderStyle()
-{
-  // return null per spec.
-  return nsnull;
-}
-
-nsIDOMCSSValue*
 nsComputedDOMStyle::DoGetBorderTopStyle()
 {
   return GetBorderStyleFor(NS_SIDE_TOP);
@@ -2026,13 +1972,6 @@ nsComputedDOMStyle::DoGetBorderTopRightRadius()
 }
 
 nsIDOMCSSValue*
-nsComputedDOMStyle::DoGetBorderWidth()
-{
-  // return null per spec.
-  return nsnull;
-}
-
-nsIDOMCSSValue*
 nsComputedDOMStyle::DoGetBorderTopWidth()
 {
   return GetBorderWidthFor(NS_SIDE_TOP);
@@ -2081,13 +2020,6 @@ nsComputedDOMStyle::DoGetBorderRightColor()
 }
 
 nsIDOMCSSValue*
-nsComputedDOMStyle::DoGetMarginWidth()
-{
-  // return null per spec.
-  return nsnull;
-}
-
-nsIDOMCSSValue*
 nsComputedDOMStyle::DoGetMarginTopWidth()
 {
   return GetMarginWidthFor(NS_SIDE_TOP);
@@ -2127,13 +2059,6 @@ nsComputedDOMStyle::DoGetOrient()
     nsCSSProps::ValueToKeywordEnum(GetStyleDisplay()->mOrient,
                                    nsCSSProps::kOrientKTable));
   return val;
-}
-
-nsIDOMCSSValue*
-nsComputedDOMStyle::DoGetOutline()
-{
-  // return null per spec.
-  return nsnull;
 }
 
 nsIDOMCSSValue*
@@ -2544,7 +2469,7 @@ nsComputedDOMStyle::DoGetTextDecoration()
 }
 
 nsIDOMCSSValue*
-nsComputedDOMStyle::DoGetMozTextDecorationColor()
+nsComputedDOMStyle::DoGetTextDecorationColor()
 {
   nsROCSSPrimitiveValue* val = GetROCSSPrimitiveValue();
 
@@ -2561,7 +2486,7 @@ nsComputedDOMStyle::DoGetMozTextDecorationColor()
 }
 
 nsIDOMCSSValue*
-nsComputedDOMStyle::DoGetMozTextDecorationLine()
+nsComputedDOMStyle::DoGetTextDecorationLine()
 {
   nsROCSSPrimitiveValue* val = GetROCSSPrimitiveValue();
 
@@ -2585,7 +2510,7 @@ nsComputedDOMStyle::DoGetMozTextDecorationLine()
 }
 
 nsIDOMCSSValue*
-nsComputedDOMStyle::DoGetMozTextDecorationStyle()
+nsComputedDOMStyle::DoGetTextDecorationStyle()
 {
   nsROCSSPrimitiveValue* val = GetROCSSPrimitiveValue();
 
@@ -2660,7 +2585,7 @@ nsComputedDOMStyle::DoGetTextTransform()
 }
 
 nsIDOMCSSValue*
-nsComputedDOMStyle::DoGetMozTabSize()
+nsComputedDOMStyle::DoGetTabSize()
 {
   nsROCSSPrimitiveValue* val = GetROCSSPrimitiveValue();
   val->SetNumber(GetStyleText()->mTabSize);
@@ -3602,7 +3527,7 @@ nsComputedDOMStyle::GetBorderWidthFor(mozilla::css::Side aSide)
     AssertFlushedPendingReflows();
     width = mInnerFrame->GetUsedBorder().Side(aSide);
   } else {
-    width = GetStyleBorder()->GetActualBorderWidth(aSide);
+    width = GetStyleBorder()->GetComputedBorderWidth(aSide);
   }
   val->SetAppUnits(width);
 
@@ -4000,6 +3925,15 @@ nsComputedDOMStyle::DoGetStrokeWidth()
 {
   nsROCSSPrimitiveValue* val = GetROCSSPrimitiveValue();
   SetValueToCoord(val, GetStyleSVG()->mStrokeWidth, true);
+  return val;
+}
+
+nsIDOMCSSValue*
+nsComputedDOMStyle::DoGetVectorEffect()
+{
+  nsROCSSPrimitiveValue *val = GetROCSSPrimitiveValue();
+  val->SetIdent(nsCSSProps::ValueToKeywordEnum(GetStyleSVGReset()->mVectorEffect,
+                                               nsCSSProps::kVectorEffectKTable));
   return val;
 }
 
@@ -4560,7 +4494,7 @@ nsComputedDOMStyle::GetQueryablePropertyMap(PRUint32* aLength)
     COMPUTED_STYLE_MAP_ENTRY(background_origin,             BackgroundOrigin),
     COMPUTED_STYLE_MAP_ENTRY(background_position,           BackgroundPosition),
     COMPUTED_STYLE_MAP_ENTRY(background_repeat,             BackgroundRepeat),
-    COMPUTED_STYLE_MAP_ENTRY(background_size,               MozBackgroundSize),
+    COMPUTED_STYLE_MAP_ENTRY(background_size,               BackgroundSize),
     //// COMPUTED_STYLE_MAP_ENTRY(border,                   Border),
     //// COMPUTED_STYLE_MAP_ENTRY(border_bottom,            BorderBottom),
     COMPUTED_STYLE_MAP_ENTRY(border_bottom_color,           BorderBottomColor),
@@ -4570,6 +4504,12 @@ nsComputedDOMStyle::GetQueryablePropertyMap(PRUint32* aLength)
     COMPUTED_STYLE_MAP_ENTRY_LAYOUT(border_bottom_width,    BorderBottomWidth),
     COMPUTED_STYLE_MAP_ENTRY(border_collapse,               BorderCollapse),
     //// COMPUTED_STYLE_MAP_ENTRY(border_color,             BorderColor),
+    //// COMPUTED_STYLE_MAP_ENTRY(border_image,             BorderImage),
+    COMPUTED_STYLE_MAP_ENTRY(border_image_outset,           BorderImageOutset),
+    COMPUTED_STYLE_MAP_ENTRY(border_image_repeat,           BorderImageRepeat),
+    COMPUTED_STYLE_MAP_ENTRY(border_image_slice,            BorderImageSlice),
+    COMPUTED_STYLE_MAP_ENTRY(border_image_source,           BorderImageSource),
+    COMPUTED_STYLE_MAP_ENTRY(border_image_width,            BorderImageWidth),
     //// COMPUTED_STYLE_MAP_ENTRY(border_left,              BorderLeft),
     COMPUTED_STYLE_MAP_ENTRY(border_left_color,             BorderLeftColor),
     COMPUTED_STYLE_MAP_ENTRY(border_left_style,             BorderLeftStyle),
@@ -4690,12 +4630,6 @@ nsComputedDOMStyle::GetQueryablePropertyMap(PRUint32* aLength)
     COMPUTED_STYLE_MAP_ENTRY(_moz_background_inline_policy, BackgroundInlinePolicy),
     COMPUTED_STYLE_MAP_ENTRY(binding,                       Binding),
     COMPUTED_STYLE_MAP_ENTRY(border_bottom_colors,          BorderBottomColors),
-    //// COMPUTED_STYLE_MAP_ENTRY(border_image,             BorderImage),
-    COMPUTED_STYLE_MAP_ENTRY(border_image_outset,           BorderImageOutset),
-    COMPUTED_STYLE_MAP_ENTRY(border_image_repeat,           BorderImageRepeat),
-    COMPUTED_STYLE_MAP_ENTRY(border_image_slice,            BorderImageSlice),
-    COMPUTED_STYLE_MAP_ENTRY(border_image_source,           BorderImageSource),
-    COMPUTED_STYLE_MAP_ENTRY(border_image_width,            BorderImageWidth),
     COMPUTED_STYLE_MAP_ENTRY(border_left_colors,            BorderLeftColors),
     COMPUTED_STYLE_MAP_ENTRY(border_right_colors,           BorderRightColors),
     COMPUTED_STYLE_MAP_ENTRY(border_top_colors,             BorderTopColors),
@@ -4715,8 +4649,8 @@ nsComputedDOMStyle::GetQueryablePropertyMap(PRUint32* aLength)
     COMPUTED_STYLE_MAP_ENTRY(_moz_column_rule_width,        ColumnRuleWidth),
     COMPUTED_STYLE_MAP_ENTRY(_moz_column_width,             ColumnWidth),
     COMPUTED_STYLE_MAP_ENTRY(float_edge,                    FloatEdge),
-    COMPUTED_STYLE_MAP_ENTRY(font_feature_settings,         MozFontFeatureSettings),
-    COMPUTED_STYLE_MAP_ENTRY(font_language_override,        MozFontLanguageOverride),
+    COMPUTED_STYLE_MAP_ENTRY(font_feature_settings,         FontFeatureSettings),
+    COMPUTED_STYLE_MAP_ENTRY(font_language_override,        FontLanguageOverride),
     COMPUTED_STYLE_MAP_ENTRY(force_broken_image_icon,       ForceBrokenImageIcon),
     COMPUTED_STYLE_MAP_ENTRY(hyphens,                       Hyphens),
     COMPUTED_STYLE_MAP_ENTRY(image_region,                  ImageRegion),
@@ -4728,12 +4662,12 @@ nsComputedDOMStyle::GetQueryablePropertyMap(PRUint32* aLength)
     COMPUTED_STYLE_MAP_ENTRY(perspective,                   Perspective),
     COMPUTED_STYLE_MAP_ENTRY_LAYOUT(perspective_origin,     PerspectiveOrigin),
     COMPUTED_STYLE_MAP_ENTRY(stack_sizing,                  StackSizing),
-    COMPUTED_STYLE_MAP_ENTRY(_moz_tab_size,                 MozTabSize),
+    COMPUTED_STYLE_MAP_ENTRY(_moz_tab_size,                 TabSize),
     COMPUTED_STYLE_MAP_ENTRY(text_align_last,               TextAlignLast),
     COMPUTED_STYLE_MAP_ENTRY(text_blink,                    MozTextBlink),
-    COMPUTED_STYLE_MAP_ENTRY(text_decoration_color,         MozTextDecorationColor),
-    COMPUTED_STYLE_MAP_ENTRY(text_decoration_line,          MozTextDecorationLine),
-    COMPUTED_STYLE_MAP_ENTRY(text_decoration_style,         MozTextDecorationStyle),
+    COMPUTED_STYLE_MAP_ENTRY(text_decoration_color,         TextDecorationColor),
+    COMPUTED_STYLE_MAP_ENTRY(text_decoration_line,          TextDecorationLine),
+    COMPUTED_STYLE_MAP_ENTRY(text_decoration_style,         TextDecorationStyle),
     COMPUTED_STYLE_MAP_ENTRY(text_size_adjust,              TextSizeAdjust),
     COMPUTED_STYLE_MAP_ENTRY_LAYOUT(transform,              Transform),
     COMPUTED_STYLE_MAP_ENTRY_LAYOUT(transform_origin,       TransformOrigin),
@@ -4781,7 +4715,8 @@ nsComputedDOMStyle::GetQueryablePropertyMap(PRUint32* aLength)
     COMPUTED_STYLE_MAP_ENTRY(stroke_opacity,                StrokeOpacity),
     COMPUTED_STYLE_MAP_ENTRY(stroke_width,                  StrokeWidth),
     COMPUTED_STYLE_MAP_ENTRY(text_anchor,                   TextAnchor),
-    COMPUTED_STYLE_MAP_ENTRY(text_rendering,                TextRendering)
+    COMPUTED_STYLE_MAP_ENTRY(text_rendering,                TextRendering),
+    COMPUTED_STYLE_MAP_ENTRY(vector_effect,                 VectorEffect)
 
   };
 

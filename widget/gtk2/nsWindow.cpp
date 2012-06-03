@@ -1,44 +1,9 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* vim:expandtab:shiftwidth=4:tabstop=4:
  */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is Christopher Blizzard
- * <blizzard@mozilla.org>.  Portions created by the Initial Developer
- * are Copyright (C) 2001 the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Mats Palmgren <matspal@gmail.com>
- *   Masayuki Nakano <masayuki@d-toybox.com>
- *   Martin Stransky <stransky@redhat.com>
- *   Jan Horak <jhorak@redhat.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
 
@@ -301,9 +266,6 @@ typedef struct _GdkDisplay GdkDisplay;
 
 // cursor cache
 static GdkCursor *gCursorCache[eCursorCount];
-
-// imported in nsWidgetFactory.cpp
-bool gDisableNativeTheme = false;
 
 static GtkWidget *gInvisibleContainer = NULL;
 
@@ -661,6 +623,13 @@ nsWindow::Destroy(void)
         }
     }
     mLayerManager = nsnull;
+
+    // It is safe to call DestroyeCompositor several times (here and 
+    // in the parent class) since it will take effect only once.
+    // The reason we call it here is because on gtk platforms we need 
+    // to destroy the compositor before we destroy the gdk window (which
+    // destroys the the gl context attached to it).
+    DestroyCompositor();
 
     ClearCachedResources();
 
@@ -1095,6 +1064,8 @@ nsWindow::Resize(PRInt32 aWidth, PRInt32 aHeight, bool aRepaint)
         }
     }
 
+    NotifyRollupGeometryChange(gRollupListener);
+
     // synthesize a resize event if this isn't a toplevel
     if (mIsTopLevel || mListenForResizes) {
         nsIntRect rect(mBounds.x, mBounds.y, aWidth, aHeight);
@@ -1159,6 +1130,8 @@ nsWindow::Resize(PRInt32 aX, PRInt32 aY, PRInt32 aWidth, PRInt32 aHeight,
         }
     }
 
+    NotifyRollupGeometryChange(gRollupListener);
+
     if (mIsTopLevel || mListenForResizes) {
         // synthesize a resize event
         nsIntRect rect(aX, aY, aWidth, aHeight);
@@ -1222,6 +1195,7 @@ nsWindow::Move(PRInt32 aX, PRInt32 aY)
         gdk_window_move(mGdkWindow, aX, aY);
     }
 
+    NotifyRollupGeometryChange(gRollupListener);
     return NS_OK;
 }
 
@@ -1533,9 +1507,10 @@ nsWindow::GetClientOffset()
     int format_returned;
     int length_returned;
     long *frame_extents;
+    GdkWindow* window;
 
-    if (!mShell || !mShell->window ||
-        !gdk_property_get(mShell->window,
+    if (!mShell || !(window = gtk_widget_get_window(mShell)) ||
+        !gdk_property_get(window,
                           gdk_atom_intern ("_NET_FRAME_EXTENTS", FALSE),
                           cardinal_atom,
                           0, // offset
@@ -2148,9 +2123,25 @@ nsWindow::OnExposeEvent(cairo_t *cr)
 #endif
         return TRUE;
     }
+    // If this widget uses OMTC...
+    if (GetLayerManager()->AsShadowForwarder() && GetLayerManager()->AsShadowForwarder()->HasShadowManager()) {
+        nsEventStatus status;
+#if defined(MOZ_WIDGET_GTK2)
+        nsRefPtr<gfxContext> ctx = new gfxContext(GetThebesSurface());
+#else
+        nsRefPtr<gfxContext> ctx = new gfxContext(GetThebesSurface(cr));
+#endif
+        nsBaseWidget::AutoLayerManagerSetup
+          setupLayerManager(this, ctx, BasicLayerManager::BUFFER_NONE);
+        DispatchEvent(&event, status);
 
-    if (GetLayerManager()->GetBackendType() == LayerManager::LAYERS_OPENGL)
-    {
+        g_free(rects);
+
+        DispatchDidPaint(this);
+
+        return TRUE;
+    
+    } else if (GetLayerManager()->GetBackendType() == LayerManager::LAYERS_OPENGL) {
         LayerManagerOGL *manager = static_cast<LayerManagerOGL*>(GetLayerManager());
         manager->SetClippingRegion(event.region);
 
@@ -5763,8 +5754,6 @@ initialize_prefs(void)
 {
     gRaiseWindows =
         Preferences::GetBool("mozilla.widget.raise-on-setfocus", true);
-    gDisableNativeTheme =
-        Preferences::GetBool("mozilla.widget.disable-native-theme", false);
 
     return NS_OK;
 }
@@ -5834,7 +5823,7 @@ nsWindow::CreateRootAccessible()
 {
     if (mIsTopLevel && !mRootAccessible) {
         LOG(("nsWindow:: Create Toplevel Accessibility\n"));
-        nsAccessible *acc = DispatchAccessibleEvent();
+        Accessible* acc = DispatchAccessibleEvent();
 
         if (acc) {
             mRootAccessible = acc;
@@ -5842,7 +5831,7 @@ nsWindow::CreateRootAccessible()
     }
 }
 
-nsAccessible*
+Accessible*
 nsWindow::DispatchAccessibleEvent()
 {
     nsAccessibleEvent event(true, NS_GETACCESSIBLE, this);
@@ -5867,7 +5856,7 @@ nsWindow::DispatchEventToRootAccessible(PRUint32 aEventType)
     }
 
     // Get the root document accessible and fire event to it.
-    nsAccessible *acc = DispatchAccessibleEvent();
+    Accessible* acc = DispatchAccessibleEvent();
     if (acc) {
         accService->FireAccessibleEvent(aEventType, acc);
     }

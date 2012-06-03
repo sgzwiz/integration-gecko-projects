@@ -1,43 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Daniel Glazman <glazman@netscape.com>
- *   Mats Palmgren <mats.palmgren@bredband.net>
- *   Jonathon Jongsma <jonathon.jongsma@collabora.co.uk>, Collabora Ltd.
- *   L. David Baron <dbaron@dbaron.org>, Mozilla Corporation
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * representation of a declaration block (or style attribute) in a CSS
@@ -300,18 +264,61 @@ Declaration::GetValue(nsCSSProperty aProperty, nsAString& aValue) const
       }
       break;
     }
-    case eCSSProperty_border_image:
+    case eCSSProperty_border_image: {
+      // Even though there are some cases where we could omit
+      // 'border-image-source' (when it's none), it's probably not a
+      // good idea since it's likely to be confusing.  It would also
+      // require adding the extra check that we serialize *something*.
       AppendValueToString(eCSSProperty_border_image_source, aValue);
-      aValue.Append(PRUnichar(' '));
-      AppendValueToString(eCSSProperty_border_image_slice, aValue);
-      aValue.Append(NS_LITERAL_STRING(" / "));
-      AppendValueToString(eCSSProperty_border_image_width, aValue);
-      aValue.Append(NS_LITERAL_STRING(" / "));
-      AppendValueToString(eCSSProperty_border_image_outset, aValue);
-      aValue.Append(PRUnichar(' '));
-      AppendValueToString(eCSSProperty_border_image_repeat, aValue);
+
+      bool sliceDefault = data->HasDefaultBorderImageSlice();
+      bool widthDefault = data->HasDefaultBorderImageWidth();
+      bool outsetDefault = data->HasDefaultBorderImageOutset();
+
+      if (!sliceDefault || !widthDefault || !outsetDefault) {
+        aValue.Append(PRUnichar(' '));
+        AppendValueToString(eCSSProperty_border_image_slice, aValue);
+        if (!widthDefault || !outsetDefault) {
+          aValue.Append(NS_LITERAL_STRING(" /"));
+          if (!widthDefault) {
+            aValue.Append(PRUnichar(' '));
+            AppendValueToString(eCSSProperty_border_image_width, aValue);
+          }
+          if (!outsetDefault) {
+            aValue.Append(NS_LITERAL_STRING(" / "));
+            AppendValueToString(eCSSProperty_border_image_outset, aValue);
+          }
+        }
+      }
+
+      bool repeatDefault = data->HasDefaultBorderImageRepeat();
+      if (!repeatDefault) {
+        aValue.Append(PRUnichar(' '));
+        AppendValueToString(eCSSProperty_border_image_repeat, aValue);
+      }
       break;
+    }
     case eCSSProperty_border: {
+      // If we have a non-default value for any of the properties that
+      // this shorthand sets but cannot specify, we have to return the
+      // empty string.
+      if (data->ValueFor(eCSSProperty_border_image_source)->GetUnit() !=
+            eCSSUnit_None ||
+          !data->HasDefaultBorderImageSlice() ||
+          !data->HasDefaultBorderImageWidth() ||
+          !data->HasDefaultBorderImageOutset() ||
+          !data->HasDefaultBorderImageRepeat() ||
+          data->ValueFor(eCSSProperty_border_top_colors)->GetUnit() !=
+            eCSSUnit_None ||
+          data->ValueFor(eCSSProperty_border_right_colors)->GetUnit() !=
+            eCSSUnit_None ||
+          data->ValueFor(eCSSProperty_border_bottom_colors)->GetUnit() !=
+            eCSSUnit_None ||
+          data->ValueFor(eCSSProperty_border_left_colors)->GetUnit() !=
+            eCSSUnit_None) {
+        break;
+      }
+
       const nsCSSProperty* subproptables[3] = {
         nsCSSProps::SubpropertyEntryFor(eCSSProperty_border_color),
         nsCSSProps::SubpropertyEntryFor(eCSSProperty_border_style),

@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Corporation code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Robert O'Callahan <robert@ocallahan.org>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef GFX_LAYERS_H
 #define GFX_LAYERS_H
@@ -57,13 +25,17 @@
 #if defined(DEBUG) || defined(PR_LOGGING)
 #  include <stdio.h>            // FILE
 #  include "prlog.h"
-#  define MOZ_LAYERS_HAVE_LOG
+#  ifndef MOZ_LAYERS_HAVE_LOG
+#    define MOZ_LAYERS_HAVE_LOG
+#  endif
 #  define MOZ_LAYERS_LOG(_args)                             \
   PR_LOG(LayerManager::GetLog(), PR_LOG_DEBUG, _args)
 #else
 struct PRLogModuleInfo;
 #  define MOZ_LAYERS_LOG(_args)
 #endif  // if defined(DEBUG) || defined(PR_LOGGING)
+
+#define MOZ_ENABLE_MASK_LAYERS
 
 class gfxContext;
 class nsPaintEvent;
@@ -107,10 +79,10 @@ public:
 
   FrameMetrics()
     : mViewport(0, 0, 0, 0)
-    , mContentSize(0, 0)
+    , mContentRect(0, 0, 0, 0)
     , mViewportScrollOffset(0, 0)
     , mScrollId(NULL_SCROLL_ID)
-    , mCSSContentSize(0, 0)
+    , mCSSContentRect(0, 0, 0, 0)
     , mResolution(1, 1)
   {}
 
@@ -145,14 +117,14 @@ public:
 
   // These are all in layer coordinate space.
   nsIntRect mViewport;
-  nsIntSize mContentSize;
+  nsIntRect mContentRect;
   nsIntPoint mViewportScrollOffset;
   nsIntRect mDisplayPort;
   ViewID mScrollId;
 
-  // Consumers often want to know the size before scaling to pixels
-  // so we record this size as well.
-  gfx::Size mCSSContentSize;
+  // Consumers often want to know the origin/size before scaling to pixels
+  // so we record this as well.
+  gfx::Rect mCSSContentRect;
 
   // This represents the resolution at which the associated layer
   // will been rendered.
@@ -476,6 +448,12 @@ public:
   virtual bool CanUseCanvasLayerForSize(const gfxIntSize &aSize) { return true; }
 
   /**
+   * returns the maximum texture size on this layer backend, or PR_INT32_MAX
+   * if there is no maximum
+   */
+  virtual PRInt32 GetMaxTextureSize() const = 0;
+
+  /**
    * Return the name of the layer manager's backend.
    */
   virtual void GetBackendName(nsAString& aName) = 0;
@@ -719,6 +697,7 @@ public:
    */
   void SetMaskLayer(Layer* aMaskLayer)
   {
+#ifdef MOZ_ENABLE_MASK_LAYERS
 #ifdef DEBUG
     if (aMaskLayer) {
       gfxMatrix maskTransform;
@@ -730,6 +709,7 @@ public:
 
     mMaskLayer = aMaskLayer;
     Mutated();
+#endif
   }
 
   /**
@@ -745,6 +725,12 @@ public:
     Mutated();
   }
 
+  /**
+   * CONSTRUCTION PHASE ONLY
+   * A layer is "fixed position" when it draws content from a content
+   * (not chrome) document, the topmost content document has a root scrollframe
+   * with a displayport, but the layer does not move when that displayport scrolls.
+   */
   void SetIsFixedPosition(bool aFixedPosition) { mIsFixedPosition = aFixedPosition; }
 
   // These getters can be used anytime.

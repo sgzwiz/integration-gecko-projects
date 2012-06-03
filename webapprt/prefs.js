@@ -4,4 +4,13 @@
 
 pref("browser.chromeURL", "chrome://webapprt/content/webapp.xul");
 pref("browser.download.folderList", 1);
-pref("general.useragent.compatMode.firefox", true);
+
+// Disable all add-on locations other than the profile (which can't be disabled this way)
+pref("extensions.enabledScopes", 1);
+// Auto-disable any add-ons that are "dropped in" to the profile
+pref("extensions.autoDisableScopes", 1);
+// Disable add-on installation via the web-exposed APIs
+pref("xpinstall.enabled", false);
+
+// Whether or not we've ever run.  We use this to set permissions on firstrun.
+pref("webapprt.firstrun", false);

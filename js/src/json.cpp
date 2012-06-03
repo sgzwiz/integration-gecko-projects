@@ -1,43 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=99:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is SpiderMonkey JSON.
- *
- * The Initial Developer of the Original Code is
- * Mozilla Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998-1999
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Robert Sayre <sayrer@gmail.com>
- *   Dave Camp <dcamp@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/FloatingPoint.h"
 
@@ -232,7 +198,7 @@ class StringifyContext
 
     StringBuffer &sb;
     const StringBuffer &gap;
-    RootedVarObject replacer;
+    RootedObject replacer;
     const AutoIdVector &propertyList;
     uint32_t depth;
     HashSet<JSObject *> objectStack;
@@ -277,7 +243,7 @@ class CycleDetector
 
   private:
     HashSet<JSObject *> &objectStack;
-    RootedVarObject obj;
+    RootedObject obj;
 };
 
 template<typename KeyType>
@@ -313,8 +279,8 @@ PreprocessValue(JSContext *cx, JSObject *holder, KeyType key, Value *vp, Stringi
     /* Step 2. */
     if (vp->isObject()) {
         Value toJSON;
-        jsid id = NameToId(cx->runtime->atomState.toJSONAtom);
-        if (!js_GetMethod(cx, RootedVarObject(cx, &vp->toObject()), id, 0, &toJSON))
+        RootedId id(cx, NameToId(cx->runtime->atomState.toJSONAtom));
+        if (!GetMethod(cx, RootedObject(cx, &vp->toObject()), id, 0, &toJSON))
             return false;
 
         if (js_IsCallable(toJSON)) {
@@ -391,7 +357,7 @@ PreprocessValue(JSContext *cx, JSObject *holder, KeyType key, Value *vp, Stringi
 static inline bool
 IsFilteredValue(const Value &v)
 {
-    return v.isUndefined() || js_IsCallable(v) || (v.isObject() && v.toObject().isXML());
+    return v.isUndefined() || js_IsCallable(v) || VALUE_IS_XML(v);
 }
 
 /* ES5 15.12.3 JO. */
@@ -435,6 +401,7 @@ JO(JSContext *cx, HandleObject obj, StringifyContext *scx)
 
     /* Steps 8-10, 13. */
     bool wroteMember = false;
+    RootedId id(cx);
     for (size_t i = 0, len = propertyList.length(); i < len; i++) {
         /*
          * Steps 8a-8b.  Note that the call to Str is broken up into 1) getting
@@ -443,11 +410,11 @@ JO(JSContext *cx, HandleObject obj, StringifyContext *scx)
          * values which process to |undefined|, and 4) stringifying all values
          * which pass the filter.
          */
-        const jsid &id = propertyList[i];
+        id = propertyList[i];
         Value outputValue;
         if (!obj->getGeneric(cx, id, &outputValue))
             return false;
-        if (!PreprocessValue(cx, obj, id, &outputValue, scx))
+        if (!PreprocessValue(cx, obj, id.reference(), &outputValue, scx))
             return false;
         if (IsFilteredValue(outputValue))
             continue;
@@ -599,7 +566,7 @@ Str(JSContext *cx, const Value &v, StringifyContext *scx)
 
     /* Step 10. */
     JS_ASSERT(v.isObject());
-    RootedVarObject obj(cx, &v.toObject());
+    RootedObject obj(cx, &v.toObject());
 
     scx->depth++;
     JSBool ok;
@@ -614,10 +581,11 @@ Str(JSContext *cx, const Value &v, StringifyContext *scx)
 
 /* ES5 15.12.3. */
 JSBool
-js_Stringify(JSContext *cx, Value *vp, JSObject *replacer_, Value space, StringBuffer &sb)
+js_Stringify(JSContext *cx, Value *vp, JSObject *replacer_, Value space_, StringBuffer &sb)
 {
-    RootedVarObject replacer(cx, replacer_);
-    RootValue spaceRoot(cx, &space);
+    RootedObject replacer(cx, replacer_);
+    RootedValue spaceRoot(cx, space_);
+    Value &space = spaceRoot.reference();
 
     /* Step 4. */
     AutoIdVector propertyList(cx);
@@ -748,12 +716,12 @@ js_Stringify(JSContext *cx, Value *vp, JSObject *replacer_, Value space, StringB
     }
 
     /* Step 9. */
-    RootedVarObject wrapper(cx, NewBuiltinClassInstance(cx, &ObjectClass));
+    RootedObject wrapper(cx, NewBuiltinClassInstance(cx, &ObjectClass));
     if (!wrapper)
         return false;
 
     /* Step 10. */
-    jsid emptyId = NameToId(cx->runtime->atomState.emptyAtom);
+    RootedId emptyId(cx, NameToId(cx->runtime->atomState.emptyAtom));
     if (!DefineNativeProperty(cx, wrapper, emptyId, *vp, JS_PropertyStub, JS_StrictPropertyStub,
                               JSPROP_ENUMERATE, 0, 0))
     {
@@ -765,7 +733,7 @@ js_Stringify(JSContext *cx, Value *vp, JSObject *replacer_, Value space, StringB
     if (!scx.init())
         return false;
 
-    if (!PreprocessValue(cx, wrapper, emptyId, vp, &scx))
+    if (!PreprocessValue(cx, wrapper, emptyId.reference(), vp, &scx))
         return false;
     if (IsFilteredValue(*vp))
         return true;
@@ -775,7 +743,7 @@ js_Stringify(JSContext *cx, Value *vp, JSObject *replacer_, Value space, StringB
 
 /* ES5 15.12.2 Walk. */
 static bool
-Walk(JSContext *cx, JSObject *holder, jsid name, const Value &reviver, Value *vp)
+Walk(JSContext *cx, HandleObject holder, HandleId name, const Value &reviver, Value *vp)
 {
     JS_CHECK_RECURSION(cx, return false);
 
@@ -786,7 +754,7 @@ Walk(JSContext *cx, JSObject *holder, jsid name, const Value &reviver, Value *vp
 
     /* Step 2. */
     if (val.isObject()) {
-        RootedVarObject obj(cx, &val.toObject());
+        RootedObject obj(cx, &val.toObject());
 
         /* 'val' must have been produced by the JSON parser, so not a proxy. */
         JS_ASSERT(!obj->isProxy());
@@ -795,9 +763,9 @@ Walk(JSContext *cx, JSObject *holder, jsid name, const Value &reviver, Value *vp
             uint32_t length = obj->getArrayLength();
 
             /* Step 2a(i), 2a(iii-iv). */
+            RootedId id(cx);
             for (uint32_t i = 0; i < length; i++) {
-                jsid id;
-                if (!IndexToId(cx, i, &id))
+                if (!IndexToId(cx, i, id.address()))
                     return false;
 
                 /* Step 2a(iii)(1). */
@@ -832,10 +800,11 @@ Walk(JSContext *cx, JSObject *holder, jsid name, const Value &reviver, Value *vp
                 return false;
 
             /* Step 2b(ii). */
+            RootedId id(cx);
             for (size_t i = 0, len = keys.length(); i < len; i++) {
                 /* Step 2b(ii)(1). */
                 Value newElement;
-                jsid id = keys[i];
+                id = keys[i];
                 if (!Walk(cx, obj, id, reviver, &newElement))
                     return false;
 
@@ -879,15 +848,14 @@ Walk(JSContext *cx, JSObject *holder, jsid name, const Value &reviver, Value *vp
 static bool
 Revive(JSContext *cx, const Value &reviver, Value *vp)
 {
-
-    JSObject *obj = NewBuiltinClassInstance(cx, &ObjectClass);
+    RootedObject obj(cx, NewBuiltinClassInstance(cx, &ObjectClass));
     if (!obj)
         return false;
 
     if (!obj->defineProperty(cx, cx->runtime->atomState.emptyAtom, *vp))
         return false;
 
-    return Walk(cx, obj, NameToId(cx->runtime->atomState.emptyAtom), reviver, vp);
+    return Walk(cx, obj, RootedId(cx, NameToId(cx->runtime->atomState.emptyAtom)), reviver, vp);
 }
 
 namespace js {
@@ -931,9 +899,9 @@ static JSFunctionSpec json_static_methods[] = {
 JSObject *
 js_InitJSONClass(JSContext *cx, JSObject *obj_)
 {
-    RootedVarObject obj(cx, obj_);
+    RootedObject obj(cx, obj_);
 
-    RootedVarObject JSON(cx, NewObjectWithClassProto(cx, &JSONClass, NULL, obj));
+    RootedObject JSON(cx, NewObjectWithClassProto(cx, &JSONClass, NULL, obj));
     if (!JSON || !JSON->setSingletonType(cx))
         return NULL;
 

@@ -6,7 +6,7 @@
 
 #include "xpcAccessibleTable.h"
 
-#include "nsAccessible.h"
+#include "Accessible.h"
 #include "TableAccessible.h"
 
 nsresult
@@ -44,6 +44,78 @@ xpcAccessibleTable::GetRowCount(PRInt32* aRowCount)
     return NS_ERROR_FAILURE;
 
   *aRowCount = mTable->RowCount();
+  return NS_OK;
+}
+
+nsresult
+xpcAccessibleTable::GetCellAt(PRInt32 aRowIdx, PRInt32 aColIdx,
+                              nsIAccessible** aCell)
+{
+  NS_ENSURE_ARG_POINTER(aCell);
+  *aCell = nsnull;
+
+  if (!mTable)
+    return NS_ERROR_FAILURE;
+
+  if (aRowIdx < 0 || static_cast<PRUint32>(aRowIdx) >= mTable->RowCount() ||
+      aColIdx < 0 || static_cast<PRUint32>(aColIdx) >= mTable->ColCount())
+    return NS_ERROR_INVALID_ARG;
+
+  NS_IF_ADDREF(*aCell = mTable->CellAt(aRowIdx, aColIdx));
+  return NS_OK;
+}
+
+nsresult
+xpcAccessibleTable::GetCellIndexAt(PRInt32 aRowIdx, PRInt32 aColIdx,
+                                   PRInt32* aCellIdx)
+{
+  NS_ENSURE_ARG_POINTER(aCellIdx);
+  *aCellIdx = -1;
+
+  if (!mTable)
+    return NS_ERROR_FAILURE;
+
+  if (aRowIdx < 0 || static_cast<PRUint32>(aRowIdx) >= mTable->RowCount() ||
+      aColIdx < 0 || static_cast<PRUint32>(aColIdx) >= mTable->ColCount())
+    return NS_ERROR_INVALID_ARG;
+
+  *aCellIdx = mTable->CellIndexAt(aRowIdx, aColIdx);
+  return NS_OK;
+}
+
+nsresult
+xpcAccessibleTable::GetColumnExtentAt(PRInt32 aRowIdx, PRInt32 aColIdx,
+                                      PRInt32* aColumnExtent)
+{
+  NS_ENSURE_ARG_POINTER(aColumnExtent);
+  *aColumnExtent = -1;
+
+  if (!mTable)
+    return NS_ERROR_FAILURE;
+
+  if (aRowIdx < 0 || static_cast<PRUint32>(aRowIdx) >= mTable->RowCount() ||
+      aColIdx < 0 || static_cast<PRUint32>(aColIdx) >= mTable->ColCount())
+    return NS_ERROR_INVALID_ARG;
+
+  *aColumnExtent = mTable->ColExtentAt(aRowIdx, aColIdx);
+  return NS_OK;
+}
+
+nsresult
+xpcAccessibleTable::GetRowExtentAt(PRInt32 aRowIdx, PRInt32 aColIdx,
+                                   PRInt32* aRowExtent)
+{
+  NS_ENSURE_ARG_POINTER(aRowExtent);
+  *aRowExtent = -1;
+
+  if (!mTable)
+    return NS_ERROR_FAILURE;
+
+  if (aRowIdx < 0 || static_cast<PRUint32>(aRowIdx) >= mTable->RowCount() ||
+      aColIdx < 0 || static_cast<PRUint32>(aColIdx) >= mTable->ColCount())
+    return NS_ERROR_INVALID_ARG;
+
+  *aRowExtent = mTable->RowExtentAt(aRowIdx, aColIdx);
   return NS_OK;
 }
 

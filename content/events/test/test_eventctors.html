@@ -346,7 +346,7 @@ ok(e.type, "hello", "Wrong event type!");
 ok(!e.isTrusted, "Event shouldn't be trusted!");
 ok(!e.bubbles, "Event shouldn't bubble!");
 ok(!e.cancelable, "Event shouldn't be cancelable!");
-is(e.key, "", "key should be ''");
+is(e.key, null, "key should be null");
 is(e.oldValue, null, "oldValue should be null");
 is(e.newValue, null, "newValue should be null");
 is(e.url, "", "url should be ''");
@@ -376,6 +376,14 @@ ok(!e.isTrusted, "Event should not be trusted");
 is(e.value, 1, "value should be 1");
 is(e.min, 0, "min should be 0");
 is(e.max, 2, "max should be 2");
+document.dispatchEvent(e);
+is(receivedEvent, e, "Wrong event!");
+
+// UserProximityEvent
+e = new UserProximityEvent("hello", {near: true});
+ok(e.type, "hello", "Wrong event type!");
+ok(!e.isTrusted, "Event should not be trusted");
+is(e.near, true, "near should be true");
 document.dispatchEvent(e);
 is(receivedEvent, e, "Wrong event!");
 

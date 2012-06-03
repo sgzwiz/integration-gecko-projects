@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko.sync.setup.activities;
 
@@ -19,6 +19,7 @@ import org.mozilla.gecko.sync.setup.SyncAccounts.SyncAccountParameters;
 import android.accounts.Account;
 import android.accounts.AccountAuthenticatorActivity;
 import android.accounts.AccountManager;
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.net.ConnectivityManager;
@@ -29,6 +30,8 @@ import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -101,6 +104,12 @@ public class SetupSyncActivity extends AccountAuthenticatorActivity {
 
   public void finishResume(Account[] accts) {
     Logger.debug(LOG_TAG, "Finishing Resume after fetching accounts.");
+
+    // Set "screen on" flag.
+    Logger.debug(LOG_TAG, "Setting screen-on flag.");
+    Window w = getWindow();
+    w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
     if (accts.length == 0) { // Start J-PAKE for pairing if no accounts present.
       Logger.debug(LOG_TAG, "No accounts; starting J-PAKE receiver.");
       displayReceiveNoPin();
@@ -174,7 +183,7 @@ public class SetupSyncActivity extends AccountAuthenticatorActivity {
   public void manualClickHandler(View target) {
     Intent accountIntent = new Intent(this, AccountActivity.class);
     accountIntent.setFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
-    startActivity(accountIntent);
+    startActivityForResult(accountIntent, 0);
     overridePendingTransition(0, 0);
   }
 
@@ -248,8 +257,13 @@ public class SetupSyncActivity extends AccountAuthenticatorActivity {
           return;
         }
         view1.setText(pin1);
+        view1.setContentDescription(pin1.replaceAll("\\B", ", "));
+
         view2.setText(pin2);
+        view2.setContentDescription(pin2.replaceAll("\\B", ", "));
+
         view3.setText(pin3);
+        view3.setContentDescription(pin3.replaceAll("\\B", ", "));
       }
     });
   }
@@ -542,6 +556,8 @@ public class SetupSyncActivity extends AccountAuthenticatorActivity {
           public void onTextChanged(CharSequence s, int start, int before, int count) {
           }
         });
+
+        row1.requestFocus();
       }
     });
   }
@@ -578,5 +594,14 @@ public class SetupSyncActivity extends AccountAuthenticatorActivity {
         }
       }
     });
+  }
+
+  @Override
+  public void onActivityResult(int requestCode, int resultCode, Intent data) {
+    switch (resultCode) {
+    case Activity.RESULT_OK:
+      // Setup completed in manual setup.
+      finish();
+    }
   }
 }

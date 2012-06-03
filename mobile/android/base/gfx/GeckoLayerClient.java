@@ -1,40 +1,7 @@
 /* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Android code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2009-2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Patrick Walton <pcwalton@mozilla.com>
- *   Chris Lord <chrislord.net@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko.gfx;
 
@@ -43,6 +10,7 @@ import org.mozilla.gecko.GeckoApp;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoEvent;
 import org.mozilla.gecko.GeckoEventResponder;
+import org.mozilla.gecko.Tab;
 import org.mozilla.gecko.Tabs;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -59,7 +27,6 @@ import android.util.Log;
 import android.view.View;
 import java.util.Map;
 import java.util.HashMap;
-import org.mozilla.gecko.Tabs;
 
 public class GeckoLayerClient implements GeckoEventResponder,
                                          LayerView.Listener {
@@ -140,8 +107,7 @@ public class GeckoLayerClient implements GeckoEventResponder,
 
     /* Informs Gecko that the screen size has changed. */
     private void sendResizeEventIfNecessary(boolean force) {
-        DisplayMetrics metrics = new DisplayMetrics();
-        GeckoApp.mAppContext.getWindowManager().getDefaultDisplay().getMetrics(metrics);
+        DisplayMetrics metrics = GeckoApp.mAppContext.getDisplayMetrics();
         View view = mLayerController.getView();
 
         IntSize newScreenSize = new IntSize(metrics.widthPixels, metrics.heightPixels);
@@ -237,7 +203,7 @@ public class GeckoLayerClient implements GeckoEventResponder,
                 // and our zoom level (which may have diverged).
                 float scaleFactor = oldMetrics.zoomFactor / messageMetrics.getZoomFactor();
                 newMetrics = new ViewportMetrics(oldMetrics);
-                newMetrics.setPageSize(messageMetrics.getPageSize().scale(scaleFactor), messageMetrics.getCssPageSize());
+                newMetrics.setPageRect(RectUtils.scale(messageMetrics.getPageRect(), scaleFactor), messageMetrics.getCssPageRect());
                 break;
             }
 
@@ -331,15 +297,18 @@ public class GeckoLayerClient implements GeckoEventResponder,
       * The compositor invokes this function just before compositing a frame where the document
       * is different from the document composited on the last frame. In these cases, the viewport
       * information we have in Java is no longer valid and needs to be replaced with the new
-      * viewport information provided. setPageSize will never be invoked on the same frame that
+      * viewport information provided. setPageRect will never be invoked on the same frame that
       * this function is invoked on; and this function will always be called prior to syncViewportInfo.
       */
-    public void setFirstPaintViewport(float offsetX, float offsetY, float zoom, float pageWidth, float pageHeight, float cssPageWidth, float cssPageHeight) {
+    public void setFirstPaintViewport(float offsetX, float offsetY, float zoom,
+            float pageLeft, float pageTop, float pageRight, float pageBottom,
+            float cssPageLeft, float cssPageTop, float cssPageRight, float cssPageBottom) {
         synchronized (mLayerController) {
             final ViewportMetrics currentMetrics = new ViewportMetrics(mLayerController.getViewportMetrics());
             currentMetrics.setOrigin(new PointF(offsetX, offsetY));
             currentMetrics.setZoomFactor(zoom);
-            currentMetrics.setPageSize(new FloatSize(pageWidth, pageHeight), new FloatSize(cssPageWidth, cssPageHeight));
+            currentMetrics.setPageRect(new RectF(pageLeft, pageTop, pageRight, pageBottom),
+                                       new RectF(cssPageLeft, cssPageTop, cssPageRight, cssPageBottom));
             // Since we have switched to displaying a different document, we need to update any
             // viewport-related state we have lying around. This includes mGeckoViewport and the
             // viewport in mLayerController. Usually this information is updated via handleViewportMessage
@@ -350,7 +319,14 @@ public class GeckoLayerClient implements GeckoEventResponder,
                 }
             });
             mLayerController.setViewportMetrics(currentMetrics);
-            mLayerController.setCheckerboardColor(Tabs.getInstance().getSelectedTab().getCheckerboardColor());
+
+            Tab tab = Tabs.getInstance().getSelectedTab();
+            mLayerController.setCheckerboardColor(tab.getCheckerboardColor());
+            mLayerController.setAllowZoom(tab.getAllowZoom());
+            mLayerController.setDefaultZoom(tab.getDefaultZoom());
+            mLayerController.setMinZoom(tab.getMinZoom());
+            mLayerController.setMaxZoom(tab.getMaxZoom());
+
             // At this point, we have just switched to displaying a different document than we
             // we previously displaying. This means we need to abort any panning/zooming animations
             // that are in progress and send an updated display port request to browser.js as soon
@@ -368,20 +344,21 @@ public class GeckoLayerClient implements GeckoEventResponder,
     }
 
     /** This function is invoked by Gecko via JNI; be careful when modifying signature.
-      * The compositor invokes this function whenever it determines that the page size
+      * The compositor invokes this function whenever it determines that the page rect
       * has changed (based on the information it gets from layout). If setFirstPaintViewport
       * is invoked on a frame, then this function will not be. For any given frame, this
       * function will be invoked before syncViewportInfo.
       */
-    public void setPageSize(float zoom, float pageWidth, float pageHeight, float cssPageWidth, float cssPageHeight) {
+    public void setPageRect(float zoom, float pageLeft, float pageTop, float pageRight, float pageBottom,
+            float cssPageLeft, float cssPageTop, float cssPageRight, float cssPageBottom) {
         synchronized (mLayerController) {
             // adjust the page dimensions to account for differences in zoom
             // between the rendered content (which is what the compositor tells us)
             // and our zoom level (which may have diverged).
+            RectF pageRect = new RectF(pageLeft, pageTop, pageRight, pageBottom);
+            RectF cssPageRect = new RectF(cssPageLeft, cssPageTop, cssPageRight, cssPageBottom);
             float ourZoom = mLayerController.getZoomFactor();
-            pageWidth = pageWidth * ourZoom / zoom;
-            pageHeight = pageHeight * ourZoom /zoom;
-            mLayerController.setPageSize(new FloatSize(pageWidth, pageHeight), new FloatSize(cssPageWidth, cssPageHeight));
+            mLayerController.setPageRect(RectUtils.scale(pageRect, ourZoom / zoom), cssPageRect);
             // Here the page size of the document has changed, but the document being displayed
             // is still the same. Therefore, we don't need to send anything to browser.js; any
             // changes we need to make to the display port will get sent the next time we call
@@ -466,7 +443,13 @@ public class GeckoLayerClient implements GeckoEventResponder,
     public void compositionPauseRequested() {
         // We need to coordinate with Gecko when pausing composition, to ensure
         // that Gecko never executes a draw event while the compositor is paused.
-        GeckoAppShell.sendEventToGecko(GeckoEvent.createCompositorPauseEvent());
+        // This is sent synchronously to make sure that we don't attempt to use
+        // any outstanding Surfaces after we call this (such as from a
+        // surfaceDestroyed notification), and to make sure that any in-flight
+        // Gecko draw events have been processed.  When this returns, composition is
+        // definitely paused -- it'll synchronize with the Gecko event loop, which
+        // in turn will synchronize with the compositor thread.
+        GeckoAppShell.sendEventToGeckoSync(GeckoEvent.createCompositorPauseEvent());
     }
 
     /** Implementation of LayerView.Listener */

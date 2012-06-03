@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RootAccessible.h"
 
@@ -43,6 +11,7 @@
 #include "nsIDOMDocument.h"
 
 #include "Accessible-inl.h"
+#include "DocAccessible-inl.h"
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
 #include "nsCoreUtils.h"
@@ -93,7 +62,7 @@ using namespace mozilla::a11y;
 ////////////////////////////////////////////////////////////////////////////////
 // nsISupports
 
-NS_IMPL_ISUPPORTS_INHERITED1(RootAccessible, nsDocAccessible, nsIAccessibleDocument)
+NS_IMPL_ISUPPORTS_INHERITED1(RootAccessible, DocAccessible, nsIAccessibleDocument)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Constructor/destructor
@@ -101,7 +70,7 @@ NS_IMPL_ISUPPORTS_INHERITED1(RootAccessible, nsDocAccessible, nsIAccessibleDocum
 RootAccessible::
   RootAccessible(nsIDocument* aDocument, nsIContent* aRootContent,
                  nsIPresShell* aPresShell) :
-  nsDocAccessibleWrap(aDocument, aRootContent, aPresShell)
+  DocAccessibleWrap(aDocument, aRootContent, aPresShell)
 {
   mFlags |= eRootAccessible;
 }
@@ -111,7 +80,7 @@ RootAccessible::~RootAccessible()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// nsAccessible
+// Accessible
 
 ENameValueFlag
 RootAccessible::Name(nsString& aName)
@@ -119,7 +88,7 @@ RootAccessible::Name(nsString& aName)
   aName.Truncate();
 
   if (mRoleMapEntry) {
-    nsAccessible::Name(aName);
+    Accessible::Name(aName);
     if (!aName.IsEmpty())
       return eNameOK;
   }
@@ -134,19 +103,12 @@ role
 RootAccessible::NativeRole()
 {
   // If it's a <dialog> or <wizard>, use roles::DIALOG instead
-  dom::Element *root = mDocument->GetRootElement();
-  if (root) {
-    nsCOMPtr<nsIDOMElement> rootElement(do_QueryInterface(root));
-    if (rootElement) {
-      nsAutoString name;
-      rootElement->GetLocalName(name);
-      if (name.EqualsLiteral("dialog") || name.EqualsLiteral("wizard")) {
-        return roles::DIALOG; // Always at the root
-      }
-    }
-  }
+  dom::Element* rootElm = mDocument->GetRootElement();
+  if (rootElm && (rootElm->Tag() == nsGkAtoms::dialog ||
+                  rootElm->Tag() == nsGkAtoms::wizard))
+    return roles::DIALOG;
 
-  return nsDocAccessibleWrap::NativeRole();
+  return DocAccessibleWrap::NativeRole();
 }
 
 // RootAccessible protected member
@@ -176,33 +138,28 @@ RootAccessible::GetChromeFlags()
 PRUint64
 RootAccessible::NativeState()
 {
-  PRUint64 states = nsDocAccessibleWrap::NativeState();
+  PRUint64 state = DocAccessibleWrap::NativeState();
+  if (state & states::DEFUNCT)
+    return state;
 
 #ifdef MOZ_XUL
   PRUint32 chromeFlags = GetChromeFlags();
   if (chromeFlags & nsIWebBrowserChrome::CHROME_WINDOW_RESIZE)
-    states |= states::SIZEABLE;
+    state |= states::SIZEABLE;
     // If it has a titlebar it's movable
     // XXX unless it's minimized or maximized, but not sure
     //     how to detect that
   if (chromeFlags & nsIWebBrowserChrome::CHROME_TITLEBAR)
-    states |= states::MOVEABLE;
+    state |= states::MOVEABLE;
   if (chromeFlags & nsIWebBrowserChrome::CHROME_MODAL)
-    states |= states::MODAL;
+    state |= states::MODAL;
 #endif
 
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
-  if (fm) {
-    nsCOMPtr<nsIDOMWindow> rootWindow;
-    GetWindow(getter_AddRefs(rootWindow));
+  if (fm && fm->GetActiveWindow() == mDocument->GetWindow())
+    state |= states::ACTIVE;
 
-    nsCOMPtr<nsIDOMWindow> activeWindow;
-    fm->GetActiveWindow(getter_AddRefs(activeWindow));
-    if (activeWindow == rootWindow)
-      states |= states::ACTIVE;
-  }
-
-  return states;
+  return state;
 }
 
 const char* const docEvents[] = {
@@ -257,7 +214,7 @@ RootAccessible::AddEventListeners()
     mCaretAccessible = new nsCaretAccessible(this);
   }
 
-  return nsDocAccessible::AddEventListeners();
+  return DocAccessible::AddEventListeners();
 }
 
 nsresult
@@ -275,7 +232,7 @@ RootAccessible::RemoveEventListeners()
 
   // Do this before removing clearing caret accessible, so that it can use
   // shutdown the caret accessible's selection listener
-  nsDocAccessible::RemoveEventListeners();
+  DocAccessible::RemoveEventListeners();
 
   if (mCaretAccessible) {
     mCaretAccessible->Shutdown();
@@ -295,7 +252,7 @@ RootAccessible::GetCaretAccessible()
 }
 
 void
-RootAccessible::DocumentActivated(nsDocAccessible* aDocument)
+RootAccessible::DocumentActivated(DocAccessible* aDocument)
 {
 }
 
@@ -312,28 +269,19 @@ RootAccessible::HandleEvent(nsIDOMEvent* aDOMEvent)
   if (!origTargetNode)
     return NS_OK;
 
-  nsDocAccessible* document =
+  DocAccessible* document =
     GetAccService()->GetDocAccessible(origTargetNode->OwnerDoc());
 
   if (document) {
-#ifdef DEBUG_NOTIFICATIONS
-    if (origTargetNode->IsElement()) {
-      nsIContent* elm = origTargetNode->AsElement();
-
-      nsAutoString tag;
-      elm->Tag()->ToString(tag);
-
-      nsIAtom* atomid = elm->GetID();
-      nsCAutoString id;
-      if (atomid)
-        atomid->ToUTF8String(id);
-
+#ifdef DEBUG
+    if (logging::IsEnabled(logging::eDOMEvents)) {
       nsAutoString eventType;
       aDOMEvent->GetType(eventType);
 
-      printf("\nPend DOM event processing for %s@id='%s', type: %s\n\n",
-             NS_ConvertUTF16toUTF8(tag).get(), id.get(),
-             NS_ConvertUTF16toUTF8(eventType).get());
+      logging::MsgBegin("DOMEvents", "event '%s' handled",
+                        NS_ConvertUTF16toUTF8(eventType).get());
+      logging::Node("target", origTargetNode);
+      logging::MsgEnd();
     }
 #endif
 
@@ -364,11 +312,11 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
     return;
   }
 
-  nsDocAccessible* targetDocument = GetAccService()->
+  DocAccessible* targetDocument = GetAccService()->
     GetDocAccessible(origTargetNode->OwnerDoc());
   NS_ASSERTION(targetDocument, "No document while accessible is in document?!");
 
-  nsAccessible* accessible = 
+  Accessible* accessible = 
     targetDocument->GetAccessibleOrContainer(origTargetNode);
   if (!accessible)
     return;
@@ -423,7 +371,7 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
     return;
   }
 
-  nsAccessible* treeItemAcc = nsnull;
+  Accessible* treeItemAcc = nsnull;
 #ifdef MOZ_XUL
   // If it's a tree element, need the currently selected item.
   if (treeAcc) {
@@ -491,7 +439,7 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
     // unique widget that may acquire focus from autocomplete popup while popup
     // stays open and has no active item. In case of XUL tree autocomplete
     // popup this event is fired for tree accessible.
-    nsAccessible* widget =
+    Accessible* widget =
       accessible->IsWidget() ? accessible : accessible->ContainerWidget();
     if (widget && widget->IsAutoCompletePopup()) {
       FocusMgr()->ActiveItemChanged(nsnull);
@@ -508,7 +456,7 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
     // (can be a case of menubar activation from keyboard) then ignore this
     // notification because later we'll receive DOMMenuItemActive event after
     // current menuitem is set.
-    nsAccessible* activeItem = accessible->CurrentItem();
+    Accessible* activeItem = accessible->CurrentItem();
     if (activeItem) {
       FocusMgr()->ActiveItemChanged(activeItem);
       A11YDEBUG_FOCUS_ACTIVEITEMCHANGE_CAUSE("DOMMenuBarActive", accessible)
@@ -545,7 +493,7 @@ RootAccessible::Shutdown()
   if (!PresShell())
     return;  // Already shutdown
 
-  nsDocAccessibleWrap::Shutdown();
+  DocAccessibleWrap::Shutdown();
 }
 
 // nsIAccessible method
@@ -553,7 +501,7 @@ Relation
 RootAccessible::RelationByType(PRUint32 aType)
 {
   if (!mDocument || aType != nsIAccessibleRelation::RELATION_EMBEDS)
-    return nsDocAccessibleWrap::RelationByType(aType);
+    return DocAccessibleWrap::RelationByType(aType);
 
   nsIDOMWindow* rootWindow = mDocument->GetWindow();
   if (rootWindow) {
@@ -565,7 +513,7 @@ RootAccessible::RelationByType(PRUint32 aType)
       nsCOMPtr<nsIDocument> contentDocumentNode =
         do_QueryInterface(contentDOMDocument);
       if (contentDocumentNode) {
-        nsDocAccessible* contentDocument =
+        DocAccessible* contentDocument =
           GetAccService()->GetDocAccessible(contentDocumentNode);
         if (contentDocument)
           return Relation(contentDocument);
@@ -580,7 +528,7 @@ RootAccessible::RelationByType(PRUint32 aType)
 // Protected members
 
 void
-RootAccessible::HandlePopupShownEvent(nsAccessible* aAccessible)
+RootAccessible::HandlePopupShownEvent(Accessible* aAccessible)
 {
   roles::Role role = aAccessible->Role();
 
@@ -602,7 +550,7 @@ RootAccessible::HandlePopupShownEvent(nsAccessible* aAccessible)
 
   if (role == roles::COMBOBOX_LIST) {
     // Fire expanded state change event for comboboxes and autocompeletes.
-    nsAccessible* combobox = aAccessible->Parent();
+    Accessible* combobox = aAccessible->Parent();
     if (!combobox)
       return;
 
@@ -623,19 +571,19 @@ RootAccessible::HandlePopupHidingEvent(nsINode* aPopupNode)
   // Get popup accessible. There are cases when popup element isn't accessible
   // but an underlying widget is and behaves like popup, an example is
   // autocomplete popups.
-  nsDocAccessible* document = nsAccUtils::GetDocAccessibleFor(aPopupNode);
+  DocAccessible* document = nsAccUtils::GetDocAccessibleFor(aPopupNode);
   if (!document)
     return;
 
-  nsAccessible* popup = document->GetAccessible(aPopupNode);
+  Accessible* popup = document->GetAccessible(aPopupNode);
   if (!popup) {
-    nsAccessible* popupContainer = document->GetContainerAccessible(aPopupNode);
+    Accessible* popupContainer = document->GetContainerAccessible(aPopupNode);
     if (!popupContainer)
       return;
 
-    PRInt32 childCount = popupContainer->GetChildCount();
-    for (PRInt32 idx = 0; idx < childCount; idx++) {
-      nsAccessible* child = popupContainer->GetChildAt(idx);
+    PRUint32 childCount = popupContainer->ChildCount();
+    for (PRUint32 idx = 0; idx < childCount; idx++) {
+      Accessible* child = popupContainer->GetChildAt(idx);
       if (child->IsAutoCompletePopup()) {
         popup = child;
         break;
@@ -661,7 +609,7 @@ RootAccessible::HandlePopupHidingEvent(nsINode* aPopupNode)
   // HTML select is target of popuphidding event. Otherwise get container
   // widget. No container widget means this is either tooltip or menupopup.
   // No events in the former case.
-  nsAccessible* widget = nsnull;
+  Accessible* widget = nsnull;
   if (popup->IsCombobox()) {
     widget = popup;
   } else {
@@ -689,7 +637,7 @@ RootAccessible::HandlePopupHidingEvent(nsINode* aPopupNode)
 
   } else if (widget->IsMenuButton()) {
     // Can be a part of autocomplete.
-    nsAccessible* compositeWidget = widget->ContainerWidget();
+    Accessible* compositeWidget = widget->ContainerWidget();
     if (compositeWidget && compositeWidget->IsAutoComplete()) {
       widget = compositeWidget;
       notifyOf = kNotifyOfState;

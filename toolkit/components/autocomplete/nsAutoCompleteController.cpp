@@ -1,44 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Joe Hewitt <hewitt@netscape.com> (Original Author)
- *   Dean Tessman <dean_tessman@hotmail.com>
- *   Johnny Stenback <jst@mozilla.jstenback.com>
- *   Masayuki Nakano <masayuki@d-toybox.com>
- *   Michael Ventnor <m.ventnor@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsAutoCompleteController.h"
 #include "nsAutoCompleteSimpleResult.h"
@@ -528,10 +491,7 @@ nsAutoCompleteController::HandleKeyNavigation(PRUint32 aKey, bool *_retval)
         // The user wants explicitely to use that result, so this ensures
         // association of the result with the autocompleted text.
         nsAutoString value;
-        nsAutoString inputValue;
-        input->GetTextValue(inputValue);
-        if (NS_SUCCEEDED(GetDefaultCompleteValue(-1, false, value)) &&
-            value.Equals(inputValue, nsCaseInsensitiveStringComparator())) {
+        if (NS_SUCCEEDED(GetFinalDefaultCompleteValue(value))) {
           input->SetTextValue(value);
           input->SelectTextRange(value.Length(), value.Length());
         }
@@ -1221,10 +1181,7 @@ nsAutoCompleteController::EnterMatch(bool aIsPopupSelection)
       // The user wants explicitely to use that result, so this ensures
       // association of the result with the autocompleted text.
       nsAutoString defaultIndexValue;
-      nsAutoString inputValue;
-      input->GetTextValue(inputValue);
-      if (NS_SUCCEEDED(GetDefaultCompleteValue(-1, false, defaultIndexValue)) &&
-          defaultIndexValue.Equals(inputValue, nsCaseInsensitiveStringComparator()))
+      if (NS_SUCCEEDED(GetFinalDefaultCompleteValue(defaultIndexValue)))
         value = defaultIndexValue;
     }
 
@@ -1481,34 +1438,34 @@ nsAutoCompleteController::CompleteDefaultIndex(PRInt32 aResultIndex)
 }
 
 nsresult
-nsAutoCompleteController::GetDefaultCompleteValue(PRInt32 aResultIndex,
-                                                  bool aPreserveCasing,
-                                                  nsAString &_retval)
+nsAutoCompleteController::GetDefaultCompleteResult(PRInt32 aResultIndex,
+                                                   nsIAutoCompleteResult** _result,
+                                                   PRInt32* _defaultIndex)
 {
-  PRInt32 defaultIndex = -1;
-  PRInt32 index = aResultIndex;
-  if (index < 0) {
-    PRUint32 count = mResults.Count();
-    for (PRUint32 i = 0; i < count; ++i) {
-      nsIAutoCompleteResult *result = mResults[i];
-      if (result && NS_SUCCEEDED(result->GetDefaultIndex(&defaultIndex)) &&
-          defaultIndex >= 0) {
-        index = i;
-        break;
-      }
+  *_defaultIndex = -1;
+  PRInt32 resultIndex = aResultIndex;
+
+  // If a result index was not provided, find the first defaultIndex result.
+  for (PRInt32 i = 0; resultIndex < 0 && i < mResults.Count(); ++i) {
+    nsIAutoCompleteResult *result = mResults[i];
+    if (result &&
+        NS_SUCCEEDED(result->GetDefaultIndex(_defaultIndex)) &&
+        *_defaultIndex >= 0) {
+      resultIndex = i;
     }
   }
-  NS_ENSURE_TRUE(index >= 0, NS_ERROR_FAILURE);
+  NS_ENSURE_TRUE(resultIndex >= 0, NS_ERROR_FAILURE);
 
-  nsIAutoCompleteResult *result = mResults.SafeObjectAt(index);
-  NS_ENSURE_TRUE(result != nsnull, NS_ERROR_FAILURE);
+  *_result = mResults.SafeObjectAt(resultIndex);
+  NS_ENSURE_TRUE(*_result, NS_ERROR_FAILURE);
 
-  if (defaultIndex < 0) {
+  if (*_defaultIndex < 0) {
     // The search must explicitly provide a default index in order
     // for us to be able to complete.
-    result->GetDefaultIndex(&defaultIndex);
+    (*_result)->GetDefaultIndex(_defaultIndex);
   }
-  if (defaultIndex < 0) {
+
+  if (*_defaultIndex < 0) {
     // We were given a result index, but that result doesn't want to
     // be autocompleted.
     return NS_ERROR_FAILURE;
@@ -1518,10 +1475,24 @@ nsAutoCompleteController::GetDefaultCompleteValue(PRInt32 aResultIndex,
   // provides a defaultIndex greater than its matchCount, avoid trying to
   // complete to an empty value.
   PRUint32 matchCount = 0;
-  result->GetMatchCount(&matchCount);
+  (*_result)->GetMatchCount(&matchCount);
   // Here defaultIndex is surely non-negative, so can be cast to unsigned.
-  if ((PRUint32)defaultIndex >= matchCount)
+  if ((PRUint32)(*_defaultIndex) >= matchCount) {
     return NS_ERROR_FAILURE;
+  }
+
+  return NS_OK;
+}
+
+nsresult
+nsAutoCompleteController::GetDefaultCompleteValue(PRInt32 aResultIndex,
+                                                  bool aPreserveCasing,
+                                                  nsAString &_retval)
+{
+  nsIAutoCompleteResult *result;
+  PRInt32 defaultIndex = -1;
+  nsresult rv = GetDefaultCompleteResult(aResultIndex, &result, &defaultIndex);
+  if (NS_FAILED(rv)) return rv;
 
   nsAutoString resultValue;
   result->GetValueAt(defaultIndex, resultValue);
@@ -1545,6 +1516,37 @@ nsAutoCompleteController::GetDefaultCompleteValue(PRInt32 aResultIndex,
   }
   else
     _retval = resultValue;
+
+  return NS_OK;
+}
+
+nsresult
+nsAutoCompleteController::GetFinalDefaultCompleteValue(nsAString &_retval)
+{
+  nsIAutoCompleteResult *result;
+  PRInt32 defaultIndex = -1;
+  nsresult rv = GetDefaultCompleteResult(-1, &result, &defaultIndex);
+  if (NS_FAILED(rv)) return rv;
+
+  // Hack: For typeAheadResults allow the comment to be used as the final
+  // defaultComplete value if provided, otherwise fall back to the usual
+  // value.  This allows to provide a different complete text when the user
+  // confirms the match.  Don't rely on this for production code, since it's a
+  // temporary solution that needs a dedicated API (bug 754265).
+  bool isTypeAheadResult = false;
+  if (NS_SUCCEEDED(result->GetTypeAheadResult(&isTypeAheadResult)) &&
+      isTypeAheadResult &&
+      NS_SUCCEEDED(result->GetCommentAt(defaultIndex, _retval)) &&
+      !_retval.IsEmpty()) {
+    return NS_OK;
+  }
+
+  result->GetValueAt(defaultIndex, _retval);
+  nsAutoString inputValue;
+  mInput->GetTextValue(inputValue);
+  if (!_retval.Equals(inputValue, nsCaseInsensitiveStringComparator())) {
+    return NS_ERROR_FAILURE;
+  }
 
   return NS_OK;
 }

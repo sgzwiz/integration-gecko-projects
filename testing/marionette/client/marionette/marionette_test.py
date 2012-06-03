@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 import os
 import re
 import sys
@@ -47,6 +51,41 @@ window.addEventListener('message', function frameload(e) {
         self.assertTrue(isinstance(frame, HTMLElement))
         return frame
 
+    def set_up_test_page(self, emulator, url="test.html", whitelist_prefs=None):
+        emulator.set_context("content")
+        url = emulator.absolute_url(url)
+        emulator.navigate(url)
+
+        if not whitelist_prefs:
+            return
+
+        emulator.set_context("chrome")
+        emulator.execute_script("""
+Components.utils.import("resource://gre/modules/Services.jsm");
+let [url, whitelist_prefs] = arguments;
+let host = Services.io.newURI(url, null, null).prePath;
+whitelist_prefs.forEach(function (pref) {
+  let value;
+  try {
+    value = Services.prefs.getCharPref(pref);
+    log(pref + " has initial value " + value);
+  } catch(ex) {
+    log(pref + " has no initial value.");
+    // Ignore.
+  }
+  let list = value ? value.split(",") : [];
+  if (list.indexOf(host) != -1) {
+    return;
+  }
+  // Some whitelists expect scheme://host, some expect the full URI...
+  list.push(host);
+  list.push(url);
+  Services.prefs.setCharPref(pref, list.join(","))
+  log("Added " + host + " to " + pref);
+});
+        """, [url, whitelist_prefs])
+        emulator.set_context("content")
+
     def setUp(self):
         if self.marionette.session is None:
             self.marionette.start_session()
@@ -67,7 +106,8 @@ class MarionetteTestCase(CommonTestCase):
     def get_new_emulator(self):
         self.extra_emulator_index += 1
         if len(self.marionette.extra_emulators) == self.extra_emulator_index:
-            qemu  = Marionette(emulator=True,
+            qemu  = Marionette(emulator=self.marionette.emulator.arch,
+                               emulatorBinary=self.marionette.emulator.binary,
                                homedir=self.marionette.homedir,
                                baseurl=self.marionette.baseurl,
                                noWindow=self.marionette.noWindow)
@@ -114,6 +154,10 @@ class MarionetteJSTestCase(CommonTestCase):
         if context:
             context = context.group(3)
             self.marionette.set_context(context)
+
+        if context != "chrome":
+            page = self.marionette.absolute_url("empty.html")
+            self.marionette.navigate(page)
 
         timeout = self.timeout_re.search(js)
         if timeout:

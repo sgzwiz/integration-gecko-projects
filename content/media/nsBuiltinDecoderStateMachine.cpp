@@ -1,40 +1,7 @@
 /* vim:set ts=2 sw=2 sts=2 et cindent: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: ML 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla code.
- *
- * The Initial Developer of the Original Code is the Mozilla Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2007
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Chris Double <chris.double@double.co.nz>
- *  Chris Pearce <chris@pearce.org.nz>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <limits>
 #include "nsAudioStream.h"
@@ -437,9 +404,9 @@ nsBuiltinDecoderStateMachine::nsBuiltinDecoderStateMachine(nsBuiltinDecoder* aDe
   mDispatchedRunEvent(false),
   mDecodeThreadWaiting(false),
   mRealTime(aRealTime),
-  mRequestedNewDecodeThread(false),
   mDidThrottleAudioDecoding(false),
   mDidThrottleVideoDecoding(false),
+  mRequestedNewDecodeThread(false),
   mEventManager(aDecoder)
 {
   MOZ_COUNT_CTOR(nsBuiltinDecoderStateMachine);
@@ -540,7 +507,7 @@ void nsBuiltinDecoderStateMachine::SendOutputStreamAudio(AudioData* aAudio,
   aStream->mLastAudioPacketTime = aAudio->mTime;
   aStream->mLastAudioPacketEndTime = aAudio->GetEnd();
 
-  NS_ASSERTION(aOutput->GetChannels() == aAudio->mChannels,
+  NS_ASSERTION(aOutput->GetChannels() == PRInt32(aAudio->mChannels),
                "Wrong number of channels");
 
   // This logic has to mimic AudioLoop closely to make sure we write
@@ -548,7 +515,7 @@ void nsBuiltinDecoderStateMachine::SendOutputStreamAudio(AudioData* aAudio,
   CheckedInt64 audioWrittenOffset = UsecsToFrames(mInfo.mAudioRate,
       aStream->mAudioFramesWrittenBaseTime + mStartTime) + aStream->mAudioFramesWritten;
   CheckedInt64 frameOffset = UsecsToFrames(mInfo.mAudioRate, aAudio->mTime);
-  if (!audioWrittenOffset.valid() || !frameOffset.valid())
+  if (!audioWrittenOffset.isValid() || !frameOffset.isValid())
     return;
   if (audioWrittenOffset.value() < frameOffset.value()) {
     // Write silence to catch up
@@ -636,7 +603,6 @@ void nsBuiltinDecoderStateMachine::SendOutputStreamData()
       AudioSegment output;
       output.Init(mInfo.mAudioChannels);
       for (PRUint32 i = 0; i < audio.Length(); ++i) {
-        AudioData* a = audio[i];
         SendOutputStreamAudio(audio[i], stream, &output);
       }
       if (output.GetDuration() > 0) {
@@ -773,7 +739,7 @@ bool nsBuiltinDecoderStateMachine::HaveEnoughDecodedAudio(PRInt64 aAmpleAudioUSe
   nsTArray<OutputMediaStream>& streams = mDecoder->OutputStreams();
   for (PRUint32 i = 0; i < streams.Length(); ++i) {
     OutputMediaStream* stream = &streams[i];
-    if (!stream->mHaveSentFinishAudio &&
+    if (stream->mStreamInitialized && !stream->mHaveSentFinishAudio &&
         !stream->mStream->HaveEnoughBuffered(TRACK_AUDIO)) {
       return false;
     }
@@ -784,7 +750,7 @@ bool nsBuiltinDecoderStateMachine::HaveEnoughDecodedAudio(PRInt64 aAmpleAudioUSe
       &nsBuiltinDecoderStateMachine::ScheduleStateMachineWithLockAndWakeDecoder);
   for (PRUint32 i = 0; i < streams.Length(); ++i) {
     OutputMediaStream* stream = &streams[i];
-    if (!stream->mHaveSentFinishAudio) {
+    if (stream->mStreamInitialized && !stream->mHaveSentFinishAudio) {
       stream->mStream->DispatchWhenNotEnoughBuffered(TRACK_AUDIO, thread, callback);
     }
   }
@@ -806,7 +772,7 @@ bool nsBuiltinDecoderStateMachine::HaveEnoughDecodedVideo()
 
   for (PRUint32 i = 0; i < streams.Length(); ++i) {
     OutputMediaStream* stream = &streams[i];
-    if (!stream->mHaveSentFinishVideo &&
+    if (stream->mStreamInitialized && !stream->mHaveSentFinishVideo &&
         !stream->mStream->HaveEnoughBuffered(TRACK_VIDEO)) {
       return false;
     }
@@ -817,7 +783,7 @@ bool nsBuiltinDecoderStateMachine::HaveEnoughDecodedVideo()
       &nsBuiltinDecoderStateMachine::ScheduleStateMachineWithLockAndWakeDecoder);
   for (PRUint32 i = 0; i < streams.Length(); ++i) {
     OutputMediaStream* stream = &streams[i];
-    if (!stream->mHaveSentFinishVideo) {
+    if (stream->mStreamInitialized && !stream->mHaveSentFinishVideo) {
       stream->mStream->DispatchWhenNotEnoughBuffered(TRACK_VIDEO, thread, callback);
     }
   }
@@ -1116,7 +1082,7 @@ void nsBuiltinDecoderStateMachine::AudioLoop()
     // samples.
     CheckedInt64 sampleTime = UsecsToFrames(s->mTime, rate);
     CheckedInt64 missingFrames = sampleTime - playedFrames;
-    if (!missingFrames.valid() || !sampleTime.valid()) {
+    if (!missingFrames.isValid() || !sampleTime.isValid()) {
       NS_WARNING("Int overflow adding in AudioLoop()");
       break;
     }
@@ -1127,8 +1093,7 @@ void nsBuiltinDecoderStateMachine::AudioLoop()
       // we pushed to the audio hardware. We must push silence into the audio
       // hardware so that the next audio chunk begins playback at the correct
       // time.
-      missingFrames = NS_MIN(static_cast<PRInt64>(PR_UINT32_MAX),
-                             missingFrames.value());
+      missingFrames = NS_MIN<int64_t>(UINT32_MAX, missingFrames.value());
       LOG(PR_LOG_DEBUG, ("%p Decoder playing %d frames of silence",
                          mDecoder.get(), PRInt32(missingFrames.value())));
       framesWritten = PlaySilence(static_cast<PRUint32>(missingFrames.value()),
@@ -1140,7 +1105,7 @@ void nsBuiltinDecoderStateMachine::AudioLoop()
     {
       ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
       CheckedInt64 playedUsecs = FramesToUsecs(audioDuration, rate) + audioStartTime;
-      if (!playedUsecs.valid()) {
+      if (!playedUsecs.isValid()) {
         NS_WARNING("Int overflow calculating audio end time");
         break;
       }
@@ -1254,30 +1219,18 @@ PRUint32 nsBuiltinDecoderStateMachine::PlayFromAudioQueue(PRUint64 aFrameOffset,
   }
   PRInt64 offset = -1;
   PRUint32 frames = 0;
-  // The state machine could have paused since we've released the decoder
-  // monitor and acquired the audio monitor. Rather than acquire both
-  // monitors, the audio stream also maintains whether its paused or not.
-  // This prevents us from doing a blocking write while holding the audio
-  // monitor while paused; we would block, and the state machine won't be
-  // able to acquire the audio monitor in order to resume or destroy the
-  // audio stream.
-  if (!mAudioStream->IsPaused()) {
-    LOG(PR_LOG_DEBUG, ("%p Decoder playing %d frames of data to stream for AudioData at %lld",
-                       mDecoder.get(), audio->mFrames, audio->mTime));
-    mAudioStream->Write(audio->mAudioData,
-                        audio->mFrames);
+  LOG(PR_LOG_DEBUG, ("%p Decoder playing %d frames of data to stream for AudioData at %lld",
+                     mDecoder.get(), audio->mFrames, audio->mTime));
+  mAudioStream->Write(audio->mAudioData,
+                      audio->mFrames);
 
-    offset = audio->mOffset;
-    frames = audio->mFrames;
+  offset = audio->mOffset;
+  frames = audio->mFrames;
 
-    // Dispatch events to the DOM for the audio just written.
-    mEventManager.QueueWrittenAudioData(audio->mAudioData.get(),
-                                        audio->mFrames * aChannels,
-                                        (aFrameOffset + frames) * aChannels);
-  } else {
-    mReader->mAudioQueue.PushFront(audio);
-    audio.forget();
-  }
+  // Dispatch events to the DOM for the audio just written.
+  mEventManager.QueueWrittenAudioData(audio->mAudioData.get(),
+                                      audio->mFrames * aChannels,
+                                      (aFrameOffset + frames) * aChannels);
   if (offset != -1) {
     mDecoder->UpdatePlaybackOffset(offset);
   }
@@ -1303,11 +1256,6 @@ void nsBuiltinDecoderStateMachine::StopPlayback()
 
   mDecoder->mPlaybackStatistics.Stop(TimeStamp::Now());
 
-  // Reset mPlayStartTime before we pause/shutdown the nsAudioStream. This is
-  // so that if the audio loop is about to write audio, it will have the chance
-  // to check to see if we're paused and not write the audio. If not, the
-  // audio thread can block in the write, and we deadlock trying to acquire
-  // the audio monitor upon resume playback.
   if (IsPlaying()) {
     mPlayDuration += DurationToUsecs(TimeStamp::Now() - mPlayStartTime);
     mPlayStartTime = TimeStamp();
@@ -1892,6 +1840,10 @@ void nsBuiltinDecoderStateMachine::DecodeSeek()
   PRInt64 mediaTime = GetMediaTime();
   if (mediaTime != seekTime) {
     currentTimeChanged = true;
+    // Stop playback now to ensure that while we're outside the monitor
+    // dispatching SeekingStarted, playback doesn't advance and mess with
+    // mCurrentFrameTime that we've setting to seekTime here.
+    StopPlayback();
     UpdatePlaybackPositionInternal(seekTime);
   }
 
@@ -1909,7 +1861,6 @@ void nsBuiltinDecoderStateMachine::DecodeSeek()
     // The seek target is different than the current playback position,
     // we'll need to seek the playback position, so shutdown our decode
     // and audio threads.
-    StopPlayback();
     StopAudioThread();
     ResetPlayback();
     nsresult res;
@@ -2198,6 +2149,7 @@ nsresult nsBuiltinDecoderStateMachine::RunStateMachine()
         PRInt64 videoTime = HasVideo() ? mVideoFrameEndTime : 0;
         PRInt64 clockTime = NS_MAX(mEndTime, NS_MAX(videoTime, GetAudioClock()));
         UpdatePlaybackPosition(clockTime);
+        printf("nsBuiltinDecoderStateMachine::RunStateMachine queuing nsBuiltinDecoder::PlaybackEnded\n");
         nsCOMPtr<nsIRunnable> event =
           NS_NewRunnableMethod(mDecoder, &nsBuiltinDecoder::PlaybackEnded);
         NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL);

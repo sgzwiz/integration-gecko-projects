@@ -1,42 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=78:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* JS execution context. */
 
@@ -99,6 +66,7 @@ namespace js {
 class MathCache;
 class WeakMapBase;
 class InterpreterFrames;
+class DebugScopes;
 
 /*
  * GetSrcNote cache to avoid O(n^2) growth in finding a source note for a
@@ -125,7 +93,7 @@ GetGSNCache(JSContext *cx);
 
 struct PendingProxyOperation {
     PendingProxyOperation   *next;
-    RootedVarObject         object;
+    RootedObject            object;
     PendingProxyOperation(JSContext *cx, JSObject *object) : next(NULL), object(cx, object) {}
 };
 
@@ -447,6 +415,10 @@ struct Thread : ThreadFriendFields
     js::AutoGCRooter   *autoGCRooters;
 };
 
+namespace JS {
+struct RuntimeSizes;
+}
+
 } /* namespace js */
 
 struct JSRuntime : js::RuntimeFriendFields
@@ -519,6 +491,9 @@ struct JSRuntime : js::RuntimeFriendFields
     int64_t             gcNextFullGCTime;
     int64_t             gcJitReleaseTime;
     JSGCMode            gcMode;
+
+    /* During shutdown, the GC needs to clean up every possible object. */
+    bool                gcShouldCleanUpEverything;
 
     /*
      * These flags must be kept separate so that a thread requesting a
@@ -646,6 +621,13 @@ struct JSRuntime : js::RuntimeFriendFields
     js::GCSliceCallback gcSliceCallback;
     JSFinalizeCallback  gcFinalizeCallback;
 
+  private:
+    /*
+     * Malloc counter to measure memory pressure for GC scheduling. It runs
+     * from gcMaxMallocBytes down to zero.
+     */
+    volatile ptrdiff_t  gcMallocBytes;
+
   public:
     /*
      * The trace operations to trace embedding-specific GC roots. One is for
@@ -695,6 +677,9 @@ struct JSRuntime : js::RuntimeFriendFields
      * thread, if any, or a thread that is in a request and holds gcLock.
      */
     JSCList             debuggerList;
+
+    /* Bookkeeping information for debug scope objects. */
+    js::DebugScopes     *debugScopes;
 
     /* Client opaque pointers */
     void                *data;
@@ -767,9 +752,10 @@ struct JSRuntime : js::RuntimeFriendFields
     /* Tables of strings that are pre-allocated in the atomsCompartment. */
     js::StaticStrings   staticStrings;
 
-    JSWrapObjectCallback wrapObjectCallback;
-    JSPreWrapCallback    preWrapObjectCallback;
-    js::PreserveWrapperCallback preserveWrapperCallback;
+    JSWrapObjectCallback                   wrapObjectCallback;
+    JSSameCompartmentWrapObjectCallback    sameCompartmentWrapObjectCallback;
+    JSPreWrapCallback                      preWrapObjectCallback;
+    js::PreserveWrapperCallback            preserveWrapperCallback;
 
     js::ScriptFilenameTable scriptFilenameTable;
 
@@ -839,9 +825,9 @@ struct JSRuntime : js::RuntimeFriendFields
     JS_DECLARE_NEW_METHODS(malloc_, JS_ALWAYS_INLINE)
     JS_DECLARE_DELETE_METHODS(free_, JS_ALWAYS_INLINE)
 
-    void setGCMaxMallocBytes(size_t value) {
-        gcMaxMallocBytes = value;
-    }
+    void setGCMaxMallocBytes(size_t value);
+
+    void resetGCMallocBytes() { gcMallocBytes = ptrdiff_t(gcMaxMallocBytes); }
 
     /*
      * Call this after allocating memory held by GC things, to update memory
@@ -852,6 +838,16 @@ struct JSRuntime : js::RuntimeFriendFields
      * the caller must ensure that no deadlock possible during OOM reporting.
      */
     void updateMallocCounter(JSContext *cx, size_t nbytes);
+
+    bool isTooMuchMalloc() const {
+        return gcMallocBytes <= 0;
+    }
+
+    /*
+     * The function must be called outside the GC lock.
+     */
+    JS_FRIEND_API(void) onTooMuchMalloc();
+
     /*
      * This should be called after system malloc/realloc returns NULL to try
      * to recove some memory or to report an error. Failures in malloc and
@@ -869,9 +865,8 @@ struct JSRuntime : js::RuntimeFriendFields
         return jitHardening;
     }
 
-    void sizeOfExcludingThis(JSMallocSizeOfFun mallocSizeOf, size_t *normal, size_t *temporary,
-                             size_t *mjitCode, size_t *regexpCode, size_t *unusedCodeMemory,
-                             size_t *stackCommitted, size_t *gcMarker);
+    void sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf, JS::RuntimeSizes *runtime);
+    size_t sizeOfExplicitNonHeap();
 };
 
 /* Common macros to access thread-local caches in JSRuntime. */
@@ -899,15 +894,21 @@ namespace js {
 struct AutoResolving;
 
 static inline bool
-OptionsHasXML(uint32_t options)
+OptionsHasAllowXML(uint32_t options)
 {
-    return !!(options & JSOPTION_XML);
+    return !!(options & JSOPTION_ALLOW_XML);
+}
+
+static inline bool
+OptionsHasMoarXML(uint32_t options)
+{
+    return !!(options & JSOPTION_MOAR_XML);
 }
 
 static inline bool
 OptionsSameVersionFlags(uint32_t self, uint32_t other)
 {
-    static const uint32_t mask = JSOPTION_XML;
+    static const uint32_t mask = JSOPTION_MOAR_XML;
     return !((self & mask) ^ (other & mask));
 }
 
@@ -920,9 +921,10 @@ OptionsSameVersionFlags(uint32_t self, uint32_t other)
  * become invalid.
  */
 namespace VersionFlags {
-static const unsigned MASK         = 0x0FFF; /* see JSVersion in jspubtd.h */
-static const unsigned HAS_XML      = 0x1000; /* flag induced by XML option */
-static const unsigned FULL_MASK    = 0x3FFF;
+static const unsigned MASK      = 0x0FFF; /* see JSVersion in jspubtd.h */
+static const unsigned ALLOW_XML = 0x1000; /* flag induced by JSOPTION_ALLOW_XML */
+static const unsigned MOAR_XML  = 0x2000; /* flag induced by JSOPTION_MOAR_XML */
+static const unsigned FULL_MASK = 0x3FFF;
 } /* namespace VersionFlags */
 
 static inline JSVersion
@@ -932,16 +934,22 @@ VersionNumber(JSVersion version)
 }
 
 static inline bool
-VersionHasXML(JSVersion version)
+VersionHasAllowXML(JSVersion version)
 {
-    return !!(version & VersionFlags::HAS_XML);
+    return !!(version & VersionFlags::ALLOW_XML);
+}
+
+static inline bool
+VersionHasMoarXML(JSVersion version)
+{
+    return !!(version & VersionFlags::MOAR_XML);
 }
 
 /* @warning This is a distinct condition from having the XML flag set. */
 static inline bool
 VersionShouldParseXML(JSVersion version)
 {
-    return VersionHasXML(version) || VersionNumber(version) >= JSVERSION_1_6;
+    return VersionHasMoarXML(version) || VersionNumber(version) >= JSVERSION_1_6;
 }
 
 static inline JSVersion
@@ -965,7 +973,8 @@ VersionHasFlags(JSVersion version)
 static inline unsigned
 VersionFlagsToOptions(JSVersion version)
 {
-    unsigned copts = VersionHasXML(version) ? JSOPTION_XML : 0;
+    unsigned copts = (VersionHasAllowXML(version) ? JSOPTION_ALLOW_XML : 0) |
+                     (VersionHasMoarXML(version) ? JSOPTION_MOAR_XML : 0);
     JS_ASSERT((copts & JSCOMPILEOPTION_MASK) == copts);
     return copts;
 }
@@ -973,7 +982,13 @@ VersionFlagsToOptions(JSVersion version)
 static inline JSVersion
 OptionFlagsToVersion(unsigned options, JSVersion version)
 {
-    return VersionSetXML(version, OptionsHasXML(options));
+    uint32_t v = version;
+    v &= ~(VersionFlags::ALLOW_XML | VersionFlags::MOAR_XML);
+    if (OptionsHasAllowXML(options))
+        v |= VersionFlags::ALLOW_XML;
+    if (OptionsHasMoarXML(options))
+        v |= VersionFlags::MOAR_XML;
+    return JSVersion(v);
 }
 
 static inline bool
@@ -1176,6 +1191,8 @@ struct JSContext : js::ContextFriendFields
     js::LifoAlloc &tempLifoAlloc() { return thread()->tempLifoAlloc; }
     inline js::LifoAlloc &typeLifoAlloc();
 
+    inline js::PropertyTree &propertyTree();
+
 #ifdef JS_THREADSAFE
     unsigned            outstandingRequests;/* number of JS_BeginRequest calls
                                                without the corresponding
@@ -1256,7 +1273,6 @@ struct JSContext : js::ContextFriendFields
     }
 
     inline void* calloc_(size_t bytes) {
-        JS_ASSERT(bytes != 0);
         return runtime->calloc_(bytes, this);
     }
 
@@ -1296,20 +1312,26 @@ struct JSContext : js::ContextFriendFields
         this->exception.setUndefined();
     }
 
+#ifdef DEBUG
+    /*
+     * Controls whether a quadratic-complexity assertion is performed during
+     * stack iteration; defaults to true.
+     */
+    bool stackIterAssertionEnabled;
+
+    /*
+     * When greather than zero, it is ok to accessed non-aliased fields of
+     * ScopeObjects because the accesses are coming from the DebugScopeProxy.
+     */
+    unsigned okToAccessUnaliasedBindings;
+#endif
+
     /*
      * Count of currently active compilations.
      * When there are compilations active for the context, the GC must not
      * purge the ParseMapPool.
      */
     unsigned activeCompilations;
-
-#ifdef DEBUG
-    /*
-     * Controls whether a quadratic-complexity assertion is performed during
-     * stack iteration, defaults to true.
-     */
-    bool stackIterAssertionEnabled;
-#endif
 
     /*
      * See JS_SetTrustedPrincipals in jsapi.h.
@@ -1337,6 +1359,23 @@ struct JSContext : js::ContextFriendFields
 }; /* struct JSContext */
 
 namespace js {
+
+class AutoAllowUnaliasedVarAccess
+{
+    JSContext *cx;
+  public:
+    AutoAllowUnaliasedVarAccess(JSContext *cx) : cx(cx) {
+#ifdef DEBUG
+        cx->okToAccessUnaliasedBindings++;
+#endif
+    }
+    ~AutoAllowUnaliasedVarAccess() {
+#ifdef DEBUG
+        JS_ASSERT(cx->okToAccessUnaliasedBindings);
+        cx->okToAccessUnaliasedBindings--;
+#endif
+    }
+};
 
 struct AutoResolving {
   public:
@@ -1374,7 +1413,7 @@ struct AutoResolving {
     JS_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
-#ifdef JS_HAS_XML_SUPPORT
+#if JS_HAS_XML_SUPPORT
 class AutoXMLRooter : private AutoGCRooter {
   public:
     AutoXMLRooter(JSContext *cx, JSXML *xml

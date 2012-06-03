@@ -63,6 +63,14 @@ const browserFrameHelpers = {
     this._setBoolPref('dom.ipc.tabs.disabled', value);
   },
 
+  getOOPByDefaultPref: function() {
+    return this._getBoolPref("dom.ipc.browser_frames.oop_by_default");
+  },
+
+  setOOPByDefaultPref: function(value) {
+    return this._setBoolPref("dom.ipc.browser_frames.oop_by_default", value);
+  },
+
   getPageThumbsEnabledPref: function() {
     return this._getBoolPref('browser.pageThumbs.enabled');
   },
@@ -81,12 +89,14 @@ const browserFrameHelpers = {
     this.setEnabledPref(this.origEnabledPref);
     this.setWhitelistPref(this.origWhitelistPref);
     this.setOOPDisabledPref(this.origOOPDisabledPref);
+    this.setOOPByDefaultPref(this.origOOPByDefaultPref);
     this.setPageThumbsEnabledPref(this.origPageThumbsEnabledPref);
   },
 
   'origEnabledPref': null,
   'origWhitelistPref': null,
   'origOOPDisabledPref': null,
+  'origOOPByDefaultPref': null,
   'origPageThumbsEnabledPref': null,
 
   // Two basically-empty pages from two different domains you can load.
@@ -96,23 +106,24 @@ const browserFrameHelpers = {
   'emptyPage2': 'http://example.org' +
                 window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/')) +
                 '/file_empty.html',
+  'focusPage': 'http://example.org' +
+                window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/')) +
+                '/file_focus.html',
 };
 
 browserFrameHelpers.origEnabledPref = browserFrameHelpers.getEnabledPref();
 browserFrameHelpers.origWhitelistPref = browserFrameHelpers.getWhitelistPref();
 browserFrameHelpers.origOOPDisabledPref = browserFrameHelpers.getOOPDisabledPref();
+browserFrameHelpers.origOOPByDefaultPref = browserFrameHelpers.getOOPByDefaultPref();
 browserFrameHelpers.origPageThumbsEnabledPref = browserFrameHelpers.getPageThumbsEnabledPref();
 
 // Disable tab view; it seriously messes us up.
 browserFrameHelpers.setPageThumbsEnabledPref(false);
 
-// OOP must be disabled on Windows; it doesn't work there.  Enable it
-// everywhere else.
+// OOP by default, except on Windows, where OOP doesn't work.
+browserFrameHelpers.setOOPByDefaultPref(true);
 if (navigator.platform.indexOf('Win') != -1) {
   browserFrameHelpers.setOOPDisabledPref(true);
-}
-else {
-  browserFrameHelpers.setOOPDisabledPref(false);
 }
 
 addEventListener('unload', function() {

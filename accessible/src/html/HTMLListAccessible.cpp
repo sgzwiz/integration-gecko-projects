@@ -6,11 +6,12 @@
 
 #include "HTMLListAccessible.h"
 
-#include "nsDocAccessible.h"
+#include "DocAccessible.h"
 #include "Role.h"
 #include "States.h"
 
 #include "nsBlockFrame.h"
+#include "nsBulletFrame.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -19,7 +20,7 @@ using namespace mozilla::a11y;
 // HTMLListAccessible
 ////////////////////////////////////////////////////////////////////////////////
 
-NS_IMPL_ISUPPORTS_INHERITED0(HTMLListAccessible, nsHyperTextAccessible)
+NS_IMPL_ISUPPORTS_INHERITED0(HTMLListAccessible, HyperTextAccessible)
 
 role
 HTMLListAccessible::NativeRole()
@@ -33,7 +34,7 @@ HTMLListAccessible::NativeRole()
 PRUint64
 HTMLListAccessible::NativeState()
 {
-  return nsHyperTextAccessibleWrap::NativeState() | states::READONLY;
+  return HyperTextAccessibleWrap::NativeState() | states::READONLY;
 }
 
 
@@ -42,8 +43,8 @@ HTMLListAccessible::NativeState()
 ////////////////////////////////////////////////////////////////////////////////
 
 HTMLLIAccessible::
-  HTMLLIAccessible(nsIContent* aContent, nsDocAccessible* aDoc) :
-  nsHyperTextAccessibleWrap(aContent, aDoc), mBullet(nsnull)
+  HTMLLIAccessible(nsIContent* aContent, DocAccessible* aDoc) :
+  HyperTextAccessibleWrap(aContent, aDoc), mBullet(nsnull)
 {
   mFlags |= eHTMLListItemAccessible;
 
@@ -55,14 +56,14 @@ HTMLLIAccessible::
   }
 }
 
-NS_IMPL_ISUPPORTS_INHERITED0(HTMLLIAccessible, nsHyperTextAccessible)
+NS_IMPL_ISUPPORTS_INHERITED0(HTMLLIAccessible, HyperTextAccessible)
 
 void
 HTMLLIAccessible::Shutdown()
 {
   mBullet = nsnull;
 
-  nsHyperTextAccessibleWrap::Shutdown();
+  HyperTextAccessibleWrap::Shutdown();
 }
 
 role
@@ -77,23 +78,23 @@ HTMLLIAccessible::NativeRole()
 PRUint64
 HTMLLIAccessible::NativeState()
 {
-  return nsHyperTextAccessibleWrap::NativeState() | states::READONLY;
+  return HyperTextAccessibleWrap::NativeState() | states::READONLY;
 }
 
 NS_IMETHODIMP
 HTMLLIAccessible::GetBounds(PRInt32* aX, PRInt32* aY,
                             PRInt32* aWidth, PRInt32* aHeight)
 {
-  nsresult rv = nsAccessibleWrap::GetBounds(aX, aY, aWidth, aHeight);
-  if (NS_FAILED(rv) || !mBullet)
+  nsresult rv = AccessibleWrap::GetBounds(aX, aY, aWidth, aHeight);
+  if (NS_FAILED(rv) || !mBullet || mBullet->IsInside())
     return rv;
 
   PRInt32 bulletX = 0, bulletY = 0, bulletWidth = 0, bulletHeight = 0;
   rv = mBullet->GetBounds(&bulletX, &bulletY, &bulletWidth, &bulletHeight);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  *aWidth += *aX - bulletX;
   *aX = bulletX; // Move x coordinate of list item over to cover bullet as well
-  *aWidth += bulletWidth;
   return NS_OK;
 }
 
@@ -108,7 +109,7 @@ HTMLLIAccessible::UpdateBullet(bool aHasBullet)
     return;
   }
 
-  nsDocAccessible* document = Document();
+  DocAccessible* document = Document();
   if (aHasBullet) {
     mBullet = new HTMLListBulletAccessible(mContent, mDoc);
     if (document->BindToDocument(mBullet, nsnull)) {
@@ -125,7 +126,7 @@ HTMLLIAccessible::UpdateBullet(bool aHasBullet)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// HTMLLIAccessible: nsAccessible protected
+// HTMLLIAccessible: Accessible protected
 
 void
 HTMLLIAccessible::CacheChildren()
@@ -134,7 +135,7 @@ HTMLLIAccessible::CacheChildren()
     AppendChild(mBullet);
 
   // Cache children from subtree.
-  nsAccessibleWrap::CacheChildren();
+  AccessibleWrap::CacheChildren();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -144,6 +145,13 @@ HTMLLIAccessible::CacheChildren()
 ////////////////////////////////////////////////////////////////////////////////
 // HTMLListBulletAccessible: nsAccessNode
 
+nsIFrame*
+HTMLListBulletAccessible::GetFrame() const
+{
+  nsBlockFrame* blockFrame = do_QueryFrame(mContent->GetPrimaryFrame());
+  return blockFrame ? blockFrame->GetBullet() : nsnull;
+}
+
 bool
 HTMLListBulletAccessible::IsPrimaryForNode() const
 {
@@ -151,7 +159,7 @@ HTMLListBulletAccessible::IsPrimaryForNode() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// HTMLListBulletAccessible: nsAccessible
+// HTMLListBulletAccessible: Accessible
 
 ENameValueFlag
 HTMLListBulletAccessible::Name(nsString &aName)
@@ -198,4 +206,14 @@ HTMLListBulletAccessible::AppendTextTo(nsAString& aText, PRUint32 aStartOffset,
     blockFrame->GetBulletText(bulletText);
 
   aText.Append(Substring(bulletText, aStartOffset, aLength));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// HTMLListBulletAccessible: public
+
+bool
+HTMLListBulletAccessible::IsInside() const
+{
+  nsBlockFrame* blockFrame = do_QueryFrame(mContent->GetPrimaryFrame());
+  return blockFrame ? blockFrame->HasInsideBullet() : false;
 }

@@ -1,41 +1,9 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=4 sw=4 et tw=99 ft=cpp:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code, released
- * June 24, 2010.
- *
- * The Initial Developer of the Original Code is
- *    The Mozilla Foundation
- *
- * Contributor(s):
- *    Andreas Gal <gal@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "XrayWrapper.h"
 #include "AccessCheck.h"
@@ -81,8 +49,7 @@ createHolder(JSContext *cx, JSObject *wrappedNative, JSObject *parent)
     if (!holder)
         return nsnull;
 
-    CompartmentPrivate *priv =
-        (CompartmentPrivate *)JS_GetCompartmentPrivate(js::GetObjectCompartment(holder));
+    CompartmentPrivate *priv = GetCompartmentPrivate(holder);
     JSObject *inner = JS_ObjectToInnerObject(cx, wrappedNative);
     XPCWrappedNative *wn = GetWrappedNative(inner);
     Value expando = ObjectOrNullValue(priv->LookupExpandoObject(wn));
@@ -290,8 +257,7 @@ EnsureExpandoObject(JSContext *cx, JSObject *holder)
     JSObject *expando = GetExpandoObject(holder);
     if (expando)
         return expando;
-    CompartmentPrivate *priv =
-        (CompartmentPrivate *)JS_GetCompartmentPrivate(js::GetObjectCompartment(holder));
+    CompartmentPrivate *priv = GetCompartmentPrivate(holder);
     XPCWrappedNative *wn = GetWrappedNativeFromHolder(holder);
     expando = priv->LookupExpandoObject(wn);
     if (!expando) {
@@ -368,9 +334,9 @@ XPCWrappedNativeXrayTraits::isResolving(JSContext *cx, JSObject *holder,
 // getter/setter and rely on the class getter/setter. We install a
 // class getter/setter on the holder object to trigger them.
 JSBool
-holder_get(JSContext *cx, JSObject *wrapper, jsid id, jsval *vp)
+holder_get(JSContext *cx, JSHandleObject wrapper_, JSHandleId id, jsval *vp)
 {
-    wrapper = FindWrapper(wrapper);
+    JSObject *wrapper = FindWrapper(wrapper_);
 
     JSObject *holder = GetHolder(wrapper);
 
@@ -392,9 +358,9 @@ holder_get(JSContext *cx, JSObject *wrapper, jsid id, jsval *vp)
 }
 
 JSBool
-holder_set(JSContext *cx, JSObject *wrapper, jsid id, JSBool strict, jsval *vp)
+holder_set(JSContext *cx, JSHandleObject wrapper_, JSHandleId id, JSBool strict, jsval *vp)
 {
-    wrapper = FindWrapper(wrapper);
+    JSObject *wrapper = FindWrapper(wrapper_);
 
     JSObject *holder = GetHolder(wrapper);
     if (XPCWrappedNativeXrayTraits::isResolving(cx, holder, id)) {
@@ -512,7 +478,7 @@ XPCWrappedNativeXrayTraits::resolveNativeProperty(JSContext *cx, JSObject *wrapp
 }
 
 static JSBool
-wrappedJSObject_getter(JSContext *cx, JSObject *wrapper, jsid id, jsval *vp)
+wrappedJSObject_getter(JSContext *cx, JSHandleObject wrapper, JSHandleId id, jsval *vp)
 {
     if (!IsWrapper(wrapper) || !WrapperFactory::IsXrayWrapper(wrapper)) {
         JS_ReportError(cx, "Unexpected object");
@@ -550,7 +516,7 @@ WrapURI(JSContext *cx, nsIURI *uri, jsval *vp)
 }
 
 static JSBool
-documentURIObject_getter(JSContext *cx, JSObject *wrapper, jsid id, jsval *vp)
+documentURIObject_getter(JSContext *cx, JSHandleObject wrapper, JSHandleId id, jsval *vp)
 {
     nsAutoUnstickChrome unstick(cx);
 
@@ -577,7 +543,7 @@ documentURIObject_getter(JSContext *cx, JSObject *wrapper, jsid id, jsval *vp)
 }
 
 static JSBool
-baseURIObject_getter(JSContext *cx, JSObject *wrapper, jsid id, jsval *vp)
+baseURIObject_getter(JSContext *cx, JSHandleObject wrapper, JSHandleId id, jsval *vp)
 {
     nsAutoUnstickChrome unstick(cx);
 
@@ -603,7 +569,7 @@ baseURIObject_getter(JSContext *cx, JSObject *wrapper, jsid id, jsval *vp)
 }
 
 static JSBool
-nodePrincipal_getter(JSContext *cx, JSObject *wrapper, jsid id, jsval *vp)
+nodePrincipal_getter(JSContext *cx, JSHandleObject wrapper, JSHandleId id, jsval *vp)
 {
     nsAutoUnstickChrome unstick(cx);
 
@@ -1364,7 +1330,7 @@ XrayWrapper<Base, Traits>::get(JSContext *cx, JSObject *wrapper, JSObject *recei
     // Skip our Base if it isn't already ProxyHandler.
     // NB: None of the functions we call are prepared for the receiver not
     // being the wrapper, so ignore the receiver here.
-    return ProxyHandler::get(cx, wrapper, wrapper, id, vp);
+    return BaseProxyHandler::get(cx, wrapper, wrapper, id, vp);
 }
 
 template <typename Base, typename Traits>
@@ -1372,10 +1338,10 @@ bool
 XrayWrapper<Base, Traits>::set(JSContext *cx, JSObject *wrapper, JSObject *receiver, jsid id,
                                bool strict, js::Value *vp)
 {
-    // Skip our Base if it isn't already ProxyHandler.
+    // Skip our Base if it isn't already BaseProxyHandler.
     // NB: None of the functions we call are prepared for the receiver not
     // being the wrapper, so ignore the receiver here.
-    return ProxyHandler::set(cx, wrapper, wrapper, id, strict, vp);
+    return BaseProxyHandler::set(cx, wrapper, wrapper, id, strict, vp);
 }
 
 template <typename Base, typename Traits>
@@ -1383,7 +1349,7 @@ bool
 XrayWrapper<Base, Traits>::has(JSContext *cx, JSObject *wrapper, jsid id, bool *bp)
 {
     // Skip our Base if it isn't already ProxyHandler.
-    return ProxyHandler::has(cx, wrapper, id, bp);
+    return BaseProxyHandler::has(cx, wrapper, id, bp);
 }
 
 template <typename Base, typename Traits>
@@ -1391,7 +1357,7 @@ bool
 XrayWrapper<Base, Traits>::hasOwn(JSContext *cx, JSObject *wrapper, jsid id, bool *bp)
 {
     // Skip our Base if it isn't already ProxyHandler.
-    return ProxyHandler::hasOwn(cx, wrapper, id, bp);
+    return BaseProxyHandler::hasOwn(cx, wrapper, id, bp);
 }
 
 template <typename Base, typename Traits>
@@ -1399,7 +1365,7 @@ bool
 XrayWrapper<Base, Traits>::keys(JSContext *cx, JSObject *wrapper, JS::AutoIdVector &props)
 {
     // Skip our Base if it isn't already ProxyHandler.
-    return ProxyHandler::keys(cx, wrapper, props);
+    return BaseProxyHandler::keys(cx, wrapper, props);
 }
 
 template <typename Base, typename Traits>
@@ -1408,7 +1374,7 @@ XrayWrapper<Base, Traits>::iterate(JSContext *cx, JSObject *wrapper, unsigned fl
                                    js::Value *vp)
 {
     // Skip our Base if it isn't already ProxyHandler.
-    return ProxyHandler::iterate(cx, wrapper, flags, vp);
+    return BaseProxyHandler::iterate(cx, wrapper, flags, vp);
 }
 
 template <typename Base, typename Traits>

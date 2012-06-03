@@ -1,40 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Corporation code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Robert O'Callahan <robert@ocallahan.org>
- *   Chris Jones <jones.chris.g@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Attributes.h"
 
@@ -599,21 +566,33 @@ static void
 SetAntialiasingFlags(Layer* aLayer, gfxContext* aTarget)
 {
   if (!aTarget->IsCairo()) {
-    // Azure targets don't contain antialiasing flags at this point.
-    return;
-  }
+    RefPtr<DrawTarget> dt = aTarget->GetDrawTarget();
 
-  nsRefPtr<gfxASurface> surface = aTarget->CurrentSurface();
-  if (surface->GetContentType() != gfxASurface::CONTENT_COLOR_ALPHA) {
-    // Destination doesn't have alpha channel; no need to set any special flags
-    return;
-  }
+    if (dt->GetFormat() != FORMAT_B8G8R8A8) {
+      return;
+    }
 
-  const nsIntRect& bounds = aLayer->GetVisibleRegion().GetBounds();
-  surface->SetSubpixelAntialiasingEnabled(
-      !(aLayer->GetContentFlags() & Layer::CONTENT_COMPONENT_ALPHA) ||
-      surface->GetOpaqueRect().Contains(
-        aTarget->UserToDevice(gfxRect(bounds.x, bounds.y, bounds.width, bounds.height))));
+    const nsIntRect& bounds = aLayer->GetVisibleRegion().GetBounds();
+    Rect transformedBounds = dt->GetTransform().TransformBounds(Rect(Float(bounds.x), Float(bounds.y),
+                                                                     Float(bounds.width), Float(bounds.height)));
+    transformedBounds.RoundOut();
+    IntRect intTransformedBounds;
+    transformedBounds.ToIntRect(&intTransformedBounds);
+    dt->SetPermitSubpixelAA(!(aLayer->GetContentFlags() & Layer::CONTENT_COMPONENT_ALPHA) ||
+                            dt->GetOpaqueRect().Contains(intTransformedBounds));
+  } else {
+    nsRefPtr<gfxASurface> surface = aTarget->CurrentSurface();
+    if (surface->GetContentType() != gfxASurface::CONTENT_COLOR_ALPHA) {
+      // Destination doesn't have alpha channel; no need to set any special flags
+      return;
+    }
+
+    const nsIntRect& bounds = aLayer->GetVisibleRegion().GetBounds();
+    surface->SetSubpixelAntialiasingEnabled(
+        !(aLayer->GetContentFlags() & Layer::CONTENT_COMPONENT_ALPHA) ||
+        surface->GetOpaqueRect().Contains(
+          aTarget->UserToDevice(gfxRect(bounds.x, bounds.y, bounds.width, bounds.height))));
+  }
 }
 
 already_AddRefed<gfxContext>
@@ -1454,6 +1433,16 @@ BasicLayerManager::PopGroupToSourceWithCachedSurface(gfxContext *aTarget, gfxCon
   }
 }
 
+PRInt32
+BasicShadowLayerManager::GetMaxTextureSize() const
+{
+  if (HasShadowManager()) {
+    return ShadowLayerForwarder::GetMaxTextureSize();
+  }
+
+  return PR_INT32_MAX;
+}
+
 void
 BasicLayerManager::BeginTransactionWithTarget(gfxContext* aTarget)
 {
@@ -1836,7 +1825,7 @@ Transform3D(gfxASurface* aSource, gfxContext* aDest,
 {
   nsRefPtr<gfxImageSurface> sourceImage = aSource->GetAsImageSurface();
   if (!sourceImage) {
-    sourceImage = new gfxImageSurface(gfxIntSize(aBounds.width, aBounds.height), gfxASurface::FormatFromContent(aSource->GetContentType()));
+    sourceImage = new gfxImageSurface(gfxIntSize(aBounds.width, aBounds.height), gfxPlatform::GetPlatform()->OptimalFormatForContent(aSource->GetContentType()));
     nsRefPtr<gfxContext> ctx = new gfxContext(sourceImage);
 
     aSource->SetDeviceOffset(gfxPoint(0, 0));
@@ -1987,7 +1976,8 @@ BasicLayerManager::PaintLayer(gfxContext* aTarget,
 
   nsRefPtr<gfxContext> groupTarget;
   nsRefPtr<gfxASurface> untransformedSurface;
-  if (!is2D) {
+  bool clipIsEmpty = !aTarget || aTarget->GetClipExtents().IsEmpty();
+  if (!is2D && !clipIsEmpty) {
     untransformedSurface = 
       gfxPlatform::GetPlatform()->CreateOffscreenSurface(gfxIntSize(bounds.width, bounds.height), 
                                                          gfxASurface::CONTENT_COLOR_ALPHA);
@@ -2005,7 +1995,7 @@ BasicLayerManager::PaintLayer(gfxContext* aTarget,
     }
     untransformedSurface->SetDeviceOffset(gfxPoint(-bounds.x, -bounds.y));
     groupTarget = new gfxContext(untransformedSurface);
-  } else if (needsGroup) {
+  } else if (needsGroup && !clipIsEmpty) {
     groupTarget = PushGroupForLayer(aTarget, aLayer, aLayer->GetEffectiveVisibleRegion(),
                                     &needsClipToVisibleRegion);
   } else {
@@ -2057,14 +2047,11 @@ BasicLayerManager::PaintLayer(gfxContext* aTarget,
     if (is2D) {
       PopGroupToSourceWithCachedSurface(aTarget, groupTarget);
     } else {
-      NS_ABORT_IF_FALSE(untransformedSurface, 
-                        "We should always allocate an untransformed surface with 3d transforms!");
-
       // Temporary fast fix for bug 725886
       // Revert these changes when 725886 is ready
-      gfxRect clipExtents;
-      clipExtents = aTarget->GetClipExtents();
-      if (!clipExtents.IsEmpty()) {
+      if (!clipIsEmpty) {
+        NS_ABORT_IF_FALSE(untransformedSurface, 
+                          "We should always allocate an untransformed surface with 3d transforms!");
         gfxPoint offset;
         bool dontBlit = needsClipToVisibleRegion || mTransactionIncomplete ||
                           aLayer->GetEffectiveOpacity() != 1.0f;
@@ -2567,7 +2554,7 @@ public:
 
   virtual void FillSpecificAttributes(SpecificLayerAttributes& aAttrs)
   {
-    aAttrs = ImageLayerAttributes(mFilter);
+    aAttrs = ImageLayerAttributes(mFilter, mForceSingleTile);
   }
 
   virtual Layer* AsLayer() { return this; }
@@ -2758,7 +2745,6 @@ public:
 void
 BasicShadowableColorLayer::Paint(gfxContext* aContext, Layer* aMaskLayer)
 {
-  // TODO[nrc] move this back inside the if, and clear the context some other way
   BasicColorLayer::Paint(aContext, aMaskLayer);
 
   if (!HasShadow()) {
@@ -3523,11 +3509,26 @@ void
 BasicShadowLayerManager::BeginTransactionWithTarget(gfxContext* aTarget)
 {
   NS_ABORT_IF_FALSE(mKeepAlive.IsEmpty(), "uncommitted txn?");
+  nsRefPtr<gfxContext> targetContext = aTarget;
+
   // If the last transaction was incomplete (a failed DoEmptyTransaction),
   // don't signal a new transaction to ShadowLayerForwarder. Carry on adding
   // to the previous transaction.
   if (HasShadowManager()) {
     ShadowLayerForwarder::BeginTransaction();
+
+    // If we have a non-default target, we need to let our shadow manager draw
+    // to it. This will happen at the end of the transaction.
+    if (aTarget && (aTarget != mDefaultTarget)) {
+      mShadowTarget = aTarget;
+
+      // Create a temporary target for ourselves, so that mShadowTarget is only
+      // drawn to by our shadow manager.
+      nsRefPtr<gfxASurface> targetSurface = gfxPlatform::GetPlatform()->
+        CreateOffscreenSurface(aTarget->OriginalSurface()->GetSize(),
+                               aTarget->OriginalSurface()->GetContentType());
+      targetContext = new gfxContext(targetSurface);
+    }
   }
   BasicLayerManager::BeginTransactionWithTarget(aTarget);
 }
@@ -3539,6 +3540,10 @@ BasicShadowLayerManager::EndTransaction(DrawThebesLayerCallback aCallback,
 {
   BasicLayerManager::EndTransaction(aCallback, aCallbackData, aFlags);
   ForwardTransaction();
+  if (mShadowTarget) {
+    ShadowLayerForwarder::ShadowDrawToTarget(mShadowTarget);
+    mShadowTarget = nsnull;
+  }
 }
 
 bool

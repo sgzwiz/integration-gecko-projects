@@ -1,43 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=2 sw=2 et tw=78: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Johnny Stenback <jst@netscape.com>
- *   Christopher A. Aillon <christopher@aillon.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* A namespace class for static layout utilities. */
 
@@ -108,7 +73,6 @@
 #include "nsIObserverService.h"
 #include "nsContentPolicyUtils.h"
 #include "nsNodeInfoManager.h"
-#include "nsIXBLService.h"
 #include "nsCRT.h"
 #include "nsIDOMEvent.h"
 #include "nsIDOMEventTarget.h"
@@ -552,30 +516,14 @@ nsContentUtils::InitializeEventTable() {
   sAtomEventTable = new nsDataHashtable<nsISupportsHashKey, EventNameMapping>;
   sStringEventTable = new nsDataHashtable<nsStringHashKey, EventNameMapping>;
   sUserDefinedEvents = new nsCOMArray<nsIAtom>(64);
-
-  if (!sAtomEventTable || !sStringEventTable || !sUserDefinedEvents ||
-      !sAtomEventTable->Init(int(ArrayLength(eventArray) / 0.75) + 1) ||
-      !sStringEventTable->Init(int(ArrayLength(eventArray) / 0.75) + 1)) {
-    delete sAtomEventTable;
-    sAtomEventTable = nsnull;
-    delete sStringEventTable;
-    sStringEventTable = nsnull;
-    delete sUserDefinedEvents;
-    sUserDefinedEvents = nsnull;
-    return false;
-  }
+  sAtomEventTable->Init(int(ArrayLength(eventArray) / 0.75) + 1);
+  sStringEventTable->Init(int(ArrayLength(eventArray) / 0.75) + 1);
 
   // Subtract one from the length because of the trailing null
   for (PRUint32 i = 0; i < ArrayLength(eventArray) - 1; ++i) {
-    if (!sAtomEventTable->Put(eventArray[i].mAtom, eventArray[i]) ||
-        !sStringEventTable->Put(Substring(nsDependentAtomString(eventArray[i].mAtom), 2),
-                                eventArray[i])) {
-      delete sAtomEventTable;
-      sAtomEventTable = nsnull;
-      delete sStringEventTable;
-      sStringEventTable = nsnull;
-      return false;
-    }
+    sAtomEventTable->Put(eventArray[i].mAtom, eventArray[i]);
+    sStringEventTable->Put(Substring(nsDependentAtomString(eventArray[i].mAtom), 2),
+                           eventArray[i]);
   }
 
   return true;
@@ -598,15 +546,9 @@ nsContentUtils::InitializeTouchEventTable()
     };
     // Subtract one from the length because of the trailing null
     for (PRUint32 i = 0; i < ArrayLength(touchEventArray) - 1; ++i) {
-      if (!sAtomEventTable->Put(touchEventArray[i].mAtom, touchEventArray[i]) ||
-          !sStringEventTable->Put(Substring(nsDependentAtomString(touchEventArray[i].mAtom), 2),
-                                  touchEventArray[i])) {
-        delete sAtomEventTable;
-        sAtomEventTable = nsnull;
-        delete sStringEventTable;
-        sStringEventTable = nsnull;
-        return;
-      }
+      sAtomEventTable->Put(touchEventArray[i].mAtom, touchEventArray[i]);
+      sStringEventTable->Put(Substring(nsDependentAtomString(touchEventArray[i].mAtom), 2),
+                             touchEventArray[i]);
     }
   }
 }
@@ -4566,6 +4508,19 @@ nsContentUtils::TriggerLink(nsIContent *aContent, nsPresContext *aPresContext,
 }
 
 /* static */
+void
+nsContentUtils::GetLinkLocation(Element* aElement, nsString& aLocationString)
+{
+  nsCOMPtr<nsIURI> hrefURI = aElement->GetHrefURI();
+  if (hrefURI) {
+    nsCAutoString specUTF8;
+    nsresult rv = hrefURI->GetSpec(specUTF8);
+    if (NS_SUCCEEDED(rv))
+      CopyUTF8toUTF16(specUTF8, aLocationString);
+  }
+}
+
+/* static */
 nsIWidget*
 nsContentUtils::GetTopLevelWidget(nsIWidget* aWidget)
 {
@@ -6460,6 +6415,21 @@ nsContentUtils::FindInternalContentViewer(const char* aType,
     }
   }
 #endif
+
+#ifdef MOZ_GSTREAMER
+  if (nsHTMLMediaElement::IsH264Enabled()) {
+    for (unsigned int i = 0; i < ArrayLength(nsHTMLMediaElement::gH264Types); ++i) {
+      const char* type = nsHTMLMediaElement::gH264Types[i];
+      if (!strcmp(aType, type)) {
+        docFactory = do_GetService("@mozilla.org/content/document-loader-factory;1");
+        if (docFactory && aLoaderType) {
+          *aLoaderType = TYPE_CONTENT;
+        }
+        return docFactory.forget();
+      }
+    }
+  }
+#endif
 #endif // MOZ_MEDIA
 
   return NULL;
@@ -6576,6 +6546,18 @@ nsContentUtils::IsRequestFullScreenAllowed()
   return !sTrustedFullScreenOnly ||
          nsEventStateManager::IsHandlingUserInput() ||
          IsCallerChrome();
+}
+
+/* static */
+bool
+nsContentUtils::HaveEqualPrincipals(nsIDocument* aDoc1, nsIDocument* aDoc2)
+{
+  if (!aDoc1 || !aDoc2) {
+    return false;
+  }
+  bool principalsEqual = false;
+  aDoc1->NodePrincipal()->Equals(aDoc2->NodePrincipal(), &principalsEqual);
+  return principalsEqual;
 }
 
 static void
@@ -6739,5 +6721,79 @@ nsContentUtils::JSArrayToAtomArray(JSContext* aCx, const JS::Value& aJSArray,
     }
     aRetVal.AppendObject(a);
   }
+  return NS_OK;
+}
+
+// static
+nsresult
+nsContentUtils::IsOnPrefWhitelist(nsPIDOMWindow* aWindow,
+                                  const char* aPrefURL, bool* aAllowed)
+{
+  // Make sure we're dealing with an inner window.
+  nsPIDOMWindow* innerWindow = aWindow->IsInnerWindow() ?
+    aWindow :
+    aWindow->GetCurrentInnerWindow();
+  NS_ENSURE_TRUE(innerWindow, NS_ERROR_FAILURE);
+
+  // Make sure we're being called from a window that we have permission to
+  // access.
+  if (!nsContentUtils::CanCallerAccess(innerWindow)) {
+    return NS_ERROR_DOM_SECURITY_ERR;
+  }
+
+  // Need the document in order to make security decisions.
+  nsCOMPtr<nsIDocument> document =
+    do_QueryInterface(innerWindow->GetExtantDocument());
+  NS_ENSURE_TRUE(document, NS_NOINTERFACE);
+
+  // Do security checks. We assume that chrome is always allowed.
+  if (nsContentUtils::IsSystemPrincipal(document->NodePrincipal())) {
+    *aAllowed = true;
+    return NS_OK;    
+  }
+
+  // We also allow a comma seperated list of pages specified by
+  // preferences.  
+  nsCOMPtr<nsIURI> originalURI;
+  nsresult rv =
+    document->NodePrincipal()->GetURI(getter_AddRefs(originalURI));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIURI> documentURI;
+  rv = originalURI->Clone(getter_AddRefs(documentURI));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Strip the query string (if there is one) before comparing.
+  nsCOMPtr<nsIURL> documentURL = do_QueryInterface(documentURI);
+  if (documentURL) {
+    rv = documentURL->SetQuery(EmptyCString());
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  bool allowed = false;
+
+  // The pref may not exist but in that case we deny access just as we do if
+  // the url doesn't match.
+  nsCString whitelist;
+  if (NS_SUCCEEDED(Preferences::GetCString(aPrefURL,
+                                           &whitelist))) {
+    nsCOMPtr<nsIIOService> ios = do_GetIOService();
+    NS_ENSURE_TRUE(ios, NS_ERROR_FAILURE);
+
+    nsCCharSeparatedTokenizer tokenizer(whitelist, ',');
+    while (tokenizer.hasMoreTokens()) {
+      nsCOMPtr<nsIURI> uri;
+      if (NS_SUCCEEDED(NS_NewURI(getter_AddRefs(uri), tokenizer.nextToken(),
+                                 nsnull, nsnull, ios))) {
+        rv = documentURI->EqualsExceptRef(uri, &allowed);
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        if (allowed) {
+          break;
+        }
+      }
+    }
+  }
+  *aAllowed = allowed;
   return NS_OK;
 }

@@ -5,16 +5,18 @@
  * The Marionette object, passed to the script context.
  */
 
-function Marionette(is_async, window, context, logObj) {
-  this.is_async = is_async;
+function Marionette(scope, window, context, logObj) {
+  this.scope = scope;
   this.window = window;
   this.tests = [];
   this.logObj = logObj;
   this.context = context;
+  this.timeout = 0;
 }
 
 Marionette.prototype = {
-  exports: ['ok', 'is', 'isnot', 'log', 'getLogs', 'generate_results', 'waitFor'],
+  exports: ['ok', 'is', 'isnot', 'log', 'getLogs', 'generate_results', 'waitFor',
+            'runEmulatorCmd'],
 
   ok: function Marionette__ok(condition, name, diag) {
     let test = {'result': !!condition, 'name': name, 'diag': diag};
@@ -119,17 +121,24 @@ Marionette.prototype = {
       return ostring;
   },
 
-  defaultWaitForTimeout: 10000,
   waitFor: function test_waitFor(callback, test, timeout) {
       if (test()) {
           callback();
           return;
       }
       timeout = timeout || Date.now();
-      if (Date.now() - timeout > this.defaultWaitForTimeout) {
-          throw 'waitFor timeout';
+      if (Date.now() - timeout > this.timeout) {
+        dump("waitFor timeout: " + test.toString() + "\n");
+        // the script will timeout here, so no need to raise a separate
+        // timeout exception
+        return;
       }
       this.window.setTimeout(this.waitFor.bind(this), 100, callback, test, timeout);
   },
+
+  runEmulatorCmd: function runEmulatorCmd(cmd, callback) {
+    this.scope.runEmulatorCmd(cmd, callback);
+  },
+
 };
 

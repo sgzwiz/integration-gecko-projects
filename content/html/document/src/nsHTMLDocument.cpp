@@ -1,42 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set sw=2 ts=2 et tw=80: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Pierre Phaneuf <pp@ludusdesign.com>
- *   Kathleen Brade <brade@netscape.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
 
@@ -1367,7 +1333,16 @@ nsHTMLDocument::Open(const nsAString& aContentTypeOrUrl,
   }
 
   // If we already have a parser we ignore the document.open call.
-  if (mParser) {
+  if (mParser || mParserAborted) {
+    // The WHATWG spec says: "If the document has an active parser that isn't
+    // a script-created parser, and the insertion point associated with that
+    // parser's input stream is not undefined (that is, it does point to
+    // somewhere in the input stream), then the method does nothing. Abort
+    // these steps and return the Document object on which the method was
+    // invoked."
+    // Note that aborting a parser leaves the parser "active" with its
+    // insertion point "not undefined". We track this using mParserAborted,
+    // because aborting a parser nulls out mParser.
     return NS_OK;
   }
 
@@ -2838,6 +2813,7 @@ static const struct MidasCommand gMidasCommandTable[] = {
   { "copy",          "cmd_copy",            "", true,  false },
   { "paste",         "cmd_paste",           "", true,  false },
   { "delete",        "cmd_delete",          "", true,  false },
+  { "forwarddelete", "cmd_forwardDelete",   "", true,  false },
   { "selectall",     "cmd_selectAll",       "", true,  false },
   { "undo",          "cmd_undo",            "", true,  false },
   { "redo",          "cmd_redo",            "", true,  false },
@@ -2854,6 +2830,8 @@ static const struct MidasCommand gMidasCommandTable[] = {
   { "createlink",    "cmd_insertLinkNoUI",  "", false, false },
   { "insertimage",   "cmd_insertImageNoUI", "", false, false },
   { "inserthtml",    "cmd_insertHTML",      "", false, false },
+  { "inserttext",    "cmd_insertText",      "", false, false },
+  { "insertparagraph", "cmd_insertText",  "\n", true,  false },
   { "gethtml",       "cmd_getContents",     "", false, false },
   { "justifyleft",   "cmd_align",       "left", true,  false },
   { "justifyright",  "cmd_align",      "right", true,  false },
@@ -2863,7 +2841,6 @@ static const struct MidasCommand gMidasCommandTable[] = {
   { "unlink",        "cmd_removeLinks",     "", true,  false },
   { "insertorderedlist",   "cmd_ol",        "", true,  false },
   { "insertunorderedlist", "cmd_ul",        "", true,  false },
-  { "insertparagraph", "cmd_paragraphState", "p", true, false },
   { "formatblock",   "cmd_paragraphState",  "", false, false },
   { "heading",       "cmd_paragraphState",  "", false, false },
   { "styleWithCSS",  "cmd_setDocumentUseCSS", "", false, true },
@@ -3090,10 +3067,10 @@ nsHTMLDocument::DoClipboardSecurityCheck(bool aPaste)
 /* boolean execCommand(in DOMString commandID, in boolean doShowUI,
                                                in DOMString value); */
 NS_IMETHODIMP
-nsHTMLDocument::ExecCommand(const nsAString & commandID,
+nsHTMLDocument::ExecCommand(const nsAString& commandID,
                             bool doShowUI,
-                            const nsAString & value,
-                            bool *_retval)
+                            const nsAString& value,
+                            bool* _retval)
 {
   NS_ENSURE_ARG_POINTER(_retval);
 
@@ -3102,48 +3079,52 @@ nsHTMLDocument::ExecCommand(const nsAString & commandID,
 
   *_retval = false;
 
+  nsCAutoString cmdToDispatch, paramStr;
+  bool isBool, boolVal;
+  if (!ConvertToMidasInternalCommand(commandID, value,
+                                     cmdToDispatch, paramStr,
+                                     isBool, boolVal)) {
+    // Return false
+    return NS_OK;
+  }
+
   // if editing is not on, bail
-  if (!IsEditingOnAfterFlush())
-    return NS_ERROR_FAILURE;
+  NS_ENSURE_TRUE(IsEditingOnAfterFlush(), NS_ERROR_FAILURE);
 
   // if they are requesting UI from us, let's fail since we have no UI
-  if (doShowUI)
+  if (doShowUI) {
     return NS_OK;
+  }
+
+  if (commandID.LowerCaseEqualsLiteral("gethtml")) {
+    return NS_ERROR_FAILURE;
+  }
 
   nsresult rv = NS_OK;
 
-  if (commandID.LowerCaseEqualsLiteral("gethtml"))
-    return NS_ERROR_FAILURE;
-
   if (commandID.LowerCaseEqualsLiteral("cut") ||
-      (commandID.LowerCaseEqualsLiteral("copy"))) {
+      commandID.LowerCaseEqualsLiteral("copy")) {
     rv = DoClipboardSecurityCheck(false);
   } else if (commandID.LowerCaseEqualsLiteral("paste")) {
     rv = DoClipboardSecurityCheck(true);
   }
 
-  if (NS_FAILED(rv))
-    return rv;
+  NS_ENSURE_SUCCESS(rv, rv);
 
   // get command manager and dispatch command to our window if it's acceptable
   nsCOMPtr<nsICommandManager> cmdMgr;
   GetMidasCommandManager(getter_AddRefs(cmdMgr));
-  if (!cmdMgr)
-    return NS_ERROR_FAILURE;
+  NS_ENSURE_TRUE(cmdMgr, NS_ERROR_FAILURE);
 
-  nsIDOMWindow *window = GetWindow();
-  if (!window)
-    return NS_ERROR_FAILURE;
+  nsIDOMWindow* window = GetWindow();
+  NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
-  nsCAutoString cmdToDispatch, paramStr;
-  bool isBool, boolVal;
-  if (!ConvertToMidasInternalCommand(commandID, value,
-                                     cmdToDispatch, paramStr, isBool, boolVal))
-    return NS_OK;
-
-  if ((cmdToDispatch.EqualsLiteral("cmd_paragraphState") ||
-       cmdToDispatch.EqualsLiteral("cmd_fontSize")) && paramStr.IsEmpty()) {
-    // Invalid value
+  if ((cmdToDispatch.EqualsLiteral("cmd_fontSize") ||
+       cmdToDispatch.EqualsLiteral("cmd_insertImageNoUI") ||
+       cmdToDispatch.EqualsLiteral("cmd_insertLinkNoUI") ||
+       cmdToDispatch.EqualsLiteral("cmd_paragraphState")) &&
+      paramStr.IsEmpty()) {
+    // Invalid value, return false
     return NS_OK;
   }
 
@@ -3153,52 +3134,51 @@ nsHTMLDocument::ExecCommand(const nsAString & commandID,
     // we have a command that requires a parameter, create params
     nsCOMPtr<nsICommandParams> cmdParams = do_CreateInstance(
                                             NS_COMMAND_PARAMS_CONTRACTID, &rv);
-    if (!cmdParams)
-      return NS_ERROR_OUT_OF_MEMORY;
+    NS_ENSURE_TRUE(cmdParams, NS_ERROR_OUT_OF_MEMORY);
 
-    if (isBool)
+    if (isBool) {
       rv = cmdParams->SetBooleanValue("state_attribute", boolVal);
-    else if (cmdToDispatch.Equals("cmd_fontFace"))
+    } else if (cmdToDispatch.EqualsLiteral("cmd_fontFace")) {
       rv = cmdParams->SetStringValue("state_attribute", value);
-    else if (cmdToDispatch.Equals("cmd_insertHTML"))
+    } else if (cmdToDispatch.EqualsLiteral("cmd_insertHTML") ||
+               cmdToDispatch.EqualsLiteral("cmd_insertText")) {
       rv = cmdParams->SetStringValue("state_data", value);
-    else
+    } else {
       rv = cmdParams->SetCStringValue("state_attribute", paramStr.get());
-    if (NS_FAILED(rv))
-      return rv;
+    }
+    NS_ENSURE_SUCCESS(rv, rv);
     rv = cmdMgr->DoCommand(cmdToDispatch.get(), cmdParams, window);
   }
 
   *_retval = NS_SUCCEEDED(rv);
-
-  return rv;
+  NS_ENSURE_SUCCESS(rv, rv);
+  return NS_OK;
 }
 
 /* boolean queryCommandEnabled(in DOMString commandID); */
 NS_IMETHODIMP
-nsHTMLDocument::QueryCommandEnabled(const nsAString & commandID,
-                                    bool *_retval)
+nsHTMLDocument::QueryCommandEnabled(const nsAString& commandID,
+                                    bool* _retval)
 {
   NS_ENSURE_ARG_POINTER(_retval);
   *_retval = false;
 
+  nsCAutoString cmdToDispatch;
+  if (!ConvertToMidasInternalCommand(commandID, cmdToDispatch)) {
+    // Return false
+    return NS_OK;
+  }
+
   // if editing is not on, bail
-  if (!IsEditingOnAfterFlush())
-    return NS_ERROR_FAILURE;
+  NS_ENSURE_TRUE(IsEditingOnAfterFlush(), NS_ERROR_FAILURE);
 
   // get command manager and dispatch command to our window if it's acceptable
   nsCOMPtr<nsICommandManager> cmdMgr;
   GetMidasCommandManager(getter_AddRefs(cmdMgr));
-  if (!cmdMgr)
-    return NS_ERROR_FAILURE;
+  NS_ENSURE_TRUE(cmdMgr, NS_ERROR_FAILURE);
 
-  nsIDOMWindow *window = GetWindow();
-  if (!window)
-    return NS_ERROR_FAILURE;
-
-  nsCAutoString cmdToDispatch;
-  if (!ConvertToMidasInternalCommand(commandID, cmdToDispatch))
-    return NS_OK; // queryCommandEnabled returns false on unsupported commands
+  nsIDOMWindow* window = GetWindow();
+  NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
   return cmdMgr->IsCommandEnabled(cmdToDispatch.get(), window, _retval);
 }
@@ -3211,23 +3191,22 @@ nsHTMLDocument::QueryCommandIndeterm(const nsAString & commandID,
   NS_ENSURE_ARG_POINTER(_retval);
   *_retval = false;
 
+  nsCAutoString cmdToDispatch;
+  if (!ConvertToMidasInternalCommand(commandID, cmdToDispatch)) {
+    // Return false
+    return NS_OK;
+  }
+
   // if editing is not on, bail
-  if (!IsEditingOnAfterFlush())
-    return NS_ERROR_FAILURE;
+  NS_ENSURE_TRUE(IsEditingOnAfterFlush(), NS_ERROR_FAILURE);
 
   // get command manager and dispatch command to our window if it's acceptable
   nsCOMPtr<nsICommandManager> cmdMgr;
   GetMidasCommandManager(getter_AddRefs(cmdMgr));
-  if (!cmdMgr)
-    return NS_ERROR_FAILURE;
+  NS_ENSURE_TRUE(cmdMgr, NS_ERROR_FAILURE);
 
-  nsIDOMWindow *window = GetWindow();
-  if (!window)
-    return NS_ERROR_FAILURE;
-
-  nsCAutoString cmdToDispatch;
-  if (!ConvertToMidasInternalCommand(commandID, cmdToDispatch))
-    return NS_ERROR_NOT_IMPLEMENTED;
+  nsIDOMWindow* window = GetWindow();
+  NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
   nsresult rv;
   nsCOMPtr<nsICommandParams> cmdParams = do_CreateInstance(
@@ -3235,8 +3214,7 @@ nsHTMLDocument::QueryCommandIndeterm(const nsAString & commandID,
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = cmdMgr->GetCommandState(cmdToDispatch.get(), window, cmdParams);
-  if (NS_FAILED(rv))
-    return rv;
+  NS_ENSURE_SUCCESS(rv, rv);
 
   // If command does not have a state_mixed value, this call fails and sets
   // *_retval to false.  This is fine -- we want to return false in that case
@@ -3252,19 +3230,25 @@ nsHTMLDocument::QueryCommandState(const nsAString & commandID, bool *_retval)
   NS_ENSURE_ARG_POINTER(_retval);
   *_retval = false;
 
+  nsCAutoString cmdToDispatch, paramToCheck;
+  bool dummy, dummy2;
+  if (!ConvertToMidasInternalCommand(commandID, commandID,
+                                     cmdToDispatch, paramToCheck,
+                                     dummy, dummy2)) {
+    // Return false
+    return NS_OK;
+  }
+
   // if editing is not on, bail
-  if (!IsEditingOnAfterFlush())
-    return NS_ERROR_FAILURE;
+  NS_ENSURE_TRUE(IsEditingOnAfterFlush(), NS_ERROR_FAILURE);
 
   // get command manager and dispatch command to our window if it's acceptable
   nsCOMPtr<nsICommandManager> cmdMgr;
   GetMidasCommandManager(getter_AddRefs(cmdMgr));
-  if (!cmdMgr)
-    return NS_ERROR_FAILURE;
+  NS_ENSURE_TRUE(cmdMgr, NS_ERROR_FAILURE);
 
-  nsIDOMWindow *window = GetWindow();
-  if (!window)
-    return NS_ERROR_FAILURE;
+  nsIDOMWindow* window = GetWindow();
+  NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
   if (commandID.LowerCaseEqualsLiteral("usecss")) {
     // Per spec, state is supported for styleWithCSS but not useCSS, so we just
@@ -3273,21 +3257,13 @@ nsHTMLDocument::QueryCommandState(const nsAString & commandID, bool *_retval)
     return NS_OK;
   }
 
-  nsCAutoString cmdToDispatch, paramToCheck;
-  bool dummy, dummy2;
-  if (!ConvertToMidasInternalCommand(commandID, commandID,
-                                     cmdToDispatch, paramToCheck, dummy, dummy2))
-    return NS_ERROR_NOT_IMPLEMENTED;
-
   nsresult rv;
   nsCOMPtr<nsICommandParams> cmdParams = do_CreateInstance(
                                            NS_COMMAND_PARAMS_CONTRACTID, &rv);
-  if (!cmdParams)
-    return NS_ERROR_OUT_OF_MEMORY;
+  NS_ENSURE_TRUE(cmdParams, NS_ERROR_OUT_OF_MEMORY);
 
   rv = cmdMgr->GetCommandState(cmdToDispatch.get(), window, cmdParams);
-  if (NS_FAILED(rv))
-    return rv;
+  NS_ENSURE_SUCCESS(rv, rv);
 
   // handle alignment as a special case (possibly other commands too?)
   // Alignment is special because the external api is individual
@@ -3295,15 +3271,17 @@ nsHTMLDocument::QueryCommandState(const nsAString & commandID, bool *_retval)
   // parameters.  When getting the state of this command, we need to
   // return the boolean for this particular alignment rather than the
   // string of 'which alignment is this?'
-  if (cmdToDispatch.Equals("cmd_align")) {
+  if (cmdToDispatch.EqualsLiteral("cmd_align")) {
     char * actualAlignmentType = nsnull;
     rv = cmdParams->GetCStringValue("state_attribute", &actualAlignmentType);
     if (NS_SUCCEEDED(rv) && actualAlignmentType && actualAlignmentType[0]) {
       *_retval = paramToCheck.Equals(actualAlignmentType);
     }
-    if (actualAlignmentType)
+    if (actualAlignmentType) {
       nsMemory::Free(actualAlignmentType);
-    return rv;
+    }
+    NS_ENSURE_SUCCESS(rv, rv);
+    return NS_OK;
   }
 
   // If command does not have a state_all value, this call fails and sets
@@ -3319,22 +3297,10 @@ nsHTMLDocument::QueryCommandSupported(const nsAString & commandID,
                                       bool *_retval)
 {
   NS_ENSURE_ARG_POINTER(_retval);
-  *_retval = false;
-
-  // if editing is not on, bail
-  if (!IsEditingOnAfterFlush())
-    return NS_ERROR_FAILURE;
-
-  // get command manager
-  nsCOMPtr<nsICommandManager> cmdMgr;
-  GetMidasCommandManager(getter_AddRefs(cmdMgr));
-  if (!cmdMgr)
-    return NS_ERROR_FAILURE;
 
   // commandID is supported if it can be converted to a Midas command
   nsCAutoString cmdToDispatch;
-  if (ConvertToMidasInternalCommand(commandID, cmdToDispatch))
-    *_retval = true;
+  *_retval = ConvertToMidasInternalCommand(commandID, cmdToDispatch);
 
   return NS_OK;
 }
@@ -3346,51 +3312,48 @@ nsHTMLDocument::QueryCommandValue(const nsAString & commandID,
 {
   _retval.SetLength(0);
 
+  nsCAutoString cmdToDispatch, paramStr;
+  if (!ConvertToMidasInternalCommand(commandID, cmdToDispatch)) {
+    // Return empty string
+    return NS_OK;
+  }
+
   // if editing is not on, bail
-  if (!IsEditingOnAfterFlush())
-    return NS_ERROR_FAILURE;
+  NS_ENSURE_TRUE(IsEditingOnAfterFlush(), NS_ERROR_FAILURE);
 
   // get command manager and dispatch command to our window if it's acceptable
   nsCOMPtr<nsICommandManager> cmdMgr;
   GetMidasCommandManager(getter_AddRefs(cmdMgr));
-  if (!cmdMgr)
-    return NS_ERROR_FAILURE;
+  NS_ENSURE_TRUE(cmdMgr, NS_ERROR_FAILURE);
 
-  nsIDOMWindow *window = GetWindow();
-  if (!window)
-    return NS_ERROR_FAILURE;
-
-  nsCAutoString cmdToDispatch, paramStr;
-  if (!ConvertToMidasInternalCommand(commandID, cmdToDispatch))
-    return NS_ERROR_NOT_IMPLEMENTED;
+  nsIDOMWindow* window = GetWindow();
+  NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
   // create params
   nsresult rv;
   nsCOMPtr<nsICommandParams> cmdParams = do_CreateInstance(
                                            NS_COMMAND_PARAMS_CONTRACTID, &rv);
-  if (!cmdParams)
-    return NS_ERROR_OUT_OF_MEMORY;
+  NS_ENSURE_TRUE(cmdParams, NS_ERROR_OUT_OF_MEMORY);
 
-  // this is a special command since we are calling "DoCommand rather than
+  // this is a special command since we are calling DoCommand rather than
   // GetCommandState like the other commands
-  if (cmdToDispatch.Equals("cmd_getContents"))
-  {
+  if (cmdToDispatch.EqualsLiteral("cmd_getContents")) {
     rv = cmdParams->SetBooleanValue("selection_only", true);
-    if (NS_FAILED(rv)) return rv;
+    NS_ENSURE_SUCCESS(rv, rv);
     rv = cmdParams->SetCStringValue("format", "text/html");
-    if (NS_FAILED(rv)) return rv;
+    NS_ENSURE_SUCCESS(rv, rv);
     rv = cmdMgr->DoCommand(cmdToDispatch.get(), cmdParams, window);
-    if (NS_FAILED(rv)) return rv;
-    return cmdParams->GetStringValue("result", _retval);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = cmdParams->GetStringValue("result", _retval);
+    NS_ENSURE_SUCCESS(rv, rv);
+    return NS_OK;
   }
 
   rv = cmdParams->SetCStringValue("state_attribute", paramStr.get());
-  if (NS_FAILED(rv))
-    return rv;
+  NS_ENSURE_SUCCESS(rv, rv);
 
   rv = cmdMgr->GetCommandState(cmdToDispatch.get(), window, cmdParams);
-  if (NS_FAILED(rv))
-    return rv;
+  NS_ENSURE_SUCCESS(rv, rv);
 
   // If command does not have a state_attribute value, this call fails, and
   // _retval will wind up being the empty string.  This is fine -- we want to

@@ -1,40 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * vim: set ts=2 sw=2 et tw=78:
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Novell code.
- *
- * The Initial Developer of the Original Code is Novell Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2006
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *     robert@ocallahan.org
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK *****
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
 /*
@@ -148,8 +116,7 @@ static bool IsFixedItem(nsDisplayItem *aItem, nsDisplayListBuilder* aBuilder)
   nsIFrame* activeScrolledRoot =
     nsLayoutUtils::GetActiveScrolledRootFor(aItem, aBuilder);
   return activeScrolledRoot &&
-         !nsLayoutUtils::ScrolledByViewportScrolling(activeScrolledRoot,
-                                                     aBuilder);
+    !nsLayoutUtils::IsScrolledByRootContentDocumentDisplayportScrolling(activeScrolledRoot, aBuilder);
 }
 
 static bool ForceVisiblityForFixedItem(nsDisplayListBuilder* aBuilder,
@@ -232,21 +199,25 @@ static void RecordFrameMetrics(nsIFrame* aForFrame,
     scrollableFrame = aScrollFrame->GetScrollTargetFrame();
 
   if (scrollableFrame) {
-    nsSize contentSize =
-      scrollableFrame->GetScrollRange().Size() +
-      scrollableFrame->GetScrollPortRect().Size();
-    metrics.mCSSContentSize = gfx::Size(nsPresContext::AppUnitsToFloatCSSPixels(contentSize.width),
-                                        nsPresContext::AppUnitsToFloatCSSPixels(contentSize.height));
-    metrics.mContentSize = contentSize.ScaleToNearestPixels(
+    nsRect contentBounds = scrollableFrame->GetScrollRange();
+    contentBounds.width += scrollableFrame->GetScrollPortRect().width;
+    contentBounds.height += scrollableFrame->GetScrollPortRect().height;
+    metrics.mCSSContentRect = gfx::Rect(nsPresContext::AppUnitsToFloatCSSPixels(contentBounds.x),
+                                        nsPresContext::AppUnitsToFloatCSSPixels(contentBounds.y),
+                                        nsPresContext::AppUnitsToFloatCSSPixels(contentBounds.width),
+                                        nsPresContext::AppUnitsToFloatCSSPixels(contentBounds.height));
+    metrics.mContentRect = contentBounds.ScaleToNearestPixels(
       aContainerParameters.mXScale, aContainerParameters.mYScale, auPerDevPixel);
     metrics.mViewportScrollOffset = scrollableFrame->GetScrollPosition().ScaleToNearestPixels(
       aContainerParameters.mXScale, aContainerParameters.mYScale, auPerDevPixel);
   }
   else {
-    nsSize contentSize = aForFrame->GetSize();
-    metrics.mCSSContentSize = gfx::Size(nsPresContext::AppUnitsToFloatCSSPixels(contentSize.width),
-                                        nsPresContext::AppUnitsToFloatCSSPixels(contentSize.height));
-    metrics.mContentSize = contentSize.ScaleToNearestPixels(
+    nsRect contentBounds = aForFrame->GetRect();
+    metrics.mCSSContentRect = gfx::Rect(nsPresContext::AppUnitsToFloatCSSPixels(contentBounds.x),
+                                        nsPresContext::AppUnitsToFloatCSSPixels(contentBounds.y),
+                                        nsPresContext::AppUnitsToFloatCSSPixels(contentBounds.width),
+                                        nsPresContext::AppUnitsToFloatCSSPixels(contentBounds.height));
+    metrics.mContentRect = contentBounds.ScaleToNearestPixels(
       aContainerParameters.mXScale, aContainerParameters.mYScale, auPerDevPixel);
   }
 
@@ -391,6 +362,29 @@ nsDisplayListBuilder::MarkFramesForDisplayList(nsIFrame* aDirtyFrame,
   for (nsFrameList::Enumerator e(aFrames); !e.AtEnd(); e.Next()) {
     mFramesMarkedForDisplay.AppendElement(e.get());
     MarkOutOfFlowFrameForDisplay(aDirtyFrame, e.get(), aDirtyRect);
+  }
+}
+
+void
+nsDisplayListBuilder::MarkPreserve3DFramesForDisplayList(nsIFrame* aDirtyFrame, const nsRect& aDirtyRect) 
+{
+  nsAutoTArray<nsIFrame::ChildList,4> childListArray;
+  aDirtyFrame->GetChildLists(&childListArray);
+  nsIFrame::ChildListArrayIterator lists(childListArray);
+  for (; !lists.IsDone(); lists.Next()) {
+    nsFrameList::Enumerator childFrames(lists.CurrentList());
+    for (; !childFrames.AtEnd(); childFrames.Next()) {
+      nsIFrame *child = childFrames.get();
+      if (child->Preserves3D()) {
+        mFramesMarkedForDisplay.AppendElement(child);
+        nsRect dirty = aDirtyRect - child->GetOffsetTo(aDirtyFrame);
+
+        child->Properties().Set(nsDisplayListBuilder::Preserve3DDirtyRectProperty(),
+                           new nsRect(dirty));
+
+        MarkFrameForDisplay(child, aDirtyFrame);
+      }
+    }
   }
 }
 
@@ -1138,8 +1132,14 @@ nsDisplayBackground::TryOptimizeToImageLayer(nsDisplayListBuilder* aBuilder)
                                            *bg,
                                            layer);
 
+  nsImageRenderer* imageRenderer = &state.mImageRenderer;
   // We only care about images here, not gradients.
-  if (!state.mImageRenderer.IsRasterImage())
+  if (imageRenderer->IsRasterImage())
+    return false;
+
+  nsRefPtr<ImageContainer> imageContainer = imageRenderer->GetContainer();
+  // Image is not ready to be made into a layer yet
+  if (!imageContainer)
     return false;
 
   // We currently can't handle tiled or partial backgrounds.
@@ -1154,7 +1154,7 @@ nsDisplayBackground::TryOptimizeToImageLayer(nsDisplayListBuilder* aBuilder)
 
   PRInt32 appUnitsPerDevPixel = presContext->AppUnitsPerDevPixel();
   mDestRect = nsLayoutUtils::RectToGfxRect(state.mDestArea, appUnitsPerDevPixel);
-  mImageContainer = state.mImageRenderer.GetContainer();
+  mImageContainer = imageContainer;
 
   // Ok, we can turn this into a layer if needed.
   return true;
@@ -2499,6 +2499,12 @@ nsRect
 nsDisplayTransform::GetFrameBoundsForTransform(const nsIFrame* aFrame)
 {
   NS_PRECONDITION(aFrame, "Can't get the bounds of a nonexistent frame!");
+
+  if (aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT) {
+    // TODO: SVG needs to define what percentage translations resolve against.
+    return nsRect();
+  }
+
   return nsRect(nsPoint(0, 0), aFrame->GetSize());
 }
 
@@ -2511,6 +2517,11 @@ nsDisplayTransform::GetFrameBoundsForTransform(const nsIFrame* aFrame)
 
   nsRect result;
   
+  if (aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT) {
+    // TODO: SVG needs to define what percentage translations resolve against.
+    return result;
+  }
+
   /* Iterate through the continuation list, unioning together all the
    * bounding rects.
    */
@@ -2540,8 +2551,8 @@ gfxPoint3D GetDeltaToMozTransformOrigin(const nsIFrame* aFrame,
                                         const nsRect* aBoundsOverride)
 {
   NS_PRECONDITION(aFrame, "Can't get delta for a null frame!");
-  NS_PRECONDITION(aFrame->GetStyleDisplay()->HasTransform(),
-                  "Can't get a delta for an untransformed frame!");
+  NS_PRECONDITION(aFrame->IsTransformed(),
+                  "Shouldn't get a delta for an untransformed frame!");
 
   /* For both of the coordinates, if the value of -moz-transform is a
    * percentage, it's relative to the size of the frame.  Otherwise, if it's
@@ -2577,6 +2588,14 @@ gfxPoint3D GetDeltaToMozTransformOrigin(const nsIFrame* aFrame,
       *coords[index] =
         NSAppUnitsToFloatPixels(coord.GetCoordValue(), aAppUnitsPerPixel);
     }
+    if ((aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT) &&
+        coord.GetUnit() != eStyleUnit_Percent) {
+      // <length> values represent offsets from the origin of the SVG element's
+      // user space, not the top left of its bounds, so we must adjust for that:
+      nscoord offset =
+        (index == 0) ? aFrame->GetPosition().x : aFrame->GetPosition().y;
+      *coords[index] -= NSAppUnitsToFloatPixels(offset, aAppUnitsPerPixel);
+    }
   }
 
   *coords[2] = NSAppUnitsToFloatPixels(display->mTransformOrigin[2].GetCoordValue(),
@@ -2597,8 +2616,8 @@ gfxPoint3D GetDeltaToMozPerspectiveOrigin(const nsIFrame* aFrame,
                                           float aAppUnitsPerPixel)
 {
   NS_PRECONDITION(aFrame, "Can't get delta for a null frame!");
-  NS_PRECONDITION(aFrame->GetStyleDisplay()->HasTransform(),
-                  "Can't get a delta for an untransformed frame!");
+  NS_PRECONDITION(aFrame->IsTransformed(),
+                  "Shouldn't get a delta for an untransformed frame!");
   NS_PRECONDITION(aFrame->GetParentStyleContextFrame(), 
                   "Can't get delta without a style parent!");
 
@@ -2688,16 +2707,27 @@ nsDisplayTransform::GetResultingTransformMatrix(const nsIFrame* aFrame,
   /* Get the matrix, then change its basis to factor in the origin. */
   bool dummy;
   gfx3DMatrix result;
+  // Call IsSVGTransformed() regardless of the value of
+  // disp->mSpecifiedTransform, since we still need any transformFromSVGParent.
+  gfxMatrix svgTransform, transformFromSVGParent;
+  bool hasSVGTransforms =
+    aFrame->IsSVGTransformed(&svgTransform, &transformFromSVGParent);
   /* Transformed frames always have a transform, or are preserving 3d (and might still have perspective!) */
   if (disp->mSpecifiedTransform) {
     result = nsStyleTransformMatrix::ReadTransforms(disp->mSpecifiedTransform,
                                                     aFrame->GetStyleContext(),
                                                     aFrame->PresContext(),
                                                     dummy, bounds, aAppUnitsPerPixel);
+  } else if (hasSVGTransforms) {
+    result = gfx3DMatrix::From2D(svgTransform);
   } else {
      NS_ASSERTION(aFrame->GetStyleDisplay()->mTransformStyle == NS_STYLE_TRANSFORM_STYLE_PRESERVE_3D ||
                   aFrame->GetStyleDisplay()->mBackfaceVisibility == NS_STYLE_BACKFACE_VISIBILITY_HIDDEN,
                   "If we don't have a transform, then we must have another reason to have an nsDisplayTransform created");
+  }
+
+  if (hasSVGTransforms && !transformFromSVGParent.IsIdentity()) {
+    result = result * gfx3DMatrix::From2D(transformFromSVGParent);
   }
 
   const nsStyleDisplay* parentDisp = nsnull;

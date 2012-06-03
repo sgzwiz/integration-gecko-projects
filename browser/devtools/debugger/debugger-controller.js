@@ -1,50 +1,15 @@
 /* -*- Mode: javascript; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ft=javascript ts=2 et sw=2 tw=80: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- *   Mozilla Foundation
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Dave Camp <dcamp@mozilla.com>
- *   Panos Astithas <past@mozilla.com>
- *   Victor Porof <vporof@mozilla.com>
- *   Mihai Sucan <mihai.sucan@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cu = Components.utils;
 
+const FRAME_STEP_CACHE_DURATION = 100; // ms
 const DBG_STRINGS_URI = "chrome://browser/locale/devtools/debugger.properties";
 
 Cu.import("resource:///modules/source-editor.jsm");
@@ -83,6 +48,7 @@ let DebuggerController = {
     this._isInitialized = true;
     window.removeEventListener("DOMContentLoaded", this._startupDebugger, true);
 
+    DebuggerView.initializePanes();
     DebuggerView.initializeEditor();
     DebuggerView.StackFrames.initialize();
     DebuggerView.Properties.initialize();
@@ -104,6 +70,7 @@ let DebuggerController = {
     this._isDestroyed = true;
     window.removeEventListener("unload", this._shutdownDebugger, true);
 
+    DebuggerView.destroyPanes();
     DebuggerView.destroyEditor();
     DebuggerView.Scripts.destroy();
     DebuggerView.StackFrames.destroy();
@@ -138,7 +105,9 @@ let DebuggerController = {
     if (!Prefs.remoteAutoConnect) {
       let prompt = new RemoteDebuggerPrompt();
       let result = prompt.show(!!this._remoteConnectionTimeout);
-      if (!result) {
+      // If the connection was not established before the user canceled the
+      // prompt, close the remote debugger.
+      if (!result && !DebuggerController.activeThread) {
         this.dispatchEvent("Debugger:Close");
         return false;
       }
@@ -377,6 +346,7 @@ function StackFrames() {
   this._onResume = this._onResume.bind(this);
   this._onFrames = this._onFrames.bind(this);
   this._onFramesCleared = this._onFramesCleared.bind(this);
+  this._afterFramesCleared = this._afterFramesCleared.bind(this);
 }
 
 StackFrames.prototype = {
@@ -405,6 +375,8 @@ StackFrames.prototype = {
    *        The next function in the initialization sequence.
    */
   connect: function SF_connect(aCallback) {
+    window.addEventListener("Debugger:FetchedVariables", this._onFetchedVars, false);
+
     this.activeThread.addListener("paused", this._onPaused);
     this.activeThread.addListener("resumed", this._onResume);
     this.activeThread.addListener("framesadded", this._onFrames);
@@ -419,6 +391,8 @@ StackFrames.prototype = {
    * Disconnect from the client.
    */
   disconnect: function SF_disconnect() {
+    window.removeEventListener("Debugger:FetchedVariables", this._onFetchedVars, false);
+
     if (!this.activeThread) {
       return;
     }
@@ -448,9 +422,11 @@ StackFrames.prototype = {
   _onFrames: function SF__onFrames() {
     if (!this.activeThread.cachedFrames.length) {
       DebuggerView.StackFrames.emptyText();
+      DebuggerView.Properties.emptyText();
       return;
     }
     DebuggerView.StackFrames.empty();
+    DebuggerView.Properties.empty();
 
     for each (let frame in this.activeThread.cachedFrames) {
       this._addFrame(frame);
@@ -467,12 +443,23 @@ StackFrames.prototype = {
    * Handler for the thread client's framescleared notification.
    */
   _onFramesCleared: function SF__onFramesCleared() {
-    DebuggerView.StackFrames.emptyText();
+    // After each frame step (in, over, out), framescleared is fired, which
+    // forces the UI to be emptied and rebuilt on framesadded. Most of the times
+    // this is not necessary, and will result in a brief redraw flicker.
+    // To avoid it, invalidate the UI only after a short time if necessary.
+    window.setTimeout(this._afterFramesCleared, FRAME_STEP_CACHE_DURATION);
     this.selectedFrame = null;
+  },
 
-    // Clear the properties as well.
-    DebuggerView.Properties.localScope.empty();
-    DebuggerView.Properties.globalScope.empty();
+  /**
+   * Called soon after the thread client's framescleared notification.
+   */
+  _afterFramesCleared: function SF__afterFramesCleared() {
+    if (!this.activeThread.cachedFrames.length) {
+      DebuggerView.StackFrames.emptyText();
+      DebuggerView.Properties.emptyText();
+      DebuggerController.dispatchEvent("Debugger:AfterFramesCleared");
+    }
   },
 
   /**
@@ -536,65 +523,116 @@ StackFrames.prototype = {
       editor.setDebugLocation(-1);
     }
 
-    // Display the local variables.
-    let localScope = DebuggerView.Properties.localScope;
-    localScope.empty();
+    // Start recording any added variables or properties in any scope.
+    DebuggerView.Properties.createHierarchyStore();
 
-    // Add "this".
-    if (frame.this) {
-      let thisVar = localScope.addVar("this");
-      thisVar.setGrip({
-        type: frame.this.type,
-        class: frame.this.class
-      });
-      this._addExpander(thisVar, frame.this);
-    }
+    // Clear existing scopes and create each one dynamically.
+    DebuggerView.Properties.empty();
 
     if (frame.environment) {
-      // Add nodes for every argument.
-      let variables = frame.environment.bindings.arguments;
-      for each (let variable in variables) {
-        let name = Object.getOwnPropertyNames(variable)[0];
-        let paramVar = localScope.addVar(name);
-        let paramVal = variable[name].value;
-        paramVar.setGrip(paramVal);
-        this._addExpander(paramVar, paramVal);
-      }
+      let env = frame.environment;
+      do {
+        // Construct the scope name.
+        let name = env.type.charAt(0).toUpperCase() + env.type.slice(1);
+        // Call the outermost scope Global.
+        if (!env.parent) {
+          name = L10N.getStr("globalScopeLabel");
+        }
+        let label = L10N.getFormatStr("scopeLabel", [name]);
+        switch (env.type) {
+          case "with":
+          case "object":
+            label += " [" + env.object.class + "]";
+            break;
+          case "function":
+            if (env.functionName) {
+              label += " [" + env.functionName + "]";
+            }
+            break;
+          default:
+            break;
+        }
 
-      // Add nodes for every other variable in scope.
-      variables = frame.environment.bindings.variables;
-      for (let variable in variables) {
-        let paramVar = localScope.addVar(variable);
-        let paramVal = variables[variable].value;
-        paramVar.setGrip(paramVal);
-        this._addExpander(paramVar, paramVal);
-      }
+        let scope = DebuggerView.Properties.addScope(label);
 
-      // If we already found 'arguments', we are done here.
-      if ("arguments" in frame.environment.bindings.variables) {
-        // Signal that variables have been fetched.
-        DebuggerController.dispatchEvent("Debugger:FetchedVariables");
-        return;
-      }
+        // Add "this" to the innermost scope.
+        if (frame.this && env == frame.environment) {
+          let thisVar = scope.addVar("this");
+          thisVar.setGrip({
+            type: frame.this.type,
+            class: frame.this.class
+          });
+          this._addExpander(thisVar, frame.this);
+          // Expand the innermost scope by default.
+          scope.expand(true);
+          scope.addToHierarchy();
+        }
+
+        switch (env.type) {
+          case "with":
+          case "object":
+            let objClient = this.activeThread.pauseGrip(env.object);
+            objClient.getPrototypeAndProperties(function SF_getProps(aResponse) {
+              this._addScopeVariables(aResponse.ownProperties, scope);
+              // Signal that variables have been fetched.
+              DebuggerController.dispatchEvent("Debugger:FetchedVariables");
+            }.bind(this));
+            break;
+          case "block":
+          case "function":
+            // Add nodes for every argument.
+            let variables = env.bindings.arguments;
+            for each (let variable in variables) {
+              let name = Object.getOwnPropertyNames(variable)[0];
+              let paramVar = scope.addVar(name, variable[name]);
+              let paramVal = variable[name].value;
+              paramVar.setGrip(paramVal);
+              this._addExpander(paramVar, paramVal);
+            }
+            // Add nodes for every other variable in scope.
+            this._addScopeVariables(env.bindings.variables, scope);
+            break;
+          default:
+            Cu.reportError("Unknown Debugger.Environment type: " + env.type);
+            break;
+        }
+      } while (env = env.parent);
     }
 
-    // Sometimes in call frames with arguments we don't get 'arguments' in the
-    // environment (bug 746601) and we have to construct it manually. Note, that
-    // in this case arguments.callee will be absent, even in the cases where it
-    // shouldn't be.
-    if (frame.arguments && frame.arguments.length > 0) {
-      // Add "arguments".
-      let argsVar = localScope.addVar("arguments");
-      argsVar.setGrip({
-        type: "object",
-        class: "Arguments"
-      });
-      this._addExpander(argsVar, frame.arguments);
+    // Signal that variables have been fetched.
+    DebuggerController.dispatchEvent("Debugger:FetchedVariables");
+  },
 
-      // Signal that variables have been fetched.
-      DebuggerController.dispatchEvent("Debugger:FetchedVariables");
+  /**
+   * Called afters variables have been fetched after a frame was selected.
+   */
+  _onFetchedVars: function SF__onFetchedVars() {
+    DebuggerView.Properties.commitHierarchy();
+  },
+
+  /**
+   * Add nodes for every variable in scope.
+   *
+   * @param object aVariables
+   *        The map of names to variables, as specified in the Remote
+   *        Debugging Protocol.
+   * @param object aScope
+   *        The scope where the nodes will be placed into.
+   */
+  _addScopeVariables: function SF_addScopeVariables(aVariables, aScope) {
+    // Sort all of the variables before adding them, for better UX.
+    let variables = {};
+    for each (let prop in Object.keys(aVariables).sort()) {
+      variables[prop] = aVariables[prop];
     }
 
+    // Add the sorted variables to the specified scope.
+    for (let variable in variables) {
+      let paramVar = aScope.addVar(variable, variables[variable]);
+      let paramVal = variables[variable].value;
+      paramVar.setGrip(paramVal);
+      this._addExpander(paramVar, paramVal);
+    }
   },
 
   /**
@@ -602,10 +640,9 @@ StackFrames.prototype = {
    * new properties.
    */
   _addExpander: function SF__addExpander(aVar, aObject) {
-    // No need for expansion for null and undefined values, but we do need them
-    // for frame.arguments which is a regular array.
+    // No need for expansion for null and undefined values.
     if (!aVar || !aObject || typeof aObject !== "object" ||
-        (aObject.type !== "object" && !Array.isArray(aObject))) {
+        aObject.type !== "object") {
       return;
     }
 
@@ -624,34 +661,8 @@ StackFrames.prototype = {
       return;
     }
 
-    // For arrays we have to construct a grip-like object.
-    if (Array.isArray(aObject)) {
-      let properties = { length: { value: aObject.length } };
-      for (let i = 0, l = aObject.length; i < l; i++) {
-        properties[i] = { value: aObject[i] };
-      }
-      aVar.addProperties(properties);
-
-      // Expansion handlers must be set after the properties are added.
-      for (let i = 0, l = aObject.length; i < l; i++) {
-        this._addExpander(aVar[i], aObject[i]);
-      }
-
-      aVar.fetched = true;
-      return;
-    }
-
     let objClient = this.activeThread.pauseGrip(aObject);
     objClient.getPrototypeAndProperties(function SF_onProtoAndProps(aResponse) {
-      // Add __proto__.
-      if (aResponse.prototype.type !== "null") {
-        let properties = { "__proto__ ": { value: aResponse.prototype } };
-        aVar.addProperties(properties);
-
-        // Expansion handlers must be set after the properties are added.
-        this._addExpander(aVar["__proto__ "], aResponse.prototype);
-      }
-
       // Sort all of the properties before adding them, for better UX.
       let properties = {};
       for each (let prop in Object.keys(aResponse.ownProperties).sort()) {
@@ -664,6 +675,14 @@ StackFrames.prototype = {
         this._addExpander(aVar[prop], aResponse.ownProperties[prop].value);
       }
 
+      // Add __proto__.
+      if (aResponse.prototype.type !== "null") {
+        let properties = { "__proto__ ": { value: aResponse.prototype } };
+        aVar.addProperties(properties);
+
+        // Expansion handlers must be set after the properties are added.
+        this._addExpander(aVar["__proto__ "], aResponse.prototype);
+      }
       aVar.fetched = true;
     }.bind(this));
   },
@@ -707,6 +726,18 @@ StackFrames.prototype = {
       return aFrame["calleeName"] ? aFrame["calleeName"] : "(anonymous)";
     }
     return "(" + aFrame.type + ")";
+  },
+
+  /**
+   * Evaluate an expression in the context of the selected frame. This is used
+   * for modifying the value of variables in scope.
+   *
+   * @param string aExpression
+   *        The expression to evaluate.
+   */
+  evaluate: function SF_evaluate(aExpression) {
+    let frame = this.activeThread.cachedFrames[this.selectedFrame];
+    this.activeThread.eval(frame.actor, aExpression);
   }
 };
 
@@ -785,6 +816,11 @@ SourceScripts.prototype = {
    * Handler for the debugger client's unsolicited newScript notification.
    */
   _onNewScript: function SS__onNewScript(aNotification, aPacket) {
+    // Ignore scripts generated from 'clientEvaluate' packets.
+    if (aPacket.url == "debugger eval code") {
+      return;
+    }
+
     this._addScript({ url: aPacket.url, startLine: aPacket.startLine }, true);
   },
 
@@ -833,14 +869,17 @@ SourceScripts.prototype = {
   },
 
   /**
-   * Trims the query part of a url string, if necessary.
+   * Trims the id selector or query part of a url string, if necessary.
    *
    * @param string aUrl
    *        The script url.
    * @return string
    */
   _trimUrlQuery: function SS__trimUrlQuery(aUrl) {
-    let q = aUrl.indexOf('?');
+    let q = aUrl.indexOf('#');
+    if (q === -1) q = aUrl.indexOf('?');
+    if (q === -1) q = aUrl.indexOf('&');
+
     if (q > -1) {
       return aUrl.slice(0, q);
     }
@@ -1382,6 +1421,46 @@ XPCOMUtils.defineLazyGetter(L10N, "stringBundle", function() {
  * Shortcuts for accessing various debugger preferences.
  */
 let Prefs = {
+
+  /**
+   * Gets the preferred stackframes pane width.
+   * @return number
+   */
+  get stackframesWidth() {
+    if (this._sfrmWidth === undefined) {
+      this._sfrmWidth = Services.prefs.getIntPref("devtools.debugger.ui.stackframes-width");
+    }
+    return this._sfrmWidth;
+  },
+
+  /**
+   * Sets the preferred stackframes pane width.
+   * @return number
+   */
+  set stackframesWidth(value) {
+    Services.prefs.setIntPref("devtools.debugger.ui.stackframes-width", value);
+    this._sfrmWidth = value;
+  },
+
+  /**
+   * Gets the preferred variables pane width.
+   * @return number
+   */
+  get variablesWidth() {
+    if (this._varsWidth === undefined) {
+      this._varsWidth = Services.prefs.getIntPref("devtools.debugger.ui.variables-width");
+    }
+    return this._varsWidth;
+  },
+
+  /**
+   * Sets the preferred variables pane width.
+   * @return number
+   */
+  set variablesWidth(value) {
+    Services.prefs.setIntPref("devtools.debugger.ui.variables-width", value);
+    this._varsWidth = value;
+  },
 
   /**
    * Gets a flag specifying if the the debugger should automatically connect to

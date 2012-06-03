@@ -1,42 +1,9 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=4 sw=4 et tw=99:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla SpiderMonkey JavaScript 1.9 code, released
- * May 28, 2008.
- *
- * The Initial Developer of the Original Code is
- *   Mozilla Foundation
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "jscntxt.h"
 #include "jscompartment.h"
@@ -143,6 +110,19 @@ JSCompartment::setNeedsBarrier(bool needs)
     needsBarrier_ = needs;
 }
 
+static bool
+WrapForSameCompartment(JSContext *cx, JSObject *obj, Value *vp)
+{
+    JS_ASSERT(cx->compartment == obj->compartment());
+    if (cx->runtime->sameCompartmentWrapObjectCallback) {
+        obj = cx->runtime->sameCompartmentWrapObjectCallback(cx, obj);
+        if (!obj)
+            return false;
+    }
+    vp->setObject(*obj);
+    return true;
+}
+
 bool
 JSCompartment::wrap(JSContext *cx, Value *vp)
 {
@@ -178,7 +158,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
      * we parent all wrappers to the global object in their home compartment.
      * This loses us some transparency, and is generally very cheesy.
      */
-    RootedVarObject global(cx);
+    RootedObject global(cx);
     if (cx->hasfp()) {
         global = &cx->fp()->global();
     } else {
@@ -191,45 +171,32 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
     if (vp->isObject()) {
         JSObject *obj = &vp->toObject();
 
-        /* If the object is already in this compartment, we are done. */
         if (obj->compartment() == this)
-            return true;
+            return WrapForSameCompartment(cx, obj, vp);
 
         /* Translate StopIteration singleton. */
         if (obj->isStopIteration())
             return js_FindClassObject(cx, NULL, JSProto_StopIteration, vp);
 
-        /* Don't unwrap an outer window proxy. */
-        if (!obj->getClass()->ext.innerObject) {
-            obj = UnwrapObject(&vp->toObject(), true, &flags);
-            vp->setObject(*obj);
-            if (obj->compartment() == this)
-                return true;
+        /* Unwrap the object, but don't unwrap outer windows. */
+        obj = UnwrapObject(&vp->toObject(), /* stopAtOuter = */ true, &flags);
 
-            if (cx->runtime->preWrapObjectCallback) {
-                obj = cx->runtime->preWrapObjectCallback(cx, global, obj, flags);
-                if (!obj)
-                    return false;
-            }
+        if (obj->compartment() == this)
+            return WrapForSameCompartment(cx, obj, vp);
 
-            vp->setObject(*obj);
-            if (obj->compartment() == this)
-                return true;
-        } else {
-            if (cx->runtime->preWrapObjectCallback) {
-                obj = cx->runtime->preWrapObjectCallback(cx, global, obj, flags);
-                if (!obj)
-                    return false;
-            }
-
-            JS_ASSERT(!obj->isWrapper() || obj->getClass()->ext.innerObject);
-            vp->setObject(*obj);
+        if (cx->runtime->preWrapObjectCallback) {
+            obj = cx->runtime->preWrapObjectCallback(cx, global, obj, flags);
+            if (!obj)
+                return false;
         }
+
+        if (obj->compartment() == this)
+            return WrapForSameCompartment(cx, obj, vp);
+        vp->setObject(*obj);
 
 #ifdef DEBUG
         {
-            JSObject *outer = obj;
-            OBJ_TO_OUTER_OBJECT(cx, outer);
+            JSObject *outer = GetOuterObject(cx, RootedObject(cx, obj));
             JS_ASSERT(outer && outer == obj);
         }
 #endif
@@ -237,14 +204,16 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
 
     LockGC(cx->runtime);
 
+    RootedValue key(cx, *vp);
+
     /* If we already have a wrapper for this value, use it. */
-    if (WrapperMap::Ptr p = crossCompartmentWrappers.lookup(*vp)) {
+    if (WrapperMap::Ptr p = crossCompartmentWrappers.lookup(key)) {
         *vp = p->value;
 
         UnlockGC(cx->runtime);
 
         if (vp->isObject()) {
-            RootedVarObject obj(cx, &vp->toObject());
+            RootedObject obj(cx, &vp->toObject());
             JS_ASSERT(obj->isCrossCompartmentWrapper());
             if (global->getClass() != &dummy_class && obj->getParent() != global) {
                 do {
@@ -260,7 +229,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
     UnlockGC(cx->runtime);
 
     if (vp->isString()) {
-        RootedVarValue orig(cx, *vp);
+        RootedValue orig(cx, *vp);
         JSString *str = vp->toString();
         const jschar *chars = str->getChars(cx);
         if (!chars)
@@ -274,7 +243,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
         return crossCompartmentWrappers.put(orig, *vp);
     }
 
-    RootedVarObject obj(cx, &vp->toObject());
+    RootedObject obj(cx, &vp->toObject());
 
     /*
      * Recurse to wrap the prototype. Long prototype chains will run out of
@@ -286,7 +255,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
      * here (since Object.prototype->parent->proto leads to Object.prototype
      * itself).
      */
-    RootedVarObject proto(cx, obj->getProto());
+    RootedObject proto(cx, obj->getProto());
     if (!wrap(cx, proto.address()))
         return false;
 
@@ -295,7 +264,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
      * the wrap hook to reason over what wrappers are currently applied
      * to the object.
      */
-    RootedVarObject wrapper(cx, cx->runtime->wrapObjectCallback(cx, obj, proto, global, flags));
+    RootedObject wrapper(cx, cx->runtime->wrapObjectCallback(cx, obj, proto, global, flags));
     if (!wrapper)
         return false;
 
@@ -306,7 +275,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
 
     {
         AutoLockGC lock(cx->runtime);
-        if (!crossCompartmentWrappers.put(GetProxyPrivate(wrapper), *vp))
+        if (!crossCompartmentWrappers.put(key, *vp))
             return false;
     }
 
@@ -318,7 +287,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
 bool
 JSCompartment::wrap(JSContext *cx, JSString **strp)
 {
-    RootedVarValue value(cx, StringValue(*strp));
+    RootedValue value(cx, StringValue(*strp));
     if (!wrap(cx, value.address()))
         return false;
     *strp = value.reference().toString();
@@ -328,7 +297,7 @@ JSCompartment::wrap(JSContext *cx, JSString **strp)
 bool
 JSCompartment::wrap(JSContext *cx, HeapPtrString *strp)
 {
-    RootedVarValue value(cx, StringValue(*strp));
+    RootedValue value(cx, StringValue(*strp));
     if (!wrap(cx, value.address()))
         return false;
     *strp = value.reference().toString();
@@ -340,7 +309,7 @@ JSCompartment::wrap(JSContext *cx, JSObject **objp)
 {
     if (!*objp)
         return true;
-    RootedVarValue value(cx, ObjectValue(**objp));
+    RootedValue value(cx, ObjectValue(**objp));
     if (!wrap(cx, value.address()))
         return false;
     *objp = &value.reference().toObject();
@@ -352,7 +321,7 @@ JSCompartment::wrapId(JSContext *cx, jsid *idp)
 {
     if (JSID_IS_INT(*idp))
         return true;
-    RootedVarValue value(cx, IdToValue(*idp));
+    RootedValue value(cx, IdToValue(*idp));
     if (!wrap(cx, value.address()))
         return false;
     return ValueToId(cx, value.reference(), idp);
@@ -411,9 +380,24 @@ JSCompartment::markCrossCompartmentWrappers(JSTracer *trc)
     JS_ASSERT(!isCollecting());
 
     for (WrapperMap::Enum e(crossCompartmentWrappers); !e.empty(); e.popFront()) {
-        Value tmp = e.front().key;
-        MarkValueRoot(trc, &tmp, "cross-compartment wrapper");
-        JS_ASSERT(tmp == e.front().key);
+        Value v = e.front().value;
+        if (v.isObject()) {
+            JSObject *wrapper = &v.toObject();
+
+            /*
+             * We have a cross-compartment wrapper. Its private pointer may
+             * point into the compartment being collected, so we should mark it.
+             */
+            Value referent = GetProxyPrivate(wrapper);
+            MarkValueRoot(trc, &referent, "cross-compartment wrapper");
+            JS_ASSERT(referent == GetProxyPrivate(wrapper));
+
+            if (IsFunctionProxy(wrapper)) {
+                Value call = GetProxyCall(wrapper);
+                MarkValueRoot(trc, &call, "cross-compartment wrapper");
+                JS_ASSERT(call == GetProxyCall(wrapper));
+            }
+        }
     }
 }
 
@@ -433,16 +417,10 @@ JSCompartment::markTypes(JSTracer *trc)
         JS_ASSERT(script == i.get<JSScript>());
     }
 
-    for (size_t thingKind = FINALIZE_OBJECT0;
-         thingKind < FINALIZE_OBJECT_LIMIT;
-         thingKind++) {
-        for (CellIterUnderGC i(this, AllocKind(thingKind)); !i.done(); i.next()) {
-            JSObject *object = i.get<JSObject>();
-            if (object->hasSingletonType()) {
-                MarkObjectRoot(trc, &object, "mark_types_singleton");
-                JS_ASSERT(object == i.get<JSObject>());
-            }
-        }
+    for (size_t thingKind = FINALIZE_OBJECT0; thingKind < FINALIZE_OBJECT_LIMIT; thingKind++) {
+        ArenaHeader *aheader = arenas.getFirstArena(static_cast<AllocKind>(thingKind));
+        if (aheader)
+            rt->gcMarker.pushArenaList(aheader);
     }
 
     for (CellIterUnderGC i(this, FINALIZE_TYPE_OBJECT); !i.done(); i.next()) {
@@ -500,16 +478,7 @@ JSCompartment::sweep(FreeOp *fop, bool releaseTypes)
 {
     JS_ASSERT(rt->IsGCLocked());
 
-    /* Remove dead wrappers from the table. */
-    for (WrapperMap::Enum e(crossCompartmentWrappers); !e.empty(); e.popFront()) {
-        JS_ASSERT_IF(IsAboutToBeFinalized(e.front().key) &&
-                     !IsAboutToBeFinalized(e.front().value),
-                     e.front().key.isString());
-        if (IsAboutToBeFinalized(e.front().key) ||
-            IsAboutToBeFinalized(e.front().value)) {
-            e.removeFront();
-        }
-    }
+    sweepCrossCompartmentWrappers();
 
     /* Remove dead references held weakly by the compartment. */
 
@@ -518,7 +487,7 @@ JSCompartment::sweep(FreeOp *fop, bool releaseTypes)
     sweepNewTypeObjectTable(newTypeObjects);
     sweepNewTypeObjectTable(lazyTypeObjects);
 
-    if (emptyTypeObject && IsAboutToBeFinalized(emptyTypeObject))
+    if (emptyTypeObject && !IsTypeObjectMarked(emptyTypeObject.unsafeGet()))
         emptyTypeObject = NULL;
 
     sweepBreakpoints(fop);
@@ -587,6 +556,27 @@ JSCompartment::sweep(FreeOp *fop, bool releaseTypes)
     active = false;
 }
 
+/*
+ * Remove dead wrappers from the table. We must sweep all compartments, since
+ * string entries in the crossCompartmentWrappers table are not marked during
+ * markCrossCompartmentWrappers.
+ */
+void
+JSCompartment::sweepCrossCompartmentWrappers()
+{
+    /* Remove dead wrappers from the table. */
+    for (WrapperMap::Enum e(crossCompartmentWrappers); !e.empty(); e.popFront()) {
+        Value key = e.front().key;
+        bool keyMarked = IsValueMarked(&key);
+        bool valMarked = IsValueMarked(e.front().value.unsafeGet());
+        JS_ASSERT_IF(!keyMarked && valMarked, key.isString());
+        if (!keyMarked || !valMarked)
+            e.removeFront();
+        else if (key != e.front().key)
+            e.rekeyFront(key);
+    }
+}
+
 void
 JSCompartment::purge()
 {
@@ -597,13 +587,17 @@ JSCompartment::purge()
 void
 JSCompartment::resetGCMallocBytes()
 {
-    gcMallocBytes = gcMaxMallocBytes;
+    gcMallocBytes = ptrdiff_t(gcMaxMallocBytes);
 }
 
 void
 JSCompartment::setGCMaxMallocBytes(size_t value)
 {
-    gcMaxMallocBytes = value;
+    /*
+     * For compatibility treat any value that exceeds PTRDIFF_T_MAX to
+     * mean that value.
+     */
+    gcMaxMallocBytes = (ptrdiff_t(value) >= 0) ? value : size_t(-1) >> 1;
     resetGCMallocBytes();
 }
 
@@ -629,7 +623,7 @@ JSCompartment::hasScriptsOnStack()
 }
 
 bool
-JSCompartment::setDebugModeFromC(JSContext *cx, bool b)
+JSCompartment::setDebugModeFromC(JSContext *cx, bool b, AutoDebugModeGC &dmgc)
 {
     bool enabledBefore = debugMode();
     bool enabledAfter = (debugModeBits & ~unsigned(DebugFromC)) || b;
@@ -655,16 +649,19 @@ JSCompartment::setDebugModeFromC(JSContext *cx, bool b)
 
     debugModeBits = (debugModeBits & ~unsigned(DebugFromC)) | (b ? DebugFromC : 0);
     JS_ASSERT(debugMode() == enabledAfter);
-    if (enabledBefore != enabledAfter)
-        updateForDebugMode(cx->runtime->defaultFreeOp());
+    if (enabledBefore != enabledAfter) {
+        updateForDebugMode(cx->runtime->defaultFreeOp(), dmgc);
+        if (!enabledAfter)
+            cx->runtime->debugScopes->onCompartmentLeaveDebugMode(this);
+    }
     return true;
 }
 
 void
-JSCompartment::updateForDebugMode(FreeOp *fop)
+JSCompartment::updateForDebugMode(FreeOp *fop, AutoDebugModeGC &dmgc)
 {
     for (ContextIter acx(rt); !acx.done(); acx.next()) {
-        if (acx->compartment == this) 
+        if (acx->compartment == this)
             acx->updateJITEnabled();
     }
 
@@ -686,10 +683,13 @@ JSCompartment::updateForDebugMode(FreeOp *fop)
     // compartment. Because !hasScriptsOnStack(), it suffices to do a garbage
     // collection cycle or to finish the ongoing GC cycle. The necessary
     // cleanup happens in JSCompartment::sweep.
-    if (!rt->gcRunning) {
-        PrepareCompartmentForGC(this);
-        GC(rt, GC_NORMAL, gcreason::DEBUG_MODE_GC);
-    }
+    //
+    // dmgc makes sure we can't forget to GC, but it is also important not
+    // to run any scripts in this compartment until the dmgc is destroyed.
+    // That is the caller's responsibility.
+    //
+    if (!rt->gcRunning)
+        dmgc.scheduleGC(this);
 #endif
 }
 
@@ -702,8 +702,10 @@ JSCompartment::addDebuggee(JSContext *cx, js::GlobalObject *global)
         return false;
     }
     debugModeBits |= DebugFromJS;
-    if (!wasEnabled)
-        updateForDebugMode(cx->runtime->defaultFreeOp());
+    if (!wasEnabled) {
+        AutoDebugModeGC dmgc(cx->runtime);
+        updateForDebugMode(cx->runtime->defaultFreeOp(), dmgc);
+    }
     return true;
 }
 
@@ -721,8 +723,11 @@ JSCompartment::removeDebuggee(FreeOp *fop,
 
     if (debuggees.empty()) {
         debugModeBits &= ~DebugFromJS;
-        if (wasEnabled && !debugMode())
-            updateForDebugMode(fop);
+        if (wasEnabled && !debugMode()) {
+            AutoDebugModeGC dmgc(rt);
+            fop->runtime()->debugScopes->onCompartmentLeaveDebugMode(this);
+            updateForDebugMode(fop, dmgc);
+        }
     }
 }
 
@@ -756,7 +761,8 @@ JSCompartment::sweepBreakpoints(FreeOp *fop)
         JSScript *script = i.get<JSScript>();
         if (!script->hasAnyBreakpointsOrStepMode())
             continue;
-        bool scriptGone = IsAboutToBeFinalized(script);
+        bool scriptGone = !IsScriptMarked(&script);
+        JS_ASSERT(script == i.get<JSScript>());
         for (unsigned i = 0; i < script->length; i++) {
             BreakpointSite *site = script->getBreakpointSite(script->code + i);
             if (!site)
@@ -766,7 +772,7 @@ JSCompartment::sweepBreakpoints(FreeOp *fop)
             Breakpoint *nextbp;
             for (Breakpoint *bp = site->firstBreakpoint(); bp; bp = nextbp) {
                 nextbp = bp->nextInSite();
-                if (scriptGone || IsAboutToBeFinalized(bp->debugger->toJSObject()))
+                if (scriptGone || !IsObjectMarked(&bp->debugger->toJSObjectRef()))
                     bp->destroy(fop);
             }
         }

@@ -1,40 +1,7 @@
 /* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2006
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Original Author: Håkan Waara <hwaara@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
  
 #import "mozAccessible.h"
 
@@ -112,7 +79,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
 
 @implementation mozAccessible
  
-- (id)initWithAccessible:(nsAccessibleWrap*)geckoAccessible
+- (id)initWithAccessible:(AccessibleWrap*)geckoAccessible
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
 
@@ -236,7 +203,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
     return [self title];
   if ([attribute isEqualToString:NSAccessibilityTitleUIElementAttribute]) {
     Relation rel = mGeckoAccessible->RelationByType(nsIAccessibleRelation::RELATION_LABELLED_BY);
-    nsAccessible* tempAcc = rel.Next();
+    Accessible* tempAcc = rel.Next();
     return tempAcc ? GetNativeFromGeckoAccessible(tempAcc) : nil;
   }
   if ([attribute isEqualToString:NSAccessibilityHelpAttribute])
@@ -324,7 +291,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
   if (mIsExpired)
     return nil;
   
-  nsAccessible* focusedGeckoChild = mGeckoAccessible->FocusedChild();
+  Accessible* focusedGeckoChild = mGeckoAccessible->FocusedChild();
   if (focusedGeckoChild) {
     mozAccessible *focusedChild = GetNativeFromGeckoAccessible(focusedGeckoChild);
     if (focusedChild)
@@ -341,7 +308,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
 
-  nsAccessible* accessibleParent = mGeckoAccessible->GetUnignoredParent();
+  Accessible* accessibleParent = mGeckoAccessible->GetUnignoredParent();
   if (accessibleParent) {
     id nativeParent = GetNativeFromGeckoAccessible(accessibleParent);
     if (nativeParent)
@@ -389,13 +356,13 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
   mChildren = [[NSMutableArray alloc] init];
 
   // get the array of children.
-  nsAutoTArray<nsAccessible*, 10> childrenArray;
+  nsAutoTArray<Accessible*, 10> childrenArray;
   mGeckoAccessible->GetUnignoredChildren(&childrenArray);
 
   // now iterate through the children array, and get each native accessible.
   PRUint32 totalCount = childrenArray.Length();
   for (PRUint32 idx = 0; idx < totalCount; idx++) {
-    nsAccessible* curAccessible = childrenArray.ElementAt(idx);
+    Accessible* curAccessible = childrenArray.ElementAt(idx);
     if (curAccessible) {
       mozAccessible *curNative = GetNativeFromGeckoAccessible(curAccessible);
       if (curNative)
@@ -453,6 +420,9 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
 
 - (NSString*)role
 {
+  if (mIsExpired)
+    return nil;
+
 #ifdef DEBUG
   NS_ASSERTION(nsAccUtils::IsTextInterfaceSupportCorrect(mGeckoAccessible),
                "Does not support nsIAccessibleText when it should");
@@ -476,10 +446,10 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
 {
   switch (mRole) {
     case roles::LIST:
-      return NSAccessibilityContentListSubrole;
+      return @"AXContentList"; // 10.6+ NSAccessibilityContentListSubrole;
 
     case roles::DEFINITION_LIST:
-      return NSAccessibilityDefinitionListSubrole;
+      return @"AXDefinitionList"; // 10.6+ NSAccessibilityDefinitionListSubrole;
 
     case roles::TERM:
       return @"AXTerm";
@@ -625,11 +595,11 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
 
-  nsAccessibleWrap *accWrap = static_cast<nsAccessibleWrap*>(mGeckoAccessible);
+  AccessibleWrap* accWrap = static_cast<AccessibleWrap*>(mGeckoAccessible);
 
   // Get a pointer to the native window (NSWindow) we reside in.
   NSWindow *nativeWindow = nil;
-  nsDocAccessible* docAcc = accWrap->Document();
+  DocAccessible* docAcc = accWrap->Document();
   if (docAcc)
     nativeWindow = static_cast<NSWindow*>(docAcc->GetNativeWindow());
 
@@ -650,7 +620,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
-- (void)appendChild:(nsAccessible*)aAccessible
+- (void)appendChild:(Accessible*)aAccessible
 {
   // if mChildren is nil, then we don't even need to bother
   if (!mChildren)
@@ -666,8 +636,10 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
   [self invalidateChildren];
-  mIsExpired = YES;
 
+  mIsExpired = YES;
+  mGeckoAccessible = nsnull;
+  
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 

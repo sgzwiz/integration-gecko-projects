@@ -1,47 +1,7 @@
 # -*- indent-tabs-mode: nil -*-
-# ***** BEGIN LICENSE BLOCK *****
-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
-#
-# The contents of this file are subject to the Mozilla Public License Version
-# 1.1 (the "License"); you may not use this file except in compliance with
-# the License. You may obtain a copy of the License at
-# http://www.mozilla.org/MPL/
-#
-# Software distributed under the License is distributed on an "AS IS" basis,
-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-# for the specific language governing rights and limitations under the
-# License.
-#
-# The Original Code is the Browser Search Service.
-#
-# The Initial Developer of the Original Code is
-# Giorgio Maone
-# Portions created by the Initial Developer are Copyright (C) 2005
-# the Initial Developer. All Rights Reserved.
-#
-# Contributor(s):
-#   Giorgio Maone <g.maone@informaction.com>
-#   Seth Spitzer <sspitzer@mozilla.com>
-#   Asaf Romano <mano@mozilla.com>
-#   Marco Bonardo <mak77@bonardo.net>
-#   Dietrich Ayala <dietrich@mozilla.com>
-#   Ehsan Akhgari <ehsan.akhgari@gmail.com>
-#   Nils Maier <maierman@web.de>
-#   Robert Strong <robert.bugzilla@gmail.com>
-#
-# Alternatively, the contents of this file may be used under the terms of
-# either the GNU General Public License Version 2 or later (the "GPL"), or
-# the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
-# in which case the provisions of the GPL or the LGPL are applicable instead
-# of those above. If you wish to allow use of your version of this file only
-# under the terms of either the GPL or the LGPL, and not to allow others to
-# use your version of this file under the terms of the MPL, indicate your
-# decision by deleting the provisions above and replace them with the notice
-# and other provisions required by the GPL or the LGPL. If you do not delete
-# the provisions above, a recipient may use your version of this file under
-# the terms of any one of the MPL, the GPL or the LGPL.
-#
-# ***** END LICENSE BLOCK *****
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 const Ci = Components.interfaces;
 const Cc = Components.classes;
@@ -128,6 +88,7 @@ BrowserGlue.prototype = {
   _isPlacesLockedObserver: false,
   _isPlacesShutdownObserver: false,
   _isPlacesDatabaseLocked: false,
+  _migrationImportsDefaultBookmarks: false,
 
   _setPrefToSaveSession: function BG__setPrefToSaveSession(aForce) {
     if (!this._saveSession && !aForce)
@@ -225,7 +186,9 @@ BrowserGlue.prototype = {
         subject.data = true;
         break;
       case "places-init-complete":
-        this._initPlaces();
+        if (!this._migrationImportsDefaultBookmarks)
+          this._initPlaces(false);
+
         Services.obs.removeObserver(this, "places-init-complete");
         this._isPlacesInitObserver = false;
         // no longer needed, since history was initialized completely.
@@ -270,11 +233,14 @@ BrowserGlue.prototype = {
           // To apply distribution bookmarks use "places-init-complete".
         }
         else if (data == "force-places-init") {
-          this._initPlaces();
+          this._initPlaces(false);
         }
         break;
-      case "initial-migration":
-        this._initialMigrationPerformed = true;
+      case "initial-migration-will-import-default-bookmarks":
+        this._migrationImportsDefaultBookmarks = true;
+        break;
+      case "initial-migration-did-import-default-bookmarks":
+        this._initPlaces(true);
         break;
     }
   }, 
@@ -972,14 +938,14 @@ BrowserGlue.prototype = {
    *   Set to true by safe-mode dialog to indicate we must restore default
    *   bookmarks.
    */
-  _initPlaces: function BG__initPlaces() {
+  _initPlaces: function BG__initPlaces(aInitialMigrationPerformed) {
     // We must instantiate the history service since it will tell us if we
     // need to import or restore bookmarks due to first-run, corruption or
     // forced migration (due to a major schema change).
     // If the database is corrupt or has been newly created we should
     // import bookmarks.
     var dbStatus = PlacesUtils.history.databaseStatus;
-    var importBookmarks = !this._initialMigrationPerformed &&
+    var importBookmarks = !aInitialMigrationPerformed &&
                           (dbStatus == PlacesUtils.history.DATABASE_STATUS_CREATE ||
                            dbStatus == PlacesUtils.history.DATABASE_STATUS_CORRUPT);
 

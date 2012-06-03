@@ -1,42 +1,9 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=99:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef jsscope_h___
 #define jsscope_h___
@@ -68,47 +35,47 @@
  * objects; it has an id, flags, etc. (But it doesn't represent the property's
  * value.)  However, Shapes are always stored in linked linear sequence of
  * Shapes, called "shape lineages". Each shape lineage represents the layout of
- * an entire object. 
- *   
+ * an entire object.
+ *
  * Every JSObject has a pointer, |shape_|, accessible via lastProperty(), to
  * the last Shape in a shape lineage, which identifies the property most
  * recently added to the object.  This pointer permits fast object layout
  * tests. The shape lineage order also dictates the enumeration order for the
  * object; ECMA requires no particular order but this implementation has
  * promised and delivered property definition order.
- *   
+ *
  * Shape lineages occur in two kinds of data structure.
- * 
+ *
  * 1. N-ary property trees. Each path from a non-root node to the root node in
  *    a property tree is a shape lineage. Property trees permit full (or
  *    partial) sharing of Shapes between objects that have fully (or partly)
  *    identical layouts. The root is an EmptyShape whose identity is determined
  *    by the object's class, compartment and prototype. These Shapes are shared
  *    and immutable.
- * 
+ *
  * 2. Dictionary mode lists. Shapes in such lists are said to be "in
  *    dictionary mode", as are objects that point to such Shapes. These Shapes
  *    are unshared, private to a single object, and immutable except for their
  *    links in the dictionary list.
- * 
+ *
  * All shape lineages are bi-directionally linked, via the |parent| and
  * |kids|/|listp| members.
- * 
+ *
  * Shape lineages start out life in the property tree. They can be converted
  * (by copying) to dictionary mode lists in the following circumstances.
- * 
+ *
  * 1. The shape lineage's size reaches MAX_HEIGHT. This reasonable limit avoids
  *    potential worst cases involving shape lineage mutations.
- * 
+ *
  * 2. A property represented by a non-last Shape in a shape lineage is removed
  *    from an object. (In the last Shape case, obj->shape_ can be easily
  *    adjusted to point to obj->shape_->parent.)  We originally tried lazy
  *    forking of the property tree, but this blows up for delete/add
  *    repetitions.
- * 
+ *
  * 3. A property represented by a non-last Shape in a shape lineage has its
  *    attributes modified.
- * 
+ *
  * To find the Shape for a particular property of an object initially requires
  * a linear search. But if the number of searches starting at any particular
  * Shape in the property tree exceeds MAX_LINEAR_SEARCHES and the Shape's
@@ -327,6 +294,8 @@ class BaseShape : public js::gc::Cell
     /* For owned BaseShapes, the shape's shape table. */
     ShapeTable       *table_;
 
+    BaseShape(const BaseShape &base) MOZ_DELETE;
+
   public:
     void finalize(FreeOp *fop);
 
@@ -453,6 +422,24 @@ struct StackBaseShape
 
     static inline HashNumber hash(const StackBaseShape *lookup);
     static inline bool match(UnownedBaseShape *key, const StackBaseShape *lookup);
+
+    class AutoRooter : private AutoGCRooter
+    {
+      public:
+        explicit AutoRooter(JSContext *cx, const StackBaseShape *base_
+                            JS_GUARD_OBJECT_NOTIFIER_PARAM)
+          : AutoGCRooter(cx, STACKBASESHAPE), base(base_), skip(cx, base_)
+        {
+            JS_GUARD_OBJECT_NOTIFIER_INIT;
+        }
+
+        friend void AutoGCRooter::trace(JSTracer *trc);
+
+      private:
+        const StackBaseShape *base;
+        SkipRoot skip;
+        JS_DECL_USE_GUARD_OBJECT_NOTIFIER
+    };
 };
 
 typedef HashSet<ReadBarriered<UnownedBaseShape>,
@@ -481,7 +468,7 @@ struct Shape : public js::gc::Cell
         FIXED_SLOTS_SHIFT      = 27,
         FIXED_SLOTS_MASK       = uint32_t(FIXED_SLOTS_MAX << FIXED_SLOTS_SHIFT),
 
-        /* 
+        /*
          * numLinearSearches starts at zero and is incremented initially on
          * search() calls. Once numLinearSearches reaches LINEAR_SEARCHES_MAX,
          * the table is created on the next search() call. The table can also
@@ -591,12 +578,23 @@ struct Shape : public js::gc::Cell
             cursor = cursor->parent;
         }
 
-        class Root {
-            js::Root<const Shape*> cursorRoot;
+        class AutoRooter : private AutoGCRooter
+        {
           public:
-            Root(JSContext *cx, Range *range)
-              : cursorRoot(cx, &range->cursor)
-            {}
+            explicit AutoRooter(JSContext *cx, Range *r_
+                                JS_GUARD_OBJECT_NOTIFIER_PARAM)
+              : AutoGCRooter(cx, SHAPERANGE), r(r_), skip(cx, r_)
+            {
+                JS_GUARD_OBJECT_NOTIFIER_INIT;
+            }
+
+            friend void AutoGCRooter::trace(JSTracer *trc);
+            void trace(JSTracer *trc);
+
+          private:
+            Range *r;
+            SkipRoot skip;
+            JS_DECL_USE_GUARD_OBJECT_NOTIFIER
         };
     };
 
@@ -702,8 +700,8 @@ struct Shape : public js::gc::Cell
                                      uint32_t aslot, unsigned aattrs, unsigned aflags,
                                      int ashortid) const;
 
-    bool get(JSContext* cx, JSObject *receiver, JSObject *obj, JSObject *pobj, js::Value* vp) const;
-    bool set(JSContext* cx, JSObject *obj, bool strict, js::Value* vp) const;
+    bool get(JSContext* cx, HandleObject receiver, JSObject *obj, JSObject *pobj, js::Value* vp) const;
+    bool set(JSContext* cx, HandleObject obj, bool strict, js::Value* vp) const;
 
     BaseShape *base() const { return base_; }
 
@@ -895,19 +893,42 @@ struct Shape : public js::gc::Cell
     }
 };
 
-class RootGetterSetter
+class AutoRooterGetterSetter
 {
-    mozilla::Maybe<RootObject> getterRoot;
-    mozilla::Maybe<RootObject> setterRoot;
+    class Inner : private AutoGCRooter
+    {
+      public:
+        Inner(JSContext *cx, uint8_t attrs,
+              PropertyOp *pgetter_, StrictPropertyOp *psetter_)
+            : AutoGCRooter(cx, GETTERSETTER), attrs(attrs),
+              pgetter(pgetter_), psetter(psetter_),
+              getterRoot(cx, pgetter_), setterRoot(cx, psetter_)
+        {}
+
+        friend void AutoGCRooter::trace(JSTracer *trc);
+
+      private:
+        uint8_t attrs;
+        PropertyOp *pgetter;
+        StrictPropertyOp *psetter;
+        SkipRoot getterRoot, setterRoot;
+    };
 
   public:
-    RootGetterSetter(JSContext *cx, uint8_t attrs, PropertyOp *pgetter, StrictPropertyOp *psetter)
+    explicit AutoRooterGetterSetter(JSContext *cx, uint8_t attrs,
+                                    PropertyOp *pgetter, StrictPropertyOp *psetter
+                                    JS_GUARD_OBJECT_NOTIFIER_PARAM)
     {
-        if (attrs & JSPROP_GETTER)
-            getterRoot.construct(cx, (JSObject **) pgetter);
-        if (attrs & JSPROP_SETTER)
-            setterRoot.construct(cx, (JSObject **) psetter);
+        if (attrs & (JSPROP_GETTER | JSPROP_SETTER))
+            inner.construct(cx, attrs, pgetter, psetter);
+        JS_GUARD_OBJECT_NOTIFIER_INIT;
     }
+
+    friend void AutoGCRooter::trace(JSTracer *trc);
+
+  private:
+    Maybe<Inner> inner;
+    JS_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 struct EmptyShape : public js::Shape
@@ -961,6 +982,11 @@ struct InitialShapeEntry
               nfixed(nfixed), baseFlags(baseFlags)
         {}
     };
+
+    inline InitialShapeEntry();
+    inline InitialShapeEntry(const ReadBarriered<Shape> &shape, JSObject *proto);
+
+    inline Lookup getLookup();
 
     static inline HashNumber hash(const Lookup &lookup);
     static inline bool match(const InitialShapeEntry &key, const Lookup &lookup);
@@ -1017,20 +1043,25 @@ struct StackShape
     }
 
     inline HashNumber hash() const;
-};
 
-/* Rooter for stack allocated shapes. */
-class RootStackShape
-{
-    Root<const UnownedBaseShape*> baseShapeRoot;
-    Root<const jsid> propidRoot;
+    class AutoRooter : private AutoGCRooter
+    {
+      public:
+        explicit AutoRooter(JSContext *cx, const StackShape *shape_
+                            JS_GUARD_OBJECT_NOTIFIER_PARAM)
+          : AutoGCRooter(cx, STACKSHAPE), shape(shape_), skip(cx, shape_)
+        {
+            JS_GUARD_OBJECT_NOTIFIER_INIT;
+        }
 
-  public:
-    RootStackShape(JSContext *cx, const StackShape *shape)
-      : baseShapeRoot(cx, &shape->base),
-        propidRoot(cx, &shape->propid)
-    {}
-};
+        friend void AutoGCRooter::trace(JSTracer *trc);
+
+      private:
+        const StackShape *shape;
+        SkipRoot skip;
+        JS_DECL_USE_GUARD_OBJECT_NOTIFIER
+    };
+ };
 
 } /* namespace js */
 
@@ -1072,12 +1103,14 @@ Shape::search(JSContext *cx, Shape *start, jsid id, Shape ***pspp, bool adding)
 
     if (start->numLinearSearches() == LINEAR_SEARCHES_MAX) {
         if (start->isBigEnoughForAShapeTable()) {
-            RootShape startRoot(cx, &start);
-            RootId idRoot(cx, &id);
+            RootedShape startRoot(cx, start);
+            RootedId idRoot(cx, id);
             if (start->hashify(cx)) {
                 Shape **spp = start->table().search(id, adding);
                 return SHAPE_FETCH(spp);
             }
+            start = startRoot;
+            id = idRoot;
         }
         /*
          * No table built -- there weren't enough entries, or OOM occurred.

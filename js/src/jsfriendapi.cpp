@@ -1,41 +1,9 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=4 sw=4 et tw=99:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is SpiderMonkey code.
- *
- * The Initial Developer of the Original Code is
- *   Mozilla Foundation
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/GuardObjects.h"
 #include "mozilla/StandardInteger.h"
@@ -69,15 +37,17 @@ JS_GetAnonymousString(JSRuntime *rt)
 }
 
 JS_FRIEND_API(JSObject *)
-JS_FindCompilationScope(JSContext *cx, JSObject *obj)
+JS_FindCompilationScope(JSContext *cx, JSObject *obj_)
 {
+    RootedObject obj(cx, obj_);
+
     /*
      * We unwrap wrappers here. This is a little weird, but it's what's being
      * asked of us.
      */
     if (obj->isWrapper())
         obj = UnwrapObject(obj);
-    
+
     /*
      * Innerize the target_obj so that we compile in the correct (inner)
      * scope.
@@ -216,9 +186,9 @@ DefineHelpProperty(JSContext *cx, HandleObject obj, const char *prop, const char
 }
 
 JS_FRIEND_API(bool)
-JS_DefineFunctionsWithHelp(JSContext *cx, JSObject *obj, const JSFunctionSpecWithHelp *fs)
+JS_DefineFunctionsWithHelp(JSContext *cx, JSObject *obj_, const JSFunctionSpecWithHelp *fs)
 {
-    RootObject objRoot(cx, &obj);
+    RootedObject obj(cx, obj_);
 
     JS_ASSERT(cx->compartment != cx->runtime->atomsCompartment);
 
@@ -229,8 +199,8 @@ JS_DefineFunctionsWithHelp(JSContext *cx, JSObject *obj, const JSFunctionSpecWit
         if (!atom)
             return false;
 
-        RootedVarFunction fun(cx);
-        fun = js_DefineFunction(cx, objRoot, AtomToId(atom),
+        RootedFunction fun(cx);
+        fun = js_DefineFunction(cx, obj, RootedId(cx, AtomToId(atom)),
                                 fs->call, fs->nargs, fs->flags);
         if (!fun)
             return false;
@@ -328,10 +298,10 @@ js::IsOriginalScriptFunction(JSFunction *fun)
 }
 
 JS_FRIEND_API(JSFunction *)
-js::DefineFunctionWithReserved(JSContext *cx, JSObject *obj, const char *name, JSNative call,
+js::DefineFunctionWithReserved(JSContext *cx, JSObject *obj_, const char *name, JSNative call,
                                unsigned nargs, unsigned attrs)
 {
-    RootObject objRoot(cx, &obj);
+    RootedObject obj(cx, obj_);
 
     JS_THREADSAFE_ASSERT(cx->compartment != cx->runtime->atomsCompartment);
     CHECK_REQUEST(cx);
@@ -339,16 +309,16 @@ js::DefineFunctionWithReserved(JSContext *cx, JSObject *obj, const char *name, J
     JSAtom *atom = js_Atomize(cx, name, strlen(name));
     if (!atom)
         return NULL;
-    return js_DefineFunction(cx, objRoot, AtomToId(atom),
+    return js_DefineFunction(cx, obj, RootedId(cx, AtomToId(atom)),
                              call, nargs, attrs,
                              JSFunction::ExtendedFinalizeKind);
 }
 
 JS_FRIEND_API(JSFunction *)
 js::NewFunctionWithReserved(JSContext *cx, JSNative native, unsigned nargs, unsigned flags,
-                            JSObject *parent, const char *name)
+                            JSObject *parent_, const char *name)
 {
-    RootObject parentRoot(cx, &parent);
+    RootedObject parent(cx, parent_);
 
     JS_THREADSAFE_ASSERT(cx->compartment != cx->runtime->atomsCompartment);
     JSAtom *atom;
@@ -364,35 +334,36 @@ js::NewFunctionWithReserved(JSContext *cx, JSNative native, unsigned nargs, unsi
             return NULL;
     }
 
-    return js_NewFunction(cx, NULL, native, nargs, flags, parentRoot, atom,
+    return js_NewFunction(cx, NULL, native, nargs, flags, parent, atom,
                           JSFunction::ExtendedFinalizeKind);
 }
 
 JS_FRIEND_API(JSFunction *)
-js::NewFunctionByIdWithReserved(JSContext *cx, JSNative native, unsigned nargs, unsigned flags, JSObject *parent,
+js::NewFunctionByIdWithReserved(JSContext *cx, JSNative native, unsigned nargs, unsigned flags, JSObject *parent_,
                                 jsid id)
 {
-    RootObject parentRoot(cx, &parent);
+    RootedObject parent(cx, parent_);
 
     JS_ASSERT(JSID_IS_STRING(id));
     JS_THREADSAFE_ASSERT(cx->compartment != cx->runtime->atomsCompartment);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, parent);
 
-    return js_NewFunction(cx, NULL, native, nargs, flags, parentRoot, JSID_TO_ATOM(id),
+    return js_NewFunction(cx, NULL, native, nargs, flags, parent, JSID_TO_ATOM(id),
                           JSFunction::ExtendedFinalizeKind);
 }
 
 JS_FRIEND_API(JSObject *)
-js::InitClassWithReserved(JSContext *cx, JSObject *obj, JSObject *parent_proto,
+js::InitClassWithReserved(JSContext *cx, JSObject *obj_, JSObject *parent_proto,
                           JSClass *clasp, JSNative constructor, unsigned nargs,
                           JSPropertySpec *ps, JSFunctionSpec *fs,
                           JSPropertySpec *static_ps, JSFunctionSpec *static_fs)
 {
+    RootedObject obj(cx, obj_);
+
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj, parent_proto);
-    RootObject objRoot(cx, &obj);
-    return js_InitClass(cx, objRoot, parent_proto, Valueify(clasp), constructor,
+    return js_InitClass(cx, obj, parent_proto, Valueify(clasp), constructor,
                         nargs, ps, fs, static_ps, static_fs, NULL,
                         JSFunction::ExtendedFinalizeKind);
 }
@@ -634,10 +605,10 @@ GetContextStructuredCloneCallbacks(JSContext *cx)
 }
 
 JS_FRIEND_API(JSVersion)
-VersionSetXML(JSVersion version, bool enable)
+VersionSetMoarXML(JSVersion version, bool enable)
 {
-    return enable ? JSVersion(uint32_t(version) | VersionFlags::HAS_XML)
-                  : JSVersion(uint32_t(version) & ~VersionFlags::HAS_XML);
+    return enable ? JSVersion(uint32_t(version) | VersionFlags::MOAR_XML)
+                  : JSVersion(uint32_t(version) & ~VersionFlags::MOAR_XML);
 }
 
 JS_FRIEND_API(bool)
@@ -809,6 +780,12 @@ extern JS_FRIEND_API(void)
 IncrementalValueBarrier(const Value &v)
 {
     HeapValue::writeBarrierPre(v);
+}
+
+extern JS_FRIEND_API(void)
+PokeGC(JSRuntime *rt)
+{
+    rt->gcPoke = true;
 }
 
 JS_FRIEND_API(JSObject *)

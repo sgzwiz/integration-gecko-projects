@@ -1,42 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=78:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * JS standard exception implementation.
@@ -89,7 +56,7 @@ static void
 exn_finalize(FreeOp *fop, JSObject *obj);
 
 static JSBool
-exn_resolve(JSContext *cx, JSObject *obj, jsid id, unsigned flags,
+exn_resolve(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
             JSObject **objp);
 
 Class js::ErrorClass = {
@@ -301,8 +268,8 @@ InitExnPrivate(JSContext *cx, HandleObject exnObject, HandleString message,
              */
             if (checkAccess && i.isNonEvalFunctionFrame()) {
                 Value v = NullValue();
-                jsid callerid = NameToId(cx->runtime->atomState.callerAtom);
-                if (!checkAccess(cx, i.callee(), callerid, JSACC_READ, &v))
+                RootedId callerid(cx, NameToId(cx->runtime->atomState.callerAtom));
+                if (!checkAccess(cx, RootedObject(cx, i.callee()), callerid, JSACC_READ, &v))
                     break;
             }
 
@@ -313,7 +280,10 @@ InitExnPrivate(JSContext *cx, HandleObject exnObject, HandleString message,
                 frame.funName = fp->fun()->atom ? fp->fun()->atom : cx->runtime->emptyString;
             else
                 frame.funName = NULL;
-            frame.filename = SaveScriptFilename(cx, i.script()->filename);
+            const char *cfilename = i.script()->filename;
+            if (!cfilename)
+                cfilename = "";
+            frame.filename = SaveScriptFilename(cx, cfilename);
             if (!frame.filename)
                 return false;
             frame.ulineno = PCToLineNumber(i.script(), i.pc());
@@ -418,7 +388,7 @@ exn_finalize(FreeOp *fop, JSObject *obj)
 }
 
 static JSBool
-exn_resolve(JSContext *cx, JSObject *obj_, jsid id, unsigned flags,
+exn_resolve(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
             JSObject **objp)
 {
     JSExnPrivate *priv;
@@ -428,8 +398,6 @@ exn_resolve(JSContext *cx, JSObject *obj_, jsid id, unsigned flags,
     const char *prop;
     jsval v;
     unsigned attrs;
-
-    RootedVarObject obj(cx, obj_);
 
     *objp = NULL;
     priv = GetExnPrivate(obj);
@@ -510,103 +478,36 @@ js_ErrorFromException(JSContext *cx, jsval exn)
 static JSString *
 StackTraceToString(JSContext *cx, JSExnPrivate *priv)
 {
-    jschar *stackbuf;
-    size_t stacklen, stackmax;
-    JSStackTraceElem *elem, *endElem;
-    JSString *str;
-    const char *cp;
-    char ulnbuf[11];
+    StringBuffer sb(cx);
 
-    /* After this point, failing control flow must goto bad. */
-    stackbuf = NULL;
-    stacklen = stackmax = 0;
+    JSStackTraceElem *element = priv->stackElems, *end = element + priv->stackDepth;
+    for (; element < end; element++) {
+        /* Try to reserve required space upfront, so we don't fail inbetween. */
+        size_t length = ((element->funName ? element->funName->length() : 0) +
+                         (element->filename ? strlen(element->filename) * 2 : 0) +
+                         13); /* "@" + ":" + "4294967295" + "\n" */
 
-/* Limit the stackbuf length to a reasonable value to avoid overflow checks. */
-#define STACK_LENGTH_LIMIT JS_BIT(20)
+        if (!sb.reserve(length) || sb.length() > JS_BIT(20))
+            break; /* Return as much as we got. */
 
-#define APPEND_CHAR_TO_STACK(c)                                               \
-    JS_BEGIN_MACRO                                                            \
-        if (stacklen == stackmax) {                                           \
-            void *ptr_;                                                       \
-            if (stackmax >= STACK_LENGTH_LIMIT)                               \
-                goto done;                                                    \
-            stackmax = stackmax ? 2 * stackmax : 64;                          \
-            ptr_ = cx->realloc_(stackbuf, (stackmax+1) * sizeof(jschar));      \
-            if (!ptr_)                                                        \
-                goto bad;                                                     \
-            stackbuf = (jschar *) ptr_;                                       \
-        }                                                                     \
-        stackbuf[stacklen++] = (c);                                           \
-    JS_END_MACRO
-
-#define APPEND_STRING_TO_STACK(str)                                           \
-    JS_BEGIN_MACRO                                                            \
-        JSString *str_ = str;                                                 \
-        size_t length_ = str_->length();                                      \
-        const jschar *chars_ = str_->getChars(cx);                            \
-        if (!chars_)                                                          \
-            goto bad;                                                         \
-                                                                              \
-        if (length_ > stackmax - stacklen) {                                  \
-            void *ptr_;                                                       \
-            if (stackmax >= STACK_LENGTH_LIMIT ||                             \
-                length_ >= STACK_LENGTH_LIMIT - stacklen) {                   \
-                goto done;                                                    \
-            }                                                                 \
-            stackmax = RoundUpPow2(stacklen + length_);                       \
-            ptr_ = cx->realloc_(stackbuf, (stackmax+1) * sizeof(jschar));     \
-            if (!ptr_)                                                        \
-                goto bad;                                                     \
-            stackbuf = (jschar *) ptr_;                                       \
-        }                                                                     \
-        js_strncpy(stackbuf + stacklen, chars_, length_);                     \
-        stacklen += length_;                                                  \
-    JS_END_MACRO
-
-    elem = priv->stackElems;
-    for (endElem = elem + priv->stackDepth; elem != endElem; elem++) {
-        if (elem->funName)
-            APPEND_STRING_TO_STACK(elem->funName);
-        APPEND_CHAR_TO_STACK('@');
-        if (elem->filename) {
-            for (cp = elem->filename; *cp; cp++)
-                APPEND_CHAR_TO_STACK(*cp);
+        if (element->funName) {
+            if (!sb.append(element->funName))
+                return NULL;
         }
-        APPEND_CHAR_TO_STACK(':');
-        JS_snprintf(ulnbuf, sizeof ulnbuf, "%u", elem->ulineno);
-        for (cp = ulnbuf; *cp; cp++)
-            APPEND_CHAR_TO_STACK(*cp);
-        APPEND_CHAR_TO_STACK('\n');
-    }
-#undef APPEND_CHAR_TO_STACK
-#undef APPEND_STRING_TO_STACK
-#undef STACK_LENGTH_LIMIT
-
-  done:
-    if (stacklen == 0) {
-        JS_ASSERT(!stackbuf);
-        return cx->runtime->emptyString;
-    }
-    if (stacklen < stackmax) {
-        /*
-         * Realloc can fail when shrinking on some FreeBSD versions, so
-         * don't use JS_realloc here; simply let the oversized allocation
-         * be owned by the string in that rare case.
-         */
-        void *shrunk = cx->realloc_(stackbuf, (stacklen+1) * sizeof(jschar));
-        if (shrunk)
-            stackbuf = (jschar *) shrunk;
+        if (!sb.append('@'))
+            return NULL;
+        if (element->filename) {
+            if (!sb.appendInflated(element->filename, strlen(element->filename)))
+                return NULL;
+        }
+        if (!sb.append(':') || !NumberValueToStringBuffer(cx, NumberValue(element->ulineno), sb) || 
+            !sb.append('\n'))
+        {
+            return NULL;
+        }
     }
 
-    stackbuf[stacklen] = 0;
-    str = js_NewString(cx, stackbuf, stacklen);
-    if (str)
-        return str;
-
-  bad:
-    if (stackbuf)
-        cx->free_(stackbuf);
-    return NULL;
+    return sb.finishString();
 }
 
 /* XXXbe Consolidate the ugly truth that we don't treat filename as UTF-8
@@ -639,12 +540,12 @@ Exception(JSContext *cx, unsigned argc, Value *vp)
     }
 
     JSObject *errProto = &protov.toObject();
-    RootedVarObject obj(cx, NewObjectWithGivenProto(cx, &ErrorClass, errProto, NULL));
+    RootedObject obj(cx, NewObjectWithGivenProto(cx, &ErrorClass, errProto, NULL));
     if (!obj)
         return false;
 
     /* Set the 'message' property. */
-    RootedVarString message(cx);
+    RootedString message(cx);
     if (args.hasDefined(0)) {
         message = ToString(cx, args[0]);
         if (!message)
@@ -658,19 +559,20 @@ Exception(JSContext *cx, unsigned argc, Value *vp)
     ScriptFrameIter iter(cx);
 
     /* Set the 'fileName' property. */
-    RootedVarString filename(cx);
+    RootedString filename(cx);
     if (args.length() > 1) {
         filename = ToString(cx, args[1]);
         if (!filename)
             return false;
         args[1].setString(filename);
     } else {
+        filename = cx->runtime->emptyString;
         if (!iter.done()) {
-            filename = FilenameToString(cx, iter.script()->filename);
-            if (!filename)
-                return false;
-        } else {
-            filename = cx->runtime->emptyString;
+            if (const char *cfilename = iter.script()->filename) {
+                filename = FilenameToString(cx, cfilename);
+                if (!filename)
+                    return false;
+            }
         }
     }
 
@@ -713,7 +615,7 @@ exn_toString(JSContext *cx, unsigned argc, Value *vp)
         return false;
 
     /* Step 4. */
-    RootedVarString name(cx);
+    RootedString name(cx);
     if (nameVal.isUndefined()) {
         name = CLASS_NAME(cx, Error);
     } else {
@@ -869,16 +771,16 @@ static JSObject *
 InitErrorClass(JSContext *cx, Handle<GlobalObject*> global, int type, HandleObject proto)
 {
     JSProtoKey key = GetExceptionProtoKey(type);
-    RootedVarAtom name(cx, cx->runtime->atomState.classAtoms[key]);
-    RootedVarObject errorProto(cx, global->createBlankPrototypeInheriting(cx, &ErrorClass, *proto));
+    RootedAtom name(cx, cx->runtime->atomState.classAtoms[key]);
+    RootedObject errorProto(cx, global->createBlankPrototypeInheriting(cx, &ErrorClass, *proto));
     if (!errorProto)
         return NULL;
 
-    RootedVarValue empty(cx, StringValue(cx->runtime->emptyString));
-    RootedVarId nameId(cx, NameToId(cx->runtime->atomState.nameAtom));
-    RootedVarId messageId(cx, NameToId(cx->runtime->atomState.messageAtom));
-    RootedVarId fileNameId(cx, NameToId(cx->runtime->atomState.fileNameAtom));
-    RootedVarId lineNumberId(cx, NameToId(cx->runtime->atomState.lineNumberAtom));
+    RootedValue empty(cx, StringValue(cx->runtime->emptyString));
+    RootedId nameId(cx, NameToId(cx->runtime->atomState.nameAtom));
+    RootedId messageId(cx, NameToId(cx->runtime->atomState.messageAtom));
+    RootedId fileNameId(cx, NameToId(cx->runtime->atomState.fileNameAtom));
+    RootedId lineNumberId(cx, NameToId(cx->runtime->atomState.lineNumberAtom));
     if (!DefineNativeProperty(cx, errorProto, nameId, StringValue(name),
                               JS_PropertyStub, JS_StrictPropertyStub, 0, 0, 0) ||
         !DefineNativeProperty(cx, errorProto, messageId, empty,
@@ -892,7 +794,7 @@ InitErrorClass(JSContext *cx, Handle<GlobalObject*> global, int type, HandleObje
     }
 
     /* Create the corresponding constructor. */
-    RootedVarFunction ctor(cx);
+    RootedFunction ctor(cx);
     ctor = global->createConstructor(cx, Exception, name, 1,
                                      JSFunction::ExtendedFinalizeKind);
     if (!ctor)
@@ -916,14 +818,14 @@ js_InitExceptionClasses(JSContext *cx, JSObject *obj)
     JS_ASSERT(obj->isGlobal());
     JS_ASSERT(obj->isNative());
 
-    RootedVar<GlobalObject*> global(cx, &obj->asGlobal());
+    Rooted<GlobalObject*> global(cx, &obj->asGlobal());
 
-    RootedVarObject objectProto(cx, global->getOrCreateObjectPrototype(cx));
+    RootedObject objectProto(cx, global->getOrCreateObjectPrototype(cx));
     if (!objectProto)
         return NULL;
 
     /* Initialize the base Error class first. */
-    RootedVarObject errorProto(cx);
+    RootedObject errorProto(cx);
     errorProto = InitErrorClass(cx, global, JSEXN_ERR, objectProto);
     if (!errorProto)
         return NULL;
@@ -1063,17 +965,17 @@ js_ErrorToException(JSContext *cx, const char *message, JSErrorReport *reportp,
         return false;
     tv[0] = OBJECT_TO_JSVAL(errProto);
 
-    RootedVarObject errObject(cx, NewObjectWithGivenProto(cx, &ErrorClass, errProto, NULL));
+    RootedObject errObject(cx, NewObjectWithGivenProto(cx, &ErrorClass, errProto, NULL));
     if (!errObject)
         return false;
     tv[1] = OBJECT_TO_JSVAL(errObject);
 
-    RootedVarString messageStr(cx, JS_NewStringCopyZ(cx, message));
+    RootedString messageStr(cx, JS_NewStringCopyZ(cx, message));
     if (!messageStr)
         return false;
     tv[2] = STRING_TO_JSVAL(messageStr);
 
-    RootedVarString filenameStr(cx, JS_NewStringCopyZ(cx, reportp->filename));
+    RootedString filenameStr(cx, JS_NewStringCopyZ(cx, reportp->filename));
     if (!filenameStr)
         return false;
     tv[3] = STRING_TO_JSVAL(filenameStr);
@@ -1117,12 +1019,12 @@ js_ReportUncaughtException(JSContext *cx)
 {
     jsval roots[6];
     JSErrorReport *reportp, report;
-    RootedVarString str(cx);
+    RootedString str(cx);
 
     if (!JS_IsExceptionPending(cx))
         return true;
 
-    RootedVarValue exn(cx);
+    RootedValue exn(cx);
     if (!JS_GetPendingException(cx, exn.address()))
         return false;
 
@@ -1135,7 +1037,7 @@ js_ReportUncaughtException(JSContext *cx)
      * need to root other intermediates, so allocate an operand stack segment
      * to protect all of these values.
      */
-    RootedVarObject exnObject(cx);
+    RootedObject exnObject(cx);
     if (JSVAL_IS_PRIMITIVE(exn)) {
         exnObject = NULL;
     } else {
@@ -1157,14 +1059,14 @@ js_ReportUncaughtException(JSContext *cx)
         (exnObject->isError() ||
          IsDuckTypedErrorObject(cx, exnObject, &filename_str)))
     {
-        RootedVarString name(cx);
+        RootedString name(cx);
         if (JS_GetProperty(cx, exnObject, js_name_str, &roots[2]) &&
             JSVAL_IS_STRING(roots[2]))
         {
             name = JSVAL_TO_STRING(roots[2]);
         }
 
-        RootedVarString msg(cx);
+        RootedString msg(cx);
         if (JS_GetProperty(cx, exnObject, js_message_str, &roots[3]) &&
             JSVAL_IS_STRING(roots[3]))
         {
@@ -1282,6 +1184,8 @@ js_CopyErrorObject(JSContext *cx, HandleObject errobj, HandleObject scope)
     if (!proto)
         return NULL;
     JSObject *copyobj = NewObjectWithGivenProto(cx, &ErrorClass, proto, NULL);
+    if (!copyobj)
+        return NULL;
     SetExnPrivate(cx, copyobj, copy);
     autoFree.p = NULL;
     return copyobj;

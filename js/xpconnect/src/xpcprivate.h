@@ -1,45 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=78:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   John Bandhauer <jband@netscape.com> (original author)
- *   Mike Shaver <shaver@mozilla.org>
- *   Mark Hammond <MarkH@ActiveState.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * XPConnect allows JS code to manipulate C++ object and C++ code to manipulate
@@ -210,7 +174,7 @@
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIPrincipal.h"
 #include "nsISecurityCheckedComponent.h"
-
+#include "xpcObjectHelper.h"
 #include "nsIThreadInternal.h"
 
 #ifdef XP_WIN
@@ -754,7 +718,7 @@ public:
     void UnmarkSkippableJSHolders();
 
     static void GCCallback(JSRuntime *rt, JSGCStatus status);
-    static void FinalizeCallback(JSFreeOp *fop, JSFinalizeStatus status);
+    static void FinalizeCallback(JSFreeOp *fop, JSFinalizeStatus status, JSBool isCompartmentGC);
 
     inline void AddVariantRoot(XPCTraceableVariant* variant);
     inline void AddWrappedJSRoot(nsXPCWrappedJS* wrappedJS);
@@ -1378,7 +1342,7 @@ extern js::Class XPC_WN_Tearoff_JSClass;
 extern js::Class XPC_WN_NoHelper_Proto_JSClass;
 
 extern JSBool
-XPC_WN_Equality(JSContext *cx, JSObject *obj, const jsval *v, JSBool *bp);
+XPC_WN_Equality(JSContext *cx, JSHandleObject obj, const jsval *v, JSBool *bp);
 
 extern JSBool
 XPC_WN_CallMethod(JSContext *cx, unsigned argc, jsval *vp);
@@ -1387,20 +1351,20 @@ extern JSBool
 XPC_WN_GetterSetter(JSContext *cx, unsigned argc, jsval *vp);
 
 extern JSBool
-XPC_WN_JSOp_Enumerate(JSContext *cx, JSObject *obj, JSIterateOp enum_op,
+XPC_WN_JSOp_Enumerate(JSContext *cx, JSHandleObject obj, JSIterateOp enum_op,
                       jsval *statep, jsid *idp);
 
 extern JSType
-XPC_WN_JSOp_TypeOf_Object(JSContext *cx, JSObject *obj);
+XPC_WN_JSOp_TypeOf_Object(JSContext *cx, JSHandleObject obj);
 
 extern JSType
-XPC_WN_JSOp_TypeOf_Function(JSContext *cx, JSObject *obj);
+XPC_WN_JSOp_TypeOf_Function(JSContext *cx, JSHandleObject obj);
 
 extern void
-XPC_WN_JSOp_Clear(JSContext *cx, JSObject *obj);
+XPC_WN_JSOp_Clear(JSContext *cx, JSHandleObject obj);
 
 extern JSObject*
-XPC_WN_JSOp_ThisObject(JSContext *cx, JSObject *obj);
+XPC_WN_JSOp_ThisObject(JSContext *cx, JSHandleObject obj);
 
 // Macros to initialize Object or Function like XPC_WN classes
 #define XPC_WN_WithCall_ObjectOps                                             \
@@ -3169,9 +3133,7 @@ public:
     bool IsMainThreadOnly() const {return mMainThreadOnly;}
 
     void TraceJS(JSTracer* trc);
-#ifdef DEBUG
-    static void PrintTraceName(JSTracer* trc, char *buf, size_t bufsize);
-#endif
+    static void GetTraceName(JSTracer* trc, char *buf, size_t bufsize);
 
     virtual ~nsXPCWrappedJS();
 protected:
@@ -3211,9 +3173,7 @@ public:
     virtual ~XPCJSObjectHolder();
 
     void TraceJS(JSTracer *trc);
-#ifdef DEBUG
-    static void PrintTraceName(JSTracer* trc, char *buf, size_t bufsize);
-#endif
+    static void GetTraceName(JSTracer* trc, char *buf, size_t bufsize);
 
 private:
     XPCJSObjectHolder(XPCCallContext& ccx, JSObject* obj);
@@ -3245,127 +3205,6 @@ private:
 };
 
 /***************************************************************************/
-// data conversion
-
-class xpcObjectHelper
-{
-public:
-    xpcObjectHelper(nsISupports *aObject, nsWrapperCache *aCache = nsnull)
-    : mCanonical(nsnull),
-      mObject(aObject),
-      mCache(aCache),
-      mIsNode(false)
-    {
-        if (!mCache) {
-            if (aObject)
-                CallQueryInterface(aObject, &mCache);
-            else
-                mCache = nsnull;
-        }
-    }
-
-    nsISupports* Object()
-    {
-        return mObject;
-    }
-
-    nsISupports* GetCanonical()
-    {
-        if (!mCanonical) {
-            mCanonicalStrong = do_QueryInterface(mObject);
-            mCanonical = mCanonicalStrong;
-        }
-        return mCanonical;
-    }
-
-    already_AddRefed<nsISupports> forgetCanonical()
-    {
-        NS_ASSERTION(mCanonical, "Huh, no canonical to forget?");
-
-        if (!mCanonicalStrong)
-            mCanonicalStrong = mCanonical;
-        mCanonical = nsnull;
-        return mCanonicalStrong.forget();
-    }
-
-    nsIClassInfo *GetClassInfo()
-    {
-        if (mXPCClassInfo)
-          return mXPCClassInfo;
-        if (!mClassInfo)
-          mClassInfo = do_QueryInterface(mObject);
-        return mClassInfo;
-    }
-
-    nsXPCClassInfo *GetXPCClassInfo()
-    {
-        if (!mXPCClassInfo) {
-            if (mIsNode)
-                mXPCClassInfo = static_cast<nsINode*>(GetCanonical())->GetClassInfo();
-            else
-                CallQueryInterface(mObject, getter_AddRefs(mXPCClassInfo));
-        }
-        return mXPCClassInfo;
-    }
-
-    already_AddRefed<nsXPCClassInfo> forgetXPCClassInfo()
-    {
-        GetXPCClassInfo();
-
-        return mXPCClassInfo.forget();
-    }
-
-    // We assert that we can reach an nsIXPCScriptable somehow.
-    PRUint32 GetScriptableFlags()
-    {
-        // Try getting an nsXPCClassInfo - this handles DOM scriptable helpers.
-        nsCOMPtr<nsIXPCScriptable> sinfo = GetXPCClassInfo();
-
-        // If that didn't work, try just QI-ing. This handles BackstagePass.
-        if (!sinfo)
-            sinfo = do_QueryInterface(GetCanonical());
-
-        // We should have something by now.
-        MOZ_ASSERT(sinfo);
-
-        // Grab the flags. This should not fail.
-        PRUint32 flags;
-        mozilla::DebugOnly<nsresult> rv = sinfo->GetScriptableFlags(&flags);
-        MOZ_ASSERT(NS_SUCCEEDED(rv));
-
-        return flags;
-    }
-
-    nsWrapperCache *GetWrapperCache()
-    {
-        return mCache;
-    }
-
-protected:
-    xpcObjectHelper(nsISupports *aObject, nsISupports *aCanonical,
-                    nsWrapperCache *aCache, bool aIsNode)
-    : mCanonical(aCanonical),
-      mObject(aObject),
-      mCache(aCache),
-      mIsNode(aIsNode)
-    {
-        if (!mCache && aObject)
-            CallQueryInterface(aObject, &mCache);
-    }
-
-    nsCOMPtr<nsISupports>    mCanonicalStrong;
-    nsISupports*             mCanonical;
-
-private:
-    xpcObjectHelper(xpcObjectHelper& aOther);
-
-    nsISupports*             mObject;
-    nsWrapperCache*          mCache;
-    nsCOMPtr<nsIClassInfo>   mClassInfo;
-    nsRefPtr<nsXPCClassInfo> mXPCClassInfo;
-    bool                     mIsNode;
-};
-
 // class here just for static methods
 class XPCConvert
 {
@@ -4420,9 +4259,7 @@ public:
     virtual ~XPCTraceableVariant();
 
     void TraceJS(JSTracer* trc);
-#ifdef DEBUG
-    static void PrintTraceName(JSTracer* trc, char *buf, size_t bufsize);
-#endif
+    static void GetTraceName(JSTracer* trc, char *buf, size_t bufsize);
 };
 
 /***************************************************************************/
@@ -4472,8 +4309,8 @@ xpc_GetJSPrivate(JSObject *obj)
 // and used.
 nsresult
 xpc_CreateSandboxObject(JSContext * cx, jsval * vp, nsISupports *prinOrSop,
-                        JSObject *proto, bool preferXray, const nsACString &sandboxName);
-
+                        JSObject *proto, bool preferXray, bool wantComponents,
+                        const nsACString &sandboxName);
 // Helper for evaluating scripts in a sandbox object created with
 // xpc_CreateSandboxObject(). The caller is responsible of ensuring
 // that *rval doesn't get collected during the call or usage after the
@@ -4511,8 +4348,12 @@ XPC_GetIdentityObject(JSContext *cx, JSObject *obj);
 
 namespace xpc {
 
-struct CompartmentPrivate
+class CompartmentPrivate
 {
+public:
+    typedef nsDataHashtable<nsPtrHashKey<XPCWrappedNative>, JSObject *> ExpandoMap;
+    typedef nsTHashtable<nsPtrHashKey<JSObject> > DOMExpandoMap;
+
     CompartmentPrivate(bool wantXrays)
         : wantXrays(wantXrays)
     {
@@ -4524,20 +4365,16 @@ struct CompartmentPrivate
     bool wantXrays;
     nsAutoPtr<JSObject2JSObjectMap> waiverWrapperMap;
     // NB: we don't want this map to hold a strong reference to the wrapper.
-    nsAutoPtr<nsDataHashtable<nsPtrHashKey<XPCWrappedNative>, JSObject *> > expandoMap;
-    nsAutoPtr<nsTHashtable<nsPtrHashKey<JSObject> > > domExpandoMap;
-    nsCString location;
+    nsAutoPtr<ExpandoMap> expandoMap;
+    nsAutoPtr<DOMExpandoMap> domExpandoMap;
 
     bool RegisterExpandoObject(XPCWrappedNative *wn, JSObject *expando) {
         if (!expandoMap) {
-            expandoMap = new nsDataHashtable<nsPtrHashKey<XPCWrappedNative>, JSObject *>();
-            if (!expandoMap->Init(8)) {
-                expandoMap = nsnull;
-                return false;
-            }
+            expandoMap = new ExpandoMap();
+            expandoMap->Init(8);
         }
         wn->SetHasExpandoObject();
-        return expandoMap->Put(wn, expando);
+        return expandoMap->Put(wn, expando, mozilla::fallible_t());
     }
 
     /**
@@ -4563,19 +4400,61 @@ struct CompartmentPrivate
 
     bool RegisterDOMExpandoObject(JSObject *expando) {
         if (!domExpandoMap) {
-            domExpandoMap = new nsTHashtable<nsPtrHashKey<JSObject> >();
-            if (!domExpandoMap->Init(8)) {
-                domExpandoMap = nsnull;
-                return false;
-            }
+            domExpandoMap = new DOMExpandoMap();
+            domExpandoMap->Init(8);
         }
-        return domExpandoMap->PutEntry(expando);
+        return domExpandoMap->PutEntry(expando, mozilla::fallible_t());
     }
     void RemoveDOMExpandoObject(JSObject *expando) {
         if (domExpandoMap)
             domExpandoMap->RemoveEntry(expando);
     }
+
+    const nsACString& GetLocation() {
+        if (locationURI) {
+            if (NS_FAILED(locationURI->GetSpec(location)))
+                location = NS_LITERAL_CSTRING("<unknown location>");
+            locationURI = nsnull;
+        }
+        return location;
+    }
+    void SetLocation(const nsACString& aLocation) {
+        if (aLocation.IsEmpty())
+            return;
+        if (!location.IsEmpty() || locationURI)
+            return;
+        location = aLocation;
+    }
+    void SetLocation(nsIURI *aLocationURI) {
+        if (!aLocationURI)
+            return;
+        if (!location.IsEmpty() || locationURI)
+            return;
+        locationURI = aLocationURI;
+    }
+
+private:
+    nsCString location;
+    nsCOMPtr<nsIURI> locationURI;
 };
+
+inline CompartmentPrivate*
+GetCompartmentPrivate(JSCompartment *compartment)
+{
+    MOZ_ASSERT(compartment);
+    void *priv = JS_GetCompartmentPrivate(compartment);
+    return static_cast<CompartmentPrivate*>(priv);
+}
+
+inline CompartmentPrivate*
+GetCompartmentPrivate(JSObject *object)
+{
+    MOZ_ASSERT(object);
+    JSCompartment *compartment = js::GetObjectCompartment(object);
+
+    MOZ_ASSERT(compartment);
+    return GetCompartmentPrivate(compartment);
+}
 
 }
 

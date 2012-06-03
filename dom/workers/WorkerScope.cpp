@@ -1,41 +1,8 @@
 /* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
 /* vim: set ts=2 et sw=2 tw=80: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Web Workers.
- *
- * The Initial Developer of the Original Code is
- *   The Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Ben Turner <bent.mozilla@gmail.com> (Original Author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WorkerScope.h"
 
@@ -134,6 +101,9 @@ public:
                         sProperties, sFunctions, NULL, NULL);
   }
 
+  using EventTarget::GetEventListener;
+  using EventTarget::SetEventListener;
+
 protected:
   WorkerGlobalScope(JSContext* aCx, WorkerPrivate* aWorker)
   : EventTarget(aCx), mWorker(aWorker)
@@ -150,24 +120,24 @@ protected:
   }
 
   virtual void
-  _Trace(JSTracer* aTrc) MOZ_OVERRIDE
+  _trace(JSTracer* aTrc) MOZ_OVERRIDE
   {
     for (int32 i = 0; i < SLOT_COUNT; i++) {
       JS_CALL_VALUE_TRACER(aTrc, mSlots[i], "WorkerGlobalScope instance slot");
     }
     mWorker->TraceInternal(aTrc);
-    EventTarget::_Trace(aTrc);
+    EventTarget::_trace(aTrc);
   }
 
   virtual void
-  _Finalize(JSFreeOp* aFop) MOZ_OVERRIDE
+  _finalize(JSFreeOp* aFop) MOZ_OVERRIDE
   {
-    EventTarget::_Finalize(aFop);
+    EventTarget::_finalize(aFop);
   }
 
 private:
   static JSBool
-  _GetEventListener(JSContext* aCx, JSObject* aObj, jsid aIdval, jsval* aVp)
+  GetEventListener(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, jsval* aVp)
   {
     JS_ASSERT(JSID_IS_INT(aIdval));
     JS_ASSERT(JSID_TO_INT(aIdval) >= 0 && JSID_TO_INT(aIdval) < STRING_COUNT);
@@ -193,7 +163,7 @@ private:
   }
 
   static JSBool
-  _SetEventListener(JSContext* aCx, JSObject* aObj, jsid aIdval, JSBool aStrict,
+  SetEventListener(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, JSBool aStrict,
                    jsval* aVp)
   {
     JS_ASSERT(JSID_IS_INT(aIdval));
@@ -233,7 +203,7 @@ private:
   }
 
   static JSBool
-  GetSelf(JSContext* aCx, JSObject* aObj, jsid aIdval, jsval* aVp)
+  GetSelf(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, jsval* aVp)
   {
     if (!GetInstancePrivate(aCx, aObj, "self")) {
       return false;
@@ -244,7 +214,7 @@ private:
   }
 
   static JSBool
-  GetLocation(JSContext* aCx, JSObject* aObj, jsid aIdval, jsval* aVp)
+  GetLocation(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, jsval* aVp)
   {
     WorkerGlobalScope* scope =
       GetInstancePrivate(aCx, aObj, sProperties[SLOT_location].name);
@@ -297,19 +267,18 @@ private:
   static JSBool
   UnwrapErrorEvent(JSContext* aCx, unsigned aArgc, jsval* aVp)
   {
-    JS_ASSERT(JSVAL_IS_OBJECT(JS_CALLEE(aCx, aVp)));
     JS_ASSERT(aArgc == 1);
-    JS_ASSERT(JSVAL_IS_OBJECT(JS_ARGV(aCx, aVp)[0]));
+    JS_ASSERT((JS_ARGV(aCx, aVp)[0]).isObject());
 
-    JSObject* wrapper = JSVAL_TO_OBJECT(JS_CALLEE(aCx, aVp));
+    JSObject* wrapper = &JS_CALLEE(aCx, aVp).toObject();
     JS_ASSERT(JS_ObjectIsFunction(aCx, wrapper));
 
     jsval scope = js::GetFunctionNativeReserved(wrapper, SLOT_wrappedScope);
     jsval listener = js::GetFunctionNativeReserved(wrapper, SLOT_wrappedFunction);
 
-    JS_ASSERT(JSVAL_IS_OBJECT(scope));
+    JS_ASSERT(scope.isObject());
 
-    JSObject* event = JSVAL_TO_OBJECT(JS_ARGV(aCx, aVp)[0]);
+    JSObject* event = &JS_ARGV(aCx, aVp)[0].toObject();
 
     jsval argv[3] = { JSVAL_VOID, JSVAL_VOID, JSVAL_VOID };
     if (!JS_GetProperty(aCx, event, "message", &argv[0]) ||
@@ -334,7 +303,7 @@ private:
   }
 
   static JSBool
-  GetOnErrorListener(JSContext* aCx, JSObject* aObj, jsid aIdval, jsval* aVp)
+  GetOnErrorListener(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, jsval* aVp)
   {
     const char* name = sEventStrings[STRING_onerror];
     WorkerGlobalScope* scope = GetInstancePrivate(aCx, aObj, name);
@@ -365,7 +334,7 @@ private:
   }
 
   static JSBool
-  SetOnErrorListener(JSContext* aCx, JSObject* aObj, jsid aIdval,
+  SetOnErrorListener(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval,
                      JSBool aStrict, jsval* aVp)
   {
     const char* name = sEventStrings[STRING_onerror];
@@ -408,7 +377,7 @@ private:
   }
 
   static JSBool
-  GetNavigator(JSContext* aCx, JSObject* aObj, jsid aIdval, jsval* aVp)
+  GetNavigator(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, jsval* aVp)
   {
     WorkerGlobalScope* scope =
       GetInstancePrivate(aCx, aObj, sProperties[SLOT_navigator].name);
@@ -648,7 +617,7 @@ JSPropertySpec WorkerGlobalScope::sProperties[] = {
   { sEventStrings[STRING_onerror], STRING_onerror, PROPERTY_FLAGS,
     GetOnErrorListener, SetOnErrorListener },
   { sEventStrings[STRING_onclose], STRING_onclose, PROPERTY_FLAGS,
-    _GetEventListener, _SetEventListener },
+    GetEventListener, SetEventListener },
   { "navigator", SLOT_navigator, PROPERTY_FLAGS, GetNavigator, 
     js_GetterOnlyPropertyStub },
   { "self", 0, PROPERTY_FLAGS, GetSelf, js_GetterOnlyPropertyStub },
@@ -734,8 +703,11 @@ protected:
   }
 
 private:
+  using EventTarget::GetEventListener;
+  using EventTarget::SetEventListener;
+
   static JSBool
-  _GetEventListener(JSContext* aCx, JSObject* aObj, jsid aIdval, jsval* aVp)
+  GetEventListener(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, jsval* aVp)
   {
     JS_ASSERT(JSID_IS_INT(aIdval));
     JS_ASSERT(JSID_TO_INT(aIdval) >= 0 && JSID_TO_INT(aIdval) < STRING_COUNT);
@@ -761,8 +733,8 @@ private:
   }
 
   static JSBool
-  _SetEventListener(JSContext* aCx, JSObject* aObj, jsid aIdval, JSBool aStrict,
-                    jsval* aVp)
+  SetEventListener(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, JSBool aStrict,
+                   jsval* aVp)
   {
     JS_ASSERT(JSID_IS_INT(aIdval));
     JS_ASSERT(JSID_TO_INT(aIdval) >= 0 && JSID_TO_INT(aIdval) < STRING_COUNT);
@@ -814,7 +786,7 @@ private:
   }
 
   static JSBool
-  Resolve(JSContext* aCx, JSObject* aObj, jsid aId, unsigned aFlags,
+  Resolve(JSContext* aCx, JSHandleObject aObj, JSHandleId aId, unsigned aFlags,
           JSObject** aObjp)
   {
     JSBool resolved;
@@ -822,7 +794,7 @@ private:
       return false;
     }
 
-    *aObjp = resolved ? aObj : NULL;
+    *aObjp = resolved ? aObj.value() : NULL;
     return true;
   }
 
@@ -834,7 +806,7 @@ private:
       UnwrapDOMObject<DedicatedWorkerGlobalScope>(aObj, Class());
     if (scope) {
       DestroyProtoOrIfaceCache(aObj);
-      scope->_Finalize(aFop);
+      scope->_finalize(aFop);
     }
   }
 
@@ -846,7 +818,7 @@ private:
       UnwrapDOMObject<DedicatedWorkerGlobalScope>(aObj, Class());
     if (scope) {
       mozilla::dom::TraceProtoOrIfaceCache(aTrc, aObj);
-      scope->_Trace(aTrc);
+      scope->_trace(aTrc);
     }
   }
 
@@ -892,7 +864,7 @@ DOMJSClass DedicatedWorkerGlobalScope::sClass = {
 
 JSPropertySpec DedicatedWorkerGlobalScope::sProperties[] = {
   { sEventStrings[STRING_onmessage], STRING_onmessage, PROPERTY_FLAGS,
-    _GetEventListener, _SetEventListener },
+    GetEventListener, SetEventListener },
   { 0, 0, 0, NULL, NULL }
 };
 

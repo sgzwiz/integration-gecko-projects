@@ -1,39 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* vim: set ts=2 sw=2 et tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
 
@@ -109,6 +78,7 @@
 #include "nsIDOMFormData.h"
 
 #include "nsWrapperCacheInlines.h"
+#include "nsStreamListenerWrapper.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -882,7 +852,7 @@ nsXMLHttpRequest::AppendToResponseText(const char * aSrcBuffer,
                                        &destBufferLen);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!mResponseText.SetCapacity(mResponseText.Length() + destBufferLen)) {
+  if (!mResponseText.SetCapacity(mResponseText.Length() + destBufferLen, fallible_t())) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
@@ -1801,13 +1771,21 @@ nsXMLHttpRequest::Open(const nsACString& method, const nsACString& url,
     // No optional arguments were passed in. Default async to true.
     async = true;
   }
-  return Open(method, url, async, user, password);
+  Optional<nsAString> realUser;
+  if (optional_argc > 1) {
+    realUser = &user;
+  }
+  Optional<nsAString> realPassword;
+  if (optional_argc > 2) {
+    realPassword = &password;
+  }
+  return Open(method, url, async, realUser, realPassword);
 }
 
 nsresult
 nsXMLHttpRequest::Open(const nsACString& method, const nsACString& url,
-                       bool async, const nsAString& user,
-                       const nsAString& password)
+                       bool async, const Optional<nsAString>& user,
+                       const Optional<nsAString>& password)
 {
   MOZ_ASSERT(NS_IsChromeOwningThread());
 
@@ -1906,12 +1884,14 @@ nsXMLHttpRequest::Open(const nsACString& method, const nsACString& url,
     return NS_ERROR_CONTENT_BLOCKED;
   }
 
-  if (!user.IsEmpty()) {
+  // XXXbz this is wrong: we should only be looking at whether
+  // user/password were passed, not at the values!  See bug 759624.
+  if (user.WasPassed() && !user.Value().IsEmpty()) {
     nsCAutoString userpass;
-    CopyUTF16toUTF8(user, userpass);
-    if (!password.IsEmpty()) {
+    CopyUTF16toUTF8(user.Value(), userpass);
+    if (password.WasPassed() && !password.Value().IsEmpty()) {
       userpass.Append(':');
-      AppendUTF16toUTF8(password, userpass);
+      AppendUTF16toUTF8(password.Value(), userpass);
     }
     uri->SetUserPass(userpass);
   }
@@ -2648,15 +2628,14 @@ GetRequestBody(nsIXHRSendable* aSendable, nsIInputStream** aResult,
 }
 
 static nsresult
-GetRequestBody(JSObject* aArrayBuffer, JSContext *aCx, nsIInputStream** aResult,
+GetRequestBody(ArrayBuffer* aArrayBuffer, nsIInputStream** aResult,
                nsACString& aContentType, nsACString& aCharset)
 {
-  NS_ASSERTION(JS_IsArrayBufferObject(aArrayBuffer, aCx), "Not an ArrayBuffer!");
   aContentType.SetIsVoid(true);
   aCharset.Truncate();
 
-  PRInt32 length = JS_GetArrayBufferByteLength(aArrayBuffer, aCx);
-  char* data = reinterpret_cast<char*>(JS_GetArrayBufferData(aArrayBuffer, aCx));
+  PRInt32 length = aArrayBuffer->mLength;
+  char* data = reinterpret_cast<char*>(aArrayBuffer->mData);
 
   nsCOMPtr<nsIInputStream> stream;
   nsresult rv = NS_NewByteInputStream(getter_AddRefs(stream), data, length,
@@ -2721,7 +2700,8 @@ GetRequestBody(nsIVariant* aBody, JSContext *aCx, nsIInputStream** aResult,
     if (NS_SUCCEEDED(rv) && !JSVAL_IS_PRIMITIVE(realVal) &&
         (obj = JSVAL_TO_OBJECT(realVal)) &&
         (JS_IsArrayBufferObject(obj, aCx))) {
-      return GetRequestBody(obj, aCx, aResult, aContentType, aCharset);
+      ArrayBuffer buf(aCx, obj);
+      return GetRequestBody(&buf, aResult, aContentType, aCharset);
     }
   }
   else if (dataType == nsIDataType::VTYPE_VOID ||
@@ -2760,7 +2740,7 @@ nsXMLHttpRequest::GetRequestBody(nsIVariant* aVariant, JSContext *aCx,
   switch (body.GetType()) {
     case nsXMLHttpRequest::RequestBody::ArrayBuffer:
     {
-      return ::GetRequestBody(value.mArrayBuffer, aCx, aResult, aContentType, aCharset);
+      return ::GetRequestBody(value.mArrayBuffer, aResult, aContentType, aCharset);
     }
     case nsXMLHttpRequest::RequestBody::Blob:
     {
@@ -3060,9 +3040,6 @@ nsXMLHttpRequest::Send(JSContext *aCx, nsIVariant* aVariant, const Nullable<Requ
   if (mState & XML_HTTP_REQUEST_MULTIPART) {
     Telemetry::Accumulate(Telemetry::MULTIPART_XHR_RESPONSE, 1);
     listener = new nsMultipartProxyListener(listener);
-    if (!listener) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
   } else {
     Telemetry::Accumulate(Telemetry::MULTIPART_XHR_RESPONSE, 0);
   }
@@ -3076,9 +3053,18 @@ nsXMLHttpRequest::Send(JSContext *aCx, nsIVariant* aVariant, const Nullable<Requ
     // a same-origin request right now, since it could be redirected.
     listener = new nsCORSListenerProxy(listener, mPrincipal, mChannel,
                                        withCredentials, true, &rv);
-    NS_ENSURE_TRUE(listener, NS_ERROR_OUT_OF_MEMORY);
     NS_ENSURE_SUCCESS(rv, rv);
   }
+  else {
+    // Because of bug 682305, we can't let listener be the XHR object itself
+    // because JS wouldn't be able to use it. So if we haven't otherwise
+    // created a listener around 'this', do so now.
+
+    listener = new nsStreamListenerWrapper(listener);
+  }
+
+  NS_ASSERTION(listener != this,
+               "Using an object as a listener that can't be exposed to JS");
 
   // Bypass the network cache in cases where it makes no sense:
   // 1) Multipart responses are very large and would likely be doomed by the

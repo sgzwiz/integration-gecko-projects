@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko.sync.setup;
 
@@ -64,10 +64,10 @@ public class SyncAccounts {
     public final AccountManager accountManager;
 
 
-    public final String username; // services.sync.account
-    public final String syncKey; // in password manager: "chrome://weave (Mozilla Services Password)"
-    public final String password; // in password manager: "chrome://weave (Mozilla Services Encryption Passphrase)"
-    public final String serverURL; // services.sync.serverURL
+    public final String username;   // services.sync.account
+    public final String syncKey;    // in password manager: "chrome://weave (Mozilla Services Encryption Passphrase)"
+    public final String password;   // in password manager: "chrome://weave (Mozilla Services Password)"
+    public final String serverURL;  // services.sync.serverURL
     public final String clusterURL; // services.sync.clusterURL
     public final String clientName; // services.sync.client.name
     public final String clientGuid; // services.sync.client.GUID

@@ -1,41 +1,9 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=4 sw=4 et tw=99 ft=cpp:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code, released
- * June 24, 2010.
- *
- * The Initial Developer of the Original Code is
- *    The Mozilla Foundation
- *
- * Contributor(s):
- *    Andreas Gal <gal@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
 
@@ -281,7 +249,7 @@ ListBase<LC>::instanceIsListObject(JSContext *cx, JSObject *obj, JSObject *calle
 
 template<class LC>
 JSBool
-ListBase<LC>::length_getter(JSContext *cx, JSObject *obj, jsid id, jsval *vp)
+ListBase<LC>::length_getter(JSContext *cx, JSHandleObject obj, JSHandleId id, jsval *vp)
 {
     if (!instanceIsListObject(cx, obj, NULL))
         return false;
@@ -340,7 +308,7 @@ ListBase<LC>::namedItem(JSContext *cx, JSObject *obj, jsval *name, NameGetterTyp
 }
 
 JSBool
-interface_hasInstance(JSContext *cx, JSObject *obj, const JS::Value *vp, JSBool *bp)
+interface_hasInstance(JSContext *cx, JSHandleObject obj, const JS::Value *vp, JSBool *bp)
 {
     if (vp->isObject()) {
         jsval prototype;
@@ -383,9 +351,9 @@ enum {
 };
 
 static JSBool
-InvalidateProtoShape_add(JSContext *cx, JSObject *obj, jsid id, jsval *vp);
+InvalidateProtoShape_add(JSContext *cx, JSHandleObject obj, JSHandleId id, jsval *vp);
 static JSBool
-InvalidateProtoShape_set(JSContext *cx, JSObject *obj, jsid id, JSBool strict, jsval *vp);
+InvalidateProtoShape_set(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, jsval *vp);
 
 js::Class sInterfacePrototypeClass = {
     "Object",
@@ -400,7 +368,7 @@ js::Class sInterfacePrototypeClass = {
 };
 
 static JSBool
-InvalidateProtoShape_add(JSContext *cx, JSObject *obj, jsid id, jsval *vp)
+InvalidateProtoShape_add(JSContext *cx, JSHandleObject obj, JSHandleId id, jsval *vp)
 {
     if (JSID_IS_STRING(id) && JS_InstanceOf(cx, obj, Jsvalify(&sInterfacePrototypeClass), NULL))
         js::SetReservedSlot(obj, 0, PrivateUint32Value(CHECK_CACHE));
@@ -408,7 +376,7 @@ InvalidateProtoShape_add(JSContext *cx, JSObject *obj, jsid id, jsval *vp)
 }
 
 static JSBool
-InvalidateProtoShape_set(JSContext *cx, JSObject *obj, jsid id, JSBool strict, jsval *vp)
+InvalidateProtoShape_set(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, jsval *vp)
 {
     return InvalidateProtoShape_add(cx, obj, id, vp);
 }
@@ -422,7 +390,7 @@ ListBase<LC>::getPrototype(JSContext *cx, JSObject *receiver, bool *enabled)
     XPCWrappedNativeScope *scope =
         XPCWrappedNativeScope::FindInJSObjectScope(cx, receiver);
     if (!scope)
-        return false;
+        return NULL;
 
     return getPrototype(cx, scope, receiver);
 }
@@ -441,8 +409,8 @@ ListBase<LC>::getPrototype(JSContext *cx, XPCWrappedNativeScope *scope,
             xpc_UnmarkGrayObject(interfacePrototype);
             return interfacePrototype;
         }
-    } else if (!cache.Init()) {
-        return NULL;
+    } else {
+        cache.Init();
     }
 
     JSObject* proto = Base::getPrototype(cx, scope, receiver);
@@ -492,7 +460,7 @@ ListBase<LC>::getPrototype(JSContext *cx, XPCWrappedNativeScope *scope,
     // overwrite the value set by InvalidateProtoShape_add when we set our own properties.
     js::SetReservedSlot(interfacePrototype, 0, PrivateUint32Value(USE_CACHE));
 
-    if (!cache.Put(sInterfaceClass.name, interfacePrototype))
+    if (!cache.Put(sInterfaceClass.name, interfacePrototype, fallible_t()))
         return NULL;
 
     return interfacePrototype;
@@ -701,8 +669,7 @@ ListBase<LC>::ensureExpandoObject(JSContext *cx, JSObject *obj)
             return NULL;
 
         JSCompartment *compartment = js::GetObjectCompartment(obj);
-        xpc::CompartmentPrivate *priv =
-            static_cast<xpc::CompartmentPrivate *>(JS_GetCompartmentPrivate(compartment));
+        xpc::CompartmentPrivate *priv = xpc::GetCompartmentPrivate(compartment);
         if (!priv->RegisterDOMExpandoObject(obj))
             return NULL;
 
@@ -956,8 +923,11 @@ ListBase<LC>::resolveNativeName(JSContext *cx, JSObject *proxy, jsid id, JSPrope
 
 template<class LC>
 bool
-ListBase<LC>::nativeGet(JSContext *cx, JSObject *proxy, JSObject *proto, jsid id, bool *found, Value *vp)
+ListBase<LC>::nativeGet(JSContext *cx, JSObject *proxy_, JSObject *proto, jsid id_, bool *found, Value *vp)
 {
+    JS::RootedObject proxy(cx, proxy_);
+    JS::RootedId id(cx, id_);
+
     uint32_t cache = js::GetReservedSlot(proto, 0).toPrivateUint32();
     if (cache == CHECK_CACHE) {
         bool isClean;
@@ -980,7 +950,7 @@ ListBase<LC>::nativeGet(JSContext *cx, JSObject *proxy, JSObject *proto, jsid id
     }
 
     for (size_t n = 0; n < sProtoPropertiesCount; ++n) {
-        if (id == sProtoProperties[n].id) {
+        if (sProtoProperties[n].id == id) {
             *found = true;
             if (!vp)
                 return true;
@@ -989,7 +959,7 @@ ListBase<LC>::nativeGet(JSContext *cx, JSObject *proxy, JSObject *proto, jsid id
         }
     }
     for (size_t n = 0; n < sProtoMethodsCount; ++n) {
-        if (id == sProtoMethods[n].id) {
+        if (sProtoMethods[n].id == id) {
             *found = true;
             if (!vp)
                 return true;
