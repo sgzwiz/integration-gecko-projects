@@ -76,7 +76,7 @@ nsAsyncRedirectVerifyHelper::Init(nsIChannel* oldChan, nsIChannel* newChan,
       mWaitingForRedirectCallback = true;
 
     nsresult rv;
-    rv = NS_DispatchToMainThread(this);
+    rv = NS_DispatchToMainThread(this, NS_DISPATCH_NORMAL, oldChan->GetZone());
     NS_ENSURE_SUCCESS(rv, rv);
 
     if (synchronize) {
@@ -212,6 +212,9 @@ nsAsyncRedirectVerifyHelper::InitCallback()
 NS_IMETHODIMP
 nsAsyncRedirectVerifyHelper::Run()
 {
+    if (mOldChan)
+        NS_StickLock(mOldChan);
+
     /* If the channel got canceled after it fired AsyncOnChannelRedirect
      * and before we got here, mostly because docloader load has been canceled,
      * we must completely ignore this notification and prevent any further

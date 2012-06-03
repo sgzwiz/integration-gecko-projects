@@ -30,6 +30,8 @@ public:
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return nsINode::GetZone(); }
+
   // interface nsIDOMNode
   NS_FORWARD_NSIDOMNODE(nsGenericElement::)
 
