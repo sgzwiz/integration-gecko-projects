@@ -81,7 +81,7 @@ public:
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
     NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsXPathResult, nsIDOMXPathResult)
 
-    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
     // nsIDOMXPathResult interface
     NS_DECL_NSIDOMXPATHRESULT
@@ -141,6 +141,7 @@ private:
     bool mBooleanResult;
     double mNumberResult;
     nsString mStringResult;
+    JSZoneId mZone;
 };
 
 #endif

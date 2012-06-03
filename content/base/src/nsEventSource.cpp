@@ -1340,12 +1340,13 @@ nsEventSource::Thaw()
   nsresult rv;
   if (!mGoingToDispatchAllMessages && mMessagesToDispatch.GetSize() > 0) {
     nsCOMPtr<nsIRunnable> event =
-      NS_NewRunnableMethod(this, &nsEventSource::DispatchAllMessageEvents);
+      NS_NewRunnableMethod(this, &nsEventSource::DispatchAllMessageEvents,
+                           GetZone());
     NS_ENSURE_STATE(event);
 
     mGoingToDispatchAllMessages = true;
 
-    rv = NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL);
+    rv = NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL, GetZone());
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -1400,12 +1401,13 @@ nsEventSource::DispatchCurrentMessageEvent()
 
   if (!mGoingToDispatchAllMessages) {
     nsCOMPtr<nsIRunnable> event =
-      NS_NewRunnableMethod(this, &nsEventSource::DispatchAllMessageEvents);
+      NS_NewRunnableMethod(this, &nsEventSource::DispatchAllMessageEvents,
+                           GetZone());
     NS_ENSURE_STATE(event);
 
     mGoingToDispatchAllMessages = true;
 
-    return NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL);
+    return NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL, GetZone());
   }
 
   return NS_OK;

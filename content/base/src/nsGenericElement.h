@@ -203,6 +203,11 @@ public:
   // nsISupports
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone()
+  {
+    return mNode ? mNode->GetZone() : JS_ZONE_CHROME;
+  }
+
   // nsISupportsWeakReference
   NS_DECL_NSISUPPORTSWEAKREFERENCE
 

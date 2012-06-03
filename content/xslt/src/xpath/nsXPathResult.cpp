@@ -56,7 +56,8 @@ nsXPathResult::nsXPathResult() : mDocument(nsnull),
                                  mResultType(ANY_TYPE),
                                  mInvalidIteratorState(true),
                                  mBooleanResult(false),
-                                 mNumberResult(0)
+                                 mNumberResult(0),
+                                 mZone(JS_ZONE_NONE)
 {
 }
 
@@ -290,6 +291,12 @@ nsresult
 nsXPathResult::SetExprResult(txAExprResult* aExprResult, PRUint16 aResultType,
                              nsINode* aContextNode)
 {
+    JSZoneId newZone = aContextNode ? aContextNode->GetZone() : JS_ZONE_CHROME;
+    MOZ_ASSERT_IF(mZone != JS_ZONE_NONE, mZone == newZone);
+
+    if (mZone == JS_ZONE_NONE)
+        mZone = newZone;
+
     if ((isSnapshot(aResultType) || isIterator(aResultType) ||
          isNode(aResultType)) &&
         aExprResult->getResultType() != txAExprResult::NODESET) {
