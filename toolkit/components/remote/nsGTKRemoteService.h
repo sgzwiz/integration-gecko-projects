@@ -20,6 +20,9 @@ class nsGTKRemoteService : public nsXRemoteService
 public:
   // We will be a static singleton, so don't use the ordinary methods.
   NS_DECL_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_DECL_NSIREMOTESERVICE
 
 

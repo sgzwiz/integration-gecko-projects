@@ -1172,7 +1172,7 @@ static inline void
 AbortIfOffMainThreadIfCheckFast()
 {
 #if defined(XP_WIN) || defined(NS_TLS)
-    if (!NS_IsMainThread() && !NS_IsCycleCollectorThread()) {
+    if (!NS_IsMainThread() && !NS_IsExecuteThread() && !NS_IsCycleCollectorThread()) {
         NS_RUNTIMEABORT("Main-thread-only object used off the main thread");
     }
 #endif

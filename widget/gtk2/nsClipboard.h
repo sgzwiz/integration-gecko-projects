@@ -22,6 +22,8 @@ public:
     
     NS_DECL_ISUPPORTS
     
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
     NS_DECL_NSICLIPBOARD
     NS_DECL_NSIOBSERVER
 
