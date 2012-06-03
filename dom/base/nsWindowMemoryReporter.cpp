@@ -445,6 +445,9 @@ static PLDHashOperator
 GetNonDetachedWindowDomainsEnumerator(const PRUint64& aId, nsGlobalWindow* aWindow,
                                       void* aClosure)
 {
+  if (!NS_TryStickLock(aWindow))
+    return PL_DHASH_NEXT;
+
   GetNonDetachedWindowDomainsEnumeratorData *data =
     static_cast<GetNonDetachedWindowDomainsEnumeratorData*>(aClosure);
 

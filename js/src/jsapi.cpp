@@ -890,8 +890,6 @@ JSRuntime::init(uint32_t maxbytes)
 
 JSRuntime::~JSRuntime()
 {
-    JS_ASSERT(onOwnerThread());
-
     delete_(debugScopes);
 
     /*
@@ -1615,21 +1613,15 @@ JS_PUBLIC_API(JSObject *)
 JS_TransplantObject(JSContext *cx, JSObject *origobj, JSObject *target)
 {
     AssertNoGC(cx);
-<<<<<<< local
-=======
     JS_ASSERT(origobj != target);
     JS_ASSERT(!IsCrossCompartmentWrapper(origobj));
     JS_ASSERT(!IsCrossCompartmentWrapper(target));
->>>>>>> other
 
-<<<<<<< local
     AutoLockGC lock(cx->runtime);
 
      // This function is called when an object moves between two
      // different compartments. In that case, we need to "move" the
      // window from origobj's compartment to target's compartment.
-=======
->>>>>>> other
     JSCompartment *destination = target->compartment();
     WrapperMap &map = destination->crossCompartmentWrappers;
     Value origv = ObjectValue(*origobj);
@@ -1668,12 +1660,15 @@ JS_TransplantObject(JSContext *cx, JSObject *origobj, JSObject *target)
 
     // Lastly, update the original object to point to the new one.
     if (origobj->compartment() != destination) {
-        AutoCompartment ac(cx, origobj);
         JSObject *newIdentityWrapper = newIdentity;
-        if (!ac.enter() || !JS_WrapObject(cx, &newIdentityWrapper))
-            return NULL;
-        if (!origobj->swap(cx, newIdentityWrapper))
-            return NULL;
+        {
+            AutoUnlockGC unlock(cx->runtime);
+            AutoCompartment ac(cx, origobj);
+            if (!ac.enter() || !JS_WrapObject(cx, &newIdentityWrapper))
+                return NULL;
+            if (!origobj->swap(cx, newIdentityWrapper))
+                return NULL;
+        }
         origobj->compartment()->crossCompartmentWrappers.put(ObjectValue(*newIdentity), origv);
     }
 
@@ -1716,8 +1711,7 @@ RemapWrappers(JSContext *cx, JSObject *orig, JSObject *target)
         pmap.remove(origv);
         NukeCrossCompartmentWrapper(wobj);
 
-<<<<<<< local
-        JSObject *tobj = obj;
+        JSObject *tobj = target;
         {
             AutoUnlockGC unlock(cx->runtime);
 
@@ -1725,16 +1719,8 @@ RemapWrappers(JSContext *cx, JSObject *orig, JSObject *target)
             // a new wrapper.
             AutoCompartment ac(cx, wobj);
             if (!ac.enter() || !wcompartment->wrap(cx, &tobj))
-                return NULL;
+                return false;
         }
-=======
-        // First, we wrap it in the new compartment. This will return
-        // a new wrapper.
-        AutoCompartment ac(cx, wobj);
-        JSObject *tobj = target;
-        if (!ac.enter() || !wcompartment->wrap(cx, &tobj))
-            return false;
->>>>>>> other
 
         // Now, because we need to maintain object identity, we do a
         // brain transplant on the old object. At the same time, we
@@ -1746,25 +1732,7 @@ RemapWrappers(JSContext *cx, JSObject *orig, JSObject *target)
         pmap.put(targetv, ObjectValue(*wobj));
     }
 
-<<<<<<< local
-    // Lastly, update the original object to point to the new one.
-    if (origobj->compartment() != destination) {
-        AutoCompartment ac(cx, origobj);
-        JSObject *tobj = obj;
-        {
-            AutoUnlockGC unlock(cx->runtime);
-            if (!ac.enter() || !JS_WrapObject(cx, &tobj))
-                return NULL;
-            if (!origobj->swap(cx, tobj))
-                return NULL;
-        }
-        origobj->compartment()->crossCompartmentWrappers.put(targetv, origv);
-    }
-
-    return obj;
-=======
     return true;
->>>>>>> other
 }
 
 /*
@@ -1783,21 +1751,14 @@ js_TransplantObjectWithWrapper(JSContext *cx,
                                JSObject *targetwrapper)
 {
     AssertNoGC(cx);
-<<<<<<< local
-=======
     JS_ASSERT(!IsCrossCompartmentWrapper(origobj));
     JS_ASSERT(!IsCrossCompartmentWrapper(origwrapper));
     JS_ASSERT(!IsCrossCompartmentWrapper(targetobj));
     JS_ASSERT(!IsCrossCompartmentWrapper(targetwrapper));
->>>>>>> other
 
-<<<<<<< local
     AutoLockGC lock(cx->runtime);
 
-    JSObject *obj;
-=======
     JSObject *newWrapper;
->>>>>>> other
     JSCompartment *destination = targetobj->compartment();
     WrapperMap &map = destination->crossCompartmentWrappers;
 
@@ -1830,70 +1791,20 @@ js_TransplantObjectWithWrapper(JSContext *cx,
     if (!RemapWrappers(cx, origobj, targetobj))
         return NULL;
 
-<<<<<<< local
-    for (JSCompartment **p = vector.begin(), **end = vector.end(); p != end; ++p) {
-        WrapperMap &pmap = (*p)->crossCompartmentWrappers;
-        if (WrapperMap::Ptr wp = pmap.lookup(origv)) {
-            // We found a wrapper. Remember and root it.
-            toTransplant.infallibleAppend(wp->value);
-        }
-    }
-
-    for (Value *begin = toTransplant.begin(), *end = toTransplant.end(); begin != end; ++begin) {
-        JSObject *wobj = &begin->toObject();
-        JSCompartment *wcompartment = wobj->compartment();
-        WrapperMap &pmap = wcompartment->crossCompartmentWrappers;
-        JS_ASSERT(pmap.lookup(origv));
-        pmap.remove(origv);
-
-        // First, we wrap it in the new compartment. This will return a
-        // new wrapper.
-        AutoCompartment ac(cx, wobj);
-
-        JSObject *tobj = targetobj;
-
-        {
-            AutoUnlockGC unlock(cx->runtime);
-            if (!ac.enter() || !wcompartment->wrap(cx, &tobj))
-                return NULL;
-        }
-
-        // Now, because we need to maintain object identity, we do a brain
-        // transplant on the old object. At the same time, we update the
-        // entry in the compartment's wrapper map to point to the old
-        // wrapper.
-        JS_ASSERT(tobj != wobj);
-        if (!wobj->swap(cx, tobj))
-            return NULL;
-        pmap.put(targetv, ObjectValue(*wobj));
-    }
-
-    // Lastly, update the original object to point to the new one. However, as
-    // mentioned above, we do the transplant on the wrapper, not the object
-    // itself, since all of the references are to the object itself.
-=======
     // Lastly, update things in the original compartment. Our invariants dictate
     // that the original compartment can only have one cross-compartment wrapper
     // to the new object. So we choose to update |origwrapper|, not |origobj|,
     // since theoretically there should have been no direct intra-compartment
     // references to |origobj|.
->>>>>>> other
     {
         AutoCompartment ac(cx, origobj);
-<<<<<<< local
-        JSObject *tobj = obj;
+        JSObject *wrapperGuts = targetobj;
         {
             AutoUnlockGC unlock(cx->runtime);
-            if (!ac.enter() || !JS_WrapObject(cx, &tobj))
+            if (!ac.enter() || !JS_WrapObject(cx, &wrapperGuts))
                 return NULL;
         }
-        if (!origwrapper->swap(cx, tobj))
-=======
-        JSObject *wrapperGuts = targetobj;
-        if (!ac.enter() || !JS_WrapObject(cx, &wrapperGuts))
-            return NULL;
         if (!origwrapper->swap(cx, wrapperGuts))
->>>>>>> other
             return NULL;
         origwrapper->compartment()->crossCompartmentWrappers.put(ObjectValue(*targetobj),
                                                                  ObjectValue(*origwrapper));
@@ -1910,6 +1821,7 @@ js_TransplantObjectWithWrapper(JSContext *cx,
 JS_PUBLIC_API(JSBool)
 JS_RefreshCrossCompartmentWrappers(JSContext *cx, JSObject *obj)
 {
+    AutoLockGC lock(cx->runtime);
     return RemapWrappers(cx, obj, obj);
 }
 

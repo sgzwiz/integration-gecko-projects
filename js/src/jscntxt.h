@@ -415,11 +415,11 @@ struct Thread : ThreadFriendFields
     js::AutoGCRooter   *autoGCRooters;
 };
 
+} /* namespace js */
+
 namespace JS {
 struct RuntimeSizes;
 }
-
-} /* namespace js */
 
 struct JSRuntime : js::RuntimeFriendFields
 {

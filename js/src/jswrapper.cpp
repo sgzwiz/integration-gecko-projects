@@ -663,7 +663,7 @@ struct AutoLockZone
 };
 
 bool
-CrossCompartmentWrapper::call(JSContext *cx, JSObject *wrapper, unsigned argc, Value *vp)
+CrossCompartmentWrapper::call(JSContext *cx, JSObject *wrapper_, unsigned argc, Value *vp)
 {
     RootedObject wrapper(cx, wrapper_);
 

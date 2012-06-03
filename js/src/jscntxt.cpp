@@ -78,6 +78,8 @@ void CompartmentCallback(JSRuntime *rt, void *vdata, JSCompartment *compartment)
 void
 JSRuntime::sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf, RuntimeSizes *runtime)
 {
+    // FIXME
+#if 0
     runtime->object = mallocSizeOf(this);
 
     runtime->atomsTable = atomState.atoms.sizeOfExcludingThis(mallocSizeOf);
@@ -110,17 +112,22 @@ JSRuntime::sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf, RuntimeSizes *run
     CallbackData data(mallocSizeOf);
     JS_IterateCompartments(this, &data, CompartmentCallback);
     runtime->compartmentObjects = data.n;
+#endif
 }
 
 size_t
 JSRuntime::sizeOfExplicitNonHeap()
 {
+    // FIXME
+    return 0;
+#if 0
     if (!execAlloc_)
         return 0;
 
     size_t mjitCode, regexpCode, unusedCodeMemory;
     execAlloc_->sizeOfCode(&mjitCode, &regexpCode, &unusedCodeMemory);
     return mjitCode + regexpCode + unusedCodeMemory + stackSpace.sizeOfCommitted();
+#endif
 }
 
 void

@@ -3194,6 +3194,10 @@ nsTypedSelection::~nsTypedSelection()
   }
 }
 
+NS_IMETHODIMP_(JSZoneId) nsTypedSelection::GetZone()
+{
+  return mFrameSelection ? mFrameSelection->GetZone() : JS_ZONE_CHROME;
+}
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsTypedSelection)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsTypedSelection)

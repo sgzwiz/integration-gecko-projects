@@ -870,6 +870,8 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(DeviceStorageRequest, nsIContentPermissionRequest)
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_IMETHOD Run() {
 
     if (mozilla::Preferences::GetBool("device.storage.prompt.testing", false)) {

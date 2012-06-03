@@ -212,7 +212,7 @@ public:
         , mDidReval(false)
         , mCacheEntryDeviceTelemetryID(UNKNOWN_DEVICE)
     {
-        MOZ_ASSERT(NS_IsMainThread());
+        MOZ_ASSERT(NS_IsChromeOwningThread());
     }
 
     nsresult Dispatch();
@@ -2768,7 +2768,7 @@ HttpCacheQuery::OnCacheEntryDoomed(nsresult)
 nsresult
 HttpCacheQuery::Dispatch()
 {
-    MOZ_ASSERT(NS_IsMainThread());
+    MOZ_ASSERT(NS_IsChromeOwningThread());
 
     nsresult rv;
 
@@ -2798,7 +2798,7 @@ NS_IMETHODIMP
 HttpCacheQuery::Run()
 {
     nsresult rv;
-    if (!NS_IsMainThread()) {
+    if (!NS_IsChromeOwningThread()) {
         AssertOnCacheThread();
 
         nsCOMPtr<nsICacheService> serv =
@@ -3220,7 +3220,7 @@ HttpCacheQuery::HasQueryString(nsHttpAtom method, nsIURI * uri)
 {
     // Must be called on the main thread because nsIURI does not implement
     // thread-safe QueryInterface.
-    MOZ_ASSERT(NS_IsMainThread());
+    MOZ_ASSERT(NS_IsChromeOwningThread());
 
     if (method != nsHttp::Get && method != nsHttp::Head)
         return false;
@@ -5411,7 +5411,7 @@ nsHttpChannel::OnCacheEntryAvailable(nsICacheEntryDescriptor *entry,
                                      nsCacheAccessMode access,
                                      nsresult status)
 {
-    MOZ_ASSERT(NS_IsMainThread());
+    MOZ_ASSERT(NS_IsChromeOwningThread());
 
     nsresult rv;
 

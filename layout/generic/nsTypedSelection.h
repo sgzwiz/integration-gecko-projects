@@ -47,10 +47,7 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsTypedSelection, nsISelectionPrivate)
 
-  NS_IMETHODIMP_(JSZoneId) GetZone()
-  {
-    return mFrameSelection ? mFrameSelection->GetZone() : JS_ZONE_CHROME;
-  }
+  NS_IMETHOD_(JSZoneId) GetZone();
 
   NS_DECL_NSISELECTION
   NS_DECL_NSISELECTIONPRIVATE

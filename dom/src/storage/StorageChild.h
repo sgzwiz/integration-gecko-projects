@@ -21,6 +21,9 @@ class StorageChild : public PStorageChild
 public:
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(StorageChild, nsIPrivacyTransitionObserver)
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_DECL_NSIPRIVACYTRANSITIONOBSERVER
   
   StorageChild(nsDOMStorage* aOwner);
