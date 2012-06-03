@@ -90,7 +90,8 @@ public:
       NS_FindThreadBitmask(&mThread, &mChrome, &mContent);
       char buf[100];
       my_snprintf(buf, sizeof(buf), "OBJECT %p THREAD %p CHROME %d CONTENT %llu\n",
-                  this, mThread, (int) mChrome, mContent);
+                  (void*) this, (void*) mThread,
+                  (int) mChrome, (unsigned long long) mContent);
       NS_DumpBacktrace(buf, false);
     }
 
@@ -108,7 +109,8 @@ public:
         bool dead = !newThread && !newChrome && !newContent;
         char buf[100];
         my_snprintf(buf, sizeof(buf), "OBJECT %p THREAD %p CHROME %d CONTENT %llu\n",
-                    this, newThread, (int) newChrome, newContent);
+                    (void*) this, (void*) newThread,
+                    (int) newChrome, (unsigned long long) newContent);
         NS_DumpBacktrace(buf, dead);
         if (dead)
           *(int*)0 = 0;

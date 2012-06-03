@@ -812,12 +812,12 @@ nsAutoUnstickChrome::~nsAutoUnstickChrome()
   js::ContextFriendFields::get(mCx)->chromeStickState = mStuck.prev;
 }
 
-#ifdef _MSC_VER
+#ifndef XP_MACOSX
 
 void
 NS_DumpBacktrace(const char *str, bool flush) {}
 
-#else // _MSC_VER
+#else // XP_MACOSX
 
 #include <execinfo.h>
 #include <stdio.h>
@@ -899,4 +899,4 @@ NS_DumpBacktrace(const char *str, bool flush)
   PR_Unlock(backtraceLock);
 }
 
-#endif // _MSC_VER
+#endif // XP_MACOSX

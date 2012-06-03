@@ -261,6 +261,8 @@ private:
     void               SetHasMappedToplevel(bool aState);
     nsIntSize          GetSafeWindowSize(nsIntSize aSize);
 
+    class NativeShowEvent;
+
     void               EnsureGrabs  (void);
     void               GrabPointer  (guint32 aTime);
     void               ReleaseGrabs (void);

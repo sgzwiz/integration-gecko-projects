@@ -1354,6 +1354,21 @@ nsViewManager::ProcessPendingUpdates()
   }
 }
 
+class nsViewManager::UpdateWidgetGeometryEvent : public nsRunnable
+{
+public:
+  nsCOMPtr<nsViewManager> mViewManager;
+
+  UpdateWidgetGeometryEvent(nsViewManager *aViewManager)
+    : mViewManager(aViewManager)
+  {}
+
+  NS_IMETHODIMP Run() {
+    mViewManager->UpdateWidgetGeometry();
+    return NS_OK;
+  }
+};
+
 void
 nsViewManager::UpdateWidgetGeometry()
 {
@@ -1363,6 +1378,12 @@ nsViewManager::UpdateWidgetGeometry()
   }
 
   if (mHasPendingWidgetGeometryChanges) {
+    if (!NS_IsMainThread()) {
+      NS_DispatchToMainThread(new UpdateWidgetGeometryEvent(this),
+                              NS_DISPATCH_SYNC);
+      return;
+    }
+
     ProcessPendingUpdatesForView(mRootView, false);
     mHasPendingWidgetGeometryChanges = false;
   }

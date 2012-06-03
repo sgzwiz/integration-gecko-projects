@@ -144,6 +144,8 @@ public:
   virtual void ProcessPendingUpdates();
   virtual void UpdateWidgetGeometry();
 
+  class UpdateWidgetGeometryEvent;
+
 protected:
   virtual ~nsViewManager();
 

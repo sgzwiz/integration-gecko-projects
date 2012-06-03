@@ -55,6 +55,9 @@ class nsAlertsIconListener : public imgIDecoderObserver,
 {
 public:
   NS_DECL_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_DECL_IMGICONTAINEROBSERVER
   NS_DECL_IMGIDECODEROBSERVER
   NS_DECL_NSIOBSERVER

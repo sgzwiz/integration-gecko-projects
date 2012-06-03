@@ -642,6 +642,10 @@ nsWindow::Destroy(void)
     if (mIsDestroyed || !mCreated)
         return NS_OK;
 
+    if (!NS_CanLockNewContent()) {
+        return NS_DispatchToMainThread(NS_NewRunnableMethod(this, &nsWindow::Destroy));
+    }
+
     LOG(("nsWindow::Destroy [%p]\n", (void *)this));
     mIsDestroyed = true;
     mCreated = false;
@@ -713,14 +717,20 @@ nsWindow::Destroy(void)
 
     GtkWidget *owningWidget = GetMozContainerWidget();
     if (mShell) {
-        gtk_widget_destroy(mShell);
+        {
+            nsAutoUnlockEverything unlock;
+            gtk_widget_destroy(mShell);
+        }
         mShell = nsnull;
         mContainer = nsnull;
         NS_ABORT_IF_FALSE(!mGdkWindow,
                           "mGdkWindow should be NULL when mContainer is destroyed");
     }
     else if (mContainer) {
-        gtk_widget_destroy(GTK_WIDGET(mContainer));
+        {
+            nsAutoUnlockEverything unlock;
+            gtk_widget_destroy(GTK_WIDGET(mContainer));
+        }
         mContainer = nsnull;
         NS_ABORT_IF_FALSE(!mGdkWindow,
                           "mGdkWindow should be NULL when mContainer is destroyed");
@@ -732,9 +742,12 @@ nsWindow::Destroy(void)
         // MozContainer widget is destroyed.)
         DestroyChildWindows();
 
-        gdk_window_set_user_data(mGdkWindow, NULL);
-        g_object_set_data(G_OBJECT(mGdkWindow), "nsWindow", NULL);
-        gdk_window_destroy(mGdkWindow);
+        {
+            nsAutoUnlockEverything unlock;
+            gdk_window_set_user_data(mGdkWindow, NULL);
+            g_object_set_data(G_OBJECT(mGdkWindow), "nsWindow", NULL);
+            gdk_window_destroy(mGdkWindow);
+        }
         mGdkWindow = nsnull;
     }
 
@@ -1882,7 +1895,10 @@ nsWindow::CaptureRollupEvents(nsIRollupListener *aListener,
                                                        (this));
         // real grab is only done when there is no dragging
         if (!nsWindow::DragInProgress()) {
-            gtk_grab_add(widget);
+            {
+                nsAutoUnlockEverything unlock;
+                gtk_grab_add(widget);
+            }
             GrabPointer(GetLastUserInputTime());
         }
     }
@@ -1890,10 +1906,14 @@ nsWindow::CaptureRollupEvents(nsIRollupListener *aListener,
         if (!nsWindow::DragInProgress()) {
             ReleaseGrabs();
         }
+
         // There may not have been a drag in process when aDoCapture was set,
         // so make sure to remove any added grab.  This is a no-op if the grab
         // was not added to this widget.
-        gtk_grab_remove(widget);
+        {
+            nsAutoUnlockEverything unlock;
+            gtk_grab_remove(widget);
+        }
         gRollupListener = nsnull;
         gRollupWindow = nsnull;
     }
@@ -3753,6 +3773,7 @@ nsWindow::Create(nsIWidget        *aParent,
                          G_CALLBACK(visibility_notify_event_cb), NULL);
         g_signal_connect(mContainer, "hierarchy_changed",
                          G_CALLBACK(hierarchy_changed_cb), NULL);
+
         // Initialize mHasMappedToplevel.
         hierarchy_changed_cb(GTK_WIDGET(mContainer), NULL);
 
@@ -3923,9 +3944,30 @@ nsWindow::NativeResize(PRInt32 aX, PRInt32 aY,
     }
 }
 
+class nsWindow::NativeShowEvent : public nsRunnable
+{
+public:
+    nsRefPtr<nsWindow> mWindow;
+    bool mAction;
+
+    NativeShowEvent(nsWindow *aWindow, bool aAction)
+        : mWindow(aWindow), mAction(aAction)
+    {}
+
+    NS_IMETHOD Run() {
+        mWindow->NativeShow(mAction);
+        return NS_OK;
+    }
+};
+
 void
 nsWindow::NativeShow (bool    aAction)
 {
+    if (!NS_CanLockNewContent()) {
+        NS_DispatchToMainThread(new NativeShowEvent(this, aAction));
+        return;
+    }
+
     if (aAction) {
         // GTK wants us to set the window mask before we show the window
         // for the first time, or setting the mask later won't work.
@@ -3941,6 +3983,8 @@ nsWindow::NativeShow (bool    aAction)
 
         // unset our flag now that our window has been shown
         mNeedsShow = false;
+
+        nsAutoUnlockEverything unlock;
 
         if (mIsTopLevel) {
             // Set up usertime/startupID metadata for the created window.
@@ -3959,6 +4003,8 @@ nsWindow::NativeShow (bool    aAction)
         }
     }
     else {
+        nsAutoUnlockEverything unlock;
+
         if (mIsTopLevel) {
             gtk_widget_hide(GTK_WIDGET(mShell));
             gtk_widget_hide(GTK_WIDGET(mContainer));
@@ -5086,6 +5132,8 @@ get_gtk_cursor(nsCursor aCursor)
 static gboolean
 expose_event_cb(GtkWidget *widget, GdkEventExpose *event)
 {
+    nsAutoLockChromeUnstickContent unlock;
+
     nsRefPtr<nsWindow> window = get_window_for_gdk_window(event->window);
     if (!window)
         return FALSE;
@@ -5141,6 +5189,8 @@ draw_window_of_widget(GtkWidget *widget, GdkWindow *aWindow, cairo_t *cr)
 gboolean
 expose_event_cb(GtkWidget *widget, cairo_t *cr)
 {
+    nsAutoLockChromeUnstickContent unlock;
+
     draw_window_of_widget(widget, gtk_widget_get_window(widget), cr);
     return FALSE;
 }
@@ -5150,6 +5200,8 @@ static gboolean
 configure_event_cb(GtkWidget *widget,
                    GdkEventConfigure *event)
 {
+    nsAutoLockChromeUnstickContent unlock;
+
     nsRefPtr<nsWindow> window = get_window_for_gtk_widget(widget);
     if (!window)
         return FALSE;
@@ -5160,6 +5212,8 @@ configure_event_cb(GtkWidget *widget,
 static void
 container_unrealize_cb (GtkWidget *widget)
 {
+    nsAutoLockChromeUnstickContent unlock;
+
     nsRefPtr<nsWindow> window = get_window_for_gtk_widget(widget);
     if (!window)
         return;
@@ -5170,6 +5224,8 @@ container_unrealize_cb (GtkWidget *widget)
 static void
 size_allocate_cb (GtkWidget *widget, GtkAllocation *allocation)
 {
+    nsAutoLockChromeUnstickContent unlock;
+
     nsRefPtr<nsWindow> window = get_window_for_gtk_widget(widget);
     if (!window)
         return;
@@ -5180,6 +5236,8 @@ size_allocate_cb (GtkWidget *widget, GtkAllocation *allocation)
 static gboolean
 delete_event_cb(GtkWidget *widget, GdkEventAny *event)
 {
+    nsAutoLockChromeUnstickContent unlock;
+
     nsRefPtr<nsWindow> window = get_window_for_gtk_widget(widget);
     if (!window)
         return FALSE;
@@ -5193,6 +5251,8 @@ static gboolean
 enter_notify_event_cb(GtkWidget *widget,
                       GdkEventCrossing *event)
 {
+    nsAutoLockChromeUnstickContent unlock;
+
     nsRefPtr<nsWindow> window = get_window_for_gdk_window(event->window);
     if (!window)
         return TRUE;
@@ -5206,6 +5266,8 @@ static gboolean
 leave_notify_event_cb(GtkWidget *widget,
                       GdkEventCrossing *event)
 {
+    nsAutoLockChromeUnstickContent unlock;
+
     if (is_parent_grab_leave(event)) {
         return TRUE;
     }
@@ -5249,6 +5311,8 @@ GetFirstNSWindowForGDKWindow(GdkWindow *aGdkWindow)
 static gboolean
 motion_notify_event_cb(GtkWidget *widget, GdkEventMotion *event)
 {
+    nsAutoLockChromeUnstickContent unlock;
+
     UpdateLastInputEventTime(event);
 
     nsWindow *window = GetFirstNSWindowForGDKWindow(event->window);
@@ -5266,6 +5330,8 @@ motion_notify_event_cb(GtkWidget *widget, GdkEventMotion *event)
 static gboolean
 button_press_event_cb(GtkWidget *widget, GdkEventButton *event)
 {
+    nsAutoLockChromeUnstickContent unlock;
+
     UpdateLastInputEventTime(event);
 
     nsWindow *window = GetFirstNSWindowForGDKWindow(event->window);
@@ -5280,6 +5346,8 @@ button_press_event_cb(GtkWidget *widget, GdkEventButton *event)
 static gboolean
 button_release_event_cb(GtkWidget *widget, GdkEventButton *event)
 {
+    nsAutoLockChromeUnstickContent unlock;
+
     UpdateLastInputEventTime(event);
 
     nsWindow *window = GetFirstNSWindowForGDKWindow(event->window);
@@ -5294,6 +5362,8 @@ button_release_event_cb(GtkWidget *widget, GdkEventButton *event)
 static gboolean
 focus_in_event_cb(GtkWidget *widget, GdkEventFocus *event)
 {
+    nsAutoLockChromeUnstickContent unlock;
+
     nsRefPtr<nsWindow> window = get_window_for_gtk_widget(widget);
     if (!window)
         return FALSE;
@@ -5306,6 +5376,8 @@ focus_in_event_cb(GtkWidget *widget, GdkEventFocus *event)
 static gboolean
 focus_out_event_cb(GtkWidget *widget, GdkEventFocus *event)
 {
+    nsAutoLockChromeUnstickContent unlock;
+
     nsRefPtr<nsWindow> window = get_window_for_gtk_widget(widget);
     if (!window)
         return FALSE;
@@ -5484,6 +5556,8 @@ plugin_client_message_filter(GdkXEvent *gdk_xevent,
 static gboolean
 key_press_event_cb(GtkWidget *widget, GdkEventKey *event)
 {
+    nsAutoLockChromeUnstickContent unlock;
+
     LOG(("key_press_event_cb\n"));
 
     UpdateLastInputEventTime(event);
@@ -5527,6 +5601,8 @@ key_press_event_cb(GtkWidget *widget, GdkEventKey *event)
 static gboolean
 key_release_event_cb(GtkWidget *widget, GdkEventKey *event)
 {
+    nsAutoLockChromeUnstickContent unlock;
+
     LOG(("key_release_event_cb\n"));
 
     UpdateLastInputEventTime(event);
@@ -5544,6 +5620,8 @@ key_release_event_cb(GtkWidget *widget, GdkEventKey *event)
 static gboolean
 scroll_event_cb(GtkWidget *widget, GdkEventScroll *event)
 {
+    nsAutoLockChromeUnstickContent lock;
+
     nsWindow *window = GetFirstNSWindowForGDKWindow(event->window);
     if (!window)
         return FALSE;
@@ -5556,6 +5634,8 @@ scroll_event_cb(GtkWidget *widget, GdkEventScroll *event)
 static gboolean
 visibility_notify_event_cb (GtkWidget *widget, GdkEventVisibility *event)
 {
+    nsAutoLockChromeUnstickContent lock;
+
     nsRefPtr<nsWindow> window = get_window_for_gdk_window(event->window);
     if (!window)
         return FALSE;
@@ -5608,6 +5688,8 @@ hierarchy_changed_cb (GtkWidget *widget,
 static gboolean
 window_state_event_cb (GtkWidget *widget, GdkEventWindowState *event)
 {
+    nsAutoLockChromeUnstickContent lock;
+
     nsRefPtr<nsWindow> window = get_window_for_gtk_widget(widget);
     if (!window)
         return FALSE;
@@ -5620,6 +5702,8 @@ window_state_event_cb (GtkWidget *widget, GdkEventWindowState *event)
 static void
 theme_changed_cb (GtkSettings *settings, GParamSpec *pspec, nsWindow *data)
 {
+    nsAutoLockChromeUnstickContent lock;
+
     nsRefPtr<nsWindow> window = data;
     window->ThemeChanged();
 }
@@ -5643,6 +5727,8 @@ drag_motion_event_cb(GtkWidget *aWidget,
                      guint aTime,
                      gpointer aData)
 {
+    nsAutoLockChromeUnstickContent lock;
+
     nsRefPtr<nsWindow> window = get_window_for_gtk_widget(aWidget);
     if (!window)
         return FALSE;
@@ -5673,6 +5759,8 @@ drag_leave_event_cb(GtkWidget *aWidget,
                     guint aTime,
                     gpointer aData)
 {
+    nsAutoLockChromeUnstickContent lock;
+
     nsRefPtr<nsWindow> window = get_window_for_gtk_widget(aWidget);
     if (!window)
         return;
@@ -5713,6 +5801,8 @@ drag_drop_event_cb(GtkWidget *aWidget,
                    guint aTime,
                    gpointer aData)
 {
+    nsAutoLockChromeUnstickContent lock;
+
     nsRefPtr<nsWindow> window = get_window_for_gtk_widget(aWidget);
     if (!window)
         return FALSE;
@@ -5747,6 +5837,8 @@ drag_data_received_event_cb(GtkWidget *aWidget,
                             guint aTime,
                             gpointer aData)
 {
+    nsAutoLockChromeUnstickContent lock;
+
     nsRefPtr<nsWindow> window = get_window_for_gtk_widget(aWidget);
     if (!window)
         return;
