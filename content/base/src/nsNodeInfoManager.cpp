@@ -179,6 +179,15 @@ nsNodeInfoManager::Init(nsIDocument *aDocument)
   return NS_OK;
 }
 
+void
+nsNodeInfoManager::SetZone(JSZoneId zone)
+{
+  mZone = zone;
+
+  if (mBindingManager)
+    mBindingManager->SetZone(zone);
+}
+
 // static
 PRIntn
 nsNodeInfoManager::DropNodeInfoDocument(PLHashEntry *he, PRIntn hashIndex, void *arg)

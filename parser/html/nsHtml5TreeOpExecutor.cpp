@@ -262,7 +262,7 @@ nsHtml5TreeOpExecutor::UpdateChildCounts()
 nsresult
 nsHtml5TreeOpExecutor::MarkAsBroken(nsresult aReason)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  NS_ASSERTION(NS_IsExecuteThread(), "Wrong thread!");
   NS_ASSERTION(!mRunsToCompletion, "Fragment parsers can't be broken!");
   mBroken = aReason;
   if (mStreamParser) {

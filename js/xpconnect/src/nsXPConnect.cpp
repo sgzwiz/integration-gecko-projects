@@ -1934,6 +1934,8 @@ NS_IMETHODIMP
 nsXPConnect::CreateSandbox(JSContext *cx, nsIPrincipal *principal,
                            nsIXPConnectJSObjectHolder **_retval)
 {
+    nsAutoUnstickChrome unstick(cx);
+
     XPCCallContext ccx(NATIVE_CALLER, cx);
     if (!ccx.IsValid())
         return UnexpectedFailure(NS_ERROR_FAILURE);
@@ -2017,8 +2019,6 @@ nsXPConnect::GetWrappedNativePrototype(JSContext * aJSContext,
 NS_IMETHODIMP
 nsXPConnect::ReleaseJSContext(JSContext * aJSContext, bool noGC)
 {
-    // XXX this code is insane.
-#if 0
     NS_ASSERTION(aJSContext, "bad param");
     XPCPerThreadData* tls = XPCPerThreadData::GetData(aJSContext);
     if (tls) {
@@ -2052,7 +2052,6 @@ nsXPConnect::ReleaseJSContext(JSContext * aJSContext, bool noGC)
         JS_DestroyContextNoGC(aJSContext);
     else
         JS_DestroyContext(aJSContext);
-#endif
     return NS_OK;
 }
 

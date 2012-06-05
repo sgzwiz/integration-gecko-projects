@@ -399,7 +399,9 @@ nsThread::Dispatch(nsIRunnable *event, PRUint32 flags)
       return rv;
 
     {
-      nsAutoUnlockEverything unlock;
+      Maybe<nsAutoUnlockEverything> unlock;
+      if (NS_IsExecuteThread())
+        unlock.construct();
       while (wrapper->IsPending())
         NS_ProcessNextEvent(thread);
     }

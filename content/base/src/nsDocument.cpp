@@ -3748,6 +3748,8 @@ nsDocument::GetScriptGlobalObject() const
    // object as soon as nsDocumentViewer::Close has called
    // RemovedFromDocShell on us.
    if (mRemovedFromDocShell) {
+     nsAutoLockChrome lock;
+
      nsCOMPtr<nsIInterfaceRequestor> requestor =
        do_QueryReferent(mDocumentContainer);
      if (requestor) {
@@ -7163,6 +7165,8 @@ nsDocument::GetLayoutHistoryState() const
 void
 nsDocument::EnsureOnloadBlocker()
 {
+  MOZ_ASSERT(NS_IsOwningThread(GetZone()));
+
   // If mScriptGlobalObject is null, we shouldn't be messing with the loadgroup
   // -- it's not ours.
   if (mOnloadBlockCount != 0 && mScriptGlobalObject) {
@@ -7200,6 +7204,8 @@ nsDocument::AsyncBlockOnload()
 void
 nsDocument::BlockOnload()
 {
+  MOZ_ASSERT(NS_IsOwningThread(GetZone()));
+
   if (mDisplayDocument) {
     mDisplayDocument->BlockOnload();
     return;
@@ -7237,6 +7243,8 @@ nsDocument::BlockOnload()
 void
 nsDocument::UnblockOnload(bool aFireSync)
 {
+  MOZ_ASSERT(NS_IsOwningThread(GetZone()));
+
   if (mDisplayDocument) {
     mDisplayDocument->UnblockOnload(aFireSync);
     return;
@@ -7276,6 +7284,8 @@ private:
 void
 nsDocument::PostUnblockOnloadEvent()
 {
+  MOZ_ASSERT(NS_IsOwningThread(GetZone()));
+
   nsCOMPtr<nsIRunnable> evt = new nsUnblockOnloadEvent(this);
   nsresult rv = NS_DispatchToMainThread(evt, NS_DISPATCH_NORMAL, GetZone());
   if (NS_SUCCEEDED(rv)) {

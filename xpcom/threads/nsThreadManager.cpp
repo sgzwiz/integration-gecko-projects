@@ -172,6 +172,13 @@ nsThreadManager::Shutdown()
   // Remove the TLS entry for the main thread.
   PR_SetThreadPrivate(mCurThreadIndex, nsnull);
 
+  for (int zone_ = JS_ZONE_CHROME; zone_ < JS_ZONE_CONTENT_LIMIT; zone_++) {
+    Zone &zone = getZone((JSZoneId) zone_);
+    PR_DestroyLock(zone.lock);
+    zone.lock = nsnull;
+    zone.thread = nsnull;
+  }
+
   sInitialized = false;
 }
 

@@ -438,7 +438,8 @@ nsBindingManager::nsBindingManager(nsIDocument* aDocument)
   : mProcessingAttachedStack(false),
     mDestroyed(false),
     mAttachedStackSizeOnOutermost(0),
-    mDocument(aDocument)
+    mDocument(aDocument),
+    mZone(aDocument->GetZone())
 {
   mContentListTable.ops = nsnull;
   mAnonymousNodesTable.ops = nsnull;
@@ -460,6 +461,12 @@ nsBindingManager::~nsBindingManager(void)
     PL_DHashTableFinish(&mInsertionParentTable);
   if (mWrapperTable.ops)
     PL_DHashTableFinish(&mWrapperTable);
+}
+
+void
+nsBindingManager::SetZone(JSZoneId aZone)
+{
+  mZone = aZone;
 }
 
 PLDHashOperator
@@ -955,12 +962,10 @@ nsBindingManager::AddToAttachedQueue(nsXBLBinding* aBinding)
 void
 nsBindingManager::PostProcessAttachedQueueEvent()
 {
-  JSZoneId zone = mDocument ? mDocument->GetZone() : JS_ZONE_CHROME;
-
   mProcessAttachedQueueEvent =
-    NS_NewRunnableMethod(this, &nsBindingManager::DoProcessAttachedQueue);
+    NS_NewRunnableMethod(this, &nsBindingManager::DoProcessAttachedQueue, GetZone());
   nsresult rv = NS_DispatchToMainThread(mProcessAttachedQueueEvent,
-                                        NS_DISPATCH_NORMAL, zone);
+                                        NS_DISPATCH_NORMAL, GetZone());
   if (NS_SUCCEEDED(rv) && mDocument) {
     mDocument->BlockOnload();
   }

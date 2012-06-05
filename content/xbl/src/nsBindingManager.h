@@ -35,12 +35,16 @@ class nsBindingManager : public nsStubMutationObserver
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
+
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTAPPENDED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
 
   nsBindingManager(nsIDocument* aDocument);
   ~nsBindingManager();
+
+  void SetZone(JSZoneId aZone);
 
   nsXBLBinding* GetBinding(nsIContent* aContent);
   nsresult SetBinding(nsIContent* aContent, nsXBLBinding* aBinding);
@@ -303,7 +307,8 @@ protected:
   nsRefPtr< nsRunnableMethod<nsBindingManager> > mProcessAttachedQueueEvent;
 
   // Our document.  This is a weak ref; the document owns us
-  nsIDocument* mDocument; 
+  nsIDocument* mDocument;
+  JSZoneId mZone; 
 };
 
 #endif

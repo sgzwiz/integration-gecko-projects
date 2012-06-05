@@ -83,7 +83,7 @@ private:
       , unlockCount(0)
     {}
 
-    nsRefPtr<nsThread> thread; // XXX leaks
+    nsRefPtr<nsThread> thread;
     PRThread *prThread;
     uintptr_t threadStackPosition;
     PRLock *lock;

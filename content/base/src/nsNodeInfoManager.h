@@ -92,10 +92,7 @@ public:
     return mZone;
   }
 
-  void SetZone(JSZoneId zone)
-  {
-    mZone = zone;
-  }
+  void SetZone(JSZoneId zone);
 
   /**
    * Gets the principal of the document this nodeinfo manager belongs to.
