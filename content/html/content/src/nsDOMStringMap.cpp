@@ -80,6 +80,8 @@ NS_IMETHODIMP_(bool) nsDOMStringMap::HasDataAttr(const nsAString& aProp)
     return false;
   }
 
+  nsAutoLockChrome lock; // for nsIAtom
+
   nsCOMPtr<nsIAtom> attrAtom = do_GetAtom(attr);
   if (!attrAtom) {
     return false;
@@ -98,6 +100,8 @@ NS_IMETHODIMP nsDOMStringMap::GetDataAttr(const nsAString& aProp,
     aResult.SetIsVoid(true);
     return NS_OK;
   }
+
+  nsAutoLockChrome lock; // for nsIAtom
 
   nsCOMPtr<nsIAtom> attrAtom = do_GetAtom(attr);
   NS_ENSURE_TRUE(attrAtom, NS_ERROR_OUT_OF_MEMORY);
@@ -120,6 +124,8 @@ NS_IMETHODIMP nsDOMStringMap::SetDataAttr(const nsAString& aProp,
   nsresult rv = nsContentUtils::CheckQName(attr, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  nsAutoLockChrome lock; // for nsIAtom
+
   nsCOMPtr<nsIAtom> attrAtom = do_GetAtom(attr);
   NS_ENSURE_TRUE(attrAtom, NS_ERROR_OUT_OF_MEMORY);
 
@@ -138,6 +144,8 @@ NS_IMETHODIMP_(void) nsDOMStringMap::RemoveDataAttr(const nsAString& aProp)
   if (!DataPropToAttr(aProp, attr)) {
     return;
   }
+
+  nsAutoLockChrome lock; // for nsIAtom
 
   nsCOMPtr<nsIAtom> attrAtom = do_GetAtom(attr);
   if (!attrAtom) {

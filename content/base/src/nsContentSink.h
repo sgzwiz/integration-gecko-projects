@@ -315,6 +315,8 @@ protected:
   PRUint8 mRunsToCompletion : 1;
   // True to call prevent script execution in the fragment mode.
   PRUint8 mPreventScriptExecution : 1;
+  // Have triggered mDocument->BlockOnload
+  PRUint8 mBlockingDocument : 1;
   
   //
   // -- Can interrupt parsing members --

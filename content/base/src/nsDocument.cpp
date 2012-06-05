@@ -7220,7 +7220,7 @@ nsDocument::BlockOnload()
       ++mAsyncOnloadBlockCount;
       if (mAsyncOnloadBlockCount == 1) {
         bool success = nsContentUtils::AddScriptRunner(
-          NS_NewRunnableMethod(this, &nsDocument::AsyncBlockOnload));
+          NS_NewRunnableMethod(this, &nsDocument::AsyncBlockOnload, GetZone()));
 
         // The script runner shouldn't fail to add. But if somebody broke
         // something and it does, we'll thrash at 100% cpu forever. The best
@@ -7246,6 +7246,7 @@ nsDocument::UnblockOnload(bool aFireSync)
   MOZ_ASSERT(NS_IsOwningThread(GetZone()));
 
   if (mDisplayDocument) {
+    NS_StickLock(mDisplayDocument); // XXX why can this be in a different zone?
     mDisplayDocument->UnblockOnload(aFireSync);
     return;
   }

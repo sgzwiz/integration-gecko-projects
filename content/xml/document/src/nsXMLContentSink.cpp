@@ -344,12 +344,35 @@ nsXMLContentSink::OnDocumentCreated(nsIDocument* aResultDocument)
   return NS_OK;
 }
 
+class nsXMLContentSink::OnTransformDoneRunnable : public nsRunnable
+{
+  nsRefPtr<nsXMLContentSink> mSink;
+  nsresult mResult;
+  nsRefPtr<nsIDocument> mResultDocument;
+
+public:
+  OnTransformDoneRunnable(nsXMLContentSink *aSink, nsresult aResult, nsIDocument *aResultDocument)
+    : mSink(aSink), mResult(aResult), mResultDocument(aResultDocument)
+  {}
+
+  NS_IMETHODIMP Run() {
+    NS_StickLock(mSink);
+    return mSink->OnTransformDone(mResult, mResultDocument);
+  }
+};
+
 NS_IMETHODIMP
 nsXMLContentSink::OnTransformDone(nsresult aResult,
                                   nsIDocument* aResultDocument)
 {
   NS_ASSERTION(NS_FAILED(aResult) || aResultDocument,
                "Don't notify about transform success without a document.");
+
+  if ((NS_SUCCEEDED(aResult) || aResultDocument) && mBlockingDocument) {
+    return NS_DispatchToMainThread(new OnTransformDoneRunnable(this, aResult, aResultDocument),
+                                   NS_DISPATCH_NORMAL,
+                                   GetZone());
+  }
 
   nsCOMPtr<nsIDOMDocument> domDoc = do_QueryInterface(aResultDocument);
 
@@ -375,6 +398,7 @@ nsXMLContentSink::OnTransformDone(nsresult aResult,
   if (NS_SUCCEEDED(aResult) || aResultDocument) {
     // Transform succeeded or it failed and we have an error
     // document to display.
+    MOZ_ASSERT(!mBlockingDocument);
     mDocument = aResultDocument;
     nsCOMPtr<nsIHTMLDocument> htmlDoc = do_QueryInterface(mDocument);
     if (htmlDoc) {

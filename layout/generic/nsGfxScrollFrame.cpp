@@ -2931,8 +2931,15 @@ void nsGfxScrollFrameInner::CurPosAttributeChanged(nsIContent* aContent)
 NS_IMETHODIMP
 nsGfxScrollFrameInner::ScrollEvent::Run()
 {
-  if (mInner)
-    mInner->FireScrollEvent();
+  if (!mInner)
+    return NS_OK;
+
+  NS_StickLock(mInner->mOuter->PresContext());
+
+  if (!mInner)
+    return NS_OK;
+
+  mInner->FireScrollEvent();
   return NS_OK;
 }
 
@@ -2944,7 +2951,6 @@ nsGfxScrollFrameInner::FireScrollEvent()
   nsScrollbarEvent event(true, NS_SCROLL_EVENT, nsnull);
   nsEventStatus status = nsEventStatus_eIgnore;
   nsIContent* content = mOuter->GetContent();
-  NS_StickLock(content);
   nsPresContext* prescontext = mOuter->PresContext();
   // Fire viewport scroll events at the document (where they
   // will bubble to the window)

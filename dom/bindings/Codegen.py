@@ -559,7 +559,9 @@ class CGClassConstructHook(CGAbstractStaticMethod):
 
     def generate_code(self):
         preamble = """
-  nsAutoLockChrome lock;
+  nsAutoUnstickChrome unstick(cx);
+  if (NS_IsExecuteThread())
+    EnsureZoneStuck(cx, JS_ZONE_CHROME);
   JSObject* obj = JS_GetGlobalForObject(cx, JSVAL_TO_OBJECT(JS_CALLEE(cx, vp)));
 """
         if self.descriptor.workers:
@@ -2681,7 +2683,9 @@ class CGAbstractBindingMethod(CGAbstractStaticMethod):
 
     def getThis(self):
         return CGIndenter(
-            CGGeneric("nsAutoLockChrome lock;\n"
+            CGGeneric("nsAutoUnstickChrome unstick(cx);\n"
+                      "if (NS_IsExecuteThread())\n"
+                      "  EnsureZoneStuck(cx, JS_ZONE_CHROME);\n"
                       "JSObject* obj = JS_THIS_OBJECT(cx, vp);\n"
                       "if (!obj) {\n"
                       "  return false;\n"

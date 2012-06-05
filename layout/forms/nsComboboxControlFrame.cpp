@@ -586,9 +586,14 @@ public:
   nsAsyncRollup(nsComboboxControlFrame* aFrame) : mFrame(aFrame) {}
   NS_IMETHODIMP Run()
   {
+    if (!mFrame.IsAlive())
+      return NS_OK;
+
+    nsComboboxControlFrame *combo = static_cast<nsComboboxControlFrame*>(mFrame.GetFrame());
+    NS_StickLock(combo->PresContext());
+
     if (mFrame.IsAlive()) {
-      static_cast<nsComboboxControlFrame*>(mFrame.GetFrame())
-        ->RollupFromList();
+      combo->RollupFromList();
     }
     return NS_OK;
   }
@@ -601,9 +606,13 @@ public:
   nsAsyncResize(nsComboboxControlFrame* aFrame) : mFrame(aFrame) {}
   NS_IMETHODIMP Run()
   {
+    if (!mFrame.IsAlive())
+      return NS_OK;
+
+    nsComboboxControlFrame *combo = static_cast<nsComboboxControlFrame*>(mFrame.GetFrame());
+    NS_StickLock(combo->PresContext());
+
     if (mFrame.IsAlive()) {
-      nsComboboxControlFrame* combo =
-        static_cast<nsComboboxControlFrame*>(mFrame.GetFrame());
       static_cast<nsListControlFrame*>(combo->mDropdownFrame)->
         SetSuppressScrollbarUpdate(true);
       nsCOMPtr<nsIPresShell> shell = mFrame->PresContext()->PresShell();

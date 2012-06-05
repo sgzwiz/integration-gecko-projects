@@ -203,6 +203,7 @@ nsContentSink::Init(nsIDocument* aDoc,
     return NS_ERROR_NULL_POINTER;
   }
 
+  MOZ_ASSERT(!mBlockingDocument);
   mDocument = aDoc;
 
   mDocumentURI = aURI;
@@ -1528,8 +1529,9 @@ nsContentSink::DropParserAndPerfHint(void)
     FavorPerformanceHint(true, 0);
   }
 
-  if (!mRunsToCompletion) {
+  if (!mRunsToCompletion && mBlockingDocument) {
     mDocument->UnblockOnload(true);
+    mBlockingDocument = false;
   }
 }
 
@@ -1582,7 +1584,9 @@ void
 nsContentSink::WillBuildModelImpl()
 {
   if (!mRunsToCompletion) {
+    MOZ_ASSERT(!mBlockingDocument);
     mDocument->BlockOnload();
+    mBlockingDocument = true;
 
     mBeginLoadTime = PR_IntervalToMicroseconds(PR_IntervalNow());
   }

@@ -1632,6 +1632,7 @@ JS_TransplantObject(JSContext *cx, JSObject *origobj, JSObject *target)
         // destination, then we know that we won't find a wrapper in the
         // destination's cross compartment map and that the same
         // object will continue to work.
+        AutoUnlockGC unlock(cx->runtime);
         if (!origobj->swap(cx, target))
             return NULL;
         newIdentity = origobj;
@@ -1646,6 +1647,7 @@ JS_TransplantObject(JSContext *cx, JSObject *origobj, JSObject *target)
         map.remove(p);
         NukeCrossCompartmentWrapper(newIdentity);
 
+        AutoUnlockGC unlock(cx->runtime);
         if (!newIdentity->swap(cx, target))
             return NULL;
     } else {
@@ -1720,15 +1722,15 @@ RemapWrappers(JSContext *cx, JSObject *orig, JSObject *target)
             AutoCompartment ac(cx, wobj);
             if (!ac.enter() || !wcompartment->wrap(cx, &tobj))
                 return false;
-        }
 
-        // Now, because we need to maintain object identity, we do a
-        // brain transplant on the old object. At the same time, we
-        // update the entry in the compartment's wrapper map to point
-        // to the old wrapper.
-        JS_ASSERT(tobj != wobj);
-        if (!wobj->swap(cx, tobj))
-            return false;
+            // Now, because we need to maintain object identity, we do a
+            // brain transplant on the old object. At the same time, we
+            // update the entry in the compartment's wrapper map to point
+            // to the old wrapper.
+            JS_ASSERT(tobj != wobj);
+            if (!wobj->swap(cx, tobj))
+                return false;
+        }
         pmap.put(targetv, ObjectValue(*wobj));
     }
 
@@ -1778,6 +1780,7 @@ js_TransplantObjectWithWrapper(JSContext *cx,
         map.remove(p);
         NukeCrossCompartmentWrapper(newWrapper);
 
+        AutoUnlockGC unlock(cx->runtime);
         if (!newWrapper->swap(cx, targetwrapper))
             return NULL;
     } else {
@@ -1803,9 +1806,9 @@ js_TransplantObjectWithWrapper(JSContext *cx,
             AutoUnlockGC unlock(cx->runtime);
             if (!ac.enter() || !JS_WrapObject(cx, &wrapperGuts))
                 return NULL;
+            if (!origwrapper->swap(cx, wrapperGuts))
+                return NULL;
         }
-        if (!origwrapper->swap(cx, wrapperGuts))
-            return NULL;
         origwrapper->compartment()->crossCompartmentWrappers.put(ObjectValue(*targetobj),
                                                                  ObjectValue(*origwrapper));
     }

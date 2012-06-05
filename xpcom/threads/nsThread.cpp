@@ -398,10 +398,7 @@ nsThread::Dispatch(nsIRunnable *event, PRUint32 flags)
     if (NS_FAILED(rv))
       return rv;
 
-    {
-      Maybe<nsAutoUnlockEverything> unlock;
-      if (NS_IsExecuteThread())
-        unlock.construct();
+    if (!NS_IsExecuteThread()) {
       while (wrapper->IsPending())
         NS_ProcessNextEvent(thread);
     }
@@ -554,6 +551,8 @@ void canary_alarm_handler (int signum)
 
 #endif
 
+//#include <dlfcn.h>
+
 NS_IMETHODIMP
 nsThread::ProcessNextEventUnlocked(bool mayWait, bool *result)
 {
@@ -651,6 +650,14 @@ nsThread::ProcessNextEventUnlocked(bool mayWait, bool *result)
       LOG(("THRD(%p) running [%p]\n", this, event.get()));
       if (MAIN_THREAD == mIsMainThread)
         HangMonitor::NotifyActivity();
+
+      /*
+      void *ptr = ((void***)event.get())[0][4];
+      Dl_info info;
+      dladdr(ptr, &info);
+      printf("SPIN %s\n", info.dli_sname ? info.dli_sname : "<UNKNOWN>");
+      */
+
       event->Run();
       event = NULL; // decref while any chrome lock is held.
     } else if (mayWait) {

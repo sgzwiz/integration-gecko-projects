@@ -87,6 +87,8 @@ public:
 
 protected:
 
+  class OnTransformDoneRunnable;
+
   nsIParser* GetParser();
 
   void ContinueInterruptedParsingIfEnabled();
