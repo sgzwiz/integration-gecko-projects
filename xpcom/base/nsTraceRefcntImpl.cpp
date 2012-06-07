@@ -21,6 +21,8 @@
 #include "nsStackWalk.h"
 #include "nsString.h"
 
+#include "js/HashTable.h"
+
 #include "nsXULAppAPI.h"
 #ifdef XP_WIN
 #include <process.h>
@@ -82,6 +84,18 @@ static PLHashTable* gTypesToLog;
 static PLHashTable* gObjectsToLog;
 static PLHashTable* gSerialNumbers;
 static PRInt32 gNextSerialNumber;
+
+class MySystemAllocPolicy
+{
+  public:
+    void *malloc_(size_t bytes) { return malloc(bytes); }
+    void *realloc_(void *p, size_t oldBytes, size_t bytes) { return realloc(p, bytes); }
+    void free_(void *p) { free(p); }
+    void reportAllocOverflow() const {}
+};
+
+typedef js::HashMap<void*, const char*, js::DefaultHasher<void*>, MySystemAllocPolicy> BacktraceMap;
+static BacktraceMap *gBacktraceMap = NULL;
 
 static bool gLogging;
 static bool gLogToLeaky;
@@ -828,6 +842,9 @@ static void InitTraceLog(void)
   }
 
   gTraceLock = PR_NewLock();
+
+  gBacktraceMap = new BacktraceMap();
+  gBacktraceMap->init();
 }
 
 #endif
@@ -837,12 +854,20 @@ extern "C" {
 static void PrintStackFrame(void *aPC, void *aClosure)
 {
   FILE *stream = (FILE*)aClosure;
-  nsCodeAddressDetails details;
-  char buf[1024];
 
-  NS_DescribeCodeAddress(aPC, &details);
-  NS_FormatCodeAddressDetails(aPC, &details, buf, sizeof(buf));
-  fputs(buf, stream);
+  BacktraceMap::AddPtr p = gBacktraceMap->lookupForAdd(aPC);
+  if (p) {
+    fputs(p->value, stream);
+  } else {
+    nsCodeAddressDetails details;
+    char buf[1024];
+
+    NS_DescribeCodeAddress(aPC, &details);
+    NS_FormatCodeAddressDetails(aPC, &details, buf, sizeof(buf));
+
+    gBacktraceMap->add(p, aPC, strdup(buf));
+    fputs(buf, stream);
+  }
 }
 
 }

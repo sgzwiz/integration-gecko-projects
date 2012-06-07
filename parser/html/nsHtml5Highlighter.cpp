@@ -62,12 +62,12 @@ nsHtml5Highlighter::nsHtml5Highlighter(nsAHtml5TreeOpSink* aOpSink)
  , mHandles(new nsIContent*[NS_HTML5_HIGHLIGHTER_HANDLE_ARRAY_LENGTH])
  , mHandlesUsed(0)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Wrong thread!");
 }
 
 nsHtml5Highlighter::~nsHtml5Highlighter()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Wrong thread!");
 }
 
 void

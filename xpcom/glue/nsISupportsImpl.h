@@ -43,25 +43,11 @@ NS_FindThreadBitmask(PRThread **pthread, bool *pchrome, PRUint64 *pcontentMask);
 extern bool
 NS_IsOwningThreadOrNonExecuteThread(JSZoneId zone);
 
-extern void
-NS_DumpBacktrace(const char *str, bool flush);
-
-#if _MSC_VER
-#define my_snprintf _snprintf
-#else
-#define my_snprintf snprintf
-#endif
-
 class nsAutoOwningThread {
 public:
     nsAutoOwningThread()
     {
       NS_FindThreadBitmask(&mThread, &mChrome, &mContent);
-      char buf[100];
-      my_snprintf(buf, sizeof(buf), "OBJECT %p THREAD %p CHROME %d CONTENT %llu\n",
-                  (void*) this, (void*) mThread,
-                  (int) mChrome, (unsigned long long) mContent);
-      NS_DumpBacktrace(buf, false);
     }
 
     bool onCorrectThread() {
@@ -76,11 +62,6 @@ public:
       newContent &= content;
       if (newThread != mThread || newChrome != mChrome || newContent != mContent) {
         bool dead = !newThread && !newChrome && !newContent;
-        char buf[100];
-        my_snprintf(buf, sizeof(buf), "OBJECT %p THREAD %p CHROME %d CONTENT %llu\n",
-                    (void*) this, (void*) newThread,
-                    (int) newChrome, (unsigned long long) newContent);
-        NS_DumpBacktrace(buf, dead);
         if (dead)
           *(int*)0 = 0;
         mThread = newThread;
@@ -95,8 +76,6 @@ private:
     bool mChrome;
     PRUint64 mContent;
 };
-
-#undef my_snprintf
 
 #define NS_DECL_OWNINGTHREAD            public: nsAutoOwningThread _mOwningThread;
 #define NS_ASSERT_OWNINGTHREAD(_class) \

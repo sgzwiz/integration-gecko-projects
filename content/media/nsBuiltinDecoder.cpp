@@ -530,13 +530,13 @@ void nsBuiltinDecoder::DecodeError()
 
 bool nsBuiltinDecoder::IsSeeking() const
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsOwningThread(GetZone()));
   return mPlayState == PLAY_STATE_SEEKING;
 }
 
 bool nsBuiltinDecoder::IsEnded() const
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsOwningThread(GetZone()));
   return mPlayState == PLAY_STATE_ENDED || mPlayState == PLAY_STATE_SHUTDOWN;
 }
 

@@ -1385,7 +1385,7 @@ MediaStreamGraphImpl::ApplyStreamUpdate(StreamUpdate* aUpdate)
 void
 MediaStreamGraphImpl::ShutdownThreads()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Must be called on main thread");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Must be called on main thread");
   // mGraph's thread is not running so it's OK to do whatever here
   LOG(PR_LOG_DEBUG, ("Stopping threads for MediaStreamGraph %p", this));
 
@@ -1398,7 +1398,7 @@ MediaStreamGraphImpl::ShutdownThreads()
 void
 MediaStreamGraphImpl::ForceShutDown()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Must be called on main thread");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Must be called on main thread");
   LOG(PR_LOG_DEBUG, ("MediaStreamGraph %p ForceShutdown", this));
   {
     MonitorAutoLock lock(mMonitor);
@@ -1481,7 +1481,7 @@ public:
 void
 MediaStreamGraphImpl::RunInStableState()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Must be called on main thread");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Must be called on main thread");
 
   nsTArray<nsCOMPtr<nsIRunnable> > runnables;
 
@@ -1575,7 +1575,7 @@ static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
 void
 MediaStreamGraphImpl::EnsureRunInStableState()
 {
-  NS_ASSERTION(NS_IsMainThread(), "main thread only");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "main thread only");
 
   if (mPostedRunInStableState)
     return;
@@ -1604,7 +1604,7 @@ MediaStreamGraphImpl::EnsureStableStateEventPosted()
 void
 MediaStreamGraphImpl::AppendMessage(ControlMessage* aMessage)
 {
-  NS_ASSERTION(NS_IsMainThread(), "main thread only");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "main thread only");
 
   if (mDetectedNotRunning &&
       mLifecycleState > LIFECYCLE_WAITING_FOR_MAIN_THREAD_CLEANUP) {
@@ -1995,7 +1995,7 @@ MediaStreamGraphShutdownObserver::Observe(nsISupports *aSubject,
 MediaStreamGraph*
 MediaStreamGraph::GetInstance()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Main thread only");
+  NS_ASSERTION(NS_IsChromeOwningThread(), "Main thread only");
 
   if (!gGraph) {
     if (!gShutdownObserverRegistered) {
