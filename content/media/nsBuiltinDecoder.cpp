@@ -530,13 +530,13 @@ void nsBuiltinDecoder::DecodeError()
 
 bool nsBuiltinDecoder::IsSeeking() const
 {
-  MOZ_ASSERT(NS_IsOwningThread(GetZone()));
+  MOZ_ASSERT(NS_IsOwningThread(const_cast<nsBuiltinDecoder*>(this)->GetZone()));
   return mPlayState == PLAY_STATE_SEEKING;
 }
 
 bool nsBuiltinDecoder::IsEnded() const
 {
-  MOZ_ASSERT(NS_IsOwningThread(GetZone()));
+  MOZ_ASSERT(NS_IsOwningThread(const_cast<nsBuiltinDecoder*>(this)->GetZone()));
   return mPlayState == PLAY_STATE_ENDED || mPlayState == PLAY_STATE_SHUTDOWN;
 }
 
