@@ -101,6 +101,8 @@ nsClipboard::nsClipboard()
 
 nsClipboard::~nsClipboard()
 {
+    nsAutoUnlockEverything unlock;
+
     // We have to clear clipboard before gdk_display_close() call.
     // See bug 531580 for details.
     if (mGlobalTransferable) {
@@ -138,6 +140,8 @@ nsClipboard::Observe(nsISupports *aSubject, const char *aTopic, const PRUnichar 
 nsresult
 nsClipboard::Store(void)
 {
+    nsAutoUnlockEverything unlock;
+
     // Ask the clipboard manager to store the current clipboard content
     if (mGlobalTransferable) {
         GtkClipboard *clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
@@ -146,10 +150,37 @@ nsClipboard::Store(void)
     return NS_OK;
 }
 
+class nsClipboard::SetDataRunnable : public nsRunnable
+{
+    nsRefPtr<nsClipboard> clipboard;
+    nsRefPtr<nsITransferable> transferable;
+    nsRefPtr<nsIClipboardOwner> owner;
+    PRInt32 whichClipboard;
+
+public:
+    nsresult result;
+
+    SetDataRunnable(nsClipboard *clipboard, nsITransferable *transferable, nsIClipboardOwner *owner, PRInt32 whichClipboard)
+        : clipboard(clipboard), transferable(transferable), owner(owner), whichClipboard(whichClipboard),
+          result(NS_ERROR_FAILURE)
+    {}
+
+    NS_IMETHOD Run() {
+        result = clipboard->SetData(transferable, owner, whichClipboard);
+        return NS_OK;
+    }
+};
+
 NS_IMETHODIMP
 nsClipboard::SetData(nsITransferable *aTransferable,
                      nsIClipboardOwner *aOwner, PRInt32 aWhichClipboard)
 {
+    if (!NS_IsMainThread()) {
+        nsRefPtr<SetDataRunnable> runnable = new SetDataRunnable(this, aTransferable, aOwner, aWhichClipboard);
+        NS_DispatchToMainThread(runnable, NS_DISPATCH_SYNC);
+        return runnable->result;
+    }
+
     // See if we can short cut
     if ((aWhichClipboard == kGlobalClipboard &&
          aTransferable == mGlobalTransferable.get() &&
@@ -228,11 +259,16 @@ nsClipboard::SetData(nsITransferable *aTransferable,
   
     gint numTargets;
     GtkTargetEntry *gtkTargets = gtk_target_table_new_from_list(list, &numTargets);
-          
+
     // Set getcallback and request to store data after an application exit
-    if (gtk_clipboard_set_with_data(gtkClipboard, gtkTargets, numTargets, 
-                                    clipboard_get_cb, clipboard_clear_cb, this))
+    bool success;
     {
+        nsAutoUnlockEverything unlock;
+        success = gtk_clipboard_set_with_data(gtkClipboard, gtkTargets, numTargets, 
+                                              clipboard_get_cb, clipboard_clear_cb, this);
+    }
+
+    if (success) {
         // We managed to set-up the clipboard so update internal state
         // We have to set it now because gtk_clipboard_set_with_data() calls clipboard_clear_cb()
         // which reset our internal state 
@@ -661,6 +697,8 @@ clipboard_get_cb(GtkClipboard *aGtkClipboard,
                  guint info,
                  gpointer user_data)
 {
+    nsAutoLockChromeUnstickContent lock;
+
     nsClipboard *aClipboard = static_cast<nsClipboard *>(user_data);
     aClipboard->SelectionGetEvent(aGtkClipboard, aSelectionData);
 }
@@ -669,6 +707,8 @@ void
 clipboard_clear_cb(GtkClipboard *aGtkClipboard,
                    gpointer user_data)
 {
+    nsAutoLockChromeUnstickContent lock;
+
     nsClipboard *aClipboard = static_cast<nsClipboard *>(user_data);
     aClipboard->SelectionClearEvent(aGtkClipboard);
 }
@@ -935,10 +975,35 @@ clipboard_contents_received(GtkClipboard     *clipboard,
         context->data = gtk_selection_data_copy(selection_data);
 }
 
+class wait_for_contents_runnable : public nsRunnable
+{
+    GtkClipboard *clipboard;
+    GdkAtom target;
+
+public:
+    GtkSelectionData *result;
+
+    wait_for_contents_runnable(GtkClipboard *clipboard, GdkAtom target)
+        : clipboard(clipboard), target(target), result(NULL)
+    {}
+
+    NS_IMETHOD Run() {
+        result = wait_for_contents(clipboard, target);
+        return NS_OK;
+    }
+};
 
 static GtkSelectionData *
 wait_for_contents(GtkClipboard *clipboard, GdkAtom target)
 {
+    if (!NS_IsMainThread()) {
+        nsRefPtr<wait_for_contents_runnable> runnable = new wait_for_contents_runnable(clipboard, target);
+        NS_DispatchToMainThread(runnable, NS_DISPATCH_SYNC);
+        return runnable->result;
+    }
+
+    nsAutoUnlockEverything unlock;
+
     retrieval_context context;
     gtk_clipboard_request_contents(clipboard, target,
                                    clipboard_contents_received,
@@ -965,9 +1030,34 @@ clipboard_text_received(GtkClipboard *clipboard,
     context->data = g_strdup(text);
 }
 
+class wait_for_text_runnable : public nsRunnable
+{
+    GtkClipboard *clipboard;
+
+public:
+    gchar *result;
+
+    wait_for_text_runnable(GtkClipboard *clipboard)
+        : clipboard(clipboard), result(NULL)
+    {}
+
+    NS_IMETHOD Run() {
+        result = wait_for_text(clipboard);
+        return NS_OK;
+    }
+};
+
 static gchar *
 wait_for_text(GtkClipboard *clipboard)
 {
+    if (!NS_IsMainThread()) {
+        nsRefPtr<wait_for_text_runnable> runnable = new wait_for_text_runnable(clipboard);
+        NS_DispatchToMainThread(runnable, NS_DISPATCH_SYNC);
+        return runnable->result;
+    }
+
+    nsAutoUnlockEverything unlock;
+
     retrieval_context context;
     gtk_clipboard_request_text(clipboard, clipboard_text_received, &context);
 

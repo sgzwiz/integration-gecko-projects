@@ -1838,7 +1838,9 @@ JS_PUBLIC_API(void)
 JS_SetGlobalObject(JSContext *cx, JSObject *obj)
 {
     AssertNoGC(cx);
-    CHECK_REQUEST(cx);
+
+    // XXX JSContextParticipant::Unlink
+    // CHECK_REQUEST(cx);
 
     cx->globalObject = obj;
     if (!cx->hasfp())

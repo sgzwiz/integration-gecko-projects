@@ -14,7 +14,8 @@
 NS_IMPL_ISUPPORTS0(nsHtml5StringParser)
 
 nsHtml5StringParser::nsHtml5StringParser()
-  : mExecutor(new nsHtml5TreeOpExecutor(true))
+  : mZone(JS_ZONE_CHROME)
+  , mExecutor(new nsHtml5TreeOpExecutor(true))
   , mTreeBuilder(new nsHtml5TreeBuilder(mExecutor, nsnull))
   , mTokenizer(new nsHtml5Tokenizer(mTreeBuilder, false))
 {
@@ -93,6 +94,8 @@ nsHtml5StringParser::Tokenize(const nsAString& aSourceBuffer,
                               bool aScriptingEnabledForNoscriptParsing) {
 
   nsIURI* uri = aDocument->GetDocumentURI();
+
+  mZone = aDocument->GetZone();
 
   mExecutor->Init(aDocument, uri, nsnull, nsnull);
 

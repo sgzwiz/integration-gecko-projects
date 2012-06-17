@@ -1273,6 +1273,8 @@ nsPlaintextEditor::GetAndInitDocEncoder(const nsAString& aFormatType,
 {
   nsresult rv = NS_OK;
 
+  nsAutoLockChrome lock;
+
   nsCAutoString formatType(NS_DOC_ENCODER_CONTRACTID_BASE);
   formatType.AppendWithConversion(aFormatType);
   nsCOMPtr<nsIDocumentEncoder> docEncoder (do_CreateInstance(formatType.get(), &rv));

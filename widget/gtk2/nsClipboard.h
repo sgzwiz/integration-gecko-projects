@@ -56,6 +56,7 @@ private:
     nsCOMPtr<nsITransferable>    mGlobalTransferable;
     nsRefPtr<nsClipboardPrivacyHandler> mPrivacyHandler;
 
+    class SetDataRunnable;
 };
 
 #endif /* __nsClipboard_h_ */

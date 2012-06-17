@@ -625,10 +625,11 @@ nsEventSource::OnStopRequest(nsIRequest *aRequest,
   }
 
   nsCOMPtr<nsIRunnable> event =
-    NS_NewRunnableMethod(this, &nsEventSource::ReestablishConnection);
+    NS_NewRunnableMethod(this, &nsEventSource::ReestablishConnection,
+                         GetZone());
   NS_ENSURE_STATE(event);
 
-  rv = NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL);
+  rv = NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL, GetZone());
   NS_ENSURE_SUCCESS(rv, rv);
 
   return healthOfRequestResult;
@@ -1076,6 +1077,7 @@ nsEventSource::SetReconnectionTimeout()
     NS_ENSURE_STATE(mTimer);
   }
 
+  mTimer->SetCallbackZone(GetZone());
   nsresult rv = mTimer->InitWithFuncCallback(TimerCallback, this,
                                              mReconnectionTime,
                                              nsITimer::TYPE_ONE_SHOT);
@@ -1161,10 +1163,10 @@ nsresult
 nsEventSource::DispatchFailConnection()
 {
   nsCOMPtr<nsIRunnable> event =
-    NS_NewRunnableMethod(this, &nsEventSource::FailConnection);
+    NS_NewRunnableMethod(this, &nsEventSource::FailConnection, GetZone());
   NS_ENSURE_STATE(event);
 
-  return NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL);
+  return NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL, GetZone());
 }
 
 void

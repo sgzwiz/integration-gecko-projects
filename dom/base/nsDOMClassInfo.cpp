@@ -2064,6 +2064,8 @@ nsDOMClassInfo::DefineStaticJSVals(JSContext *cx)
 static nsresult
 CreateExceptionFromResult(JSContext *cx, nsresult aResult)
 {
+  nsAutoLockChrome lock;
+
   nsCOMPtr<nsIExceptionService> xs =
     do_GetService(NS_EXCEPTIONSERVICE_CONTRACTID);
   if (!xs) {

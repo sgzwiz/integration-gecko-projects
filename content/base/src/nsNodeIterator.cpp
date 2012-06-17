@@ -181,6 +181,11 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsNodeIterator)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsNodeIterator)
 
+NS_IMETHODIMP_(JSZoneId) nsNodeIterator::GetZone()
+{
+    return mRoot ? mRoot->GetZone() : JS_ZONE_CHROME;
+}
+
 /* readonly attribute nsIDOMNode root; */
 NS_IMETHODIMP nsNodeIterator::GetRoot(nsIDOMNode * *aRoot)
 {

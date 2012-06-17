@@ -62,6 +62,8 @@ nsBaseAppShell::Init()
 void
 nsBaseAppShell::NativeEventCallback()
 {
+  nsAutoLockChromeUnstickContent lock;
+
   PRInt32 hasPending = PR_ATOMIC_SET(&mNativeEventPending, 0);
   if (hasPending == 0)
     return;
@@ -94,7 +96,10 @@ nsBaseAppShell::NativeEventCallback()
 
   ++mEventloopNestingLevel;
   EventloopNestingState prevVal = mEventloopNestingState;
-  NS_ProcessPendingEvents(thread, THREAD_EVENT_STARVATION_LIMIT);
+  {
+    nsAutoUnlockEverything unlock;
+    NS_ProcessPendingEvents(thread, THREAD_EVENT_STARVATION_LIMIT);
+  }
   mProcessedGeckoEvents = true;
   mEventloopNestingState = prevVal;
   mBlockNativeEvent = prevBlockNativeEvent;

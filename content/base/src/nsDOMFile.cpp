@@ -619,6 +619,12 @@ nsDOMMemoryFile::GetInternalStream(nsIInputStream **aStream)
 ////////////////////////////////////////////////////////////////////////////
 // nsDOMFileList implementation
 
+nsDOMFileList::nsDOMFileList(nsISupports *aParent)
+  : mParent(aParent), mZone(aParent ? aParent->GetZone() : JS_ZONE_CHROME)
+{
+  SetIsDOMBinding();
+}
+
 DOMCI_DATA(FileList, nsDOMFileList)
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_0(nsDOMFileList)

@@ -599,6 +599,8 @@ nsHtml5TreeOpExecutor::FlushDocumentWrite()
 #endif
   
   nsIContent* scriptElement = nsnull;
+
+  nsAutoLockChrome lock; // for doc update
   
   BeginDocUpdate();
 
@@ -901,7 +903,10 @@ nsHtml5TreeOpExecutor::DropHeldElements()
   mDocument = nsnull;
   mNodeInfoManager = nsnull;
   mCSSLoader = nsnull;
-  mDocumentURI = nsnull;
+  {
+    nsAutoLockChrome lock;
+    mDocumentURI = nsnull;
+  }
   mDocShell = nsnull;
   mOwnedElements.Clear();
 }

@@ -80,7 +80,7 @@ nsWebSocket::PrintErrorOnConsole(const char *aBundleURI,
                                  const PRUnichar **aFormatStrings,
                                  PRUint32 aFormatStringsLen)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   nsresult rv;
 
   nsCOMPtr<nsIStringBundleService> bundleService =
@@ -129,7 +129,7 @@ nsresult
 nsWebSocket::CloseConnection(PRUint16 aReasonCode,
                              const nsACString& aReasonString)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   if (mDisconnected)
     return NS_OK;
 
@@ -160,7 +160,7 @@ nsWebSocket::CloseConnection(PRUint16 aReasonCode,
 nsresult
 nsWebSocket::ConsoleError()
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   nsresult rv;
 
   nsCAutoString targetSpec;
@@ -190,7 +190,7 @@ nsresult
 nsWebSocket::FailConnection(PRUint16 aReasonCode,
                             const nsACString& aReasonString)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   ConsoleError();
 
   CloseConnection(aReasonCode, aReasonString);
@@ -205,7 +205,7 @@ nsWebSocket::FailConnection(PRUint16 aReasonCode,
 nsresult
 nsWebSocket::Disconnect()
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
 
   if (mDisconnected)
     return NS_OK;
@@ -239,7 +239,7 @@ nsWebSocket::Disconnect()
 nsresult
 nsWebSocket::DoOnMessageAvailable(const nsACString & aMsg, bool isBinary)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   NS_ABORT_IF_FALSE(!mDisconnected, "Received message after disconnecting");
 
   if (mReadyState == nsIWebSocket::OPEN) {
@@ -274,7 +274,7 @@ nsWebSocket::OnBinaryMessageAvailable(nsISupports *aContext,
 NS_IMETHODIMP
 nsWebSocket::OnStart(nsISupports *aContext)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   if (mDisconnected)
     return NS_OK;
 
@@ -299,7 +299,7 @@ nsWebSocket::OnStart(nsISupports *aContext)
 NS_IMETHODIMP
 nsWebSocket::OnStop(nsISupports *aContext, nsresult aStatusCode)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   if (mDisconnected)
     return NS_OK;
 
@@ -327,7 +327,7 @@ nsWebSocket::OnStop(nsISupports *aContext, nsresult aStatusCode)
 NS_IMETHODIMP
 nsWebSocket::OnAcknowledge(nsISupports *aContext, PRUint32 aSize)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
 
   if (aSize > mOutgoingBufferedAmount)
     return NS_ERROR_UNEXPECTED;
@@ -340,7 +340,7 @@ NS_IMETHODIMP
 nsWebSocket::OnServerClose(nsISupports *aContext, PRUint16 aCode,
                            const nsACString &aReason)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
 
   NS_ABORT_IF_FALSE(mReadyState != nsIWebSocket::CONNECTING,
                     "Received server close before connected?");
@@ -379,7 +379,7 @@ nsWebSocket::OnServerClose(nsISupports *aContext, PRUint16 aCode,
 NS_IMETHODIMP
 nsWebSocket::GetInterface(const nsIID &aIID, void **aResult)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
 
   if (mDisconnected)
     return NS_ERROR_FAILURE;
@@ -421,13 +421,13 @@ nsWebSocket::nsWebSocket() : mKeepingAlive(false),
                              mScriptLine(0),
                              mInnerWindowID(0)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   nsLayoutStatics::AddRef();
 }
 
 nsWebSocket::~nsWebSocket()
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
 
   Disconnect();
   nsLayoutStatics::Release();
@@ -533,7 +533,7 @@ nsWebSocket::Initialize(nsISupports* aOwner,
                         PRUint32 aArgc,
                         JS::Value* aArgv)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   nsAutoString urlParam;
 
   if (!PrefEnabled()) {
@@ -655,7 +655,7 @@ private:
 nsresult
 nsWebSocket::EstablishConnection()
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   NS_ABORT_IF_FALSE(!mChannel, "mChannel should be null");
 
   nsresult rv;
@@ -734,7 +734,7 @@ private:
 nsresult
 nsWebSocket::CreateAndDispatchSimpleEvent(const nsString& aName)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   nsresult rv;
 
   rv = CheckInnerWindowCorrectness();
@@ -761,7 +761,10 @@ nsresult
 nsWebSocket::CreateAndDispatchMessageEvent(const nsACString& aData,
                                            bool isBinary)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  if (GetOwner())
+    NS_StickLock(GetOwner());
+
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   nsresult rv;
 
   rv = CheckInnerWindowCorrectness();
@@ -852,7 +855,7 @@ nsWebSocket::CreateAndDispatchCloseEvent(bool aWasClean,
                                          PRUint16 aCode,
                                          const nsString &aReason)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   nsresult rv;
 
   mTriggeredCloseEvent = true;
@@ -891,7 +894,7 @@ nsWebSocket::PrefEnabled()
 void
 nsWebSocket::SetReadyState(PRUint16 aNewReadyState)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   nsresult rv;
 
   if (mReadyState == aNewReadyState) {
@@ -1031,7 +1034,7 @@ nsWebSocket::ParseURL(const nsString& aURL)
 void
 nsWebSocket::UpdateMustKeepAlive()
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   if (!mCheckMustKeepAlive) {
     return;
   }
@@ -1085,7 +1088,7 @@ nsWebSocket::UpdateMustKeepAlive()
 void
 nsWebSocket::DontKeepAliveAnyMore()
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   if (mKeepingAlive) {
     mKeepingAlive = false;
     static_cast<nsIDOMEventTarget*>(this)->Release();
@@ -1127,7 +1130,7 @@ nsWebSocket::RemoveEventListener(const nsAString& aType,
                                  nsIDOMEventListener* aListener,
                                  bool aUseCapture)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   nsresult rv = nsDOMEventTargetHelper::RemoveEventListener(aType,
                                                             aListener,
                                                             aUseCapture);
@@ -1144,7 +1147,7 @@ nsWebSocket::AddEventListener(const nsAString& aType,
                               bool aWantsUntrusted,
                               PRUint8 optional_argc)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   nsresult rv = nsDOMEventTargetHelper::AddEventListener(aType,
                                                          aListener,
                                                          aUseCapture,
@@ -1271,7 +1274,7 @@ ContainsUnpairedSurrogates(const nsAString& aData)
 NS_IMETHODIMP
 nsWebSocket::Send(nsIVariant *aData, JSContext *aCx)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
 
   if (mReadyState == nsIWebSocket::CONNECTING) {
     return NS_ERROR_DOM_INVALID_STATE_ERR;
@@ -1393,7 +1396,7 @@ nsWebSocket::GetSendParams(nsIVariant *aData, nsCString &aStringOut,
 nsresult
 nsWebSocket::ConvertTextToUTF8(const nsString& aMessage, nsCString& buf)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   nsresult rv;
 
   nsCOMPtr<nsICharsetConverterManager> ccm =
@@ -1441,7 +1444,7 @@ nsWebSocket::ConvertTextToUTF8(const nsString& aMessage, nsCString& buf)
 NS_IMETHODIMP
 nsWebSocket::Close(PRUint16 code, const nsAString & reason, PRUint8 argc)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
 
   // the reason code is optional, but if provided it must be in a specific range
   PRUint16 closeCode = 0;
@@ -1495,7 +1498,7 @@ nsWebSocket::Init(nsIPrincipal* aPrincipal,
                   const nsAString& aURL,
                   nsTArray<nsString> & protocolArray)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
   nsresult rv;
 
   NS_ENSURE_ARG(aPrincipal);
@@ -1654,7 +1657,7 @@ nsWebSocket::GetStatus(nsresult *aStatus)
 NS_IMETHODIMP
 nsWebSocket::Cancel(nsresult aStatus)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "Not running on main thread");
 
   if (mDisconnected)
     return NS_OK;
@@ -1679,6 +1682,9 @@ NS_IMETHODIMP
 nsWebSocket::GetLoadGroup(nsILoadGroup **aLoadGroup)
 {
   *aLoadGroup = nsnull;
+
+  if (GetOwner())
+    NS_StickLock(GetOwner());
 
   nsresult rv;
   nsIScriptContext* sc = GetContextForEventHandlers(&rv);

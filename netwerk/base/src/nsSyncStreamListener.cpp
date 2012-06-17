@@ -22,6 +22,8 @@ nsSyncStreamListener::WaitForData()
 {
     mKeepWaiting = true;
 
+    nsAutoUnlockEverything unlock;
+
     while (mKeepWaiting)
         NS_ENSURE_STATE(NS_ProcessNextEvent(NS_GetCurrentThread()));
 

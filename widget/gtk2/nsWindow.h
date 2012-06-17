@@ -153,6 +153,8 @@ public:
                                            bool aConsumeRollupEvent);
     NS_IMETHOD         GetAttention(PRInt32 aCycleCount);
 
+    class GetScreenBoundsEvent;
+
     virtual bool       HasPendingInputEvent();
 
     NS_IMETHOD         MakeFullScreen(bool aFullScreen);

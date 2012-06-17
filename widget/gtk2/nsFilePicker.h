@@ -44,6 +44,8 @@ public:
 
 protected:
 
+  class ShowRunnable;
+
   void ReadValuesFromFileChooser(GtkWidget *file_chooser);
 
   nsCOMPtr<nsIWidget>    mParentWidget;

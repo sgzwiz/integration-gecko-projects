@@ -20,6 +20,8 @@ class nsHtml5StringParser : public nsParserBase
 
     NS_DECL_ISUPPORTS
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
+
     /**
      * Constructor for use ONLY by nsContentUtils. Others, please call the
      * nsContentUtils statics that wrap this.
@@ -61,6 +63,8 @@ class nsHtml5StringParser : public nsParserBase
     void Tokenize(const nsAString& aSourceBuffer,
                   nsIDocument* aDocument,
                   bool aScriptingEnabledForNoscriptParsing);
+
+    JSZoneId mZone;
 
     /**
      * The tree operation executor

@@ -1826,6 +1826,7 @@ PresShell::ResizeReflowIgnoreOverride(nscoord aWidth, nscoord aHeight)
       }
       if (mAsyncResizeEventTimer) {
         mAsyncResizeTimerIsActive = true;
+        mAsyncResizeEventTimer->SetCallbackZone(GetZone());
         mAsyncResizeEventTimer->InitWithFuncCallback(AsyncResizeEventCallback,
                                                      this, 15,
                                                      nsITimer::TYPE_ONE_SHOT);

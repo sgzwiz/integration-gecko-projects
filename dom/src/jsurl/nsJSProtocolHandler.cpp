@@ -394,7 +394,7 @@ public:
 
     NS_DECL_ISUPPORTS
 
-    NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return mListener ? mListener->GetZone() : JS_ZONE_CHROME; }
 
     NS_DECL_NSIREQUEST
     NS_DECL_NSICHANNEL

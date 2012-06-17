@@ -223,6 +223,8 @@ nsFilePicker::ReadValuesFromFileChooser(GtkWidget *file_chooser)
   mSelectedType = static_cast<PRInt16>(g_slist_index(filter_list, filter));
   g_slist_free(filter_list);
 
+  nsAutoLockChrome lock;
+
   // Remember last used directory.
   nsCOMPtr<nsILocalFile> file;
   GetFile(getter_AddRefs(file));
@@ -358,10 +360,30 @@ nsFilePicker::GetFiles(nsISimpleEnumerator **aFiles)
   return NS_ERROR_FAILURE;
 }
 
+class nsFilePicker::ShowRunnable : public nsRunnable
+{
+  nsRefPtr<nsFilePicker> mFilePicker;
+  PRInt16 *mReturn;
+
+public:
+  ShowRunnable(nsFilePicker *aFilePicker, PRInt16 *aReturn)
+    : mFilePicker(aFilePicker), mReturn(aReturn)
+  {}
+
+  NS_IMETHODIMP Run() {
+    return mFilePicker->Show(mReturn);
+  }
+};
+
 NS_IMETHODIMP
 nsFilePicker::Show(PRInt16 *aReturn)
 {
   NS_ENSURE_ARG_POINTER(aReturn);
+
+  if (!NS_IsMainThread())
+    return NS_DispatchToMainThread(new ShowRunnable(this, aReturn), NS_DISPATCH_SYNC);
+
+  nsAutoUnlockEverything unlock;
 
   nsXPIDLCString title;
   title.Adopt(ToNewUTF8String(mTitle));

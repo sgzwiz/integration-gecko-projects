@@ -560,7 +560,7 @@ nsMouseWheelTransaction::OnFailToScrollTarget()
 void
 nsMouseWheelTransaction::OnTimeout(nsITimer* aTimer, void* aClosure)
 {
-  if (!sTargetFrame) {
+  if (!sTargetFrame || !NS_TryStickLock(sTargetFrame->GetContent())) {
     // The transaction target was destroyed already
     EndTransaction();
     return;

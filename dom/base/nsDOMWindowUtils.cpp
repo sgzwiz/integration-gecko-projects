@@ -973,7 +973,10 @@ nsDOMWindowUtils::GarbageCollect(nsICycleCollectorListener *aListener,
 
   for (int i = 0; i < 3; i++) {
     nsJSContext::GarbageCollectNow(js::gcreason::DOM_UTILS, nsGCNormal, true);
-    nsJSContext::CycleCollectNow(aListener, aExtraForgetSkippableCalls);
+    if (NS_LockEverything()) {
+      nsJSContext::CycleCollectNow(aListener, aExtraForgetSkippableCalls);
+      NS_UnlockEverything();
+    }
   }
   nsJSContext::GarbageCollectNow(js::gcreason::DOM_UTILS, nsGCNormal, true);
 

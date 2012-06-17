@@ -126,7 +126,7 @@ public:
 
   NS_IMETHOD Run()
   {
-    NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+    NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
     mChannel->mListener->OnStop(mChannel->mContext, mData);
     return NS_OK;
   }
@@ -407,7 +407,7 @@ public:
 
   bool ConditionallyConnect(nsCString &aStr, WebSocketChannel *ws)
   {
-    NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+    NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
 
     // if aStr is not in mData then we return true, else false.
     // in either case aStr is then added to mData - meaning
@@ -439,7 +439,7 @@ public:
 
   bool Complete(WebSocketChannel *aChannel)
   {
-    NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+    NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
     NS_ABORT_IF_FALSE(!aChannel->mOpenBlocked,
                       "blocked, but complete nsOpenConn");
 
@@ -461,7 +461,7 @@ public:
 
   bool Cancel(WebSocketChannel *aChannel)
   {
-    NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+    NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
     PRInt32 index = IndexOf(aChannel);
     NS_ABORT_IF_FALSE(index >= 0, "Cancelled connection not in open list");
     NS_ABORT_IF_FALSE(aChannel->mOpenRunning ^ aChannel->mOpenBlocked,
@@ -710,7 +710,7 @@ WebSocketChannel::WebSocketChannel() :
   mDynamicOutputSize(0),
   mDynamicOutput(nsnull)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
 
   LOG(("WebSocketChannel::WebSocketChannel() %p\n", this));
 
@@ -784,7 +784,7 @@ nsresult
 WebSocketChannel::BeginOpen()
 {
   LOG(("WebSocketChannel::BeginOpen() %p\n", this));
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
 
   nsresult rv;
 
@@ -1739,7 +1739,7 @@ WebSocketChannel::HandleExtensions()
   nsresult rv;
   nsCAutoString extensions;
 
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
 
   rv = mHttpChannel->GetResponseHeader(
     NS_LITERAL_CSTRING("Sec-WebSocket-Extensions"), extensions);
@@ -1929,7 +1929,7 @@ WebSocketChannel::OnLookupComplete(nsICancelable *aRequest,
   LOG(("WebSocketChannel::OnLookupComplete() %p [%p %p %x]\n",
        this, aRequest, aRecord, aStatus));
 
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
   NS_ABORT_IF_FALSE(aRequest == mDNSRequest || mStopped,
                     "wrong dns request");
 
@@ -2115,7 +2115,7 @@ WebSocketChannel::Notify(nsITimer *timer)
   } else if (timer == mOpenTimer) {
     NS_ABORT_IF_FALSE(!mRecvdHttpOnStartRequest,
                       "Open Timer after open complete");
-    NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+    NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
 
     mOpenTimer = nsnull;
     LOG(("WebSocketChannel:: Connection Timed Out\n"));
@@ -2159,7 +2159,7 @@ NS_IMETHODIMP
 WebSocketChannel::GetSecurityInfo(nsISupports **aSecurityInfo)
 {
   LOG(("WebSocketChannel::GetSecurityInfo() %p\n", this));
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
 
   if (mTransport) {
     if (NS_FAILED(mTransport->GetSecurityInfo(aSecurityInfo)))
@@ -2177,7 +2177,7 @@ WebSocketChannel::AsyncOpen(nsIURI *aURI,
 {
   LOG(("WebSocketChannel::AsyncOpen() %p\n", this));
 
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
 
   if (!aURI || !aListener) {
     LOG(("WebSocketChannel::AsyncOpen() Uri or Listener null"));
@@ -2342,7 +2342,7 @@ NS_IMETHODIMP
 WebSocketChannel::Close(PRUint16 code, const nsACString & reason)
 {
   LOG(("WebSocketChannel::Close() %p\n", this));
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
 
   if (mRequestedClose) {
     return NS_OK;
@@ -2394,7 +2394,7 @@ nsresult
 WebSocketChannel::SendMsgCommon(const nsACString *aMsg, bool aIsBinary,
                                 PRUint32 aLength, nsIInputStream *aStream)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
 
   if (mRequestedClose) {
     LOG(("WebSocketChannel:: Error: send when closed\n"));
@@ -2426,7 +2426,7 @@ WebSocketChannel::OnTransportAvailable(nsISocketTransport *aTransport,
                                        nsIAsyncInputStream *aSocketIn,
                                        nsIAsyncOutputStream *aSocketOut)
 {
-  if (!NS_IsMainThread()) {
+  if (!NS_IsChromeOwningThread()) {
     return NS_DispatchToMainThread(new CallOnTransportAvailable(this,
                                                                 aTransport,
                                                                 aSocketIn,
@@ -2436,7 +2436,7 @@ WebSocketChannel::OnTransportAvailable(nsISocketTransport *aTransport,
   LOG(("WebSocketChannel::OnTransportAvailable %p [%p %p %p] rcvdonstart=%d\n",
        this, aTransport, aSocketIn, aSocketOut, mRecvdHttpOnStartRequest));
 
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
   NS_ABORT_IF_FALSE(!mRecvdHttpUpgradeTransport, "OTA duplicated");
   NS_ABORT_IF_FALSE(aSocketIn, "OTA with invalid socketIn");
 
@@ -2464,7 +2464,7 @@ WebSocketChannel::OnStartRequest(nsIRequest *aRequest,
 {
   LOG(("WebSocketChannel::OnStartRequest(): %p [%p %p] recvdhttpupgrade=%d\n",
        this, aRequest, aContext, mRecvdHttpUpgradeTransport));
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
   NS_ABORT_IF_FALSE(!mRecvdHttpOnStartRequest, "OTA duplicated");
 
   // Generating the onStart event will take us out of the
@@ -2622,7 +2622,7 @@ WebSocketChannel::OnStopRequest(nsIRequest *aRequest,
 {
   LOG(("WebSocketChannel::OnStopRequest() %p [%p %p %x]\n",
        this, aRequest, aContext, aStatusCode));
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+  NS_ABORT_IF_FALSE(NS_IsChromeOwningThread(), "not main thread");
 
   // This is the end of the HTTP upgrade transaction, the
   // upgraded streams live on

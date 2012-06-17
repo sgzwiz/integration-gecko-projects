@@ -314,13 +314,12 @@ class nsDOMFileList MOZ_FINAL : public nsIDOMFileList,
                                 public nsWrapperCache
 {
 public:
-  nsDOMFileList(nsISupports *aParent) : mParent(aParent)
-  {
-    SetIsDOMBinding();
-  }
+  nsDOMFileList(nsISupports *aParent);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsDOMFileList)
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   NS_DECL_NSIDOMFILELIST
 
@@ -362,6 +361,7 @@ public:
 private:
   nsCOMArray<nsIDOMFile> mFiles;
   nsISupports *mParent;
+  JSZoneId mZone;
 };
 
 class NS_STACK_CLASS nsDOMFileInternalUrlHolder {

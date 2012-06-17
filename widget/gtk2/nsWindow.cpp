@@ -1473,10 +1473,32 @@ nsWindow::SetFocus(bool aRaise)
     return NS_OK;
 }
 
+class nsWindow::GetScreenBoundsEvent : public nsRunnable
+{
+    nsRefPtr<nsWindow> mWindow;
+    nsIntRect &mRect;
+
+public:
+    GetScreenBoundsEvent(nsWindow *aWindow, nsIntRect &aRect)
+        : mWindow(aWindow), mRect(aRect)
+    {}
+
+    NS_IMETHOD Run() {
+        return mWindow->GetScreenBounds(mRect);
+    }
+};
+
 NS_IMETHODIMP
 nsWindow::GetScreenBounds(nsIntRect &aRect)
 {
+    if (!NS_IsMainThread()) {
+        nsRefPtr<GetScreenBoundsEvent> runnable = new GetScreenBoundsEvent(this, aRect);
+        return NS_DispatchToMainThread(runnable, NS_DISPATCH_SYNC);
+    }
+
     if (mIsTopLevel && mContainer) {
+        nsAutoUnlockEverything unlock;
+
         // use the point including window decorations
         gint x, y;
         gdk_window_get_root_origin(gtk_widget_get_window(GTK_WIDGET(mContainer)), &x, &y);

@@ -1773,14 +1773,17 @@ WorkerRunnable::Run()
 
   JSAutoRequest ar(cx);
 
-  JSAutoEnterCompartment ac;
-  if (targetCompartmentObject && !ac.enter(cx, targetCompartmentObject)) {
-    return false;
+  bool result;
+  {
+    JSAutoEnterCompartment ac;
+    if (targetCompartmentObject && !ac.enter(cx, targetCompartmentObject)) {
+      return false;
+    }
+
+    result = WorkerRun(cx, mWorkerPrivate);
+
+    PostRun(cx, mWorkerPrivate, result);
   }
-
-  bool result = WorkerRun(cx, mWorkerPrivate);
-
-  PostRun(cx, mWorkerPrivate, result);
 
   if (contextStack) {
     JSContext* otherCx;

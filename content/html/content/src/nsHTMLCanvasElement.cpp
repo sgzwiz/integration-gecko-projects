@@ -473,6 +473,8 @@ nsHTMLCanvasElement::GetContext(const nsAString& aContextId,
 
   bool forceThebes = false;
 
+  nsAutoLockChrome lock; // canvases are protected by chrome lock.
+
   while (mCurrentContextId.IsEmpty()) {
     rv = GetContextHelper(aContextId, forceThebes, getter_AddRefs(mCurrentContext));
     NS_ENSURE_SUCCESS(rv, rv);

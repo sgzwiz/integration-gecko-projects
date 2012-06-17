@@ -549,11 +549,13 @@ nsAutoLockChromeUnstickContent::nsAutoLockChromeUnstickContent()
   : nsAutoLockZone(JS_ZONE_CHROME)
 {
 #ifdef NS_DEBUG
-  PRThread *thread;
-  bool chrome;
-  PRUint64 contentMask;
-  NS_FindThreadBitmask(&thread, &chrome, &contentMask);
-  MOZ_ASSERT(chrome && contentMask == 0);
+  GET_MANAGER();
+  if (mgr) {
+    bool chrome;
+    PRUint64 contentMask;
+    mgr->FindThreadBitmask(&chrome, &contentMask);
+    MOZ_ASSERT(chrome && contentMask == 0);
+  }
 #endif
   mThread = PR_GetCurrentThread();
   mPrev = gUnstickList;
@@ -644,10 +646,9 @@ nsAutoLockChromeUnstickContent::~nsAutoLockChromeUnstickContent()
   RemoveContextSticks();
 
 #ifdef NS_DEBUG
-  PRThread *thread;
   bool chrome;
   PRUint64 contentMask;
-  NS_FindThreadBitmask(&thread, &chrome, &contentMask);
+  mgr->FindThreadBitmask(&chrome, &contentMask);
   MOZ_ASSERT(chrome && contentMask == 0);
 #endif
 }

@@ -112,6 +112,8 @@ public:
 
   NS_DECL_CYCLE_COLLECTION_CLASS(nsNode3Tearoff)
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mNode->GetZone(); }
+
   NS_DECL_NSIDOMXPATHNSRESOLVER
 
   nsNode3Tearoff(nsINode *aNode) : mNode(aNode)

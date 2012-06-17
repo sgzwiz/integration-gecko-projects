@@ -1245,6 +1245,7 @@ nsGenericHTMLElement::GetMarkup(bool aIncludeSelf, nsAString& aMarkup)
 
   nsCOMPtr<nsIDocumentEncoder> docEncoder = doc->GetCachedEncoder();
   if (!docEncoder) {
+    nsAutoLockChrome lock;
     docEncoder =
       do_CreateInstance(PromiseFlatCString(
         nsDependentCString(NS_DOC_ENCODER_CONTRACTID_BASE) +
@@ -1254,6 +1255,7 @@ nsGenericHTMLElement::GetMarkup(bool aIncludeSelf, nsAString& aMarkup)
   if (!docEncoder) {
     // This could be some type for which we create a synthetic document.  Try
     // again as XML
+    nsAutoLockChrome lock;
     contentType.AssignLiteral("application/xml");
     docEncoder = do_CreateInstance(NS_DOC_ENCODER_CONTRACTID_BASE "application/xml");
   }

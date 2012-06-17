@@ -73,7 +73,7 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(nsDocumentEncoder)
 
-  NS_IMETHODIMP_(JSZoneId) GetZone() { return mDocument ? mDocument->GetZone() : JS_ZONE_NONE; }
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
   NS_DECL_NSIDOCUMENTENCODER
 
@@ -134,6 +134,7 @@ protected:
   
   virtual bool IncludeInContext(nsINode *aNode);
 
+  JSZoneId                       mZone;
   nsCOMPtr<nsIDocument>          mDocument;
   nsCOMPtr<nsISelection>         mSelection;
   nsRefPtr<nsRange>              mRange;
@@ -202,6 +203,7 @@ nsDocumentEncoder::nsDocumentEncoder() : mCachedBuffer(nsnull)
 
 void nsDocumentEncoder::Initialize(bool aClearCachedSerializer)
 {
+  mZone = JS_ZONE_CHROME;
   mFlags = 0;
   mWrapColumn = 72;
   mStartDepth = 0;
@@ -248,6 +250,7 @@ nsDocumentEncoder::NativeInit(nsIDocument* aDocument,
   Initialize(!mMimeType.Equals(aMimeType));
 
   mDocument = aDocument;
+  mZone = aDocument->GetZone();
 
   mMimeType = aMimeType;
 

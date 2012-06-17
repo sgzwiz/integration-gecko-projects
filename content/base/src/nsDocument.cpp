@@ -3838,6 +3838,7 @@ nsDocument::SetScriptGlobalObject(nsIScriptGlobalObject *aScriptGlobalObject)
 
     mZone = aScriptGlobalObject->GetZone();
     mNodeInfoManager->SetZone(mZone);
+    mCSSLoader->SetZone(mZone);
     UpdateWeakReferencesZone();
 
 #ifdef DEBUG
@@ -3926,6 +3927,7 @@ nsDocument::SetScriptHandlingObject(nsIScriptGlobalObject* aScriptObject)
   if (aScriptObject) {
     mZone = aScriptObject->GetZone();
     mNodeInfoManager->SetZone(mZone);
+    mCSSLoader->SetZone(mZone);
     UpdateWeakReferencesZone();
 
     mHasHadScriptHandlingObject = true;

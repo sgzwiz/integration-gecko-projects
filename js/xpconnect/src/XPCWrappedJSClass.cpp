@@ -76,11 +76,13 @@ AutoScriptEvaluate::~AutoScriptEvaluate()
     // the JSOPTION_PRIVATE_IS_NSISUPPORTS option.
 
     if (JS_GetOptions(mJSContext) & JSOPTION_PRIVATE_IS_NSISUPPORTS) {
-        nsCOMPtr<nsIXPCScriptNotify> scriptNotify =
-            do_QueryInterface(static_cast<nsISupports*>
-                                         (JS_GetContextPrivate(mJSContext)));
-        if (scriptNotify)
-            scriptNotify->ScriptExecuted();
+        nsISupports *priv = static_cast<nsISupports*>
+                                       (JS_GetContextPrivate(mJSContext));
+        if (priv && NS_TryStickLock(priv)) {
+            nsCOMPtr<nsIXPCScriptNotify> scriptNotify = do_QueryInterface(priv);
+            if (scriptNotify)
+                scriptNotify->ScriptExecuted();
+        }
     }
 
     if (mErrorReporterSet)
@@ -514,7 +516,6 @@ GetContextFromObject(JSObject *obj)
 
     if (xpcc) {
         JSContext *cx = xpcc->GetJSContext();
-        JS_AbortIfWrongThread(JS_GetRuntime(cx), JS_GetZone(cx));
 
         if (js::GetContextThread(cx) != (uintptr_t) PR_GetCurrentThread())
             return nsnull;

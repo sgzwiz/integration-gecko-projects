@@ -51,6 +51,8 @@ class nsHtml5TreeOpExecutor : public nsContentSink,
     NS_DECL_ISUPPORTS_INHERITED
     NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsHtml5TreeOpExecutor, nsContentSink)
 
+    NS_IMETHODIMP_(JSZoneId) GetZone() { return nsContentSink::GetZone(); }
+
   private:
     static bool        sExternalViewSource;
 #ifdef DEBUG_NS_HTML5_TREE_OP_EXECUTOR_FLUSH

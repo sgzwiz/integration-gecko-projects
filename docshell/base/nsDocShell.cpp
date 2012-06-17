@@ -733,6 +733,15 @@ nsDocShell::MaybeFreeWindowZone()
     }
 }
 
+// Optional zone for docshells that are created on the main thread while a content
+// script on another thread is blocked waiting for the load to complete.
+static JSZoneId gMainThreadWindowZone = JS_ZONE_NONE;
+
+void SetMainThreadDocShellZone(JSZoneId aZone)
+{
+    gMainThreadWindowZone = aZone;
+}
+
 // Note: operator new zeros our memory
 nsDocShell::nsDocShell():
     nsDocLoader(),
@@ -784,6 +793,10 @@ nsDocShell::nsDocShell():
     // If this was opened via a call from some content script, use the same
     // zone as that script. XXX make this less of a gigantic hack.
     JSZoneId activeZone = JS_GetExecutingContentScriptZone();
+
+    if (activeZone == JS_ZONE_NONE && NS_IsMainThread())
+        activeZone = gMainThreadWindowZone;
+
     if (activeZone != JS_ZONE_NONE) {
         MaybeFreeWindowZone();
         mWindowZone = activeZone;
@@ -11064,6 +11077,9 @@ nsDocShell::EnsureScriptEnvironment()
         return NS_ERROR_NOT_AVAILABLE;
     }
 
+    if (mWindowZone >= JS_ZONE_CONTENT_START && !NS_TryStickContentLock(mWindowZone))
+        return NS_ERROR_XPC_CANT_GET_LOCK;
+
     NS_TIME_FUNCTION;
 
 #ifdef DEBUG
@@ -11086,10 +11102,6 @@ nsDocShell::EnsureScriptEnvironment()
     bool isModalContentWindow =
         (chromeFlags & nsIWebBrowserChrome::CHROME_MODAL) &&
         !(chromeFlags & nsIWebBrowserChrome::CHROME_OPENAS_CHROME);
-
-    Maybe<nsAutoLockZone> lock;
-    if (mWindowZone >= JS_ZONE_CONTENT_START)
-        lock.construct(mWindowZone);
 
     // If our window is modal and we're not opened as chrome, make
     // this window a modal content window.

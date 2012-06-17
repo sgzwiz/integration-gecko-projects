@@ -206,7 +206,11 @@ nsContentSink::Init(nsIDocument* aDoc,
   MOZ_ASSERT(!mBlockingDocument);
   mDocument = aDoc;
 
-  mDocumentURI = aURI;
+  {
+    nsAutoLockChrome lock; // for nsIURI
+    mDocumentURI = aURI;
+  }
+
   mDocShell = do_QueryInterface(aContainer);
   mScriptLoader = mDocument->ScriptLoader();
 

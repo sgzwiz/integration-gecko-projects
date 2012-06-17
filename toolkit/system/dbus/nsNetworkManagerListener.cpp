@@ -11,6 +11,7 @@
 #include "nsServiceManagerUtils.h"
 #include "nsIObserverService.h"
 #include "nsStringAPI.h"
+#include "nsThreadUtils.h"
 #include "nsCRT.h"
 
 // Define NetworkManager API constants. This avoids a dependency on
@@ -79,6 +80,8 @@ nsNetworkManagerListener::Init() {
 
 static void
 NetworkStatusNotify(DBusPendingCall *pending, void* user_data) {
+  nsAutoLockChromeUnstickContent lock;
+
   DBusMessage* msg = dbus_pending_call_steal_reply(pending);
   if (!msg)
     return;

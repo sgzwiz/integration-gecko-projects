@@ -266,6 +266,7 @@ nsStyledElementNotElementCSSInlineStyle::ParseStyleAttribute(const nsAString& aV
       css::Loader* cssLoader = doc->CSSLoader();
       nsCSSParser cssParser(cssLoader);
 
+      nsAutoLockChrome lock; // for nsIURI
       nsCOMPtr<nsIURI> baseURI = GetBaseURI();
 
       nsRefPtr<css::StyleRule> rule;
