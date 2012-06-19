@@ -14,7 +14,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=375314
 <div id="content" style="display: none">
   
 </div>
-<pre id="test">
+
+<!-- XXX using this id is causing other tests which also use a 'test' pre to load incorrectly,
+     it seems like this test is not being torn down correctly. -->
+<pre id="test2">
 <script class="testbody" type="text/javascript">
 
 /** Test for Bug 375314 **/

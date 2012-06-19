@@ -171,17 +171,17 @@ NS_IMETHODIMP imgTools::EncodeScaledImage(imgIContainer *aContainer,
     // Create a temporary image surface
     dest = new gfxImageSurface(gfxIntSize(aScaledWidth, aScaledHeight),
                                gfxASurface::ImageFormatARGB32);
-    gfxContext ctx(dest);
+    nsRefPtr<gfxContext> ctx = new gfxContext(dest);
 
     // Set scaling
     gfxFloat sw = (double) aScaledWidth / w;
     gfxFloat sh = (double) aScaledHeight / h;
-    ctx.Scale(sw, sh);
+    ctx->Scale(sw, sh);
 
     // Paint a scaled image
-    ctx.SetOperator(gfxContext::OPERATOR_SOURCE);
-    ctx.SetSource(frame);
-    ctx.Paint();
+    ctx->SetOperator(gfxContext::OPERATOR_SOURCE);
+    ctx->SetSource(frame);
+    ctx->Paint();
 
     bitmapData = dest->Data();
     strideSize = dest->Stride();

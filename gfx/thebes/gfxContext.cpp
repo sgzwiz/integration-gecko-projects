@@ -78,6 +78,8 @@ gfxContext::gfxContext(gfxASurface *surface)
 {
   MOZ_COUNT_CTOR(gfxContext);
 
+  MOZ_ASSERT(NS_IsChromeOwningThread());
+
   mCairo = cairo_create(surface->CairoSurface());
   mFlags = surface->GetDefaultContextFlags();
   if (mSurface->GetRotateForLandscape()) {
@@ -110,6 +112,8 @@ gfxContext::gfxContext(DrawTarget *aTarget)
 
 gfxContext::~gfxContext()
 {
+  MOZ_ASSERT(mRefCnt.get() == 1);
+
   if (mCairo) {
     cairo_destroy(mCairo);
   }
@@ -1427,11 +1431,31 @@ gfxContext::Mask(gfxASurface *surface, const gfxPoint& offset)
   }
 }
 
+class gfxContext::PaintRunnable : public nsRunnable
+{
+  nsRefPtr<gfxContext> mContext;
+  gfxFloat mAlpha;
+
+public:
+  PaintRunnable(gfxContext *aContext, gfxFloat aAlpha)
+    : mContext(aContext), mAlpha(aAlpha)
+  {}
+
+  NS_IMETHODIMP Run() {
+    mContext->Paint(mAlpha);
+    return NS_OK;
+  };
+};
+
 void
 gfxContext::Paint(gfxFloat alpha)
 {
   SAMPLE_LABEL("gfxContext", "Paint");
   if (mCairo) {
+    if (!NS_IsMainThread()) {
+      NS_DispatchToMainThread(new PaintRunnable(this, alpha));
+      return;
+    }
     cairo_paint_with_alpha(mCairo, alpha);
   } else {
     AzureState &state = CurrentState();

@@ -398,7 +398,11 @@ nsThread::Dispatch(nsIRunnable *event, PRUint32 flags)
     if (NS_FAILED(rv))
       return rv;
 
-    if (!NS_IsExecuteThread()) {
+    if (NS_IsExecuteThread()) {
+      // XXX fix busy wait
+      nsAutoUnlockEverything unlock;
+      while (wrapper->IsPending()) {}
+    } else {
       while (wrapper->IsPending())
         NS_ProcessNextEvent(thread);
     }

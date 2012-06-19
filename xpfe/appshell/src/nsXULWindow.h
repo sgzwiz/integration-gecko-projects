@@ -114,6 +114,8 @@ protected:
    void       PersistentAttributesDirty(PRUint32 aDirtyFlags);
    PRUint32   AppUnitsPerDevPixel();
 
+  class GetPositionAndSizeEvent;
+
    nsChromeTreeOwner*      mChromeTreeOwner;
    nsContentTreeOwner*     mContentTreeOwner;
    nsContentTreeOwner*     mPrimaryContentTreeOwner;

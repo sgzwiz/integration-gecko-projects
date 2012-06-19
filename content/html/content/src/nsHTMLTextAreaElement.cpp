@@ -71,6 +71,8 @@ public:
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return nsINode::GetZone(); }
+
   // nsIDOMNode
   NS_FORWARD_NSIDOMNODE(nsGenericHTMLFormElement::)
 
@@ -373,6 +375,8 @@ nsHTMLTextAreaElement::Select()
   if (state == eUnfocusable) {
     return NS_OK;
   }
+
+  nsAutoLockChrome lock;
 
   nsIFocusManager* fm = nsFocusManager::GetFocusManager();
 

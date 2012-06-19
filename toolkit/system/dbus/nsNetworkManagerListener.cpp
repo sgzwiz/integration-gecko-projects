@@ -126,6 +126,8 @@ nsNetworkManagerListener::RegisterWithConnection(DBusConnection* connection) {
 
 void
 nsNetworkManagerListener::NotifyNetworkStatusObservers() {
+  nsAutoLockChromeUnstickContent lock;
+
   nsCOMPtr<nsIObserverService> observerService =
     do_GetService("@mozilla.org/observer-service;1");
   if (!observerService)

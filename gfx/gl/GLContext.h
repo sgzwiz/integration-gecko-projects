@@ -957,8 +957,8 @@ public:
             abort = true;
         }
 
-        if (abort)
-            NS_ABORT();
+        //if (abort)
+        //    NS_ABORT();
 #endif
 
         // We only ever expose the user's bound FBOs
@@ -989,8 +989,8 @@ public:
             abort = true;
         }
 
-        if (abort)
-            NS_ABORT();
+        //if (abort)
+        //    NS_ABORT();
 #endif
 
         // We only ever expose the user's bound FBOs

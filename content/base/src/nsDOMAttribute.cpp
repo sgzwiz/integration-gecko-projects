@@ -156,6 +156,7 @@ nsDOMAttribute::GetValue(nsAString& aValue)
 {
   nsIContent* content = GetContentInternal();
   if (content) {
+    nsAutoLockChrome lock;
     nsCOMPtr<nsIAtom> nameAtom = GetNameAtom(content);
     content->GetAttr(mNodeInfo->NamespaceID(), nameAtom, aValue);
   }
@@ -175,6 +176,7 @@ nsDOMAttribute::SetValue(const nsAString& aValue)
     return NS_OK;
   }
 
+  nsAutoLockChrome lock;
   nsCOMPtr<nsIAtom> nameAtom = GetNameAtom(content);
   return content->SetAttr(mNodeInfo->NamespaceID(),
                           nameAtom,

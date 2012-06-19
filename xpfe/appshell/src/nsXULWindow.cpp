@@ -215,6 +215,8 @@ NS_IMETHODIMP nsXULWindow::GetZLevel(PRUint32 *outLevel)
 
 NS_IMETHODIMP nsXULWindow::SetZLevel(PRUint32 aLevel)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   nsCOMPtr<nsIWindowMediator> mediator(do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
   if (!mediator)
     return NS_ERROR_FAILURE;
@@ -431,6 +433,8 @@ NS_IMETHODIMP nsXULWindow::Create()
 
 NS_IMETHODIMP nsXULWindow::Destroy()
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   if (!mWindow)
      return NS_OK;
 
@@ -544,6 +548,8 @@ NS_IMETHODIMP nsXULWindow::Destroy()
 
 NS_IMETHODIMP nsXULWindow::SetPosition(PRInt32 aX, PRInt32 aY)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   // Don't reset the window's size mode here - platforms that don't want to move
   // maximized windows should reset it in their respective Move implementation.
   NS_ENSURE_SUCCESS(mWindow->Move(aX, aY), NS_ERROR_FAILURE);
@@ -565,6 +571,8 @@ NS_IMETHODIMP nsXULWindow::GetPosition(PRInt32* aX, PRInt32* aY)
 
 NS_IMETHODIMP nsXULWindow::SetSize(PRInt32 aCX, PRInt32 aCY, bool aRepaint)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   /* any attempt to set the window's size or position overrides the window's
      zoom state. this is important when these two states are competing while
      the window is being opened. but it should probably just always be so. */
@@ -595,6 +603,8 @@ NS_IMETHODIMP nsXULWindow::GetSize(PRInt32* aCX, PRInt32* aCY)
 NS_IMETHODIMP nsXULWindow::SetPositionAndSize(PRInt32 aX, PRInt32 aY, 
    PRInt32 aCX, PRInt32 aCY, bool aRepaint)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   /* any attempt to set the window's size or position overrides the window's
      zoom state. this is important when these two states are competing while
      the window is being opened. but it should probably just always be so. */
@@ -616,9 +626,27 @@ NS_IMETHODIMP nsXULWindow::SetPositionAndSize(PRInt32 aX, PRInt32 aY,
   return NS_OK;
 }
 
+class nsXULWindow::GetPositionAndSizeEvent : public nsRunnable
+{
+  nsRefPtr<nsXULWindow> mWindow;
+  PRInt32 *x, *y, *cx, *cy;
+
+public:
+  GetPositionAndSizeEvent(nsXULWindow *aWindow, PRInt32* x, PRInt32* y, PRInt32* cx, PRInt32* cy)
+    : mWindow(aWindow), x(x), y(y), cx(cx), cy(cy)
+  {}
+
+  NS_IMETHODIMP Run() {
+    return mWindow->GetPositionAndSize(x, y, cx, cy);
+  }
+};
+
 NS_IMETHODIMP nsXULWindow::GetPositionAndSize(PRInt32* x, PRInt32* y, PRInt32* cx,
    PRInt32* cy)
 {
+  if (!NS_IsMainThread())
+    return NS_DispatchToMainThread(new GetPositionAndSizeEvent(this, x, y, cx, cy), NS_DISPATCH_SYNC);
+
   nsIntRect rect;
 
   if (!mWindow)
@@ -640,6 +668,8 @@ NS_IMETHODIMP nsXULWindow::GetPositionAndSize(PRInt32* x, PRInt32* y, PRInt32* c
 
 NS_IMETHODIMP nsXULWindow::Center(nsIXULWindow *aRelative, bool aScreen, bool aAlert)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   PRInt32  left, top, width, height,
            ourWidth, ourHeight;
   bool     screenCoordinates =  false,
@@ -716,6 +746,8 @@ NS_IMETHODIMP nsXULWindow::Repaint(bool aForce)
 
 NS_IMETHODIMP nsXULWindow::GetParentWidget(nsIWidget** aParentWidget)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   NS_ENSURE_ARG_POINTER(aParentWidget);
   NS_ENSURE_STATE(mWindow);
 
@@ -804,6 +836,8 @@ NS_IMETHODIMP nsXULWindow::SetVisibility(bool aVisibility)
 
 NS_IMETHODIMP nsXULWindow::GetEnabled(bool *aEnabled)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   NS_ENSURE_ARG_POINTER(aEnabled);
   if (mWindow)
     return mWindow->IsEnabled(aEnabled);
@@ -814,6 +848,8 @@ NS_IMETHODIMP nsXULWindow::GetEnabled(bool *aEnabled)
 
 NS_IMETHODIMP nsXULWindow::SetEnabled(bool aEnable)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   if (mWindow) {
     mWindow->Enable(aEnable);
     return NS_OK;
@@ -823,6 +859,8 @@ NS_IMETHODIMP nsXULWindow::SetEnabled(bool aEnable)
 
 NS_IMETHODIMP nsXULWindow::GetMainWidget(nsIWidget** aMainWidget)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   NS_ENSURE_ARG_POINTER(aMainWidget);
    
   *aMainWidget = mWindow;
@@ -849,6 +887,8 @@ NS_IMETHODIMP nsXULWindow::GetTitle(PRUnichar** aTitle)
 
 NS_IMETHODIMP nsXULWindow::SetTitle(const PRUnichar* aTitle)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   NS_ENSURE_STATE(mWindow);
   mTitle.Assign(aTitle);
   mTitle.StripChars("\n\r");
@@ -988,6 +1028,8 @@ void nsXULWindow::OnChromeLoaded()
 
 bool nsXULWindow::LoadPositionFromXUL()
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   nsresult rv;
   bool     gotPosition = false;
   
@@ -1057,6 +1099,8 @@ bool nsXULWindow::LoadPositionFromXUL()
 
 bool nsXULWindow::LoadSizeFromXUL()
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   nsresult rv;
   bool     gotSize = false;
   
@@ -1136,6 +1180,8 @@ bool nsXULWindow::LoadSizeFromXUL()
    attributes (sizemode) and they require extra processing. */
 bool nsXULWindow::LoadMiscPersistentAttributesFromXUL()
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   nsresult rv;
   bool     gotState = false;
   
@@ -1335,6 +1381,8 @@ void nsXULWindow::StaggerPosition(PRInt32 &aRequestedX, PRInt32 &aRequestedY,
 
 void nsXULWindow::SyncAttributesToWidget()
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   nsCOMPtr<nsIDOMElement> windowElement;
   GetWindowDOMElement(getter_AddRefs(windowElement));
   if (!windowElement)
@@ -1396,6 +1444,8 @@ void nsXULWindow::SyncAttributesToWidget()
 
 NS_IMETHODIMP nsXULWindow::SavePersistentAttributes()
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   // can happen when the persistence timer fires at an inopportune time
   // during window shutdown
   if (!mDocShell)
@@ -2049,6 +2099,8 @@ NS_IMETHODIMP nsXULWindow::SetXULBrowserWindow(nsIXULBrowserWindow * aXULBrowser
 
 PRUint32 nsXULWindow::AppUnitsPerDevPixel()
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   if (mWindow && mWindow->GetDeviceContext()) {
     mAppPerDev = mWindow->GetDeviceContext()->AppUnitsPerDevPixel();
   } else {

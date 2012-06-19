@@ -431,10 +431,10 @@ CopyXlibSurfaceToImage(gfxXlibSurface *tempXlibSurface,
     nsRefPtr<gfxImageSurface> result =
         new gfxImageSurface(tempXlibSurface->GetSize(), format);
 
-    gfxContext copyCtx(result);
-    copyCtx.SetSource(tempXlibSurface);
-    copyCtx.SetOperator(gfxContext::OPERATOR_SOURCE);
-    copyCtx.Paint();
+    nsRefPtr<gfxContext> copyCtx = new gfxContext(result);
+    copyCtx->SetSource(tempXlibSurface);
+    copyCtx->SetOperator(gfxContext::OPERATOR_SOURCE);
+    copyCtx->Paint();
 
     return result.forget();
 }
@@ -599,10 +599,10 @@ gfxXlibNativeRenderer::Draw(gfxContext* ctx, nsIntSize size,
                     CreateSimilarSurface(gfxASurface::CONTENT_COLOR_ALPHA,
                                          gfxIntSize(size.width, size.height));
 
-                gfxContext copyCtx(result->mSurface);
-                copyCtx.SetSource(blackImage);
-                copyCtx.SetOperator(gfxContext::OPERATOR_SOURCE);
-                copyCtx.Paint();
+                nsRefPtr<gfxContext> copyCtx = new gfxContext(result->mSurface);
+                copyCtx->SetSource(blackImage);
+                copyCtx->SetOperator(gfxContext::OPERATOR_SOURCE);
+                copyCtx->Paint();
 
                 ctx->SetSource(result->mSurface);
             }

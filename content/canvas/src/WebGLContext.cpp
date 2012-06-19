@@ -40,6 +40,8 @@
 #include "nsIObserverService.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
 
+#include "nsProxyRelease.h"
+
 using namespace mozilla;
 using namespace mozilla::gl;
 using namespace mozilla::layers;
@@ -675,6 +677,11 @@ class WebGLContextUserData : public LayerUserData {
 public:
     WebGLContextUserData(nsHTMLCanvasElement *aContent)
     : mContent(aContent) {}
+
+    ~WebGLContextUserData()
+    {
+        NS_ReleaseReference(mContent);
+    }
 
   /** DidTransactionCallback gets called by the Layers code everytime the WebGL canvas gets composite,
     * so it really is the right place to put actions that have to be performed upon compositing

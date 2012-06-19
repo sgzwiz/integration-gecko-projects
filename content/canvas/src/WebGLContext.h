@@ -605,6 +605,7 @@ public:
             return;
         }
         
+        mContextRestorer->SetCallbackZone(GetZone());
         mContextRestorer->InitWithCallback(static_cast<nsITimerCallback*>(this),
                                            PR_MillisecondsToInterval(1000),
                                            nsITimer::TYPE_ONE_SHOT);

@@ -499,19 +499,19 @@ nsresult imgFrame::Extract(const nsIntRect& aRegion, imgFrame** aResult)
 
   // scope to destroy ctx
   {
-    gfxContext ctx(subImage->ThebesSurface());
-    ctx.SetOperator(gfxContext::OPERATOR_SOURCE);
+    nsRefPtr<gfxContext> ctx = new gfxContext(subImage->ThebesSurface());
+    ctx->SetOperator(gfxContext::OPERATOR_SOURCE);
     if (mSinglePixel) {
-      ctx.SetDeviceColor(mSinglePixelColor);
+      ctx->SetDeviceColor(mSinglePixelColor);
     } else {
       // SetSource() places point (0,0) of its first argument at
       // the coordinages given by its second argument.  We want
       // (x,y) of the image to be (0,0) of source space, so we
       // put (0,0) of the image at (-x,-y).
-      ctx.SetSource(this->ThebesSurface(), gfxPoint(-aRegion.x, -aRegion.y));
+      ctx->SetSource(this->ThebesSurface(), gfxPoint(-aRegion.x, -aRegion.y));
     }
-    ctx.Rectangle(gfxRect(0, 0, aRegion.width, aRegion.height));
-    ctx.Fill();
+    ctx->Rectangle(gfxRect(0, 0, aRegion.width, aRegion.height));
+    ctx->Fill();
   }
 
   nsIntRect filled(0, 0, aRegion.width, aRegion.height);

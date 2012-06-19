@@ -1163,6 +1163,9 @@ nsCanvasRenderingContext2D::EnsureSurface()
             nsIDocument* ownerDoc = nsnull;
             if (content)
                 ownerDoc = content->OwnerDoc();
+
+            nsAutoLockChrome lock;
+
             nsRefPtr<LayerManager> layerManager = nsnull;
 
             if (ownerDoc)
@@ -1201,6 +1204,8 @@ nsCanvasRenderingContext2D::EnsureSurface()
     } else {
         return false;
     }
+
+    nsAutoLockChrome lock;
 
     mSurface = surface;
     CreateThebes();
@@ -1317,6 +1322,8 @@ nsCanvasRenderingContext2D::GetInputStream(const char *aMimeType,
 
     if (!imgsurf || imgsurf->CairoStatus())
         return NS_ERROR_FAILURE;
+
+    nsAutoLockChrome lock;
 
     nsRefPtr<gfxContext> ctx = new gfxContext(imgsurf);
 

@@ -313,6 +313,8 @@ nsMenuPopupFrame* GetPopupToMoveOrResize(nsIFrame* aFrame)
 void
 nsXULPopupManager::PopupMoved(nsIFrame* aFrame, nsIntPoint aPnt)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   nsMenuPopupFrame* menuPopupFrame = GetPopupToMoveOrResize(aFrame);
   if (!menuPopupFrame)
     return;
@@ -607,11 +609,38 @@ nsXULPopupManager::ShowPopupAtScreen(nsIContent* aPopup,
   FirePopupShowingEvent(aPopup, aIsContextMenu, false);
 }
 
+class nsXULPopupManager::ShowTooltipAtScreenEvent : public nsRunnable
+{
+  nsRefPtr<nsXULPopupManager> mManager;
+  nsRefPtr<nsIContent> mPopup, mTriggerContent;
+  PRInt32 mXPos, mYPos;
+
+public:
+  ShowTooltipAtScreenEvent(nsXULPopupManager *aManager,
+                           nsIContent *aPopup, nsIContent *aTriggerContent,
+                           PRInt32 aXPos, PRInt32 aYPos)
+    : mManager(aManager), mPopup(aPopup), mTriggerContent(aTriggerContent), mXPos(aXPos), mYPos(aYPos)
+  {}
+
+  NS_IMETHODIMP Run() {
+    if (mTriggerContent)
+      NS_StickLock(mTriggerContent);
+    mManager->ShowTooltipAtScreen(mPopup, mTriggerContent, mXPos, mYPos);
+    return NS_OK;
+  }
+};
+
 void
 nsXULPopupManager::ShowTooltipAtScreen(nsIContent* aPopup,
                                        nsIContent* aTriggerContent,
                                        PRInt32 aXPos, PRInt32 aYPos)
 {
+  if (!NS_IsMainThread()) {
+    NS_DispatchToMainThread(new ShowTooltipAtScreenEvent(this, aPopup, aTriggerContent,
+                                                         aXPos, aYPos));
+    return;
+  }
+
   nsMenuPopupFrame* popupFrame = GetPopupFrameForContent(aPopup, true);
   if (!popupFrame || !MayShowPopup(popupFrame))
     return;
@@ -1386,6 +1415,8 @@ nsXULPopupManager::GetLastTriggerNode(nsIDocument* aDocument, bool aIsTooltip)
 bool
 nsXULPopupManager::MayShowPopup(nsMenuPopupFrame* aPopup)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   // if a popup's IsOpen method returns true, then the popup must always be in
   // the popup chain scanned in IsPopupOpen.
   NS_ASSERTION(!aPopup->IsOpen() || IsPopupOpen(aPopup->GetContent()),
@@ -1549,9 +1580,30 @@ nsXULPopupManager::HasContextMenu(nsMenuPopupFrame* aPopup)
   return false;
 }
 
+class nsXULPopupManager::SetCaptureStateEvent : public nsRunnable
+{
+  nsRefPtr<nsXULPopupManager> mManager;
+  nsRefPtr<nsIContent> mOldPopup;
+
+public:
+  SetCaptureStateEvent(nsXULPopupManager *aManager, nsIContent *aOldPopup)
+    : mManager(aManager), mOldPopup(aOldPopup)
+  {}
+
+  NS_IMETHODIMP Run() {
+    mManager->SetCaptureState(mOldPopup);
+    return NS_OK;
+  }
+};
+
 void
 nsXULPopupManager::SetCaptureState(nsIContent* aOldPopup)
 {
+  if (!NS_IsMainThread()) {
+    NS_DispatchToMainThread(new SetCaptureStateEvent(this, aOldPopup));
+    return;
+  }
+
   nsMenuChainItem* item = GetTopVisibleMenu();
   if (item && aOldPopup == item->Content())
     return;

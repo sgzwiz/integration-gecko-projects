@@ -166,9 +166,9 @@ public:
     nsrefcnt refcount;
     if (IsPurple()) {
       nsPurpleBufferEntry *e = NS_CCAR_TAGGED_TO_PURPLE_ENTRY(mTagged);
-      NS_ASSERTION(e->mObject == owner, "wrong entry");
+      MOZ_ASSERT(e->mObject == owner);
       refcount = e->mRefCnt;
-      NS_ASSERTION(refcount != 0, "purple ISupports pointer with zero refcnt");
+      MOZ_ASSERT(refcount != 0);
 
       if (NS_LIKELY(NS_CycleCollectorForget2(e))) {
         // |e| is now invalid

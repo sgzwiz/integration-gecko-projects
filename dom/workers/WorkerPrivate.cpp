@@ -2475,6 +2475,8 @@ already_AddRefed<WorkerPrivate>
 WorkerPrivate::Create(JSContext* aCx, JSObject* aObj, WorkerPrivate* aParent,
                       JSString* aScriptURL, bool aIsChromeWorker)
 {
+  nsAutoLockChrome lock; // for nsIURI
+
   nsCString domain;
   nsCOMPtr<nsIURI> baseURI;
   nsCOMPtr<nsIPrincipal> principal;

@@ -810,12 +810,12 @@ RasterImage::CopyFrame(PRUint32 aWhichFrame,
   // rect, implicitly padding the frame out to the image's size.
   nsRefPtr<gfxImageSurface> imgsurface = new gfxImageSurface(gfxIntSize(mSize.width, mSize.height),
                                                              gfxASurface::ImageFormatARGB32);
-  gfxContext ctx(imgsurface);
-  ctx.SetOperator(gfxContext::OPERATOR_SOURCE);
-  ctx.Rectangle(framerect);
-  ctx.Translate(framerect.TopLeft());
-  ctx.SetPattern(pattern);
-  ctx.Fill();
+  nsRefPtr<gfxContext> ctx = new gfxContext(imgsurface);
+  ctx->SetOperator(gfxContext::OPERATOR_SOURCE);
+  ctx->Rectangle(framerect);
+  ctx->Translate(framerect.TopLeft());
+  ctx->SetPattern(pattern);
+  ctx->Fill();
 
   *_retval = imgsurface.forget().get();
   return NS_OK;
@@ -1933,9 +1933,9 @@ RasterImage::ClearFrame(imgFrame *aFrame)
   aFrame->GetSurface(getter_AddRefs(surf));
 
   // Erase the surface to transparent
-  gfxContext ctx(surf);
-  ctx.SetOperator(gfxContext::OPERATOR_CLEAR);
-  ctx.Paint();
+  nsRefPtr<gfxContext> ctx = new gfxContext(surf);
+  ctx->SetOperator(gfxContext::OPERATOR_CLEAR);
+  ctx->Paint();
 
   aFrame->UnlockImageData();
 }
@@ -1955,10 +1955,10 @@ RasterImage::ClearFrame(imgFrame *aFrame, nsIntRect &aRect)
   aFrame->GetSurface(getter_AddRefs(surf));
 
   // Erase the destination rectangle to transparent
-  gfxContext ctx(surf);
-  ctx.SetOperator(gfxContext::OPERATOR_CLEAR);
-  ctx.Rectangle(gfxRect(aRect.x, aRect.y, aRect.width, aRect.height));
-  ctx.Fill();
+  nsRefPtr<gfxContext> ctx = new gfxContext(surf);
+  ctx->SetOperator(gfxContext::OPERATOR_CLEAR);
+  ctx->Rectangle(gfxRect(aRect.x, aRect.y, aRect.width, aRect.height));
+  ctx->Fill();
 
   aFrame->UnlockImageData();
 }
@@ -2089,20 +2089,20 @@ RasterImage::DrawFrameTo(imgFrame *aSrc,
   nsRefPtr<gfxASurface> dstSurf;
   aDst->GetSurface(getter_AddRefs(dstSurf));
 
-  gfxContext dst(dstSurf);
-  dst.Translate(gfxPoint(aSrcRect.x, aSrcRect.y));
-  dst.Rectangle(gfxRect(0, 0, aSrcRect.width, aSrcRect.height), true);
+  nsRefPtr<gfxContext> dst = new gfxContext(dstSurf);
+  dst->Translate(gfxPoint(aSrcRect.x, aSrcRect.y));
+  dst->Rectangle(gfxRect(0, 0, aSrcRect.width, aSrcRect.height), true);
   
   // first clear the surface if the blend flag says so
   PRInt32 blendMethod = aSrc->GetBlendMethod();
   if (blendMethod == kBlendSource) {
-    gfxContext::GraphicsOperator defaultOperator = dst.CurrentOperator();
-    dst.SetOperator(gfxContext::OPERATOR_CLEAR);
-    dst.Fill();
-    dst.SetOperator(defaultOperator);
+    gfxContext::GraphicsOperator defaultOperator = dst->CurrentOperator();
+    dst->SetOperator(gfxContext::OPERATOR_CLEAR);
+    dst->Fill();
+    dst->SetOperator(defaultOperator);
   }
-  dst.SetPattern(srcPatt);
-  dst.Paint();
+  dst->SetPattern(srcPatt);
+  dst->Paint();
 
   aDst->UnlockImageData();
 

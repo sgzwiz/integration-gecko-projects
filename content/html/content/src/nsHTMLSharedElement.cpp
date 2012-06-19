@@ -39,6 +39,8 @@ public:
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return nsINode::GetZone(); }
+
   // nsIDOMNode
   NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
 
@@ -206,6 +208,8 @@ nsHTMLSharedElement::GetHref(nsAString& aValue)
   nsAutoString href;
   GetAttr(kNameSpaceID_None, nsGkAtoms::href, href);
 
+  nsAutoLockChrome lock; // for nsIURI
+
   nsCOMPtr<nsIURI> uri;
   nsIDocument* doc = OwnerDoc();
   nsContentUtils::NewURIWithDocumentCharset(
@@ -308,6 +312,8 @@ SetBaseURIUsingFirstBaseWithHref(nsIDocument* aDocument, nsIContent* aMustMatch)
       // Resolve the <base> element's href relative to our document URI
       nsAutoString href;
       child->GetAttr(kNameSpaceID_None, nsGkAtoms::href, href);
+
+      nsAutoLockChrome lock; // for nsIURI
 
       nsCOMPtr<nsIURI> newBaseURI;
       nsContentUtils::NewURIWithDocumentCharset(

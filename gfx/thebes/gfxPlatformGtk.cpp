@@ -179,9 +179,9 @@ gfxPlatformGtk::CreateOffscreenSurface(const gfxIntSize& size,
     }
 
     if (newSurface && needsClear) {
-        gfxContext tmpCtx(newSurface);
-        tmpCtx.SetOperator(gfxContext::OPERATOR_CLEAR);
-        tmpCtx.Paint();
+        nsRefPtr<gfxContext> tmpCtx = new gfxContext(newSurface);
+        tmpCtx->SetOperator(gfxContext::OPERATOR_CLEAR);
+        tmpCtx->Paint();
     }
 
     return newSurface.forget();

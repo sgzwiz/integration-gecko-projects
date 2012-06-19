@@ -685,6 +685,10 @@ protected:
   }
 
 private:
+
+  class ShowTooltipAtScreenEvent;
+  class SetCaptureStateEvent;
+
   /**
    * Handle keyboard navigation within a menu popup aFrame. If aItem is
    * supplied, then it is expected to have a frame equal to aFrame.

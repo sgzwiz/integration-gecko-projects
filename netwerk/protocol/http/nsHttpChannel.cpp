@@ -911,7 +911,8 @@ nsHttpChannel::CallOnStartRequest()
                                             mListenerContext,
                                             getter_AddRefs(converter));
                 if (NS_SUCCEEDED(rv)) {
-                    MOZ_ASSERT(converter->GetZone() == mZone);
+                    MOZ_ASSERT(converter->GetZone() == mZone ||
+                               converter->GetZone() == JS_ZONE_CHROME);
                     mListener = converter;
                 }
             }
@@ -3834,7 +3835,8 @@ nsHttpChannel::InstallCacheListener(PRUint32 offset)
 
     if (NS_FAILED(rv)) return rv;
 
-    MOZ_ASSERT(tee->GetZone() == mZone);
+    MOZ_ASSERT(tee->GetZone() == mZone ||
+               tee->GetZone() == JS_ZONE_CHROME);
     mListener = tee;
 
     return NS_OK;

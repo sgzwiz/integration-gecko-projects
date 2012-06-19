@@ -1779,6 +1779,7 @@ nsHTMLFormElement::UpdateValidity(bool aElementValidity)
    * be safe.
    */
 
+  nsAutoLockChrome lock;
   nsAutoScriptBlocker scriptBlocker;
 
   // Inform submit controls that the form validity has changed.

@@ -698,6 +698,8 @@ private:
   typedef mozilla::gfx::PathBuilder PathBuilder;
   typedef mozilla::gfx::SourceSurface SourceSurface;
   
+  class PaintRunnable;
+
   struct AzureState {
     AzureState()
       : op(mozilla::gfx::OP_OVER)

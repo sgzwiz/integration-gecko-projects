@@ -278,8 +278,10 @@ PluginModuleParent::NotifyPluginCrashed()
         return;
     }
 
-    if (mPlugin)
+    if (mPlugin) {
+        nsAutoLockChromeUnstickContent lock;
         mPlugin->PluginCrashed(mPluginDumpID, mBrowserDumpID);
+    }
 }
 
 PPluginIdentifierParent*

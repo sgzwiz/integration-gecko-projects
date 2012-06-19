@@ -226,6 +226,8 @@ protected:
 NS_IMETHODIMP
 AsyncClickHandler::Run()
 {
+  NS_StickLock(mInput);
+
   // Get parent nsPIDOMWindow object.
   nsCOMPtr<nsIDocument> doc = mInput->OwnerDoc();
 
@@ -1642,6 +1644,8 @@ nsHTMLInputElement::Focus()
       nsCOMPtr<nsIFormControl> formCtrl =
         do_QueryInterface(childFrame->GetContent());
       if (formCtrl && formCtrl->GetType() == NS_FORM_INPUT_BUTTON) {
+        nsAutoLockChrome lock;
+
         nsCOMPtr<nsIDOMElement> element = do_QueryInterface(formCtrl);
         nsIFocusManager* fm = nsFocusManager::GetFocusManager();
         if (fm && element) {
@@ -1740,7 +1744,7 @@ NS_IMETHODIMP
 nsHTMLInputElement::FireAsyncClickHandler()
 {
   nsCOMPtr<nsIRunnable> event = new AsyncClickHandler(this);
-  return NS_DispatchToMainThread(event);
+  return NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL, GetZone());
 }
 
 bool

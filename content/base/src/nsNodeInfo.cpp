@@ -82,6 +82,9 @@ nsNodeInfo::~nsNodeInfo()
 {
   mOwnerManager->RemoveNodeInfo(this);
 
+  // for nsIAtom
+  nsAutoLockChrome lock;
+
   NS_RELEASE(mInner.mName);
   NS_IF_RELEASE(mInner.mPrefix);
   NS_IF_RELEASE(mInner.mExtraName);

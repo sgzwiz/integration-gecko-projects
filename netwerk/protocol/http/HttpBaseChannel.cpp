@@ -20,6 +20,7 @@
 #include "nsILoadContext.h"
 #include "nsEscape.h"
 #include "nsStreamListenerWrapper.h"
+#include "nsProxyRelease.h"
 
 #include "prnetdb.h"
 
@@ -64,6 +65,9 @@ HttpBaseChannel::HttpBaseChannel()
 HttpBaseChannel::~HttpBaseChannel()
 {
   LOG(("Destroying HttpBaseChannel @%x\n", this));
+
+  if (mCallbacks)
+    NS_ReleaseReference(mCallbacks);
 
   // Make sure we don't leak
   CleanRedirectCacheChainIfNecessary();
