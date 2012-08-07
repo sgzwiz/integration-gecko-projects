@@ -37,6 +37,22 @@
   <commandset id="editMenuCommands"/>
   <commandset id="sourceEditorCommands"/>
   <keyset id="sourceEditorKeys"/>
+  <keyset id="scriptSearchKeys">
+    <key key="P" modifiers="access shift"
+         oncommand="DebuggerView.Scripts._onSearch()"/>
+    <key key="T" modifiers="access shift"
+         oncommand="DebuggerView.Scripts._onTokenSearch()"/>
+  </keyset>
+  <keyset id="threadStateKeys">
+    <key keycode="VK_F6"
+         oncommand="DebuggerView.StackFrames._onResume()"/>
+    <key keycode="VK_F7"
+         oncommand="DebuggerView.StackFrames._onStepOver()"/>
+    <key keycode="VK_F8"
+         oncommand="DebuggerView.StackFrames._onStepIn()"/>
+    <key keycode="VK_F8" modifiers="shift"
+         oncommand="DebuggerView.StackFrames._onStepOut()"/>
+  </keyset>
 
   <vbox id="body" flex="1">
     <toolbar id="dbg-toolbar" class="devtools-toolbar">
@@ -64,10 +80,15 @@
                        tabindex="0"/>
       </hbox>
       <menulist id="scripts" class="devtools-menulist"
+                sizetopopup="always"
                 label="&debuggerUI.emptyScriptText;"/>
       <textbox id="scripts-search" type="search"
                class="devtools-searchinput"
                emptytext="&debuggerUI.emptyFilterText;"/>
+      <checkbox id="pause-exceptions"
+                type="checkbox"
+                tabindex="0"
+                label="&debuggerUI.pauseExceptions;"/>
       <spacer flex="1"/>
 #ifndef XP_MACOSX
       <toolbarbutton id="close"
@@ -76,10 +97,14 @@
 #endif
     </toolbar>
     <hbox id="dbg-content" flex="1">
-      <vbox id="stackframes"/>
-      <splitter id="stack-script-splitter" class="devtools-side-splitter"/>
+      <vbox id="stackframes+breakpoints">
+        <vbox id="stackframes" flex="1"/>
+        <splitter class="devtools-horizontal-splitter"/>
+        <vbox id="breakpoints"/>
+      </vbox>
+      <splitter class="devtools-side-splitter"/>
       <vbox id="editor" flex="1"/>
-      <splitter id="script-properties-splitter" class="devtools-side-splitter"/>
+      <splitter class="devtools-side-splitter"/>
       <vbox id="variables"/>
     </hbox>
   </vbox>

@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ipc/AutoOpenSurface.h"
 #include "mozilla/layers/PLayers.h"
 #include "mozilla/layers/ShadowLayers.h"
 
@@ -32,6 +33,23 @@ using namespace mozilla;
 using namespace mozilla::layers;
 using namespace mozilla::gl;
 
+static void
+MakeTextureIfNeeded(GLContext* gl, GLuint& aTexture)
+{
+  if (aTexture != 0)
+    return;
+
+  gl->fGenTextures(1, &aTexture);
+
+  gl->fActiveTexture(LOCAL_GL_TEXTURE0);
+  gl->fBindTexture(LOCAL_GL_TEXTURE_2D, aTexture);
+
+  gl->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MIN_FILTER, LOCAL_GL_LINEAR);
+  gl->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MAG_FILTER, LOCAL_GL_LINEAR);
+  gl->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_WRAP_S, LOCAL_GL_CLAMP_TO_EDGE);
+  gl->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_WRAP_T, LOCAL_GL_CLAMP_TO_EDGE);
+}
+
 void
 CanvasLayerOGL::Destroy()
 {
@@ -44,10 +62,10 @@ CanvasLayerOGL::Destroy()
 void
 CanvasLayerOGL::Initialize(const Data& aData)
 {
-  NS_ASSERTION(mCanvasSurface == nsnull, "BasicCanvasLayer::Initialize called twice!");
+  NS_ASSERTION(mCanvasSurface == nullptr, "BasicCanvasLayer::Initialize called twice!");
 
-  if (aData.mGLContext != nsnull &&
-      aData.mSurface != nsnull)
+  if (aData.mGLContext != nullptr &&
+      aData.mSurface != nullptr)
   {
     NS_WARNING("CanvasLayerOGL can't have both surface and GLContext");
     return;
@@ -57,6 +75,7 @@ CanvasLayerOGL::Initialize(const Data& aData)
 
   if (aData.mDrawTarget) {
     mDrawTarget = aData.mDrawTarget;
+    mCanvasSurface = gfxPlatform::GetPlatform()->GetThebesSurfaceForDrawTarget(mDrawTarget);
     mNeedsYFlip = false;
   } else if (aData.mSurface) {
     mCanvasSurface = aData.mSurface;
@@ -71,7 +90,7 @@ CanvasLayerOGL::Initialize(const Data& aData)
             } else {
                 mLayerProgram = gl::RGBXLayerProgramType;
             }
-            MakeTexture();
+            MakeTextureIfNeeded(gl(), mTexture);
         }
     }
 #endif
@@ -97,7 +116,7 @@ CanvasLayerOGL::Initialize(const Data& aData)
   GLint texSize = gl()->GetMaxTextureSize();
   if (mBounds.width > (2 + texSize) || mBounds.height > (2 + texSize)) {
     mDelayedUpdates = true;
-    MakeTexture();
+    MakeTextureIfNeeded(gl(), mTexture);
     // This should only ever occur with 2d canvas, WebGL can't already have a texture
     // of this size can it?
     NS_ABORT_IF_FALSE(mCanvasSurface || mDrawTarget, 
@@ -105,22 +124,42 @@ CanvasLayerOGL::Initialize(const Data& aData)
   }
 }
 
-void
-CanvasLayerOGL::MakeTexture()
+#ifdef XP_MACOSX
+static GLuint
+MakeIOSurfaceTexture(void* aCGIOSurfaceContext, mozilla::gl::GLContext* aGL)
 {
-  if (mTexture != 0)
-    return;
+  GLuint ioSurfaceTexture;
 
-  gl()->fGenTextures(1, &mTexture);
+  aGL->fGenTextures(1, &ioSurfaceTexture);
 
-  gl()->fActiveTexture(LOCAL_GL_TEXTURE0);
-  gl()->fBindTexture(LOCAL_GL_TEXTURE_2D, mTexture);
+  aGL->fActiveTexture(LOCAL_GL_TEXTURE0);
+  aGL->fBindTexture(LOCAL_GL_TEXTURE_RECTANGLE_ARB, ioSurfaceTexture);
 
-  gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MIN_FILTER, LOCAL_GL_LINEAR);
-  gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MAG_FILTER, LOCAL_GL_LINEAR);
-  gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_WRAP_S, LOCAL_GL_CLAMP_TO_EDGE);
-  gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_WRAP_T, LOCAL_GL_CLAMP_TO_EDGE);
+  aGL->fTexParameteri(LOCAL_GL_TEXTURE_RECTANGLE_ARB, LOCAL_GL_TEXTURE_MIN_FILTER, LOCAL_GL_LINEAR);
+  aGL->fTexParameteri(LOCAL_GL_TEXTURE_RECTANGLE_ARB, LOCAL_GL_TEXTURE_MAG_FILTER, LOCAL_GL_LINEAR);
+  aGL->fTexParameteri(LOCAL_GL_TEXTURE_RECTANGLE_ARB, LOCAL_GL_TEXTURE_WRAP_S, LOCAL_GL_CLAMP_TO_EDGE);
+  aGL->fTexParameteri(LOCAL_GL_TEXTURE_RECTANGLE_ARB, LOCAL_GL_TEXTURE_WRAP_T, LOCAL_GL_CLAMP_TO_EDGE);
+
+  RefPtr<MacIOSurface> ioSurface = MacIOSurface::IOSurfaceContextGetSurface((CGContextRef)aCGIOSurfaceContext);
+  void *nativeCtx = aGL->GetNativeData(GLContext::NativeGLContext);
+
+  ioSurface->CGLTexImageIOSurface2D(nativeCtx,
+                                    LOCAL_GL_RGBA, LOCAL_GL_BGRA,
+                                    LOCAL_GL_UNSIGNED_INT_8_8_8_8_REV, 0);
+
+  aGL->fBindTexture(LOCAL_GL_TEXTURE_RECTANGLE_ARB, 0);
+
+  return ioSurfaceTexture;
 }
+
+#else
+static GLuint
+MakeIOSurfaceTexture(void* aCGIOSurfaceContext, mozilla::gl::GLContext* aGL)
+{
+  NS_RUNTIMEABORT("Not implemented");
+  return 0;
+}
+#endif
 
 /**
  * Following UpdateSurface(), mTexture on context this->gl() should contain the data we want,
@@ -156,16 +195,12 @@ CanvasLayerOGL::UpdateSurface()
         mTexture == 0)
     {
       mOGLManager->MakeCurrent();
-      MakeTexture();
+      MakeTextureIfNeeded(gl(), mTexture);
     }
   } else {
     nsRefPtr<gfxASurface> updatedAreaSurface;
 
-    if (mDrawTarget) {
-      // TODO: This is suboptimal - We should have direct handling for the surface types instead of
-      // going via a gfxASurface.
-      updatedAreaSurface = gfxPlatform::GetPlatform()->GetThebesSurfaceForDrawTarget(mDrawTarget);
-    } else if (mCanvasSurface) {
+    if (mCanvasSurface) {
       updatedAreaSurface = mCanvasSurface;
     } else if (mCanvasGLContext) {
       gfxIntSize size(mBounds.width, mBounds.height);
@@ -205,10 +240,10 @@ CanvasLayerOGL::RenderLayer(int aPreviousDestination,
   gl()->fActiveTexture(LOCAL_GL_TEXTURE0);
 
   if (mTexture) {
-    gl()->fBindTexture(LOCAL_GL_TEXTURE_2D, mTexture);
+    gl()->fBindTexture(mTextureTarget, mTexture);
   }
 
-  ShaderProgramOGL *program = nsnull;
+  ShaderProgramOGL *program = nullptr;
 
   bool useGLContext = mCanvasGLContext &&
     mCanvasGLContext->GetContextType() == gl()->GetContextType();
@@ -225,13 +260,8 @@ CanvasLayerOGL::RenderLayer(int aPreviousDestination,
     
     drawRect.IntersectRect(drawRect, GetEffectiveVisibleRegion().GetBounds());
 
-    nsRefPtr<gfxASurface> surf = mCanvasSurface;
-    if (mDrawTarget) {
-      surf = gfxPlatform::GetPlatform()->GetThebesSurfaceForDrawTarget(mDrawTarget);
-    }
-
     mLayerProgram =
-      gl()->UploadSurfaceToTexture(surf,
+      gl()->UploadSurfaceToTexture(mCanvasSurface,
                                    nsIntRect(0, 0, drawRect.width, drawRect.height),
                                    mTexture,
                                    true,
@@ -251,6 +281,10 @@ CanvasLayerOGL::RenderLayer(int aPreviousDestination,
   gl()->ApplyFilterToBoundTexture(mFilter);
 
   program->Activate();
+  if (mLayerProgram == gl::RGBARectLayerProgramType) {
+    // This is used by IOSurface that use 0,0...w,h coordinate rather then 0,0..1,1.
+    program->SetTexCoordMultiplier(mDrawTarget->GetSize().width, mDrawTarget->GetSize().height);
+  }
   program->SetLayerQuadRect(drawRect);
   program->SetLayerTransform(GetEffectiveTransform());
   program->SetLayerOpacity(GetEffectiveOpacity());
@@ -284,15 +318,21 @@ CanvasLayerOGL::CleanupResources()
   }
 }
 
+static bool
+IsValidSharedTexDescriptor(const SurfaceDescriptor& aDescriptor)
+{
+  return aDescriptor.type() == SurfaceDescriptor::TSharedTextureDescriptor;
+}
 
 ShadowCanvasLayerOGL::ShadowCanvasLayerOGL(LayerManagerOGL* aManager)
-  : ShadowCanvasLayer(aManager, nsnull)
+  : ShadowCanvasLayer(aManager, nullptr)
   , LayerOGL(aManager)
   , mNeedsYFlip(false)
+  , mTexture(0)
 {
   mImplData = static_cast<LayerOGL*>(this);
 }
- 
+
 ShadowCanvasLayerOGL::~ShadowCanvasLayerOGL()
 {}
 
@@ -305,12 +345,12 @@ ShadowCanvasLayerOGL::Initialize(const Data& aData)
 void
 ShadowCanvasLayerOGL::Init(const CanvasSurface& aNewFront, bool needYFlip)
 {
-  nsRefPtr<gfxASurface> surf = ShadowLayerForwarder::OpenDescriptor(aNewFront);
+  AutoOpenSurface autoSurf(OPEN_READ_ONLY, aNewFront);
 
   mNeedsYFlip = needYFlip;
 
-  mTexImage = gl()->CreateTextureImage(surf->GetSize(),
-                                       surf->GetContentType(),
+  mTexImage = gl()->CreateTextureImage(autoSurf.Size(),
+                                       autoSurf.ContentType(),
                                        LOCAL_GL_CLAMP_TO_EDGE,
                                        mNeedsYFlip ? TextureImage::NeedsYFlip : TextureImage::NoFlags);
 }
@@ -320,24 +360,45 @@ ShadowCanvasLayerOGL::Swap(const CanvasSurface& aNewFront,
                            bool needYFlip,
                            CanvasSurface* aNewBack)
 {
-  if (!mDestroyed) {
-    nsRefPtr<gfxASurface> surf = ShadowLayerForwarder::OpenDescriptor(aNewFront);
-    gfxIntSize sz = surf->GetSize();
+  if (mDestroyed) {
+    *aNewBack = aNewFront;
+    return;
+  }
+
+  if (IsValidSharedTexDescriptor(aNewFront)) {
+    MakeTextureIfNeeded(gl(), mTexture);
+    if (!IsValidSharedTexDescriptor(mFrontBufferDescriptor)) {
+      mFrontBufferDescriptor = SharedTextureDescriptor(TextureImage::ThreadShared, 0, nsIntSize(0, 0), false);
+    }
+    *aNewBack = mFrontBufferDescriptor;
+    mFrontBufferDescriptor = aNewFront;
+    mNeedsYFlip = needYFlip;
+  } else {
+    AutoOpenSurface autoSurf(OPEN_READ_ONLY, aNewFront);
+    gfxIntSize sz = autoSurf.Size();
     if (!mTexImage || mTexImage->GetSize() != sz ||
-        mTexImage->GetContentType() != surf->GetContentType()) {
+        mTexImage->GetContentType() != autoSurf.ContentType()) {
       Init(aNewFront, needYFlip);
     }
     nsIntRegion updateRegion(nsIntRect(0, 0, sz.width, sz.height));
-    mTexImage->DirectUpdate(surf, updateRegion);
+    mTexImage->DirectUpdate(autoSurf.Get(), updateRegion);
+    *aNewBack = aNewFront;
   }
-
-  *aNewBack = aNewFront;
 }
 
 void
 ShadowCanvasLayerOGL::DestroyFrontBuffer()
 {
-  mTexImage = nsnull;
+  mTexImage = nullptr;
+  if (mTexture) {
+    gl()->MakeCurrent();
+    gl()->fDeleteTextures(1, &mTexture);
+  }
+  if (IsValidSharedTexDescriptor(mFrontBufferDescriptor)) {
+    SharedTextureDescriptor texDescriptor = mFrontBufferDescriptor.get_SharedTextureDescriptor();
+    gl()->ReleaseSharedHandle(texDescriptor.shareType(), texDescriptor.handle());
+    mFrontBufferDescriptor = SurfaceDescriptor();
+  }
 }
 
 void
@@ -351,7 +412,7 @@ ShadowCanvasLayerOGL::Destroy()
 {
   if (!mDestroyed) {
     mDestroyed = true;
-    mTexImage = nsnull;
+    DestroyFrontBuffer();
   }
 }
 
@@ -365,14 +426,14 @@ void
 ShadowCanvasLayerOGL::RenderLayer(int aPreviousFrameBuffer,
                                   const nsIntPoint& aOffset)
 {
+  if (!mTexImage && !IsValidSharedTexDescriptor(mFrontBufferDescriptor)) {
+    return;
+  }
+
   mOGLManager->MakeCurrent();
 
-  ShaderProgramOGL *program =
-    mOGLManager->GetProgram(mTexImage->GetShaderProgramType(),
-                            GetMaskLayer());
-
-
   gfx3DMatrix effectiveTransform = GetEffectiveTransform();
+  gfxPattern::GraphicsFilter filter = mFilter;
 #ifdef ANDROID
   // Bug 691354
   // Using the LINEAR filter we get unexplained artifacts.
@@ -380,14 +441,19 @@ ShadowCanvasLayerOGL::RenderLayer(int aPreviousFrameBuffer,
   gfxMatrix matrix;
   bool is2D = GetEffectiveTransform().Is2D(&matrix);
   if (is2D && !matrix.HasNonTranslationOrFlip()) {
-    mTexImage->SetFilter(gfxPattern::FILTER_NEAREST);
-  } else {
-    mTexImage->SetFilter(mFilter);
+    filter = gfxPattern::FILTER_NEAREST;
   }
-#else
-  mTexImage->SetFilter(mFilter);
 #endif
 
+  ShaderProgramOGL *program;
+  if (IsValidSharedTexDescriptor(mFrontBufferDescriptor)) {
+    program = mOGLManager->GetBasicLayerProgram(CanUseOpaqueSurface(),
+                                                true,
+                                                GetMaskLayer() ? Mask2d : MaskNone);
+  } else {
+    program = mOGLManager->GetProgram(mTexImage->GetShaderProgramType(),
+                                      GetMaskLayer());
+  }
 
   program->Activate();
   program->SetLayerTransform(effectiveTransform);
@@ -396,29 +462,47 @@ ShadowCanvasLayerOGL::RenderLayer(int aPreviousFrameBuffer,
   program->SetTextureUnit(0);
   program->LoadMask(GetMaskLayer());
 
-  mTexImage->BeginTileIteration();
-  if (gl()->CanUploadNonPowerOfTwo()) {
-    do {
-      TextureImage::ScopedBindTextureAndApplyFilter texBind(mTexImage, LOCAL_GL_TEXTURE0);
-      program->SetLayerQuadRect(mTexImage->GetTileRect());
-      mOGLManager->BindAndDrawQuad(program, mNeedsYFlip); // FIXME flip order of tiles?
-    } while (mTexImage->NextTile());
+  if (IsValidSharedTexDescriptor(mFrontBufferDescriptor)) {
+    // Shared texture handle rendering path, single texture rendering
+    SharedTextureDescriptor texDescriptor = mFrontBufferDescriptor.get_SharedTextureDescriptor();
+    gl()->fActiveTexture(LOCAL_GL_TEXTURE0);
+    gl()->fBindTexture(LOCAL_GL_TEXTURE_2D, mTexture);
+    if (!gl()->AttachSharedHandle(texDescriptor.shareType(), texDescriptor.handle())) {
+      NS_ERROR("Failed to attach shared texture handle");
+      return;
+    }
+    gl()->ApplyFilterToBoundTexture(filter);
+    program->SetLayerQuadRect(nsIntRect(nsIntPoint(0, 0), texDescriptor.size()));
+    mOGLManager->BindAndDrawQuad(program, mNeedsYFlip);
+    gl()->DetachSharedHandle(texDescriptor.shareType(), texDescriptor.handle());
+    gl()->fBindTexture(LOCAL_GL_TEXTURE_2D, 0);
   } else {
-    do {
-      TextureImage::ScopedBindTextureAndApplyFilter texBind(mTexImage, LOCAL_GL_TEXTURE0);
-      program->SetLayerQuadRect(mTexImage->GetTileRect());
-      // We can't use BindAndDrawQuad because that always uploads the whole texture from 0.0f -> 1.0f
-      // in x and y. We use BindAndDrawQuadWithTextureRect to actually draw a subrect of the texture
-      // We need to reset the origin to 0,0 from the tile rect because the tile originates at 0,0 in the
-      // actual texture, even though its origin in the composed (tiled) texture is not 0,0
-      // FIXME: we need to handle mNeedsYFlip, Bug #728625
-      mOGLManager->BindAndDrawQuadWithTextureRect(program,
-                                                  nsIntRect(0, 0, mTexImage->GetTileRect().width,
-                                                                  mTexImage->GetTileRect().height),
-                                                  mTexImage->GetTileRect().Size(),
-                                                  mTexImage->GetWrapMode(),
-                                                  mNeedsYFlip);
-    } while (mTexImage->NextTile());
+    // Tiled texture image rendering path
+    mTexImage->SetFilter(filter);
+    mTexImage->BeginTileIteration();
+    if (gl()->CanUploadNonPowerOfTwo()) {
+      do {
+        TextureImage::ScopedBindTextureAndApplyFilter texBind(mTexImage, LOCAL_GL_TEXTURE0);
+        program->SetLayerQuadRect(mTexImage->GetTileRect());
+        mOGLManager->BindAndDrawQuad(program, mNeedsYFlip); // FIXME flip order of tiles?
+      } while (mTexImage->NextTile());
+    } else {
+      do {
+        TextureImage::ScopedBindTextureAndApplyFilter texBind(mTexImage, LOCAL_GL_TEXTURE0);
+        program->SetLayerQuadRect(mTexImage->GetTileRect());
+        // We can't use BindAndDrawQuad because that always uploads the whole texture from 0.0f -> 1.0f
+        // in x and y. We use BindAndDrawQuadWithTextureRect to actually draw a subrect of the texture
+        // We need to reset the origin to 0,0 from the tile rect because the tile originates at 0,0 in the
+        // actual texture, even though its origin in the composed (tiled) texture is not 0,0
+        // FIXME: we need to handle mNeedsYFlip, Bug #728625
+        mOGLManager->BindAndDrawQuadWithTextureRect(program,
+                                                    nsIntRect(0, 0, mTexImage->GetTileRect().width,
+                                                                    mTexImage->GetTileRect().height),
+                                                    mTexImage->GetTileRect().Size(),
+                                                    mTexImage->GetWrapMode(),
+                                                    mNeedsYFlip);
+      } while (mTexImage->NextTile());
+    }
   }
 }
 

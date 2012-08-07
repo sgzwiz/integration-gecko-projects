@@ -17,6 +17,7 @@
 #include "nsTArray.h"
 #include "rdf.h"
 #include "rdfutil.h"
+#include "mozilla/Attributes.h"
 
 #include "rdfIDataSource.h"
 
@@ -199,7 +200,7 @@ nsRDFXMLSerializer::EnsureNewPrefix()
             ++iter;
         } 
     } while (!isNewPrefix);
-    nsIAtom* outPrefix = nsnull;
+    nsIAtom* outPrefix = nullptr;
     prefix.swap(outPrefix);
     return outPrefix;
 }
@@ -407,7 +408,7 @@ nsRDFXMLSerializer::SerializeChildAssertion(nsIOutputStream* aStream,
     nsCOMPtr<nsIRDFInt> number;
     nsCOMPtr<nsIRDFDate> date;
 
-    if ((resource = do_QueryInterface(aValue)) != nsnull) {
+    if ((resource = do_QueryInterface(aValue)) != nullptr) {
         nsCAutoString uri;
         resource->GetValueUTF8(uri);
 
@@ -425,7 +426,7 @@ nsRDFXMLSerializer::SerializeChildAssertion(nsIOutputStream* aStream,
 
         goto no_close_tag;
     }
-    else if ((literal = do_QueryInterface(aValue)) != nsnull) {
+    else if ((literal = do_QueryInterface(aValue)) != nullptr) {
         const PRUnichar *value;
         literal->GetValueConst(&value);
         NS_ConvertUTF16toUTF8 s(value);
@@ -437,7 +438,7 @@ nsRDFXMLSerializer::SerializeChildAssertion(nsIOutputStream* aStream,
         rv = rdf_BlockingWrite(aStream, s);
         if (NS_FAILED(rv)) return rv;
     }
-    else if ((number = do_QueryInterface(aValue)) != nsnull) {
+    else if ((number = do_QueryInterface(aValue)) != nullptr) {
         PRInt32 value;
         number->GetValue(&value);
 
@@ -450,7 +451,7 @@ nsRDFXMLSerializer::SerializeChildAssertion(nsIOutputStream* aStream,
         rv = rdf_BlockingWrite(aStream, n);
         if (NS_FAILED(rv)) return rv;
     }
-    else if ((date = do_QueryInterface(aValue)) != nsnull) {
+    else if ((date = do_QueryInterface(aValue)) != nullptr) {
         PRTime value;
         date->GetValue(&value);
 
@@ -517,7 +518,7 @@ nsRDFXMLSerializer::SerializeProperty(nsIOutputStream* aStream,
         if (!needsChild) {
             assertions->HasMoreElements(&needsChild);
             if (!needsChild) {
-                const PRUnichar* literalVal = nsnull;
+                const PRUnichar* literalVal = nullptr;
                 literal->GetValueConst(&literalVal);
                 if (literalVal) {
                     for (; *literalVal; literalVal++) {
@@ -741,7 +742,7 @@ static const char kRDFLIOpen[] = "    <RDF:li";
                                     sizeof(kRDFLIOpen) - 1); 
     if (NS_FAILED(rv)) return rv;
 
-    if ((resource = do_QueryInterface(aMember)) != nsnull) {
+    if ((resource = do_QueryInterface(aMember)) != nullptr) {
         nsCAutoString uri;
         resource->GetValueUTF8(uri);
 
@@ -759,7 +760,7 @@ static const char kRDFLIOpen[] = "    <RDF:li";
 
         goto no_close_tag;
     }
-    else if ((literal = do_QueryInterface(aMember)) != nsnull) {
+    else if ((literal = do_QueryInterface(aMember)) != nullptr) {
         const PRUnichar *value;
         literal->GetValueConst(&value);
 static const char kRDFLIOpenGT[] = ">";
@@ -774,7 +775,7 @@ static const char kRDFLIOpenGT[] = ">";
         rv = rdf_BlockingWrite(aStream, s);
         if (NS_FAILED(rv)) return rv;
     }
-    else if ((number = do_QueryInterface(aMember)) != nsnull) {
+    else if ((number = do_QueryInterface(aMember)) != nullptr) {
         PRInt32 value;
         number->GetValue(&value);
 
@@ -787,7 +788,7 @@ static const char kRDFLIOpenGT[] = ">";
         rv = rdf_BlockingWrite(aStream, n);
         if (NS_FAILED(rv)) return rv;
     }
-    else if ((date = do_QueryInterface(aMember)) != nsnull) {
+    else if ((date = do_QueryInterface(aMember)) != nullptr) {
         PRTime value;
         date->GetValue(&value);
 
@@ -906,7 +907,7 @@ nsRDFXMLSerializer::SerializeContainer(nsIOutputStream* aStream,
             elements->GetNext(getter_AddRefs(isupports));
 
             nsCOMPtr<nsIRDFNode> element = do_QueryInterface(isupports);
-            NS_ASSERTION(element != nsnull, "not an nsIRDFNode");
+            NS_ASSERTION(element != nullptr, "not an nsIRDFNode");
             if (! element)
                 continue;
 
@@ -1008,7 +1009,7 @@ nsRDFXMLSerializer::SerializeEpilogue(nsIOutputStream* aStream)
     return rdf_BlockingWrite(aStream, NS_LITERAL_CSTRING("</RDF:RDF>\n"));
 }
 
-class QNameCollector : public rdfITripleVisitor {
+class QNameCollector MOZ_FINAL : public rdfITripleVisitor {
 public:
     NS_DECL_ISUPPORTS
     NS_DECL_RDFITRIPLEVISITOR
@@ -1030,14 +1031,14 @@ QNameCollector::Visit(nsIRDFNode* aSubject, nsIRDFResource* aPredicate,
             // ignore error
             return NS_OK;
         }
-        if (mParent->mQNames.Get(resType, nsnull)) {
+        if (mParent->mQNames.Get(resType, nullptr)) {
             return NS_OK;
         }
         mParent->RegisterQName(resType);
         return NS_OK;
     }
 
-    if (mParent->mQNames.Get(aPredicate, nsnull)) {
+    if (mParent->mQNames.Get(aPredicate, nullptr)) {
         return NS_OK;
     }
     if (aPredicate == mParent->kRDF_instanceOf ||

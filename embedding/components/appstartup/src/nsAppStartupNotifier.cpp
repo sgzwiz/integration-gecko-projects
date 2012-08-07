@@ -73,14 +73,14 @@ NS_IMETHODIMP nsAppStartupNotifier::Observe(nsISupports *aSubject, const char *a
                     nsCOMPtr<nsIObserver> startupObserver =
                         do_QueryInterface(startupInstance, &rv);
                     if (NS_SUCCEEDED(rv)) {
-                        rv = startupObserver->Observe(nsnull, aTopic, nsnull);
+                        rv = startupObserver->Observe(nullptr, aTopic, nullptr);
      
                         // mainly for debugging if you want to know if your observer worked.
                         NS_ASSERTION(NS_SUCCEEDED(rv), "Startup Observer failed!\n");
                     }
                 }
                 else {
-                  #ifdef NS_DEBUG
+                  #ifdef DEBUG
                     nsCAutoString warnStr("Cannot create startup observer : ");
                     warnStr += contractId.get();
                     NS_WARNING(warnStr.get());

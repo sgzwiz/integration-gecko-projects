@@ -9,6 +9,9 @@
 
 #include "AccIterator.h"
 
+namespace mozilla {
+namespace a11y {
+
 /**
  * This class is used to return Relation objects from functions.  A copy
  * constructor doesn't work here because we need to mutate the old relation to
@@ -30,7 +33,7 @@ struct RelationCopyHelper
 class Relation
 {
 public:
-  Relation() : mFirstIter(nsnull), mLastIter(nsnull) { }
+  Relation() : mFirstIter(nullptr), mLastIter(nullptr) { }
 
   Relation(const RelationCopyHelper aRelation) :
     mFirstIter(aRelation.mFirstIter), mLastIter(aRelation.mLastIter) { }
@@ -38,11 +41,11 @@ public:
   Relation(AccIterable* aIter) : mFirstIter(aIter), mLastIter(aIter) { }
 
   Relation(Accessible* aAcc) :
-    mFirstIter(nsnull), mLastIter(nsnull)
+    mFirstIter(nullptr), mLastIter(nullptr)
     { AppendTarget(aAcc); }
 
   Relation(DocAccessible* aDocument, nsIContent* aContent) :
-    mFirstIter(nsnull), mLastIter(nsnull)
+    mFirstIter(nullptr), mLastIter(nullptr)
     { AppendTarget(aDocument, aContent); }
 
   Relation& operator = (const RelationCopyHelper& aRH)
@@ -98,14 +101,14 @@ public:
    */
   inline Accessible* Next()
   {
-    Accessible* target = nsnull;
+    Accessible* target = nullptr;
 
     // a trick nsAutoPtr deletes what it used to point to when assigned to
     while (mFirstIter && !(target = mFirstIter->Next()))
       mFirstIter = mFirstIter->mNextIter;
 
     if (!mFirstIter)
-      mLastIter = nsnull;
+      mLastIter = nullptr;
 
     return target;
   }
@@ -116,6 +119,9 @@ private:
   nsAutoPtr<AccIterable> mFirstIter;
   AccIterable* mLastIter;
 };
+
+} // namespace a11y
+} // namespace mozilla
 
 #endif
 

@@ -6,6 +6,8 @@
 // Make sure the order of included headers
 #include "base/basictypes.h"
 #include "nspr/prtypes.h"
+#include "base/message_loop.h"
+#include "base/task.h"
 
 #include "mozilla/Hal.h"
 #include "nsAppShell.h"
@@ -20,6 +22,9 @@
 #include "nsDOMNotifyPaintEvent.h"
 #include "nsIDOMClientRectList.h"
 #include "nsIDOMClientRect.h"
+#include "nsIDOMWakeLockListener.h"
+#include "nsIPowerManagerService.h"
+#include "nsFrameManager.h"
 
 #include "mozilla/Services.h"
 #include "mozilla/unused.h"
@@ -53,15 +58,43 @@
 using namespace mozilla;
 
 #ifdef PR_LOGGING
-PRLogModuleInfo *gWidgetLog = nsnull;
+PRLogModuleInfo *gWidgetLog = nullptr;
 #endif
 
-nsIGeolocationUpdate *gLocationCallback = nsnull;
+nsIGeolocationUpdate *gLocationCallback = nullptr;
 nsAutoPtr<mozilla::AndroidGeckoEvent> gLastSizeChange;
 
-nsAppShell *nsAppShell::gAppShell = nsnull;
+nsAppShell *nsAppShell::gAppShell = nullptr;
 
 NS_IMPL_ISUPPORTS_INHERITED1(nsAppShell, nsBaseAppShell, nsIObserver)
+
+class ScreenshotRunnable : public nsRunnable {
+public:
+    ScreenshotRunnable(nsIAndroidBrowserApp* aBrowserApp, int aTabId, nsTArray<nsIntPoint>& aPoints, int aToken, RefCountedJavaObject* aBuffer):
+        mBrowserApp(aBrowserApp), mPoints(aPoints), mTabId(aTabId), mToken(aToken), mBuffer(aBuffer) {}
+
+    virtual nsresult Run() {
+        nsCOMPtr<nsIDOMWindow> domWindow;
+        nsCOMPtr<nsIBrowserTab> tab;
+        mBrowserApp->GetBrowserTab(mTabId, getter_AddRefs(tab));
+        if (!tab)
+            return NS_OK;
+
+        tab->GetWindow(getter_AddRefs(domWindow));
+        if (!domWindow)
+            return NS_OK;
+
+        NS_ASSERTION(mPoints.Length() == 5, "Screenshot event does not have enough coordinates");
+
+        AndroidBridge::Bridge()->TakeScreenshot(domWindow, mPoints[0].x, mPoints[0].y, mPoints[1].x, mPoints[1].y, mPoints[2].x, mPoints[2].y, mPoints[3].x, mPoints[3].y, mPoints[4].x, mPoints[4].y, mTabId, mToken, mBuffer->GetObject());
+        return NS_OK;
+    }
+private:
+    nsCOMPtr<nsIAndroidBrowserApp> mBrowserApp;
+    nsTArray<nsIntPoint> mPoints;
+    int mTabId, mToken;
+    nsRefPtr<RefCountedJavaObject> mBuffer;
+};
 
 class AfterPaintListener : public nsIDOMEventListener {
   public:
@@ -81,31 +114,32 @@ class AfterPaintListener : public nsIDOMEventListener {
     void Unregister() {
         if (mEventTarget)
             mEventTarget->RemoveEventListener(NS_LITERAL_STRING("MozAfterPaint"), this, false);
-        mEventTarget = nsnull;
+        mEventTarget = nullptr;
     }
 
     virtual nsresult HandleEvent(nsIDOMEvent* aEvent) {
+        PRUint32 generation = nsFrameManager::GetGlobalGenerationNumber();
+        if (mLastGeneration == generation) {
+            // the frame tree has not changed since our last AfterPaint
+            // so we can drop this event.
+            return NS_OK;
+        }
+
+        mLastGeneration = generation;
+
         nsCOMPtr<nsIDOMNotifyPaintEvent> paintEvent = do_QueryInterface(aEvent);
         if (!paintEvent)
             return NS_OK;
 
-        nsCOMPtr<nsIDOMClientRectList> rects;
-        paintEvent->GetClientRects(getter_AddRefs(rects));
-        if (!rects)
-            return NS_OK;
-        PRUint32 length;
-        rects->GetLength(&length);
-        for (PRUint32 i = 0; i < length; ++i) {
-            float top, left, bottom, right;
-            nsCOMPtr<nsIDOMClientRect> rect = rects->GetItemAt(i);
-            if (!rect)
-                continue;
-            rect->GetTop(&top);
-            rect->GetLeft(&left);
-            rect->GetRight(&right);
-            rect->GetBottom(&bottom);
-            AndroidBridge::NotifyPaintedRect(top, left, bottom, right);
-        }
+        nsCOMPtr<nsIDOMClientRect> rect;
+        paintEvent->GetBoundingClientRect(getter_AddRefs(rect));
+        float top, left, bottom, right;
+        rect->GetTop(&top);
+        rect->GetLeft(&left);
+        rect->GetRight(&right);
+        rect->GetBottom(&bottom);
+        __android_log_print(ANDROID_LOG_INFO, "GeckoScreenshot", "rect: %f, %f, %f, %f", top, left, right, bottom);
+        AndroidBridge::NotifyPaintedRect(top, left, bottom, right);
         return NS_OK;
     }
 
@@ -115,28 +149,59 @@ class AfterPaintListener : public nsIDOMEventListener {
     }
 
   private:
+    PRUint32 mLastGeneration;
     nsCOMPtr<nsIDOMEventTarget> mEventTarget;
 };
 
+class WakeLockListener : public nsIDOMMozWakeLockListener {
+ public:
+  NS_DECL_ISUPPORTS;
+
+  nsresult Callback(const nsAString& topic, const nsAString& state) {
+    AndroidBridge::Bridge()->NotifyWakeLockChanged(topic, state);
+    return NS_OK;
+  }
+};
+
 NS_IMPL_ISUPPORTS1(AfterPaintListener, nsIDOMEventListener)
-nsCOMPtr<AfterPaintListener> sAfterPaintListener = nsnull;
+nsCOMPtr<AfterPaintListener> sAfterPaintListener = nullptr;
+
+NS_IMPL_ISUPPORTS1(WakeLockListener, nsIDOMMozWakeLockListener)
+nsCOMPtr<nsIPowerManagerService> sPowerManagerService = nullptr;
+nsCOMPtr<nsIDOMMozWakeLockListener> sWakeLockListener = nullptr;
 
 nsAppShell::nsAppShell()
     : mQueueLock("nsAppShell.mQueueLock"),
       mCondLock("nsAppShell.mCondLock"),
       mQueueCond(mCondLock, "nsAppShell.mQueueCond"),
-      mQueuedDrawEvent(nsnull),
-      mQueuedViewportEvent(nsnull),
+      mQueuedDrawEvent(nullptr),
+      mQueuedViewportEvent(nullptr),
       mAllowCoalescingNextDraw(false)
 {
     gAppShell = this;
     sAfterPaintListener = new AfterPaintListener();
+
+    sPowerManagerService = do_GetService(POWERMANAGERSERVICE_CONTRACTID);
+
+    if (sPowerManagerService) {
+        sWakeLockListener = new WakeLockListener();
+    } else {
+        NS_WARNING("Failed to retrieve PowerManagerService, wakelocks will be broken!");
+    }
+
 }
 
 nsAppShell::~nsAppShell()
 {
-    gAppShell = nsnull;
+    gAppShell = nullptr;
     delete sAfterPaintListener;
+
+    if (sPowerManagerService) {
+        sPowerManagerService->RemoveWakeLockListener(sWakeLockListener);
+
+        sPowerManagerService = nullptr;
+        sWakeLockListener = nullptr;
+    }
 }
 
 void
@@ -151,7 +216,7 @@ nsAppShell::NotifyNativeEvent()
 static const char* kObservedPrefs[] = {
   PREFNAME_MATCH_OS,
   PREFNAME_UA_LOCALE,
-  nsnull
+  nullptr
 };
 
 nsresult
@@ -172,6 +237,9 @@ nsAppShell::Init()
     if (obsServ) {
         obsServ->AddObserver(this, "xpcom-shutdown", false);
     }
+
+    if (sPowerManagerService)
+        sPowerManagerService->AddWakeLockListener(sWakeLockListener);
 
     if (!bridge)
         return rv;
@@ -337,8 +405,8 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
         nsCOMPtr<nsIObserverService> obsServ =
             mozilla::services::GetObserverService();
         NS_NAMED_LITERAL_STRING(minimize, "heap-minimize");
-        obsServ->NotifyObservers(nsnull, "memory-pressure", minimize.get());
-        obsServ->NotifyObservers(nsnull, "application-background", nsnull);
+        obsServ->NotifyObservers(nullptr, "memory-pressure", minimize.get());
+        obsServ->NotifyObservers(nullptr, "application-background", nullptr);
 
         break;
     }
@@ -347,11 +415,11 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
         nsCOMPtr<nsIObserverService> obsServ =
             mozilla::services::GetObserverService();
         NS_NAMED_LITERAL_STRING(context, "shutdown-persist");
-        obsServ->NotifyObservers(nsnull, "quit-application-granted", nsnull);
-        obsServ->NotifyObservers(nsnull, "quit-application-forced", nsnull);
-        obsServ->NotifyObservers(nsnull, "profile-change-net-teardown", context.get());
-        obsServ->NotifyObservers(nsnull, "profile-change-teardown", context.get());
-        obsServ->NotifyObservers(nsnull, "profile-before-change", context.get());
+        obsServ->NotifyObservers(nullptr, "quit-application-granted", nullptr);
+        obsServ->NotifyObservers(nullptr, "quit-application-forced", nullptr);
+        obsServ->NotifyObservers(nullptr, "profile-change-net-teardown", context.get());
+        obsServ->NotifyObservers(nullptr, "profile-change-teardown", context.get());
+        obsServ->NotifyObservers(nullptr, "profile-before-change", context.get());
         nsCOMPtr<nsIAppStartup> appSvc = do_GetService("@mozilla.org/toolkit/app-startup;1");
         if (appSvc)
             appSvc->Quit(nsIAppStartup::eForceQuit);
@@ -364,7 +432,7 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
             // background status
             nsCOMPtr<nsIObserverService> obsServ =
                 mozilla::services::GetObserverService();
-            obsServ->NotifyObservers(nsnull, "application-background", nsnull);
+            obsServ->NotifyObservers(nullptr, "application-background", nullptr);
 
             // If we are OOM killed with the disk cache enabled, the entire
             // cache will be cleared (bug 105843), so shut down the cache here
@@ -384,7 +452,7 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
             if (prefBranch)
                 prefBranch->SetIntPref("recent_crashes", 0);
 
-            prefs->SavePrefFile(nsnull);
+            prefs->SavePrefFile(nullptr);
         }
 
         break;
@@ -396,7 +464,7 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
 
         nsCOMPtr<nsIObserverService> obsServ =
             mozilla::services::GetObserverService();
-        obsServ->NotifyObservers(nsnull, "application-foreground", nsnull);
+        obsServ->NotifyObservers(nullptr, "application-foreground", nullptr);
 
         break;
     }
@@ -425,21 +493,13 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
             break;
 
         PRInt32 token = curEvent->Flags();
-
-        nsCOMPtr<nsIDOMWindow> domWindow;
-        nsCOMPtr<nsIBrowserTab> tab;
-        mBrowserApp->GetBrowserTab(curEvent->MetaState(), getter_AddRefs(tab));
-        if (!tab)
-            break;
-
-        tab->GetWindow(getter_AddRefs(domWindow));
-        if (!domWindow)
-            break;
-
-        float scale = 1.0;
+        PRInt32 tabId = curEvent->MetaState();
         nsTArray<nsIntPoint> points = curEvent->Points();
-        NS_ASSERTION(points.Length() == 4, "Screenshot event does not have enough coordinates");
-        bridge->TakeScreenshot(domWindow, points[0].x, points[0].y, points[1].x, points[1].y, points[3].x, points[3].y, curEvent->MetaState(), scale, curEvent->Flags());
+        RefCountedJavaObject* buffer = curEvent->ByteBuffer();
+        nsCOMPtr<ScreenshotRunnable> sr = 
+            new ScreenshotRunnable(mBrowserApp, tabId, points, token, buffer);
+        MessageLoop::current()->PostIdleTask(
+            FROM_HERE, NewRunnableMethod(sr.get(), &ScreenshotRunnable::Run));
         break;
     }
 
@@ -455,7 +515,7 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
         const NS_ConvertUTF16toUTF8 topic(curEvent->Characters());
         const nsPromiseFlatString& data = PromiseFlatString(curEvent->CharactersExtra());
 
-        obsServ->NotifyObservers(nsnull, topic.get(), data.get());
+        obsServ->NotifyObservers(nullptr, topic.get(), data.get());
         break;
     }
 
@@ -480,7 +540,7 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
             uri,
             flag ? flag : ""
         };
-        nsresult rv = cmdline->Init(4, const_cast<char **>(argv), nsnull, nsICommandLine::STATE_REMOTE_AUTO);
+        nsresult rv = cmdline->Init(4, const_cast<char **>(argv), nullptr, nsICommandLine::STATE_REMOTE_AUTO);
         if (NS_SUCCEEDED(rv))
             cmdline->Run();
         nsMemory::Free(uri);
@@ -523,7 +583,7 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
             // to foreground status
             nsCOMPtr<nsIObserverService> obsServ =
                 mozilla::services::GetObserverService();
-            obsServ->NotifyObservers(nsnull, "application-foreground", nsnull);
+            obsServ->NotifyObservers(nullptr, "application-foreground", nullptr);
         }
         break;
     }
@@ -573,15 +633,15 @@ nsAppShell::ResendLastResizeEvent(nsWindow* aDest) {
 AndroidGeckoEvent*
 nsAppShell::PopNextEvent()
 {
-    AndroidGeckoEvent *ae = nsnull;
+    AndroidGeckoEvent *ae = nullptr;
     MutexAutoLock lock(mQueueLock);
     if (mEventQueue.Length()) {
         ae = mEventQueue[0];
         mEventQueue.RemoveElementAt(0);
         if (mQueuedDrawEvent == ae) {
-            mQueuedDrawEvent = nsnull;
+            mQueuedDrawEvent = nullptr;
         } else if (mQueuedViewportEvent == ae) {
-            mQueuedViewportEvent = nsnull;
+            mQueuedViewportEvent = nullptr;
         }
     }
 
@@ -591,7 +651,7 @@ nsAppShell::PopNextEvent()
 AndroidGeckoEvent*
 nsAppShell::PeekNextEvent()
 {
-    AndroidGeckoEvent *ae = nsnull;
+    AndroidGeckoEvent *ae = nullptr;
     MutexAutoLock lock(mQueueLock);
     if (mEventQueue.Length()) {
         ae = mEventQueue[0];
@@ -631,7 +691,7 @@ nsAppShell::PostEvent(AndroidGeckoEvent *ae)
         case AndroidGeckoEvent::COMPOSITOR_RESUME:
             // Give priority to these events, but maintain their order wrt each other.
             {
-                int i = 0;
+                PRUint32 i = 0;
                 while (i < mEventQueue.Length() &&
                        (mEventQueue[i]->Type() == AndroidGeckoEvent::COMPOSITOR_PAUSE ||
                         mEventQueue[i]->Type() == AndroidGeckoEvent::COMPOSITOR_RESUME)) {
@@ -674,7 +734,7 @@ nsAppShell::PostEvent(AndroidGeckoEvent *ae)
                 // don't set mQueuedDrawEvent to point to this; that way the
                 // next draw event that comes in won't kill this one.
                 mAllowCoalescingNextDraw = true;
-                mQueuedDrawEvent = nsnull;
+                mQueuedDrawEvent = nullptr;
             } else {
                 mQueuedDrawEvent = ae;
             }
@@ -729,7 +789,7 @@ nsAppShell::PostEvent(AndroidGeckoEvent *ae)
         // so that we don't coalesce future viewport events into the last viewport
         // event we added
         if (!allowCoalescingNextViewport)
-            mQueuedViewportEvent = nsnull;
+            mQueuedViewportEvent = nullptr;
     }
     NotifyNativeEvent();
 }
@@ -742,7 +802,7 @@ nsAppShell::OnResume()
 nsresult
 nsAppShell::AddObserver(const nsAString &aObserverKey, nsIObserver *aObserver)
 {
-    NS_ASSERTION(aObserver != nsnull, "nsAppShell::AddObserver: aObserver is null!");
+    NS_ASSERTION(aObserver != nullptr, "nsAppShell::AddObserver: aObserver is null!");
     mObserversHash.Put(aObserverKey, aObserver);
     return NS_OK;
 }
@@ -754,13 +814,13 @@ class ObserverCaller : public nsRunnable {
 public:
     ObserverCaller(nsIObserver *aObserver, const char *aTopic, const PRUnichar *aData) :
         mObserver(aObserver), mTopic(aTopic), mData(aData) {
-        NS_ASSERTION(aObserver != nsnull, "ObserverCaller: aObserver is null!");
+        NS_ASSERTION(aObserver != nullptr, "ObserverCaller: aObserver is null!");
     }
 
     NS_IMETHOD Run() {
         ALOG("ObserverCaller::Run: observer = %p, topic = '%s')",
              (nsIObserver*)mObserver, mTopic.get());
-        mObserver->Observe(nsnull, mTopic.get(), mData.get());
+        mObserver->Observe(nullptr, mTopic.get(), mData.get());
         return NS_OK;
     }
 
@@ -786,7 +846,7 @@ nsAppShell::CallObserver(const nsAString &aObserverKey, const nsAString &aTopic,
 
     if (NS_IsMainThread()) {
         // This branch will unlikely be hit, have it just in case
-        observer->Observe(nsnull, sTopic.get(), sData.get());
+        observer->Observe(nullptr, sTopic.get(), sData.get());
     } else {
         // Java is not running on main thread, so we have to use NS_DispatchToMainThread
         nsCOMPtr<nsIRunnable> observerCaller = new ObserverCaller(observer, sTopic.get(), sData.get());

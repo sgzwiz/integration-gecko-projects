@@ -3,19 +3,22 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "domstubs.idl"
+#include "nsIDOMEventTarget.idl"
 interface nsIDOMBlob;
 interface nsIDOMDOMRequest;
 interface nsIDOMDeviceStorageCursor;
+interface nsIDOMDeviceStorageChangeEvent;
+interface nsIDOMEventListener;
 
-[scriptable, uuid(05C0D0C8-D698-4CCD-899C-7198A33BD7EC)]
-interface nsIDOMDeviceStorage : nsISupports
+dictionary DeviceStorageEnumerationParameters
 {
-    /*
-     * Hint as to what kind of storage this object is.
-     * May be "external", "shared", or "default".
-     */
-    readonly attribute DOMString type;
+  jsval since;
+};
 
+[scriptable, uuid(3dbe0137-ca73-44c5-bcde-25c297bf7c65), builtinclass]
+interface nsIDOMDeviceStorage : nsIDOMEventTarget
+{
+    attribute nsIDOMEventListener onchange;
     nsIDOMDOMRequest add(in nsIDOMBlob aBlob);
     nsIDOMDOMRequest addNamed(in nsIDOMBlob aBlob, in DOMString aName);
 
@@ -24,12 +27,13 @@ interface nsIDOMDeviceStorage : nsISupports
 
     [implicit_jscontext]
     nsIDOMDOMRequest getEditable(in jsval aName);
-    
+
     [implicit_jscontext]
     nsIDOMDOMRequest delete(in jsval aName);
 
-    nsIDOMDeviceStorageCursor enumerate([optional] in DOMString directory);
+    [optional_argc, implicit_jscontext]
+    nsIDOMDeviceStorageCursor enumerate([optional] in jsval aName, /* DeviceStorageEnumerationParameters */ [optional] in jsval options);
 
-    nsIDOMDeviceStorageCursor enumerateEditable([optional] in DOMString directory);
+    [optional_argc, implicit_jscontext]
+    nsIDOMDeviceStorageCursor enumerateEditable([optional] in jsval aName, /* DeviceStorageEnumerationParameters */ [optional] in jsval options);
 };
-

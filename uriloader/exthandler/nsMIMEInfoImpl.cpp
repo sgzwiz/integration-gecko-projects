@@ -8,7 +8,7 @@
 #include "nsXPIDLString.h"
 #include "nsReadableUtils.h"
 #include "nsStringEnumerator.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIFileURL.h"
 #include "nsEscape.h"
 #include "nsNetUtil.h"
@@ -260,7 +260,7 @@ nsMIMEInfoBase::SetAlwaysAskBeforeHandling(bool aAlwaysAsk)
 
 /* static */
 nsresult 
-nsMIMEInfoBase::GetLocalFileFromURI(nsIURI *aURI, nsILocalFile **aFile)
+nsMIMEInfoBase::GetLocalFileFromURI(nsIURI *aURI, nsIFile **aFile)
 {
   nsresult rv;
 
@@ -349,11 +349,11 @@ nsMIMEInfoBase::InitProcess(nsIFile* aApp, nsresult* aResult)
   nsCOMPtr<nsIProcess> process = do_CreateInstance(NS_PROCESS_CONTRACTID,
                                                    aResult);
   if (NS_FAILED(*aResult))
-    return nsnull;
+    return nullptr;
 
   *aResult = process->Init(aApp);
   if (NS_FAILED(*aResult))
-    return nsnull;
+    return nullptr;
 
   return process.forget();
 }

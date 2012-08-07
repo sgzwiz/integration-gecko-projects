@@ -9,7 +9,6 @@
 #include "nsCacheDevice.h"
 #include "nsIApplicationCache.h"
 #include "nsIApplicationCacheService.h"
-#include "nsILocalFile.h"
 #include "nsIObserver.h"
 #include "mozIStorageConnection.h"
 #include "mozIStorageFunction.h"
@@ -20,11 +19,12 @@
 #include "nsInterfaceHashtable.h"
 #include "nsClassHashtable.h"
 #include "nsWeakReference.h"
+#include "mozilla/Attributes.h"
 
 class nsIURI;
 class nsOfflineCacheDevice;
 
-class nsApplicationCacheNamespace : public nsIApplicationCacheNamespace
+class nsApplicationCacheNamespace MOZ_FINAL : public nsIApplicationCacheNamespace
 {
 public:
   NS_DECL_ISUPPORTS
@@ -38,7 +38,7 @@ private:
   nsCString mData;
 };
 
-class nsOfflineCacheEvictionFunction : public mozIStorageFunction {
+class nsOfflineCacheEvictionFunction MOZ_FINAL : public mozIStorageFunction {
 public:
   NS_DECL_ISUPPORTS
   NS_DECL_MOZISTORAGEFUNCTION
@@ -161,14 +161,21 @@ public:
   nsresult                GetGroupsTimeOrdered(PRUint32 *count,
                                                char ***keys);
 
+  bool                    IsLocked(const nsACString &key);
+  void                    Lock(const nsACString &key);
+  void                    Unlock(const nsACString &key);
+
   /**
    * Preference accessors
    */
 
-  void                    SetCacheParentDirectory(nsILocalFile * parentDir);
+  void                    SetCacheParentDirectory(nsIFile * parentDir);
   void                    SetCapacity(PRUint32  capacity);
+  void                    SetAutoShutdown() { mAutoShutdown = true; }
+  bool                    AutoShutdown(nsIApplicationCache * aAppCache);
 
-  nsILocalFile *          CacheDirectory() { return mCacheDirectory; }
+  nsIFile *               BaseDirectory() { return mBaseDirectory; }
+  nsIFile *               CacheDirectory() { return mCacheDirectory; }
   PRUint32                CacheCapacity() { return mCacheCapacity; }
   PRUint32                CacheSize();
   PRUint32                EntryCount();
@@ -182,7 +189,7 @@ private:
 
   static bool GetStrictFileOriginPolicy();
 
-  bool     Initialized() { return mDB != nsnull; }
+  bool     Initialized() { return mDB != nullptr; }
 
   nsresult InitActiveCaches();
   nsresult UpdateEntry(nsCacheEntry *entry);
@@ -233,7 +240,6 @@ private:
   nsCOMPtr<mozIStorageStatement>  mStatement_EntryCount;
   nsCOMPtr<mozIStorageStatement>  mStatement_UpdateEntry;
   nsCOMPtr<mozIStorageStatement>  mStatement_UpdateEntrySize;
-  nsCOMPtr<mozIStorageStatement>  mStatement_UpdateEntryFlags;
   nsCOMPtr<mozIStorageStatement>  mStatement_DeleteEntry;
   nsCOMPtr<mozIStorageStatement>  mStatement_FindEntry;
   nsCOMPtr<mozIStorageStatement>  mStatement_BindEntry;
@@ -252,13 +258,16 @@ private:
   nsCOMPtr<mozIStorageStatement>  mStatement_EnumerateGroups;
   nsCOMPtr<mozIStorageStatement>  mStatement_EnumerateGroupsTimeOrder;
 
-  nsCOMPtr<nsILocalFile>          mCacheDirectory;
+  nsCOMPtr<nsIFile>               mBaseDirectory;
+  nsCOMPtr<nsIFile>               mCacheDirectory;
   PRUint32                        mCacheCapacity; // in bytes
   PRInt32                         mDeltaCounter;
+  bool                            mAutoShutdown;
 
   nsInterfaceHashtable<nsCStringHashKey, nsIWeakReference> mCaches;
   nsClassHashtable<nsCStringHashKey, nsCString> mActiveCachesByGroup;
   nsTHashtable<nsCStringHashKey> mActiveCaches;
+  nsTHashtable<nsCStringHashKey> mLockedEntries;
 
   nsCOMPtr<nsIThread> mInitThread;
 };

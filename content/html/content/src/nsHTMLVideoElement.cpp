@@ -12,9 +12,6 @@
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsSize.h"
-#include "nsIFrame.h"
-#include "nsIDocument.h"
-#include "nsIDOMDocument.h"
 #include "nsDOMError.h"
 #include "nsNodeInfoManager.h"
 #include "plbase64.h"
@@ -80,6 +77,20 @@ nsHTMLVideoElement::~nsHTMLVideoElement()
 {
 }
 
+void
+nsHTMLVideoElement::GetItemValueText(nsAString& aValue)
+{
+  // Can't call GetSrc because we don't have a JSContext
+  GetURIAttr(nsGkAtoms::src, nullptr, aValue);
+}
+
+void
+nsHTMLVideoElement::SetItemValueText(const nsAString& aValue)
+{
+  // Can't call SetSrc because we don't have a JSContext
+  SetAttr(kNameSpaceID_None, nsGkAtoms::src, aValue, true);
+}
+
 nsresult nsHTMLVideoElement::GetVideoSize(nsIntSize* size)
 {
   if (mMediaSize.width == -1 && mMediaSize.height == -1) {
@@ -119,7 +130,7 @@ nsHTMLVideoElement::IsAttributeMapped(const nsIAtom* aAttribute) const
   static const MappedAttributeEntry attributes[] = {
     { &nsGkAtoms::width },
     { &nsGkAtoms::height },
-    { nsnull }
+    { nullptr }
   };
 
   static const MappedAttributeEntry* const map[] = {

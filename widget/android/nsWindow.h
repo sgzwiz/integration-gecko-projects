@@ -8,16 +8,14 @@
 
 #include "nsBaseWidget.h"
 #include "gfxPoint.h"
-
+#include "nsIIdleServiceInternal.h"
 #include "nsTArray.h"
 
 #ifdef MOZ_JAVA_COMPOSITOR
 #include "AndroidJavaWrappers.h"
-#include "Layers.h"
 #endif
 
 class gfxASurface;
-class nsIdleService;
 
 struct ANPEvent;
 
@@ -28,6 +26,7 @@ namespace mozilla {
     namespace layers {
         class CompositorParent;
         class CompositorChild;
+        class LayerManager;
     }
 }
 
@@ -52,7 +51,7 @@ public:
     void OnDraw(mozilla::AndroidGeckoEvent *ae);
     bool OnMultitouchEvent(mozilla::AndroidGeckoEvent *ae);
     void OnGestureEvent(mozilla::AndroidGeckoEvent *ae);
-    void OnMotionEvent(mozilla::AndroidGeckoEvent *ae);
+    void OnMouseEvent(mozilla::AndroidGeckoEvent *ae);
     void OnKeyEvent(mozilla::AndroidGeckoEvent *ae);
     void OnIMEEvent(mozilla::AndroidGeckoEvent *ae);
 
@@ -77,7 +76,7 @@ public:
     virtual float GetDPI();
     NS_IMETHOD Show(bool aState);
     NS_IMETHOD SetModal(bool aModal);
-    NS_IMETHOD IsVisible(bool & aState);
+    virtual bool IsVisible() const;
     NS_IMETHOD ConstrainPosition(bool aAllowSlop,
                                  PRInt32 *aX,
                                  PRInt32 *aY);
@@ -97,7 +96,7 @@ public:
                            bool aActivate);
     NS_IMETHOD SetSizeMode(PRInt32 aMode);
     NS_IMETHOD Enable(bool aState);
-    NS_IMETHOD IsEnabled(bool *aState);
+    virtual bool IsEnabled() const;
     NS_IMETHOD Invalidate(const nsIntRect &aRect);
     NS_IMETHOD SetFocus(bool aRaise = false);
     NS_IMETHOD GetScreenBounds(nsIntRect &aRect);
@@ -141,10 +140,10 @@ public:
     NS_IMETHOD OnIMESelectionChange(void);
     virtual nsIMEUpdatePreference GetIMEUpdatePreference();
 
-    LayerManager* GetLayerManager (PLayersChild* aShadowManager = nsnull, 
-                                   LayersBackend aBackendHint = LayerManager::LAYERS_NONE, 
-                                   LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT, 
-                                   bool* aAllowRetaining = nsnull);
+    LayerManager* GetLayerManager (PLayersChild* aShadowManager = nullptr,
+                                   LayersBackend aBackendHint = mozilla::layers::LAYERS_NONE,
+                                   LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT,
+                                   bool* aAllowRetaining = nullptr);
 
     NS_IMETHOD ReparentNativeWidget(nsIWidget* aNewParent);
 
@@ -153,8 +152,7 @@ public:
     virtual void DrawWindowOverlay(LayerManager* aManager, nsIntRect aRect);
 
     static void SetCompositor(mozilla::layers::CompositorParent* aCompositorParent,
-                              mozilla::layers::CompositorChild* aCompositorChild,
-                              ::base::Thread* aCompositorThread);
+                              mozilla::layers::CompositorChild* aCompositorChild);
     static void ScheduleComposite();
     static void SchedulePauseComposition();
     static void ScheduleResumeComposition(int width, int height);
@@ -188,7 +186,7 @@ protected:
     double mSwipeMaxPinchDelta;
     double mSwipeMinDistance;
 
-    nsCOMPtr<nsIdleService> mIdleService;
+    nsCOMPtr<nsIIdleServiceInternal> mIdleService;
 
     bool mIMEComposing;
     nsString mIMEComposingText;
@@ -220,7 +218,6 @@ private:
     static nsRefPtr<mozilla::layers::CompositorParent> sCompositorParent;
     static nsRefPtr<mozilla::layers::CompositorChild> sCompositorChild;
     static bool sCompositorPaused;
-    static base::Thread *sCompositorThread;
 #endif
 };
 

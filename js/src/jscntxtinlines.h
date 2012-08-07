@@ -112,21 +112,6 @@ NewObjectCache::newObjectFromHit(JSContext *cx, EntryIndex entry_)
         return obj;
     }
 
-    /* Copy the entry to the stack first in case it is purged by a GC. */
-    size_t nbytes = entry->nbytes;
-    char stackObject[sizeof(JSObject_Slots16)];
-    JS_ASSERT(nbytes <= sizeof(stackObject));
-    js_memcpy(&stackObject, &entry->templateObject, nbytes);
-
-    JSObject *baseobj = (JSObject *) stackObject;
-
-    obj = js_NewGCObject(cx, entry->kind);
-    if (obj) {
-        copyCachedToObject(obj, baseobj);
-        Probes::createObject(cx, obj);
-        return obj;
-    }
-
     return NULL;
 }
 
@@ -157,7 +142,7 @@ GetGlobalForScopeChain(JSContext *cx)
     if (!cx->globalObject)
         return NULL;
 
-    JSObject *scope = JS_ObjectToInnerObject(cx, cx->globalObject);
+    JSObject *scope = JS_ObjectToInnerObject(cx, HandleObject::fromMarkedLocation(&cx->globalObject));
     if (!scope)
         return NULL;
     return &scope->asGlobal();
@@ -226,8 +211,13 @@ class CompartmentChecker
     JSCompartment *compartment;
 
   public:
-    explicit CompartmentChecker(JSContext *cx) : context(cx), compartment(cx->compartment) {
-        check(cx->hasfp() ? JS_GetGlobalForScopeChain(cx) : cx->globalObject);
+    explicit CompartmentChecker(JSContext *cx)
+      : context(cx), compartment(cx->compartment)
+    {
+        if (cx->compartment) {
+            GlobalObject *global = GetGlobalForScopeChain(cx);
+            JS_ASSERT(cx->global() == global);
+        }
     }
 
     /*
@@ -266,6 +256,11 @@ class CompartmentChecker
     void check(JSObject *obj) {
         if (obj)
             check(obj->compartment());
+    }
+
+    template<typename T>
+    void check(Handle<T> handle) {
+        check(handle.get());
     }
 
     void check(JSString *str) {
@@ -310,11 +305,8 @@ class CompartmentChecker
     }
 
     void check(JSScript *script) {
-        if (script) {
+        if (script)
             check(script->compartment());
-            if (!script->isCachedEval && script->globalObject)
-                check(script->globalObject);
-        }
     }
 
     void check(StackFrame *fp) {
@@ -330,7 +322,7 @@ class CompartmentChecker
  * depends on other objects not having been swept yet.
  */
 #define START_ASSERT_SAME_COMPARTMENT()                                       \
-    if (cx->runtime->gcRunning)                                               \
+    if (cx->runtime->isHeapBusy())                                            \
         return;                                                               \
     CompartmentChecker c(cx)
 
@@ -395,11 +387,29 @@ STATIC_PRECONDITION_ASSUME(ubound(args.argv_) >= argc)
 JS_ALWAYS_INLINE bool
 CallJSNative(JSContext *cx, Native native, const CallArgs &args)
 {
+    JS_CHECK_RECURSION(cx, return false);
+
 #ifdef DEBUG
-    JSBool alreadyThrowing = cx->isExceptionPending();
+    bool alreadyThrowing = cx->isExceptionPending();
 #endif
     assertSameCompartment(cx, args);
     bool ok = native(cx, args.length(), args.base());
+    if (ok) {
+        assertSameCompartment(cx, args.rval());
+        JS_ASSERT_IF(!alreadyThrowing, !cx->isExceptionPending());
+    }
+    return ok;
+}
+
+STATIC_PRECONDITION_ASSUME(ubound(args.argv_) >= argc)
+JS_ALWAYS_INLINE bool
+CallNativeImpl(JSContext *cx, NativeImpl impl, const CallArgs &args)
+{
+#ifdef DEBUG
+    bool alreadyThrowing = cx->isExceptionPending();
+#endif
+    assertSameCompartment(cx, args);
+    bool ok = impl(cx, args);
     if (ok) {
         assertSameCompartment(cx, args.rval());
         JS_ASSERT_IF(!alreadyThrowing, !cx->isExceptionPending());
@@ -445,29 +455,33 @@ CallJSNativeConstructor(JSContext *cx, Native native, const CallArgs &args)
 }
 
 JS_ALWAYS_INLINE bool
-CallJSPropertyOp(JSContext *cx, PropertyOp op, HandleObject receiver, HandleId id, Value *vp)
+CallJSPropertyOp(JSContext *cx, PropertyOp op, HandleObject receiver, HandleId id, MutableHandleValue vp)
 {
-    assertSameCompartment(cx, receiver, id, *vp);
+    JS_CHECK_RECURSION(cx, return false);
+
+    assertSameCompartment(cx, receiver, id, vp);
     JSBool ok = op(cx, receiver, id, vp);
     if (ok)
-        assertSameCompartment(cx, *vp);
+        assertSameCompartment(cx, vp);
     return ok;
 }
 
 JS_ALWAYS_INLINE bool
 CallJSPropertyOpSetter(JSContext *cx, StrictPropertyOp op, HandleObject obj, HandleId id,
-                       JSBool strict, Value *vp)
+                       JSBool strict, MutableHandleValue vp)
 {
-    assertSameCompartment(cx, obj, id, *vp);
+    JS_CHECK_RECURSION(cx, return false);
+
+    assertSameCompartment(cx, obj, id, vp);
     return op(cx, obj, id, strict, vp);
 }
 
 inline bool
 CallSetter(JSContext *cx, HandleObject obj, HandleId id, StrictPropertyOp op, unsigned attrs,
-           unsigned shortid, JSBool strict, Value *vp)
+           unsigned shortid, JSBool strict, MutableHandleValue vp)
 {
     if (attrs & JSPROP_SETTER)
-        return InvokeGetterOrSetter(cx, obj, CastAsObjectJsval(op), 1, vp, vp);
+        return InvokeGetterOrSetter(cx, obj, CastAsObjectJsval(op), 1, vp.address(), vp.address());
 
     if (attrs & JSPROP_GETTER)
         return js_ReportGetterOnlyAssignment(cx);
@@ -478,12 +492,6 @@ CallSetter(JSContext *cx, HandleObject obj, HandleId id, StrictPropertyOp op, un
     RootedId nid(cx, INT_TO_JSID(shortid));
 
     return CallJSPropertyOpSetter(cx, op, obj, nid, strict, vp);
-}
-
-static inline HeapPtrAtom *
-FrameAtomBase(JSContext *cx, js::StackFrame *fp)
-{
-    return fp->script()->atoms;
 }
 
 }  /* namespace js */
@@ -548,28 +556,11 @@ JSContext::setCompileOptions(unsigned newcopts)
     maybeOverrideVersion(newVersion);
 }
 
-inline void
-JSContext::assertValidStackDepth(unsigned depth)
-{
-#ifdef DEBUG
-    JS_ASSERT(0 <= regs().sp - fp()->base());
-    JS_ASSERT(depth <= uintptr_t(regs().sp - fp()->base()));
-#endif
-}
 
 inline js::LifoAlloc &
 JSContext::typeLifoAlloc()
 {
     return compartment->typeLifoAlloc;
-}
-
-inline bool
-JSContext::ensureGeneratorStackSpace()
-{
-    bool ok = genStack.reserve(genStack.length() + 1);
-    if (!ok)
-        js_ReportOutOfMemory(this);
-    return ok;
 }
 
 inline void
@@ -585,7 +576,7 @@ JSContext::ensureParseMapPool()
 {
     if (parseMapPool_)
         return true;
-    parseMapPool_ = js::OffTheBooks::new_<js::ParseMapPool>(this);
+    parseMapPool_ = js::OffTheBooks::new_<js::frontend::ParseMapPool>(this);
     return parseMapPool_;
 }
 

@@ -4,20 +4,23 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "jsscope.h"
+
+#include "jscntxt.h"
 #include "jsnum.h"
-#include "MonoIC.h"
-#include "StubCalls.h"
-#include "StubCalls-inl.h"
+#include "jsobj.h"
+#include "jsscope.h"
+
 #include "assembler/assembler/LinkBuffer.h"
 #include "assembler/assembler/MacroAssembler.h"
 #include "assembler/assembler/CodeLocation.h"
+
 #include "methodjit/CodeGenIncludes.h"
 #include "methodjit/Compiler.h"
 #include "methodjit/ICRepatcher.h"
+#include "methodjit/InlineFrameAssembler.h"
+#include "methodjit/MonoIC.h"
 #include "methodjit/PolyIC.h"
-#include "InlineFrameAssembler.h"
-#include "jsobj.h"
+#include "methodjit/StubCalls.h"
 
 #include "builtin/RegExp.h"
 
@@ -25,6 +28,8 @@
 #include "jsobjinlines.h"
 #include "jsscopeinlines.h"
 #include "jsscriptinlines.h"
+
+#include "methodjit/StubCalls-inl.h"
 
 using namespace js;
 using namespace js::mjit;
@@ -53,12 +58,12 @@ PatchGetFallback(VMFrame &f, ic::GetGlobalNameIC *ic)
 void JS_FASTCALL
 ic::GetGlobalName(VMFrame &f, ic::GetGlobalNameIC *ic)
 {
-    JSObject &obj = f.fp()->global();
+    RootedObject obj(f.cx, &f.fp()->global());
     PropertyName *name = f.script()->getName(GET_UINT32_INDEX(f.pc()));
 
     RecompilationMonitor monitor(f.cx);
 
-    const Shape *shape = obj.nativeLookup(f.cx, NameToId(name));
+    Shape *shape = obj->nativeLookup(f.cx, NameToId(name));
 
     if (monitor.recompiled()) {
         stubs::Name(f);
@@ -78,10 +83,10 @@ ic::GetGlobalName(VMFrame &f, ic::GetGlobalNameIC *ic)
 
     /* Patch shape guard. */
     Repatcher repatcher(f.chunk());
-    repatcher.repatch(ic->fastPathStart.dataLabelPtrAtOffset(ic->shapeOffset), obj.lastProperty());
+    repatcher.repatch(ic->fastPathStart.dataLabelPtrAtOffset(ic->shapeOffset), obj->lastProperty());
 
     /* Patch loads. */
-    uint32_t index = obj.dynamicSlotIndex(slot);
+    uint32_t index = obj->dynamicSlotIndex(slot);
     JSC::CodeLocationLabel label = ic->fastPathStart.labelAtOffset(ic->loadStoreOffset);
     repatcher.patchAddressOffsetForValueLoad(label, index * sizeof(Value));
 
@@ -102,22 +107,21 @@ template void JS_FASTCALL DisabledSetGlobal<false>(VMFrame &f, ic::SetGlobalName
 static void
 PatchSetFallback(VMFrame &f, ic::SetGlobalNameIC *ic)
 {
-    JSScript *script = f.script();
     Repatcher repatch(f.chunk());
-    VoidStubSetGlobal stub = STRICT_VARIANT(DisabledSetGlobal);
+    VoidStubSetGlobal stub = STRICT_VARIANT(f.script(), DisabledSetGlobal);
     JSC::FunctionPtr fptr(JS_FUNC_TO_DATA_PTR(void *, stub));
     repatch.relink(ic->slowPathCall, fptr);
 }
 
 void
-SetGlobalNameIC::patchInlineShapeGuard(Repatcher &repatcher, const Shape *shape)
+SetGlobalNameIC::patchInlineShapeGuard(Repatcher &repatcher, Shape *shape)
 {
     JSC::CodeLocationDataLabelPtr label = fastPathStart.dataLabelPtrAtOffset(shapeOffset);
     repatcher.repatch(label, shape);
 }
 
 static LookupStatus
-UpdateSetGlobalName(VMFrame &f, ic::SetGlobalNameIC *ic, JSObject *obj, const Shape *shape)
+UpdateSetGlobalName(VMFrame &f, ic::SetGlobalNameIC *ic, JSObject *obj, Shape *shape)
 {
     /* Give globals a chance to appear. */
     if (!shape)
@@ -148,21 +152,20 @@ UpdateSetGlobalName(VMFrame &f, ic::SetGlobalNameIC *ic, JSObject *obj, const Sh
 void JS_FASTCALL
 ic::SetGlobalName(VMFrame &f, ic::SetGlobalNameIC *ic)
 {
-    JSObject &obj = f.fp()->global();
-    JSScript *script = f.script();
-    PropertyName *name = script->getName(GET_UINT32_INDEX(f.pc()));
+    RootedObject obj(f.cx, &f.fp()->global());
+    RootedPropertyName name(f.cx, f.script()->getName(GET_UINT32_INDEX(f.pc())));
 
     RecompilationMonitor monitor(f.cx);
 
-    const Shape *shape = obj.nativeLookup(f.cx, NameToId(name));
+    Shape *shape = obj->nativeLookup(f.cx, NameToId(name));
 
     if (!monitor.recompiled()) {
-        LookupStatus status = UpdateSetGlobalName(f, ic, &obj, shape);
+        LookupStatus status = UpdateSetGlobalName(f, ic, obj, shape);
         if (status == Lookup_Error)
             THROW();
     }
 
-    STRICT_VARIANT(stubs::SetGlobalName)(f, name);
+    STRICT_VARIANT(f.script(), stubs::SetGlobalName)(f, name);
 }
 
 class EqualityICLinker : public LinkerHelper
@@ -243,7 +246,6 @@ class EqualityCompiler : public BaseCompiler
         RegisterID tmp = ic.tempReg;
 
         /* JSString::isAtom === (lengthAndFlags & ATOM_MASK == 0) */
-        JS_STATIC_ASSERT(JSString::ATOM_FLAGS == 0);
         Imm32 atomMask(JSString::ATOM_MASK);
 
         masm.load32(Address(lvr.dataReg(), JSString::offsetOfLengthAndFlags()), tmp);
@@ -571,10 +573,10 @@ class CallCompiler : public BaseCompiler
         masm.loadPtr(scriptAddr, t0);
 
         // Test that:
-        // - script->jitInfo is not NULL
-        // - script->jitInfo->jitHandle{Ctor,Normal}->value is neither NULL nor UNJITTABLE, and
-        // - script->jitInfo->jitHandle{Ctor,Normal}->value->arityCheckEntry is not NULL.
-        masm.loadPtr(Address(t0, JSScript::offsetOfJITInfo()), t0);
+        // - script->mJITInfo is not NULL
+        // - script->mJITInfo->jitHandle{Ctor,Normal}->value is neither NULL nor UNJITTABLE, and
+        // - script->mJITInfo->jitHandle{Ctor,Normal}->value->arityCheckEntry is not NULL.
+        masm.loadPtr(Address(t0, JSScript::offsetOfMJITInfo()), t0);
         Jump hasNoJitInfo = masm.branchPtr(Assembler::Equal, t0, ImmPtr(NULL));
         size_t offset = JSScript::JITScriptSet::jitHandleOffset(callingNew,
                                                                 f.cx->compartment->needsBarrier());
@@ -760,8 +762,8 @@ class CallCompiler : public BaseCompiler
             args = CallArgsFromSp(f.u.call.dynamicArgc, f.regs.sp);
         }
 
-        JSFunction *fun;
-        if (!IsFunctionObject(args.calleev(), &fun))
+        RootedFunction fun(cx);
+        if (!IsFunctionObject(args.calleev(), fun.address()))
             return false;
 
         if ((!callingNew && !fun->isNative()) || (callingNew && !fun->isNativeConstructor()))
@@ -1043,7 +1045,7 @@ ic::SplatApplyArgs(VMFrame &f)
     JS_ASSERT(args.length() == 2);
     JS_ASSERT(IsNativeFunction(args.calleev(), js_fun_apply));
 
-    if (args[1].isMagic(JS_OPTIMIZED_ARGUMENTS)) {
+    if (IsOptimizedArguments(f.fp(), &args[1])) {
         /* Mirror isMagic(JS_OPTIMIZED_ARGUMENTS) case in js_fun_apply. */
         /* Steps 4-6. */
         unsigned length = f.regs.fp()->numActualArgs();
@@ -1054,7 +1056,7 @@ ic::SplatApplyArgs(VMFrame &f)
             THROWV(false);
 
         /* Steps 7-8. */
-        f.regs.fp()->forEachCanonicalActualArg(CopyTo(f.regs.sp));
+        f.regs.fp()->forEachUnaliasedActual(CopyTo(f.regs.sp));
 
         f.regs.sp += length;
         f.u.call.dynamicArgc = length;
@@ -1093,8 +1095,13 @@ ic::SplatApplyArgs(VMFrame &f)
     }
 
     int delta = length - 1;
-    if (delta > 0 && !BumpStack(f, delta))
-        THROWV(false);
+    if (delta > 0) {
+        if (!BumpStack(f, delta))
+            THROWV(false);
+
+        MakeRangeGCSafe(f.regs.sp, delta);
+    }
+
     f.regs.sp += delta;
 
     /* Steps 7-8. */

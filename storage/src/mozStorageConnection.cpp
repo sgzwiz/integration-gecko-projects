@@ -11,10 +11,11 @@
 #include "nsAutoPtr.h"
 #include "nsIMemoryReporter.h"
 #include "nsThreadUtils.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/CondVar.h"
+#include "mozilla/Attributes.h"
 
 #include "mozIStorageAggregateFunction.h"
 #include "mozIStorageCompletionCallback.h"
@@ -48,7 +49,7 @@
 #define DEFAULT_CACHE_SIZE_PAGES 2000
 
 #ifdef PR_LOGGING
-PRLogModuleInfo* gStorageLog = nsnull;
+PRLogModuleInfo* gStorageLog = nullptr;
 #endif
 
 namespace mozilla {
@@ -210,7 +211,10 @@ basicFunctionHelper(sqlite3_context *aCtx,
                            -1);
     return;
   }
-  if (variantToSQLiteT(aCtx, result) != SQLITE_OK) {
+  int retcode = variantToSQLiteT(aCtx, result);
+  if (retcode == SQLITE_IGNORE) {
+    ::sqlite3_result_int(aCtx, SQLITE_IGNORE);
+  } else if (retcode != SQLITE_OK) {
     NS_WARNING("User function returned invalid data type!");
     ::sqlite3_result_error(aCtx,
                            "User function returned invalid data type",
@@ -361,8 +365,8 @@ public:
     // mConnection and it's nice to avoid for mCallbackEvent too.  We do not
     // null out mCallingThread because it is conceivable the async thread might
     // still be 'in' the object.
-    mConnection = nsnull;
-    mCallbackEvent = nsnull;
+    mConnection = nullptr;
+    mCallbackEvent = nullptr;
 
     return NS_OK;
   }
@@ -375,122 +379,6 @@ private:
 } // anonymous namespace
 
 ////////////////////////////////////////////////////////////////////////////////
-//// Memory Reporting
-
-class StorageMemoryReporter : public nsIMemoryReporter
-{
-public:
-  NS_DECL_ISUPPORTS
-
-  enum ReporterType {
-    Cache_Used,
-    Schema_Used,
-    Stmt_Used
-  };
-
-  StorageMemoryReporter(sqlite3 *aDBConn,
-                        const nsCString &aFileName,
-                        ReporterType aType)
-  : mDBConn(aDBConn)
-  , mFileName(aFileName)
-  , mType(aType)
-  , mHasLeaked(false)
-  {
-  }
-
-  NS_IMETHOD GetProcess(nsACString &process)
-  {
-    process.Truncate();
-    return NS_OK;
-  }
-
-  NS_IMETHOD GetPath(nsACString &path)
-  {
-    path.AssignLiteral("explicit/storage/sqlite/");
-    path.Append(mFileName);
-    if (mHasLeaked) {
-      path.AppendLiteral("-LEAKED");
-    }
-
-    if (mType == Cache_Used) {
-      path.AppendLiteral("/cache-used");
-    }
-    else if (mType == Schema_Used) {
-      path.AppendLiteral("/schema-used");
-    }
-    else if (mType == Stmt_Used) {
-      path.AppendLiteral("/stmt-used");
-    }
-    return NS_OK;
-  }
-
-  NS_IMETHOD GetKind(PRInt32 *kind)
-  {
-    *kind = KIND_HEAP;
-    return NS_OK;
-  }
-
-  NS_IMETHOD GetUnits(PRInt32 *units)
-  {
-    *units = UNITS_BYTES;
-    return NS_OK;
-  }
-
-  NS_IMETHOD GetAmount(PRInt64 *amount)
-  {
-    int type = 0;
-    if (mType == Cache_Used) {
-      type = SQLITE_DBSTATUS_CACHE_USED;
-    }
-    else if (mType == Schema_Used) {
-      type = SQLITE_DBSTATUS_SCHEMA_USED;
-    }
-    else if (mType == Stmt_Used) {
-      type = SQLITE_DBSTATUS_STMT_USED;
-    }
-
-    int cur=0, max=0;
-    int rc = ::sqlite3_db_status(mDBConn, type, &cur, &max, 0);
-    *amount = cur;
-    return convertResultCode(rc);
-  }
-
-  NS_IMETHOD GetDescription(nsACString &desc)
-  {
-    if (mType == Cache_Used) {
-      desc.AssignLiteral("Memory (approximate) used by all pager caches used "
-                         "by connections to this database.");
-    }
-    else if (mType == Schema_Used) {
-      desc.AssignLiteral("Memory (approximate) used to store the schema "
-                         "for all databases associated with connections to "
-                         "this database.");
-    }
-    else if (mType == Stmt_Used) {
-      desc.AssignLiteral("Memory (approximate) used by all prepared statements "
-                         "used by connections to this database.");
-    }
-    return NS_OK;
-  }
-
-  // We call this when we know we've leaked a connection.
-  void markAsLeaked()
-  {
-    mHasLeaked = true;
-  }
-
-private:
-  sqlite3 *mDBConn;
-  nsCString mFileName;
-  ReporterType mType;
-  bool mHasLeaked;
-};
-NS_IMPL_THREADSAFE_ISUPPORTS1(
-  StorageMemoryReporter
-, nsIMemoryReporter
-)
-
-////////////////////////////////////////////////////////////////////////////////
 //// Connection
 
 Connection::Connection(Service *aService,
@@ -498,10 +386,10 @@ Connection::Connection(Service *aService,
 : sharedAsyncExecutionMutex("Connection::sharedAsyncExecutionMutex")
 , sharedDBMutex("Connection::sharedDBMutex")
 , threadOpenedOn(do_GetCurrentThread())
-, mDBConn(nsnull)
+, mDBConn(nullptr)
 , mAsyncExecutionThreadShuttingDown(false)
 , mTransactionInProgress(false)
-, mProgressHandler(nsnull)
+, mProgressHandler(nullptr)
 , mFlags(aFlags)
 , mStorageService(aService)
 {
@@ -551,14 +439,17 @@ Connection::getAsyncExecutionTarget()
   // If we are shutting down the asynchronous thread, don't hand out any more
   // references to the thread.
   if (mAsyncExecutionThreadShuttingDown)
-    return nsnull;
+    return nullptr;
 
   if (!mAsyncExecutionThread) {
     nsresult rv = ::NS_NewThread(getter_AddRefs(mAsyncExecutionThread));
     if (NS_FAILED(rv)) {
       NS_WARNING("Failed to create async thread.");
-      return nsnull;
+      return nullptr;
     }
+    static nsThreadPoolNaming naming;
+    naming.SetThreadPoolName(NS_LITERAL_CSTRING("mozStorage"),
+                             mAsyncExecutionThread);
   }
 
   return mAsyncExecutionThread;
@@ -589,7 +480,7 @@ Connection::initialize(nsIFile *aDatabaseFile,
     srv = ::sqlite3_open_v2(":memory:", &mDBConn, mFlags, aVFSName);
   }
   if (srv != SQLITE_OK) {
-    mDBConn = nsnull;
+    mDBConn = nullptr;
     return convertResultCode(srv);
   }
 
@@ -641,7 +532,7 @@ Connection::initialize(nsIFile *aDatabaseFile,
   srv = executeSql(cacheSizeQuery.get());
   if (srv != SQLITE_OK) {
     ::sqlite3_close(mDBConn);
-    mDBConn = nsnull;
+    mDBConn = nullptr;
     return convertResultCode(srv);
   }
 
@@ -649,7 +540,7 @@ Connection::initialize(nsIFile *aDatabaseFile,
   srv = registerFunctions(mDBConn);
   if (srv != SQLITE_OK) {
     ::sqlite3_close(mDBConn);
-    mDBConn = nsnull;
+    mDBConn = nullptr;
     return convertResultCode(srv);
   }
 
@@ -657,7 +548,7 @@ Connection::initialize(nsIFile *aDatabaseFile,
   srv = registerCollations(mDBConn, mStorageService);
   if (srv != SQLITE_OK) {
     ::sqlite3_close(mDBConn);
-    mDBConn = nsnull;
+    mDBConn = nullptr;
     return convertResultCode(srv);
   }
 
@@ -828,6 +719,7 @@ Connection::getFilename()
 int
 Connection::stepStatement(sqlite3_stmt *aStatement)
 {
+  MOZ_ASSERT(aStatement);
   bool checkedMainThread = false;
   TimeStamp startTime = TimeStamp::Now();
 
@@ -864,16 +756,9 @@ Connection::stepStatement(sqlite3_stmt *aStatement)
   // Report very slow SQL statements to Telemetry
   TimeDuration duration = TimeStamp::Now() - startTime;
   if (duration.ToMilliseconds() >= Telemetry::kSlowStatementThreshold) {
-    const char *sql = ::sqlite3_sql(aStatement);
-    // FIXME: Try runs have found hard to reproduce crashes where sql is NULL.
-    // It is not clear how can we get a NULL sql statement in here.
-    // sqlite3_prepare_v2 always copies the incoming argument and fails
-    // if it runs out of memory.
-    if (sql) {
-      nsDependentCString statementString(sql);
-      Telemetry::RecordSlowSQLStatement(statementString, getFilename(),
-                                        duration.ToMilliseconds(), false);
-    }
+    nsDependentCString statementString(::sqlite3_sql(aStatement));
+    Telemetry::RecordSlowSQLStatement(statementString, getFilename(),
+                                      duration.ToMilliseconds(), false);
   }
 
   (void)::sqlite3_extended_result_codes(mDBConn, 0);
@@ -923,7 +808,15 @@ Connection::prepareStatement(const nsCString &aSQL,
 
   (void)::sqlite3_extended_result_codes(mDBConn, 0);
   // Drop off the extended result bits of the result code.
-  return srv & 0xFF;
+  int rc = srv & 0xFF;
+  // sqlite will return OK on a comment only string and set _stmt to NULL.
+  // The callers of this function are used to only checking the return value,
+  // so it is safer to return an error code.
+  if (rc == SQLITE_OK && *_stmt == NULL) {
+    return SQLITE_MISUSE;
+  }
+
+  return rc;
 }
 
 
@@ -1446,7 +1339,7 @@ Connection::SetProgressHandler(PRInt32 aGranularity,
   NS_IF_ADDREF(*_oldHandler = mProgressHandler);
 
   if (!aHandler || aGranularity <= 0) {
-    aHandler = nsnull;
+    aHandler = nullptr;
     aGranularity = 0;
   }
   mProgressHandler = aHandler;
@@ -1464,7 +1357,7 @@ Connection::RemoveProgressHandler(mozIStorageProgressHandler **_oldHandler)
   SQLiteMutexAutoLock lockedScope(sharedDBMutex);
   NS_IF_ADDREF(*_oldHandler = mProgressHandler);
 
-  mProgressHandler = nsnull;
+  mProgressHandler = nullptr;
   ::sqlite3_progress_handler(mDBConn, 0, NULL, NULL);
 
   return NS_OK;
@@ -1478,10 +1371,8 @@ Connection::SetGrowthIncrement(PRInt32 aChunkSize, const nsACString &aDatabaseNa
   // on log structured file systems used by Android devices
 #if !defined(ANDROID) && !defined(MOZ_PLATFORM_MAEMO)
   // Don't preallocate if less than 500MiB is available.
-  nsCOMPtr<nsILocalFile> localFile = do_QueryInterface(mDatabaseFile);
-  NS_ENSURE_STATE(localFile);
   PRInt64 bytesAvailable;
-  nsresult rv = localFile->GetDiskSpaceAvailable(&bytesAvailable);
+  nsresult rv = mDatabaseFile->GetDiskSpaceAvailable(&bytesAvailable);
   NS_ENSURE_SUCCESS(rv, rv);
   if (bytesAvailable < MIN_AVAILABLE_BYTES_PER_CHUNKED_GROWTH) {
     return NS_ERROR_FILE_TOO_BIG;

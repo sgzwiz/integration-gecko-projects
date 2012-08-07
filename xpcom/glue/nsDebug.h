@@ -17,7 +17,6 @@
 #include "nsXPCOM.h"
 
 #ifdef DEBUG
-#define NS_DEBUG
 #include "prprf.h"
 #endif
 
@@ -118,21 +117,21 @@
  * Log a warning message.
  */
 #define NS_WARNING(str)                                       \
-  NS_DebugBreak(NS_DEBUG_WARNING, str, nsnull, __FILE__, __LINE__)
+  NS_DebugBreak(NS_DEBUG_WARNING, str, nullptr, __FILE__, __LINE__)
 
 /**
  * Trigger an abort
  */
 #define NS_ABORT()                                            \
-  NS_DebugBreak(NS_DEBUG_ABORT, nsnull, nsnull, __FILE__, __LINE__)
+  NS_DebugBreak(NS_DEBUG_ABORT, nullptr, nullptr, __FILE__, __LINE__)
 
 /**
  * Cause a break
  */
 #define NS_BREAK()                                            \
-  NS_DebugBreak(NS_DEBUG_BREAK, nsnull, nsnull, __FILE__, __LINE__)
+  NS_DebugBreak(NS_DEBUG_BREAK, nullptr, nullptr, __FILE__, __LINE__)
 
-#else /* NS_DEBUG */
+#else /* DEBUG */
 
 /**
  * The non-debug version of these macros do not evaluate the
@@ -150,7 +149,7 @@
 #define NS_ABORT()                     PR_BEGIN_MACRO /* nothing */ PR_END_MACRO
 #define NS_BREAK()                     PR_BEGIN_MACRO /* nothing */ PR_END_MACRO
 
-#endif /* ! NS_DEBUG */
+#endif /* ! DEBUG */
 
 /******************************************************************************
 ** Macros for static assertions.  These are used by the sixgill tool.
@@ -229,7 +228,7 @@
 
 /******************************************************************************
 ** Macros for terminating execution when an unrecoverable condition is
-** reached.  These need to be compiled regardless of the NS_DEBUG flag. 
+** reached.  These need to be compiled regardless of the DEBUG flag. 
 ******************************************************************************/
 
 /**
@@ -238,12 +237,12 @@
  * code (e.g., by intercepting a signal).
  */
 #define NS_RUNTIMEABORT(msg)                                    \
-  NS_DebugBreak(NS_DEBUG_ABORT, msg, nsnull, __FILE__, __LINE__)
+  NS_DebugBreak(NS_DEBUG_ABORT, msg, nullptr, __FILE__, __LINE__)
 
 
 /* Macros for checking the trueness of an expression passed in within an 
  * interface implementation.  These need to be compiled regardless of the */
-/* NS_DEBUG flag
+/* DEBUG flag
 ******************************************************************************/
 
 #define NS_ENSURE_TRUE(x, ret)                                \
@@ -316,10 +315,13 @@
 /*****************************************************************************/
 
 #ifdef XPCOM_GLUE
-#define NS_CheckThreadSafe
+  #define NS_CheckThreadSafe(owningThread, msg)
+#elif defined MOZ_FATAL_ASSERTIONS_FOR_THREAD_SAFETY
+  #define NS_CheckThreadSafe(owningThread, msg)                 \
+    NS_ABORT_IF_FALSE(owningThread == PR_GetCurrentThread(), msg)
 #else
-#define NS_CheckThreadSafe(owningThread, msg)                 \
-  NS_ASSERTION(owningThread == PR_GetCurrentThread(), msg)
+  #define NS_CheckThreadSafe(owningThread, msg)                 \
+    NS_ASSERTION(owningThread == PR_GetCurrentThread(), msg)
 #endif
 
 /* When compiling the XPCOM Glue on Windows, we pretend that it's going to

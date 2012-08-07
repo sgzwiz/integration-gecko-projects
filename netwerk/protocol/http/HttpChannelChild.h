@@ -121,7 +121,7 @@ protected:
                                      const nsCString& clientID);
   bool RecvDeleteSelf();
 
-  bool GetAssociatedContentSecurity(nsIAssociatedContentSecurity** res = nsnull);
+  bool GetAssociatedContentSecurity(nsIAssociatedContentSecurity** res = nullptr);
   virtual void DoNotifyListenerCleanup();
 
 private:

@@ -15,43 +15,32 @@
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
 #include "nsCoreUtils.h"
+#include "nsEventShell.h"
 #include "Relation.h"
 #include "Role.h"
 #include "States.h"
+#ifdef MOZ_XUL
+#include "XULTreeAccessible.h"
+#endif
 
 #include "mozilla/dom/Element.h"
-#include "nsHTMLSelectAccessible.h"
+
 #include "nsIAccessibleRelation.h"
-#include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
-#include "nsIDocShellTreeNode.h"
 #include "nsIDocShellTreeOwner.h"
-#include "nsIDOMElement.h"
-#include "nsIDOMEventListener.h"
 #include "nsIDOMEventTarget.h"
-#include "nsIDOMHTMLAnchorElement.h"
-#include "nsIDOMHTMLImageElement.h"
-#include "nsIDOMHTMLInputElement.h"
-#include "nsIDOMHTMLSelectElement.h"
 #include "nsIDOMDataContainerEvent.h"
-#include "nsIDOMNSEvent.h"
 #include "nsIDOMXULMultSelectCntrlEl.h"
-#include "nsIDOMXULPopupElement.h"
 #include "nsIDocument.h"
 #include "nsEventListenerManager.h"
-#include "nsIFrame.h"
-#include "nsIHTMLDocument.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsISelectionPrivate.h"
 #include "nsIServiceManager.h"
 #include "nsPIDOMWindow.h"
 #include "nsIWebBrowserChrome.h"
 #include "nsReadableUtils.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsFocusManager.h"
 
 #ifdef MOZ_XUL
-#include "nsXULTreeAccessible.h"
 #include "nsIXULDocument.h"
 #include "nsIXULWindow.h"
 #endif
@@ -236,7 +225,7 @@ RootAccessible::RemoveEventListeners()
 
   if (mCaretAccessible) {
     mCaretAccessible->Shutdown();
-    mCaretAccessible = nsnull;
+    mCaretAccessible = nullptr;
   }
 
   return NS_OK;
@@ -262,9 +251,9 @@ RootAccessible::DocumentActivated(DocAccessible* aDocument)
 NS_IMETHODIMP
 RootAccessible::HandleEvent(nsIDOMEvent* aDOMEvent)
 {
-  nsCOMPtr<nsIDOMNSEvent> DOMNSEvent(do_QueryInterface(aDOMEvent));
+  MOZ_ASSERT(aDOMEvent);
   nsCOMPtr<nsIDOMEventTarget> DOMEventTarget;
-  DOMNSEvent->GetOriginalTarget(getter_AddRefs(DOMEventTarget));
+  aDOMEvent->GetOriginalTarget(getter_AddRefs(DOMEventTarget));
   nsCOMPtr<nsINode> origTargetNode(do_QueryInterface(DOMEventTarget));
   if (!origTargetNode)
     return NS_OK;
@@ -299,9 +288,9 @@ RootAccessible::HandleEvent(nsIDOMEvent* aDOMEvent)
 void
 RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
 {
-  nsCOMPtr<nsIDOMNSEvent> DOMNSEvent(do_QueryInterface(aDOMEvent));
+  MOZ_ASSERT(aDOMEvent);
   nsCOMPtr<nsIDOMEventTarget> DOMEventTarget;
-  DOMNSEvent->GetOriginalTarget(getter_AddRefs(DOMEventTarget));
+  aDOMEvent->GetOriginalTarget(getter_AddRefs(DOMEventTarget));
   nsCOMPtr<nsINode> origTargetNode(do_QueryInterface(DOMEventTarget));
 
   nsAutoString eventType;
@@ -324,7 +313,7 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
   nsINode* targetNode = accessible->GetNode();
 
 #ifdef MOZ_XUL
-  nsXULTreeAccessible* treeAcc = accessible->AsXULTree();
+  XULTreeAccessible* treeAcc = accessible->AsXULTree();
   if (treeAcc) {
     if (eventType.EqualsLiteral("TreeRowCountChanged")) {
       HandleTreeRowCountChangedEvent(aDOMEvent, treeAcc);
@@ -343,7 +332,7 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
 
     // radiogroup in prefWindow is exposed as a list,
     // and panebutton is exposed as XULListitem in A11y.
-    // nsXULListitemAccessible::GetStateInternal uses STATE_SELECTED in this case,
+    // XULListitemAccessible::GetStateInternal uses STATE_SELECTED in this case,
     // so we need to check states::SELECTED also.
     bool isEnabled = (state & (states::CHECKED | states::SELECTED)) != 0;
 
@@ -371,7 +360,7 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
     return;
   }
 
-  Accessible* treeItemAcc = nsnull;
+  Accessible* treeItemAcc = nullptr;
 #ifdef MOZ_XUL
   // If it's a tree element, need the currently selected item.
   if (treeAcc) {
@@ -403,7 +392,7 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
         // XXX: We need to fire EVENT_SELECTION_ADD and EVENT_SELECTION_REMOVE
         // for each tree item. Perhaps each tree item will need to cache its
         // selection state and fire an event after a DOM "select" event when
-        // that state changes. nsXULTreeAccessible::UpdateTreeSelection();
+        // that state changes. XULTreeAccessible::UpdateTreeSelection();
         nsEventShell::FireEvent(nsIAccessibleEvent::EVENT_SELECTION_WITHIN,
                                 accessible);
         return;
@@ -442,7 +431,7 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
     Accessible* widget =
       accessible->IsWidget() ? accessible : accessible->ContainerWidget();
     if (widget && widget->IsAutoCompletePopup()) {
-      FocusMgr()->ActiveItemChanged(nsnull);
+      FocusMgr()->ActiveItemChanged(nullptr);
       A11YDEBUG_FOCUS_ACTIVEITEMCHANGE_CAUSE("DOMMenuItemInactive", accessible)
     }
   }
@@ -466,7 +455,7 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
     nsEventShell::FireEvent(nsIAccessibleEvent::EVENT_MENU_END,
                             accessible, eFromUserInput);
 
-    FocusMgr()->ActiveItemChanged(nsnull);
+    FocusMgr()->ActiveItemChanged(nullptr);
     A11YDEBUG_FOCUS_ACTIVEITEMCHANGE_CAUSE("DOMMenuBarInactive", accessible)
   }
   else if (eventType.EqualsLiteral("ValueChange")) {
@@ -609,7 +598,7 @@ RootAccessible::HandlePopupHidingEvent(nsINode* aPopupNode)
   // HTML select is target of popuphidding event. Otherwise get container
   // widget. No container widget means this is either tooltip or menupopup.
   // No events in the former case.
-  Accessible* widget = nsnull;
+  Accessible* widget = nullptr;
   if (popup->IsCombobox()) {
     widget = popup;
   } else {
@@ -657,7 +646,7 @@ RootAccessible::HandlePopupHidingEvent(nsINode* aPopupNode)
 
   // Restore focus to where it was.
   if (notifyOf & kNotifyOfFocus) {
-    FocusMgr()->ActiveItemChanged(nsnull);
+    FocusMgr()->ActiveItemChanged(nullptr);
     A11YDEBUG_FOCUS_ACTIVEITEMCHANGE_CAUSE("popuphiding", popup)
   }
 
@@ -672,7 +661,7 @@ RootAccessible::HandlePopupHidingEvent(nsINode* aPopupNode)
 #ifdef MOZ_XUL
 void
 RootAccessible::HandleTreeRowCountChangedEvent(nsIDOMEvent* aEvent,
-                                               nsXULTreeAccessible* aAccessible)
+                                               XULTreeAccessible* aAccessible)
 {
   nsCOMPtr<nsIDOMDataContainerEvent> dataEvent(do_QueryInterface(aEvent));
   if (!dataEvent)
@@ -699,7 +688,7 @@ RootAccessible::HandleTreeRowCountChangedEvent(nsIDOMEvent* aEvent,
 
 void
 RootAccessible::HandleTreeInvalidatedEvent(nsIDOMEvent* aEvent,
-                                           nsXULTreeAccessible* aAccessible)
+                                           XULTreeAccessible* aAccessible)
 {
   nsCOMPtr<nsIDOMDataContainerEvent> dataEvent(do_QueryInterface(aEvent));
   if (!dataEvent)

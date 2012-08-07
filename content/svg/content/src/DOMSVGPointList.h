@@ -14,6 +14,7 @@
 #include "nsSVGElement.h"
 #include "nsTArray.h"
 #include "SVGPointList.h" // IWYU pragma: keep
+#include "mozilla/Attributes.h"
 
 class nsIDOMSVGPoint;
 
@@ -47,8 +48,8 @@ class SVGAnimatedPointList;
  *
  * Our DOM items are created lazily on demand as and when script requests them.
  */
-class DOMSVGPointList : public nsIDOMSVGPointList,
-                        public nsWrapperCache
+class DOMSVGPointList MOZ_FINAL : public nsIDOMSVGPointList,
+                                  public nsWrapperCache
 {
   friend class DOMSVGPoint;
 
@@ -90,7 +91,7 @@ public:
   /**
    * This method returns the DOMSVGPointList wrapper for an internal
    * SVGPointList object if it currently has a wrapper. If it does
-   * not, then nsnull is returned.
+   * not, then nullptr is returned.
    */
   static DOMSVGPointList*
   GetDOMWrapperIfExists(void *aList);

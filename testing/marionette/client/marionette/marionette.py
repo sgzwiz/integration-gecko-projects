@@ -5,6 +5,7 @@
 import socket
 
 from client import MarionetteClient
+from keys import Keys
 from errors import *
 from emulator import Emulator
 from geckoinstance import GeckoInstance
@@ -43,11 +44,23 @@ class HTMLElement(object):
     def click(self):
         return self.marionette._send_message('clickElement', 'ok', element=self.id)
 
+    @property
     def text(self):
         return self.marionette._send_message('getElementText', 'value', element=self.id)
 
-    def send_keys(self, string):
-        return self.marionette._send_message('sendKeysToElement', 'ok', element=self.id, value=string)
+    def send_keys(self, *string):
+        typing = []
+        for val in string:
+            if isinstance(val, Keys):
+                typing.append(val)
+            elif isinstance(val, int):
+                val = str(val)
+                for i in range(len(val)):
+                    typing.append(val[i])
+            else:
+                for i in range(len(val)):
+                    typing.append(val[i])
+        return self.marionette._send_message('sendKeysToElement', 'ok', element=self.id, value=typing)
 
     def value(self):
         return self.marionette._send_message('getElementValue', 'value', element=self.id)
@@ -61,7 +74,7 @@ class HTMLElement(object):
     def enabled(self):
         return self.marionette._send_message('isElementEnabled', 'value', element=self.id)
 
-    def displayed(self):
+    def is_displayed(self):
         return self.marionette._send_message('isElementDisplayed', 'value', element=self.id)
 
 
@@ -71,11 +84,13 @@ class Marionette(object):
     CONTEXT_CONTENT = 'content'
 
     def __init__(self, host='localhost', port=2828, bin=None, profile=None,
-                 emulator=None, emulatorBinary=None, connectToRunningEmulator=False,
+                 emulator=None, emulatorBinary=None, emulatorImg=None,
+                 emulator_res='480x800', connectToRunningEmulator=False,
                  homedir=None, baseurl=None, noWindow=False, logcat_dir=None):
         self.host = host
         self.port = self.local_port = port
         self.bin = bin
+        self.instance = None
         self.profile = profile
         self.session = None
         self.window = None
@@ -96,7 +111,9 @@ class Marionette(object):
                                      noWindow=self.noWindow,
                                      logcat_dir=self.logcat_dir,
                                      arch=emulator,
-                                     emulatorBinary=emulatorBinary)
+                                     emulatorBinary=emulatorBinary,
+                                     userdata=emulatorImg,
+                                     res=emulator_res)
             self.emulator.start()
             self.port = self.emulator.setup_port_forwarding(self.port)
             assert(self.emulator.wait_for_port())
@@ -238,17 +255,24 @@ class Marionette(object):
         response = self._send_message('setSearchTimeout', 'ok', value=timeout)
         return response
 
-    def get_window(self):
+    @property
+    def current_window_handle(self):
         self.window = self._send_message('getWindow', 'value')
         return self.window
+    
+    @property
+    def title(self):
+        response = self._send_message('getTitle', 'value') 
+        return response
 
-    def get_windows(self):
+    @property
+    def window_handles(self):
         response = self._send_message('getWindows', 'value')
         return response
 
-    def close_window(self, window_id=None):
+    def close(self, window_id=None):
         if not window_id:
-            window_id = self.get_window()
+            window_id = self.current_window_handle
         response = self._send_message('closeWindow', 'ok', value=window_id)
         return response
 
@@ -322,7 +346,7 @@ class Marionette(object):
 
         return unwrapped
 
-    def execute_js_script(self, script, script_args=None, timeout=True, new_sandbox=True):
+    def execute_js_script(self, script, script_args=None, timeout=True, new_sandbox=True, special_powers=False):
         if script_args is None:
             script_args = []
         args = self.wrapArguments(script_args)
@@ -331,10 +355,11 @@ class Marionette(object):
                                       value=script,
                                       args=args,
                                       timeout=timeout,
-                                      newSandbox=new_sandbox)
+                                      newSandbox=new_sandbox,
+                                      specialPowers=special_powers)
         return self.unwrapValue(response)
 
-    def execute_script(self, script, script_args=None, new_sandbox=True):
+    def execute_script(self, script, script_args=None, new_sandbox=True, special_powers=False):
         if script_args is None:
             script_args = []
         args = self.wrapArguments(script_args)
@@ -342,10 +367,11 @@ class Marionette(object):
                                      'value',
                                       value=script,
                                       args=args,
-                                      newSandbox=new_sandbox)
+                                      newSandbox=new_sandbox,
+                                      specialPowers=special_powers)
         return self.unwrapValue(response)
 
-    def execute_async_script(self, script, script_args=None, new_sandbox=True):
+    def execute_async_script(self, script, script_args=None, new_sandbox=True, special_powers=False):
         if script_args is None:
             script_args = []
         args = self.wrapArguments(script_args)
@@ -353,7 +379,8 @@ class Marionette(object):
                                       'value',
                                       value=script,
                                       args=args,
-                                      newSandbox=new_sandbox)
+                                      newSandbox=new_sandbox,
+                                      specialPowers=special_powers)
         return self.unwrapValue(response)
 
     def find_element(self, method, target, id=None):
@@ -380,3 +407,14 @@ class Marionette(object):
 
     def get_logs(self):
         return self._send_message('getLogs', 'value')
+
+    def add_perf_data(self, suite, name, value):
+        return self._send_message('addPerfData', 'ok', suite=suite, name=name, value=value)
+
+    def get_perf_data(self):
+        return self._send_message('getPerfData', 'value')
+
+    def import_script(self, file):
+        f = open(file, "r")
+        js = f.read()
+        return self._send_message('importScript', 'ok', script=js)

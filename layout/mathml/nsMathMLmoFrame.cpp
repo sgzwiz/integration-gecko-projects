@@ -103,10 +103,10 @@ nsMathMLmoFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
       selectedRect = firstChild->GetRect();
       isSelected = true;
     }
-    rv = mMathMLChar.Display(aBuilder, this, aLists, 0, isSelected ? &selectedRect : nsnull);
+    rv = mMathMLChar.Display(aBuilder, this, aLists, 0, isSelected ? &selectedRect : nullptr);
     NS_ENSURE_SUCCESS(rv, rv);
   
-#if defined(NS_DEBUG) && defined(SHOW_BOUNDING_BOX)
+#if defined(DEBUG) && defined(SHOW_BOUNDING_BOX)
     // for visual debug
     rv = DisplayBoundingMetrics(aBuilder, this, mReference, mBoundingMetrics, aLists);
 #endif
@@ -228,7 +228,7 @@ nsMathMLmoFrame::ProcessOperatorData()
     // reset everything so that we don't keep outdated values around
     // in case of dynamic changes
     mEmbellishData.flags = 0;
-    mEmbellishData.coreFrame = nsnull;
+    mEmbellishData.coreFrame = nullptr;
     mEmbellishData.leadingSpace = 0;
     mEmbellishData.trailingSpace = 0;
     if (mMathMLChar.Length() != 1)
@@ -339,14 +339,24 @@ nsMathMLmoFrame::ProcessOperatorData()
     mFlags &= ~NS_MATHML_OPERATOR_FORM; // clear the old form bits
     mFlags |= form;
 
-    // lookup the operator dictionary
-    float lspace = 0.0f;
-    float rspace = 0.0f;
-    nsAutoString data;
-    mMathMLChar.GetData(data);
-    bool found = nsMathMLOperators::LookupOperator(data, form, &mFlags, &lspace, &rspace);
-    if (found && (lspace || rspace)) {
-      // cache the default values of lspace & rspace that we get from the dictionary.
+    // Use the default value suggested by the MathML REC.
+    // http://www.w3.org/TR/MathML/chapter3.html#presm.mo.attrs
+    // thickmathspace = 5/18em
+    float lspace = 5.0/18.0;
+    float rspace = 5.0/18.0;
+    if (NS_MATHML_OPERATOR_IS_INVISIBLE(mFlags)) {
+      // mMathMLChar has been reset in ProcessTextData so we can not find it
+      // in the operator dictionary. The operator dictionary always uses
+      // lspace = rspace = 0 for invisible operators.
+      lspace = rspace = 0.0;
+    } else {
+      // lookup the operator dictionary
+      nsAutoString data;
+      mMathMLChar.GetData(data);
+      nsMathMLOperators::LookupOperator(data, form, &mFlags, &lspace, &rspace);
+    }
+    if (lspace || rspace) {
+      // Cache the default values of lspace and rspace.
       // since these values are relative to the 'em' unit, convert to twips now
       nscoord em;
       nsRefPtr<nsFontMetrics> fm;
@@ -917,7 +927,7 @@ nsMathMLmoFrame::TransmitAutomaticData()
   // this will cause us to re-sync our flags from scratch
   // but our returned 'form' is still not final (bug 133429), it will
   // be recomputed to its final value during the next call in Reflow()
-  mEmbellishData.coreFrame = nsnull;
+  mEmbellishData.coreFrame = nullptr;
   ProcessOperatorData();
   return NS_OK;
 }
@@ -1038,7 +1048,7 @@ nsMathMLmoFrame::GetAdditionalStyleContext(PRInt32 aIndex) const
   case NS_MATHML_CHAR_STYLE_CONTEXT_INDEX:
     return mMathMLChar.GetStyleContext();
   default:
-    return nsnull;
+    return nullptr;
   }
 }
 

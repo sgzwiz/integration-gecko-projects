@@ -226,7 +226,7 @@ public:
 
 protected:
   nsFixedSizeAllocator mArenaPool;
-#ifdef  NS_DEBUG
+#ifdef  DEBUG
   int mTotals[eToken_last-1];
 #endif
 };
@@ -248,7 +248,7 @@ public:
   
   nsNodeAllocator();
   ~nsNodeAllocator();
-  nsCParserNode* CreateNode(CToken* aToken=nsnull, nsTokenAllocator* aTokenAllocator=0);
+  nsCParserNode* CreateNode(CToken* aToken=nullptr, nsTokenAllocator* aTokenAllocator=0);
 
   nsFixedSizeAllocator&  GetArenaPool() { return mNodePool; }
 
@@ -314,7 +314,7 @@ public:
   nsTokenAllocator  *mTokenAllocator;
   nsNodeAllocator   *mNodeAllocator;
 
-#ifdef  NS_DEBUG
+#ifdef  DEBUG
   enum { eMaxTags = MAX_REFLOW_DEPTH };
   eHTMLTags       mXTags[eMaxTags];
 #endif

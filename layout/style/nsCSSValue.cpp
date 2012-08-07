@@ -423,10 +423,10 @@ void nsCSSValue::SetPairValue(const nsCSSValue& xValue,
 void nsCSSValue::SetTripletValue(const nsCSSValueTriplet* aValue)
 {
     // triplet should not be used for null/inherit/initial values
-    // Only allow Null for the z component
     NS_ABORT_IF_FALSE(aValue &&
                       aValue->mXValue.GetUnit() != eCSSUnit_Null &&
                       aValue->mYValue.GetUnit() != eCSSUnit_Null &&
+                      aValue->mZValue.GetUnit() != eCSSUnit_Null &&
                       aValue->mXValue.GetUnit() != eCSSUnit_Inherit &&
                       aValue->mYValue.GetUnit() != eCSSUnit_Inherit &&
                       aValue->mZValue.GetUnit() != eCSSUnit_Inherit &&
@@ -828,21 +828,6 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult) const
                                            aResult);
       }
     }
-    else if (eCSSProperty_unicode_bidi == aProperty) {
-      MOZ_STATIC_ASSERT(NS_STYLE_UNICODE_BIDI_NORMAL == 0,
-                        "unicode-bidi style constants not as expected");
-      PRInt32 intValue = GetIntValue();
-      if (NS_STYLE_UNICODE_BIDI_NORMAL == intValue) {
-        AppendASCIItoUTF16(nsCSSProps::LookupPropertyValue(aProperty, intValue),
-                           aResult);
-      } else {
-        nsStyleUtil::AppendBitmaskCSSValue(
-          aProperty, intValue,
-          NS_STYLE_UNICODE_BIDI_EMBED,
-          NS_STYLE_UNICODE_BIDI_PLAINTEXT,
-          aResult);
-      }
-    }
     else {
       const nsAFlatCString& name = nsCSSProps::LookupPropertyValue(aProperty, GetIntValue());
       AppendASCIItoUTF16(name, aResult);
@@ -908,37 +893,90 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult) const
   else if (eCSSUnit_Gradient == unit) {
     nsCSSValueGradient* gradient = GetGradientValue();
 
+    if (gradient->mIsLegacySyntax) {
+      aResult.AppendLiteral("-moz-");
+    }
     if (gradient->mIsRepeating) {
-      if (gradient->mIsRadial)
-        aResult.AppendLiteral("-moz-repeating-radial-gradient(");
-      else
-        aResult.AppendLiteral("-moz-repeating-linear-gradient(");
+      aResult.AppendLiteral("repeating-");
+    }
+    if (gradient->mIsRadial) {
+      aResult.AppendLiteral("radial-gradient(");
     } else {
-      if (gradient->mIsRadial)
-        aResult.AppendLiteral("-moz-radial-gradient(");
-      else
-        aResult.AppendLiteral("-moz-linear-gradient(");
+      aResult.AppendLiteral("linear-gradient(");
     }
 
-    if (gradient->mIsToCorner) {
-      aResult.AppendLiteral("to");
-      NS_ABORT_IF_FALSE(gradient->mBgPos.mXValue.GetUnit() == eCSSUnit_Enumerated &&
-                        gradient->mBgPos.mYValue.GetUnit() == eCSSUnit_Enumerated,
-                        "unexpected unit");
-      if (!(gradient->mBgPos.mXValue.GetIntValue() & NS_STYLE_BG_POSITION_CENTER)) {
-        aResult.AppendLiteral(" ");
-        gradient->mBgPos.mXValue.AppendToString(eCSSProperty_background_position,
-                                                aResult);
+    bool needSep = false;
+    if (gradient->mIsRadial && !gradient->mIsLegacySyntax) {
+      if (!gradient->mIsExplicitSize) {
+        if (gradient->GetRadialShape().GetUnit() != eCSSUnit_None) {
+          NS_ABORT_IF_FALSE(gradient->GetRadialShape().GetUnit() ==
+                            eCSSUnit_Enumerated,
+                            "bad unit for radial gradient shape");
+          PRInt32 intValue = gradient->GetRadialShape().GetIntValue();
+          NS_ABORT_IF_FALSE(intValue != NS_STYLE_GRADIENT_SHAPE_LINEAR,
+                            "radial gradient with linear shape?!");
+          AppendASCIItoUTF16(nsCSSProps::ValueToKeyword(intValue,
+                                 nsCSSProps::kRadialGradientShapeKTable),
+                             aResult);
+          needSep = true;
+        }
+
+        if (gradient->GetRadialSize().GetUnit() != eCSSUnit_None) {
+          if (needSep) {
+            aResult.AppendLiteral(" ");
+          }
+          NS_ABORT_IF_FALSE(gradient->GetRadialSize().GetUnit() ==
+                            eCSSUnit_Enumerated,
+                            "bad unit for radial gradient size");
+          PRInt32 intValue = gradient->GetRadialSize().GetIntValue();
+          AppendASCIItoUTF16(nsCSSProps::ValueToKeyword(intValue,
+                                 nsCSSProps::kRadialGradientSizeKTable),
+                             aResult);
+          needSep = true;
+        }
+      } else {
+        NS_ABORT_IF_FALSE(gradient->GetRadiusX().GetUnit() != eCSSUnit_None,
+                          "bad unit for radial gradient explicit size");
+        gradient->GetRadiusX().AppendToString(aProperty, aResult);
+        if (gradient->GetRadiusY().GetUnit() != eCSSUnit_None) {
+          aResult.AppendLiteral(" ");
+          gradient->GetRadiusY().AppendToString(aProperty, aResult);
+        }
+        needSep = true;
       }
-      if (!(gradient->mBgPos.mYValue.GetIntValue() & NS_STYLE_BG_POSITION_CENTER)) {
-        aResult.AppendLiteral(" ");
-        gradient->mBgPos.mYValue.AppendToString(eCSSProperty_background_position,
-                                                aResult);
+    }
+    if (!gradient->mIsRadial && !gradient->mIsLegacySyntax) {
+      if (gradient->mBgPos.mXValue.GetUnit() != eCSSUnit_None ||
+          gradient->mBgPos.mYValue.GetUnit() != eCSSUnit_None) {
+        MOZ_ASSERT(gradient->mAngle.GetUnit() == eCSSUnit_None);
+        NS_ABORT_IF_FALSE(gradient->mBgPos.mXValue.GetUnit() == eCSSUnit_Enumerated &&
+                          gradient->mBgPos.mYValue.GetUnit() == eCSSUnit_Enumerated,
+                          "unexpected unit");
+        aResult.AppendLiteral("to");
+        if (!(gradient->mBgPos.mXValue.GetIntValue() & NS_STYLE_BG_POSITION_CENTER)) {
+          aResult.AppendLiteral(" ");
+          gradient->mBgPos.mXValue.AppendToString(eCSSProperty_background_position,
+                                                  aResult);
+        }
+        if (!(gradient->mBgPos.mYValue.GetIntValue() & NS_STYLE_BG_POSITION_CENTER)) {
+          aResult.AppendLiteral(" ");
+          gradient->mBgPos.mYValue.AppendToString(eCSSProperty_background_position,
+                                                  aResult);
+        }
+        needSep = true;
+      } else if (gradient->mAngle.GetUnit() != eCSSUnit_None) {
+        gradient->mAngle.AppendToString(aProperty, aResult);
+        needSep = true;
       }
-      aResult.AppendLiteral(", ");
     } else if (gradient->mBgPos.mXValue.GetUnit() != eCSSUnit_None ||
         gradient->mBgPos.mYValue.GetUnit() != eCSSUnit_None ||
         gradient->mAngle.GetUnit() != eCSSUnit_None) {
+      if (needSep) {
+        aResult.AppendLiteral(" ");
+      }
+      if (gradient->mIsRadial && !gradient->mIsLegacySyntax) {
+        aResult.AppendLiteral("at ");
+      }
       if (gradient->mBgPos.mXValue.GetUnit() != eCSSUnit_None) {
         gradient->mBgPos.mXValue.AppendToString(eCSSProperty_background_position,
                                                 aResult);
@@ -950,19 +988,25 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult) const
         aResult.AppendLiteral(" ");
       }
       if (gradient->mAngle.GetUnit() != eCSSUnit_None) {
+        NS_ABORT_IF_FALSE(gradient->mIsLegacySyntax,
+                          "angle is allowed only for legacy syntax");
         gradient->mAngle.AppendToString(aProperty, aResult);
       }
-      aResult.AppendLiteral(", ");
+      needSep = true;
     }
 
-    if (gradient->mIsRadial &&
-        (gradient->mRadialShape.GetUnit() != eCSSUnit_None ||
-         gradient->mRadialSize.GetUnit() != eCSSUnit_None)) {
-      if (gradient->mRadialShape.GetUnit() != eCSSUnit_None) {
-        NS_ABORT_IF_FALSE(gradient->mRadialShape.GetUnit() ==
+    if (gradient->mIsRadial && gradient->mIsLegacySyntax &&
+        (gradient->GetRadialShape().GetUnit() != eCSSUnit_None ||
+         gradient->GetRadialSize().GetUnit() != eCSSUnit_None)) {
+      MOZ_ASSERT(!gradient->mIsExplicitSize);
+      if (needSep) {
+        aResult.AppendLiteral(", ");
+      }
+      if (gradient->GetRadialShape().GetUnit() != eCSSUnit_None) {
+        NS_ABORT_IF_FALSE(gradient->GetRadialShape().GetUnit() ==
                           eCSSUnit_Enumerated,
                           "bad unit for radial gradient shape");
-        PRInt32 intValue = gradient->mRadialShape.GetIntValue();
+        PRInt32 intValue = gradient->GetRadialShape().GetIntValue();
         NS_ABORT_IF_FALSE(intValue != NS_STYLE_GRADIENT_SHAPE_LINEAR,
                           "radial gradient with linear shape?!");
         AppendASCIItoUTF16(nsCSSProps::ValueToKeyword(intValue,
@@ -971,15 +1015,18 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult) const
         aResult.AppendLiteral(" ");
       }
 
-      if (gradient->mRadialSize.GetUnit() != eCSSUnit_None) {
-        NS_ABORT_IF_FALSE(gradient->mRadialSize.GetUnit() ==
+      if (gradient->GetRadialSize().GetUnit() != eCSSUnit_None) {
+        NS_ABORT_IF_FALSE(gradient->GetRadialSize().GetUnit() ==
                           eCSSUnit_Enumerated,
                           "bad unit for radial gradient size");
-        PRInt32 intValue = gradient->mRadialSize.GetIntValue();
+        PRInt32 intValue = gradient->GetRadialSize().GetIntValue();
         AppendASCIItoUTF16(nsCSSProps::ValueToKeyword(intValue,
                                nsCSSProps::kRadialGradientSizeKTable),
                            aResult);
       }
+      needSep = true;
+    }
+    if (needSep) {
       aResult.AppendLiteral(", ");
     }
 
@@ -1255,7 +1302,7 @@ nsCSSValueList::CloneInto(nsCSSValueList* aList) const
 {
     NS_ASSERTION(!aList->mNext, "Must be an empty list!");
     aList->mValue = mValue;
-    aList->mNext = mNext ? mNext->Clone() : nsnull;
+    aList->mNext = mNext ? mNext->Clone() : nullptr;
 }
 
 void
@@ -1621,7 +1668,7 @@ nsCSSValue::URL::GetURI() const
     // Be careful to not null out mURI before we've passed it as the base URI
     nsCOMPtr<nsIURI> newURI;
     NS_NewURI(getter_AddRefs(newURI),
-              NS_ConvertUTF16toUTF8(GetBufferValue(mString)), nsnull, mURI);
+              NS_ConvertUTF16toUTF8(GetBufferValue(mString)), nullptr, mURI);
     newURI.swap(mURI);
   }
 
@@ -1658,7 +1705,7 @@ nsCSSValue::Image::Image(nsIURI* aURI, nsStringBuffer* aString,
       nsContentUtils::CanLoadImage(aURI, aDocument, aDocument,
                                    aOriginPrincipal)) {
     nsContentUtils::LoadImage(aURI, aDocument, aOriginPrincipal, aReferrer,
-                              nsnull, nsIRequest::LOAD_NORMAL,
+                              nullptr, nsIRequest::LOAD_NORMAL,
                               getter_AddRefs(mRequest));
   }
 }
@@ -1699,23 +1746,24 @@ nsCSSValueGradient::nsCSSValueGradient(bool aIsRadial,
                                        bool aIsRepeating)
   : mIsRadial(aIsRadial),
     mIsRepeating(aIsRepeating),
-    mIsToCorner(false),
+    mIsLegacySyntax(false),
+    mIsExplicitSize(false),
     mBgPos(eCSSUnit_None),
-    mAngle(eCSSUnit_None),
-    mRadialShape(eCSSUnit_None),
-    mRadialSize(eCSSUnit_None)
+    mAngle(eCSSUnit_None)
 {
+  mRadialValues[0].SetNoneValue();
+  mRadialValues[1].SetNoneValue();
 }
 
 size_t
 nsCSSValueGradient::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
 {
   size_t n = aMallocSizeOf(this);
-  n += mBgPos      .SizeOfExcludingThis(aMallocSizeOf);
-  n += mAngle      .SizeOfExcludingThis(aMallocSizeOf);
-  n += mRadialShape.SizeOfExcludingThis(aMallocSizeOf);
-  n += mRadialSize .SizeOfExcludingThis(aMallocSizeOf);
-  n += mStops      .SizeOfExcludingThis(aMallocSizeOf);
+  n += mBgPos.SizeOfExcludingThis(aMallocSizeOf);
+  n += mAngle.SizeOfExcludingThis(aMallocSizeOf);
+  n += mRadialValues[0].SizeOfExcludingThis(aMallocSizeOf);
+  n += mRadialValues[1].SizeOfExcludingThis(aMallocSizeOf);
+  n += mStops.SizeOfExcludingThis(aMallocSizeOf);
   for (PRUint32 i = 0; i < mStops.Length(); i++) {
     n += mStops[i].SizeOfExcludingThis(aMallocSizeOf);
   }

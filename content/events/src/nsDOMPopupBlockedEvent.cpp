@@ -3,9 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsDOMClassInfoID.h"
 #include "nsDOMPopupBlockedEvent.h"
 #include "nsIURI.h"
-#include "nsContentUtils.h"
 
 NS_IMPL_ADDREF_INHERITED(nsDOMPopupBlockedEvent, nsDOMEvent)
 NS_IMPL_RELEASE_INHERITED(nsDOMPopupBlockedEvent, nsDOMEvent)
@@ -38,7 +38,7 @@ nsDOMPopupBlockedEvent::InitPopupBlockedEvent(const nsAString & aTypeArg,
 NS_IMETHODIMP
 nsDOMPopupBlockedEvent::GetRequestingWindow(nsIDOMWindow **aRequestingWindow)
 {
-  *aRequestingWindow = nsnull;
+  *aRequestingWindow = nullptr;
   if (mRequestingWindow)
     CallQueryReferent(mRequestingWindow.get(), aRequestingWindow);
 
@@ -75,7 +75,7 @@ nsresult NS_NewDOMPopupBlockedEvent(nsIDOMEvent** aInstancePtrResult,
                                     nsEvent *aEvent) 
 {
   nsDOMPopupBlockedEvent* it = new nsDOMPopupBlockedEvent(aPresContext, aEvent);
-  if (nsnull == it) {
+  if (nullptr == it) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 

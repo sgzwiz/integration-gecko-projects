@@ -37,9 +37,9 @@ using namespace mozilla::net;
 static NS_DEFINE_CID(kDNSServiceCID, NS_DNSSERVICE_CID);
 bool sDisablePrefetchHTTPSPref;
 static bool sInitialized = false;
-static nsIDNSService *sDNSService = nsnull;
-static nsHTMLDNSPrefetch::nsDeferrals *sPrefetches = nsnull;
-static nsHTMLDNSPrefetch::nsListener *sDNSListener = nsnull;
+static nsIDNSService *sDNSService = nullptr;
+static nsHTMLDNSPrefetch::nsDeferrals *sPrefetches = nullptr;
+static nsHTMLDNSPrefetch::nsListener *sDNSListener = nullptr;
 
 nsresult
 nsHTMLDNSPrefetch::Initialize()
@@ -150,7 +150,7 @@ nsHTMLDNSPrefetch::Prefetch(const nsAString &hostname, PRUint16 flags)
   nsCOMPtr<nsICancelable> tmpOutstanding;
   return sDNSService->AsyncResolve(NS_ConvertUTF16toUTF8(hostname),
                                    flags | nsIDNSService::RESOLVE_SPECULATE,
-                                   sDNSListener, nsnull, 
+                                   sDNSListener, nullptr, 
                                    getter_AddRefs(tmpOutstanding));
 }
 
@@ -273,7 +273,7 @@ nsHTMLDNSPrefetch::nsDeferrals::Flush()
   while (mHead != mTail) {
     if (mEntries[mTail].mZone >= JS_ZONE_CONTENT_START)
       NS_StickContentLock(mEntries[mTail].mZone);
-    mEntries[mTail].mElement = nsnull;
+    mEntries[mTail].mElement = nullptr;
     mTail = (mTail + 1) & sMaxDeferredMask;
   }
 }
@@ -317,7 +317,7 @@ nsHTMLDNSPrefetch::nsDeferrals::SubmitQueue()
       nsCOMPtr<Link> link = do_QueryInterface(content);
       // Only prefetch here if request was deferred and deferral not cancelled
       if (link && link->HasDeferredDNSPrefetchRequest()) {
-        nsCOMPtr<nsIURI> hrefURI(link ? link->GetURI() : nsnull);
+        nsCOMPtr<nsIURI> hrefURI(link ? link->GetURI() : nullptr);
         if (hrefURI)
           hrefURI->GetAsciiHost(hostName);
 
@@ -331,7 +331,7 @@ nsHTMLDNSPrefetch::nsDeferrals::SubmitQueue()
             nsresult rv = sDNSService->AsyncResolve(hostName, 
                                     mEntries[mTail].mFlags
                                     | nsIDNSService::RESOLVE_SPECULATE,
-                                    sDNSListener, nsnull,
+                                    sDNSListener, nullptr,
                                     getter_AddRefs(tmpOutstanding));
             // Tell link that deferred prefetch was requested
             if (NS_SUCCEEDED(rv))
@@ -341,7 +341,7 @@ nsHTMLDNSPrefetch::nsDeferrals::SubmitQueue()
       }
     }
     
-    mEntries[mTail].mElement = nsnull;
+    mEntries[mTail].mElement = nullptr;
     mTail = (mTail + 1) & sMaxDeferredMask;
   }
   

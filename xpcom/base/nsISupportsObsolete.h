@@ -71,7 +71,7 @@ _method(const char *aString)                   \
 {                                              \
     if (_member) PR_Free(_member);             \
     if (!aString)                              \
-      _member = nsnull;                        \
+      _member = nullptr;                        \
     else if (!(_member = PL_strdup(aString)))  \
       return NS_ERROR_OUT_OF_MEMORY;           \
     return NS_OK;                              \
@@ -192,7 +192,7 @@ NS_IMPL_SETTER_STR(_class::Set##_postfix, _member)
  * @param _classiiddef The name of the #define symbol that defines the IID
  * for the class (e.g. NS_ISUPPORTS_IID)
  */
-#if defined(NS_DEBUG)
+#if defined(DEBUG)
 #define NS_VERIFY_THREADSAFE_INTERFACE(_iface)                                \
  if (NULL != (_iface)) {                                                      \
    nsISupports* tmp;                                                          \

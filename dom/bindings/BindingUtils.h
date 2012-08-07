@@ -20,6 +20,7 @@
 #include "xpcpublic.h"
 #include "nsTraceRefcnt.h"
 #include "nsWrapperCacheInlines.h"
+#include "mozilla/Likely.h"
 
 // nsGlobalWindow implements nsWrapperCache, but doesn't always use it. Don't
 // try to use it without fixing that first.
@@ -27,6 +28,17 @@ class nsGlobalWindow;
 
 namespace mozilla {
 namespace dom {
+
+enum ErrNum {
+#define MSG_DEF(_name, _argc, _str) \
+  _name,
+#include "mozilla/dom/Errors.msg"
+#undef MSG_DEF
+  Err_Limit
+};
+
+bool
+ThrowErrorMessage(JSContext* aCx, const ErrNum aErrorNumber, ...);
 
 template<bool mainThread>
 inline bool
@@ -62,20 +74,19 @@ IsDOMClass(const JSClass* clasp)
   return clasp->flags & JSCLASS_IS_DOMJSCLASS;
 }
 
+inline bool
+IsDOMClass(const js::Class* clasp)
+{
+  return IsDOMClass(Jsvalify(clasp));
+}
+
 template <class T>
 inline T*
-UnwrapDOMObject(JSObject* obj, const JSClass* clasp)
+UnwrapDOMObject(JSObject* obj)
 {
-  MOZ_ASSERT(IsDOMClass(clasp));
-  MOZ_ASSERT(JS_GetClass(obj) == clasp);
+  MOZ_ASSERT(IsDOMClass(JS_GetClass(obj)));
 
-  size_t slot = DOMJSClass::FromJSClass(clasp)->mNativeSlot;
-  MOZ_ASSERT((slot == DOM_OBJECT_SLOT &&
-              !(clasp->flags & JSCLASS_DOM_GLOBAL)) ||
-             (slot == DOM_GLOBAL_OBJECT_SLOT &&
-              (clasp->flags & JSCLASS_DOM_GLOBAL)));
-
-  JS::Value val = js::GetReservedSlot(obj, slot);
+  JS::Value val = js::GetReservedSlot(obj, DOM_OBJECT_SLOT);
   // XXXbz/khuey worker code tries to unwrap interface objects (which have
   // nothing here).  That needs to stop.
   // XXX We don't null-check UnwrapObject's result; aren't we going to crash
@@ -85,13 +96,6 @@ UnwrapDOMObject(JSObject* obj, const JSClass* clasp)
   }
   
   return static_cast<T*>(val.toPrivate());
-}
-
-template <class T>
-inline T*
-UnwrapDOMObject(JSObject* obj, const js::Class* clasp)
-{
-  return UnwrapDOMObject<T>(obj, Jsvalify(clasp));
 }
 
 // Some callers don't want to set an exception when unwrappin fails
@@ -131,7 +135,7 @@ UnwrapObject(JSContext* cx, JSObject* obj, U& value)
   DOMJSClass* domClass = DOMJSClass::FromJSClass(clasp);
   if (domClass->mInterfaceChain[PrototypeTraits<PrototypeID>::Depth] ==
       PrototypeID) {
-    value = UnwrapDOMObject<T>(obj, clasp);
+    value = UnwrapDOMObject<T>(obj);
     return NS_OK;
   }
 
@@ -197,7 +201,7 @@ inline nsresult
 UnwrapObject(JSContext* cx, JSObject* obj, U& value)
 {
   return UnwrapObject<static_cast<prototypes::ID>(
-           PrototypeIDMap<T>::PrototypeID)>(cx, obj, value);
+           PrototypeIDMap<T>::PrototypeID), T>(cx, obj, value);
 }
 
 const size_t kProtoOrIfaceCacheCount =
@@ -221,6 +225,8 @@ TraceProtoOrIfaceCache(JSTracer* trc, JSObject* obj)
 {
   MOZ_ASSERT(js::GetObjectClass(obj)->flags & JSCLASS_DOM_GLOBAL);
 
+  if (!HasProtoOrIfaceArray(obj))
+    return;
   JSObject** protoOrIfaceArray = GetProtoOrIfaceArray(obj);
   for (size_t i = 0; i < kProtoOrIfaceCacheCount; ++i) {
     JSObject* proto = protoOrIfaceArray[i];
@@ -341,12 +347,48 @@ WrapNewBindingObject(JSContext* cx, JSObject* scope, T* value, JS::Value* vp)
 }
 
 // Helper for smart pointers (nsAutoPtr/nsRefPtr/nsCOMPtr).
-template <template <class> class SmartPtr, class T>
+template <template <typename> class SmartPtr, class T>
 inline bool
 WrapNewBindingObject(JSContext* cx, JSObject* scope, const SmartPtr<T>& value,
                      JS::Value* vp)
 {
   return WrapNewBindingObject(cx, scope, value.get(), vp);
+}
+
+template <class T>
+inline bool
+WrapNewBindingNonWrapperCachedObject(JSContext* cx, JSObject* scope, T* value,
+                                     JS::Value* vp)
+{
+  // We try to wrap in the compartment of the underlying object of "scope"
+  JSObject* obj;
+  {
+    // scope for the JSAutoEnterCompartment so that we restore the
+    // compartment before we call JS_WrapValue.
+    JSAutoEnterCompartment ac;
+    if (js::IsWrapper(scope)) {
+      scope = xpc::Unwrap(cx, scope, false);
+      if (!scope || !ac.enter(cx, scope)) {
+        return false;
+      }
+    }
+
+    obj = value->WrapObject(cx, scope);
+  }
+
+  // We can end up here in all sorts of compartments, per above.  Make
+  // sure to JS_WrapValue!
+  *vp = JS::ObjectValue(*obj);
+  return JS_WrapValue(cx, vp);
+}
+
+// Helper for smart pointers (nsAutoPtr/nsRefPtr/nsCOMPtr).
+template <template <typename> class SmartPtr, typename T>
+inline bool
+WrapNewBindingNonWrapperCachedObject(JSContext* cx, JSObject* scope,
+                                     const SmartPtr<T>& value, JS::Value* vp)
+{
+  return WrapNewBindingNonWrapperCachedObject(cx, scope, value.get(), vp);
 }
 
 /**
@@ -372,7 +414,7 @@ HandleNewBindingWrappingFailure(JSContext* cx, JSObject* scope, T* value,
 }
 
 // Helper for smart pointers (nsAutoPtr/nsRefPtr/nsCOMPtr).
-template <template <class> class SmartPtr, class T>
+template <template <typename> class SmartPtr, class T>
 MOZ_ALWAYS_INLINE bool
 HandleNewBindingWrappingFailure(JSContext* cx, JSObject* scope,
                                 const SmartPtr<T>& value, JS::Value* vp)
@@ -385,8 +427,38 @@ struct EnumEntry {
   size_t length;
 };
 
+template<bool Fatal>
+inline bool
+EnumValueNotFound(JSContext* cx, const jschar* chars, size_t length,
+                  const char* type)
+{
+  return false;
+}
+
+template<>
+inline bool
+EnumValueNotFound<false>(JSContext* cx, const jschar* chars, size_t length,
+                         const char* type)
+{
+  // TODO: Log a warning to the console.
+  return true;
+}
+
+template<>
+inline bool
+EnumValueNotFound<true>(JSContext* cx, const jschar* chars, size_t length,
+                        const char* type)
+{
+  NS_LossyConvertUTF16toASCII deflated(static_cast<const PRUnichar*>(chars),
+                                       length);
+  return ThrowErrorMessage(cx, MSG_INVALID_ENUM_VALUE, deflated.get(), type);
+}
+
+
+template<bool InvalidValueFatal>
 inline int
-FindEnumStringIndex(JSContext* cx, JS::Value v, const EnumEntry* values, bool* ok)
+FindEnumStringIndex(JSContext* cx, JS::Value v, const EnumEntry* values,
+                    const char* type, bool* ok)
 {
   // JS_StringEqualsAscii is slow as molasses, so don't use it here.
   JSString* str = JS_ValueToString(cx, v);
@@ -422,9 +494,8 @@ FindEnumStringIndex(JSContext* cx, JS::Value v, const EnumEntry* values, bool* o
     }
   }
 
-  // XXX we don't know whether we're on the main thread, so play it safe
-  *ok = Throw<false>(cx, NS_ERROR_XPC_BAD_CONVERT_JS);
-  return 0;
+  *ok = EnumValueNotFound<InvalidValueFatal>(cx, chars, length, type);
+  return -1;
 }
 
 inline nsWrapperCache*
@@ -449,7 +520,7 @@ struct ParentObject {
     mWrapperCache(GetWrapperCache(aObject))
   {}
 
-  template<class T, template<class> class SmartPtr>
+  template<class T, template<typename> class SmartPtr>
   ParentObject(const SmartPtr<T>& aObject) :
     mObject(aObject.get()),
     mWrapperCache(GetWrapperCache(aObject.get()))
@@ -474,13 +545,13 @@ template<class T>
 inline nsISupports*
 GetParentPointer(T* aObject)
 {
-  return aObject;
+  return ToSupports(aObject);
 }
 
 inline nsISupports*
 GetParentPointer(const ParentObject& aObject)
 {
-  return aObject.mObject;
+  return ToSupports(aObject.mObject);
 }
 
 // Only set allowNativeWrapper to false if you really know you need it, if in
@@ -583,6 +654,16 @@ WrapNativeParent(JSContext* cx, JSObject* scope, const T& p)
          NULL;
 }
 
+static inline bool
+InternJSString(JSContext* cx, jsid& id, const char* chars)
+{
+  if (JSString *str = ::JS_InternString(cx, chars)) {
+    id = INTERNED_STRING_TO_JSID(cx, str);
+    return true;
+  }
+  return false;
+}
+
 // Spec needs a name property
 template <typename Spec>
 static bool
@@ -595,12 +676,9 @@ InitIds(JSContext* cx, Prefable<Spec>* prefableSpecs, jsid* ids)
     // because this is only done once per application runtime.
     Spec* spec = prefableSpecs->specs;
     do {
-      JSString *str = ::JS_InternString(cx, spec->name);
-      if (!str) {
+      if (!InternJSString(cx, *ids, spec->name)) {
         return false;
       }
-
-      *ids = INTERNED_STRING_TO_JSID(cx, str);
     } while (++ids, (++spec)->name);
 
     // We ran out of ids for that pref.  Put a JSID_VOID in on the id
@@ -616,8 +694,6 @@ JSBool
 QueryInterface(JSContext* cx, unsigned argc, JS::Value* vp);
 JSBool
 ThrowingConstructor(JSContext* cx, unsigned argc, JS::Value* vp);
-JSBool
-ThrowingConstructorWorkers(JSContext* cx, unsigned argc, JS::Value* vp);
 
 template<class T>
 class NonNull
@@ -643,6 +719,15 @@ public:
 
   void operator=(T* t) {
     ptr = t;
+    MOZ_ASSERT(ptr);
+#ifdef DEBUG
+    inited = true;
+#endif
+  }
+
+  template<typename U>
+  void operator=(U* t) {
+    ptr = t->ToAStringPtr();
     MOZ_ASSERT(ptr);
 #ifdef DEBUG
     inited = true;
@@ -703,17 +788,83 @@ protected:
 #endif
 };
 
+// A struct that has the same layout as an nsDependentString but much
+// faster constructor and destructor behavior
+struct FakeDependentString {
+  FakeDependentString() :
+    mFlags(nsDependentString::F_TERMINATED)
+  {
+  }
+
+  void SetData(const nsDependentString::char_type* aData,
+               nsDependentString::size_type aLength) {
+    MOZ_ASSERT(mFlags == nsDependentString::F_TERMINATED);
+    mData = aData;
+    mLength = aLength;
+  }
+
+  void Truncate() {
+    mData = nsDependentString::char_traits::sEmptyBuffer;
+    mLength = 0;
+  }
+
+  void SetNull() {
+    Truncate();
+    mFlags |= nsDependentString::F_VOIDED;
+  }
+
+  const nsAString* ToAStringPtr() const {
+    return reinterpret_cast<const nsDependentString*>(this);
+  }
+
+  nsAString* ToAStringPtr() {
+    return reinterpret_cast<nsDependentString*>(this);
+  }
+
+  operator const nsAString& () const {
+    return *reinterpret_cast<const nsDependentString*>(this);
+  }
+
+private:
+  const nsDependentString::char_type* mData;
+  nsDependentString::size_type mLength;
+  PRUint32 mFlags;
+
+  // A class to use for our static asserts to ensure our object layout
+  // matches that of nsDependentString.
+  class DependentStringAsserter;
+  friend class DependentStringAsserter;
+
+  class DepedentStringAsserter : public nsDependentString {
+  public:
+    static void StaticAsserts() {
+      MOZ_STATIC_ASSERT(sizeof(FakeDependentString) == sizeof(nsDependentString),
+                        "Must have right object size");
+      MOZ_STATIC_ASSERT(offsetof(FakeDependentString, mData) ==
+                          offsetof(DepedentStringAsserter, mData),
+                        "Offset of mData should match");
+      MOZ_STATIC_ASSERT(offsetof(FakeDependentString, mLength) ==
+                          offsetof(DepedentStringAsserter, mLength),
+                        "Offset of mLength should match");
+      MOZ_STATIC_ASSERT(offsetof(FakeDependentString, mFlags) ==
+                          offsetof(DepedentStringAsserter, mFlags),
+                        "Offset of mFlags should match");
+    }
+  };
+};
+
 enum StringificationBehavior {
   eStringify,
   eEmpty,
   eNull
 };
 
+// pval must not be null and must point to a rooted JS::Value
 static inline bool
 ConvertJSValueToString(JSContext* cx, const JS::Value& v, JS::Value* pval,
                        StringificationBehavior nullBehavior,
                        StringificationBehavior undefinedBehavior,
-                       nsDependentString& result)
+                       FakeDependentString& result)
 {
   JSString *s;
   if (v.isString()) {
@@ -728,13 +879,12 @@ ConvertJSValueToString(JSContext* cx, const JS::Value& v, JS::Value* pval,
       behavior = eStringify;
     }
 
-    // If pval is null, that means the argument was optional and
-    // not passed; turn those into void strings if they're
-    // supposed to be stringified.
-    if (behavior != eStringify || !pval) {
-      // Here behavior == eStringify implies !pval, so both eNull and
-      // eStringify should end up with void strings.
-      result.SetIsVoid(behavior != eEmpty);
+    if (behavior != eStringify) {
+      if (behavior == eEmpty) {
+        result.Truncate();
+      } else {
+        result.SetNull();
+      }
       return true;
     }
 
@@ -751,7 +901,7 @@ ConvertJSValueToString(JSContext* cx, const JS::Value& v, JS::Value* pval,
     return false;
   }
 
-  result.Rebind(chars, len);
+  result.SetData(chars, len);
   return true;
 }
 
@@ -806,6 +956,12 @@ public:
     mPassed = true;
   }
 
+  void operator=(const FakeDependentString* str) {
+    MOZ_ASSERT(str);
+    mStr = str->ToAStringPtr();
+    mPassed = true;
+  }
+
   const nsAString& Value() const {
     MOZ_ASSERT(WasPassed());
     return *mStr;
@@ -830,6 +986,58 @@ class Sequence : public AutoFallibleTArray<T, 16>
 public:
   Sequence() : AutoFallibleTArray<T, 16>() {}
 };
+
+// Class for holding the type of members of a union. The union type has an enum
+// to keep track of which of its UnionMembers has been constructed.
+template<class T>
+class UnionMember {
+    AlignedStorage2<T> storage;
+
+public:
+    T& SetValue() {
+      new (storage.addr()) T();
+      return *storage.addr();
+    }
+    const T& Value() const {
+      return *storage.addr();
+    }
+    void Destroy() {
+      storage.addr()->~T();
+    }
+};
+
+// Implementation of the bits that XrayWrapper needs
+bool
+XrayResolveProperty(JSContext* cx, JSObject* wrapper, jsid id,
+                    JSPropertyDescriptor* desc,
+                    // And the things we need to determine the descriptor
+                    Prefable<JSFunctionSpec>* methods,
+                    jsid* methodIds,
+                    JSFunctionSpec* methodSpecs,
+                    size_t methodCount,
+                    Prefable<JSPropertySpec>* attributes,
+                    jsid* attributeIds,
+                    JSPropertySpec* attributeSpecs,
+                    size_t attributeCount,
+                    Prefable<ConstantSpec>* constants,
+                    jsid* constantIds,
+                    ConstantSpec* constantSpecs,
+                    size_t constantCount);
+
+bool
+XrayEnumerateProperties(JS::AutoIdVector& props,
+                        Prefable<JSFunctionSpec>* methods,
+                        jsid* methodIds,
+                        JSFunctionSpec* methodSpecs,
+                        size_t methodCount,
+                        Prefable<JSPropertySpec>* attributes,
+                        jsid* attributeIds,
+                        JSPropertySpec* attributeSpecs,
+                        size_t attributeCount,
+                        Prefable<ConstantSpec>* constants,
+                        jsid* constantIds,
+                        ConstantSpec* constantSpecs,
+                        size_t constantCount);
 
 } // namespace dom
 } // namespace mozilla

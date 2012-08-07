@@ -36,6 +36,7 @@
 #endif
 
 #include "mozilla/BlockingResourceBase.h"
+#include "mozilla/mozPoisonWrite.h"
 
 #ifdef HAVE_DLOPEN
 #include <dlfcn.h>
@@ -115,11 +116,11 @@ static PRUintn gActivityTLS = BAD_TLS_INDEX;
 static bool gInitialized;
 static nsrefcnt gInitCount;
 
-static FILE *gBloatLog = nsnull;
-static FILE *gRefcntsLog = nsnull;
-static FILE *gAllocLog = nsnull;
-static FILE *gLeakyLog = nsnull;
-static FILE *gCOMPtrLog = nsnull;
+static FILE *gBloatLog = nullptr;
+static FILE *gRefcntsLog = nullptr;
+static FILE *gAllocLog = nullptr;
+static FILE *gLeakyLog = nullptr;
+static FILE *gCOMPtrLog = nullptr;
 
 struct serialNumberRecord {
   PRInt32 serialNumber;
@@ -493,10 +494,10 @@ nsresult
 nsTraceRefcntImpl::DumpStatistics(StatisticsType type, FILE* out)
 {
 #ifdef NS_IMPL_REFCNT_LOGGING
-  if (gBloatLog == nsnull || gBloatView == nsnull) {
+  if (gBloatLog == nullptr || gBloatView == nullptr) {
     return NS_ERROR_FAILURE;
   }
-  if (out == nsnull) {
+  if (out == nullptr) {
     out = gBloatLog;
   }
 
@@ -559,7 +560,7 @@ nsTraceRefcntImpl::ResetStatistics()
   LOCK_TRACELOG();
   if (gBloatView) {
     PL_HashTableDestroy(gBloatView);
-    gBloatView = nsnull;
+    gBloatView = nullptr;
   }
   UNLOCK_TRACELOG();
 #endif
@@ -569,7 +570,7 @@ nsTraceRefcntImpl::ResetStatistics()
 static bool LogThisType(const char* aTypeName)
 {
   void* he = PL_HashTableLookup(gTypesToLog, aTypeName);
-  return nsnull != he;
+  return nullptr != he;
 }
 
 static PRInt32 GetSerialNumber(void* aPtr, bool aCreate)
@@ -597,7 +598,7 @@ static PRInt32* GetRefCount(void* aPtr)
   if (hep && *hep) {
     return &((reinterpret_cast<serialNumberRecord*>((*hep)->value))->refCount);
   } else {
-    return nsnull;
+    return nullptr;
   }
 }
 
@@ -607,7 +608,7 @@ static PRInt32* GetCOMPtrCount(void* aPtr)
   if (hep && *hep) {
     return &((reinterpret_cast<serialNumberRecord*>((*hep)->value))->COMPtrCount);
   } else {
-    return nsnull;
+    return nullptr;
   }
 }
 
@@ -618,7 +619,7 @@ static void RecycleSerialNumberPtr(void* aPtr)
 
 static bool LogThisObj(PRInt32 aSerialNumber)
 {
-  return nsnull != PL_HashTableLookup(gObjectsToLog, (const void*)(aSerialNumber));
+  return nullptr != PL_HashTableLookup(gObjectsToLog, (const void*)(aSerialNumber));
 }
 
 #ifdef XP_WIN
@@ -660,6 +661,7 @@ static bool InitLog(const char* envVar, const char* msg, FILE* *result)
       }
       stream = ::fopen(fname.get(), "w" FOPEN_NO_INHERIT);
       if (stream != NULL) {
+        MozillaRegisterDebugFD(fileno(stream));
         *result = stream;
         fprintf(stdout, "### %s defined -- logging %s to %s\n",
                 envVar, msg, fname.get());
@@ -693,7 +695,7 @@ static void InitTraceLog(void)
     RecreateBloatView();
     if (!gBloatView) {
       NS_WARNING("out of memory");
-      gBloatLog = nsnull;
+      gBloatLog = nullptr;
       gLogLeaksOnly = false;
     }
   }
@@ -705,14 +707,14 @@ static void InitTraceLog(void)
   defined = InitLog("XPCOM_MEM_LEAKY_LOG", "for leaky", &gLeakyLog);
   if (defined) {
     gLogToLeaky = true;
-    PRFuncPtr p = nsnull, q = nsnull;
+    PRFuncPtr p = nullptr, q = nullptr;
 #ifdef HAVE_DLOPEN
     {
-      PRLibrary *lib = nsnull;
+      PRLibrary *lib = nullptr;
       p = PR_FindFunctionSymbolAndLibrary("__log_addref", &lib);
       if (lib) {
         PR_UnloadLibrary(lib);
-        lib = nsnull;
+        lib = nullptr;
       }
       q = PR_FindFunctionSymbolAndLibrary("__log_release", &lib);
       if (lib) {
@@ -851,7 +853,7 @@ static void InitTraceLog(void)
 
 extern "C" {
 
-static void PrintStackFrame(void *aPC, void *aClosure)
+static void PrintStackFrame(void *aPC, void *aSP, void *aClosure)
 {
   FILE *stream = (FILE*)aClosure;
 
@@ -892,8 +894,8 @@ nsTraceRefcntImpl::DemangleSymbol(const char * aSymbol,
                               char * aBuffer,
                               int aBufLen)
 {
-  NS_ASSERTION(nsnull != aSymbol,"null symbol");
-  NS_ASSERTION(nsnull != aBuffer,"null buffer");
+  NS_ASSERTION(nullptr != aSymbol,"null symbol");
+  NS_ASSERTION(nullptr != aBuffer,"null buffer");
   NS_ASSERTION(aBufLen >= 32 ,"pulled 32 out of you know where");
 
   aBuffer[0] = '\0';
@@ -1260,6 +1262,17 @@ nsTraceRefcntImpl::Startup()
 {
 }
 
+static void maybeUnregisterAndCloseFile(FILE *&f) {
+  if (!f)
+    return;
+
+  int fd = fileno(f);
+  fclose(f);
+  if (fd != 1 && fd != 2)
+    MozillaUnRegisterDebugFD(fd);
+  f = nullptr;
+}
+
 void
 nsTraceRefcntImpl::Shutdown()
 {
@@ -1267,40 +1280,25 @@ nsTraceRefcntImpl::Shutdown()
 
   if (gBloatView) {
     PL_HashTableDestroy(gBloatView);
-    gBloatView = nsnull;
+    gBloatView = nullptr;
   }
   if (gTypesToLog) {
     PL_HashTableDestroy(gTypesToLog);
-    gTypesToLog = nsnull;
+    gTypesToLog = nullptr;
   }
   if (gObjectsToLog) {
     PL_HashTableDestroy(gObjectsToLog);
-    gObjectsToLog = nsnull;
+    gObjectsToLog = nullptr;
   }
   if (gSerialNumbers) {
     PL_HashTableDestroy(gSerialNumbers);
-    gSerialNumbers = nsnull;
+    gSerialNumbers = nullptr;
   }
-  if (gBloatLog) {
-    fclose(gBloatLog);
-    gBloatLog = nsnull;
-  }
-  if (gRefcntsLog) {
-    fclose(gRefcntsLog);
-    gRefcntsLog = nsnull;
-  }
-  if (gAllocLog) {
-    fclose(gAllocLog);
-    gAllocLog = nsnull;
-  }
-  if (gLeakyLog) {
-    fclose(gLeakyLog);
-    gLeakyLog = nsnull;
-  }
-  if (gCOMPtrLog) {
-    fclose(gCOMPtrLog);
-    gCOMPtrLog = nsnull;
-  }
+  maybeUnregisterAndCloseFile(gBloatLog);
+  maybeUnregisterAndCloseFile(gRefcntsLog);
+  maybeUnregisterAndCloseFile(gAllocLog);
+  maybeUnregisterAndCloseFile(gLeakyLog);
+  maybeUnregisterAndCloseFile(gCOMPtrLog);
 #endif
 }
 
@@ -1309,7 +1307,7 @@ nsTraceRefcntImpl::SetActivityIsLegal(bool aLegal)
 {
 #ifdef NS_IMPL_REFCNT_LOGGING
   if (gActivityTLS == BAD_TLS_INDEX)
-    PR_NewThreadPrivateIndex(&gActivityTLS, nsnull);
+    PR_NewThreadPrivateIndex(&gActivityTLS, nullptr);
 
   PR_SetThreadPrivate(gActivityTLS, NS_INT32_TO_PTR(!aLegal));
 #endif

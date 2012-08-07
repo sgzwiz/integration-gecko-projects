@@ -94,11 +94,13 @@
 #include "nsHyphenationManager.h"
 #include "nsEditorSpellCheck.h"
 #include "nsWindowMemoryReporter.h"
+#include "mozilla/dom/ipc/ProcessPriorityManager.h"
 
 extern void NS_ShutdownChainItemPool();
 
 using namespace mozilla;
 using namespace mozilla::dom;
+using namespace mozilla::dom::ipc;
 
 nsrefcnt nsLayoutStatics::sLayoutStaticRefcnt = 0;
 
@@ -243,6 +245,8 @@ nsLayoutStatics::Initialize()
 
   nsSVGUtils::Init();
 
+  InitProcessPriorityManager();
+
   return NS_OK;
 }
 
@@ -309,6 +313,7 @@ nsLayoutStatics::Shutdown()
   nsXBLWindowKeyHandler::ShutDown();
   nsXBLService::Shutdown();
   nsAutoCopyListener::Shutdown();
+  FrameLayerBuilder::Shutdown();
 
 #ifdef MOZ_MEDIA_PLUGINS
   nsMediaPluginHost::Shutdown();  

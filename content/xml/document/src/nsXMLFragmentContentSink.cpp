@@ -14,15 +14,10 @@
 #include "nsIContent.h"
 #include "nsGkAtoms.h"
 #include "nsINodeInfo.h"
-#include "nsNodeInfoManager.h"
-#include "nsNullPrincipal.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsDOMError.h"
 #include "nsIConsoleService.h"
 #include "nsIScriptError.h"
-#include "nsServiceManagerUtils.h"
-#include "nsContentUtils.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsNetUtil.h"
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"
@@ -180,7 +175,7 @@ nsXMLFragmentContentSink::DidBuildModel(bool aTerminated)
 
   // Drop our reference to the parser to get rid of a circular
   // reference.
-  mParser = nsnull;
+  mParser = nullptr;
 
   return NS_OK;
 }
@@ -369,22 +364,22 @@ nsXMLFragmentContentSink::StartLayout()
 NS_IMETHODIMP 
 nsXMLFragmentContentSink::FinishFragmentParsing(nsIDOMDocumentFragment** aFragment)
 {
-  *aFragment = nsnull;
-  mTargetDocument = nsnull;
-  mNodeInfoManager = nsnull;
-  mScriptLoader = nsnull;
-  mCSSLoader = nsnull;
+  *aFragment = nullptr;
+  mTargetDocument = nullptr;
+  mNodeInfoManager = nullptr;
+  mScriptLoader = nullptr;
+  mCSSLoader = nullptr;
   mContentStack.Clear();
-  mDocumentURI = nsnull;
-  mDocShell = nsnull;
+  mDocumentURI = nullptr;
+  mDocShell = nullptr;
   if (mParseError) {
     //XXX PARSE_ERR from DOM3 Load and Save would be more appropriate
-    mRoot = nsnull;
+    mRoot = nullptr;
     mParseError = false;
     return NS_ERROR_DOM_SYNTAX_ERR;
   } else if (mRoot) {
     nsresult rv = CallQueryInterface(mRoot, aFragment);
-    mRoot = nsnull;
+    mRoot = nullptr;
     return rv;
   } else {
     return NS_OK;

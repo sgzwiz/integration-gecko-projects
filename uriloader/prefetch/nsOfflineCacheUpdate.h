@@ -31,6 +31,7 @@
 #include "nsTArray.h"
 #include "nsWeakReference.h"
 #include "nsICryptoHash.h"
+#include "mozilla/Attributes.h"
 
 class nsOfflineCacheUpdate;
 
@@ -55,27 +56,30 @@ public:
     NS_DECL_NSIINTERFACEREQUESTOR
     NS_DECL_NSICHANNELEVENTSINK
 
-    nsOfflineCacheUpdateItem(nsOfflineCacheUpdate *aUpdate,
-                             nsIURI *aURI,
+    nsOfflineCacheUpdateItem(nsIURI *aURI,
                              nsIURI *aReferrerURI,
+                             nsIApplicationCache *aApplicationCache,
                              nsIApplicationCache *aPreviousApplicationCache,
-                             const nsACString &aClientID,
                              PRUint32 aType);
     virtual ~nsOfflineCacheUpdateItem();
 
     nsCOMPtr<nsIURI>           mURI;
     nsCOMPtr<nsIURI>           mReferrerURI;
+    nsCOMPtr<nsIApplicationCache> mApplicationCache;
     nsCOMPtr<nsIApplicationCache> mPreviousApplicationCache;
-    nsCString                  mClientID;
     nsCString                  mCacheKey;
     PRUint32                   mItemType;
 
-    nsresult OpenChannel();
+    nsresult OpenChannel(nsOfflineCacheUpdate *aUpdate);
     nsresult Cancel();
     nsresult GetRequestSucceeded(bool * succeeded);
 
+    bool IsInProgress();
+    bool IsScheduled();
+    bool IsCompleted();
+
 private:
-    nsOfflineCacheUpdate*          mUpdate;
+    nsRefPtr<nsOfflineCacheUpdate> mUpdate;
     nsCOMPtr<nsIChannel>           mChannel;
     PRUint16                       mState;
 
@@ -90,11 +94,10 @@ public:
     NS_DECL_NSISTREAMLISTENER
     NS_DECL_NSIREQUESTOBSERVER
 
-    nsOfflineManifestItem(nsOfflineCacheUpdate *aUpdate,
-                          nsIURI *aURI,
+    nsOfflineManifestItem(nsIURI *aURI,
                           nsIURI *aReferrerURI,
-                          nsIApplicationCache *aPreviousApplicationCache,
-                          const nsACString &aClientID);
+                          nsIApplicationCache *aApplicationCache,
+                          nsIApplicationCache *aPreviousApplicationCache);
     virtual ~nsOfflineManifestItem();
 
     nsCOMArray<nsIURI> &GetExplicitURIs() { return mExplicitURIs; }
@@ -148,6 +151,7 @@ private:
         PARSE_CACHE_ENTRIES,
         PARSE_FALLBACK_ENTRIES,
         PARSE_BYPASS_ENTRIES,
+        PARSE_UNKNOWN_SECTION,
         PARSE_ERROR
     } mParserState;
 
@@ -180,9 +184,10 @@ public:
     virtual nsresult UpdateFinished(nsOfflineCacheUpdate *aUpdate) = 0;
 };
 
-class nsOfflineCacheUpdate : public nsIOfflineCacheUpdate
-                           , public nsIOfflineCacheUpdateObserver
-                           , public nsOfflineCacheUpdateOwner
+class nsOfflineCacheUpdate MOZ_FINAL : public nsIOfflineCacheUpdate
+                                     , public nsIOfflineCacheUpdateObserver
+                                     , public nsIRunnable
+                                     , public nsOfflineCacheUpdateOwner
 {
 public:
     NS_DECL_ISUPPORTS
@@ -191,6 +196,7 @@ public:
 
     NS_DECL_NSIOFFLINECACHEUPDATE
     NS_DECL_NSIOFFLINECACHEUPDATEOBSERVER
+    NS_DECL_NSIRUNNABLE
 
     nsOfflineCacheUpdate();
     ~nsOfflineCacheUpdate();
@@ -202,7 +208,7 @@ public:
     nsresult Begin();
     nsresult Cancel();
 
-    void LoadCompleted();
+    void LoadCompleted(nsOfflineCacheUpdateItem *aItem);
     void ManifestCheckCompleted(nsresult aStatus,
                                 const nsCString &aManifestHash);
     void StickDocument(nsIURI *aDocumentURI);
@@ -225,7 +231,7 @@ private:
     // If namespaceFilter is non-null, only items matching the
     // specified namespaces will be added.
     nsresult AddExistingItems(PRUint32 aType,
-                              nsTArray<nsCString>* namespaceFilter = nsnull);
+                              nsTArray<nsCString>* namespaceFilter = nullptr);
     nsresult ScheduleImplicit();
     nsresult AssociateDocuments(nsIApplicationCache* cache);
 
@@ -256,8 +262,8 @@ private:
     nsCString mUpdateDomain;
     nsCOMPtr<nsIURI> mManifestURI;
     nsCOMPtr<nsIURI> mDocumentURI;
+    nsCOMPtr<nsIFile> mCustomProfileDir;
 
-    nsCString mClientID;
     nsCOMPtr<nsIApplicationCache> mApplicationCache;
     nsCOMPtr<nsIApplicationCache> mPreviousApplicationCache;
 
@@ -266,7 +272,7 @@ private:
     nsRefPtr<nsOfflineManifestItem> mManifestItem;
 
     /* Items being updated */
-    PRInt32 mCurrentItem;
+    PRUint32 mItemsInProgress;
     nsTArray<nsRefPtr<nsOfflineCacheUpdateItem> > mItems;
 
     /* Clients watching this update for changes */
@@ -291,10 +297,10 @@ private:
     PRUint64                       mByteProgress;
 };
 
-class nsOfflineCacheUpdateService : public nsIOfflineCacheUpdateService
-                                  , public nsIObserver
-                                  , public nsOfflineCacheUpdateOwner
-                                  , public nsSupportsWeakReference
+class nsOfflineCacheUpdateService MOZ_FINAL : public nsIOfflineCacheUpdateService
+                                            , public nsIObserver
+                                            , public nsOfflineCacheUpdateOwner
+                                            , public nsSupportsWeakReference
 {
 public:
     NS_DECL_ISUPPORTS
@@ -318,13 +324,14 @@ public:
                       nsIURI *aDocumentURI,
                       nsIDOMDocument *aDocument,
                       nsIDOMWindow* aWindow,
+                      nsIFile* aCustomProfileDir,
                       nsIOfflineCacheUpdate **aUpdate);
 
     virtual nsresult UpdateFinished(nsOfflineCacheUpdate *aUpdate);
 
     /**
      * Returns the singleton nsOfflineCacheUpdateService without an addref, or
-     * nsnull if the service couldn't be created.
+     * nullptr if the service couldn't be created.
      */
     static nsOfflineCacheUpdateService *EnsureService();
 

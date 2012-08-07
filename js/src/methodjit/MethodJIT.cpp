@@ -1056,10 +1056,6 @@ mjit::EnterMethodJIT(JSContext *cx, StackFrame *fp, void *code, Value *stackLimi
         fp->markReturnValue();
     }
 
-    /* See comment in mjit::Compiler::emitReturn. */
-    if (fp->isFunctionFrame())
-        fp->updateEpilogueFlags();
-
     return ok ? Jaeger_Returned : Jaeger_Throwing;
 }
 
@@ -1366,10 +1362,10 @@ JSScript::JITScriptHandle::staticAsserts()
 size_t
 JSScript::sizeOfJitScripts(JSMallocSizeOfFun mallocSizeOf)
 {
-    if (!hasJITInfo())
+    if (!hasMJITInfo())
         return 0;
 
-    size_t n = mallocSizeOf(jitInfo);
+    size_t n = mallocSizeOf(mJITInfo);
     for (int constructing = 0; constructing <= 1; constructing++) {
         for (int barriers = 0; barriers <= 1; barriers++) {
             JITScript *jit = getJIT((bool) constructing, (bool) barriers);

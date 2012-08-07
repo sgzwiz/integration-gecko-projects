@@ -13,7 +13,7 @@
 #include "nsIDownload.h"
 #include "nsIDownloadManager.h"
 #include "nsIDownloadProgressListener.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIMIMEInfo.h"
 #include "nsINavHistoryService.h"
 #include "nsIObserver.h"
@@ -60,7 +60,7 @@ public:
       mDBType(DATABASE_DISK)
     , mInPrivateBrowsing(false)
 #ifdef DOWNLOAD_SCANNER
-    , mScanner(nsnull)
+    , mScanner(nullptr)
 #endif
   {
   }
@@ -354,7 +354,7 @@ protected:
 
   /**
    * Fail a download because of a failure status and prompt the provided
-   * message or use a generic download failure message if nsnull.
+   * message or use a generic download failure message if nullptr.
    */
   nsresult FailDownload(nsresult aStatus, const PRUnichar *aMessage);
 
@@ -381,7 +381,7 @@ private:
   nsCOMPtr<nsIURI> mReferrer;
   nsCOMPtr<nsICancelable> mCancelable;
   nsCOMPtr<nsIRequest> mRequest;
-  nsCOMPtr<nsILocalFile> mTempFile;
+  nsCOMPtr<nsIFile> mTempFile;
   nsCOMPtr<nsIMIMEInfo> mMIMEInfo;
 
   DownloadState mDownloadState;

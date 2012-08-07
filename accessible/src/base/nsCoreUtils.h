@@ -7,19 +7,21 @@
 #define nsCoreUtils_h_
 
 
-#include "nsIDOMNode.h"
 #include "nsIContent.h"
 #include "nsIBoxObject.h"
-#include "nsITreeBoxObject.h"
-#include "nsITreeColumns.h"
+#include "nsIPresShell.h"
 
-#include "nsIFrame.h"
-#include "nsIDocShellTreeItem.h"
-#include "nsIDOMCSSStyleDeclaration.h"
 #include "nsIDOMDOMStringList.h"
-#include "nsIMutableArray.h"
 #include "nsPoint.h"
 #include "nsTArray.h"
+
+class nsRange;
+class nsIDOMNode;
+class nsIFrame;
+class nsIDocShellTreeItem;
+class nsITreeColumn;
+class nsITreeBoxObject;
+class nsIWidget;
 
 /**
  * Core utils.
@@ -85,7 +87,7 @@ public:
    * Return DOM element related with the given node, i.e.
    * a) itself if it is DOM element
    * b) parent element if it is text node
-   * c) otherwise nsnull
+   * c) otherwise nullptr
    *
    * @param aNode  [in] the given DOM node
    */
@@ -122,38 +124,28 @@ public:
    */
    static bool IsAncestorOf(nsINode *aPossibleAncestorNode,
                               nsINode *aPossibleDescendantNode,
-                              nsINode *aRootNode = nsnull);
+                              nsINode *aRootNode = nullptr);
 
   /**
    * Helper method to scroll range into view, used for implementation of
    * nsIAccessibleText::scrollSubstringTo().
    *
    * @param aFrame        the frame for accessible the range belongs to.
-   * @param aStartNode    start node of a range
-   * @param aStartOffset  an offset inside the start node
-   * @param aEndNode      end node of a range
-   * @param aEndOffset    an offset inside the end node
+   * @param aRange    the range to scroll to
    * @param aScrollType   the place a range should be scrolled to
    */
-  static nsresult ScrollSubstringTo(nsIFrame *aFrame,
-                                    nsIDOMNode *aStartNode, PRInt32 aStartIndex,
-                                    nsIDOMNode *aEndNode, PRInt32 aEndIndex,
+  static nsresult ScrollSubstringTo(nsIFrame* aFrame, nsRange* aRange,
                                     PRUint32 aScrollType);
 
   /** Helper method to scroll range into view, used for implementation of
    * nsIAccessibleText::scrollSubstringTo[Point]().
    *
    * @param aFrame        the frame for accessible the range belongs to.
-   * @param aStartNode    start node of a range
-   * @param aStartOffset  an offset inside the start node
-   * @param aEndNode      end node of a range
-   * @param aEndOffset    an offset inside the end node
+   * @param aRange    the range to scroll to
    * @param aVertical     how to align vertically, specified in percents, and when.
    * @param aHorizontal     how to align horizontally, specified in percents, and when.
    */
-  static nsresult ScrollSubstringTo(nsIFrame *aFrame,
-                                    nsIDOMNode *aStartNode, PRInt32 aStartIndex,
-                                    nsIDOMNode *aEndNode, PRInt32 aEndIndex,
+  static nsresult ScrollSubstringTo(nsIFrame* aFrame, nsRange* aRange,
                                     nsIPresShell::ScrollAxis aVertical,
                                     nsIPresShell::ScrollAxis aHorizontal);
 
@@ -333,7 +325,7 @@ public:
   NS_DECL_NSIDOMDOMSTRINGLIST
 
   bool Add(const nsAString& aName) {
-    return mNames.AppendElement(aName) != nsnull;
+    return mNames.AppendElement(aName) != nullptr;
   }
 
 private:

@@ -20,6 +20,7 @@
 #include "nsIInterfaceRequestor.h" 
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIDNSService.h" 
+#include "mozilla/Attributes.h"
 
 #include "nsISimpleEnumerator.h"
 #include "nsNetUtil.h"
@@ -42,7 +43,7 @@ public:
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIEquals, NS_IEQUALS_IID)
 
-class ConsumerContext : public nsIEquals {
+class ConsumerContext MOZ_FINAL : public nsIEquals {
 public:
     NS_DECL_ISUPPORTS
 
@@ -219,7 +220,7 @@ int main(int argc, char *argv[]) {
         cmdLineURL = true;
     }
 
-    rv = NS_InitXPCOM2(nsnull, nsnull, nsnull);
+    rv = NS_InitXPCOM2(nullptr, nullptr, nullptr);
     if (NS_FAILED(rv)) return rv;
 
     if (cmdLineURL) {
@@ -232,7 +233,7 @@ int main(int argc, char *argv[]) {
     // Enter the message pump to allow the URL load to proceed.
     PumpEvents();
 
-    NS_ShutdownXPCOM(nsnull);
+    NS_ShutdownXPCOM(nullptr);
     if (gError) {
         fprintf(stderr, "\n\n-------ERROR-------\n\n");
     }

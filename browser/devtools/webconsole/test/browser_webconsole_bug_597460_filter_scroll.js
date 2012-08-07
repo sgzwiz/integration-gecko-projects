@@ -17,24 +17,42 @@ function consoleOpened(aHud) {
     content.console.log("test message " + i);
   }
 
-  HUDService.setFilterState(hud.hudId, "network", false);
-  HUDService.setFilterState(hud.hudId, "networkinfo", false);
+  hud.setFilterState("network", false);
+  hud.setFilterState("networkinfo", false);
 
-  hud.filterBox.value = "test message";
-  HUDService.updateFilterText(hud.filterBox);
+  hud.ui.filterBox.value = "test message";
+  hud.ui.adjustVisibilityOnSearchStringChange();
 
-  browser.addEventListener("load", tabReload, true);
+  let waitForNetwork = {
+    name: "network message",
+    validatorFn: function()
+    {
+      return hud.outputNode.querySelector(".webconsole-msg-network");
+    },
+    successFn: testScroll,
+    failureFn: finishTest,
+  };
 
-  executeSoon(function() {
-    content.location.reload();
+  waitForSuccess({
+    name: "console messages displayed",
+    validatorFn: function()
+    {
+      return hud.outputNode.textContent.indexOf("test message 199") > -1;
+    },
+    successFn: function()
+    {
+      browser.addEventListener("load", function onReload() {
+        browser.removeEventListener("load", onReload, true);
+        waitForSuccess(waitForNetwork);
+      }, true);
+      content.location.reload();
+    },
+    failureFn: finishTest,
   });
 }
 
-function tabReload(aEvent) {
-  browser.removeEventListener(aEvent.type, tabReload, true);
-
+function testScroll() {
   let msgNode = hud.outputNode.querySelector(".webconsole-msg-network");
-  ok(msgNode, "found network message");
   ok(msgNode.classList.contains("hud-filtered-by-type"),
     "network message is filtered by type");
   ok(msgNode.classList.contains("hud-filtered-by-string"),
@@ -49,8 +67,8 @@ function tabReload(aEvent) {
   ok(scrollBox.scrollTop >= scrollBox.scrollHeight - scrollBox.clientHeight -
      nodeHeight * 2, "scroll location is correct");
 
-  HUDService.setFilterState(hud.hudId, "network", true);
-  HUDService.setFilterState(hud.hudId, "networkinfo", true);
+  hud.setFilterState("network", true);
+  hud.setFilterState("networkinfo", true);
 
   executeSoon(finishTest);
 }

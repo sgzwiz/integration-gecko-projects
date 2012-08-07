@@ -37,7 +37,7 @@ NS_IMETHODIMP
 BackstagePass::NewResolve(nsIXPConnectWrappedNative *wrapper,
                           JSContext * cx, JSObject * obj_,
                           jsid id_, PRUint32 flags,
-                          JSObject * *objp, bool *_retval)
+                          JSObject * *objp_, bool *_retval)
 {
     JS::RootedObject obj(cx, obj_);
     JS::RootedId id(cx, id_);
@@ -45,15 +45,19 @@ BackstagePass::NewResolve(nsIXPConnectWrappedNative *wrapper,
     JSBool resolved;
 
     *_retval = !!JS_ResolveStandardClass(cx, obj, id, &resolved);
-    if (!*_retval)
-        return NS_OK;
-
-    if (resolved) {
-        *objp = obj;
+    if (!*_retval) {
+        *objp_ = nullptr;
         return NS_OK;
     }
 
-    *_retval = !!ResolveWorkerClasses(cx, obj, id, flags, objp);
+    if (resolved) {
+        *objp_ = obj;
+        return NS_OK;
+    }
+
+    JS::RootedObject objp(cx, *objp_);
+    *_retval = !!ResolveWorkerClasses(cx, obj, id, flags, &objp);
+    *objp_ = objp;
     return NS_OK;
 }
 
@@ -88,7 +92,7 @@ oom:
     while (index)
         nsMemory::Free(array[--index]);
     nsMemory::Free(array);
-    *aArray = nsnull;
+    *aArray = nullptr;
     return NS_ERROR_OUT_OF_MEMORY;
 }
 
@@ -97,7 +101,7 @@ NS_IMETHODIMP
 BackstagePass::GetHelperForLanguage(PRUint32 language,
                                     nsISupports **retval)
 {
-    *retval = nsnull;
+    *retval = nullptr;
     return NS_OK;
 }
 
@@ -105,7 +109,7 @@ BackstagePass::GetHelperForLanguage(PRUint32 language,
 NS_IMETHODIMP
 BackstagePass::GetContractID(char * *aContractID)
 {
-    *aContractID = nsnull;
+    *aContractID = nullptr;
     return NS_ERROR_NOT_AVAILABLE;
 }
 
@@ -122,7 +126,7 @@ BackstagePass::GetClassDescription(char * *aClassDescription)
 NS_IMETHODIMP
 BackstagePass::GetClassID(nsCID * *aClassID)
 {
-    *aClassID = nsnull;
+    *aClassID = nullptr;
     return NS_OK;
 }
 

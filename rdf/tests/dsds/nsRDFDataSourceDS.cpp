@@ -19,7 +19,7 @@
 
 #include "nsXPIDLString.h"
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
 #include <stdio.h>
 #endif
 
@@ -80,9 +80,9 @@ private:
   
 };
 
-nsIRDFResource* nsRDFDataSourceDataSource::kNC_Name=nsnull;
-nsIRDFResource* nsRDFDataSourceDataSource::kNC_Value=nsnull;
-nsIRDFResource* nsRDFDataSourceDataSource::kNC_Child=nsnull;
+nsIRDFResource* nsRDFDataSourceDataSource::kNC_Name=nullptr;
+nsIRDFResource* nsRDFDataSourceDataSource::kNC_Value=nullptr;
+nsIRDFResource* nsRDFDataSourceDataSource::kNC_Child=nullptr;
 
 
 nsRDFDataSourceDataSource::nsRDFDataSourceDataSource()

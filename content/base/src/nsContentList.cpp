@@ -29,8 +29,6 @@
 
 #ifdef DEBUG_CONTENT_LIST
 #include "nsIContentIterator.h"
-nsresult
-NS_NewPreContentIterator(nsIContentIterator** aInstancePtrResult);
 #define ASSERT_IN_SYNC AssertInSync()
 #else
 #define ASSERT_IN_SYNC PR_BEGIN_MACRO PR_END_MACRO
@@ -116,7 +114,7 @@ nsBaseContentList::Item(PRUint32 aIndex, nsIDOMNode** aReturn)
   nsISupports *tmp = GetNodeAt(aIndex);
 
   if (!tmp) {
-    *aReturn = nsnull;
+    *aReturn = nullptr;
 
     return NS_OK;
   }
@@ -231,7 +229,7 @@ NS_GetContentList(nsINode* aRootNode,
 
   nsAutoLockChrome lock;
 
-  nsContentList* list = nsnull;
+  nsContentList* list = nullptr;
 
   static PLDHashTableOps hash_table_ops =
   {
@@ -247,16 +245,16 @@ NS_GetContentList(nsINode* aRootNode,
   // Initialize the hashtable if needed.
   if (!gContentListHashTable.ops) {
     bool success = PL_DHashTableInit(&gContentListHashTable,
-                                       &hash_table_ops, nsnull,
+                                       &hash_table_ops, nullptr,
                                        sizeof(ContentListHashEntry),
                                        16);
 
     if (!success) {
-      gContentListHashTable.ops = nsnull;
+      gContentListHashTable.ops = nullptr;
     }
   }
   
-  ContentListHashEntry *entry = nsnull;
+  ContentListHashEntry *entry = nullptr;
   // First we look in our hashtable.  Then we create a content list if needed
   if (gContentListHashTable.ops) {
     nsContentListKey hashKey(aRootNode, aMatchNameSpaceId, aTagname);
@@ -335,7 +333,7 @@ NS_GetFuncStringContentList(nsINode* aRootNode,
 
   nsAutoLockChrome lock;
 
-  nsCacheableFuncStringContentList* list = nsnull;
+  nsCacheableFuncStringContentList* list = nullptr;
 
   static PLDHashTableOps hash_table_ops =
   {
@@ -351,16 +349,16 @@ NS_GetFuncStringContentList(nsINode* aRootNode,
   // Initialize the hashtable if needed.
   if (!gFuncStringContentListHashTable.ops) {
     bool success = PL_DHashTableInit(&gFuncStringContentListHashTable,
-                                       &hash_table_ops, nsnull,
+                                       &hash_table_ops, nullptr,
                                        sizeof(FuncStringContentListHashEntry),
                                        16);
 
     if (!success) {
-      gFuncStringContentListHashTable.ops = nsnull;
+      gFuncStringContentListHashTable.ops = nullptr;
     }
   }
 
-  FuncStringContentListHashEntry *entry = nsnull;
+  FuncStringContentListHashEntry *entry = nullptr;
   // First we look in our hashtable.  Then we create a content list if needed
   if (gFuncStringContentListHashTable.ops) {
     nsFuncStringCacheKey hashKey(aRootNode, aFunc, aString);
@@ -383,7 +381,7 @@ NS_GetFuncStringContentList(nsINode* aRootNode,
     if (list && !list->AllocatedData()) {
       // Failed to allocate the data
       delete list;
-      list = nsnull;
+      list = nullptr;
     }
 
     if (entry) {
@@ -393,7 +391,7 @@ NS_GetFuncStringContentList(nsINode* aRootNode,
         PL_DHashTableRawRemove(&gContentListHashTable, entry);
     }
 
-    NS_ENSURE_TRUE(list, nsnull);
+    NS_ENSURE_TRUE(list, nullptr);
   }
 
   NS_ADDREF(list);
@@ -416,9 +414,9 @@ nsContentList::nsContentList(nsINode* aRootNode,
     mMatchNameSpaceId(aMatchNameSpaceId),
     mHTMLMatchAtom(aHTMLMatchAtom),
     mXMLMatchAtom(aXMLMatchAtom),
-    mFunc(nsnull),
-    mDestroyFunc(nsnull),
-    mData(nsnull),
+    mFunc(nullptr),
+    mDestroyFunc(nullptr),
+    mData(nullptr),
     mState(LIST_DIRTY),
     mDeep(aDeep),
     mFuncMayDependOnAttr(false)
@@ -555,7 +553,7 @@ nsContentList::NamedItem(const nsAString& aName, bool aDoFlush)
 
   // Typically IDs and names are atomized
   nsCOMPtr<nsIAtom> name = do_GetAtom(aName);
-  NS_ENSURE_TRUE(name, nsnull);
+  NS_ENSURE_TRUE(name, nullptr);
 
   for (i = 0; i < count; i++) {
     nsIContent *content = mElements[i];
@@ -569,7 +567,7 @@ nsContentList::NamedItem(const nsAString& aName, bool aDoFlush)
     }
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 PRInt32
@@ -592,7 +590,7 @@ nsContentList::NodeWillBeDestroyed(const nsINode* aNode)
   // We shouldn't do anything useful from now on
 
   RemoveFromCaches();
-  mRootNode = nsnull;
+  mRootNode = nullptr;
 
   // We will get no more updates, so we can never know we're up to
   // date
@@ -619,7 +617,7 @@ nsContentList::Item(PRUint32 aIndex, nsIDOMNode** aReturn)
     return CallQueryInterface(node, aReturn);
   }
 
-  *aReturn = nsnull;
+  *aReturn = nullptr;
 
   return NS_OK;
 }
@@ -633,7 +631,7 @@ nsContentList::NamedItem(const nsAString& aName, nsIDOMNode** aReturn)
     return CallQueryInterface(content, aReturn);
   }
 
-  *aReturn = nsnull;
+  *aReturn = nullptr;
 
   return NS_OK;
 }
@@ -960,7 +958,7 @@ nsContentList::RemoveFromHashtable()
 
   if (gContentListHashTable.entryCount == 0) {
     PL_DHashTableFinish(&gContentListHashTable);
-    gContentListHashTable.ops = nsnull;
+    gContentListHashTable.ops = nullptr;
   }
 }
 
@@ -1003,7 +1001,7 @@ nsCacheableFuncStringContentList::RemoveFromFuncStringHashtable()
 
   if (gFuncStringContentListHashTable.entryCount == 0) {
     PL_DHashTableFinish(&gFuncStringContentListHashTable);
-    gFuncStringContentListHashTable.ops = nsnull;
+    gFuncStringContentListHashTable.ops = nullptr;
   }
 }
 
@@ -1033,7 +1031,7 @@ nsContentList::AssertInSync()
 
   nsCOMPtr<nsIContentIterator> iter;
   if (mDeep) {
-    NS_NewPreContentIterator(getter_AddRefs(iter));
+    iter = NS_NewPreContentIterator();
     iter->Init(root);
     iter->First();
   }

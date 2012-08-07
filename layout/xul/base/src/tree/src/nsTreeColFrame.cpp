@@ -9,7 +9,6 @@
 #include "nsIContent.h"
 #include "nsStyleContext.h"
 #include "nsINameSpaceManager.h" 
-#include "nsIDocument.h"
 #include "nsIBoxObject.h"
 #include "nsTreeBoxObject.h"
 #include "nsIDOMElement.h"
@@ -162,7 +161,7 @@ nsTreeColFrame::SetBounds(nsBoxLayoutState& aBoxLayoutState,
 nsITreeBoxObject*
 nsTreeColFrame::GetTreeBoxObject()
 {
-  nsITreeBoxObject* result = nsnull;
+  nsITreeBoxObject* result = nullptr;
 
   nsIContent* parent = mContent->GetParent();
   if (parent) {

@@ -58,7 +58,7 @@ class mozJSComponentLoader : public mozilla::ModuleLoader,
     nsresult ReallyInit();
     void UnloadModules();
 
-    nsresult GlobalForLocation(nsILocalFile* aComponentFile,
+    nsresult GlobalForLocation(nsIFile* aComponentFile,
                                nsIURI *aComponent,
                                JSObject **aGlobal,
                                char **location,
@@ -90,8 +90,8 @@ class mozJSComponentLoader : public mozilla::ModuleLoader,
             loadProc = NULL;
             unloadProc = NULL;
 
-            global = nsnull;
-            location = nsnull;
+            global = nullptr;
+            location = nullptr;
         }
 
         ~ModuleEntry() {

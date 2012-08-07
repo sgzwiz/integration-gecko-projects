@@ -3,29 +3,43 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <stdlib.h>                     // for getenv
+
+#include "mozilla/Attributes.h"         // for MOZ_FINAL
+#include "mozilla/Preferences.h"        // for Preferences
+#include "mozilla/Services.h"           // for GetXULChromeRegistryService
+#include "mozilla/dom/Element.h"        // for Element
+#include "mozilla/mozalloc.h"           // for operator delete, etc
+#include "nsAString.h"                  // for nsAString_internal::IsEmpty, etc
+#include "nsComponentManagerUtils.h"    // for do_CreateInstance
+#include "nsDebug.h"                    // for NS_ENSURE_TRUE, etc
+#include "nsDependentSubstring.h"       // for Substring
 #include "nsEditorSpellCheck.h"
-
-#include "nsStyleUtil.h"
-#include "nsIContent.h"
-#include "nsIDOMElement.h"
-#include "nsITextServicesDocument.h"
-#include "nsISpellChecker.h"
-#include "nsISelection.h"
-#include "nsIDOMRange.h"
-#include "nsIEditor.h"
-#include "nsIHTMLEditor.h"
-
-#include "nsIComponentManager.h"
-#include "nsIContentPrefService.h"
-#include "nsServiceManagerUtils.h"
-#include "nsIChromeRegistry.h"
-#include "nsString.h"
-#include "nsReadableUtils.h"
-#include "nsITextServicesFilter.h"
-#include "nsUnicharUtils.h"
-#include "mozilla/Services.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/dom/Element.h"
+#include "nsError.h"                    // for NS_ERROR_NOT_INITIALIZED, etc
+#include "nsIChromeRegistry.h"          // for nsIXULChromeRegistry
+#include "nsIContent.h"                 // for nsIContent
+#include "nsIContentPrefService.h"      // for nsIContentPrefService, etc
+#include "nsIDOMDocument.h"             // for nsIDOMDocument
+#include "nsIDOMElement.h"              // for nsIDOMElement
+#include "nsIDOMRange.h"                // for nsIDOMRange
+#include "nsIDocument.h"                // for nsIDocument
+#include "nsIEditor.h"                  // for nsIEditor
+#include "nsIHTMLEditor.h"              // for nsIHTMLEditor
+#include "nsISelection.h"               // for nsISelection
+#include "nsISpellChecker.h"            // for nsISpellChecker, etc
+#include "nsISupportsBase.h"            // for nsISupports
+#include "nsISupportsUtils.h"           // for NS_ADDREF
+#include "nsITextServicesDocument.h"    // for nsITextServicesDocument
+#include "nsITextServicesFilter.h"      // for nsITextServicesFilter
+#include "nsIURI.h"                     // for nsIURI
+#include "nsIVariant.h"                 // for nsIWritableVariant, etc
+#include "nsLiteralString.h"            // for NS_LITERAL_STRING, etc
+#include "nsMemory.h"                   // for nsMemory
+#include "nsReadableUtils.h"            // for ToNewUnicode, EmptyString, etc
+#include "nsServiceManagerUtils.h"      // for do_GetService
+#include "nsString.h"                   // for nsAutoString, nsString, etc
+#include "nsStringFwd.h"                // for nsAFlatString
+#include "nsStyleUtil.h"                // for nsStyleUtil
 
 using namespace mozilla;
 
@@ -116,7 +130,7 @@ LastDictionary::FetchLastDictionary(nsIEditor* aEditor, nsAString& aDictionary)
   bool hasPref;
   if (NS_SUCCEEDED(contentPrefService->HasPref(uri, CPS_PREF_NAME, &hasPref)) && hasPref) {
     nsCOMPtr<nsIVariant> pref;
-    contentPrefService->GetPref(uri, CPS_PREF_NAME, nsnull, getter_AddRefs(pref));
+    contentPrefService->GetPref(uri, CPS_PREF_NAME, nullptr, getter_AddRefs(pref));
     pref->GetAsAString(aDictionary);
   } else {
     aDictionary.Truncate();
@@ -173,7 +187,7 @@ LastDictionary::ClearCurrentDictionary(nsIEditor* aEditor)
   return contentPrefService->RemovePref(uri, CPS_PREF_NAME);
 }
 
-LastDictionary* nsEditorSpellCheck::gDictionaryStore = nsnull;
+LastDictionary* nsEditorSpellCheck::gDictionaryStore = nullptr;
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsEditorSpellCheck)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsEditorSpellCheck)
@@ -192,7 +206,7 @@ NS_IMPL_CYCLE_COLLECTION_3(nsEditorSpellCheck,
 nsEditorSpellCheck::nsEditorSpellCheck()
   : mSuggestedWordIndex(0)
   , mDictionaryIndex(0)
-  , mEditor(nsnull)
+  , mEditor(nullptr)
   , mUpdateDictionaryRunning(false)
 {
 }
@@ -201,7 +215,7 @@ nsEditorSpellCheck::~nsEditorSpellCheck()
 {
   // Make sure we blow the spellchecker away, just in
   // case it hasn't been destroyed already.
-  mSpellChecker = nsnull;
+  mSpellChecker = nullptr;
 }
 
 // The problem is that if the spell checker does not exist, we can not tell
@@ -366,7 +380,7 @@ nsEditorSpellCheck::CheckCurrentWordNoSuggest(const PRUnichar *aSuggestedWord,
   NS_ENSURE_TRUE(mSpellChecker, NS_ERROR_NOT_INITIALIZED);
 
   return mSpellChecker->CheckWord(nsDependentString(aSuggestedWord),
-                                  aIsMisspelled, nsnull);
+                                  aIsMisspelled, nullptr);
 }
 
 NS_IMETHODIMP    
@@ -494,6 +508,8 @@ nsEditorSpellCheck::SetCurrentDictionary(const nsAString& aDictionary)
 {
   NS_ENSURE_TRUE(mSpellChecker, NS_ERROR_NOT_INITIALIZED);
 
+  nsRefPtr<nsEditorSpellCheck> kungFuDeathGrip = this;
+
   if (!mUpdateDictionaryRunning) {
 
     nsDefaultStringComparator comparator;
@@ -581,6 +597,8 @@ NS_IMETHODIMP
 nsEditorSpellCheck::UpdateCurrentDictionary()
 {
   nsresult rv;
+
+  nsRefPtr<nsEditorSpellCheck> kungFuDeathGrip = this;
 
   UpdateDictionnaryHolder holder(this);
 
@@ -713,7 +731,7 @@ nsEditorSpellCheck::UpdateCurrentDictionary()
     if (NS_FAILED(rv) || currentDictionary.IsEmpty()) {
       // Try to get current dictionary from environment variable LANG
       char* env_lang = getenv("LANG");
-      if (env_lang != nsnull) {
+      if (env_lang != nullptr) {
         nsString lang = NS_ConvertUTF8toUTF16(env_lang);
         // Strip trailing charset if there is any
         PRInt32 dot_pos = lang.FindChar('.');

@@ -18,13 +18,17 @@
 #include "nsIPrefService.h"
 #include "nsIJSContextStack.h"
 #include "nspr.h"
+#include "mozilla/Attributes.h"
+#include "nsContentUtils.h"
+#include "nsIScriptSecurityManager.h"
+#include "nsJSPrincipals.h"
 
 extern PRLogModuleInfo *MCD;
 
 // Security Manager for new XPCONNECT enabled JS Context
 // Right now it allows all access
 
-class AutoConfigSecMan : public nsIXPCSecurityManager
+class AutoConfigSecMan MOZ_FINAL : public nsIXPCSecurityManager
 {
 public:
     NS_DECL_ISUPPORTS
@@ -70,13 +74,13 @@ AutoConfigSecMan::CanAccess(PRUint32 aAction,
 
 //*****************************************************************************
 
-static  JSContext *autoconfig_cx = nsnull;
+static  JSContext *autoconfig_cx = nullptr;
 static  JSObject *autoconfig_glob;
 
 static JSClass global_class = {
     "autoconfig_global", JSCLASS_GLOBAL_FLAGS,
     JS_PropertyStub,  JS_PropertyStub,  JS_PropertyStub,  JS_StrictPropertyStub,
-    JS_EnumerateStub, JS_ResolveStub,   JS_ConvertStub,   nsnull
+    JS_EnumerateStub, JS_ResolveStub,   JS_ConvertStub,   nullptr
 };
 
 static void
@@ -127,8 +131,7 @@ nsresult CentralizedAdminPrefManagerInit()
         static_cast<nsIXPCSecurityManager*>(new AutoConfigSecMan());
     xpc->SetSecurityManagerForJSContext(autoconfig_cx, secman, 0);
 
-    autoconfig_glob = JS_NewCompartmentAndGlobalObject(autoconfig_cx, &global_class, NULL,
-                                                       JS_ZONE_CHROME);
+    autoconfig_glob = JS_NewGlobalObject(autoconfig_cx, &global_class, NULL, JS_ZONE_CHROME);
     if (autoconfig_glob) {
         JSAutoEnterCompartment ac;
         if(!ac.enter(autoconfig_cx, autoconfig_glob))
@@ -143,7 +146,7 @@ nsresult CentralizedAdminPrefManagerInit()
 
     // failue exit... clean up the JS context
     JS_DestroyContext(autoconfig_cx);
-    autoconfig_cx = nsnull;
+    autoconfig_cx = nullptr;
     return NS_ERROR_FAILURE;
 }
 
@@ -192,8 +195,11 @@ nsresult EvaluateAdminConfigScript(const char *js_buffer, size_t length,
     }
 
     JS_BeginRequest(autoconfig_cx);
-    ok = JS_EvaluateScript(autoconfig_cx, autoconfig_glob,
-                           js_buffer, length, filename, 0, nsnull);
+    nsCOMPtr<nsIPrincipal> principal;
+    nsContentUtils::GetSecurityManager()->GetSystemPrincipal(getter_AddRefs(principal));
+    ok = JS_EvaluateScriptForPrincipals(autoconfig_cx, autoconfig_glob, 
+                                        nsJSPrincipals::get(principal),
+                                        js_buffer, length, filename, 0, nullptr);
     JS_EndRequest(autoconfig_cx);
 
     JS_MaybeGC(autoconfig_cx);

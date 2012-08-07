@@ -11,6 +11,7 @@
 #include "nsIPrintOptions.h" 
 #include "nsCOMPtr.h"
 #include "nsString.h"
+#include "mozilla/Attributes.h"
 
 #include "nsCRT.h" /* should be <limits.h>? */
 
@@ -57,15 +58,15 @@ protected:
   GtkPrintSettings* mGtkPrintSettings;
   GtkPageSetup*     mGtkPageSetup;
 
-  nsCString              mSpoolName;
-  nsCOMPtr<nsILocalFile> mSpoolFile;
+  nsCString         mSpoolName;
+  nsCOMPtr<nsIFile> mSpoolFile;
 
 };
 
 //-------------------------------------------------------------------------
 // Printer Enumerator
 //-------------------------------------------------------------------------
-class nsPrinterEnumeratorGTK : public nsIPrinterEnumerator
+class nsPrinterEnumeratorGTK MOZ_FINAL : public nsIPrinterEnumerator
 {
 public:
   nsPrinterEnumeratorGTK();

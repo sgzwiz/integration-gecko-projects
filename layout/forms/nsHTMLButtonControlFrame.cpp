@@ -21,7 +21,6 @@
 #include "nsCSSAnonBoxes.h"
 #include "nsStyleConsts.h"
 #include "nsIComponentManager.h"
-#include "nsIDocument.h"
 #include "nsButtonFrameRenderer.h"
 #include "nsFormControlFrame.h"
 #include "nsFrameManager.h"
@@ -87,7 +86,7 @@ nsHTMLButtonControlFrame::CreateAccessible()
                                                   PresContext()->PresShell()); 
   }
 
-  return nsnull;
+  return nullptr;
 }
 #endif
 

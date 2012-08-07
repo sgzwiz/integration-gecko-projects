@@ -119,9 +119,20 @@ class nsACString;
  */
 class nsStringContainer;
 
+
+/**
+ * This struct is never used directly. It is designed to have the same
+ * size as nsString. It can be stack and heap allocated and the internal
+ * functions cast it to nsString.
+ * While this practice is a strict aliasing violation, it doesn't seem to
+ * cause problems since the the struct is only accessed via the casts to
+ * nsString.
+ * We use protected instead of private to avoid compiler warnings about
+ * the members being unused.
+ */
 struct nsStringContainer_base
 {
-private:
+protected:
   void *d1;
   PRUint32 d2;
   PRUint32 d3;
@@ -176,12 +187,12 @@ NS_StringContainerInit(nsStringContainer &aContainer);
  * options that permit more efficient memory usage.  When aContainer is
  * no longer needed, NS_StringContainerFinish should be called.
  *
- * NOTE: NS_StringContainerInit2(container, nsnull, 0, 0) is equivalent to
+ * NOTE: NS_StringContainerInit2(container, nullptr, 0, 0) is equivalent to
  * NS_StringContainerInit(container).
  */
 XPCOM_API(nsresult)
 NS_StringContainerInit2
-  (nsStringContainer &aContainer, const PRUnichar *aData = nsnull,
+  (nsStringContainer &aContainer, const PRUnichar *aData = nullptr,
    PRUint32 aDataLength = PR_UINT32_MAX, PRUint32 aFlags = 0);
 
 /**
@@ -214,7 +225,7 @@ NS_StringContainerFinish(nsStringContainer &aContainer);
 XPCOM_API(PRUint32)
 NS_StringGetData
   (const nsAString &aStr, const PRUnichar **aData,
-   bool *aTerminated = nsnull);
+   bool *aTerminated = nullptr);
 
 /**
  * NS_StringGetMutableData
@@ -395,7 +406,7 @@ NS_StringInsertData(nsAString &aStr, PRUint32 aOffset, const PRUnichar *aData,
 inline NS_HIDDEN_(nsresult)
 NS_StringCutData(nsAString &aStr, PRUint32 aCutOffset, PRUint32 aCutLength)
 {
-  return NS_StringSetDataRange(aStr, aCutOffset, aCutLength, nsnull, 0);
+  return NS_StringSetDataRange(aStr, aCutOffset, aCutLength, nullptr, 0);
 }
 
 /**
@@ -481,12 +492,12 @@ NS_CStringContainerInit(nsCStringContainer &aContainer);
  * options that permit more efficient memory usage.  When aContainer is
  * no longer needed, NS_CStringContainerFinish should be called.
  *
- * NOTE: NS_CStringContainerInit2(container, nsnull, 0, 0) is equivalent to
+ * NOTE: NS_CStringContainerInit2(container, nullptr, 0, 0) is equivalent to
  * NS_CStringContainerInit(container).
  */
 XPCOM_API(nsresult)
 NS_CStringContainerInit2
-  (nsCStringContainer &aContainer, const char *aData = nsnull,
+  (nsCStringContainer &aContainer, const char *aData = nullptr,
    PRUint32 aDataLength = PR_UINT32_MAX, PRUint32 aFlags = 0);
 
 /**
@@ -519,7 +530,7 @@ NS_CStringContainerFinish(nsCStringContainer &aContainer);
 XPCOM_API(PRUint32)
 NS_CStringGetData
   (const nsACString &aStr, const char **aData,
-   bool *aTerminated = nsnull);
+   bool *aTerminated = nullptr);
 
 /**
  * NS_CStringGetMutableData
@@ -700,7 +711,7 @@ NS_CStringInsertData(nsACString &aStr, PRUint32 aOffset, const char *aData,
 inline NS_HIDDEN_(nsresult)
 NS_CStringCutData(nsACString &aStr, PRUint32 aCutOffset, PRUint32 aCutLength)
 {
-  return NS_CStringSetDataRange(aStr, aCutOffset, aCutLength, nsnull, 0);
+  return NS_CStringSetDataRange(aStr, aCutOffset, aCutLength, nullptr, 0);
 }
 
 /**
@@ -740,7 +751,7 @@ enum nsCStringEncoding {
   /* Conversion from UTF-16 to the native filesystem charset may result in a
    * loss of information.  No attempt is made to protect against data loss in
    * this case.  The native filesystem charset applies to strings passed to
-   * the "Native" method variants on nsIFile and nsILocalFile. */
+   * the "Native" method variants on nsIFile. */
   NS_CSTRING_ENCODING_NATIVE_FILESYSTEM = 2
 };
 

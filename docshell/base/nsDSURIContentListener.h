@@ -32,12 +32,14 @@ protected:
     virtual ~nsDSURIContentListener();
 
     void DropDocShellreference() {
-        mDocShell = nsnull;
+        mDocShell = nullptr;
     }
 
     // Determine if X-Frame-Options allows content to be framed
     // as a subdocument
     bool CheckFrameOptions(nsIRequest* request);
+    bool CheckOneFrameOptionsPolicy(nsIRequest* request,
+                                    const nsAString& policy);
 
 protected:
     nsDocShell*                      mDocShell;

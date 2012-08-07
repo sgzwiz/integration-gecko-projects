@@ -21,10 +21,12 @@
 #include "nsIObserverService.h"
 #include "nsThreadUtils.h"
 #include "xpcpublic.h"
+#include "mozilla/Attributes.h"
 
 namespace mozilla {
 namespace dom {
 class ContentParent;
+struct StructuredCloneData;
 }
 }
 
@@ -41,15 +43,16 @@ struct nsMessageListenerInfo
 typedef bool (*nsLoadScriptCallback)(void* aCallbackData, const nsAString& aURL);
 typedef bool (*nsSyncMessageCallback)(void* aCallbackData,
                                       const nsAString& aMessage,
-                                      const nsAString& aJSON,
+                                      const mozilla::dom::StructuredCloneData& aData,
                                       InfallibleTArray<nsString>* aJSONRetVal);
 typedef bool (*nsAsyncMessageCallback)(void* aCallbackData,
                                        const nsAString& aMessage,
-                                       const nsAString& aJSON);
+                                             const mozilla::dom::StructuredCloneData& aData);
 
-class nsFrameMessageManager : public nsIContentFrameMessageManager,
-                              public nsIChromeFrameMessageManager
+class nsFrameMessageManager MOZ_FINAL : public nsIContentFrameMessageManager,
+                                        public nsIChromeFrameMessageManager
 {
+  typedef mozilla::dom::StructuredCloneData StructuredCloneData;
 public:
   nsFrameMessageManager(bool aChrome,
                         nsSyncMessageCallback aSyncCallback,
@@ -63,7 +66,8 @@ public:
   : mChrome(aChrome), mGlobal(aGlobal), mIsProcessManager(aProcessManager),
     mHandlingMessage(false), mDisconnected(false), mParentManager(aParentManager),
     mSyncCallback(aSyncCallback), mAsyncCallback(aAsyncCallback),
-    mLoadScriptCallback(aLoadScriptCallback), mCallbackData(aCallbackData),
+    mLoadScriptCallback(aLoadScriptCallback),
+    mCallbackData(aCallbackData),
     mContext(aContext)
   {
     NS_ASSERTION(mContext || (aChrome && !aParentManager) || aProcessManager,
@@ -86,15 +90,15 @@ public:
     }
     if (mIsProcessManager) {
       if (this == sParentProcessManager) {
-        sParentProcessManager = nsnull;
+        sParentProcessManager = nullptr;
       }
       if (this == sChildProcessManager) {
-        sChildProcessManager = nsnull;
+        sChildProcessManager = nullptr;
         delete sPendingSameProcessAsyncMessages;
-        sPendingSameProcessAsyncMessages = nsnull;
+        sPendingSameProcessAsyncMessages = nullptr;
       }
       if (this == sSameProcessParentManager) {
-        sSameProcessParentManager = nsnull;
+        sSameProcessParentManager = nullptr;
       }
     }
   }
@@ -115,10 +119,11 @@ public:
   NewProcessMessageManager(mozilla::dom::ContentParent* aProcess);
 
   nsresult ReceiveMessage(nsISupports* aTarget, const nsAString& aMessage,
-                          bool aSync, const nsAString& aJSON,
+                          bool aSync, const StructuredCloneData* aCloneData,
                           JSObject* aObjectsArray,
                           InfallibleTArray<nsString>* aJSONRetVal,
-                          JSContext* aContext = nsnull);
+                          JSContext* aContext = nullptr);
+
   void AddChildManager(nsFrameMessageManager* aManager,
                        bool aLoadScripts = true);
   void RemoveChildManager(nsFrameMessageManager* aManager)
@@ -129,11 +134,8 @@ public:
   void Disconnect(bool aRemoveFromParent = true);
   void SetCallbackData(void* aData, bool aLoadScripts = true);
   void* GetCallbackData() { return mCallbackData; }
-  void GetParamsForMessage(const jsval& aObject,
-                           JSContext* aCx,
-                           nsAString& aJSON);
   nsresult SendAsyncMessageInternal(const nsAString& aMessage,
-                                    const nsAString& aJSON);
+                                          const StructuredCloneData& aData);
   JSContext* GetJSContext() { return mContext; }
   void SetJSContext(JSContext* aCx) { mContext = aCx; }
   void RemoveFromParent();
@@ -241,7 +243,7 @@ public:
   nsFrameScriptExecutor* mExec;
 };
 
-class nsScriptCacheCleaner : public nsIObserver
+class nsScriptCacheCleaner MOZ_FINAL : public nsIObserver
 {
   NS_DECL_ISUPPORTS
 

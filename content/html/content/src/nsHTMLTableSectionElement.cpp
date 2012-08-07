@@ -15,7 +15,6 @@
 #include "nsContentList.h"
 #include "nsRuleData.h"
 #include "nsDOMError.h"
-#include "nsIDocument.h"
 #include "nsContentUtils.h"
 
 using namespace mozilla;
@@ -122,7 +121,7 @@ NS_IMETHODIMP
 nsHTMLTableSectionElement::InsertRow(PRInt32 aIndex,
                                      nsIDOMHTMLElement** aValue)
 {
-  *aValue = nsnull;
+  *aValue = nullptr;
 
   if (aIndex < -1) {
     return NS_ERROR_DOM_INDEX_SIZE_ERR;
@@ -285,7 +284,7 @@ nsHTMLTableSectionElement::IsAttributeMapped(const nsIAtom* aAttribute) const
     { &nsGkAtoms::align }, 
     { &nsGkAtoms::valign },
     { &nsGkAtoms::height },
-    { nsnull }
+    { nullptr }
   };
 
   static const MappedAttributeEntry* const map[] = {

@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsMimeTypeArray.h"
-#include "nsContentUtils.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIDOMNavigator.h"
 #include "nsIDOMPluginArray.h"
@@ -66,7 +65,7 @@ nsMimeTypeArray::GetItemAt(PRUint32 aIndex, nsresult *aResult)
   if (!mInited) {
     *aResult = GetMimeTypes();
     if (*aResult != NS_OK)
-      return nsnull;
+      return nullptr;
   }
 
   NS_ASSERTION(mPluginMimeTypeCount <= (PRUint32)mMimeTypeArray.Count(),
@@ -76,7 +75,7 @@ nsMimeTypeArray::GetItemAt(PRUint32 aIndex, nsresult *aResult)
   if (aIndex >= mPluginMimeTypeCount) {
     *aResult = NS_ERROR_FAILURE;
 
-    return nsnull;
+    return nullptr;
   }
 
   *aResult = NS_OK;
@@ -100,7 +99,7 @@ nsMimeTypeArray::GetNamedItem(const nsAString& aName, nsresult* aResult)
   if (!mInited) {
     *aResult = GetMimeTypes();
     if (*aResult != NS_OK)
-      return nsnull;
+      return nullptr;
   }
 
   NS_ASSERTION(mPluginMimeTypeCount <= (PRUint32)mMimeTypeArray.Count(),
@@ -144,7 +143,7 @@ nsMimeTypeArray::GetNamedItem(const nsAString& aName, nsresult* aResult)
             mimeInfo->GetDefaultDescription(defaultDescription);
             if (defaultDescription.IsEmpty()) {
               // no support; just leave
-              return nsnull;
+              return nullptr;
             }
           }
         }
@@ -153,18 +152,18 @@ nsMimeTypeArray::GetNamedItem(const nsAString& aName, nsresult* aResult)
       // If we got here, we support this type!  Say so.
       nsCOMPtr<nsIDOMMimeType> helper, entry;
       if (!(helper = new nsHelperMimeType(aName)) ||
-          !(entry = new nsMimeType(nsnull, helper)) ||
+          !(entry = new nsMimeType(nullptr, helper)) ||
           !mMimeTypeArray.AppendObject(entry)) {
         *aResult = NS_ERROR_OUT_OF_MEMORY;
 
-        return nsnull;
+        return nullptr;
       }
 
       return entry;
     }
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 NS_IMETHODIMP
@@ -202,7 +201,7 @@ nsMimeTypeArray::GetMimeTypes()
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  nsIDOMPluginArray* pluginArray = nsnull;
+  nsIDOMPluginArray* pluginArray = nullptr;
   nsresult rv = mNavigator->GetPlugins(&pluginArray);
   if (rv == NS_OK) {
     // count up all possible MimeTypes, and collect them here. Later,
@@ -318,7 +317,7 @@ nsHelperMimeType::GetDescription(nsAString& aDescription)
 NS_IMETHODIMP
 nsHelperMimeType::GetEnabledPlugin(nsIDOMPlugin** aEnabledPlugin)
 {
-  *aEnabledPlugin = nsnull;
+  *aEnabledPlugin = nullptr;
   return NS_OK;
 }
 

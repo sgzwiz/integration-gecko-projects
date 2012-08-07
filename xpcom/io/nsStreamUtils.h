@@ -78,11 +78,11 @@ NS_AsyncCopy(nsIInputStream         *aSource,
              nsIEventTarget         *aTarget,
              nsAsyncCopyMode         aMode = NS_ASYNCCOPY_VIA_READSEGMENTS,
              PRUint32                aChunkSize = 4096,
-             nsAsyncCopyCallbackFun  aCallbackFun = nsnull,
-             void                   *aCallbackClosure = nsnull,
+             nsAsyncCopyCallbackFun  aCallbackFun = nullptr,
+             void                   *aCallbackClosure = nullptr,
              bool                    aCloseSource = true,
              bool                    aCloseSink = true,
-             nsISupports           **aCopierCtx = nsnull);
+             nsISupports           **aCopierCtx = nullptr);
 
 /**
  * This function cancels copying started by function NS_AsyncCopy.
@@ -179,6 +179,18 @@ extern NS_METHOD
 NS_CopySegmentToBuffer(nsIInputStream *aInputStream, void *aClosure,
                        const char *aFromSegment, PRUint32 aToOffset,
                        PRUint32 aCount, PRUint32 *aWriteCount);
+
+/**
+ * This function is intended to be passed to nsIOutputStream::WriteSegments to
+ * copy data into the nsIOutputStream from a character buffer passed as the
+ * aClosure parameter to the WriteSegments function.
+ *
+ * @see nsIOutputStream.idl for a description of this function's parameters.
+ */
+extern NS_METHOD
+NS_CopySegmentToBuffer(nsIOutputStream *aOutputStream, void *aClosure,
+                       char *aToSegment, PRUint32 aFromOffset,
+                       PRUint32 aCount, PRUint32 *aReadCount);
 
 /**
  * This function is intended to be passed to nsIInputStream::ReadSegments to

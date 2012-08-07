@@ -14,10 +14,10 @@
 #include "nsIDOMDocument.h"
 #include "nsIDOMEventTarget.h"
 #include "nsIServiceManager.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsIServiceManager.h"
-
+#include "GeneratedEvents.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Attributes.h"
 
 using namespace mozilla;
 using namespace hal;
@@ -30,7 +30,7 @@ using namespace hal;
 static const nsTArray<nsIDOMWindow*>::index_type NoIndex =
   nsTArray<nsIDOMWindow*>::NoIndex;
 
-class nsDeviceSensorData : public nsIDeviceSensorData
+class nsDeviceSensorData MOZ_FINAL : public nsIDeviceSensorData
 {
 public:
   NS_DECL_ISUPPORTS
@@ -118,6 +118,17 @@ nsDeviceSensors::~nsDeviceSensors()
   }
 }
 
+NS_IMETHODIMP nsDeviceSensors::ListenerCount(PRUint32 aType, PRInt32 *aRetVal)
+{
+  if (!mEnabled) {
+    *aRetVal = 0;
+    return NS_OK;
+  }
+
+  *aRetVal = mWindowListeners[aType]->Length();
+  return NS_OK;
+}
+
 NS_IMETHODIMP nsDeviceSensors::AddWindowListener(PRUint32 aType, nsIDOMWindow *aWindow)
 {
   if (!mEnabled)
@@ -160,9 +171,11 @@ nsDeviceSensors::Notify(const mozilla::hal::SensorData& aSensorData)
 {
   PRUint32 type = aSensorData.sensor();
 
-  double x = aSensorData.values()[0];
-  double y = aSensorData.values()[1];
-  double z = aSensorData.values()[2];
+  const InfallibleTArray<float>& values = aSensorData.values();
+  size_t len = values.Length();
+  double x = len > 0 ? values[0] : 0.0;
+  double y = len > 1 ? values[1] : 0.0;
+  double z = len > 2 ? values[2] : 0.0;
 
   nsCOMArray<nsIDOMWindow> windowListeners;
   for (PRUint32 i = 0; i < mWindowListeners[type]->Length(); i++) {
@@ -205,7 +218,7 @@ nsDeviceSensors::FireDOMLightEvent(nsIDOMEventTarget *aTarget,
                                   double aValue)
 {
   nsCOMPtr<nsIDOMEvent> event;
-  NS_NewDOMDeviceLightEvent(getter_AddRefs(event), nsnull, nsnull);
+  NS_NewDOMDeviceLightEvent(getter_AddRefs(event), nullptr, nullptr);
 
   nsCOMPtr<nsIDOMDeviceLightEvent> oe = do_QueryInterface(event);
   oe->InitDeviceLightEvent(NS_LITERAL_STRING("devicelight"),
@@ -213,10 +226,7 @@ nsDeviceSensors::FireDOMLightEvent(nsIDOMEventTarget *aTarget,
                           false,
                           aValue);
 
-  nsCOMPtr<nsIPrivateDOMEvent> privateEvent = do_QueryInterface(event);
-  if (privateEvent) {
-    privateEvent->SetTrusted(true);
-  }
+  event->SetTrusted(true);
 
   bool defaultActionEnabled;
   aTarget->DispatchEvent(event, &defaultActionEnabled);
@@ -229,7 +239,7 @@ nsDeviceSensors::FireDOMProximityEvent(nsIDOMEventTarget *aTarget,
                                        double aMax)
 {
   nsCOMPtr<nsIDOMEvent> event;
-  NS_NewDOMDeviceProximityEvent(getter_AddRefs(event), nsnull, nsnull);
+  NS_NewDOMDeviceProximityEvent(getter_AddRefs(event), nullptr, nullptr);
   nsCOMPtr<nsIDOMDeviceProximityEvent> oe = do_QueryInterface(event);
 
   oe->InitDeviceProximityEvent(NS_LITERAL_STRING("deviceproximity"),
@@ -239,10 +249,8 @@ nsDeviceSensors::FireDOMProximityEvent(nsIDOMEventTarget *aTarget,
                                aMin,
                                aMax);
 
-  nsCOMPtr<nsIPrivateDOMEvent> privateEvent = do_QueryInterface(event);
-  if (privateEvent) {
-    privateEvent->SetTrusted(true);
-  }
+  event->SetTrusted(true);
+
   bool defaultActionEnabled;
   aTarget->DispatchEvent(event, &defaultActionEnabled);
 
@@ -262,7 +270,7 @@ void
 nsDeviceSensors::FireDOMUserProximityEvent(nsIDOMEventTarget *aTarget, bool aNear)
 {
   nsCOMPtr<nsIDOMEvent> event;
-  NS_NewDOMUserProximityEvent(getter_AddRefs(event), nsnull, nsnull);
+  NS_NewDOMUserProximityEvent(getter_AddRefs(event), nullptr, nullptr);
   nsCOMPtr<nsIDOMUserProximityEvent> pe = do_QueryInterface(event);
 
   pe->InitUserProximityEvent(NS_LITERAL_STRING("userproximity"),
@@ -270,10 +278,8 @@ nsDeviceSensors::FireDOMUserProximityEvent(nsIDOMEventTarget *aTarget, bool aNea
                              false,
                              aNear);
 
-  nsCOMPtr<nsIPrivateDOMEvent> privateEvent = do_QueryInterface(event);
-  if (privateEvent) {
-    privateEvent->SetTrusted(true);
-  }
+  event->SetTrusted(true);
+
   bool defaultActionEnabled;
   aTarget->DispatchEvent(event, &defaultActionEnabled);
 }
@@ -303,9 +309,7 @@ nsDeviceSensors::FireDOMOrientationEvent(nsIDOMDocument *domdoc,
                                  gamma,
                                  true);
 
-  nsCOMPtr<nsIPrivateDOMEvent> privateEvent = do_QueryInterface(event);
-  if (privateEvent)
-    privateEvent->SetTrusted(true);
+  event->SetTrusted(true);
   
   target->DispatchEvent(event, &defaultActionEnabled);
 }
@@ -353,15 +357,13 @@ nsDeviceSensors::FireDOMMotionEvent(nsIDOMDocument *domdoc,
                             mLastRotationRate,
                             DEFAULT_SENSOR_POLL);
 
-  nsCOMPtr<nsIPrivateDOMEvent> privateEvent = do_QueryInterface(event);
-  if (privateEvent)
-    privateEvent->SetTrusted(true);
+  event->SetTrusted(true);
 
   bool defaultActionEnabled = true;
   target->DispatchEvent(event, &defaultActionEnabled);
 
-  mLastRotationRate = nsnull;
-  mLastAccelerationIncluduingGravity = nsnull;
-  mLastAcceleration = nsnull;
+  mLastRotationRate = nullptr;
+  mLastAccelerationIncluduingGravity = nullptr;
+  mLastAcceleration = nullptr;
   mLastDOMMotionEventTime = TimeStamp::Now();
 }

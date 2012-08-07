@@ -7,12 +7,12 @@
 #include "nsIFile.h"
 
 #include "mozilla/storage.h"
-#include "nsContentUtils.h"
 #include "nsEscape.h"
 #include "nsThreadUtils.h"
 #include "snappy/snappy.h"
 #include "test_quota.h"
 
+#include "nsIBFCacheEntry.h"
 #include "IDBEvents.h"
 #include "IDBFactory.h"
 #include "IndexedDatabaseManager.h"
@@ -24,7 +24,8 @@ namespace {
 
 // If JS_STRUCTURED_CLONE_VERSION changes then we need to update our major
 // schema version.
-PR_STATIC_ASSERT(JS_STRUCTURED_CLONE_VERSION == 1);
+MOZ_STATIC_ASSERT(JS_STRUCTURED_CLONE_VERSION == 1,
+                  "Need to update the major schema version.");
 
 // Major schema version. Bump for almost everything.
 const PRUint32 kMajorSchemaVersion = 12;
@@ -36,8 +37,10 @@ const PRUint32 kMinorSchemaVersion = 0;
 // The schema version we store in the SQLite database is a (signed) 32-bit
 // integer. The major version is left-shifted 4 bits so the max value is
 // 0xFFFFFFF. The minor version occupies the lower 4 bits and its max is 0xF.
-PR_STATIC_ASSERT(kMajorSchemaVersion <= 0xFFFFFFF);
-PR_STATIC_ASSERT(kMajorSchemaVersion <= 0xF);
+MOZ_STATIC_ASSERT(kMajorSchemaVersion <= 0xFFFFFFF,
+                  "Major version needs to fit in 28 bits.");
+MOZ_STATIC_ASSERT(kMinorSchemaVersion <= 0xF,
+                  "Minor version needs to fit in 4 bits.");
 
 inline
 PRInt32
@@ -49,18 +52,6 @@ MakeSchemaVersion(PRUint32 aMajorSchemaVersion,
 
 const PRInt32 kSQLiteSchemaVersion = PRInt32((kMajorSchemaVersion << 4) +
                                              kMinorSchemaVersion);
-
-inline
-PRUint32 GetMajorSchemaVersion(PRInt32 aSchemaVersion)
-{
-  return PRUint32(aSchemaVersion) >> 4;
-}
-
-inline
-PRUint32 GetMinorSchemaVersion(PRInt32 aSchemaVersion)
-{
-  return PRUint32(aSchemaVersion) & 0xF;
-}
 
 nsresult
 GetDatabaseFilename(const nsAString& aName,
@@ -1364,8 +1355,10 @@ protected:
   // Need an upgradeneeded event here.
   virtual already_AddRefed<nsDOMEvent> CreateSuccessEvent() MOZ_OVERRIDE;
 
-  virtual nsresult NotifyTransactionComplete(IDBTransaction* aTransaction)
-                                             MOZ_OVERRIDE;
+  virtual nsresult NotifyTransactionPreComplete(IDBTransaction* aTransaction)
+                                                MOZ_OVERRIDE;
+  virtual nsresult NotifyTransactionPostComplete(IDBTransaction* aTransaction)
+                                                 MOZ_OVERRIDE;
 
   virtual ChildProcessSendResult
   MaybeSendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE
@@ -1403,7 +1396,7 @@ public:
                        PRUint64 aCurrentVersion,
                        const nsAString& aName,
                        const nsACString& aASCIIOrigin)
-  : AsyncConnectionHelper(static_cast<IDBDatabase*>(nsnull), aRequest),
+  : AsyncConnectionHelper(static_cast<IDBDatabase*>(nullptr), aRequest),
     mOpenHelper(aHelper), mOpenRequest(aRequest),
     mCurrentVersion(aCurrentVersion), mName(aName),
     mASCIIOrigin(aASCIIOrigin)
@@ -1414,8 +1407,8 @@ public:
 
   void ReleaseMainThreadObjects()
   {
-    mOpenHelper = nsnull;
-    mOpenRequest = nsnull;
+    mOpenHelper = nullptr;
+    mOpenRequest = nullptr;
 
     AsyncConnectionHelper::ReleaseMainThreadObjects();
   }
@@ -1619,6 +1612,7 @@ OpenDatabaseHelper::DoDatabaseWork()
   NS_ASSERTION(mgr, "This should never be null!");
 
   nsresult rv = mgr->EnsureOriginIsInitialized(mASCIIOrigin,
+                                               mPrivilege,
                                                getter_AddRefs(dbDirectory));
   NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
@@ -1646,7 +1640,11 @@ OpenDatabaseHelper::DoDatabaseWork()
   nsCOMPtr<mozIStorageConnection> connection;
   rv = CreateDatabaseConnection(mName, dbFile, fileManagerDirectory,
                                 getter_AddRefs(connection));
-  NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+  if (NS_FAILED(rv) &&
+      NS_ERROR_GET_MODULE(rv) != NS_ERROR_MODULE_DOM_INDEXEDDB) {
+    rv = NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+  }
+  NS_ENSURE_SUCCESS(rv, rv);
 
   rv = IDBFactory::LoadDatabaseInformation(connection, mDatabaseId,
                                            &mCurrentVersion, mObjectStores);
@@ -1805,7 +1803,8 @@ OpenDatabaseHelper::CreateDatabaseConnection(
     }
     else  {
       // This logic needs to change next time we change the schema!
-      PR_STATIC_ASSERT(kSQLiteSchemaVersion == PRInt32((12 << 4) + 0));
+      MOZ_STATIC_ASSERT(kSQLiteSchemaVersion == PRInt32((12 << 4) + 0),
+                        "Need upgrade code from schema version increase.");
 
       while (schemaVersion != kSQLiteSchemaVersion) {
         if (schemaVersion == 4) {
@@ -1847,7 +1846,12 @@ OpenDatabaseHelper::CreateDatabaseConnection(
       NS_ASSERTION(schemaVersion == kSQLiteSchemaVersion, "Huh?!");
     }
 
-    rv = transaction.Commit();
+    rv = transaction.Commit();    
+    if (rv == NS_ERROR_FILE_NO_DEVICE_SPACE) {
+      // mozstorage translates SQLITE_FULL to NS_ERROR_FILE_NO_DEVICE_SPACE,
+      // which we know better as NS_ERROR_DOM_INDEXEDDB_QUOTA_ERR.
+      rv = NS_ERROR_DOM_INDEXEDDB_QUOTA_ERR;
+    }
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -1892,15 +1896,14 @@ OpenDatabaseHelper::StartSetVersion()
   IndexedDatabaseManager* mgr = IndexedDatabaseManager::Get();
   NS_ASSERTION(mgr, "This should never be null!");
 
-  rv = mgr->AcquireExclusiveAccess(mDatabase, helper,
-            &VersionChangeEventsRunnable::QueueVersionChange<SetVersionHelper>,
+  rv = mgr->AcquireExclusiveAccess(mDatabase, mDatabase->Origin(), helper,
+             &VersionChangeEventsRunnable::QueueVersionChange<SetVersionHelper>,
                                    helper);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
   // The SetVersionHelper is responsible for dispatching us back to the
   // main thread again and changing the state to eSetVersionCompleted.
   mState = eSetVersionPending;
-
   return NS_OK;
 }
 
@@ -1922,8 +1925,8 @@ OpenDatabaseHelper::StartDelete()
   IndexedDatabaseManager* mgr = IndexedDatabaseManager::Get();
   NS_ASSERTION(mgr, "This should never be null!");
 
-  rv = mgr->AcquireExclusiveAccess(mDatabase, helper,
-        &VersionChangeEventsRunnable::QueueVersionChange<DeleteDatabaseHelper>,
+  rv = mgr->AcquireExclusiveAccess(mDatabase, mDatabase->Origin(), helper,
+         &VersionChangeEventsRunnable::QueueVersionChange<DeleteDatabaseHelper>,
                                    helper);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
@@ -1969,19 +1972,13 @@ OpenDatabaseHelper::Run()
 
     switch (mState) {
       case eSetVersionCompleted: {
-        // Allow transaction creation/other version change transactions to proceed
-        // before we fire events.  Other version changes will be postd to the end
-        // of the event loop, and will be behind whatever the page does in
-        // its error/success event handlers.
-        mDatabase->ExitSetVersionTransaction();
-
         mState = eFiringEvents;
         break;
       }
 
       case eDeleteCompleted: {
         // Destroy the database now (we should have the only ref).
-        mDatabase = nsnull;
+        mDatabase = nullptr;
 
         DatabaseInfo::Remove(mDatabaseId);
 
@@ -2113,10 +2110,8 @@ OpenDatabaseHelper::EnsureSuccessResult()
   dbInfo->nextIndexId = mLastIndexId + 1;
 
   nsRefPtr<IDBDatabase> database =
-    IDBDatabase::Create(mOpenDBRequest,
-                        dbInfo.forget(),
-                        mASCIIOrigin,
-                        mFileManager);
+    IDBDatabase::Create(mOpenDBRequest, dbInfo.forget(), mASCIIOrigin,
+                        mFileManager, mContentParent);
   if (!database) {
     return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
   }
@@ -2147,8 +2142,11 @@ OpenDatabaseHelper::NotifySetVersionFinished()
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread");
   NS_ASSERTION(mState = eSetVersionPending, "How did we get here?");
 
+  // Allow transaction creation to proceed.
+  mDatabase->ExitSetVersionTransaction();
+
   mState = eSetVersionCompleted;
-  
+
   // Dispatch ourself back to the main thread
   return NS_DispatchToCurrentThread(this);
 }
@@ -2217,9 +2215,9 @@ OpenDatabaseHelper::ReleaseMainThreadObjects()
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
-  mOpenDBRequest = nsnull;
-  mDatabase = nsnull;
-  mDatabaseId = nsnull;
+  mOpenDBRequest = nullptr;
+  mDatabase = nullptr;
+  mDatabaseId = nullptr;
 
   HelperBase::ReleaseMainThreadObjects();
 }
@@ -2305,7 +2303,17 @@ SetVersionHelper::CreateSuccessEvent()
 }
 
 nsresult
-SetVersionHelper::NotifyTransactionComplete(IDBTransaction* aTransaction)
+SetVersionHelper::NotifyTransactionPreComplete(IDBTransaction* aTransaction)
+{
+  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  NS_ASSERTION(aTransaction, "This is unexpected.");
+  NS_ASSERTION(mOpenRequest, "Why don't we have a request?");
+
+  return mOpenHelper->NotifySetVersionFinished();
+}
+
+nsresult
+SetVersionHelper::NotifyTransactionPostComplete(IDBTransaction* aTransaction)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   NS_ASSERTION(aTransaction, "This is unexpected.");
@@ -2322,11 +2330,10 @@ SetVersionHelper::NotifyTransactionComplete(IDBTransaction* aTransaction)
     mOpenHelper->SetError(aTransaction->GetAbortCode());
   }
 
-  mOpenRequest->SetTransaction(nsnull);
-  mOpenRequest = nsnull;
+  mOpenRequest->SetTransaction(nullptr);
+  mOpenRequest = nullptr;
 
-  rv = mOpenHelper->NotifySetVersionFinished();
-  mOpenHelper = nsnull;
+  mOpenHelper = nullptr;
 
   return rv;
 }
@@ -2372,6 +2379,16 @@ DeleteDatabaseHelper::DoDatabaseWork(mozIStorageConnection* aConnection)
     if (rc != SQLITE_OK) {
       NS_WARNING("Failed to delete db file!");
       return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+    }
+
+    // sqlite3_quota_remove won't actually remove anything if we're not tracking
+    // the quota here. Manually remove the file if it exists.
+    rv = dbFile->Exists(&exists);
+    NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+
+    if (exists) {
+      rv = dbFile->Remove(false);
+      NS_ENSURE_SUCCESS(rv, rv);
     }
   }
 

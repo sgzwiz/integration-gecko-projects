@@ -104,9 +104,16 @@ NSPoint nsCocoaUtils::EventLocationForWindow(NSEvent* anEvent, NSWindow* aWindow
 
 BOOL nsCocoaUtils::IsMomentumScrollEvent(NSEvent* aEvent)
 {
-  return [aEvent type] == NSScrollWheel &&
-         [aEvent respondsToSelector:@selector(_scrollPhase)] &&
-         [aEvent _scrollPhase] != 0;
+  if ([aEvent type] != NSScrollWheel)
+    return NO;
+    
+  if ([aEvent respondsToSelector:@selector(momentumPhase)])
+    return ([aEvent momentumPhase] & NSEventPhaseChanged) != 0;
+    
+  if ([aEvent respondsToSelector:@selector(_scrollPhase)])
+    return [aEvent _scrollPhase] != 0;
+    
+  return NO;
 }
 
 void nsCocoaUtils::HideOSChromeOnScreen(bool aShouldHide, NSScreen* aScreen)
@@ -148,27 +155,27 @@ nsIWidget* nsCocoaUtils::GetHiddenWindowWidget()
   nsCOMPtr<nsIAppShellService> appShell(do_GetService(NS_APPSHELLSERVICE_CONTRACTID));
   if (!appShell) {
     NS_WARNING("Couldn't get AppShellService in order to get hidden window ref");
-    return nsnull;
+    return nullptr;
   }
   
   nsCOMPtr<nsIXULWindow> hiddenWindow;
   appShell->GetHiddenWindow(getter_AddRefs(hiddenWindow));
   if (!hiddenWindow) {
     // Don't warn, this happens during shutdown, bug 358607.
-    return nsnull;
+    return nullptr;
   }
   
   nsCOMPtr<nsIBaseWindow> baseHiddenWindow;
   baseHiddenWindow = do_GetInterface(hiddenWindow);
   if (!baseHiddenWindow) {
     NS_WARNING("Couldn't get nsIBaseWindow from hidden window (nsIXULWindow)");
-    return nsnull;
+    return nullptr;
   }
   
   nsCOMPtr<nsIWidget> hiddenWindowWidget;
   if (NS_FAILED(baseHiddenWindow->GetMainWidget(getter_AddRefs(hiddenWindowWidget)))) {
     NS_WARNING("Couldn't get nsIWidget from hidden window (nsIBaseWindow)");
-    return nsnull;
+    return nullptr;
   }
   
   return hiddenWindowWidget;

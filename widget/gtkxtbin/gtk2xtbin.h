@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim:expandtab:shiftwidth=2:tabstop=2: */
+ * vim: set expandtab shiftwidth=2 tabstop=2: */
  
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -119,6 +119,15 @@ typedef struct _CorePart {
 typedef struct _WidgetRec {
     CorePart    core;
  } WidgetRec, CoreRec;   
+
+/* Exported functions, used by Xt plugins */
+void xt_client_create(XtClient * xtclient, Window embeder, int height, int width);
+void xt_client_unrealize(XtClient* xtclient);
+void xt_client_destroy(XtClient* xtclient);
+void xt_client_init(XtClient * xtclient, Visual *xtvisual, Colormap xtcolormap, int xtdepth);
+void xt_client_xloop_create(void);
+void xt_client_xloop_destroy(void);
+Display * xt_client_get_display(void);
 
 #ifdef __cplusplus
 }

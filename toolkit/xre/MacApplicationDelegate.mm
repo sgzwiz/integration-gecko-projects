@@ -226,7 +226,7 @@ ProcessPendingGetURLAppleEvents()
   if (NS_FAILED(rv))
     return NO;
 
-  const char *argv[3] = {nsnull, "-file", filePath.get()};
+  const char *argv[3] = {nullptr, "-file", filePath.get()};
   rv = cmdLine->Init(3, const_cast<char**>(argv), workingDir, nsICommandLine::STATE_REMOTE_EXPLICIT);
   if (NS_FAILED(rv))
     return NO;
@@ -315,7 +315,7 @@ ProcessPendingGetURLAppleEvents()
     return NSTerminateNow;
 
   cancelQuit->SetData(false);
-  obsServ->NotifyObservers(cancelQuit, "quit-application-requested", nsnull);
+  obsServ->NotifyObservers(cancelQuit, "quit-application-requested", nullptr);
 
   bool abortQuit;
   cancelQuit->GetData(&abortQuit);
@@ -368,7 +368,7 @@ ProcessPendingGetURLAppleEvents()
     nsresult rv = NS_GetSpecialDirectory(NS_OS_CURRENT_WORKING_DIR, getter_AddRefs(workingDir));
     if (NS_FAILED(rv))
       return;
-    const char *argv[3] = {nsnull, "-url", [urlString UTF8String]};
+    const char *argv[3] = {nullptr, "-url", [urlString UTF8String]};
     rv = cmdLine->Init(3, const_cast<char**>(argv), workingDir, nsICommandLine::STATE_REMOTE_EXPLICIT);
     if (NS_FAILED(rv))
       return;

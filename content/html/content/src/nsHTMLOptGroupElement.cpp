@@ -10,7 +10,6 @@
 #include "nsIFrame.h"
 #include "nsIFormControlFrame.h"
 #include "nsEventStates.h"
-#include "nsIDocument.h"
 
 #include "nsEventDispatcher.h"
 #include "nsHTMLSelectElement.h"
@@ -144,7 +143,7 @@ nsHTMLOptGroupElement::GetSelect()
     }
   }
   
-  return nsnull;
+  return nullptr;
 }
 
 nsresult
@@ -163,7 +162,7 @@ nsHTMLOptGroupElement::InsertChildAt(nsIContent* aKid,
 void
 nsHTMLOptGroupElement::RemoveChildAt(PRUint32 aIndex, bool aNotify)
 {
-  nsSafeOptionListMutation safeMutation(GetSelect(), this, nsnull, aIndex,
+  nsSafeOptionListMutation safeMutation(GetSelect(), this, nullptr, aIndex,
                                         aNotify);
   nsGenericHTMLElement::RemoveChildAt(aIndex, aNotify);
 }

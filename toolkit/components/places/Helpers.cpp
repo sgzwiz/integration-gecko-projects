@@ -13,7 +13,6 @@
 #if defined(XP_OS2)
 #include "nsIRandomGenerator.h"
 #endif
-#include "nsContentUtils.h"
 
 // The length of guids that are used by history and bookmarks.
 #define GUID_LENGTH 12
@@ -340,7 +339,7 @@ ForceWALCheckpoint()
     );
     if (stmt) {
       nsCOMPtr<mozIStoragePendingStatement> handle;
-      (void)stmt->ExecuteAsync(nsnull, getter_AddRefs(handle));
+      (void)stmt->ExecuteAsync(nullptr, getter_AddRefs(handle));
     }
   }
 }
@@ -376,7 +375,7 @@ PlacesEvent::Notify()
   NS_ASSERTION(NS_IsChromeOwningThread(), "Must only be used on the main thread!");
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (obs) {
-    (void)obs->NotifyObservers(nsnull, mTopic, nsnull);
+    (void)obs->NotifyObservers(nullptr, mTopic, nullptr);
   }
 }
 
@@ -396,7 +395,7 @@ AsyncStatementCallbackNotifier::HandleCompletion(PRUint16 aReason)
 
   nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
   if (obs) {
-    (void)obs->NotifyObservers(nsnull, mTopic, nsnull);
+    (void)obs->NotifyObservers(nullptr, mTopic, nullptr);
   }
 
   return NS_OK;

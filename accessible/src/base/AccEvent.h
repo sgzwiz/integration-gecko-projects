@@ -8,7 +8,7 @@
 
 #include "nsIAccessibleEvent.h"
 
-#include "Accessible.h"
+#include "mozilla/a11y/Accessible.h"
 
 class nsAccEvent;
 class DocAccessible;
@@ -373,7 +373,8 @@ class AccVCChangeEvent : public AccEvent
 public:
   AccVCChangeEvent(Accessible* aAccessible,
                    nsIAccessible* aOldAccessible,
-                   PRInt32 aOldStart, PRInt32 aOldEnd);
+                   PRInt32 aOldStart, PRInt32 aOldEnd,
+                   PRInt16 aReason);
 
   virtual ~AccVCChangeEvent() { }
 
@@ -390,11 +391,13 @@ public:
   nsIAccessible* OldAccessible() const { return mOldAccessible; }
   PRInt32 OldStartOffset() const { return mOldStart; }
   PRInt32 OldEndOffset() const { return mOldEnd; }
+  PRInt32 Reason() const { return mReason; }
 
 private:
   nsRefPtr<nsIAccessible> mOldAccessible;
   PRInt32 mOldStart;
   PRInt32 mOldEnd;
+  PRInt16 mReason;
 };
 
 /**
@@ -408,10 +411,10 @@ public:
   template<class Destination>
   operator Destination*() {
     if (!mRawPtr)
-      return nsnull;
+      return nullptr;
 
     return mRawPtr->GetEventGroups() & (1U << Destination::kEventGroup) ?
-      static_cast<Destination*>(mRawPtr) : nsnull;
+      static_cast<Destination*>(mRawPtr) : nullptr;
   }
 
 private:

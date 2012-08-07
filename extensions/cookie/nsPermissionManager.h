@@ -74,8 +74,8 @@ public:
   static PLDHashNumber HashKey(KeyTypePointer aKey)
   {
     // PL_DHashStringKey doesn't use the table parameter, so we can safely
-    // pass nsnull
-    return PL_DHashStringKey(nsnull, aKey);
+    // pass nullptr
+    return PL_DHashStringKey(nullptr, aKey);
   }
 
   // force the hashtable to use the copy constructor when shuffling entries
@@ -193,9 +193,10 @@ private:
   void     NotifyObservers(nsIPermission *aPermission, const PRUnichar *aData);
 
   // Finalize all statements, close the DB and null it.
-  void     CloseDB();
+  // if aRebuildOnSuccess, reinitialize database
+  void     CloseDB(bool aRebuildOnSuccess = false);
 
-  nsresult RemoveAllInternal();
+  nsresult RemoveAllInternal(bool aNotifyObservers);
   nsresult RemoveAllFromMemory();
   nsresult NormalizeToACE(nsCString &aHost);
   nsresult GetHost(nsIURI *aURI, nsACString &aResult);
@@ -222,6 +223,13 @@ private:
 
   // An array to store the strings identifying the different types.
   nsTArray<nsCString>          mTypeArray;
+
+  // Initially, |false|. Set to |true| once shutdown has started, to avoid
+  // reopening the database.
+  bool mIsShuttingDown;
+
+  friend class DeleteFromMozHostListener;
+  friend class CloseDatabaseListener;
 };
 
 // {4F6B5E00-0C36-11d5-A535-0010A401EB10}

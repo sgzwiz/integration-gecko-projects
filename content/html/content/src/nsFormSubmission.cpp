@@ -13,7 +13,6 @@
 #include "nsILinkHandler.h"
 #include "nsIDocument.h"
 #include "nsGkAtoms.h"
-#include "nsIHTMLDocument.h"
 #include "nsIFormControl.h"
 #include "nsIDOMHTMLFormElement.h"
 #include "nsDOMError.h"
@@ -168,7 +167,7 @@ nsFSURLEncoded::AddNameFilePair(const nsAString& aName,
                                 nsIDOMBlob* aBlob)
 {
   if (!mWarnedFileControl) {
-    SendJSWarning(mDocument, "ForgotFileEnctypeWarning", nsnull, 0);
+    SendJSWarning(mDocument, "ForgotFileEnctypeWarning", nullptr, 0);
     mWarnedFileControl = true;
   }
 
@@ -253,7 +252,7 @@ nsFSURLEncoded::GetEncodedSubmission(nsIURI* aURI,
 {
   nsresult rv = NS_OK;
 
-  *aPostDataStream = nsnull;
+  *aPostDataStream = nullptr;
 
   if (mMethod == NS_FORM_METHOD_POST) {
 
@@ -689,7 +688,7 @@ nsEncodingFormSubmission::nsEncodingFormSubmission(const nsACString& aCharset,
     NS_ConvertUTF8toUTF16 charsetUtf16(charset);
     const PRUnichar* charsetPtr = charsetUtf16.get();
     SendJSWarning(aOriginatingElement ? aOriginatingElement->GetOwnerDocument()
-                                      : nsnull,
+                                      : nullptr,
                   "CannotEncodeAllUnicode",
                   &charsetPtr,
                   1);
@@ -703,7 +702,7 @@ nsEncodingFormSubmission::nsEncodingFormSubmission(const nsACString& aCharset,
                       nsISaveAsCharset::attr_FallbackDecimalNCR),
                      0);
     if (NS_FAILED(rv)) {
-      mEncoder = nsnull;
+      mEncoder = nullptr;
     }
   }
 }

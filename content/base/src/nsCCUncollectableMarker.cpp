@@ -8,7 +8,6 @@
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsServiceManagerUtils.h"
-#include "nsIDOMDocument.h"
 #include "nsIContentViewer.h"
 #include "nsIDocument.h"
 #include "nsIWindowMediator.h"
@@ -265,6 +264,8 @@ nsCCUncollectableMarker::Observe(nsISupports* aSubject, const char* aTopic,
                                  const PRUnichar* aData)
 {
   if (!strcmp(aTopic, "xpcom-shutdown")) {
+    nsGenericElement::ClearContentUnbinder();
+
     nsCOMPtr<nsIObserverService> obs =
       mozilla::services::GetObserverService();
     if (!obs)
@@ -289,7 +290,9 @@ nsCCUncollectableMarker::Observe(nsISupports* aSubject, const char* aTopic,
     !strcmp(aTopic, "cycle-collector-forget-skippable");
 
   bool prepareForCC = !strcmp(aTopic, "cycle-collector-begin");
-    
+  if (prepareForCC) {
+    nsGenericElement::ClearContentUnbinder();
+  }
 
   // Increase generation to effectivly unmark all current objects
   if (!++sGeneration) {
@@ -303,7 +306,7 @@ nsCCUncollectableMarker::Observe(nsISupports* aSubject, const char* aTopic,
   nsCOMPtr<nsIWindowMediator> med =
     do_GetService(NS_WINDOWMEDIATOR_CONTRACTID);
   if (med) {
-    rv = med->GetEnumerator(nsnull, getter_AddRefs(windowList));
+    rv = med->GetEnumerator(nullptr, getter_AddRefs(windowList));
     NS_ENSURE_SUCCESS(rv, rv);
 
     MarkWindowList(windowList, cleanupJS, prepareForCC);

@@ -127,8 +127,14 @@ CSS_STATE_PSEUDO_CLASS(mozSuppressed, ":-moz-suppressed",
 CSS_STATE_PSEUDO_CLASS(mozLoading, ":-moz-loading", NS_EVENT_STATE_LOADING)
 CSS_STATE_PSEUDO_CLASS(mozTypeUnsupported, ":-moz-type-unsupported",
                        NS_EVENT_STATE_TYPE_UNSUPPORTED)
+CSS_STATE_PSEUDO_CLASS(mozTypeUnsupportedPlatform, ":-moz-type-unsupported-platform",
+                       NS_EVENT_STATE_TYPE_UNSUPPORTED_PLATFORM)
 CSS_STATE_PSEUDO_CLASS(mozHandlerClickToPlay, ":-moz-handler-clicktoplay",
                        NS_EVENT_STATE_TYPE_CLICK_TO_PLAY)
+CSS_STATE_PSEUDO_CLASS(mozHandlerVulnerableUpdatable, ":-moz-handler-vulnerable-updatable",
+                       NS_EVENT_STATE_VULNERABLE_UPDATABLE)
+CSS_STATE_PSEUDO_CLASS(mozHandlerVulnerableNoUpdate, ":-moz-handler-vulnerable-no-update",
+                       NS_EVENT_STATE_VULNERABLE_NO_UPDATE)
 CSS_STATE_PSEUDO_CLASS(mozHandlerDisabled, ":-moz-handler-disabled",
                        NS_EVENT_STATE_HANDLER_DISABLED)
 CSS_STATE_PSEUDO_CLASS(mozHandlerBlocked, ":-moz-handler-blocked",
@@ -161,6 +167,12 @@ CSS_STATE_PSEUDO_CLASS(mozUIInvalid, ":-moz-ui-invalid",
                        NS_EVENT_STATE_MOZ_UI_INVALID)
 CSS_STATE_PSEUDO_CLASS(mozUIValid, ":-moz-ui-valid",
                        NS_EVENT_STATE_MOZ_UI_VALID)
+CSS_STATE_PSEUDO_CLASS(mozMeterOptimum, ":-moz-meter-optimum",
+                       NS_EVENT_STATE_OPTIMUM)
+CSS_STATE_PSEUDO_CLASS(mozMeterSubOptimum, ":-moz-meter-sub-optimum",
+                       NS_EVENT_STATE_SUB_OPTIMUM)
+CSS_STATE_PSEUDO_CLASS(mozMeterSubSubOptimum, ":-moz-meter-sub-sub-optimum",
+                       NS_EVENT_STATE_SUB_SUB_OPTIMUM)
 
 #ifdef DEFINED_CSS_STATE_PSEUDO_CLASS
 #undef DEFINED_CSS_STATE_PSEUDO_CLASS

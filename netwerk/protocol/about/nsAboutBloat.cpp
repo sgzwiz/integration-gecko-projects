@@ -19,7 +19,7 @@
 #include "nsIFileStreams.h"
 #include "nsNetUtil.h"
 #include "nsDirectoryServiceDefs.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 
 static void GC_gcollect() {}
 
@@ -101,10 +101,7 @@ nsAboutBloat::NewChannel(nsIURI *aURI, nsIChannel **result)
         if (NS_FAILED(rv)) return rv;
 
         FILE* out;
-        nsCOMPtr<nsILocalFile> lfile = do_QueryInterface(file);
-        if (lfile == nsnull)
-            return NS_ERROR_FAILURE;
-        rv = lfile->OpenANSIFileDesc("w", &out);
+        rv = file->OpenANSIFileDesc("w", &out);
         if (NS_FAILED(rv)) return rv;
 
         rv = nsTraceRefcntImpl::DumpStatistics(statType, out);
@@ -136,7 +133,7 @@ nsresult
 nsAboutBloat::Create(nsISupports *aOuter, REFNSIID aIID, void **aResult)
 {
     nsAboutBloat* about = new nsAboutBloat();
-    if (about == nsnull)
+    if (about == nullptr)
         return NS_ERROR_OUT_OF_MEMORY;
     NS_ADDREF(about);
     nsresult rv = about->QueryInterface(aIID, aResult);

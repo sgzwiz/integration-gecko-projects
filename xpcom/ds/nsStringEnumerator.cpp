@@ -11,14 +11,15 @@
 #include "nsReadableUtils.h"
 #include "nsISimpleEnumerator.h"
 #include "nsSupportsPrimitives.h"
+#include "mozilla/Attributes.h"
 
 //
 // nsStringEnumerator
 //
 
-class nsStringEnumerator : public nsIStringEnumerator,
-                           public nsIUTF8StringEnumerator,
-                           public nsISimpleEnumerator
+class nsStringEnumerator MOZ_FINAL : public nsIStringEnumerator,
+                                     public nsIUTF8StringEnumerator,
+                                     public nsISimpleEnumerator
 {
 public:
     nsStringEnumerator(const nsTArray<nsString>* aArray, bool aOwnsArray) :
@@ -152,7 +153,7 @@ nsStringEnumerator::GetNext(nsACString& aResult)
 
 template<class T>
 static inline nsresult
-StringEnumeratorTail(T** aResult NS_INPARAM)
+StringEnumeratorTail(T** aResult)
 {
     if (!*aResult)
         return NS_ERROR_OUT_OF_MEMORY;

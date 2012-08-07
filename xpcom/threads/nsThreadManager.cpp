@@ -87,7 +87,7 @@ nsThreadManager::Init()
 
   nsresult rv = mMainThread->InitCurrentThread();
   if (NS_FAILED(rv)) {
-    mMainThread = nsnull;
+    mMainThread = nullptr;
     return rv;
   }
 
@@ -162,15 +162,15 @@ nsThreadManager::Shutdown()
   // Normally thread shutdown clears the observer for the thread, but since the
   // main thread is special we do it manually here after we're sure all events
   // have been processed.
-  mMainThread->SetObserver(nsnull);
+  mMainThread->SetObserver(nullptr);
   mMainThread->ClearObservers();
 
   // Release main thread object.
-  mMainThread = nsnull;
-  mLock = nsnull;
+  mMainThread = nullptr;
+  mLock = nullptr;
 
   // Remove the TLS entry for the main thread.
-  PR_SetThreadPrivate(mCurThreadIndex, nsnull);
+  PR_SetThreadPrivate(mCurThreadIndex, nullptr);
 
   for (int zone_ = JS_ZONE_CHROME; zone_ < JS_ZONE_CONTENT_LIMIT; zone_++) {
     Zone &zone = getZone((JSZoneId) zone_);
@@ -204,7 +204,7 @@ nsThreadManager::UnregisterCurrentThread(nsThread *thread)
 
   mThreadsByPRThread.Remove(thread->GetPRThread());
 
-  PR_SetThreadPrivate(mCurThreadIndex, nsnull);
+  PR_SetThreadPrivate(mCurThreadIndex, nullptr);
   // Ref-count balanced via ReleaseObject
 }
 
@@ -217,13 +217,13 @@ nsThreadManager::GetCurrentThread()
     return static_cast<nsThread *>(data);
 
   if (!mInitialized) {
-    return nsnull;
+    return nullptr;
   }
 
   // OK, that's fine.  We'll dynamically create one :-)
   nsRefPtr<nsThread> thread = new nsThread(nsThread::OTHER_THREAD, 0);
   if (!thread || NS_FAILED(thread->InitCurrentThread()))
-    return nsnull;
+    return nullptr;
 
   return thread.get();  // reference held in TLS
 }

@@ -26,6 +26,7 @@
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIWebNavigation.h"
 #include "nsIDocShellTreeItem.h"
+#include "nsIScriptContext.h"
 
 using namespace mozilla;
 
@@ -217,7 +218,7 @@ nsDOMDataTransfer::GetMozUserCancelled(bool* aUserCancelled)
 NS_IMETHODIMP
 nsDOMDataTransfer::GetFiles(nsIDOMFileList** aFileList)
 {
-  *aFileList = nsnull;
+  *aFileList = nullptr;
 
   if (mEventType != NS_DRAGDROP_DROP && mEventType != NS_DRAGDROP_DRAGDROP)
     return NS_OK;
@@ -262,7 +263,7 @@ nsDOMDataTransfer::GetFiles(nsIDOMFileList** aFileList)
 NS_IMETHODIMP
 nsDOMDataTransfer::GetTypes(nsIDOMDOMStringList** aTypes)
 {
-  *aTypes = nsnull;
+  *aTypes = nullptr;
 
   nsRefPtr<nsDOMStringList> types = new nsDOMStringList();
   NS_ENSURE_TRUE(types, NS_ERROR_OUT_OF_MEMORY);
@@ -387,7 +388,7 @@ nsDOMDataTransfer::SetMozCursor(const nsAString& aCursorState)
 NS_IMETHODIMP
 nsDOMDataTransfer::GetMozSourceNode(nsIDOMNode** aSourceNode)
 {
-  *aSourceNode = nsnull;
+  *aSourceNode = nullptr;
 
   nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
   if (!dragSession)
@@ -405,7 +406,7 @@ nsDOMDataTransfer::GetMozSourceNode(nsIDOMNode** aSourceNode)
 NS_IMETHODIMP
 nsDOMDataTransfer::MozTypesAt(PRUint32 aIndex, nsIDOMDOMStringList** aTypes)
 {
-  *aTypes = nsnull;
+  *aTypes = nullptr;
 
   nsRefPtr<nsDOMStringList> types = new nsDOMStringList();
   NS_ENSURE_TRUE(types, NS_ERROR_OUT_OF_MEMORY);
@@ -428,7 +429,7 @@ nsDOMDataTransfer::MozGetDataAt(const nsAString& aFormat,
                                 PRUint32 aIndex,
                                 nsIVariant** aData)
 {
-  *aData = nsnull;
+  *aData = nullptr;
 
   if (aFormat.IsEmpty())
     return NS_OK;
@@ -447,7 +448,7 @@ nsDOMDataTransfer::MozGetDataAt(const nsAString& aFormat,
   // source of the drag is in a child frame of the caller. In that case,
   // we only allow access to data of the same principal. During other events,
   // only allow access to the data with the same principal.
-  nsIPrincipal* principal = nsnull;
+  nsIPrincipal* principal = nullptr;
   if (mIsCrossDomainSubFrameDrop ||
       (mEventType != NS_DRAGDROP_DROP && mEventType != NS_DRAGDROP_DRAGDROP &&
        !nsContentUtils::CallerHasUniversalXPConnect())) {
@@ -627,14 +628,25 @@ nsDOMDataTransfer::Clone(PRUint32 aEventType, bool aUserCancelled,
 }
 
 void
-nsDOMDataTransfer::GetTransferables(nsISupportsArray** aArray)
+nsDOMDataTransfer::GetTransferables(nsISupportsArray** aArray,
+                                    nsIDOMNode* aDragTarget)
 {
-  *aArray = nsnull;
+  MOZ_ASSERT(aDragTarget);
+
+  *aArray = nullptr;
 
   nsCOMPtr<nsISupportsArray> transArray =
     do_CreateInstance("@mozilla.org/supports-array;1");
   if (!transArray)
     return;
+
+  nsCOMPtr<nsINode> dragNode = do_QueryInterface(aDragTarget);
+  if (!dragNode)
+    return;
+  nsIDocument* doc = dragNode->GetCurrentDoc();
+  if (!doc)
+    return;
+  nsILoadContext* loadContext = doc->GetLoadContext();
 
   bool added = false;
   PRUint32 count = mItems.Length();
@@ -649,6 +661,7 @@ nsDOMDataTransfer::GetTransferables(nsISupportsArray** aArray)
       do_CreateInstance("@mozilla.org/widget/transferable;1");
     if (!transferable)
       return;
+    transferable->Init(loadContext);
 
     for (PRUint32 f = 0; f < count; f++) {
       TransferItem& formatitem = item[f];
@@ -697,7 +710,7 @@ nsDOMDataTransfer::ConvertFromVariant(nsIVariant* aVariant,
                                       nsISupports** aSupports,
                                       PRUint32* aLength)
 {
-  *aSupports = nsnull;
+  *aSupports = nullptr;
   *aLength = 0;
 
   PRUint16 type;
@@ -821,7 +834,7 @@ nsDOMDataTransfer::GetCurrentPrincipal(nsresult* rv)
 
   nsCOMPtr<nsIPrincipal> currentPrincipal;
   *rv = ssm->GetSubjectPrincipal(getter_AddRefs(currentPrincipal));
-  NS_ENSURE_SUCCESS(*rv, nsnull);
+  NS_ENSURE_SUCCESS(*rv, nullptr);
 
   if (!currentPrincipal)
     ssm->GetSystemPrincipal(getter_AddRefs(currentPrincipal));
@@ -880,12 +893,12 @@ nsDOMDataTransfer::CacheExternalFormats()
       // the data. When retrieved, GetRealData will read the data.
       if (supported) {
         if (strcmp(formats[f], kUnicodeMime) == 0) {
-          SetDataWithPrincipal(NS_LITERAL_STRING("text/plain"), nsnull, c, sysPrincipal);
+          SetDataWithPrincipal(NS_LITERAL_STRING("text/plain"), nullptr, c, sysPrincipal);
         }
         else {
           if (strcmp(formats[f], kURLDataMime) == 0)
-            SetDataWithPrincipal(NS_LITERAL_STRING("text/uri-list"), nsnull, c, sysPrincipal);
-          SetDataWithPrincipal(NS_ConvertUTF8toUTF16(formats[f]), nsnull, c, sysPrincipal);
+            SetDataWithPrincipal(NS_LITERAL_STRING("text/uri-list"), nullptr, c, sysPrincipal);
+          SetDataWithPrincipal(NS_ConvertUTF8toUTF16(formats[f]), nullptr, c, sysPrincipal);
         }
       }
     }
@@ -898,11 +911,6 @@ nsDOMDataTransfer::FillInExternalDragData(TransferItem& aItem, PRUint32 aIndex)
   NS_PRECONDITION(mIsExternal, "Not an external drag");
 
   if (!aItem.mData) {
-    nsCOMPtr<nsITransferable> trans =
-      do_CreateInstance("@mozilla.org/widget/transferable;1");
-    if (!trans)
-      return;
-
     NS_ConvertUTF16toUTF8 utf8format(aItem.mFormat);
     const char* format = utf8format.get();
     if (strcmp(format, "text/plain") == 0)
@@ -913,6 +921,16 @@ nsDOMDataTransfer::FillInExternalDragData(TransferItem& aItem, PRUint32 aIndex)
     nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
     if (!dragSession)
       return;
+
+    nsCOMPtr<nsITransferable> trans =
+      do_CreateInstance("@mozilla.org/widget/transferable;1");
+    if (!trans)
+      return;
+
+    nsCOMPtr<nsIDOMDocument> domDoc;
+    dragSession->GetSourceDocument(getter_AddRefs(domDoc));
+    nsCOMPtr<nsIDocument> doc = do_QueryInterface(domDoc);
+    trans->Init(doc ? doc->GetLoadContext() : nullptr);
 
     trans->AddDataFlavor(format);
     dragSession->GetData(trans, aIndex);

@@ -22,6 +22,8 @@
 #include "nsReadableUtils.h"
 #include "nsStaticNameTable.h"
 
+#include "mozilla/Preferences.h"
+
 using namespace mozilla;
 
 // required to make the symbol external, so that TestCSSPropertyLookup.cpp can link with it
@@ -47,7 +49,7 @@ static nsStaticCaseInsensitiveNameTable* gFontDescTable;
 
 /* static */ nsCSSProperty *
   nsCSSProps::gShorthandsContainingTable[eCSSProperty_COUNT_no_shorthands];
-/* static */ nsCSSProperty* nsCSSProps::gShorthandsContainingPool = nsnull;
+/* static */ nsCSSProperty* nsCSSProps::gShorthandsContainingPool = nullptr;
 
 static const char* const kCSSRawFontDescs[] = {
 #define CSS_FONT_DESC(name_, method_) #name_,
@@ -71,6 +73,50 @@ SortPropertyAndCount(const void* s1, const void* s2, void *closure)
   // Secondary sort by property index (highest to lowest)
   return pc2->property - pc1->property;
 }
+
+// We need eCSSAliasCount so we can make gAliases nonzero size when there
+// are no aliases.
+enum {
+#define CSS_PROP_ALIAS(aliasname_, propid_, aliasmethod_, pref_)              \
+  eCSSAliasCountBefore_##aliasmethod_,
+#include "nsCSSPropAliasList.h"
+#undef CSS_PROP_ALIAS
+
+  eCSSAliasCount
+};
+
+enum {
+  // We want the largest sizeof(#aliasname_).  To find that, we use the
+  // auto-incrementing behavior of C++ enums (a value without an
+  // initializer is one larger than the previous value, or 0 at the
+  // start of the enum), and for each alias we define two values:
+  //   eMaxCSSAliasNameSizeBefore_##aliasmethod_ is the largest
+  //     sizeof(#aliasname_) before that alias.  The first one is
+  //     conveniently zero.
+  //   eMaxCSSAliasNameSizeWith_##aliasmethod_ is **one less than** the
+  //     largest sizeof(#aliasname_) before or including that alias.
+#define CSS_PROP_ALIAS(aliasname_, propid_, aliasmethod_, pref_)              \
+  eMaxCSSAliasNameSizeBefore_##aliasmethod_,                                  \
+  eMaxCSSAliasNameSizeWith_##aliasmethod_ =                                   \
+    PR_MAX(sizeof(#aliasname_), eMaxCSSAliasNameSizeBefore_##aliasmethod_) - 1,
+#include "nsCSSPropAliasList.h"
+#undef CSS_PROP_ALIAS
+
+  eMaxCSSAliasNameSize
+};
+
+struct CSSPropertyAlias {
+  const char name[PR_MAX(eMaxCSSAliasNameSize, 1)];
+  const nsCSSProperty id;
+  bool enabled;
+};
+
+static CSSPropertyAlias gAliases[PR_MAX(eCSSAliasCount, 1)] = {
+#define CSS_PROP_ALIAS(aliasname_, propid_, aliasmethod_, pref_)  \
+  { #aliasname_, eCSSProperty_##propid_, true },
+#include "nsCSSPropAliasList.h"
+#undef CSS_PROP_ALIAS
+};
 
 void
 nsCSSProps::AddRefTable(void)
@@ -116,6 +162,40 @@ nsCSSProps::AddRefTable(void)
     }
 
     BuildShorthandsContainingTable();
+
+    static bool prefObserversInited = false;
+    if (!prefObserversInited) {
+      prefObserversInited = true;
+      
+      #define OBSERVE_PROP(pref_, id_)                                        \
+        if (pref_[0]) {                                                       \
+          Preferences::AddBoolVarCache(&gPropertyEnabled[eCSSProperty_##id_], \
+                                       pref_);                                \
+        }
+
+      #define CSS_PROP(name_, id_, method_, flags_, pref_, parsevariant_,     \
+                       kwtable_, stylestruct_, stylestructoffset_, animtype_) \
+        OBSERVE_PROP(pref_, id_)
+      #include "nsCSSPropList.h"
+      #undef CSS_PROP
+
+      #define  CSS_PROP_SHORTHAND(name_, id_, method_, flags_, pref_) \
+        OBSERVE_PROP(pref_, id_)
+      #include "nsCSSPropList.h"
+      #undef CSS_PROP_SHORTHAND
+
+      #undef OBSERVE_PROP
+
+      size_t aliasIndex = 0;
+      #define CSS_PROP_ALIAS(aliasname_, propid_, aliasmethod_, pref_)    \
+        if (pref_[0]) {                                                   \
+          Preferences::AddBoolVarCache(&gAliases[aliasIndex].enabled,     \
+                                       pref_);                            \
+        }                                                                 \
+        ++aliasIndex;
+      #include "nsCSSPropAliasList.h"
+      #undef CSS_PROP_ALIAS
+    }
   }
 }
 
@@ -187,7 +267,7 @@ nsCSSProps::BuildShorthandsContainingTable()
   // Sort with lowest count at the start and highest at the end, and
   // within counts sort in reverse property index order.
   NS_QuickSort(&subpropCounts, ArrayLength(subpropCounts),
-               sizeof(subpropCounts[0]), SortPropertyAndCount, nsnull);
+               sizeof(subpropCounts[0]), SortPropertyAndCount, nullptr);
 
   // Fill in all the entries in gShorthandsContainingTable
   for (const PropertyAndCount *shorthandAndCount = subpropCounts,
@@ -272,61 +352,19 @@ nsCSSProps::ReleaseTable(void)
 {
   if (0 == --gTableRefCount) {
     delete gPropertyTable;
-    gPropertyTable = nsnull;
+    gPropertyTable = nullptr;
 
     delete gFontDescTable;
-    gFontDescTable = nsnull;
+    gFontDescTable = nullptr;
 
     delete [] gShorthandsContainingPool;
-    gShorthandsContainingPool = nsnull;
+    gShorthandsContainingPool = nullptr;
   }
 }
 
-// We need eCSSAliasCount so we can make gAliases nonzero size when there
-// are no aliases.
-enum {
-#define CSS_PROP_ALIAS(aliasname_, propid_, aliasmethod_, pref_)              \
-  eCSSAliasCountBefore_##aliasmethod_,
-#include "nsCSSPropAliasList.h"
-#undef CSS_PROP_ALIAS
-
-  eCSSAliasCount
-};
-
-enum {
-  // We want the largest sizeof(#aliasname_).  To find that, we use the
-  // auto-incrementing behavior of C++ enums (a value without an
-  // initializer is one larger than the previous value, or 0 at the
-  // start of the enum), and for each alias we define two values:
-  //   eMaxCSSAliasNameSizeBefore_##aliasmethod_ is the largest
-  //     sizeof(#aliasname_) before that alias.  The first one is
-  //     conveniently zero.
-  //   eMaxCSSAliasNameSizeWith_##aliasmethod_ is **one less than** the
-  //     largest sizeof(#aliasname_) before or including that alias.
-#define CSS_PROP_ALIAS(aliasname_, propid_, aliasmethod_, pref_)              \
-  eMaxCSSAliasNameSizeBefore_##aliasmethod_,                                  \
-  eMaxCSSAliasNameSizeWith_##aliasmethod_ =                                   \
-    PR_MAX(sizeof(#aliasname_), eMaxCSSAliasNameSizeBefore_##aliasmethod_) - 1,
-#include "nsCSSPropAliasList.h"
-#undef CSS_PROP_ALIAS
-
-  eMaxCSSAliasNameSize
-};
-
-struct CSSPropertyAlias {
-  char name[PR_MAX(eMaxCSSAliasNameSize, 1)];
-  nsCSSProperty id;
-};
-
-static const CSSPropertyAlias gAliases[PR_MAX(eCSSAliasCount, 1)] = {
-#define CSS_PROP_ALIAS(aliasname_, propid_, aliasmethod_, pref_)  \
-  { #aliasname_, eCSSProperty_##propid_ },
-#include "nsCSSPropAliasList.h"
-#undef CSS_PROP_ALIAS
-};
-
 nsCSSProperty
-nsCSSProps::LookupProperty(const nsACString& aProperty)
+nsCSSProps::LookupProperty(const nsACString& aProperty,
+                           EnabledState aEnabled)
 {
   NS_ABORT_IF_FALSE(gPropertyTable, "no lookup table, needs addref");
 
@@ -337,17 +375,21 @@ nsCSSProps::LookupProperty(const nsACString& aProperty)
     for (const CSSPropertyAlias *alias = gAliases,
                             *alias_end = ArrayEnd(gAliases);
          alias < alias_end; ++alias) {
-      if (aProperty.LowerCaseEqualsASCII(alias->name)) {
+      if (aProperty.LowerCaseEqualsASCII(alias->name) &&
+          (alias->enabled || aEnabled == eAny)) {
         res = alias->id;
         break;
       }
     }
   }
+  if (res != eCSSProperty_UNKNOWN && aEnabled == eEnabled && !IsEnabled(res)) {
+    res = eCSSProperty_UNKNOWN;
+  }
   return res;
 }
 
 nsCSSProperty
-nsCSSProps::LookupProperty(const nsAString& aProperty)
+nsCSSProps::LookupProperty(const nsAString& aProperty, EnabledState aEnabled)
 {
   // This is faster than converting and calling
   // LookupProperty(nsACString&).  The table will do its own
@@ -360,11 +402,15 @@ nsCSSProps::LookupProperty(const nsAString& aProperty)
     for (const CSSPropertyAlias *alias = gAliases,
                             *alias_end = ArrayEnd(gAliases);
          alias < alias_end; ++alias) {
-      if (aProperty.LowerCaseEqualsASCII(alias->name)) {
+      if (aProperty.LowerCaseEqualsASCII(alias->name) &&
+          (alias->enabled || aEnabled == eAny)) {
         res = alias->id;
         break;
       }
     }
+  }
+  if (res != eCSSProperty_UNKNOWN && aEnabled == eEnabled && !IsEnabled(res)) {
+    res = eCSSProperty_UNKNOWN;
   }
   return res;
 }
@@ -441,7 +487,9 @@ nsCSSProps::OtherNameFor(nsCSSProperty aProperty)
 
 const PRInt32 nsCSSProps::kAnimationDirectionKTable[] = {
   eCSSKeyword_normal, NS_STYLE_ANIMATION_DIRECTION_NORMAL,
+  eCSSKeyword_reverse, NS_STYLE_ANIMATION_DIRECTION_REVERSE,
   eCSSKeyword_alternate, NS_STYLE_ANIMATION_DIRECTION_ALTERNATE,
+  eCSSKeyword_alternate_reverse, NS_STYLE_ANIMATION_DIRECTION_ALTERNATE_REVERSE,
   eCSSKeyword_UNKNOWN,-1
 };
 
@@ -480,6 +528,8 @@ const PRInt32 nsCSSProps::kAppearanceKTable[] = {
   eCSSKeyword_button_arrow_down,      NS_THEME_BUTTON_ARROW_DOWN,
   eCSSKeyword_button_arrow_next,      NS_THEME_BUTTON_ARROW_NEXT,
   eCSSKeyword_button_arrow_previous,  NS_THEME_BUTTON_ARROW_PREVIOUS,
+  eCSSKeyword_meterbar,               NS_THEME_METERBAR,
+  eCSSKeyword_meterchunk,             NS_THEME_METERBAR_CHUNK,
   eCSSKeyword_separator,              NS_THEME_TOOLBAR_SEPARATOR,
   eCSSKeyword_splitter,               NS_THEME_SPLITTER,
   eCSSKeyword_statusbar,              NS_THEME_STATUSBAR,
@@ -884,6 +934,10 @@ const PRInt32 nsCSSProps::kDisplayKTable[] = {
   eCSSKeyword__moz_popup,         NS_STYLE_DISPLAY_POPUP,
   eCSSKeyword__moz_groupbox,      NS_STYLE_DISPLAY_GROUPBOX,
 #endif
+#ifdef MOZ_FLEXBOX
+  eCSSKeyword__moz_flex,          NS_STYLE_DISPLAY_FLEX,
+  eCSSKeyword__moz_inline_flex,   NS_STYLE_DISPLAY_INLINE_FLEX,
+#endif // MOZ_FLEXBOX
   eCSSKeyword_UNKNOWN,-1
 };
 
@@ -893,6 +947,45 @@ const PRInt32 nsCSSProps::kEmptyCellsKTable[] = {
   eCSSKeyword__moz_show_background, NS_STYLE_TABLE_EMPTY_CELLS_SHOW_BACKGROUND,
   eCSSKeyword_UNKNOWN,-1
 };
+
+#ifdef MOZ_FLEXBOX
+const PRInt32 nsCSSProps::kAlignItemsKTable[] = {
+  eCSSKeyword_flex_start, NS_STYLE_ALIGN_ITEMS_FLEX_START,
+  eCSSKeyword_flex_end,   NS_STYLE_ALIGN_ITEMS_FLEX_END,
+  eCSSKeyword_center,     NS_STYLE_ALIGN_ITEMS_CENTER,
+  eCSSKeyword_baseline,   NS_STYLE_ALIGN_ITEMS_BASELINE,
+  eCSSKeyword_stretch,    NS_STYLE_ALIGN_ITEMS_STRETCH,
+  eCSSKeyword_UNKNOWN,-1
+};
+
+// Note: 'align-self' takes the same keywords as 'align-items', plus 'auto'.
+const PRInt32 nsCSSProps::kAlignSelfKTable[] = {
+  eCSSKeyword_flex_start, NS_STYLE_ALIGN_ITEMS_FLEX_START,
+  eCSSKeyword_flex_end,   NS_STYLE_ALIGN_ITEMS_FLEX_END,
+  eCSSKeyword_center,     NS_STYLE_ALIGN_ITEMS_CENTER,
+  eCSSKeyword_baseline,   NS_STYLE_ALIGN_ITEMS_BASELINE,
+  eCSSKeyword_stretch,    NS_STYLE_ALIGN_ITEMS_STRETCH,
+  eCSSKeyword_auto,       NS_STYLE_ALIGN_SELF_AUTO,
+  eCSSKeyword_UNKNOWN,-1
+};
+
+const PRInt32 nsCSSProps::kFlexDirectionKTable[] = {
+  eCSSKeyword_row,            NS_STYLE_FLEX_DIRECTION_ROW,
+  eCSSKeyword_row_reverse,    NS_STYLE_FLEX_DIRECTION_ROW_REVERSE,
+  eCSSKeyword_column,         NS_STYLE_FLEX_DIRECTION_COLUMN,
+  eCSSKeyword_column_reverse, NS_STYLE_FLEX_DIRECTION_COLUMN_REVERSE,
+  eCSSKeyword_UNKNOWN,-1
+};
+
+const PRInt32 nsCSSProps::kJustifyContentKTable[] = {
+  eCSSKeyword_flex_start,    NS_STYLE_JUSTIFY_CONTENT_FLEX_START,
+  eCSSKeyword_flex_end,      NS_STYLE_JUSTIFY_CONTENT_FLEX_END,
+  eCSSKeyword_center,        NS_STYLE_JUSTIFY_CONTENT_CENTER,
+  eCSSKeyword_space_between, NS_STYLE_JUSTIFY_CONTENT_SPACE_BETWEEN,
+  eCSSKeyword_space_around,  NS_STYLE_JUSTIFY_CONTENT_SPACE_AROUND,
+  eCSSKeyword_UNKNOWN,-1
+};
+#endif // MOZ_FLEXBOX
 
 const PRInt32 nsCSSProps::kFloatKTable[] = {
   eCSSKeyword_none,  NS_STYLE_FLOAT_NONE,
@@ -1164,6 +1257,14 @@ const PRInt32 nsCSSProps::kRadialGradientSizeKTable[] = {
   eCSSKeyword_closest_corner,  NS_STYLE_GRADIENT_SIZE_CLOSEST_CORNER,
   eCSSKeyword_farthest_side,   NS_STYLE_GRADIENT_SIZE_FARTHEST_SIDE,
   eCSSKeyword_farthest_corner, NS_STYLE_GRADIENT_SIZE_FARTHEST_CORNER,
+  eCSSKeyword_UNKNOWN,-1
+};
+
+const PRInt32 nsCSSProps::kRadialGradientLegacySizeKTable[] = {
+  eCSSKeyword_closest_side,    NS_STYLE_GRADIENT_SIZE_CLOSEST_SIDE,
+  eCSSKeyword_closest_corner,  NS_STYLE_GRADIENT_SIZE_CLOSEST_CORNER,
+  eCSSKeyword_farthest_side,   NS_STYLE_GRADIENT_SIZE_FARTHEST_SIDE,
+  eCSSKeyword_farthest_corner, NS_STYLE_GRADIENT_SIZE_FARTHEST_CORNER,
   // synonyms
   eCSSKeyword_contain,         NS_STYLE_GRADIENT_SIZE_CLOSEST_SIDE,
   eCSSKeyword_cover,           NS_STYLE_GRADIENT_SIZE_FARTHEST_CORNER,
@@ -1269,6 +1370,7 @@ const PRInt32 nsCSSProps::kUnicodeBidiKTable[] = {
   eCSSKeyword_embed, NS_STYLE_UNICODE_BIDI_EMBED,
   eCSSKeyword_bidi_override, NS_STYLE_UNICODE_BIDI_OVERRIDE,
   eCSSKeyword__moz_isolate, NS_STYLE_UNICODE_BIDI_ISOLATE,
+  eCSSKeyword__moz_isolate_override, NS_STYLE_UNICODE_BIDI_ISOLATE_OVERRIDE,
   eCSSKeyword__moz_plaintext, NS_STYLE_UNICODE_BIDI_PLAINTEXT,
   eCSSKeyword_UNKNOWN,-1
 };
@@ -1557,7 +1659,7 @@ nsCSSProps::LookupPropertyValue(nsCSSProperty aProp, PRInt32 aValue)
   NS_ABORT_IF_FALSE(aProp >= 0 && aProp < eCSSProperty_COUNT,
                     "property out of range");
 
-  const PRInt32* kwtable = nsnull;
+  const PRInt32* kwtable = nullptr;
   if (aProp < eCSSProperty_COUNT_no_shorthands)
     kwtable = kKeywordTableTable[aProp];
 
@@ -2027,6 +2129,15 @@ static const nsCSSProperty gColumnRuleSubpropTable[] = {
   eCSSProperty_UNKNOWN
 };
 
+#ifdef MOZ_FLEXBOX
+static const nsCSSProperty gFlexSubpropTable[] = {
+  eCSSProperty_flex_grow,
+  eCSSProperty_flex_shrink,
+  eCSSProperty_flex_basis,
+  eCSSProperty_UNKNOWN
+};
+#endif // MOZ_FLEXBOX
+
 static const nsCSSProperty gOverflowSubpropTable[] = {
   eCSSProperty_overflow_x,
   eCSSProperty_overflow_y,
@@ -2317,4 +2428,18 @@ nsCSSProps::gPropertyIndexInStruct[eCSSProperty_COUNT_no_shorthands] = {
   #undef CSS_PROP
   #undef CSS_PROP_BACKENDONLY
 
+};
+
+/* static */ bool
+nsCSSProps::gPropertyEnabled[eCSSProperty_COUNT] = {
+  #define CSS_PROP(name_, id_, method_, flags_, pref_, parsevariant_,     \
+                   kwtable_, stylestruct_, stylestructoffset_, animtype_) \
+    true,
+  #include "nsCSSPropList.h"
+  #undef CSS_PROP
+
+  #define  CSS_PROP_SHORTHAND(name_, id_, method_, flags_, pref_) \
+    true,
+  #include "nsCSSPropList.h"
+  #undef CSS_PROP_SHORTHAND
 };

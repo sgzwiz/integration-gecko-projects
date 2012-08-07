@@ -21,10 +21,6 @@ endif
 
 tier_platform_dirs += xpcom
 
-ifndef MOZ_NATIVE_ZLIB
-tier_platform_dirs += modules/zlib
-endif
-
 tier_platform_dirs += \
 		modules/libpref \
 		intl \
@@ -108,6 +104,9 @@ endif
 
 ifdef MOZ_WEBM
 tier_platform_dirs += media/libnestegg
+endif
+
+ifdef MOZ_VP8
 ifndef MOZ_NATIVE_LIBVPX
 tier_platform_dirs += media/libvpx
 endif
@@ -124,6 +123,12 @@ ifdef MOZ_SYDNEYAUDIO
 tier_platform_dirs += \
 		media/libsydneyaudio \
 		$(NULL)
+endif
+
+ifdef MOZ_WEBRTC
+tier_platform_dirs += \
+  media/webrtc \
+  $(NULL)
 endif
 
 ifdef MOZ_SPEEX_RESAMPLER

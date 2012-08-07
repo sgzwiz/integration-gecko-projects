@@ -44,6 +44,10 @@ const INSPECTOR_NOTIFICATIONS = {
 
 const PSEUDO_CLASSES = [":hover", ":active", ":focus"];
 
+// Timer, in milliseconds, between change events fired by
+// things like resize events.
+const LAYOUT_CHANGE_TIMER = 250;
+
 /**
  * Represents an open instance of the Inspector for a tab.
  * This is the object handed out to sidebars and other API consumers.
@@ -61,7 +65,10 @@ function Inspector(aIUI)
 {
   this._IUI = aIUI;
   this._winID = aIUI.winID;
+  this._browser = aIUI.browser;
   this._listeners = {};
+
+  this._browser.addEventListener("resize", this, true);
 }
 
 Inspector.prototype = {
@@ -106,7 +113,19 @@ Inspector.prototype = {
    */
   change: function Inspector_change(aContext)
   {
+    this._cancelLayoutChange();
     this._IUI.nodeChanged(aContext);
+  },
+
+  /**
+   * Returns true if a given sidebar panel is currently visible.
+   * @param string aPanelName
+   *        The panel name as registered with registerSidebar
+   */
+  isPanelVisible: function Inspector_isPanelVisible(aPanelName)
+  {
+    return this._IUI.sidebar.visible &&
+           this._IUI.sidebar.activePanel === aPanelName;
   },
 
   /**
@@ -114,8 +133,74 @@ Inspector.prototype = {
    */
   _destroy: function Inspector__destroy()
   {
+    this._cancelLayoutChange();
+    this._browser.removeEventListener("resize", this, true);
     delete this._IUI;
     delete this._listeners;
+  },
+
+  /**
+   * Event handler for DOM events.
+   *
+   * @param DOMEvent aEvent
+   */
+  handleEvent: function Inspector_handleEvent(aEvent)
+  {
+    switch(aEvent.type) {
+      case "resize":
+        this._scheduleLayoutChange();
+    }
+  },
+
+  /**
+   * Schedule a low-priority change event for things like paint
+   * and resize.
+   */
+  _scheduleLayoutChange: function Inspector_scheduleLayoutChange()
+  {
+    if (this._timer) {
+      return null;
+    }
+    this._timer = this._IUI.win.setTimeout(function() {
+      this.change("layout");
+    }.bind(this), LAYOUT_CHANGE_TIMER);
+  },
+
+  /**
+   * Cancel a pending low-priority change event if any is
+   * scheduled.
+   */
+  _cancelLayoutChange: function Inspector_cancelLayoutChange()
+  {
+    if (this._timer) {
+      this._IUI.win.clearTimeout(this._timer);
+      delete this._timer;
+    }
+  },
+
+  /**
+   * Called by InspectorUI after a tab switch, when the
+   * inspector is no longer the active tab.
+   */
+  _freeze: function Inspector__freeze()
+  {
+    this._cancelLayoutChange();
+    this._browser.removeEventListener("resize", this, true);
+    this._frozen = true;
+  },
+
+  /**
+   * Called by InspectorUI after a tab switch when the
+   * inspector is back to being the active tab.
+   */
+  _thaw: function Inspector__thaw()
+  {
+    if (!this._frozen) {
+      return;
+    }
+
+    this._browser.addEventListener("resize", this, true);
+    delete this._frozen;
   },
 
   /// Event stuff.  Would like to refactor this eventually.
@@ -176,8 +261,21 @@ Inspector.prototype = {
   {
     if (!(aEvent in this._listeners))
       return;
-    for each (let listener in this._listeners[aEvent]) {
-      listener.apply(null, arguments);
+
+    let originalListeners = this._listeners[aEvent];
+    for (let listener of this._listeners[aEvent]) {
+      // If the inspector was destroyed during event emission, stop
+      // emitting.
+      if (!this._listeners) {
+        break;
+      }
+
+      // If listeners were removed during emission, make sure the
+      // event handler we're going to fire wasn't removed.
+      if (originalListeners === this._listeners[aEvent] ||
+          this._listeners[aEvent].some(function(l) l === listener)) {
+        listener.apply(null, arguments);
+      }
     }
   }
 }
@@ -342,7 +440,7 @@ InspectorUI.prototype = {
   /**
    * Toggle the TreePanel.
    */
-  toggleHTMLPanel: function TP_toggleHTMLPanel()
+  toggleHTMLPanel: function IUI_toggleHTMLPanel()
   {
     if (this.treePanel.isOpen()) {
       this.treePanel.close();
@@ -513,6 +611,7 @@ InspectorUI.prototype = {
     // Has this windowID been inspected before?
     if (this.store.hasID(this.winID)) {
       this._currentInspector = this.store.getInspector(this.winID);
+      this._currentInspector._thaw();
       let selectedNode = this.currentInspector._selectedNode;
       if (selectedNode) {
         this.inspectNode(selectedNode);
@@ -554,15 +653,10 @@ InspectorUI.prototype = {
    setupNavigationKeys: function IUI_setupNavigationKeys()
    {
      // UI elements that are arrow keys sensitive:
-     // - highlighter veil;
-     // - content window (when the highlighter `veil is pointer-events:none`;
      // - the Inspector toolbar.
 
      this.onKeypress = this.onKeypress.bind(this);
 
-     this.highlighter.highlighterContainer.addEventListener("keypress",
-       this.onKeypress, true);
-     this.win.addEventListener("keypress", this.onKeypress, true);
      this.toolbar.addEventListener("keypress", this.onKeypress, true);
    },
 
@@ -571,9 +665,6 @@ InspectorUI.prototype = {
    */
    removeNavigationKeys: function IUI_removeNavigationKeys()
    {
-      this.highlighter.highlighterContainer.removeEventListener("keypress",
-        this.onKeypress, true);
-      this.win.removeEventListener("keypress", this.onKeypress, true);
       this.toolbar.removeEventListener("keypress", this.onKeypress, true);
    },
 
@@ -646,9 +737,12 @@ InspectorUI.prototype = {
       this.breadcrumbs = null;
     }
 
-    delete this._currentInspector;
-    if (!aKeepInspector)
+    if (aKeepInspector) {
+      this._currentInspector._freeze();
+    } else {
       this.store.deleteInspector(this.winID);
+    }
+    delete this._currentInspector;
 
     this.inspectorUICommand.setAttribute("checked", "false");
 
@@ -691,6 +785,7 @@ InspectorUI.prototype = {
 
   _notifySelected: function IUI__notifySelected(aFrom)
   {
+    this._currentInspector._cancelLayoutChange();
     this._currentInspector._emit("select", aFrom);
   },
 
@@ -754,7 +849,7 @@ InspectorUI.prototype = {
 
     this.breadcrumbs.update();
     this.chromeWin.Tilt.update(aNode);
-    this.treePanel.select(aNode, aScroll);
+    this.treePanel.select(aNode, aScroll, aFrom);
 
     this._notifySelected(aFrom);
   },
@@ -790,7 +885,9 @@ InspectorUI.prototype = {
   clearPseudoClassLocks: function IUI_clearPseudoClassLocks()
   {
     this.breadcrumbs.nodeHierarchy.forEach(function(crumb) {
-      DOMUtils.clearPseudoClassLocks(crumb.node);
+      if (LayoutHelpers.isNodeConnected(crumb.node)) {
+        DOMUtils.clearPseudoClassLocks(crumb.node);
+      }
     });
   },
 
@@ -1001,7 +1098,7 @@ InspectorUI.prototype = {
    */
   copyInnerHTML: function IUI_copyInnerHTML()
   {
-    clipboardHelper.copyString(this.selection.innerHTML);
+    clipboardHelper.copyString(this.selection.innerHTML, this.selection.ownerDocument);
   },
 
   /**
@@ -1010,7 +1107,7 @@ InspectorUI.prototype = {
    */
   copyOuterHTML: function IUI_copyOuterHTML()
   {
-    clipboardHelper.copyString(this.selection.outerHTML);
+    clipboardHelper.copyString(this.selection.outerHTML, this.selection.ownerDocument);
   },
 
   /**
@@ -1019,7 +1116,14 @@ InspectorUI.prototype = {
   deleteNode: function IUI_deleteNode()
   {
     let selection = this.selection;
-    let parent = this.selection.parentNode;
+
+    let root = selection.ownerDocument.documentElement;
+    if (selection === root) {
+      // We can't delete the root element.
+      return;
+    }
+
+    let parent = selection.parentNode;
 
     // remove the node from the treepanel
     if (this.treePanel.isOpen())
@@ -1047,6 +1151,11 @@ InspectorUI.prototype = {
    */
   inspectNode: function IUI_inspectNode(aNode, aScroll)
   {
+    if (aNode.ownerDocument === this.chromeDoc) {
+      // This should never happen, but just in case, we don't let the inspector
+      // inspect browser nodes.
+      return;
+    }
     this.select(aNode, true, true);
     this.highlighter.highlight(aNode, aScroll);
   },
@@ -1119,7 +1228,7 @@ InspectorUI.prototype = {
 
   /**
    * Destroy the InspectorUI instance. This is called by the InspectorUI API
-   * "user", see BrowserShutdown() in browser.js.
+   * "user", see gBrowserInit.onUnload() in browser.js.
    */
   destroy: function IUI_destroy()
   {
@@ -1477,9 +1586,6 @@ InspectorStyleSidebar.prototype = {
     // wire up button to show the iframe
     let onClick = function() {
       this.activatePanel(aRegObj.id);
-      // Cheat a little bit and trigger a refresh
-      // when switching panels.
-      this._inspector.change("activatepanel-" + aRegObj.id);
     }.bind(this);
     btn.addEventListener("click", onClick, true);
 
@@ -1636,7 +1742,13 @@ InspectorStyleSidebar.prototype = {
       aTool.context = aTool.registration.load(this._inspector, aTool.frame);
 
       this._inspector._emit("sidebaractivated", aTool.id);
-      this._inspector._emit("sidebaractivated-" + aTool.id);
+
+      // Send an event specific to the activation of this panel.  For
+      // this initial event, include a "createpanel" argument
+      // to let panels watch sidebaractivated to refresh themselves
+      // but ignore the one immediately after their load.
+      // I don't really like this, we should find a better solution.
+      this._inspector._emit("sidebaractivated-" + aTool.id, "createpanel");
     }.bind(this);
     aTool.frame.addEventListener("load", aTool.onLoad, true);
     aTool.frame.setAttribute("src", aTool.registration.contentURL);
@@ -1804,7 +1916,7 @@ HTMLBreadcrumbs.prototype = {
 
     let classesLabel = this.IUI.chromeDoc.createElement("label");
     classesLabel.className = "inspector-breadcrumbs-classes plain";
-    
+
     let pseudosLabel = this.IUI.chromeDoc.createElement("label");
     pseudosLabel.className = "inspector-breadcrumbs-pseudo-classes plain";
 
@@ -2033,6 +2145,7 @@ HTMLBreadcrumbs.prototype = {
     };
 
     button.onclick = (function _onBreadcrumbsRightClick(aEvent) {
+      button.focus();
       if (aEvent.button == 2) {
         this.openSiblingMenu(button, aNode);
       }

@@ -6,7 +6,7 @@
 
 #include "nsINavBookmarksService.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 
 #include "nsNavHistory.h"
 #include "nsPlacesTables.h"
@@ -23,6 +23,7 @@
 #include "mozilla/Util.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
+#include "mozilla/Attributes.h"
 
 // Time between corrupt database backups.
 #define RECENT_BACKUP_TIME_MICROSEC (PRInt64)86400 * PR_USEC_PER_SEC // 24H
@@ -139,7 +140,7 @@ updateSQLiteStatistics(mozIStorageConnection* aDBConn)
   };
 
   nsCOMPtr<mozIStoragePendingStatement> ps;
-  (void)aDBConn->ExecuteAsync(stmts, ArrayLength(stmts), nsnull,
+  (void)aDBConn->ExecuteAsync(stmts, ArrayLength(stmts), nullptr,
                               getter_AddRefs(ps));
   return NS_OK;
 }
@@ -208,7 +209,7 @@ SetJournalMode(nsCOMPtr<mozIStorageConnection>& aDBConn,
   return JOURNAL_DELETE;
 }
 
-class BlockingConnectionCloseCallback : public mozIStorageCompletionCallback {
+class BlockingConnectionCloseCallback MOZ_FINAL : public mozIStorageCompletionCallback {
   bool mDone;
 
 public:
@@ -226,9 +227,9 @@ BlockingConnectionCloseCallback::Complete()
   MOZ_ASSERT(os);
   if (!os)
     return NS_OK;
-  DebugOnly<nsresult> rv = os->NotifyObservers(nsnull,
+  DebugOnly<nsresult> rv = os->NotifyObservers(nullptr,
                                                TOPIC_PLACES_CONNECTION_CLOSED,
-                                               nsnull);
+                                               nullptr);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
   return NS_OK;
 }
@@ -359,7 +360,7 @@ Database::~Database()
 
   // Remove the static reference to the service.
   if (gDatabase == this) {
-    gDatabase = nsnull;
+    gDatabase = nullptr;
   }
 }
 
@@ -1003,7 +1004,7 @@ Database::UpdateBookmarkRootTitles()
   rv = stmt->BindParameters(paramsArray);
   if (NS_FAILED(rv)) return rv;
   nsCOMPtr<mozIStoragePendingStatement> pendingStmt;
-  rv = stmt->ExecuteAsync(nsnull, getter_AddRefs(pendingStmt));
+  rv = stmt->ExecuteAsync(nullptr, getter_AddRefs(pendingStmt));
   if (NS_FAILED(rv)) return rv;
 
   return NS_OK;
@@ -1248,7 +1249,7 @@ Database::MigrateV7Up()
     );
     NS_ENSURE_STATE(stmt);
     nsCOMPtr<mozIStoragePendingStatement> ps;
-    (void)stmt->ExecuteAsync(nsnull, getter_AddRefs(ps));
+    (void)stmt->ExecuteAsync(nullptr, getter_AddRefs(ps));
   }
 
   // Temporary migration code for bug 396300
@@ -1551,7 +1552,7 @@ Database::MigrateV13Up()
   );
   NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<mozIStoragePendingStatement> ps;
-  rv = deleteDynContainersStmt->ExecuteAsync(nsnull, getter_AddRefs(ps));
+  rv = deleteDynContainersStmt->ExecuteAsync(nullptr, getter_AddRefs(ps));
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1678,7 +1679,7 @@ Database::MigrateV17Up()
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<mozIStoragePendingStatement> ps;
-  rv = fillHostsStmt->ExecuteAsync(nsnull, getter_AddRefs(ps));
+  rv = fillHostsStmt->ExecuteAsync(nullptr, getter_AddRefs(ps));
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1722,7 +1723,7 @@ Database::MigrateV18Up()
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<mozIStoragePendingStatement> ps;
-  rv = updateTypedStmt->ExecuteAsync(nsnull, getter_AddRefs(ps));
+  rv = updateTypedStmt->ExecuteAsync(nullptr, getter_AddRefs(ps));
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1874,7 +1875,7 @@ Database::MigrateV21Up()
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<mozIStoragePendingStatement> ps;
-  rv = updatePrefixesStmt->ExecuteAsync(nsnull, getter_AddRefs(ps));
+  rv = updatePrefixesStmt->ExecuteAsync(nullptr, getter_AddRefs(ps));
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1936,13 +1937,13 @@ Database::Observe(nsISupports *aSubject,
       while (NS_SUCCEEDED(e->HasMoreElements(&hasMore)) && hasMore) {
         nsCOMPtr<nsIObserver> observer;
         if (NS_SUCCEEDED(e->GetNext(getter_AddRefs(observer)))) {
-          (void)observer->Observe(observer, TOPIC_PLACES_INIT_COMPLETE, nsnull);
+          (void)observer->Observe(observer, TOPIC_PLACES_INIT_COMPLETE, nullptr);
         }
       }
     }
 
     // Notify all Places users that we are about to shutdown.
-    (void)os->NotifyObservers(nsnull, TOPIC_PLACES_SHUTDOWN, nsnull);
+    (void)os->NotifyObservers(nullptr, TOPIC_PLACES_SHUTDOWN, nullptr);
   }
 
   else if (strcmp(aTopic, TOPIC_PROFILE_BEFORE_CHANGE) == 0) {
@@ -1954,7 +1955,7 @@ Database::Observe(nsISupports *aSubject,
     // Fire internal shutdown notifications.
     nsCOMPtr<nsIObserverService> os = services::GetObserverService();
     if (os) {
-      (void)os->NotifyObservers(nsnull, TOPIC_PLACES_WILL_CLOSE_CONNECTION, nsnull);
+      (void)os->NotifyObservers(nullptr, TOPIC_PLACES_WILL_CLOSE_CONNECTION, nullptr);
     }
 
 #ifdef DEBUG

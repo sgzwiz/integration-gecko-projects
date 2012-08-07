@@ -30,7 +30,7 @@ nsMIMEInfoAndroid::LoadUriInternal(nsIURI * aURI)
 
   if (mozilla::AndroidBridge::Bridge())
     return mozilla::AndroidBridge::Bridge()->
-      OpenUriExternal(uriSpec, mType.Equals(uriScheme) ? EmptyCString() : mType) ? NS_OK : NS_ERROR_FAILURE;
+      OpenUriExternal(uriSpec, (mType.Equals(uriScheme) || mType.Equals(uriSpec)) ? EmptyCString() : mType) ? NS_OK : NS_ERROR_FAILURE;
 
   return NS_ERROR_FAILURE;
 }
@@ -49,7 +49,7 @@ nsMIMEInfoAndroid::GetMimeInfoForMimeType(const nsACString& aMimeType,
     return false;
   }
 
-  nsIHandlerApp* systemDefault = nsnull;
+  nsIHandlerApp* systemDefault = nullptr;
   bridge->GetHandlersForMimeType(nsCAutoString(aMimeType).get(), 
                                  info->mHandlerApps, &systemDefault);
   
@@ -108,7 +108,7 @@ nsMIMEInfoAndroid::GetMimeInfoForURL(const nsACString &aURL,
     return NS_OK;
   }
 
-  nsIHandlerApp* systemDefault = nsnull;
+  nsIHandlerApp* systemDefault = nullptr;
   bridge->GetHandlersForURL(nsCAutoString(aURL).get(), 
                             mimeinfo->mHandlerApps, &systemDefault);
   

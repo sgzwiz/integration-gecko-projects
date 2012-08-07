@@ -19,6 +19,7 @@
 #include "nsIObserverService.h"
 #include "mozilla/Services.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Attributes.h"
 
 #include "sqlite3.h"
 #include "test_quota.h"
@@ -119,7 +120,7 @@ NS_MEMORY_REPORTER_IMPLEMENT(StorageSQLite,
     GetStorageSQLiteMemoryUsed,
     "Memory used by SQLite.")
 
-class StorageSQLiteMultiReporter : public nsIMemoryMultiReporter
+class StorageSQLiteMultiReporter MOZ_FINAL : public nsIMemoryMultiReporter
 {
 private:
   Service *mService;    // a weakref because Service contains a strongref to this
@@ -352,7 +353,7 @@ NS_IMPL_THREADSAFE_ISUPPORTS3(
   mozIStorageServiceQuotaManagement
 )
 
-Service *Service::gService = nsnull;
+Service *Service::gService = nullptr;
 
 Service *
 Service::getSingleton()
@@ -373,7 +374,7 @@ Service::getSingleton()
       message.AppendASCII("The application has been updated, but your version "
                           "of SQLite is too old and the application cannot "
                           "run.");
-      (void)ps->Alert(nsnull, title.get(), message.get());
+      (void)ps->Alert(nullptr, title.get(), message.get());
     }
     ::PR_Abort();
   }
@@ -388,7 +389,7 @@ Service::getSingleton()
   return gService;
 }
 
-nsIXPConnect *Service::sXPConnect = nsnull;
+nsIXPConnect *Service::sXPConnect = nullptr;
 
 // static
 already_AddRefed<nsIXPConnect>
@@ -419,11 +420,11 @@ Service::getSynchronousPref()
 
 Service::Service()
 : mMutex("Service::mMutex")
-, mSqliteVFS(nsnull)
+, mSqliteVFS(nullptr)
 , mRegistrationMutex("Service::mRegistrationMutex")
 , mConnections()
-, mStorageSQLiteReporter(nsnull)
-, mStorageSQLiteMultiReporter(nsnull)
+, mStorageSQLiteReporter(nullptr)
+, mStorageSQLiteMultiReporter(nullptr)
 {
 }
 
@@ -449,9 +450,9 @@ Service::~Service()
   DebugOnly<bool> shutdownObserved = !sXPConnect;
   NS_ASSERTION(shutdownObserved, "Shutdown was not observed!");
 
-  gService = nsnull;
+  gService = nullptr;
   delete mSqliteVFS;
-  mSqliteVFS = nsnull;
+  mSqliteVFS = nullptr;
 }
 
 void
@@ -653,27 +654,27 @@ Service::getLocaleCollation()
   nsCOMPtr<nsILocaleService> svc(do_GetService(NS_LOCALESERVICE_CONTRACTID));
   if (!svc) {
     NS_WARNING("Could not get locale service");
-    return nsnull;
+    return nullptr;
   }
 
   nsCOMPtr<nsILocale> appLocale;
   nsresult rv = svc->GetApplicationLocale(getter_AddRefs(appLocale));
   if (NS_FAILED(rv)) {
     NS_WARNING("Could not get application locale");
-    return nsnull;
+    return nullptr;
   }
 
   nsCOMPtr<nsICollationFactory> collFact =
     do_CreateInstance(NS_COLLATIONFACTORY_CONTRACTID);
   if (!collFact) {
     NS_WARNING("Could not create collation factory");
-    return nsnull;
+    return nullptr;
   }
 
   rv = collFact->CreateCollation(appLocale, getter_AddRefs(mLocaleCollation));
   if (NS_FAILED(rv)) {
     NS_WARNING("Could not create collation");
-    return nsnull;
+    return nullptr;
   }
 
   return mLocaleCollation;

@@ -4,7 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -18,7 +18,9 @@ CPPSRCS = \
   selfTest.cpp \
   testAddPropertyPropcache.cpp \
   testArgumentsObject.cpp \
+  testBindCallable.cpp \
   testBug604087.cpp \
+  testCallNonGenericMethodOnProxy.cpp \
   testChromeBuffer.cpp \
   testClassGetter.cpp \
   testCloneScript.cpp \
@@ -61,7 +63,8 @@ CPPSRCS = \
   testValueABI.cpp \
   testVersion.cpp \
   testXDR.cpp \
-  testBindCallable.cpp \
+  testProfileStrings.cpp \
+  testJSEvaluateScript.cpp \
   $(NULL)
 
 CSRCS = \
@@ -80,7 +83,7 @@ DEFINES         += -DEXPORT_JS_API
 # on its behalf.
 DEFINES         += -DIMPL_MFBT
 
-LIBS      = $(DEPTH)/$(LIB_PREFIX)js_static.$(LIB_SUFFIX) $(NSPR_LIBS)
+LIBS      = $(DEPTH)/$(LIB_PREFIX)js_static.$(LIB_SUFFIX) $(NSPR_LIBS) $(MOZ_ZLIB_LIBS)
 
 LOCAL_INCLUDES += -I$(topsrcdir) -I..
 

@@ -171,7 +171,7 @@ RPM_CMD = \
   mkdir -p $(RPMBUILD_SOURCEDIR) && \
   $(PYTHON) $(topsrcdir)/config/Preprocessor.py \
 	-DMOZ_APP_NAME=$(MOZ_APP_NAME) \
-	-DMOZ_APP_DISPLAYNAME=$(MOZ_APP_DISPLAYNAME) \
+	-DMOZ_APP_DISPLAYNAME="$(MOZ_APP_DISPLAYNAME)" \
 	< $(RPM_INCIDENTALS)/mozilla.desktop \
 	> $(RPMBUILD_SOURCEDIR)/$(MOZ_APP_NAME).desktop && \
   rm -rf $(_ABS_DIST)/$(TARGET_CPU) && \
@@ -559,7 +559,10 @@ endif
 ifdef MOZ_SIGN_PREPARED_PACKAGE_CMD
 ifeq (Darwin, $(OS_ARCH)) 
 MAKE_PACKAGE    = $(PREPARE_PACKAGE) \
-                  && cd ./$(PKG_DMG_SOURCE) && $(MOZ_SIGN_PREPARED_PACKAGE_CMD) $(MOZ_MACBUNDLE_NAME)  && cd $(PACKAGE_BASE_DIR) \
+                  && cd ./$(PKG_DMG_SOURCE) && $(MOZ_SIGN_PREPARED_PACKAGE_CMD) $(MOZ_MACBUNDLE_NAME) \
+                  && rm $(MOZ_MACBUNDLE_NAME)/Contents/CodeResources \
+                  && cp $(MOZ_MACBUNDLE_NAME)/Contents/_CodeSignature/CodeResources $(MOZ_MACBUNDLE_NAME)/Contents \
+                  && cd $(PACKAGE_BASE_DIR) \
                   && $(INNER_MAKE_PACKAGE)
 else
 MAKE_PACKAGE    = $(PREPARE_PACKAGE) && $(MOZ_SIGN_PREPARED_PACKAGE_CMD) \
@@ -773,11 +776,6 @@ endif
 	$(call PACKAGER_COPY, "$(call core_abspath,$(DIST))",\
 	  "$(call core_abspath,$(DIST)/$(MOZ_PKG_DIR))", \
 	  "$(MOZ_PKG_MANIFEST)", "$(PKGCP_OS)", 1, 0, 1)
-ifeq (DMG, $(MOZ_PKG_FORMAT))
-ifeq (dmg, $(filter dmg, $(MOZ_INTERNAL_SIGNING_FORMAT)))
-	@cd $(DIST)/$(_APPNAME)/Contents && ln -sf _CodeSignature/CodeResources CodeResources
-endif
-endif
 	$(PERL) $(MOZILLA_DIR)/toolkit/mozapps/installer/xptlink.pl -s $(DIST) -d $(DIST)/xpt -f $(DIST)/$(MOZ_PKG_DIR)/$(_BINPATH)/components -v -x "$(XPIDL_LINK)"
 	$(PYTHON) $(MOZILLA_DIR)/toolkit/mozapps/installer/link-manifests.py \
 	  $(DIST)/$(MOZ_PKG_DIR)/$(_BINPATH)/components/components.manifest \
@@ -788,6 +786,10 @@ endif
 	$(PYTHON) $(MOZILLA_DIR)/toolkit/mozapps/installer/link-manifests.py \
 	  $(DIST)/$(MOZ_PKG_DIR)/$(_BINPATH)/chrome/localized.manifest \
 	  $(patsubst %,$(DIST)/manifests/%/chrome,$(MOZ_LOCALIZED_PKG_LIST))
+ifdef MOZ_WEBAPP_RUNTIME
+	mv $(DIST)/$(MOZ_PKG_DIR)/$(_BINPATH)/webapprt/chrome/$(AB_CD).manifest $(DIST)/$(MOZ_PKG_DIR)/$(_BINPATH)/webapprt/chrome/localized.manifest
+	sed 's/$(AB_CD)/localized/' $(DIST)/bin/webapprt/chrome.manifest > $(DIST)/$(MOZ_PKG_DIR)/$(_BINPATH)/webapprt/chrome.manifest
+endif
 	printf "manifest components/interfaces.manifest\nmanifest components/components.manifest\nmanifest chrome/nonlocalized.manifest\nmanifest chrome/localized.manifest\n" > $(DIST)/$(MOZ_PKG_DIR)/$(_BINPATH)/chrome.manifest
 else # !MOZ_PKG_MANIFEST
 ifeq ($(MOZ_WIDGET_TOOLKIT),cocoa)
@@ -900,7 +902,7 @@ endif
 ifdef MOZ_OMNIJAR
 	cd $(DIST)/$(STAGEPATH)$(MOZ_PKG_DIR)$(_BINPATH) && $(PACK_OMNIJAR)
 ifdef MOZ_WEBAPP_RUNTIME
-	cd $(DIST)/$(STAGEPATH)$(MOZ_PKG_DIR)$(_BINPATH)/webapprt && $(PACK_OMNIJAR_WEBAPP_RUNTIME))
+	cd $(DIST)/$(STAGEPATH)$(MOZ_PKG_DIR)$(_BINPATH)/webapprt && $(PACK_OMNIJAR_WEBAPP_RUNTIME)
 endif
 endif
 	$(NSINSTALL) -D $(DESTDIR)$(installdir)
@@ -994,7 +996,6 @@ UPLOAD_FILES= \
 
 SIGN_CHECKSUM_CMD=
 ifdef MOZ_SIGN_CMD
-ifeq (gpg,$(filter gpg,$(MOZ_EXTERNAL_SIGNING_FORMAT)))
 # If we're signing with gpg, we'll have a bunch of extra detached signatures to
 # upload. We also want to sign our checksums file
 SIGN_CHECKSUM_CMD=$(MOZ_SIGN_CMD) -f gpg $(CHECKSUM_FILE)
@@ -1004,7 +1005,6 @@ UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(COMPLETE_MAR).asc)
 UPLOAD_FILES += $(call QUOTED_WILDCARD,$(wildcard $(DIST)/$(PARTIAL_MAR).asc))
 UPLOAD_FILES += $(call QUOTED_WILDCARD,$(INSTALLER_PACKAGE).asc)
 UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PACKAGE).asc)
-endif
 endif
 
 checksum:

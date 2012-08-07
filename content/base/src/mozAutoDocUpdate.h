@@ -17,13 +17,11 @@ class NS_STACK_CLASS mozAutoDocUpdate
 {
 public:
   mozAutoDocUpdate(nsIDocument* aDocument, nsUpdateType aUpdateType,
-                   bool aNotify)
-    : mDocument(nsnull)
-    , mUpdateType(aUpdateType)
+                   bool aNotify) :
+    mDocument(aNotify ? aDocument : nullptr),
+    mUpdateType(aUpdateType)
   {
-    if (aNotify && aDocument) {
-      mDocument = aDocument;
-
+    if (mDocument) {
       JSZoneId zone = mDocument->GetZone();
       MOZ_ASSERT(NS_IsOwningThread(zone));
 
@@ -79,7 +77,7 @@ class NS_STACK_CLASS mozAutoDocConditionalContentUpdateBatch
 public:
   mozAutoDocConditionalContentUpdateBatch(nsIDocument* aDocument,
                                           bool aNotify) :
-    mDocument(aNotify ? aDocument : nsnull)
+    mDocument(aNotify ? aDocument : nullptr)
   {
     if (mDocument) {
       mDocument->BeginUpdate(UPDATE_CONTENT_MODEL);

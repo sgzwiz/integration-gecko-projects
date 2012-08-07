@@ -88,6 +88,8 @@ public:
                                nsIPluginInstanceOwner *aOwner);
   nsresult IsPluginEnabledForType(const char* aMimeType);
   nsresult IsPluginEnabledForExtension(const char* aExtension, const char* &aMimeType);
+  bool     IsPluginClickToPlayForType(const char *aMimeType);
+  nsresult GetBlocklistStateForType(const char *aMimeType, PRUint32 *state);
 
   nsresult GetPluginCount(PRUint32* aPluginCount);
   nsresult GetPlugins(PRUint32 aPluginCount, nsIDOMPlugin** aPluginArray);
@@ -131,8 +133,8 @@ public:
   NewPluginURLStream(const nsString& aURL, 
                      nsNPAPIPluginInstance *aInstance, 
                      nsNPAPIPluginStreamListener *aListener,
-                     nsIInputStream *aPostStream = nsnull,
-                     const char *aHeadersData = nsnull, 
+                     nsIInputStream *aPostStream = nullptr,
+                     const char *aHeadersData = nullptr, 
                      PRUint32 aHeadersDataLen = 0);
 
   nsresult
@@ -159,6 +161,10 @@ public:
   // Writes updated plugins settings to disk and unloads the plugin
   // if it is now disabled
   nsresult UpdatePluginInfo(nsPluginTag* aPluginTag);
+  
+  // Helper that checks if a type is whitelisted in plugin.allowed_types.
+  // Always returns true if plugin.allowed_types is not set
+  static bool IsTypeWhitelisted(const char *aType);
 
   // checks whether aTag is a "java" plugin tag (a tag for a plugin
   // that does Java)
@@ -180,7 +186,7 @@ public:
 
   void DestroyRunningInstances(nsISupportsArray* aReloadDocs, nsPluginTag* aPluginTag);
 
-  // Return the tag for |aLibrary| if found, nsnull if not.
+  // Return the tag for |aLibrary| if found, nullptr if not.
   nsPluginTag* FindTagForLibrary(PRLibrary* aLibrary);
 
   // The last argument should be false if we already have an in-flight stream
@@ -217,6 +223,9 @@ private:
   nsresult
   NewEmbeddedPluginStream(nsIURI* aURL, nsObjectLoadingContent *aContent, nsNPAPIPluginInstance* aInstance);
 
+  nsPluginTag*
+  FindPreferredPlugin(const InfallibleTArray<nsPluginTag*>& matches);
+
   // Return an nsPluginTag for this type, if any.  If aCheckEnabled is
   // true, only enabled plugins will be returned.
   nsPluginTag*
@@ -230,6 +239,11 @@ private:
 
   nsresult
   FindPlugins(bool aCreatePluginList, bool * aPluginsChanged);
+
+  // Registers or unregisters the given mime type with the category manager
+  // (performs no checks - see UpdateCategoryManager)
+  enum nsRegisterType { ePluginRegister, ePluginUnregister };
+  void RegisterWithCategoryManager(nsCString &aMimeType, nsRegisterType aType);
 
   nsresult
   ScanPluginsDirectory(nsIFile *pluginsDir,
@@ -258,13 +272,12 @@ private:
 
   // Checks to see if a tag object is in our list of live tags.
   bool IsLiveTag(nsIPluginTag* tag);
-
+  
   // Checks our list of live tags for an equivalent tag.
-  nsPluginTag* HaveSamePlugin(nsPluginTag * aPluginTag);
-
-  // checks if given plugin is a duplicate of what we already have
-  // in the plugin list but found in some different place
-  bool IsDuplicatePlugin(nsPluginTag * aPluginTag);
+  nsPluginTag* HaveSamePlugin(const nsPluginTag * aPluginTag);
+    
+  // Returns the first plugin at |path|
+  nsPluginTag* FirstPluginWithPath(const nsCString& path);
 
   nsresult EnsurePrivateDirServiceProvider();
 
@@ -281,6 +294,8 @@ private:
 
   // set by pref plugin.disable
   bool mPluginsDisabled;
+  // set by pref plugins.click_to_play
+  bool mPluginsClickToPlay;
 
   // Any instances in this array will have valid plugin objects via GetPlugin().
   // When removing an instance it might not die - be sure to null out it's plugin.
@@ -327,7 +342,7 @@ public:
   }
 
   PluginDestructionGuard(NPP npp)
-    : mInstance(npp ? static_cast<nsNPAPIPluginInstance*>(npp->ndata) : nsnull)
+    : mInstance(npp ? static_cast<nsNPAPIPluginInstance*>(npp->ndata) : nullptr)
   {
     Init();
   }

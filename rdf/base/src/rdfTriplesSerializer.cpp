@@ -19,8 +19,9 @@
 
 #include "nsIRDFResource.h"
 #include "nsIRDFLiteral.h"
+#include "mozilla/Attributes.h"
 
-class TriplesVisitor : public rdfITripleVisitor
+class TriplesVisitor MOZ_FINAL : public rdfITripleVisitor
 {
 public:
     TriplesVisitor(nsIOutputStream* aOut) : mOut(aOut) {}
@@ -72,7 +73,7 @@ TriplesVisitor::Visit(nsIRDFNode *aSubject, nsIRDFResource *aPredicate,
     PRUint32 wroteCount;
     if (res) {
         rv = writeResource(res);
-    } else if ((lit = do_QueryInterface(aObject)) != nsnull) {
+    } else if ((lit = do_QueryInterface(aObject)) != nullptr) {
         const PRUnichar *value;
         lit->GetValueConst(&value);
         nsCAutoString object;
@@ -82,7 +83,7 @@ TriplesVisitor::Visit(nsIRDFNode *aSubject, nsIRDFResource *aPredicate,
         PRUint32 writeCount = object.Length();
         rv = mOut->Write(object.get(), writeCount, &wroteCount);
         NS_ENSURE_TRUE(writeCount == wroteCount, NS_ERROR_FAILURE);
-    } else if ((intLit = do_QueryInterface(aObject)) != nsnull) {
+    } else if ((intLit = do_QueryInterface(aObject)) != nullptr) {
         PRInt32 value;
         intLit->GetValue(&value);
         nsPrintfCString
@@ -96,7 +97,7 @@ TriplesVisitor::Visit(nsIRDFNode *aSubject, nsIRDFResource *aPredicate,
     return mOut->Write(".\n", 2, &wroteCount);
 }
 
-class rdfTriplesSerializer : public rdfISerializer
+class rdfTriplesSerializer MOZ_FINAL : public rdfISerializer
 {
 public:
   NS_DECL_ISUPPORTS
@@ -112,7 +113,7 @@ private:
 nsresult
 NS_NewTriplesSerializer(rdfISerializer** aResult)
 {
-    NS_PRECONDITION(aResult != nsnull, "null ptr");
+    NS_PRECONDITION(aResult != nullptr, "null ptr");
     if (! aResult)
         return NS_ERROR_NULL_POINTER;
 

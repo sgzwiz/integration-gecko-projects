@@ -204,7 +204,7 @@ AsyncExecuteStatements::AsyncExecuteStatements(StatementDataArray &aStatements,
                                                Connection *aConnection,
                                                mozIStorageStatementCallback *aCallback)
 : mConnection(aConnection)
-, mTransactionManager(nsnull)
+, mTransactionManager(nullptr)
 , mCallback(aCallback)
 , mMaxWait(TimeDuration::FromMilliseconds(MAX_MILLISECONDS_BETWEEN_RESULTS))
 , mIntervalStart(TimeStamp::Now())
@@ -240,7 +240,7 @@ AsyncExecuteStatements::bindExecuteAndProcessStatement(StatementData &aData,
 {
   mMutex.AssertNotCurrentThreadOwns();
 
-  sqlite3_stmt *aStatement = nsnull;
+  sqlite3_stmt *aStatement = nullptr;
   // This cannot fail; we are only called if it's available.
   (void)aData.getSqliteStatement(&aStatement);
   NS_ASSERTION(aStatement, "You broke the code; do not call here like that!");
@@ -445,7 +445,7 @@ AsyncExecuteStatements::notifyComplete()
       (void)mTransactionManager->Rollback();
     }
     delete mTransactionManager;
-    mTransactionManager = nsnull;
+    mTransactionManager = nullptr;
   }
 
   // Always generate a completion notification; it is what guarantees that our
@@ -456,7 +456,7 @@ AsyncExecuteStatements::notifyComplete()
                "Should have given up ownership of mStatements!");
 
   // We no longer own mCallback (the CompletionNotifier takes ownership).
-  mCallback = nsnull;
+  mCallback = nullptr;
 
   NS_DispatchToMainThread(completionEvent, NS_DISPATCH_NORMAL);
 
@@ -507,7 +507,7 @@ AsyncExecuteStatements::notifyResults()
 
   nsresult rv = NS_DispatchToMainThread(notifier, NS_DISPATCH_NORMAL);
   if (NS_SUCCEEDED(rv))
-    mResultSet = nsnull; // we no longer own it on success
+    mResultSet = nullptr; // we no longer own it on success
   return rv;
 }
 

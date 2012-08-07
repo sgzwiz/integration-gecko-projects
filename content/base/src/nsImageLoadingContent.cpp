@@ -72,7 +72,7 @@ static void PrintReqURL(imgIRequest* req) {
 
 
 nsImageLoadingContent::nsImageLoadingContent()
-  : mObserverList(nsnull),
+  : mObserverList(nullptr),
     mImageBlockingStatus(nsIContentPolicy::ACCEPT),
     mLoadingEnabled(true),
     mIsImageStateForced(false),
@@ -274,14 +274,6 @@ nsImageLoadingContent::OnStopDecode(imgIRequest* aRequest,
   NS_ABORT_IF_FALSE(aRequest == mCurrentRequest,
                     "One way or another, we should be current by now");
 
-  if (mCurrentRequestNeedsResetAnimation) {
-    nsCOMPtr<imgIContainer> container;
-    mCurrentRequest->GetImage(getter_AddRefs(container));
-    if (container)
-      container->ResetAnimation();
-    mCurrentRequestNeedsResetAnimation = false;
-  }
-
   // We just loaded all the data we're going to get. If we're visible and
   // haven't done an initial paint (*), we want to make sure the image starts
   // decoding immediately, for two reasons:
@@ -303,7 +295,7 @@ nsImageLoadingContent::OnStopDecode(imgIRequest* aRequest,
   // aren't loading images in those situations.
 
   nsIDocument* doc = GetOurDocument();
-  nsIPresShell* shell = doc ? doc->GetShell() : nsnull;
+  nsIPresShell* shell = doc ? doc->GetShell() : nullptr;
   if (shell && shell->IsVisible() &&
       (!shell->DidInitialReflow() || shell->IsPaintingSuppressed())) {
 
@@ -425,7 +417,7 @@ nsImageLoadingContent::RemoveObserver(imgIDecoderObserver* aObserver)
   NS_ENSURE_ARG_POINTER(aObserver);
 
   if (mObserverList.mObserver == aObserver) {
-    mObserverList.mObserver = nsnull;
+    mObserverList.mObserver = nullptr;
     // Don't touch the linking of the list!
     return NS_OK;
   }
@@ -442,7 +434,7 @@ nsImageLoadingContent::RemoveObserver(imgIDecoderObserver* aObserver)
     // splice it out
     ImageObserver* oldObserver = observer->mNext;
     observer->mNext = oldObserver->mNext;
-    oldObserver->mNext = nsnull;  // so we don't destroy them all
+    oldObserver->mNext = nullptr;  // so we don't destroy them all
     delete oldObserver;
   }
 #ifdef DEBUG
@@ -466,7 +458,7 @@ nsImageLoadingContent::GetRequest(PRInt32 aRequestType,
     break;
   default:
     NS_ERROR("Unknown request type");
-    *aRequest = nsnull;
+    *aRequest = nullptr;
     return NS_ERROR_UNEXPECTED;
   }
   
@@ -544,7 +536,7 @@ nsImageLoadingContent::GetCurrentURI(nsIURI** aURI)
   }
 
   if (!mCurrentURI) {
-    *aURI = nsnull;
+    *aURI = nullptr;
     return NS_OK;
   }
   
@@ -581,6 +573,7 @@ nsImageLoadingContent::LoadImageWithChannel(nsIChannel* aChannel,
                          getter_AddRefs(req));
   if (NS_SUCCEEDED(rv)) {
     TrackImage(req);
+    ResetAnimationIfNeeded();
   } else {
     // If we don't have a current URI, we might as well store this URI so people
     // know what we tried (and failed) to load.
@@ -602,7 +595,7 @@ NS_IMETHODIMP nsImageLoadingContent::ForceReload()
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  return LoadImage(currentURI, true, true, nsnull, nsIRequest::VALIDATE_ALWAYS);
+  return LoadImage(currentURI, true, true, nullptr, nsIRequest::VALIDATE_ALWAYS);
 }
 
 /*
@@ -750,6 +743,7 @@ nsImageLoadingContent::LoadImage(nsIURI* aNewURI,
                                  getter_AddRefs(req));
   if (NS_SUCCEEDED(rv)) {
     TrackImage(req);
+    ResetAnimationIfNeeded();
 
     // Handle cases when we just ended up with a pending request but it's
     // already done.  In that situation we have to synchronously switch that
@@ -895,7 +889,7 @@ nsIDocument*
 nsImageLoadingContent::GetOurDocument()
 {
   nsCOMPtr<nsIContent> thisContent = do_QueryInterface(this);
-  NS_ENSURE_TRUE(thisContent, nsnull);
+  NS_ENSURE_TRUE(thisContent, nullptr);
 
   return thisContent->OwnerDoc();
 }
@@ -911,7 +905,7 @@ nsPresContext* nsImageLoadingContent::GetFramePresContext()
 {
   nsIFrame* frame = GetOurPrimaryFrame();
   if (!frame) {
-    return nsnull;
+    return nullptr;
   }
 
   return frame->PresContext();
@@ -936,7 +930,7 @@ nsImageLoadingContent::StringToURI(const nsAString& aSpec,
   // (3) Construct the silly thing
   return NS_NewURI(aURI,
                    aSpec,
-                   charset.IsEmpty() ? nsnull : charset.get(),
+                   charset.IsEmpty() ? nullptr : charset.get(),
                    baseURL,
                    nsContentUtils::GetIOService());
 }
@@ -1024,14 +1018,49 @@ nsImageLoadingContent::PreparePendingRequest()
   return mPendingRequest;
 }
 
+namespace {
+
+class ImageRequestAutoLock
+{
+public:
+  ImageRequestAutoLock(imgIRequest* aRequest)
+    : mRequest(aRequest)
+  {
+    if (mRequest) {
+      mRequest->LockImage();
+    }
+  }
+
+  ~ImageRequestAutoLock()
+  {
+    if (mRequest) {
+      mRequest->UnlockImage();
+    }
+  }
+
+private:
+  nsCOMPtr<imgIRequest> mRequest;
+};
+
+} // anonymous namespace
+
 void
 nsImageLoadingContent::MakePendingRequestCurrent()
 {
   MOZ_ASSERT(mPendingRequest);
+
+  // Lock mCurrentRequest for the duration of this method.  We do this because
+  // PrepareCurrentRequest() might unlock mCurrentRequest.  If mCurrentRequest
+  // and mPendingRequest are both requests for the same image, unlocking
+  // mCurrentRequest before we lock mPendingRequest can cause the lock count
+  // to go to 0 and the image to be discarded!
+  ImageRequestAutoLock autoLock(mCurrentRequest);
+
   PrepareCurrentRequest() = mPendingRequest;
-  mPendingRequest = nsnull;
+  mPendingRequest = nullptr;
   mCurrentRequestNeedsResetAnimation = mPendingRequestNeedsResetAnimation;
   mPendingRequestNeedsResetAnimation = false;
+  ResetAnimationIfNeeded();
 }
 
 void
@@ -1040,7 +1069,7 @@ nsImageLoadingContent::ClearCurrentRequest(nsresult aReason)
   if (!mCurrentRequest) {
     // Even if we didn't have a current request, we might have been keeping
     // a URI as a placeholder for a failed load. Clear that now.
-    mCurrentURI = nsnull;
+    mCurrentURI = nullptr;
     return;
   }
   NS_ABORT_IF_FALSE(!mCurrentURI,
@@ -1054,7 +1083,7 @@ nsImageLoadingContent::ClearCurrentRequest(nsresult aReason)
   // Clean up the request.
   UntrackImage(mCurrentRequest);
   mCurrentRequest->CancelAndForgetObserver(aReason);
-  mCurrentRequest = nsnull;
+  mCurrentRequest = nullptr;
   mCurrentRequestNeedsResetAnimation = false;
 
   // We only block onload during the decoding of "current" images. This one is
@@ -1081,7 +1110,7 @@ nsImageLoadingContent::ClearPendingRequest(nsresult aReason)
 
   UntrackImage(mPendingRequest);
   mPendingRequest->CancelAndForgetObserver(aReason);
-  mPendingRequest = nsnull;
+  mPendingRequest = nullptr;
   mPendingRequestNeedsResetAnimation = false;
 }
 
@@ -1093,7 +1122,19 @@ nsImageLoadingContent::GetRegisteredFlagForRequest(imgIRequest* aRequest)
   } else if (aRequest == mPendingRequest) {
     return &mPendingRequestRegistered;
   } else {
-    return nsnull;
+    return nullptr;
+  }
+}
+
+void
+nsImageLoadingContent::ResetAnimationIfNeeded()
+{
+  if (mCurrentRequest && mCurrentRequestNeedsResetAnimation) {
+    nsCOMPtr<imgIContainer> container;
+    mCurrentRequest->GetImage(getter_AddRefs(container));
+    if (container)
+      container->ResetAnimation();
+    mCurrentRequestNeedsResetAnimation = false;
   }
 }
 

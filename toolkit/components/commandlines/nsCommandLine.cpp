@@ -24,6 +24,7 @@
 #include "nsTextFormatter.h"
 #include "nsXPCOMCID.h"
 #include "plstr.h"
+#include "mozilla/Attributes.h"
 
 #ifdef MOZ_WIDGET_COCOA
 #include <CoreFoundation/CoreFoundation.h>
@@ -44,7 +45,7 @@
 #define NS_COMMANDLINE_CID \
   { 0x23bcc750, 0xdc20, 0x460b, { 0xb2, 0xd4, 0x74, 0xd8, 0xf5, 0x8d, 0x36, 0x15 } }
 
-class nsCommandLine : public nsICommandLineRunner
+class nsCommandLine MOZ_FINAL : public nsICommandLineRunner
 {
 public:
   NS_DECL_ISUPPORTS
@@ -64,7 +65,7 @@ protected:
 					void *aClosure);
 
   void appendArg(const char* arg);
-  void resolveShortcutURL(nsILocalFile* aFile, nsACString& outURL);
+  void resolveShortcutURL(nsIFile* aFile, nsACString& outURL);
   nsresult EnumerateHandlers(EnumerateHandlersCallback aCallback, void *aClosure);
   nsresult EnumerateValidators(EnumerateValidatorsCallback aCallback, void *aClosure);
 
@@ -245,7 +246,7 @@ nsCommandLine::ResolveFile(const nsAString& aArgument, nsIFile* *aResult)
 {
   NS_ENSURE_TRUE(mWorkingDir, NS_ERROR_NOT_INITIALIZED);
 
-  // This is some seriously screwed-up code. nsILocalFile.appendRelativeNativePath
+  // This is some seriously screwed-up code. nsIFile.appendRelativeNativePath
   // explicitly does not accept .. or . path parts, but that is exactly what we
   // need here. So we hack around it.
 
@@ -280,7 +281,7 @@ nsCommandLine::ResolveFile(const nsAString& aArgument, nsIFile* *aResult)
   return NS_OK;
 
 #elif defined(XP_UNIX)
-  nsCOMPtr<nsILocalFile> lf (do_CreateInstance(NS_LOCAL_FILE_CONTRACTID));
+  nsCOMPtr<nsIFile> lf (do_CreateInstance(NS_LOCAL_FILE_CONTRACTID));
   NS_ENSURE_TRUE(lf, NS_ERROR_OUT_OF_MEMORY);
 
   if (aArgument.First() == '/') {
@@ -311,7 +312,7 @@ nsCommandLine::ResolveFile(const nsAString& aArgument, nsIFile* *aResult)
   return NS_OK;
 
 #elif defined(XP_WIN32)
-  nsCOMPtr<nsILocalFile> lf (do_CreateInstance(NS_LOCAL_FILE_CONTRACTID));
+  nsCOMPtr<nsIFile> lf (do_CreateInstance(NS_LOCAL_FILE_CONTRACTID));
   NS_ENSURE_TRUE(lf, NS_ERROR_OUT_OF_MEMORY);
 
   rv = lf->InitWithPath(aArgument);
@@ -338,7 +339,7 @@ nsCommandLine::ResolveFile(const nsAString& aArgument, nsIFile* *aResult)
   return NS_OK;
 
 #elif defined(XP_OS2)
-  nsCOMPtr<nsILocalFile> lf (do_CreateInstance(NS_LOCAL_FILE_CONTRACTID));
+  nsCOMPtr<nsIFile> lf (do_CreateInstance(NS_LOCAL_FILE_CONTRACTID));
   NS_ENSURE_TRUE(lf, NS_ERROR_OUT_OF_MEMORY);
 
   rv = lf->InitWithPath(aArgument);
@@ -384,7 +385,7 @@ nsCommandLine::ResolveURI(const nsAString& aArgument, nsIURI* *aResult)
     io->NewFileURI(mWorkingDir, getter_AddRefs(workingDirURI));
   }
 
-  nsCOMPtr<nsILocalFile> lf (do_CreateInstance(NS_LOCAL_FILE_CONTRACTID));
+  nsCOMPtr<nsIFile> lf (do_CreateInstance(NS_LOCAL_FILE_CONTRACTID));
   rv = lf->InitWithPath(aArgument);
   if (NS_SUCCEEDED(rv)) {
     lf->Normalize();
@@ -393,7 +394,7 @@ nsCommandLine::ResolveURI(const nsAString& aArgument, nsIURI* *aResult)
     resolveShortcutURL(lf, url);
     if (!url.IsEmpty()) {
       return io->NewURI(url,
-                        nsnull,
+                        nullptr,
                         workingDirURI,
                         aResult);
     }
@@ -402,7 +403,7 @@ nsCommandLine::ResolveURI(const nsAString& aArgument, nsIURI* *aResult)
   }
 
   return io->NewURI(NS_ConvertUTF16toUTF8(aArgument),
-                    nsnull,
+                    nullptr,
                     workingDirURI,
                     aResult);
 }
@@ -425,7 +426,7 @@ nsCommandLine::appendArg(const char* arg)
 }
 
 void
-nsCommandLine::resolveShortcutURL(nsILocalFile* aFile, nsACString& outURL)
+nsCommandLine::resolveShortcutURL(nsIFile* aFile, nsACString& outURL)
 {
   nsCOMPtr<nsIFileProtocolHandler> fph;
   nsresult rv = NS_GetFileProtocolHandler(getter_AddRefs(fph));
@@ -626,11 +627,11 @@ nsCommandLine::Run()
 {
   nsresult rv;
 
-  rv = EnumerateValidators(EnumValidate, nsnull);
+  rv = EnumerateValidators(EnumValidate, nullptr);
   if (rv == NS_ERROR_ABORT)
     return rv;
 
-  rv = EnumerateHandlers(EnumRun, nsnull);
+  rv = EnumerateHandlers(EnumRun, nullptr);
   if (rv == NS_ERROR_ABORT)
     return rv;
 

@@ -24,7 +24,6 @@
 #include "uachelper.h"
 #include "updatehelper.h"
 #include "errors.h"
-#include "prefetch.h"
 
 // Wait 15 minutes for an update operation to run at most.
 // Updates usually take less than a minute so this seems like a 
@@ -81,6 +80,19 @@ IsStatusApplying(LPCWSTR updateDirPath, BOOL &isApplying)
   return TRUE;
 }
 
+/**
+ * Determines whether we're staging an update.
+ *
+ * @param argc    The argc value normally sent to updater.exe
+ * @param argv    The argv value normally sent to updater.exe
+ * @param boolean True if we're staging an update
+ */
+static bool
+IsUpdateBeingStaged(int argc, LPWSTR *argv)
+{
+  // PID will be set to -1 if we're supposed to stage an update.
+  return argc == 4 && !wcscmp(argv[3], L"-1");
+}
 
 /**
  * Gets the installation directory from the arguments passed to updater.exe.
@@ -101,8 +113,7 @@ GetInstallationDir(int argcTmp, LPWSTR *argvTmp, WCHAR aResultDir[MAX_PATH])
   if (backSlash && (backSlash[1] == L'\0')) {
     *backSlash = L'\0';
   }
-  // PID will be set to -1 if we're supposed to perform a background update.
-  bool backgroundUpdate = (argcTmp == 4 && !wcscmp(argvTmp[3], L"-1"));
+  bool backgroundUpdate = IsUpdateBeingStaged(argcTmp, argvTmp);
   bool replaceRequest = (argcTmp >= 4 && wcsstr(argvTmp[3], L"/replace"));
   if (backgroundUpdate || replaceRequest) {
     return PathRemoveFileSpecW(aResultDir);
@@ -239,7 +250,7 @@ StartUpdateProcess(int argc,
     if (updateWasSuccessful && argc > 2) {
       LPCWSTR installationDir = argv[2];
       LPCWSTR updateInfoDir = argv[1];
-      bool backgroundUpdate = (argc == 4 && !wcscmp(argv[3], L"-1"));
+      bool backgroundUpdate = IsUpdateBeingStaged(argc, argv);
 
       // Launch the PostProcess with admin access in session 0.  This is
       // actually launching the post update process but it takes in the 
@@ -413,9 +424,12 @@ ProcessSoftwareUpdateCommand(DWORD argc, LPWSTR *argv)
       LOG(("updater.exe was launched and run successfully!\n"));
       LogFlush();
 
-      // We might not execute code after StartServiceUpdate because
-      // the service installer will stop the service if it is running.
-      StartServiceUpdate(installDir);
+      // Don't attempt to update the service when the update is being staged.
+      if (!IsUpdateBeingStaged(argc, argv)) {
+        // We might not execute code after StartServiceUpdate because
+        // the service installer will stop the service if it is running.
+        StartServiceUpdate(installDir);
+      }
     } else {
       result = FALSE;
       LOG(("Error running update process. Updating update.status"
@@ -489,8 +503,6 @@ ExecuteServiceCommand(int argc, LPWSTR *argv)
     // because the service self updates itself and the service
     // installer will stop the service.
     LOG(("Service command %ls complete.\n", argv[2]));
-  } else if (!lstrcmpi(argv[2], L"clear-prefetch")) {
-    result = ClearKnownPrefetch();
   } else {
     LOG(("Service command not recognized: %ls.\n", argv[2]));
     // result is already set to FALSE

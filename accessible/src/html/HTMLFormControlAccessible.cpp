@@ -8,6 +8,7 @@
 #include "Accessible-inl.h"
 #include "nsAccUtils.h"
 #include "nsARIAMap.h"
+#include "nsEventShell.h"
 #include "nsTextEquivUtils.h"
 #include "Relation.h"
 #include "Role.h"
@@ -15,7 +16,6 @@
 
 #include "nsContentList.h"
 #include "nsIAccessibleRelation.h"
-#include "nsIDOMDocument.h"
 #include "nsIDOMHTMLInputElement.h"
 #include "nsIDOMNSEditableElement.h"
 #include "nsIDOMHTMLFormElement.h"
@@ -43,7 +43,7 @@ using namespace mozilla::a11y;
 
 HTMLCheckboxAccessible::
   HTMLCheckboxAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-  nsLeafAccessible(aContent, aDoc)
+  LeafAccessible(aContent, aDoc)
 {
 }
 
@@ -91,7 +91,7 @@ HTMLCheckboxAccessible::DoAction(PRUint8 aIndex)
 PRUint64
 HTMLCheckboxAccessible::NativeState()
 {
-  PRUint64 state = nsLeafAccessible::NativeState();
+  PRUint64 state = LeafAccessible::NativeState();
 
   state |= states::CHECKABLE;
   bool checkState = false;   // Radio buttons and check boxes can be checked or mixed
@@ -324,9 +324,8 @@ HTMLTextFieldAccessible::
 {
 }
 
-NS_IMPL_ISUPPORTS_INHERITED3(HTMLTextFieldAccessible,
-                             Accessible,
-                             HyperTextAccessible,
+NS_IMPL_ISUPPORTS_INHERITED2(HTMLTextFieldAccessible,
+                             Accessible,                             
                              nsIAccessibleText,
                              nsIAccessibleEditableText)
 
@@ -514,14 +513,14 @@ HTMLTextFieldAccessible::GetEditor() const
 {
   nsCOMPtr<nsIDOMNSEditableElement> editableElt(do_QueryInterface(mContent));
   if (!editableElt)
-    return nsnull;
+    return nullptr;
 
   // nsGenericHTMLElement::GetEditor has a security check.
   // Make sure we're not restricted by the permissions of
   // whatever script is currently running.
   nsCOMPtr<nsIJSContextStack> stack =
     do_GetService("@mozilla.org/js/xpc/ContextStack;1");
-  bool pushed = stack && NS_SUCCEEDED(stack->Push(nsnull));
+  bool pushed = stack && NS_SUCCEEDED(stack->Push(nullptr));
 
   nsCOMPtr<nsIEditor> editor;
   editableElt->GetEditor(getter_AddRefs(editor));
@@ -547,7 +546,7 @@ HTMLTextFieldAccessible::IsWidget() const
 Accessible*
 HTMLTextFieldAccessible::ContainerWidget() const
 {
-  return mParent && mParent->Role() == roles::AUTOCOMPLETE ? mParent : nsnull;
+  return mParent && mParent->Role() == roles::AUTOCOMPLETE ? mParent : nullptr;
 }
 
 
@@ -634,7 +633,7 @@ HTMLGroupboxAccessible::GetLegend()
     }
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 nsresult
@@ -763,7 +762,7 @@ HTMLFigureAccessible::Caption() const
     }
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

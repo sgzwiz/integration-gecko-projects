@@ -10,7 +10,9 @@
 
 #include "HyperTextAccessibleWrap.h"
 #include "TableAccessible.h"
+#include "TableCellAccessible.h"
 #include "xpcAccessibleTable.h"
+#include "xpcAccessibleTableCell.h"
 
 namespace mozilla {
 namespace a11y {
@@ -30,10 +32,10 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIAccessibleTable
-  NS_DECL_OR_FORWARD_NSIACCESSIBLETABLE_WITH_XPCACCESSIBLETABLE
+  NS_FORWARD_NSIACCESSIBLETABLE(xpcAccessibleTable::)
 
   // Accessible
-  virtual mozilla::a11y::TableAccessible* AsTable() { return this; }
+  virtual TableAccessible* AsTable() { return this; }
 
   // nsAccessNode
   virtual void Shutdown();
@@ -42,6 +44,18 @@ public:
   virtual PRUint32 ColCount();
   virtual PRUint32 RowCount();
   virtual Accessible* CellAt(PRUint32 aRowIndex, PRUint32 aColumnIndex);
+  virtual bool IsColSelected(PRUint32 aColIdx);
+  virtual bool IsRowSelected(PRUint32 aRowIdx);
+  virtual bool IsCellSelected(PRUint32 aRowIdx, PRUint32 aColIdx);
+  virtual PRUint32 SelectedCellCount();
+  virtual PRUint32 SelectedColCount();
+  virtual PRUint32 SelectedRowCount();
+  virtual void SelectedCells(nsTArray<Accessible*>* aCells);
+  virtual void SelectedCellIndices(nsTArray<PRUint32>* aCells);
+  virtual void SelectedColIndices(nsTArray<PRUint32>* aCols);
+  virtual void SelectedRowIndices(nsTArray<PRUint32>* aRows);
+  virtual void SelectCol(PRUint32 aColIdx);
+  virtual void SelectRow(PRUint32 aRowIdx);
   virtual void UnselectCol(PRUint32 aColIdx);
   virtual void UnselectRow(PRUint32 aRowIdx);
 
@@ -76,12 +90,6 @@ protected:
    */
   nsresult SetARIASelected(Accessible* aAccessible, bool aIsSelected,
                            bool aNotify = true);
-
-  /**
-   * Helper method for GetSelectedColumnCount and GetSelectedColumns.
-   */
-  nsresult GetSelectedColumnsArray(PRUint32 *acolumnCount,
-                                   PRInt32 **aColumns = nsnull);
 };
 
 
@@ -89,7 +97,9 @@ protected:
  * Accessible for ARIA gridcell and rowheader/columnheader.
  */
 class ARIAGridCellAccessible : public HyperTextAccessibleWrap,
-                               public nsIAccessibleTableCell
+                               public nsIAccessibleTableCell,
+                               public TableCellAccessible,
+                               public xpcAccessibleTableCell
 {
 public:
   ARIAGridCellAccessible(nsIContent* aContent, DocAccessible* aDoc);
@@ -98,9 +108,10 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIAccessibleTableCell
-  NS_DECL_NSIACCESSIBLETABLECELL
+  NS_DECL_OR_FORWARD_NSIACCESSIBLETABLECELL_WITH_XPCACCESSIBLETABLECELL
 
   // Accessible
+  virtual void Shutdown();
   virtual void ApplyARIAState(PRUint64* aState) const;
   virtual nsresult GetAttributesInternal(nsIPersistentProperties *aAttributes);
 };

@@ -278,7 +278,7 @@ class JarMaker(object):
     # chromebasepath is used for chrome registration manifests
     # %s is getting replaced with chrome/ for chrome.manifest, and with
     # an empty string for jarfile.manifest
-    chromebasepath = '%s' + jarfile
+    chromebasepath = '%s' + os.path.basename(jarfile)
     if self.outputFormat == 'jar':
       chromebasepath = 'jar:' + chromebasepath + '.jar!'
     chromebasepath += '/'
@@ -290,8 +290,9 @@ class JarMaker(object):
       jarfilepath = jarfile + '.jar'
       try:
         os.makedirs(os.path.dirname(jarfilepath))
-      except OSError:
-        pass
+      except OSError, error:
+        if error.errno != errno.EEXIST:
+          raise
       jf = ZipFile(jarfilepath, 'a', lock = True)
       outHelper = self.OutputHelper_jar(jf)
     else:
@@ -369,6 +370,7 @@ class JarMaker(object):
           pp.setMarker('%')
         pp.out = outf
         pp.do_include(inf)
+        pp.warnUnused(realsrc)
         outf.close()
         inf.close()
         return
@@ -423,7 +425,11 @@ class JarMaker(object):
       out = os.path.join(self.basepath, name)
       outdir = os.path.dirname(out)
       if not os.path.isdir(outdir):
-        os.makedirs(outdir)
+        try:
+          os.makedirs(outdir)
+        except OSError, error:
+          if error.errno != errno.EEXIST:
+            raise
       return out
 
   class OutputHelper_symlink(OutputHelper_flat):

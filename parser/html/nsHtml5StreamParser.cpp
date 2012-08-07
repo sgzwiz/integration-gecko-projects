@@ -81,10 +81,10 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsHtml5StreamParser)
   tmp->DropTimer();
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mObserver)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mRequest)
-  tmp->mOwner = nsnull;
-  tmp->mExecutorFlusher = nsnull;
-  tmp->mLoadFlusher = nsnull;
-  tmp->mExecutor = nsnull;
+  tmp->mOwner = nullptr;
+  tmp->mExecutorFlusher = nullptr;
+  tmp->mLoadFlusher = nullptr;
+  tmp->mExecutor = nullptr;
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mChardet)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -123,7 +123,9 @@ class nsHtml5ExecutorFlusher : public nsRunnable
     {}
     NS_IMETHODIMP Run()
     {
-      mExecutor->RunFlushLoop();
+      if (!mExecutor->isInList()) {
+        mExecutor->RunFlushLoop();
+      }
       return NS_OK;
     }
 };
@@ -146,14 +148,14 @@ class nsHtml5LoadFlusher : public nsRunnable
 nsHtml5StreamParser::nsHtml5StreamParser(nsHtml5TreeOpExecutor* aExecutor,
                                          nsHtml5Parser* aOwner,
                                          eParserMode aMode)
-  : mFirstBuffer(nsnull) // Will be filled when starting
-  , mLastBuffer(nsnull) // Will be filled when starting
+  : mFirstBuffer(nullptr) // Will be filled when starting
+  , mLastBuffer(nullptr) // Will be filled when starting
   , mExecutor(aExecutor)
   , mTreeBuilder(new nsHtml5TreeBuilder((aMode == VIEW_SOURCE_HTML ||
                                          aMode == VIEW_SOURCE_XML) ?
-                                             nsnull : mExecutor->GetStage(),
+                                             nullptr : mExecutor->GetStage(),
                                          aMode == NORMAL ?
-                                             mExecutor->GetStage() : nsnull))
+                                             mExecutor->GetStage() : nullptr))
   , mTokenizer(new nsHtml5Tokenizer(mTreeBuilder, aMode == VIEW_SOURCE_XML))
   , mTokenizerMutex("nsHtml5StreamParser mTokenizerMutex")
   , mOwner(aOwner)
@@ -206,16 +208,16 @@ nsHtml5StreamParser::~nsHtml5StreamParser()
   mTokenizer->end();
   NS_ASSERTION(!mFlushTimer, "Flush timer was not dropped before dtor!");
 #ifdef DEBUG
-  mRequest = nsnull;
-  mObserver = nsnull;
-  mUnicodeDecoder = nsnull;
-  mSniffingBuffer = nsnull;
-  mMetaScanner = nsnull;
-  mFirstBuffer = nsnull;
-  mExecutor = nsnull;
-  mTreeBuilder = nsnull;
-  mTokenizer = nsnull;
-  mOwner = nsnull;
+  mRequest = nullptr;
+  mObserver = nullptr;
+  mUnicodeDecoder = nullptr;
+  mSniffingBuffer = nullptr;
+  mMetaScanner = nullptr;
+  mFirstBuffer = nullptr;
+  mExecutor = nullptr;
+  mTreeBuilder = nullptr;
+  mTokenizer = nullptr;
+  mOwner = nullptr;
 #endif
 }
 
@@ -317,9 +319,9 @@ nsHtml5StreamParser::WriteSniffingBufferAndCurrentSegment(const PRUint8* aFromSe
     PRUint32 writeCount;
     rv = WriteStreamBytes(mSniffingBuffer, mSniffingLength, &writeCount);
     NS_ENSURE_SUCCESS(rv, rv);
-    mSniffingBuffer = nsnull;
+    mSniffingBuffer = nullptr;
   }
-  mMetaScanner = nsnull;
+  mMetaScanner = nullptr;
   if (aFromSegment) {
     rv = WriteStreamBytes(aFromSegment, aCount, aWriteCount);
   }
@@ -340,8 +342,8 @@ nsHtml5StreamParser::SetupDecodingFromBom(const char* aCharsetName, const char* 
   mCharsetSource = kCharsetFromByteOrderMark;
   mFeedChardet = false;
   mTreeBuilder->SetDocumentCharset(mCharset, mCharsetSource);
-  mSniffingBuffer = nsnull;
-  mMetaScanner = nsnull;
+  mSniffingBuffer = nullptr;
+  mMetaScanner = nullptr;
   mBomState = BOM_SNIFFING_OVER;
   return rv;
 }
@@ -722,7 +724,7 @@ nsHtml5StreamParser::SniffStreamBytes(const PRUint8* aFromSegment,
         mCharsetSource = kCharsetFromMetaPrescan;
         mFeedChardet = false;
         mTreeBuilder->SetDocumentCharset(mCharset, mCharsetSource);
-        mMetaScanner = nsnull;
+        mMetaScanner = nullptr;
         return WriteSniffingBufferAndCurrentSegment(aFromSegment, aCount,
             aWriteCount);
       }
@@ -742,7 +744,7 @@ nsHtml5StreamParser::SniffStreamBytes(const PRUint8* aFromSegment,
       mCharsetSource = kCharsetFromMetaPrescan;
       mFeedChardet = false;
       mTreeBuilder->SetDocumentCharset(mCharset, mCharsetSource);
-      mMetaScanner = nsnull;
+      mMetaScanner = nullptr;
       return WriteSniffingBufferAndCurrentSegment(aFromSegment, 
                                                   aCount,
                                                   aWriteCount);
@@ -897,6 +899,8 @@ nsHtml5StreamParser::OnStartRequest(nsIRequest* aRequest, nsISupports* aContext)
                                    false : mExecutor->IsScriptEnabled();
   mOwner->StartTokenizer(scriptingEnabled);
   mTreeBuilder->setScriptingEnabled(scriptingEnabled);
+  mTreeBuilder->SetPreventScriptExecution(!((mMode == NORMAL) &&
+                                            scriptingEnabled));
   mTokenizer->start();
   mExecutor->Start();
   mExecutor->StartReadingFromStage();
@@ -994,7 +998,7 @@ nsHtml5StreamParser::DoStopRequest()
 
   if (!mUnicodeDecoder) {
     PRUint32 writeCount;
-    if (NS_FAILED(FinalizeSniffing(nsnull, 0, &writeCount, 0))) {
+    if (NS_FAILED(FinalizeSniffing(nullptr, 0, &writeCount, 0))) {
       MarkAsBroken();
       return;
     }
@@ -1363,7 +1367,10 @@ nsHtml5StreamParser::ParseAvailableData()
       // Terminate, but that never happens together with script.
       // Can't assert that here, though, because it's possible that the main
       // thread has called Terminate() while this thread was parsing.
-      if (mMode == NORMAL && mTreeBuilder->HasScript()) {
+      if (mTreeBuilder->HasScript()) {
+        // HasScript() cannot return true if the tree builder is preventing
+        // script execution.
+        MOZ_ASSERT(mMode == NORMAL);
         mozilla::MutexAutoLock speculationAutoLock(mSpeculationMutex);
         nsHtml5Speculation* speculation = 
           new nsHtml5Speculation(mFirstBuffer,
@@ -1483,8 +1490,8 @@ nsHtml5StreamParser::ContinueAfterScripts(nsHtml5Tokenizer* aTokenizer,
                                       mExecutor->GetDocument(),
                                       nsContentUtils::eDOM_PROPERTIES,
                                       "SpeculationFailed",
-                                      nsnull, 0,
-                                      nsnull,
+                                      nullptr, 0,
+                                      nullptr,
                                       EmptyString(),
                                       speculation->GetStartLineNumber());
 
@@ -1566,7 +1573,7 @@ public:
   {
     if (mStreamParser->mFlushTimer) {
       mStreamParser->mFlushTimer->Cancel();
-      mStreamParser->mFlushTimer = nsnull;
+      mStreamParser->mFlushTimer = nullptr;
     }
     return NS_OK;
   }

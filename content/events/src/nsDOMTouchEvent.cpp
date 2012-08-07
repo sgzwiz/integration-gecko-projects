@@ -146,7 +146,6 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsDOMTouchList)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSTARRAY_OF_NSCOMPTR(mPoints)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDOMTouchList)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSTARRAY(mPoints)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -171,7 +170,7 @@ nsDOMTouchList::Item(PRUint32 aIndex, nsIDOMTouch** aRetVal)
 NS_IMETHODIMP
 nsDOMTouchList::IdentifiedTouch(PRInt32 aIdentifier, nsIDOMTouch** aRetVal)
 {
-  *aRetVal = nsnull;
+  *aRetVal = nullptr;
   for (PRUint32 i = 0; i < mPoints.Length(); ++i) {
     nsCOMPtr<nsIDOMTouch> point = mPoints[i];
     PRInt32 identifier;
@@ -189,7 +188,7 @@ nsDOMTouchList::IdentifiedTouch(PRInt32 aIdentifier, nsIDOMTouch** aRetVal)
 nsDOMTouchEvent::nsDOMTouchEvent(nsPresContext* aPresContext,
                                  nsTouchEvent* aEvent)
   : nsDOMUIEvent(aPresContext, aEvent ? aEvent :
-                                        new nsTouchEvent(false, 0, nsnull))
+                                        new nsTouchEvent(false, 0, nullptr))
 {
   if (aEvent) {
     mEventIsInternal = false;
@@ -209,7 +208,7 @@ nsDOMTouchEvent::~nsDOMTouchEvent()
 {
   if (mEventIsInternal && mEvent) {
     delete static_cast<nsTouchEvent*>(mEvent);
-    mEvent = nsnull;
+    mEvent = nullptr;
   }
 }
 

@@ -3,39 +3,43 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsTextEditRules.h"
-
-#include "nsEditor.h"
-#include "nsTextEditUtils.h"
-#include "nsCRT.h"
-
+#include "mozilla/Assertions.h"
+#include "mozilla/LookAndFeel.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/Selection.h"
+#include "mozilla/dom/Element.h"
+#include "nsAString.h"
+#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
-#include "nsIServiceManager.h"
-#include "nsIDOMNode.h"
+#include "nsCRT.h"
+#include "nsCRTGlue.h"
+#include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
+#include "nsDebug.h"
+#include "nsEditor.h"
+#include "nsEditorUtils.h"
+#include "nsError.h"
+#include "nsGkAtoms.h"
+#include "nsIContent.h"
+#include "nsIDOMCharacterData.h"
+#include "nsIDOMDocument.h"
 #include "nsIDOMElement.h"
-#include "nsIDOMText.h"
+#include "nsIDOMNode.h"
+#include "nsIDOMNodeFilter.h"
+#include "nsIDOMNodeIterator.h"
 #include "nsIDOMNodeList.h"
+#include "nsIDOMText.h"
+#include "nsINameSpaceManager.h"
+#include "nsINode.h"
+#include "nsIPlaintextEditor.h"
 #include "nsISelection.h"
 #include "nsISelectionPrivate.h"
-#include "nsISelectionController.h"
-#include "nsIDOMRange.h"
-#include "nsIDOMCharacterData.h"
-#include "nsIContent.h"
-#include "nsIContentIterator.h"
-#include "nsEditorUtils.h"
-#include "EditTxn.h"
-#include "nsEditProperty.h"
-#include "nsUnicharUtils.h"
-#include "DeleteTextTxn.h"
+#include "nsISupportsBase.h"
+#include "nsLiteralString.h"
 #include "nsNodeIterator.h"
-#include "nsIDOMNodeFilter.h"
-
-// for IBMBIDI
-#include "nsFrameSelection.h"
-
-#include "mozilla/Preferences.h"
-#include "mozilla/LookAndFeel.h"
-#include "mozilla/dom/Element.h"
+#include "nsTextEditRules.h"
+#include "nsTextEditUtils.h"
+#include "nsUnicharUtils.h"
 
 using namespace mozilla;
 
@@ -52,7 +56,7 @@ using namespace mozilla;
  ********************************************************/
 
 nsTextEditRules::nsTextEditRules()
-: mEditor(nsnull)
+: mEditor(nullptr)
 , mZone(JS_ZONE_NONE)
 , mPasswordText()
 , mPasswordIMEText()
@@ -138,7 +142,7 @@ nsTextEditRules::DetachEditor()
   if (mTimer)
     mTimer->Cancel();
 
-  mEditor = nsnull;
+  mEditor = nullptr;
   return NS_OK;
 }
 
@@ -187,7 +191,7 @@ nsTextEditRules::AfterEdit(nsEditor::OperationID action,
   
     res = mEditor->HandleInlineSpellCheck(action, selection,
                                           mCachedSelectionNode, mCachedSelectionOffset,
-                                          nsnull, 0, nsnull, 0);
+                                          nullptr, 0, nullptr, 0);
     NS_ENSURE_SUCCESS(res, res);
 
     // if only trailing <br> remaining remove it
@@ -211,7 +215,7 @@ nsTextEditRules::AfterEdit(nsEditor::OperationID action,
 
 
 NS_IMETHODIMP
-nsTextEditRules::WillDoAction(nsTypedSelection* aSelection,
+nsTextEditRules::WillDoAction(Selection* aSelection,
                               nsRulesInfo* aInfo,
                               bool* aCancel,
                               bool* aHandled)
@@ -299,7 +303,7 @@ nsTextEditRules::DocumentIsEmpty(bool *aDocumentIsEmpty)
 {
   NS_ENSURE_TRUE(aDocumentIsEmpty, NS_ERROR_NULL_POINTER);
   
-  *aDocumentIsEmpty = (mBogusNode != nsnull);
+  *aDocumentIsEmpty = (mBogusNode != nullptr);
   return NS_OK;
 }
 
@@ -322,7 +326,7 @@ nsTextEditRules::WillInsert(nsISelection *aSelection, bool *aCancel)
   if (mBogusNode)
   {
     mEditor->DeleteNode(mBogusNode);
-    mBogusNode = nsnull;
+    mBogusNode = nullptr;
   }
 
   return NS_OK;
@@ -335,7 +339,7 @@ nsTextEditRules::DidInsert(nsISelection *aSelection, nsresult aResult)
 }
 
 nsresult
-nsTextEditRules::WillInsertBreak(nsISelection *aSelection,
+nsTextEditRules::WillInsertBreak(Selection* aSelection,
                                  bool *aCancel,
                                  bool *aHandled,
                                  PRInt32 aMaxLength)
@@ -418,11 +422,8 @@ nsTextEditRules::CollapseSelectionToTrailingBRIfNeeded(nsISelection* aSelection)
   if (selOffset != PRInt32(length))
     return NS_OK;
 
-  nsCOMPtr<nsIDOMNode> parentNode;
   PRInt32 parentOffset;
-  res = nsEditor::GetNodeLocation(selNode, address_of(parentNode),
-                                  &parentOffset);
-  NS_ENSURE_SUCCESS(res, res);
+  nsCOMPtr<nsIDOMNode> parentNode = nsEditor::GetNodeLocation(selNode, &parentOffset);
 
   nsCOMPtr<nsIDOMNode> root = do_QueryInterface(mEditor->GetRoot());
   NS_ENSURE_TRUE(root, NS_ERROR_NULL_POINTER);
@@ -443,17 +444,17 @@ GetTextNode(nsISelection *selection, nsEditor *editor) {
   PRInt32 selOffset;
   nsCOMPtr<nsIDOMNode> selNode;
   nsresult res = editor->GetStartNodeAndOffset(selection, getter_AddRefs(selNode), &selOffset);
-  NS_ENSURE_SUCCESS(res, nsnull);
+  NS_ENSURE_SUCCESS(res, nullptr);
   if (!editor->IsTextNode(selNode)) {
     // Get an nsINode from the nsIDOMNode
     nsCOMPtr<nsINode> node = do_QueryInterface(selNode);
     // if node is null, return it to indicate there's no text
-    NS_ENSURE_TRUE(node, nsnull);
+    NS_ENSURE_TRUE(node, nullptr);
     // This should be the root node, walk the tree looking for text nodes
-    nsNodeIterator iter(node, nsIDOMNodeFilter::SHOW_TEXT, nsnull);
+    nsNodeIterator iter(node, nsIDOMNodeFilter::SHOW_TEXT, nullptr);
     while (!editor->IsTextNode(selNode)) {
       if (NS_FAILED(res = iter.NextNode(getter_AddRefs(selNode))) || !selNode) {
-        return nsnull;
+        return nullptr;
       }
     }
   }
@@ -542,7 +543,7 @@ nsTextEditRules::HandleNewLines(nsString &aString,
 
 nsresult
 nsTextEditRules::WillInsertText(nsEditor::OperationID aAction,
-                                nsISelection *aSelection, 
+                                Selection* aSelection,
                                 bool            *aCancel,
                                 bool            *aHandled,
                                 const nsAString *inString,
@@ -580,15 +581,13 @@ nsTextEditRules::WillInsertText(nsEditor::OperationID aAction,
     return NS_OK;
   }
   
-  PRUint32 start = 0;
-  PRUint32 end = 0;  
+  PRInt32 start = 0;
+  PRInt32 end = 0;
 
   // handle password field docs
-  if (IsPasswordEditor())
-  {
-    res = mEditor->GetTextSelectionOffsets(aSelection, start, end);
-    NS_ASSERTION((NS_SUCCEEDED(res)), "getTextSelectionOffsets failed!");
-    NS_ENSURE_SUCCESS(res, res);
+  if (IsPasswordEditor()) {
+    nsContentUtils::GetSelectionInTextControl(aSelection, mEditor->GetRoot(),
+                                              start, end);
   }
 
   // if the selection isn't collapsed, delete it.
@@ -613,8 +612,7 @@ nsTextEditRules::WillInsertText(nsEditor::OperationID aAction,
   if (IsPasswordEditor())
   {
     if (aAction == nsEditor::kOpInsertIMEText) {
-      res = RemoveIMETextFromPWBuf(start, outString);
-      NS_ENSURE_SUCCESS(res, res);
+      RemoveIMETextFromPWBuf(start, outString);
     }
   }
 
@@ -655,12 +653,12 @@ nsTextEditRules::WillInsertText(nsEditor::OperationID aAction,
         mTimer = do_CreateInstance("@mozilla.org/timer;1", &res);
         NS_ENSURE_SUCCESS(res, res);
       }
-      mTimer->InitWithCallback(this, 600, nsITimer::TYPE_ONE_SHOT);
+      mTimer->InitWithCallback(this, LookAndFeel::GetPasswordMaskDelay(),
+                               nsITimer::TYPE_ONE_SHOT);
     } 
     else 
     {
-      res = FillBufWithPWChars(outString, outString->Length());
-      NS_ENSURE_SUCCESS(res, res);
+      FillBufWithPWChars(outString, outString->Length());
     }
   }
 
@@ -701,8 +699,7 @@ nsTextEditRules::WillInsertText(nsEditor::OperationID aAction,
       // in which case make the caret attach to the next line.
       bool endsWithLF =
         !outString->IsEmpty() && outString->Last() == nsCRT::LF;
-      nsCOMPtr<nsISelectionPrivate>selPrivate(do_QueryInterface(aSelection));
-      selPrivate->SetInterlinePosition(endsWithLF);
+      aSelection->SetInterlinePosition(endsWithLF);
 
       aSelection->Collapse(curNode, curOffset);
     }
@@ -759,7 +756,7 @@ nsTextEditRules::DidRemoveTextProperty(nsISelection *aSelection, nsresult aResul
 }
 
 nsresult
-nsTextEditRules::WillDeleteSelection(nsISelection *aSelection, 
+nsTextEditRules::WillDeleteSelection(Selection* aSelection,
                                      nsIEditor::EDirection aCollapsedAction, 
                                      bool *aCancel,
                                      bool *aHandled)
@@ -785,9 +782,9 @@ nsTextEditRules::WillDeleteSelection(nsISelection *aSelection,
     NS_ENSURE_SUCCESS(res, res);
 
     // manage the password buffer
-    PRUint32 start, end;
-    mEditor->GetTextSelectionOffsets(aSelection, start, end);
-    NS_ENSURE_SUCCESS(res, res);
+    PRInt32 start, end;
+    nsContentUtils::GetSelectionInTextControl(aSelection, mEditor->GetRoot(),
+                                              start, end);
 
     if (LookAndFeel::GetEchoPassword()) {
       HideLastPWInput();
@@ -910,7 +907,7 @@ nsTextEditRules::DidUndo(nsISelection *aSelection, nsresult aResult)
   if (node && mEditor->IsMozEditorBogusNode(node)) {
     mBogusNode = do_QueryInterface(node);
   } else {
-    mBogusNode = nsnull;
+    mBogusNode = nullptr;
   }
   return aResult;
 }
@@ -947,7 +944,7 @@ nsTextEditRules::DidRedo(nsISelection *aSelection, nsresult aResult)
       
       if (len != 1) {
         // only in the case of one br could there be the bogus node
-        mBogusNode = nsnull;
+        mBogusNode = nullptr;
         return NS_OK;  
       }
 
@@ -956,7 +953,7 @@ nsTextEditRules::DidRedo(nsISelection *aSelection, nsresult aResult)
       if (mEditor->IsMozEditorBogusNode(content)) {
         mBogusNode = do_QueryInterface(content);
       } else {
-        mBogusNode = nsnull;
+        mBogusNode = nullptr;
       }
     }
   }
@@ -1120,7 +1117,7 @@ nsTextEditRules::CreateBogusNodeIfNeeded(nsISelection *aSelection)
   }
 
   // Create a br.
-  nsCOMPtr<nsIContent> newContent;
+  nsCOMPtr<dom::Element> newContent;
   nsresult rv = mEditor->CreateHTMLContent(NS_LITERAL_STRING("br"), getter_AddRefs(newContent));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1144,7 +1141,7 @@ nsTextEditRules::CreateBogusNodeIfNeeded(nsISelection *aSelection)
 
 
 nsresult
-nsTextEditRules::TruncateInsertionIfNeeded(nsISelection *aSelection, 
+nsTextEditRules::TruncateInsertionIfNeeded(Selection* aSelection,
                                            const nsAString  *aInString,
                                            nsAString  *aOutString,
                                            PRInt32          aMaxLength,
@@ -1176,13 +1173,11 @@ nsTextEditRules::TruncateInsertionIfNeeded(nsISelection *aSelection,
     res = mEditor->GetTextLength(&docLength);
     if (NS_FAILED(res)) { return res; }
 
-    PRUint32 start, end;
-    res = mEditor->GetTextSelectionOffsets(aSelection, start, end);
-    if (NS_FAILED(res)) { return res; }
+    PRInt32 start, end;
+    nsContentUtils::GetSelectionInTextControl(aSelection, mEditor->GetRoot(),
+                                              start, end);
 
-    PRInt32 oldCompStrLength;
-    res = mEditor->GetIMEBufferLength(&oldCompStrLength);
-    if (NS_FAILED(res)) { return res; }
+    PRInt32 oldCompStrLength = mEditor->GetIMEBufferLength();
 
     const PRInt32 selectionLength = end - start;
     const PRInt32 resultingDocLength = docLength - selectionLength - oldCompStrLength;
@@ -1208,19 +1203,16 @@ nsTextEditRules::TruncateInsertionIfNeeded(nsISelection *aSelection,
   return res;
 }
 
-nsresult
+void
 nsTextEditRules::ResetIMETextPWBuf()
 {
   mPasswordIMEText.Truncate();
-  return NS_OK;
 }
 
-nsresult
-nsTextEditRules::RemoveIMETextFromPWBuf(PRUint32 &aStart, nsAString *aIMEString)
+void
+nsTextEditRules::RemoveIMETextFromPWBuf(PRInt32 &aStart, nsAString *aIMEString)
 {
-  if (!aIMEString) {
-    return NS_ERROR_NULL_POINTER;
-  }
+  MOZ_ASSERT(aIMEString);
 
   // initialize PasswordIME
   if (mPasswordIMEText.IsEmpty()) {
@@ -1233,7 +1225,6 @@ nsTextEditRules::RemoveIMETextFromPWBuf(PRUint32 &aStart, nsAString *aIMEString)
   }
 
   mPasswordIMEText.Assign(*aIMEString);
-  return NS_OK;
 }
 
 NS_IMETHODIMP nsTextEditRules::Notify(class nsITimer *) {
@@ -1252,12 +1243,11 @@ nsresult nsTextEditRules::HideLastPWInput() {
   nsAutoString hiddenText;
   FillBufWithPWChars(&hiddenText, mLastLength);
 
-  nsCOMPtr<nsISelection> selection;
-  PRUint32 start, end;
-  nsresult res = mEditor->GetSelection(getter_AddRefs(selection));
-  NS_ENSURE_SUCCESS(res, res);
-  res = mEditor->GetTextSelectionOffsets(selection, start, end);
-  NS_ENSURE_SUCCESS(res, res);
+  nsRefPtr<Selection> selection = mEditor->GetSelection();
+  NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
+  PRInt32 start, end;
+  nsContentUtils::GetSelectionInTextControl(selection, mEditor->GetRoot(),
+                                            start, end);
 
   nsCOMPtr<nsIDOMNode> selNode = GetTextNode(selection, mEditor);
   NS_ENSURE_TRUE(selNode, NS_OK);
@@ -1273,10 +1263,10 @@ nsresult nsTextEditRules::HideLastPWInput() {
 }
 
 // static
-nsresult
+void
 nsTextEditRules::FillBufWithPWChars(nsAString *aOutString, PRInt32 aLength)
 {
-  if (!aOutString) {return NS_ERROR_NULL_POINTER;}
+  MOZ_ASSERT(aOutString);
 
   // change the output to the platform password character
   PRUnichar passwordChar = LookAndFeel::GetPasswordCharacter();
@@ -1285,8 +1275,6 @@ nsTextEditRules::FillBufWithPWChars(nsAString *aOutString, PRInt32 aLength)
   aOutString->Truncate();
   for (i=0; i < aLength; i++)
     aOutString->Append(passwordChar);
-
-  return NS_OK;
 }
 
 

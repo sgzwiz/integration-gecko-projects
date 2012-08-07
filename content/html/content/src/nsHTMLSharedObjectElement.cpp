@@ -47,21 +47,21 @@ public:
 
   // nsIDOMHTMLElement
   NS_FORWARD_NSIDOMHTMLELEMENT_BASIC(nsGenericHTMLElement::)
-  NS_SCRIPTABLE NS_IMETHOD Click() {
+  NS_IMETHOD Click() {
     return nsGenericHTMLElement::Click();
   }
-  NS_SCRIPTABLE NS_IMETHOD GetTabIndex(PRInt32* aTabIndex);
-  NS_SCRIPTABLE NS_IMETHOD SetTabIndex(PRInt32 aTabIndex);
-  NS_SCRIPTABLE NS_IMETHOD Focus() {
+  NS_IMETHOD GetTabIndex(PRInt32* aTabIndex);
+  NS_IMETHOD SetTabIndex(PRInt32 aTabIndex);
+  NS_IMETHOD Focus() {
     return nsGenericHTMLElement::Focus();
   }
-  NS_SCRIPTABLE NS_IMETHOD GetDraggable(bool* aDraggable) {
+  NS_IMETHOD GetDraggable(bool* aDraggable) {
     return nsGenericHTMLElement::GetDraggable(aDraggable);
   }
-  NS_SCRIPTABLE NS_IMETHOD GetInnerHTML(nsAString& aInnerHTML) {
+  NS_IMETHOD GetInnerHTML(nsAString& aInnerHTML) {
     return nsGenericHTMLElement::GetInnerHTML(aInnerHTML);
   }
-  NS_SCRIPTABLE NS_IMETHOD SetInnerHTML(const nsAString& aInnerHTML) {
+  NS_IMETHOD SetInnerHTML(const nsAString& aInnerHTML) {
     return nsGenericHTMLElement::SetInnerHTML(aInnerHTML);
   }
 
@@ -109,7 +109,7 @@ public:
 
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
 
-  nsresult CopyInnerTo(nsGenericElement* aDest) const;
+  nsresult CopyInnerTo(nsGenericElement* aDest);
 
   void StartObjectLoad() { StartObjectLoad(true); }
 
@@ -155,6 +155,9 @@ private:
   // mIsDoneAddingChildren is only really used for <applet>.  This boolean is
   // always true for <embed>, per the documentation in nsIContent.h.
   bool mIsDoneAddingChildren;
+
+  virtual void GetItemValueText(nsAString& text);
+  virtual void SetItemValueText(const nsAString& text);
 };
 
 
@@ -171,6 +174,26 @@ nsHTMLSharedObjectElement::nsHTMLSharedObjectElement(already_AddRefed<nsINodeInf
 
   // By default we're in the loading state
   AddStatesSilently(NS_EVENT_STATE_LOADING);
+}
+
+void
+nsHTMLSharedObjectElement::GetItemValueText(nsAString& aValue)
+{
+  if (mNodeInfo->Equals(nsGkAtoms::applet)) {
+    nsGenericHTMLElement::GetItemValueText(aValue);
+  } else {
+    GetSrc(aValue);
+  }
+}
+
+void
+nsHTMLSharedObjectElement::SetItemValueText(const nsAString& aValue)
+{
+  if (mNodeInfo->Equals(nsGkAtoms::applet)) {
+    nsGenericHTMLElement::SetItemValueText(aValue);
+  } else {
+    SetSrc(aValue);
+  }
 }
 
 nsHTMLSharedObjectElement::~nsHTMLSharedObjectElement()
@@ -220,7 +243,7 @@ nsHTMLSharedObjectElement::GetClassInfoInternal()
   if (mNodeInfo->Equals(nsGkAtoms::embed)) {
     return NS_GetDOMClassInfoInstance(eDOMClassInfo_HTMLEmbedElement_id);
   }
-  return nsnull;
+  return nullptr;
 }
 
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(nsHTMLSharedObjectElement)
@@ -277,11 +300,9 @@ void
 nsHTMLSharedObjectElement::UnbindFromTree(bool aDeep,
                                           bool aNullParent)
 {
-  RemovedFromDocument();
   nsObjectLoadingContent::UnbindFromTree(aDeep, aNullParent);
   nsGenericHTMLElement::UnbindFromTree(aDeep, aNullParent);
 }
-
 
 
 nsresult
@@ -289,10 +310,12 @@ nsHTMLSharedObjectElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom *aName,
                                    nsIAtom *aPrefix, const nsAString &aValue,
                                    bool aNotify)
 {
-  // If we plan to call LoadObject, we want to do it first so that the
-  // object load kicks off _before_ the reflow triggered by the SetAttr.  But if
-  // aNotify is false, we are coming from the parser or some such place; we'll
-  // get bound after all the attributes have been set, so we'll do the
+  nsresult rv = nsGenericHTMLElement::SetAttr(aNameSpaceID, aName, aPrefix,
+                                              aValue, aNotify);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // if aNotify is false, we are coming from the parser or some such place;
+  // we'll get bound after all the attributes have been set, so we'll do the
   // object load from BindToTree/DoneAddingChildren.
   // Skip the LoadObject call in that case.
   // We also don't want to start loading the object when we're not yet in
@@ -300,13 +323,10 @@ nsHTMLSharedObjectElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom *aName,
   // attributes before inserting the node into the document.
   if (aNotify && IsInDoc() && mIsDoneAddingChildren &&
       aNameSpaceID == kNameSpaceID_None && aName == URIAttrName()) {
-    nsCAutoString type;
-    GetTypeAttrValue(type);
-    LoadObject(aValue, aNotify, type, true);
+    return LoadObject(aNotify, true);
   }
 
-  return nsGenericHTMLElement::SetAttr(aNameSpaceID, aName, aPrefix, aValue,
-                                       aNotify);
+  return NS_OK;
 }
 
 bool
@@ -360,7 +380,7 @@ nsHTMLSharedObjectElement::GetSVGDocument(nsIDOMDocument **aResult)
 {
   NS_ENSURE_ARG_POINTER(aResult);
 
-  *aResult = nsnull;
+  *aResult = nullptr;
 
   if (!IsInDoc()) {
     return NS_OK;
@@ -447,19 +467,7 @@ nsHTMLSharedObjectElement::GetAttributeMappingFunction() const
 void
 nsHTMLSharedObjectElement::StartObjectLoad(bool aNotify)
 {
-  nsCAutoString type;
-  GetTypeAttrValue(type);
-
-  nsAutoString uri;
-  if (!GetAttr(kNameSpaceID_None, URIAttrName(), uri)) {
-    // Be sure to call the nsIURI version if we have no attribute
-    // That handles the case where no URI is specified. An empty string would
-    // get interpreted as the page itself, instead of absence of URI.
-    LoadObject(nsnull, aNotify, type);
-  }
-  else {
-    LoadObject(uri, aNotify, type);
-  }
+  LoadObject(aNotify);
   SetIsNetworkCreated(false);
 }
 
@@ -472,7 +480,7 @@ nsHTMLSharedObjectElement::IntrinsicState() const
 PRUint32
 nsHTMLSharedObjectElement::GetCapabilities() const
 {
-  PRUint32 capabilities = eSupportPlugins | eOverrideServerType;
+  PRUint32 capabilities = eSupportPlugins | eAllowPluginSkipChannel;
   if (mNodeInfo->Equals(nsGkAtoms::embed)) {
     capabilities |= eSupportSVG | eSupportImages;
   }
@@ -483,12 +491,12 @@ nsHTMLSharedObjectElement::GetCapabilities() const
 void
 nsHTMLSharedObjectElement::DestroyContent()
 {
-  RemovedFromDocument();
+  nsObjectLoadingContent::DestroyContent();
   nsGenericHTMLElement::DestroyContent();
 }
 
 nsresult
-nsHTMLSharedObjectElement::CopyInnerTo(nsGenericElement* aDest) const
+nsHTMLSharedObjectElement::CopyInnerTo(nsGenericElement* aDest)
 {
   nsresult rv = nsGenericHTMLElement::CopyInnerTo(aDest);
   NS_ENSURE_SUCCESS(rv, rv);

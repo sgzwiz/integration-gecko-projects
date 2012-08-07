@@ -9,15 +9,16 @@
 #include "nsIObserver.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIChannelEventSink.h"
+#include "nsIRedirectResultListener.h"
 #include "nsIWebProgressListener.h"
 #include "nsIStreamListener.h"
 #include "nsIChannel.h"
 #include "nsIURI.h"
-#include "nsIDOMDocument.h"
 #include "nsIDOMLoadStatus.h"
 #include "nsWeakReference.h"
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
+#include "mozilla/Attributes.h"
 
 class nsPrefetchService;
 class nsPrefetchListener;
@@ -27,10 +28,10 @@ class nsPrefetchNode;
 // nsPrefetchService
 //-----------------------------------------------------------------------------
 
-class nsPrefetchService : public nsIPrefetchService
-                        , public nsIWebProgressListener
-                        , public nsIObserver
-                        , public nsSupportsWeakReference
+class nsPrefetchService MOZ_FINAL : public nsIPrefetchService
+                                  , public nsIWebProgressListener
+                                  , public nsIObserver
+                                  , public nsSupportsWeakReference
 {
 public:
     NS_DECL_ISUPPORTS
@@ -84,10 +85,11 @@ private:
 // nsPrefetchNode
 //-----------------------------------------------------------------------------
 
-class nsPrefetchNode : public nsIDOMLoadStatus
-                     , public nsIStreamListener
-                     , public nsIInterfaceRequestor
-                     , public nsIChannelEventSink
+class nsPrefetchNode MOZ_FINAL : public nsIDOMLoadStatus
+                               , public nsIStreamListener
+                               , public nsIInterfaceRequestor
+                               , public nsIChannelEventSink
+                               , public nsIRedirectResultListener
 {
 public:
     NS_DECL_ISUPPORTS
@@ -99,6 +101,7 @@ public:
     NS_DECL_NSISTREAMLISTENER
     NS_DECL_NSIINTERFACEREQUESTOR
     NS_DECL_NSICHANNELEVENTSINK
+    NS_DECL_NSIREDIRECTRESULTLISTENER
 
     nsPrefetchNode(nsPrefetchService *aPrefetchService,
                    nsIURI *aURI,
@@ -118,6 +121,7 @@ public:
 private:
     nsRefPtr<nsPrefetchService> mService;
     nsCOMPtr<nsIChannel>        mChannel;
+    nsCOMPtr<nsIChannel>        mRedirectChannel;
     PRUint16                    mState;
     PRInt32                     mBytesRead;
 };

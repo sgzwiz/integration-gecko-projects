@@ -92,28 +92,28 @@ nsThreadClassInfo::GetInterfaces(PRUint32 *count, nsIID ***array)
 NS_IMETHODIMP
 nsThreadClassInfo::GetHelperForLanguage(PRUint32 lang, nsISupports **result)
 {
-  *result = nsnull;
+  *result = nullptr;
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsThreadClassInfo::GetContractID(char **result)
 {
-  *result = nsnull;
+  *result = nullptr;
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsThreadClassInfo::GetClassDescription(char **result)
 {
-  *result = nsnull;
+  *result = nullptr;
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsThreadClassInfo::GetClassID(nsCID **result)
 {
-  *result = nsnull;
+  *result = nullptr;
   return NS_OK;
 }
 
@@ -250,7 +250,7 @@ nsThread::ThreadFunc(void *arg)
     return;
   }
   event->Run();  // unblocks nsThread::Init
-  event = nsnull;
+  event = nullptr;
 
   // Now, process incoming events...
   while (!self->ShuttingDown())
@@ -284,7 +284,7 @@ nsThread::ThreadFunc(void *arg)
   self->mShutdownContext->joiningThread->Dispatch(event, NS_DISPATCH_NORMAL);
 
   // Release any observer of the thread here.
-  self->SetObserver(nsnull);
+  self->SetObserver(nullptr);
 
   NS_RELEASE(self);
 }
@@ -294,10 +294,10 @@ nsThread::ThreadFunc(void *arg)
 nsThread::nsThread(MainThreadFlag aMainThread, PRUint32 aStackSize)
   : mLock("nsThread.mLock")
   , mPriority(PRIORITY_NORMAL)
-  , mThread(nsnull)
+  , mThread(nullptr)
   , mRunningEvent(0)
   , mStackSize(aStackSize)
-  , mShutdownContext(nsnull)
+  , mShutdownContext(nullptr)
   , mShutdownRequired(false)
   , mEventsAreDoomed(false)
   , mIsMainThread(aMainThread)
@@ -481,7 +481,7 @@ nsThread::Shutdown()
   // Now, it should be safe to join without fear of dead-locking.
 
   PR_JoinThread(mThread);
-  mThread = nsnull;
+  mThread = nullptr;
 
   // We hold strong references to our event observers, and once the thread is
   // shut down the observers can't easily unregister themselves. Do it here
@@ -503,7 +503,7 @@ nsThread::HasPendingEvents(bool *result)
 {
   NS_ENSURE_STATE(PR_GetCurrentThread() == mThread);
 
-  *result = mEvents.GetEvent(false, nsnull);
+  *result = mEvents.GetEvent(false, nullptr);
   return NS_OK;
 }
 
@@ -584,7 +584,7 @@ nsThread::ProcessNextEventUnlocked(bool mayWait, bool *result)
     if (mpPending) {
       nsCOMPtr<nsIObserverService> os = services::GetObserverService();
       if (os) {
-        os->NotifyObservers(nsnull, "memory-pressure",
+        os->NotifyObservers(nullptr, "memory-pressure",
                             NS_LITERAL_STRING("low-memory").get());
       }
       else {
@@ -643,7 +643,7 @@ nsThread::ProcessNextEventUnlocked(bool mayWait, bool *result)
     NS_TIME_FUNCTION_MIN_FMT(5.0, message);
 #endif
 
-    *result = (event.get() != nsnull);
+    *result = (event.get() != nullptr);
 
     if (event) {
       Maybe<ScopedNSAutoreleasePool> releasePools;
@@ -810,7 +810,7 @@ nsThreadSyncDispatch::Run()
 {
   if (mSyncTask) {
     mResult = mSyncTask->Run();
-    mSyncTask = nsnull;
+    mSyncTask = nullptr;
     // unblock the origin thread
     mOrigin->Dispatch(this, NS_DISPATCH_NORMAL);
   }

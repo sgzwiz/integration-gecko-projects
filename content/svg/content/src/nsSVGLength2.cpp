@@ -55,8 +55,8 @@ NS_INTERFACE_MAP_END
 
 static nsIAtom** const unitMap[] =
 {
-  nsnull, /* SVG_LENGTHTYPE_UNKNOWN */
-  nsnull, /* SVG_LENGTHTYPE_NUMBER */
+  nullptr, /* SVG_LENGTHTYPE_UNKNOWN */
+  nullptr, /* SVG_LENGTHTYPE_NUMBER */
   &nsGkAtoms::percentage,
   &nsGkAtoms::em,
   &nsGkAtoms::ex,
@@ -177,13 +177,14 @@ nsSVGLength2::GetAxisLength(nsSVGSVGElement *aCtx) const
 float
 nsSVGLength2::GetAxisLength(nsIFrame *aNonSVGFrame) const
 {
-  gfxRect rect = nsSVGIntegrationUtils::GetSVGRectForNonSVGFrame(aNonSVGFrame);
+  gfxSize size =
+    nsSVGIntegrationUtils::GetSVGCoordContextForNonSVGFrame(aNonSVGFrame);
   float length;
   switch (mCtxType) {
-  case nsSVGUtils::X: length = rect.Width(); break;
-  case nsSVGUtils::Y: length = rect.Height(); break;
+  case nsSVGUtils::X: length = size.width; break;
+  case nsSVGUtils::Y: length = size.height; break;
   case nsSVGUtils::XY:
-    length = nsSVGUtils::ComputeNormalizedHypotenuse(rect.Width(), rect.Height());
+    length = nsSVGUtils::ComputeNormalizedHypotenuse(size.width, size.height);
     break;
   default:
     NS_NOTREACHED("Unknown axis type");

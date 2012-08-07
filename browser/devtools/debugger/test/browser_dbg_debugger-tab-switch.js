@@ -8,6 +8,12 @@ let gTab1, gTab2, gTab3, gTab4;
 let gPane1, gPane2;
 let gNbox;
 
+/**
+ * Tests that a debugger instance can't be opened in multiple tabs at once,
+ * and that on such an attempt a notification is shown, which can either switch
+ * to the old debugger instance, or close the old instance to open a new one.
+ */
+
 function test() {
   gNbox = gBrowser.getNotificationBox(gBrowser.selectedBrowser);
 
@@ -45,14 +51,12 @@ function testTab1(callback) {
     is(DebuggerUI.getDebugger(), gPane1,
       "getDebugger() should return the same pane as toggleDebugger().");
 
-    gPane1._frame.addEventListener("Debugger:Loaded", function dbgLoaded() {
-      gPane1._frame.removeEventListener("Debugger:Loaded", dbgLoaded, true);
-
+    wait_for_connect_and_resume(function dbgLoaded() {
       info("First debugger has finished loading correctly.");
       executeSoon(function() {
         callback();
       });
-    }, true);
+    });
   });
 }
 
@@ -180,7 +184,7 @@ function testTab4(callback) {
         EventUtils.sendKey("SPACE");
         info("The open button on the notification was pressed.");
 
-        executeSoon(function() {
+        wait_for_connect_and_resume(function() {
           callback();
         });
       });
@@ -210,19 +214,22 @@ function lastTest(callback) {
   });
 }
 
-function cleanup(callback) {
-  removeTab(gTab1);
-  removeTab(gTab2);
-  removeTab(gTab3);
-  removeTab(gTab4);
-
-  gTab1 = null;
-  gTab2 = null;
-  gTab3 = null;
-  gTab4 = null;
+function cleanup(callback)
+{
   gPane1 = null;
   gPane2 = null;
   gNbox = null;
 
-  callback();
+  closeDebuggerAndFinish(false, function() {
+    removeTab(gTab1);
+    removeTab(gTab2);
+    removeTab(gTab3);
+    removeTab(gTab4);
+    gTab1 = null;
+    gTab2 = null;
+    gTab3 = null;
+    gTab4 = null;
+
+    callback();
+  });
 }

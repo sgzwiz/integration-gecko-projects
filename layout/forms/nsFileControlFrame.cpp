@@ -18,7 +18,6 @@
 #include "nsINameSpaceManager.h"
 #include "nsCOMPtr.h"
 #include "nsIDOMElement.h"
-#include "nsIDOMDocument.h"
 #include "nsIDocument.h"
 #include "nsIPresShell.h"
 #include "nsXPCOM.h"
@@ -28,13 +27,12 @@
 #include "nsIDOMMouseEvent.h"
 #include "nsINodeInfo.h"
 #include "nsIDOMEventTarget.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsHTMLInputElement.h"
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsContentUtils.h"
 #include "nsDisplayList.h"
-#include "nsIDOMNSEvent.h"
 #include "nsEventListenerManager.h"
 #ifdef ACCESSIBILITY
 #include "nsAccessibilityService.h"
@@ -132,7 +130,7 @@ nsFileControlFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
   nsCOMPtr<nsIDocument> doc = mContent->GetDocument();
 
   nsCOMPtr<nsINodeInfo> nodeInfo;
-  nodeInfo = doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::input, nsnull,
+  nodeInfo = doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::input, nullptr,
                                                  kNameSpaceID_XHTML,
                                                  nsIDOMNode::ELEMENT_NODE);
 
@@ -179,7 +177,7 @@ nsFileControlFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
                                        mMouseListener, false);
 
   // Create the browse button
-  nodeInfo = doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::input, nsnull,
+  nodeInfo = doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::input, nullptr,
                                                  kNameSpaceID_XHTML,
                                                  nsIDOMNode::ELEMENT_NODE);
   NS_NewHTMLElement(getter_AddRefs(mBrowse), nodeInfo.forget(),
@@ -203,7 +201,7 @@ nsFileControlFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
 
     if (data.mode != 0) {
       mCaptureMouseListener->mMode = data.mode;
-      nodeInfo = doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::input, nsnull,
+      nodeInfo = doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::input, nullptr,
                                                      kNameSpaceID_XHTML,
                                                      nsIDOMNode::ELEMENT_NODE);
       NS_NewHTMLElement(getter_AddRefs(mCapture), nodeInfo.forget(),
@@ -276,10 +274,9 @@ bool ShouldProcessMouseClick(nsIDOMEvent* aMouseEvent)
 {
   // only allow the left button
   nsCOMPtr<nsIDOMMouseEvent> mouseEvent = do_QueryInterface(aMouseEvent);
-  nsCOMPtr<nsIDOMNSEvent> domNSEvent = do_QueryInterface(aMouseEvent);
-  NS_ENSURE_TRUE(mouseEvent && domNSEvent, false);
+  NS_ENSURE_TRUE(mouseEvent, false);
   bool defaultPrevented = false;
-  domNSEvent->GetPreventDefault(&defaultPrevented);
+  aMouseEvent->GetPreventDefault(&defaultPrevented);
   if (defaultPrevented) {
     return false;
   }
@@ -404,10 +401,8 @@ nsFileControlFrame::BrowseMouseListener::HandleEvent(nsIDOMEvent* aEvent)
     return input ? input->FireAsyncClickHandler() : NS_OK;
   }
 
-  nsCOMPtr<nsIDOMNSEvent> domNSEvent = do_QueryInterface(aEvent);
-  NS_ENSURE_STATE(domNSEvent);
   bool defaultPrevented = false;
-  domNSEvent->GetPreventDefault(&defaultPrevented);
+  aEvent->GetPreventDefault(&defaultPrevented);
   if (defaultPrevented) {
     return NS_OK;
   }
@@ -555,7 +550,7 @@ nsFileControlFrame::IsLeaf() const
   return true;
 }
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
 NS_IMETHODIMP
 nsFileControlFrame::GetFrameName(nsAString& aResult) const
 {
@@ -644,7 +639,7 @@ nsFileControlFrame::CreateAccessible()
   // Accessible object exists just to hold onto its children, for later shutdown
   nsAccessibilityService* accService = nsIPresShell::AccService();
   if (!accService)
-    return nsnull;
+    return nullptr;
 
   return accService->CreateHTMLFileInputAccessible(mContent,
                                                    PresContext()->PresShell());

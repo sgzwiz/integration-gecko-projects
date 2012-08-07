@@ -19,6 +19,7 @@
 #include "nsIComponentManager.h"
 #include "nsPIDOMWindow.h"
 #include "nsProgressFrame.h"
+#include "nsMeterFrame.h"
 #include "nsMenuFrame.h"
 #include "mozilla/dom/Element.h"
 #include "nsProxyRelease.h"
@@ -34,12 +35,12 @@ nsIPresShell *
 nsNativeTheme::GetPresShell(nsIFrame* aFrame)
 {
   if (!aFrame)
-    return nsnull;
+    return nullptr;
 
   // this is a workaround for the egcs 1.1.2 not inliningg
   // aFrame->GetPresContext(), which causes an undefined symbol
   nsPresContext *context = aFrame->GetStyleContext()->GetRuleNode()->GetPresContext();
-  return context ? context->GetPresShell() : nsnull;
+  return context ? context->GetPresShell() : nullptr;
 }
 
 nsEventStates
@@ -128,7 +129,8 @@ nsNativeTheme::CheckIntAttr(nsIFrame* aFrame, nsIAtom* aAtom, PRInt32 defaultVal
 
   nsAutoString attr;
   aFrame->GetContent()->GetAttr(kNameSpaceID_None, aAtom, attr);
-  PRInt32 err, value = attr.ToInteger(&err);
+  nsresult err;
+  PRInt32 value = attr.ToInteger(&err);
   if (attr.IsEmpty() || NS_FAILED(err))
     return defaultValue;
 
@@ -248,6 +250,19 @@ nsNativeTheme::IsWidgetStyled(nsPresContext* aPresContext, nsIFrame* aFrame,
     }
   }
 
+  /**
+   * Meter bar appearance should be the same for the bar and the container
+   * frame. nsMeterFrame owns the logic and will tell us what we should do.
+   */
+  if (aWidgetType == NS_THEME_METERBAR_CHUNK ||
+      aWidgetType == NS_THEME_METERBAR) {
+    nsMeterFrame* meterFrame = do_QueryFrame(aWidgetType == NS_THEME_METERBAR_CHUNK
+                                       ? aFrame->GetParent() : aFrame);
+    if (meterFrame) {
+      return !meterFrame->ShouldUseNativeStyle();
+    }
+  }
+
   return (aWidgetType == NS_THEME_BUTTON ||
           aWidgetType == NS_THEME_TEXTFIELD ||
           aWidgetType == NS_THEME_TEXTFIELD_MULTILINE ||
@@ -298,7 +313,7 @@ nsNativeTheme::GetScrollbarButtonType(nsIFrame* aFrame)
   static nsIContent::AttrValuesArray strings[] =
     {&nsGkAtoms::scrollbarDownBottom, &nsGkAtoms::scrollbarDownTop,
      &nsGkAtoms::scrollbarUpBottom, &nsGkAtoms::scrollbarUpTop,
-     nsnull};
+     nullptr};
 
   switch (aFrame->GetContent()->FindAttrValueIn(kNameSpaceID_None,
                                                 nsGkAtoms::sbattr,
@@ -320,7 +335,7 @@ nsNativeTheme::GetTreeSortDirection(nsIFrame* aFrame)
     return eTreeSortDirection_Natural;
 
   static nsIContent::AttrValuesArray strings[] =
-    {&nsGkAtoms::descending, &nsGkAtoms::ascending, nsnull};
+    {&nsGkAtoms::descending, &nsGkAtoms::ascending, nullptr};
   switch (aFrame->GetContent()->FindAttrValueIn(kNameSpaceID_None,
                                                 nsGkAtoms::sortDirection,
                                                 strings, eCaseMatters)) {
@@ -449,6 +464,13 @@ nsNativeTheme::IsVerticalProgress(nsIFrame* aFrame)
          aFrame->GetStyleDisplay()->mOrient == NS_STYLE_ORIENT_VERTICAL;
 }
 
+bool
+nsNativeTheme::IsVerticalMeter(nsIFrame* aFrame)
+{
+  NS_PRECONDITION(aFrame, "You have to pass a non-null aFrame");
+  return aFrame->GetStyleDisplay()->mOrient == NS_STYLE_ORIENT_VERTICAL;
+}
+
 // menupopup:
 bool
 nsNativeTheme::IsSubmenu(nsIFrame* aFrame, bool* aLeftOfParent)
@@ -562,7 +584,7 @@ nsNativeTheme::GetAdjacentSiblingFrameWithSameAppearance(nsIFrame* aFrame,
                                                          bool aNextSibling)
 {
   if (!aFrame)
-    return nsnull;
+    return nullptr;
 
   // Find the next visible sibling.
   nsIFrame* sibling = aFrame;
@@ -575,6 +597,6 @@ nsNativeTheme::GetAdjacentSiblingFrameWithSameAppearance(nsIFrame* aFrame,
       sibling->GetStyleDisplay()->mAppearance != aFrame->GetStyleDisplay()->mAppearance ||
       (sibling->GetRect().XMost() != aFrame->GetRect().x &&
        aFrame->GetRect().XMost() != sibling->GetRect().x))
-    return nsnull;
+    return nullptr;
   return sibling;
 }

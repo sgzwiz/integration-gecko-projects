@@ -9,7 +9,6 @@
 #include "nsEvent.h"
 #include "nsGUIEvent.h"
 #include "nsEventDispatcher.h"
-#include "nsContentUtils.h"
 #include "nsNodeUtils.h"
 #include "nsIFrame.h"
 
@@ -19,15 +18,16 @@ nsHtml5TreeBuilder::nsHtml5TreeBuilder(nsAHtml5TreeOpSink* aOpSink,
                                        nsHtml5TreeOpStage* aStage)
   : scriptingEnabled(false)
   , fragment(false)
-  , contextNode(nsnull)
-  , formPointer(nsnull)
-  , headPointer(nsnull)
-  , mViewSource(nsnull)
+  , contextNode(nullptr)
+  , formPointer(nullptr)
+  , headPointer(nullptr)
+  , mViewSource(nullptr)
   , mOpSink(aOpSink)
   , mHandles(new nsIContent*[NS_HTML5_TREE_BUILDER_HANDLE_ARRAY_LENGTH])
   , mHandlesUsed(0)
   , mSpeculativeLoadStage(aStage)
   , mCurrentHtmlScriptIsAsyncOrDefer(false)
+  , mPreventScriptExecution(false)
 #ifdef DEBUG
   , mActive(false)
 #endif
@@ -366,7 +366,7 @@ void
 nsHtml5TreeBuilder::start(bool fragment)
 {
   mCurrentHtmlScriptIsAsyncOrDefer = false;
-  deepTreeSurrogateParent = nsnull;
+  deepTreeSurrogateParent = nullptr;
 #ifdef DEBUG
   mActive = true;
 #endif
@@ -464,13 +464,17 @@ nsHtml5TreeBuilder::elementPopped(PRInt32 aNamespace, nsIAtom* aName, nsIContent
   NS_ASSERTION(aName, "Element doesn't have local name!");
   NS_ASSERTION(aElement, "No element!");
   if (deepTreeSurrogateParent && currentPtr <= MAX_REFLOW_DEPTH) {
-    deepTreeSurrogateParent = nsnull;
+    deepTreeSurrogateParent = nullptr;
   }
   if (aNamespace == kNameSpaceID_MathML) {
     return;
   }
   // we now have only SVG and HTML
   if (aName == nsHtml5Atoms::script) {
+    if (mPreventScriptExecution) {
+      mOpQueue.AppendElement()->Init(eTreeOpPreventScriptExecution, aElement);
+      return;
+    }
     if (mCurrentHtmlScriptIsAsyncOrDefer) {
       NS_ASSERTION(aNamespace == kNameSpaceID_XHTML, 
                    "Only HTML scripts may be async/defer.");

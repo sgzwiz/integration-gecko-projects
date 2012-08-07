@@ -37,7 +37,7 @@ interface nsIContentViewer : nsISupports
   attribute nsISupports container;
 
   void loadStart(in nsISupports aDoc);
-  void loadComplete(in unsigned long aStatus);
+  void loadComplete(in nsresult aStatus);
 
   /**
    * Checks if the document wants to prevent unloading by firing beforeunload on
@@ -157,6 +157,7 @@ interface nsIContentViewer : nsISupports
 
   [noscript] readonly attribute nsIPresShellPtr presShell;
   [noscript] readonly attribute nsPresContextPtr presContext;
+  // aDocument must not be null.
   [noscript] void setDocumentInternal(in nsIDocumentPtr aDocument,
                                       in boolean aForceReuseInnerWindow);
   /**

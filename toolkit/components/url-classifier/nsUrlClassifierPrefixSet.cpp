@@ -13,7 +13,6 @@
 #include "nsIUrlClassifierPrefixSet.h"
 #include "nsIRandomGenerator.h"
 #include "nsIFile.h"
-#include "nsILocalFile.h"
 #include "nsToolkitCompsCID.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
@@ -26,7 +25,7 @@ using namespace mozilla;
 
 // NSPR_LOG_MODULES=UrlClassifierPrefixSet:5
 #if defined(PR_LOGGING)
-static const PRLogModuleInfo *gUrlClassifierPrefixSetLog = nsnull;
+static const PRLogModuleInfo *gUrlClassifierPrefixSetLog = nullptr;
 #define LOG(args) PR_LOG(gUrlClassifierPrefixSetLog, PR_LOG_DEBUG, args)
 #define LOG_ENABLED() PR_LOG_TEST(gUrlClassifierPrefixSetLog, 4)
 #else
@@ -450,12 +449,9 @@ NS_IMETHODIMP
 nsUrlClassifierPrefixSet::LoadFromFile(nsIFile * aFile)
 {
   nsresult rv;
-  nsCOMPtr<nsILocalFile> file(do_QueryInterface(aFile, &rv));
-  NS_ENSURE_SUCCESS(rv, rv);
-
   AutoFDClose fileFd;
-  rv = file->OpenNSPRFileDesc(PR_RDONLY | nsILocalFile::OS_READAHEAD,
-                              0, &fileFd.rwget());
+  rv = aFile->OpenNSPRFileDesc(PR_RDONLY | nsIFile::OS_READAHEAD,
+                               0, &fileFd.rwget());
   NS_ENSURE_SUCCESS(rv, rv);
 
   return LoadFromFd(fileFd);
@@ -511,12 +507,10 @@ nsUrlClassifierPrefixSet::StoreToFile(nsIFile * aFile)
   }
 
   nsresult rv;
-  nsCOMPtr<nsILocalFile> file(do_QueryInterface(aFile, &rv));
-  NS_ENSURE_SUCCESS(rv, rv);
 
   AutoFDClose fileFd;
-  rv = file->OpenNSPRFileDesc(PR_RDWR | PR_TRUNCATE | PR_CREATE_FILE,
-                              0644, &fileFd.rwget());
+  rv = aFile->OpenNSPRFileDesc(PR_RDWR | PR_TRUNCATE | PR_CREATE_FILE,
+                               0644, &fileFd.rwget());
   NS_ENSURE_SUCCESS(rv, rv);
 
   MutexAutoLock lock(mPrefixSetLock);

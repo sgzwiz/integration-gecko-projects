@@ -14,11 +14,12 @@
 #include "nsAutoPtr.h"
 #include "prprf.h"
 #include "prenv.h"
+#include "mozilla/Attributes.h"
 
 //-----------------------------------------------------------------------------
 
-class FetchObserver : public nsIRequestObserver
-                    , public nsIProgressEventSink
+class FetchObserver MOZ_FINAL : public nsIRequestObserver
+                              , public nsIProgressEventSink
 {
 public:
   NS_DECL_ISUPPORTS
@@ -71,7 +72,7 @@ static nsresult
 DoIncrementalFetch(const char *uriSpec, const char *resultPath, PRInt32 chunkSize,
                    PRInt32 interval)
 {
-  nsCOMPtr<nsILocalFile> resultFile;
+  nsCOMPtr<nsIFile> resultFile;
   nsresult rv = NS_NewNativeLocalFile(nsDependentCString(resultPath),
                                       false, getter_AddRefs(resultFile));
   if (NS_FAILED(rv))
@@ -95,7 +96,7 @@ DoIncrementalFetch(const char *uriSpec, const char *resultPath, PRInt32 chunkSiz
   if (NS_FAILED(rv))
     return rv;
 
-  rv = download->Start(observer, nsnull);
+  rv = download->Start(observer, nullptr);
   if (NS_FAILED(rv))
     return rv;
 
@@ -114,7 +115,7 @@ main(int argc, char **argv)
     return -1;
   }
 
-  nsresult rv = NS_InitXPCOM2(nsnull, nsnull, nsnull);
+  nsresult rv = NS_InitXPCOM2(nullptr, nullptr, nullptr);
   if (NS_FAILED(rv))
     return -1;
 
@@ -125,6 +126,6 @@ main(int argc, char **argv)
   if (NS_FAILED(rv))
     fprintf(stderr, "ERROR: DoIncrementalFetch failed [%x]\n", rv);
 
-  NS_ShutdownXPCOM(nsnull);
+  NS_ShutdownXPCOM(nullptr);
   return 0;
 }

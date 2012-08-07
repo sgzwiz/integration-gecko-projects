@@ -15,6 +15,7 @@
 #include "nsCOMPtr.h"
 #include "nsNetUtil.h"
 #include "nsThreadUtils.h"
+#include "mozilla/Attributes.h"
 
 #include "nspr.h"
 
@@ -49,7 +50,7 @@ static NS_DEFINE_CID(kStreamConverterServiceCID, NS_STREAMCONVERTERSERVICE_CID);
 //   receives the fully converted data, although it doesn't do anything with
 //   the data.
 ////////////////////////////////////////////////////////////////////////
-class EndListener : public nsIStreamListener {
+class EndListener MOZ_FINAL : public nsIStreamListener {
 public:
     // nsISupports declaration
     NS_DECL_ISUPPORTS
@@ -108,7 +109,7 @@ nsresult SendData(const char * aData, nsIStreamListener* aListener, nsIRequest* 
     PRUint32 avail;
     dataStream->Available(&avail);
 
-    return aListener->OnDataAvailable(request, nsnull, dataStream, 0, avail);
+    return aListener->OnDataAvailable(request, nullptr, dataStream, 0, avail);
 }
 #define SEND_DATA(x) SendData(x, converterListener, request)
 
@@ -154,7 +155,7 @@ main(int argc, char* argv[])
         XRE_AddStaticComponent(&kTestModule);
 
         nsCOMPtr<nsIServiceManager> servMan;
-        NS_InitXPCOM2(getter_AddRefs(servMan), nsnull, nsnull);
+        NS_InitXPCOM2(getter_AddRefs(servMan), nullptr, nullptr);
     
         nsCOMPtr<nsIThread> thread = do_GetCurrentThread();
 
@@ -187,7 +188,7 @@ main(int argc, char* argv[])
 
         rv = NS_NewInputStreamChannel(getter_AddRefs(channel),
                                       dummyURI,
-                                      nsnull,   // inStr
+                                      nullptr,   // inStr
                                       "text/plain", // content-type
                                       -1);      // XXX fix contentLength
         if (NS_FAILED(rv)) return rv;
@@ -206,9 +207,9 @@ main(int argc, char* argv[])
         // setup a listener to push the data into. This listener sits inbetween the
         // unconverted data of fromType, and the final listener in the chain (in this case
         // the dataReceiver.
-        nsIStreamListener *converterListener = nsnull;
+        nsIStreamListener *converterListener = nullptr;
         rv = StreamConvService->AsyncConvertData(fromStr, toStr,
-                                                 dataReceiver, nsnull, &converterListener);
+                                                 dataReceiver, nullptr, &converterListener);
         if (NS_FAILED(rv)) return rv;
         NS_RELEASE(dataReceiver);
 
@@ -216,7 +217,7 @@ main(int argc, char* argv[])
         // that will receive the converted data. Let's mimic On*() calls and get the conversion
         // going. Typically these On*() calls would be made inside their respective wrappers On*()
         // methods.
-        rv = converterListener->OnStartRequest(request, nsnull);
+        rv = converterListener->OnStartRequest(request, nullptr);
         if (NS_FAILED(rv)) return rv;
 
         rv = SEND_DATA("aaa");
@@ -226,7 +227,7 @@ main(int argc, char* argv[])
         if (NS_FAILED(rv)) return rv;
 
         // Finish the request.
-        rv = converterListener->OnStopRequest(request, nsnull, rv);
+        rv = converterListener->OnStopRequest(request, nullptr, rv);
         if (NS_FAILED(rv)) return rv;
 
         NS_RELEASE(converterListener);
@@ -234,7 +235,7 @@ main(int argc, char* argv[])
         // SYNCHRONOUS conversion
         nsCOMPtr<nsIInputStream> convertedData;
         rv = StreamConvService->Convert(inputData, fromStr, toStr,
-                                        nsnull, getter_AddRefs(convertedData));
+                                        nullptr, getter_AddRefs(convertedData));
         if (NS_FAILED(rv)) return rv;
 #endif
 
@@ -245,6 +246,6 @@ main(int argc, char* argv[])
         }
     } // this scopes the nsCOMPtrs
     // no nsCOMPtrs are allowed to be alive when you call NS_ShutdownXPCOM
-    NS_ShutdownXPCOM(nsnull);
+    NS_ShutdownXPCOM(nullptr);
     return rv;
 }

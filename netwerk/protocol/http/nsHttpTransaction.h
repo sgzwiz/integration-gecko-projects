@@ -81,7 +81,7 @@ public:
 
     // attributes
     nsHttpConnectionInfo  *ConnectionInfo() { return mConnInfo; }
-    nsHttpResponseHead    *ResponseHead()   { return mHaveAllHeaders ? mResponseHead : nsnull; }
+    nsHttpResponseHead    *ResponseHead()   { return mHaveAllHeaders ? mResponseHead : nullptr; }
     nsISupports           *SecurityInfo()   { return mSecurityInfo; }
 
     nsIInterfaceRequestor *Callbacks()      { return mCallbacks; } 
@@ -102,6 +102,8 @@ public:
 
     const TimingStruct& Timings() const { return mTimings; }
     enum Classifier Classification() { return mClassification; }
+
+    void PrintDiagnostics(nsCString &log);
 
 private:
     nsresult Restart();

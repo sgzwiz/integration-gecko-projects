@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifdef MOZ_WIDGET_GTK2
+#ifdef MOZ_WIDGET_GTK
 #include <gtk/gtk.h>
 #endif
 
@@ -26,8 +26,11 @@
 #include "mozilla/ipc/TestShellChild.h"
 #include "mozilla/ipc/XPCShellEnvironment.h"
 #include "mozilla/jsipc/PContextWrapperChild.h"
+#include "mozilla/layers/CompositorChild.h"
+#include "mozilla/layers/PCompositorChild.h"
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Attributes.h"
 
 #if defined(MOZ_SYDNEYAUDIO)
 #include "nsAudioStream.h"
@@ -50,6 +53,7 @@
 #include "nsNetUtil.h"
 
 #include "base/message_loop.h"
+#include "base/process_util.h"
 #include "base/task.h"
 
 #include "nsChromeRegistryContent.h"
@@ -77,14 +81,23 @@
 #include "nsIAccessibilityService.h"
 #endif
 
+#include "mozilla/dom/indexedDB/PIndexedDBChild.h"
 #include "mozilla/dom/sms/SmsChild.h"
+#include "mozilla/dom/devicestorage/DeviceStorageRequestChild.h"
 
+#include "nsDOMFile.h"
+#include "nsIRemoteBlob.h"
+#include "StructuredCloneUtils.h"
+
+using namespace mozilla::docshell;
+using namespace mozilla::dom::devicestorage;
+using namespace mozilla::dom::sms;
+using namespace mozilla::dom::indexedDB;
 using namespace mozilla::hal_sandbox;
 using namespace mozilla::ipc;
+using namespace mozilla::layers;
 using namespace mozilla::net;
 using namespace mozilla::places;
-using namespace mozilla::docshell;
-using namespace mozilla::dom::sms;
 
 namespace mozilla {
 namespace dom {
@@ -132,7 +145,7 @@ public:
 
     bool Notify(const nsCString& aType) const
     {
-        mObserver->Observe(nsnull, aType.get(), mData.get());
+        mObserver->Observe(nullptr, aType.get(), mData.get());
         return true;
     }
 
@@ -141,7 +154,7 @@ private:
     nsString mData;
 };
 
-class ConsoleListener : public nsIConsoleListener
+class ConsoleListener MOZ_FINAL : public nsIConsoleListener
 {
 public:
     ConsoleListener(ContentChild* aChild)
@@ -217,7 +230,7 @@ ContentChild::Init(MessageLoop* aIOLoop,
                    base::ProcessHandle aParentHandle,
                    IPC::Channel* aChannel)
 {
-#ifdef MOZ_WIDGET_GTK2
+#ifdef MOZ_WIDGET_GTK
     // sigh
     gtk_init(NULL, NULL);
 #endif
@@ -282,7 +295,7 @@ ContentChild::AllocPMemoryReportRequest()
 
 // This is just a wrapper for InfallibleTArray<MemoryReport> that implements
 // nsISupports, so it can be passed to nsIMemoryMultiReporter::CollectReports.
-class MemoryReportsWrapper : public nsISupports {
+class MemoryReportsWrapper MOZ_FINAL : public nsISupports {
 public:
     NS_DECL_ISUPPORTS
     MemoryReportsWrapper(InfallibleTArray<MemoryReport> *r) : mReports(r) { }
@@ -290,7 +303,7 @@ public:
 };
 NS_IMPL_ISUPPORTS0(MemoryReportsWrapper)
 
-class MemoryReportCallback : public nsIMemoryMultiReporterCallback
+class MemoryReportCallback MOZ_FINAL : public nsIMemoryMultiReporterCallback
 {
 public:
     NS_DECL_ISUPPORTS
@@ -380,10 +393,19 @@ ContentChild::DeallocPMemoryReportRequest(PMemoryReportRequestChild* actor)
     return true;
 }
 
-PBrowserChild*
-ContentChild::AllocPBrowser(const PRUint32& aChromeFlags)
+PCompositorChild*
+ContentChild::AllocPCompositor(mozilla::ipc::Transport* aTransport,
+                               base::ProcessId aOtherProcess)
 {
-    nsRefPtr<TabChild> iframe = new TabChild(aChromeFlags);
+    return CompositorChild::Create(aTransport, aOtherProcess);
+}
+
+PBrowserChild*
+ContentChild::AllocPBrowser(const PRUint32& aChromeFlags,
+                            const bool& aIsBrowserElement,
+                            const PRUint32& aAppId)
+{
+    nsRefPtr<TabChild> iframe = new TabChild(aChromeFlags, aIsBrowserElement, aAppId);
     return NS_SUCCEEDED(iframe->Init()) ? iframe.forget().get() : NULL;
 }
 
@@ -395,6 +417,84 @@ ContentChild::DeallocPBrowser(PBrowserChild* iframe)
     return true;
 }
 
+PBlobChild*
+ContentChild::AllocPBlob(const BlobConstructorParams& aParams)
+{
+  return BlobChild::Create(aParams);
+}
+
+bool
+ContentChild::DeallocPBlob(PBlobChild* aActor)
+{
+  delete aActor;
+  return true;
+}
+
+BlobChild*
+ContentChild::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
+{
+  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  NS_ASSERTION(aBlob, "Null pointer!");
+
+  nsCOMPtr<nsIRemoteBlob> remoteBlob = do_QueryInterface(aBlob);
+  if (remoteBlob) {
+    BlobChild* actor =
+      static_cast<BlobChild*>(static_cast<PBlobChild*>(remoteBlob->GetPBlob()));
+    NS_ASSERTION(actor, "Null actor?!");
+
+    return actor;
+  }
+
+  // XXX This is only safe so long as all blob implementations in our tree
+  //     inherit nsDOMFileBase. If that ever changes then this will need to grow
+  //     a real interface or something.
+  const nsDOMFileBase* blob = static_cast<nsDOMFileBase*>(aBlob);
+
+  BlobConstructorParams params;
+
+  if (blob->IsSizeUnknown()) {
+    // We don't want to call GetSize yet since that may stat a file on the main
+    // thread here. Instead we'll learn the size lazily from the other process.
+    params = MysteryBlobConstructorParams();
+  }
+  else {
+    nsString contentType;
+    nsresult rv = aBlob->GetType(contentType);
+    NS_ENSURE_SUCCESS(rv, nullptr);
+
+    PRUint64 length;
+    rv = aBlob->GetSize(&length);
+    NS_ENSURE_SUCCESS(rv, nullptr);
+
+    nsCOMPtr<nsIDOMFile> file = do_QueryInterface(aBlob);
+    if (file) {
+      FileBlobConstructorParams fileParams;
+
+      rv = file->GetName(fileParams.name());
+      NS_ENSURE_SUCCESS(rv, nullptr);
+
+      fileParams.contentType() = contentType;
+      fileParams.length() = length;
+
+      params = fileParams;
+    } else {
+      NormalBlobConstructorParams blobParams;
+      blobParams.contentType() = contentType;
+      blobParams.length() = length;
+      params = blobParams;
+    }
+  }
+
+  BlobChild* actor = BlobChild::Create(aBlob);
+  NS_ENSURE_TRUE(actor, nullptr);
+
+  if (!SendPBlobConstructor(actor, params)) {
+    return nullptr;
+  }
+
+  return actor;
+}
+
 PCrashReporterChild*
 ContentChild::AllocPCrashReporter(const mozilla::dom::NativeThreadId& id,
                                   const PRUint32& processType)
@@ -402,7 +502,7 @@ ContentChild::AllocPCrashReporter(const mozilla::dom::NativeThreadId& id,
 #ifdef MOZ_CRASHREPORTER
     return new CrashReporterChild();
 #else
-    return nsnull;
+    return nullptr;
 #endif
 }
 
@@ -424,6 +524,20 @@ ContentChild::DeallocPHal(PHalChild* aHal)
 {
     delete aHal;
     return true;
+}
+
+PIndexedDBChild*
+ContentChild::AllocPIndexedDB()
+{
+  NS_NOTREACHED("Should never get here!");
+  return NULL;
+}
+
+bool
+ContentChild::DeallocPIndexedDB(PIndexedDBChild* aActor)
+{
+  delete aActor;
+  return true;
 }
 
 PTestShellChild*
@@ -456,7 +570,7 @@ ContentChild::AllocPAudio(const PRInt32& numChannels,
     NS_ADDREF(child);
     return child;
 #else
-    return nsnull;
+    return nullptr;
 #endif
 }
 
@@ -467,6 +581,19 @@ ContentChild::DeallocPAudio(PAudioChild* doomed)
     AudioChild *child = static_cast<AudioChild*>(doomed);
     NS_RELEASE(child);
 #endif
+    return true;
+}
+
+PDeviceStorageRequestChild*
+ContentChild::AllocPDeviceStorageRequest(const DeviceStorageParams& aParams)
+{
+    return new DeviceStorageRequestChild();
+}
+
+bool
+ContentChild::DeallocPDeviceStorageRequest(PDeviceStorageRequestChild* aDeviceStorage)
+{
+    delete aDeviceStorage;
     return true;
 }
 
@@ -521,7 +648,7 @@ PStorageChild*
 ContentChild::AllocPStorage(const StorageConstructData& aData)
 {
     NS_NOTREACHED("We should never be manually allocating PStorageChild actors");
-    return nsnull;
+    return nullptr;
 }
 
 bool
@@ -576,7 +703,7 @@ ContentChild::ActorDestroy(ActorDestroyReason why)
     nsCOMPtr<nsIConsoleService> svc(do_GetService(NS_CONSOLESERVICE_CONTRACTID));
     if (svc) {
         svc->UnregisterListener(mConsoleListener);
-        mConsoleListener->mChild = nsnull;
+        mConsoleListener->mChild = nullptr;
     }
 
     XRE_ShutdownChildProcess();
@@ -659,14 +786,30 @@ ContentChild::RecvNotifyVisited(const IPC::URI& aURI)
     return true;
 }
 
-
 bool
-ContentChild::RecvAsyncMessage(const nsString& aMsg, const nsString& aJSON)
+ContentChild::RecvAsyncMessage(const nsString& aMsg,
+                                     const ClonedMessageData& aData)
 {
   nsRefPtr<nsFrameMessageManager> cpm = nsFrameMessageManager::sChildProcessManager;
   if (cpm) {
+    const SerializedStructuredCloneBuffer& buffer = aData.data();
+    const InfallibleTArray<PBlobChild*>& blobChildList = aData.blobsChild();
+    StructuredCloneData cloneData;
+    cloneData.mData = buffer.data;
+    cloneData.mDataLength = buffer.dataLength;
+    if (!blobChildList.IsEmpty()) {
+      PRUint32 length = blobChildList.Length();
+      cloneData.mClosure.mBlobs.SetCapacity(length);
+      for (PRUint32 i = 0; i < length; ++i) {
+        BlobChild* blobChild = static_cast<BlobChild*>(blobChildList[i]);
+        MOZ_ASSERT(blobChild);
+        nsCOMPtr<nsIDOMBlob> blob = blobChild->GetBlob();
+        MOZ_ASSERT(blob);
+        cloneData.mClosure.mBlobs.AppendElement(blob);
+      }
+    }
     cpm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(cpm.get()),
-                        aMsg, false, aJSON, nsnull, nsnull);
+                        aMsg, false, &cloneData, nullptr, nullptr);
   }
   return true;
 }
@@ -724,7 +867,7 @@ ContentChild::RecvFlushMemory(const nsString& reason)
     nsCOMPtr<nsIObserverService> os =
         mozilla::services::GetObserverService();
     if (os)
-        os->NotifyObservers(nsnull, "memory-pressure", reason.get());
+        os->NotifyObservers(nullptr, "memory-pressure", reason.get());
   return true;
 }
 
@@ -743,14 +886,14 @@ ContentChild::RecvActivateA11y()
 bool
 ContentChild::RecvGarbageCollect()
 {
-    nsJSContext::GarbageCollectNow(js::gcreason::DOM_IPC, nsGCNormal, true);
+    nsJSContext::GarbageCollectNow(js::gcreason::DOM_IPC);
     return true;
 }
 
 bool
 ContentChild::RecvCycleCollect()
 {
-    nsJSContext::GarbageCollectNow(js::gcreason::DOM_IPC, nsGCNormal, true);
+    nsJSContext::GarbageCollectNow(js::gcreason::DOM_IPC);
     nsJSContext::CycleCollectNow();
     return true;
 }
@@ -777,7 +920,22 @@ bool
 ContentChild::RecvLastPrivateDocShellDestroyed()
 {
     nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-    obs->NotifyObservers(nsnull, "last-pb-context-exited", nsnull);
+    obs->NotifyObservers(nullptr, "last-pb-context-exited", nullptr);
+    return true;
+}
+
+bool
+ContentChild::RecvFilePathUpdate(const nsString& path, const nsCString& aReason)
+{
+    // data strings will have the format of
+    //  reason:path
+    nsString data;
+    CopyASCIItoUTF16(aReason, data);
+    data.Append(NS_LITERAL_STRING(":"));
+    data.Append(path);
+
+    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+    obs->NotifyObservers(nullptr, "file-watcher-update", data.get());
     return true;
 }
 

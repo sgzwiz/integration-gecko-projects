@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifdef MOZ_WIDGET_GTK2
+#ifdef MOZ_WIDGET_GTK
 #include <glib.h>
 #elif XP_MACOSX
 #include "PluginInterposeOSX.h"
@@ -13,6 +13,7 @@
 #ifdef MOZ_WIDGET_QT
 #include <QtCore/QCoreApplication>
 #include <QtCore/QEventLoop>
+#include "NestedLoopTimer.h"
 #endif
 
 #include "base/process_util.h"
@@ -27,11 +28,11 @@
 
 #include "nsAutoPtr.h"
 #include "nsCRT.h"
-#ifdef MOZ_CRASHREPORTER
-#include "mozilla/dom/CrashReporterParent.h"
-#endif
 #include "nsNPAPIPlugin.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
+#include "nsPrintfCString.h"
+
+#include "prsystem.h"
 
 #ifdef XP_WIN
 #include "mozilla/widget/AudioSession.h"
@@ -48,6 +49,12 @@ using mozilla::dom::CrashReporterParent;
 using namespace mozilla;
 using namespace mozilla::plugins;
 using namespace mozilla::plugins::parent;
+
+#ifdef MOZ_CRASHREPORTER
+#include "mozilla/dom/CrashReporterParent.h"
+
+using namespace CrashReporter;
+#endif
 
 static const char kChildTimeoutPref[] = "dom.ipc.plugins.timeoutSecs";
 static const char kParentTimeoutPref[] = "dom.ipc.plugins.parentTimeoutSecs";
@@ -75,7 +82,7 @@ PluginModuleParent::LoadModule(const char* aFilePath)
     if (!launched) {
         // Need to set this so the destructor doesn't complain.
         parent->mShutdown = true;
-        return nsnull;
+        return nullptr;
     }
     parent->Open(parent->mSubprocess->GetChannel(),
                  parent->mSubprocess->GetChildProcessHandle());
@@ -86,7 +93,7 @@ PluginModuleParent::LoadModule(const char* aFilePath)
     // If this fails, we're having IPC troubles, and we're doomed anyways.
     if (!CrashReporterParent::CreateCrashReporter(parent.get())) {
         parent->mShutdown = true;
-        return nsnull;
+        return nullptr;
     }
 #endif
 
@@ -102,6 +109,13 @@ PluginModuleParent::PluginModuleParent(const char* aFilePath)
     , mNPNIface(NULL)
     , mPlugin(NULL)
     , mTaskFactory(this)
+#ifdef XP_WIN
+    , mPluginCpuUsageOnHang(-1)
+#endif
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+    , mFlashProcess1(0)
+    , mFlashProcess2(0)
+#endif
 {
     NS_ASSERTION(mSubprocess, "Out of memory!");
 
@@ -124,8 +138,15 @@ PluginModuleParent::~PluginModuleParent()
 
     if (mSubprocess) {
         mSubprocess->Delete();
-        mSubprocess = nsnull;
+        mSubprocess = nullptr;
     }
+
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+    if (mFlashProcess1)
+        UnregisterInjectorCallback(mFlashProcess1);
+    if (mFlashProcess2)
+        UnregisterInjectorCallback(mFlashProcess2);
+#endif
 
     Preferences::UnregisterCallback(TimeoutChanged, kChildTimeoutPref, this);
     Preferences::UnregisterCallback(TimeoutChanged, kParentTimeoutPref, this);
@@ -133,7 +154,7 @@ PluginModuleParent::~PluginModuleParent()
 
 #ifdef MOZ_CRASHREPORTER
 void
-PluginModuleParent::WriteExtraDataForMinidump(CrashReporter::AnnotationTable& notes)
+PluginModuleParent::WriteExtraDataForMinidump(AnnotationTable& notes)
 {
     typedef nsDependentCString CS;
 
@@ -151,9 +172,21 @@ PluginModuleParent::WriteExtraDataForMinidump(CrashReporter::AnnotationTable& no
     notes.Put(CS("PluginName"), CS(""));
     notes.Put(CS("PluginVersion"), CS(""));
 
-    const nsString& hangID = CrashReporter()->HangID();
-    if (!hangID.IsEmpty())
-        notes.Put(CS("HangID"), NS_ConvertUTF16toUTF8(hangID));
+    CrashReporterParent* crashReporter = CrashReporter();
+    if (crashReporter) {
+        const nsString& hangID = crashReporter->HangID();
+        if (!hangID.IsEmpty()) {
+            notes.Put(CS("HangID"), NS_ConvertUTF16toUTF8(hangID));
+#ifdef XP_WIN
+            if (mPluginCpuUsageOnHang >= 0) {
+              notes.Put(CS("PluginCpuUsage"), 
+                        nsPrintfCString("%.2f", mPluginCpuUsageOnHang));
+              notes.Put(CS("NumberOfProcessors"),
+                        nsPrintfCString("%d", PR_GetNumberOfProcessors()));
+            }
+#endif
+        }
+    }
 }
 #endif  // MOZ_CRASHREPORTER
 
@@ -178,9 +211,63 @@ PluginModuleParent::TimeoutChanged(const char* aPref, void* aModule)
 void
 PluginModuleParent::CleanupFromTimeout()
 {
-    if (!mShutdown)
+    if (!mShutdown && OkToCleanup())
         Close();
 }
+
+#ifdef XP_WIN
+namespace {
+
+PRUint64
+FileTimeToUTC(const FILETIME& ftime) 
+{
+  ULARGE_INTEGER li;
+  li.LowPart = ftime.dwLowDateTime;
+  li.HighPart = ftime.dwHighDateTime;
+  return li.QuadPart;
+}
+
+bool 
+GetProcessCpuUsage(const base::ProcessHandle& processHandle, float& cpuUsage)
+{
+  FILETIME creationTime, exitTime, kernelTime, userTime, currentTime;
+  BOOL res;
+
+  ::GetSystemTimeAsFileTime(&currentTime);
+  res = ::GetProcessTimes(processHandle, &creationTime, &exitTime, &kernelTime, &userTime);
+  if (!res) {
+    NS_WARNING("failed to get process times");
+    return false;
+  }
+
+  PRUint64 sampleTimes[2];
+  PRUint64 cpuTimes[2];
+  
+  sampleTimes[0] = FileTimeToUTC(currentTime);
+  cpuTimes[0]    = FileTimeToUTC(kernelTime) + FileTimeToUTC(userTime);
+
+  // we already hung for a while, a little bit longer won't matter
+  ::Sleep(50);
+
+  ::GetSystemTimeAsFileTime(&currentTime);
+  res = ::GetProcessTimes(processHandle, &creationTime, &exitTime, &kernelTime, &userTime);
+  if (!res) {
+    NS_WARNING("failed to get process times");
+    return false;
+  }
+
+  sampleTimes[1] = FileTimeToUTC(currentTime);
+  cpuTimes[1]    = FileTimeToUTC(kernelTime) + FileTimeToUTC(userTime);    
+
+  const PRUint64 deltaSampleTime = sampleTimes[1] - sampleTimes[0];
+  const PRUint64 deltaCpuTime    = cpuTimes[1]    - cpuTimes[0];
+  cpuUsage = 100.f * (float(deltaCpuTime) / deltaSampleTime) / PR_GetNumberOfProcessors();
+
+  return true;
+}
+
+} // anonymous namespace
+#endif // #ifdef XP_WIN
 
 bool
 PluginModuleParent::ShouldContinueFromReplyTimeout()
@@ -197,6 +284,13 @@ PluginModuleParent::ShouldContinueFromReplyTimeout()
                  NS_ConvertUTF16toUTF8(crashReporter->HangID()).get()));
     } else {
         NS_WARNING("failed to capture paired minidumps from hang");
+    }
+#endif
+
+#ifdef XP_WIN
+    float cpuUsage;
+    if (GetProcessCpuUsage(OtherProcess(), cpuUsage)) {
+      mPluginCpuUsageOnHang = cpuUsage;
     }
 #endif
 
@@ -217,8 +311,93 @@ PluginModuleParent::ShouldContinueFromReplyTimeout()
 CrashReporterParent*
 PluginModuleParent::CrashReporter()
 {
-    MOZ_ASSERT(ManagedPCrashReporterParent().Length() > 0);
     return static_cast<CrashReporterParent*>(ManagedPCrashReporterParent()[0]);
+}
+
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+static void
+RemoveMinidump(nsIFile* minidump)
+{
+    if (!minidump)
+        return;
+
+    minidump->Remove(false);
+    nsCOMPtr<nsIFile> extraFile;
+    if (GetExtraFileForMinidump(minidump,
+                                getter_AddRefs(extraFile))) {
+        extraFile->Remove(true);
+    }
+}
+#endif // MOZ_CRASHREPORTER_INJECTOR
+
+void
+PluginModuleParent::ProcessFirstMinidump()
+{
+    CrashReporterParent* crashReporter = CrashReporter();
+    if (!crashReporter)
+        return;
+
+    AnnotationTable notes;
+    notes.Init(4);
+    WriteExtraDataForMinidump(notes);
+        
+    if (!mPluginDumpID.IsEmpty() && !mBrowserDumpID.IsEmpty()) {
+        crashReporter->GenerateHangCrashReport(&notes);
+        return;
+    }
+
+    PRUint32 sequence = PR_UINT32_MAX;
+    nsCOMPtr<nsIFile> dumpFile;
+    nsCAutoString flashProcessType;
+    TakeMinidump(getter_AddRefs(dumpFile), &sequence);
+
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+    nsCOMPtr<nsIFile> childDumpFile;
+    PRUint32 childSequence;
+
+    if (mFlashProcess1 &&
+        TakeMinidumpForChild(mFlashProcess1,
+                             getter_AddRefs(childDumpFile),
+                             &childSequence)) {
+        if (childSequence < sequence) {
+            RemoveMinidump(dumpFile);
+            dumpFile = childDumpFile;
+            sequence = childSequence;
+            flashProcessType.AssignLiteral("Broker");
+        }
+        else {
+            RemoveMinidump(childDumpFile);
+        }
+    }
+    if (mFlashProcess2 &&
+        TakeMinidumpForChild(mFlashProcess2,
+                             getter_AddRefs(childDumpFile),
+                             &childSequence)) {
+        if (childSequence < sequence) {
+            RemoveMinidump(dumpFile);
+            dumpFile = childDumpFile;
+            sequence = childSequence;
+            flashProcessType.AssignLiteral("Sandbox");
+        }
+        else {
+            RemoveMinidump(childDumpFile);
+        }
+    }
+#endif
+
+    if (!dumpFile) {
+        NS_WARNING("[PluginModuleParent::ActorDestroy] abnormal shutdown without minidump!");
+        return;
+    }
+
+    PLUGIN_LOG_DEBUG(("got child minidump: %s",
+                      NS_ConvertUTF16toUTF8(mPluginDumpID).get()));
+
+    GetIDFromMinidump(dumpFile, mPluginDumpID);
+    if (!flashProcessType.IsEmpty()) {
+        notes.Put(NS_LITERAL_CSTRING("FlashProcessDump"), flashProcessType);
+    }
+    crashReporter->GenerateCrashReportForMinidump(dumpFile, &notes);
 }
 #endif
 
@@ -228,23 +407,7 @@ PluginModuleParent::ActorDestroy(ActorDestroyReason why)
     switch (why) {
     case AbnormalShutdown: {
 #ifdef MOZ_CRASHREPORTER
-        CrashReporterParent* crashReporter = CrashReporter();
-
-        CrashReporter::AnnotationTable notes;
-        notes.Init(4);
-        WriteExtraDataForMinidump(notes);
-        
-        if (crashReporter->GenerateCrashReport(this, &notes)) {
-            mPluginDumpID = crashReporter->ChildDumpID();
-            PLUGIN_LOG_DEBUG(("got child minidump: %s",
-                              NS_ConvertUTF16toUTF8(mPluginDumpID).get()));
-        }
-        else if (!mPluginDumpID.IsEmpty() && !mBrowserDumpID.IsEmpty()) {
-            crashReporter->GenerateHangCrashReport(&notes);
-        }
-        else {
-            NS_WARNING("[PluginModuleParent::ActorDestroy] abnormal shutdown without minidump!");
-        }
+        ProcessFirstMinidump();
 #endif
 
         mShutdown = true;
@@ -300,7 +463,7 @@ PluginModuleParent::AllocPPluginIdentifier(const nsCString& aString,
 
     if (!npident) {
         NS_WARNING("Failed to get identifier!");
-        return nsnull;
+        return nullptr;
     }
 
     PluginIdentifierParent* ident = new PluginIdentifierParent(npident, false);
@@ -338,7 +501,7 @@ void
 PluginModuleParent::SetPluginFuncs(NPPluginFuncs* aFuncs)
 {
     aFuncs->version = (NP_VERSION_MAJOR << 8) | NP_VERSION_MINOR;
-    aFuncs->javaClass = nsnull;
+    aFuncs->javaClass = nullptr;
 
     // Gecko should always call these functions through a PluginLibrary object.
     aFuncs->newp = NULL;
@@ -390,7 +553,7 @@ PluginModuleParent::NPP_Destroy(NPP instance,
         return NPERR_NO_ERROR;
 
     NPError retval = parentInstance->Destroy();
-    instance->pdata = nsnull;
+    instance->pdata = nullptr;
 
     unused << PluginInstanceParent::Call__delete__(parentInstance);
     return retval;
@@ -549,7 +712,7 @@ PluginModuleParent::NPP_URLRedirectNotify(NPP instance, const char* url,
 bool
 PluginModuleParent::AnswerNPN_UserAgent(nsCString* userAgent)
 {
-    *userAgent = NullableString(mNPNIface->uagent(nsnull));
+    *userAgent = NullableString(mNPNIface->uagent(nullptr));
     return true;
 }
 
@@ -571,7 +734,7 @@ PluginModuleParent::GetIdentifierForNPIdentifier(NPP npp, NPIdentifier aIdentifi
         NPUTF8* chars =
             mozilla::plugins::parent::_utf8fromidentifier(aIdentifier);
         if (!chars) {
-            return nsnull;
+            return nullptr;
         }
         string.Adopt(chars);
         temporary = !NPStringIdentifierIsPermanent(npp, aIdentifier);
@@ -583,7 +746,7 @@ PluginModuleParent::GetIdentifierForNPIdentifier(NPP npp, NPIdentifier aIdentifi
 
     ident = new PluginIdentifierParent(aIdentifier, temporary);
     if (!SendPPluginIdentifierConstructor(ident, string, intval, temporary))
-        return nsnull;
+        return nullptr;
 
     if (!temporary) {
         mIdentifiers.Put(aIdentifier, ident);
@@ -763,6 +926,10 @@ PluginModuleParent::NP_Initialize(NPNetscapeFuncs* bFuncs, NPError* error)
         unused << SendSetAudioSessionData(id, sessionName, iconPath);
 #endif
 
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+    InitializeInjector();
+#endif
+
     return NS_OK;
 }
 #endif
@@ -868,7 +1035,7 @@ PluginModuleParent::NPP_New(NPMIMEType pluginType, NPP instance,
                                         nsDependentCString(pluginType), mode,
                                         names, values, error)) {
         // |parentInstance| is automatically deleted.
-        instance->pdata = nsnull;
+        instance->pdata = nullptr;
         // if IPC is down, we'll get an immediate "failed" return, but
         // without *error being set.  So make sure that the error
         // condition is signaled to nsNPAPIPluginInstance
@@ -940,7 +1107,7 @@ PluginModuleParent::AnswerNPN_GetValue_WithBoolReturn(const NPNVariable& aVariab
                                                       bool* aBoolVal)
 {
     NPBool boolVal = false;
-    *aError = mozilla::plugins::parent::_getvalue(nsnull, aVariable, &boolVal);
+    *aError = mozilla::plugins::parent::_getvalue(nullptr, aVariable, &boolVal);
     *aBoolVal = boolVal ? true : false;
     return true;
 }
@@ -966,7 +1133,7 @@ PluginModuleParent::AnswerProcessSomeEvents()
     return true;
 }
 
-#elif !defined(MOZ_WIDGET_GTK2)
+#elif !defined(MOZ_WIDGET_GTK)
 bool
 PluginModuleParent::AnswerProcessSomeEvents()
 {
@@ -1056,7 +1223,7 @@ PluginModuleParent::AllocPCrashReporter(mozilla::dom::NativeThreadId* id,
 #ifdef MOZ_CRASHREPORTER
     return new CrashReporterParent();
 #else
-    return nsnull;
+    return nullptr;
 #endif
 }
 
@@ -1164,3 +1331,73 @@ PluginModuleParent::RecvNPN_ReloadPlugins(const bool& aReloadPages)
     mozilla::plugins::parent::_reloadplugins(aReloadPages);
     return true;
 }
+
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+
+// We only add the crash reporter to subprocess which have the filename
+// FlashPlayerPlugin*
+#define FLASH_PROCESS_PREFIX "FLASHPLAYERPLUGIN"
+
+static DWORD
+GetFlashChildOfPID(DWORD pid, HANDLE snapshot)
+{
+    PROCESSENTRY32 entry = {
+        sizeof(entry)
+    };
+    for (BOOL ok = Process32First(snapshot, &entry);
+         ok;
+         ok = Process32Next(snapshot, &entry)) {
+        if (entry.th32ParentProcessID == pid) {
+            nsString name(entry.szExeFile);
+            ToUpperCase(name);
+            if (StringBeginsWith(name, NS_LITERAL_STRING(FLASH_PROCESS_PREFIX))) {
+                return entry.th32ProcessID;
+            }
+        }
+    }
+    return 0;
+}
+
+// We only look for child processes of the Flash plugin, NPSWF*
+#define FLASH_PLUGIN_PREFIX "NPSWF"
+
+void
+PluginModuleParent::InitializeInjector()
+{
+    if (!Preferences::GetBool("dom.ipc.plugins.flash.subprocess.crashreporter.enabled", false))
+        return;
+
+    nsCString path(Process()->GetPluginFilePath().c_str());
+    ToUpperCase(path);
+    PRInt32 lastSlash = path.RFindCharInSet("\\/");
+    if (kNotFound == lastSlash)
+        return;
+
+    if (!StringBeginsWith(Substring(path, lastSlash + 1),
+                          NS_LITERAL_CSTRING(FLASH_PLUGIN_PREFIX)))
+        return;
+
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (INVALID_HANDLE_VALUE == snapshot)
+        return;
+
+    DWORD pluginProcessPID = GetProcessId(Process()->GetChildProcessHandle());
+    mFlashProcess1 = GetFlashChildOfPID(pluginProcessPID, snapshot);
+    if (mFlashProcess1) {
+        InjectCrashReporterIntoProcess(mFlashProcess1, this);
+
+        mFlashProcess2 = GetFlashChildOfPID(mFlashProcess1, snapshot);
+        if (mFlashProcess2) {
+            InjectCrashReporterIntoProcess(mFlashProcess2, this);
+        }
+    }
+}
+
+void
+PluginModuleParent::OnCrash(DWORD processID)
+{
+    GetIPCChannel()->CloseWithError();
+    KillProcess(OtherProcess(), 1, false);
+}
+
+#endif // MOZ_CRASHREPORTER_INJECTOR

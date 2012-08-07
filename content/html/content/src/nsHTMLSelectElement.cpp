@@ -21,7 +21,6 @@
 #include "nsIDOMHTMLOptGroupElement.h"
 #include "nsEventStates.h"
 #include "nsGUIEvent.h"
-#include "nsIPrivateDOMEvent.h"
 
 // Notify/query select frame for selectedIndex
 #include "nsIDocument.h"
@@ -199,7 +198,7 @@ nsHTMLSelectElement::InsertChildAt(nsIContent* aKid,
 void
 nsHTMLSelectElement::RemoveChildAt(PRUint32 aIndex, bool aNotify)
 {
-  nsSafeOptionListMutation safeMutation(this, this, nsnull, aIndex, aNotify);
+  nsSafeOptionListMutation safeMutation(this, this, nullptr, aIndex, aNotify);
   nsGenericHTMLFormElement::RemoveChildAt(aIndex, aNotify);
 }
 
@@ -227,7 +226,7 @@ nsHTMLSelectElement::InsertOptionsIntoList(nsIContent* aOptions,
     // Get the frame stuff for notification. No need to flush here
     // since if there's no frame for the select yet the select will
     // get into the right state once it's created.
-    nsISelectControlFrame* selectFrame = nsnull;
+    nsISelectControlFrame* selectFrame = nullptr;
     nsWeakFrame weakSelectFrame;
     bool didGetFrame = false;
 
@@ -254,7 +253,7 @@ nsHTMLSelectElement::InsertOptionsIntoList(nsIContent* aOptions,
         if (selected) {
           // Clear all other options
           if (!HasAttr(kNameSpaceID_None, nsGkAtoms::multiple)) {
-            SetOptionsSelectedByIndex(i, i, true, true, true, true, nsnull);
+            SetOptionsSelectedByIndex(i, i, true, true, true, true, nullptr);
           }
 
           // This is sort of a hack ... we need to notify that the option was
@@ -336,8 +335,7 @@ nsHTMLSelectElement::InsertOptionsIntoListRecurse(nsIContent* aOptions,
 
   nsHTMLOptionElement *optElement = nsHTMLOptionElement::FromContent(aOptions);
   if (optElement) {
-    nsresult rv = mOptions->InsertOptionAt(optElement, *aInsertIndex);
-    NS_ENSURE_SUCCESS(rv, rv);
+    mOptions->InsertOptionAt(optElement, *aInsertIndex);
     (*aInsertIndex)++;
     return NS_OK;
   }
@@ -591,7 +589,7 @@ nsHTMLSelectElement::GetSelectFrame()
 {
   nsIFormControlFrame* form_control_frame = GetFormControlFrame(false);
 
-  nsISelectControlFrame *select_frame = nsnull;
+  nsISelectControlFrame *select_frame = nullptr;
 
   if (form_control_frame) {
     select_frame = do_QueryFrame(form_control_frame);
@@ -797,7 +795,7 @@ nsHTMLSelectElement::SetSelectedIndexInternal(PRInt32 aIndex, bool aNotify)
   PRInt32 oldSelectedIndex = mSelectedIndex;
 
   nsresult rv = SetOptionsSelectedByIndex(aIndex, aIndex, true,
-                                          true, true, aNotify, nsnull);
+                                          true, true, aNotify, nullptr);
 
   if (NS_SUCCEEDED(rv)) {
     nsISelectControlFrame* selectFrame = GetSelectFrame();
@@ -950,7 +948,7 @@ nsHTMLSelectElement::SetOptionsSelectedByIndex(PRInt32 aStartIndex,
   bool optionsSelected = false;
   bool optionsDeselected = false;
 
-  nsISelectControlFrame *selectFrame = nsnull;
+  nsISelectControlFrame *selectFrame = nullptr;
   bool didGetFrame = false;
   nsWeakFrame weakSelectFrame;
 
@@ -1227,7 +1225,7 @@ NS_IMPL_BOOL_ATTR(nsHTMLSelectElement, Disabled, disabled)
 NS_IMPL_BOOL_ATTR(nsHTMLSelectElement, Multiple, multiple)
 NS_IMPL_STRING_ATTR(nsHTMLSelectElement, Name, name)
 NS_IMPL_BOOL_ATTR(nsHTMLSelectElement, Required, required)
-NS_IMPL_NON_NEGATIVE_INT_ATTR_DEFAULT_VALUE(nsHTMLSelectElement, Size, size, 0)
+NS_IMPL_UINT_ATTR(nsHTMLSelectElement, Size, size)
 NS_IMPL_INT_ATTR(nsHTMLSelectElement, TabIndex, tabindex)
 
 bool
@@ -1405,7 +1403,7 @@ nsHTMLSelectElement::DoneAddingChildren(bool aHaveNotified)
   // content, restore the rest of the options proper-like
   if (mRestoreState) {
     RestoreStateTo(mRestoreState);
-    mRestoreState = nsnull;
+    mRestoreState = nullptr;
   }
 
   // Notify the frame
@@ -1489,7 +1487,7 @@ nsresult
 nsHTMLSelectElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
 {
   nsIFormControlFrame* formControlFrame = GetFormControlFrame(false);
-  nsIFrame* formFrame = nsnull;
+  nsIFrame* formFrame = nullptr;
   if (formControlFrame) {
     formFrame = do_QueryFrame(formControlFrame);
   }
@@ -1593,7 +1591,7 @@ nsHTMLSelectElement::SaveState()
     }
   }
 
-  nsPresState *presState = nsnull;
+  nsPresState *presState = nullptr;
   nsresult rv = GetPrimaryPresState(this, &presState);
   if (presState) {
     presState->SetStateProperty(state);
@@ -1642,7 +1640,7 @@ nsHTMLSelectElement::RestoreStateTo(nsSelectState* aNewSelected)
   GetLength(&len);
 
   // First clear all
-  SetOptionsSelectedByIndex(-1, -1, true, true, true, true, nsnull);
+  SetOptionsSelectedByIndex(-1, -1, true, true, true, true, nullptr);
 
   // Next set the proper ones
   for (PRInt32 i = 0; i < PRInt32(len); i++) {
@@ -1651,7 +1649,7 @@ nsHTMLSelectElement::RestoreStateTo(nsSelectState* aNewSelected)
       nsAutoString value;
       nsresult rv = option->GetValue(value);
       if (NS_SUCCEEDED(rv) && aNewSelected->ContainsOption(i, value)) {
-        SetOptionsSelectedByIndex(i, i, true, false, true, true, nsnull);
+        SetOptionsSelectedByIndex(i, i, true, false, true, true, nullptr);
       }
     }
   }
@@ -1684,7 +1682,7 @@ nsHTMLSelectElement::Reset()
       bool selected = false;
       option->GetDefaultSelected(&selected);
       SetOptionsSelectedByIndex(i, i, selected,
-                                false, true, true, nsnull);
+                                false, true, true, nullptr);
       if (selected) {
         numSelected++;
       }
@@ -1811,7 +1809,6 @@ AddOptionsRecurse(nsIContent* aRoot, nsHTMLOptionCollection* aArray)
        cur = cur->GetNextSibling()) {
     nsHTMLOptionElement* opt = nsHTMLOptionElement::FromContent(cur);
     if (opt) {
-      // If we fail here, then at least we've tried our best
       aArray->AppendOption(opt);
     } else if (cur->IsHTML(nsGkAtoms::optgroup)) {
       AddOptionsRecurse(cur, aArray);
@@ -1939,7 +1936,7 @@ void
 nsHTMLOptionCollection::DropReference()
 {
   // Drop our (non ref-counted) reference
-  mSelect = nsnull;
+  mSelect = nullptr;
 }
 
 nsresult
@@ -2113,7 +2110,7 @@ nsHTMLOptionCollection::Item(PRUint32 aIndex, nsIDOMNode** aReturn)
 {
   nsISupports* item = GetNodeAt(aIndex);
   if (!item) {
-    *aReturn = nsnull;
+    *aReturn = nullptr;
 
     return NS_OK;
   }
@@ -2143,7 +2140,7 @@ GetNamedItemHelper(nsTArray<nsRefPtr<nsHTMLOptionElement> > &aElements,
     }
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 nsISupports*

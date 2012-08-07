@@ -17,7 +17,7 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsIXPConnect.h"
 #include "nsIArray.h"
-#include "xpcpublic.h"
+#include "mozilla/Attributes.h"
 
 class nsIXPConnectJSObjectHolder;
 class nsRootedJSValueArray;
@@ -113,15 +113,7 @@ public:
 
   virtual JSContext* GetNativeContext();
   virtual JSObject* GetNativeGlobal();
-  virtual nsresult CreateNativeGlobalForInner(
-                                      nsIScriptGlobalObject *aGlobal,
-                                      JSZoneId aZone,
-                                      nsIURI *aURI,
-                                      nsIPrincipal *aPrincipal,
-                                      JSObject** aNativeGlobal,
-                                      nsISupports **aHolder);
   virtual nsresult InitContext();
-  virtual nsresult InitOuterWindow();
   virtual bool IsContextInitialized();
 
   virtual void ScriptEvaluated(bool aTerminated);
@@ -159,14 +151,32 @@ public:
   static void LoadStart();
   static void LoadEnd();
 
+  enum IsCompartment {
+    CompartmentGC,
+    NonCompartmentGC
+  };
+
+  enum IsShrinking {
+    ShrinkingGC,
+    NonShrinkingGC
+  };
+
+  enum IsIncremental {
+    IncrementalGC,
+    NonIncrementalGC
+  };
+
   static void GarbageCollectNow(js::gcreason::Reason reason,
-                                PRUint32 aGckind,
-                                bool aGlobal);
+                                IsIncremental aIncremental = NonIncrementalGC,
+                                IsCompartment aCompartment = NonCompartmentGC,
+                                IsShrinking aShrinking = NonShrinkingGC,
+                                int64_t aSliceMillis = 0);
   static void ShrinkGCBuffersNow();
   // If aExtraForgetSkippableCalls is -1, forgetSkippable won't be
   // called even if the previous collection was GC.
-  static void CycleCollectNow(nsICycleCollectorListener *aListener = nsnull,
-                              PRInt32 aExtraForgetSkippableCalls = 0);
+  static void CycleCollectNow(nsICycleCollectorListener *aListener = nullptr,
+                              PRInt32 aExtraForgetSkippableCalls = 0,
+                              bool aForced = true);
 
   static void PokeGC(js::gcreason::Reason aReason, int aDelay = 0);
   static void KillGCTimer();
@@ -177,6 +187,7 @@ public:
   static void MaybePokeCC();
   static void KillCCTimer();
   static void KillFullGCTimer();
+  static void KillInterSliceGCTimer();
 
   virtual void GC(js::gcreason::Reason aReason);
 
@@ -187,7 +198,7 @@ public:
     // Verify that we have a global so that this
     // does always return a null when GetGlobalObject() is null.
     JSObject* global = JS_GetGlobalObject(GetNativeContext());
-    return global ? mGlobalObjectRef.get() : nsnull;
+    return global ? mGlobalObjectRef.get() : nullptr;
   }
 protected:
   nsresult InitializeExternalClasses();
@@ -249,7 +260,7 @@ protected:
       : mContext(aContext),
         mTerminations(aContext->mTerminations)
     {
-      aContext->mTerminations = nsnull;
+      aContext->mTerminations = nullptr;
     }
     ~TerminationFuncHolder()
     {
@@ -302,7 +313,7 @@ private:
 
 class nsIJSRuntimeService;
 
-class nsJSRuntime : public nsIScriptRuntime
+class nsJSRuntime MOZ_FINAL : public nsIScriptRuntime
 {
 public:
   // let people who can see us use our runtime for convenience.
@@ -313,8 +324,6 @@ public:
   NS_DECL_ISUPPORTS
 
   virtual already_AddRefed<nsIScriptContext> CreateContext();
-
-  virtual nsresult ParseVersion(const nsString &aVersionStr, PRUint32 *flags);
 
   virtual nsresult DropScriptObject(void *object);
   virtual nsresult HoldScriptObject(void *object);

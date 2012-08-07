@@ -3,7 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -34,6 +34,13 @@ EXPORTS		= \
 		nsTextFragment.h \
 		mozAutoDocUpdate.h \
 		nsFrameMessageManager.h \
+		nsAttrAndChildArray.h \
+		nsAttrValue.h \
+		nsCrossSiteListenerProxy.h \
+		nsDOMAttributeMap.h \
+		nsGenericElement.h \
+		nsMappedAttributeElement.h \
+		nsStyledElement.h \
 		$(NULL)
 
 EXPORTS_NAMESPACES = mozilla/dom
@@ -85,6 +92,7 @@ CPPSRCS		= \
 		nsGkAtoms.cpp \
 		nsHTMLContentSerializer.cpp \
 		nsImageLoadingContent.cpp \
+		nsINode.cpp \
 		nsLineBreaker.cpp \
 		nsMappedAttributeElement.cpp \
 		nsMappedAttributes.cpp \
@@ -117,8 +125,10 @@ CPPSRCS		= \
 		nsXMLContentSerializer.cpp \
 		nsXMLHttpRequest.cpp \
 		nsXMLNameSpaceMap.cpp \
+		FragmentOrElement.cpp \
 		Link.cpp \
 		nsBlobProtocolHandler.cpp \
+		nsBlobURI.cpp \
 		nsFrameMessageManager.cpp \
 		nsInProcessTabChildGlobal.cpp \
 		ThirdPartyUtil.cpp \

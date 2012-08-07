@@ -14,9 +14,7 @@
 #include "nsIDocument.h"
 #include "nsIDOMDocument.h"
 #include "mozilla/css/Loader.h"
-#include "nsStyleConsts.h"
 #include "nsStyleLinkElement.h"
-#include "nsINodeInfo.h"
 #include "nsIDocShell.h"
 #include "nsILoadContext.h"
 #include "nsIDocShellTreeItem.h"
@@ -25,49 +23,31 @@
 #include "nsNetUtil.h"
 #include "nsIHttpChannel.h"
 #include "nsIContent.h"
-#include "nsIScriptElement.h"
-#include "nsContentErrors.h"
 #include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsIViewManager.h"
-#include "nsIContentViewer.h"
 #include "nsIAtom.h"
 #include "nsGkAtoms.h"
 #include "nsIDOMWindow.h"
-#include "nsIPrincipal.h"
-#include "nsIScriptGlobalObject.h"
 #include "nsNetCID.h"
 #include "nsIOfflineCacheUpdate.h"
 #include "nsIApplicationCache.h"
 #include "nsIApplicationCacheContainer.h"
 #include "nsIApplicationCacheChannel.h"
 #include "nsIScriptSecurityManager.h"
-#include "nsIDOMLoadStatus.h"
 #include "nsICookieService.h"
 #include "nsIPrompt.h"
-#include "nsServiceManagerUtils.h"
 #include "nsContentUtils.h"
-#include "nsCRT.h"
-#include "nsEscape.h"
-#include "nsWeakReference.h"
-#include "nsUnicharUtils.h"
 #include "nsNodeInfoManager.h"
 #include "nsIAppShell.h"
 #include "nsIWidget.h"
 #include "nsWidgetsCID.h"
-#include "nsIRequest.h"
-#include "nsNodeUtils.h"
 #include "nsIDOMNode.h"
-#include "nsThreadUtils.h"
-#include "nsPIDOMWindow.h"
 #include "mozAutoDocUpdate.h"
 #include "nsIWebNavigation.h"
-#include "nsIDocumentLoader.h"
-#include "nsICachingChannel.h"
-#include "nsICacheEntryDescriptor.h"
 #include "nsGenericHTMLElement.h"
 #include "nsHTMLDNSPrefetch.h"
-#include "nsISupportsPrimitives.h"
+#include "nsIObserverService.h"
 #include "mozilla/Preferences.h"
 #include "nsParserConstants.h"
 
@@ -100,8 +80,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsContentSink)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mDocument)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mParser)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_MEMBER(mNodeInfoManager,
-                                                  nsNodeInfoManager)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mNodeInfoManager)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mScriptLoader)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
@@ -124,7 +103,7 @@ nsContentSink::nsContentSink()
   NS_ASSERTION(mInNotification == 0, "What?");
   NS_ASSERTION(!mDeferredLayoutStart, "What?");
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
   if (!gContentSinkLogModuleInfo) {
     gContentSinkLogModuleInfo = PR_NewLogModule("nscontentsink");
   }
@@ -380,7 +359,7 @@ nsContentSink::DoProcessLinkHeader()
 {
   nsAutoString value;
   mDocument->GetHeaderData(nsGkAtoms::link, value);
-  ProcessLinkHeader(nsnull, value);
+  ProcessLinkHeader(nullptr, value);
 }
 
 // check whether the Link header field applies to the context resource
@@ -410,7 +389,7 @@ nsContentSink::LinkContextIsOurDocument(const nsSubstring& aAnchor)
   // resolve anchor against context    
   nsCOMPtr<nsIURI> resolvedUri;
   rv = NS_NewURI(getter_AddRefs(resolvedUri), aAnchor,
-      nsnull, contextUri);
+      nullptr, contextUri);
   
   if (NS_FAILED(rv)) {
     // resolving failed
@@ -761,7 +740,7 @@ nsContentSink::ProcessStyleLink(nsIContent* aElement,
   }
 
   nsCOMPtr<nsIURI> url;
-  nsresult rv = NS_NewURI(getter_AddRefs(url), aHref, nsnull,
+  nsresult rv = NS_NewURI(getter_AddRefs(url), aHref, nullptr,
                           mDocument->GetDocBaseURI());
   
   if (NS_FAILED(rv)) {
@@ -772,7 +751,7 @@ nsContentSink::ProcessStyleLink(nsIContent* aElement,
   // If this is a fragment parser, we don't want to observe.
   bool isAlternate;
   rv = mCSSLoader->LoadStyleLink(aElement, url, aTitle, aMedia, aAlternate,
-                                 mRunsToCompletion ? nsnull : this, &isAlternate);
+                                 mRunsToCompletion ? nullptr : this, &isAlternate);
   NS_ENSURE_SUCCESS(rv, rv);
   
   if (!isAlternate && !mRunsToCompletion) {
@@ -863,7 +842,7 @@ nsContentSink::PrefetchHref(const nsAString &aHref,
     const nsACString &charset = mDocument->GetDocumentCharacterSet();
     nsCOMPtr<nsIURI> uri;
     NS_NewURI(getter_AddRefs(uri), aHref,
-              charset.IsEmpty() ? nsnull : PromiseFlatCString(charset).get(),
+              charset.IsEmpty() ? nullptr : PromiseFlatCString(charset).get(),
               mDocument->GetDocBaseURI());
     if (uri) {
       nsCOMPtr<nsIDOMNode> domNode = do_QueryInterface(aSource);
@@ -934,7 +913,7 @@ nsContentSink::SelectDocAppCache(nsIApplicationCache *aLoadApplicationCache,
       // The http manifest attribute URI is equal to the manifest URI of
       // the cache the document was loaded from - associate the document with
       // that cache and invoke the cache update process.
-#ifdef NS_DEBUG
+#ifdef DEBUG
       nsCAutoString docURISpec, clientID;
       mDocumentURI->GetAsciiSpec(docURISpec);
       aLoadApplicationCache->GetClientID(clientID);
@@ -975,7 +954,7 @@ nsContentSink::SelectDocAppCacheNoManifest(nsIApplicationCache *aLoadApplication
                                            nsIURI **aManifestURI,
                                            CacheSelectionAction *aAction)
 {
-  *aManifestURI = nsnull;
+  *aManifestURI = nullptr;
   *aAction = CACHE_SELECTION_NONE;
 
   nsresult rv;
@@ -988,7 +967,7 @@ nsContentSink::SelectDocAppCacheNoManifest(nsIApplicationCache *aLoadApplication
     NS_ASSERTION(applicationCacheDocument,
                  "mDocument must implement nsIApplicationCacheContainer.");
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
     nsCAutoString docURISpec, clientID;
     mDocumentURI->GetAsciiSpec(docURISpec);
     aLoadApplicationCache->GetClientID(clientID);
@@ -1286,7 +1265,7 @@ nsContentSink::Notify(nsITimer *timer)
     ScrollToRef();
   }
 
-  mNotificationTimer = nsnull;
+  mNotificationTimer = nullptr;
   return NS_OK;
 }
 
@@ -1364,7 +1343,7 @@ nsContentSink::WillInterruptImpl()
             mNotificationTimer->InitWithCallback(this, delay,
                                                  nsITimer::TYPE_ONE_SHOT);
           if (NS_FAILED(result)) {
-            mNotificationTimer = nsnull;
+            mNotificationTimer = nullptr;
           }
         }
       }
@@ -1488,7 +1467,7 @@ nsContentSink::EndUpdate(nsIDocument *aDocument, nsUpdateType aUpdateType)
 void
 nsContentSink::DidBuildModelImpl(bool aTerminated)
 {
-  if (mDocument && !aTerminated) {
+  if (mDocument) {
     MOZ_ASSERT(mDocument->GetReadyStateEnum() ==
                nsIDocument::READYSTATE_LOADING, "Bad readyState");
     mDocument->SetReadyStateInternal(nsIDocument::READYSTATE_INTERACTIVE);
@@ -1568,8 +1547,9 @@ nsContentSink::WillParseImpl(void)
     vm->GetLastUserEventTime(lastEventTime);
 
     bool newDynLower =
-      (currentTime - mBeginLoadTime) > PRUint32(sInitialPerfTime) &&
-      (currentTime - lastEventTime) < PRUint32(sInteractiveTime);
+      mDocument->IsInBackgroundWindow() ||
+      ((currentTime - mBeginLoadTime) > PRUint32(sInitialPerfTime) &&
+       (currentTime - lastEventTime) < PRUint32(sInteractiveTime));
     
     if (mDynamicLowerValue != newDynLower) {
       FavorPerformanceHint(!newDynLower, 0);

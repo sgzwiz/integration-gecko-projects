@@ -25,7 +25,7 @@
 #include "nsIRollupListener.h"
 #include "nsIViewManager.h"
 #include "nsIInterfaceRequestor.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsILocalFileMac.h"
 #include "nsGfxCIID.h"
 #include "nsIDOMSimpleGestureEvent.h"
@@ -51,6 +51,9 @@
 #include "LayerManagerOGL.h"
 #include "GLContext.h"
 #include "mozilla/layers/CompositorCocoaWidgetHelper.h"
+#ifdef ACCESSIBILITY
+#include "nsAccessibilityService.h"
+#endif
 
 #include "mozilla/Preferences.h"
 
@@ -74,7 +77,7 @@ using namespace mozilla;
 #define MAX_RECTS_IN_REGION 100
 
 #ifdef PR_LOGGING
-PRLogModuleInfo* sCocoaLog = nsnull;
+PRLogModuleInfo* sCocoaLog = nullptr;
 #endif
 
 extern "C" {
@@ -103,8 +106,8 @@ static void blinkRect(Rect* r);
 static void blinkRgn(RgnHandle rgn);
 #endif
 
-nsIRollupListener * gRollupListener = nsnull;
-nsIWidget         * gRollupWidget   = nsnull;
+nsIRollupListener * gRollupListener = nullptr;
+nsIWidget         * gRollupWidget   = nullptr;
 
 bool gUserCancelledDrag = false;
 
@@ -201,14 +204,14 @@ void EnsureLogInitialized()
 #pragma mark -
 
 nsChildView::nsChildView() : nsBaseWidget()
-, mView(nsnull)
-, mParentView(nsnull)
-, mParentWidget(nsnull)
+, mView(nullptr)
+, mParentView(nullptr)
+, mParentWidget(nullptr)
 , mVisible(false)
 , mDrawing(false)
 , mPluginDrawing(false)
 , mIsDispatchPaint(false)
-, mPluginInstanceOwner(nsnull)
+, mPluginInstanceOwner(nullptr)
 {
   EnsureLogInitialized();
 
@@ -234,7 +237,7 @@ nsChildView::~nsChildView()
 
   NS_WARN_IF_FALSE(mOnDestroyCalled, "nsChildView object destroyed without calling Destroy()");
 
-  mResizerImage = nsnull;
+  mResizerImage = nullptr;
 
   // An nsChildView object that was in use can be destroyed without Destroy()
   // ever being called on it.  So we also need to do a quick, safe cleanup
@@ -301,20 +304,20 @@ nsresult nsChildView::Create(nsIWidget *aParent,
     // inherit the top-level window. NS_NATIVE_WIDGET is always a NSView
     // regardless of if we're asking a window or a view (for compatibility
     // with windows).
-    mParentView = (NSView*)aParent->GetNativeData(NS_NATIVE_WIDGET); 
+    mParentView = (NSView<mozView>*)aParent->GetNativeData(NS_NATIVE_WIDGET); 
     mParentWidget = aParent;   
   } else {
     // This is the normal case. When we're the root widget of the view hiararchy,
     // aNativeParent will be the contentView of our window, since that's what
     // nsCocoaWindow returns when asked for an NS_NATIVE_VIEW.
-    mParentView = reinterpret_cast<NSView*>(aNativeParent);
+    mParentView = reinterpret_cast<NSView<mozView>*>(aNativeParent);
   }
   
   // create our parallel NSView and hook it up to our parent. Recall
   // that NS_NATIVE_WIDGET is the NSView.
   NSRect r;
   nsCocoaUtils::GeckoRectToNSRect(mBounds, r);
-  mView = [CreateCocoaView(r) retain];
+  mView = [(NSView<mozView>*)CreateCocoaView(r) retain];
   if (!mView) return NS_ERROR_FAILURE;
 
   [(ChildView*)mView setIsPluginView:(mWindowType == eWindowType_plugin)];
@@ -402,7 +405,7 @@ nsChildView::GetXULWindowWidget()
   if (windowDelegate && [windowDelegate isKindOfClass:[WindowDelegate class]]) {
     return [(WindowDelegate *)windowDelegate geckoWidget];
   }
-  return nsnull;
+  return nullptr;
 }
 
 NS_IMETHODIMP nsChildView::Destroy()
@@ -446,7 +449,7 @@ void* nsChildView::GetNativeData(PRUint32 aDataType)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSNULL;
 
-  void* retVal = nsnull;
+  void* retVal = nullptr;
 
   switch (aDataType) 
   {
@@ -461,7 +464,7 @@ void* nsChildView::GetNativeData(PRUint32 aDataType)
 
     case NS_NATIVE_GRAPHIC:
       NS_ERROR("Requesting NS_NATIVE_GRAPHIC on a Mac OS X child view!");
-      retVal = nsnull;
+      retVal = nullptr;
       break;
 
     case NS_NATIVE_OFFSETX:
@@ -478,7 +481,7 @@ void* nsChildView::GetNativeData(PRUint32 aDataType)
     {
       // The NP_CGContext pointer should always be NULL in the Cocoa event model.
       if ([(ChildView*)mView pluginEventModel] == NPEventModelCocoa)
-        return nsnull;
+        return nullptr;
 
       UpdatePluginPort();
 #ifndef NP_NO_QUICKDRAW
@@ -523,26 +526,20 @@ void nsChildView::SetTransparencyMode(nsTransparencyMode aMode)
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
-NS_IMETHODIMP nsChildView::IsVisible(bool& outState)
+bool nsChildView::IsVisible() const
 {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
 
   if (!mVisible) {
-    outState = mVisible;
-  }
-  else {
-    // mVisible does not accurately reflect the state of a hidden tabbed view
-    // so verify that the view has a window as well
-    outState = ([mView window] != nil);
-    // now check native widget hierarchy visibility
-    if (outState && NSIsEmptyRect([mView visibleRect])) {
-      outState = false;
-    }
+    return mVisible;
   }
 
-  return NS_OK;
+  // mVisible does not accurately reflect the state of a hidden tabbed view
+  // so verify that the view has a window as well
+  // then check native widget hierarchy visibility
+  return ([mView window] != nil) && !NSIsEmptyRect([mView visibleRect]);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(false);
 }
 
 void nsChildView::HidePlugin()
@@ -723,7 +720,7 @@ nsChildView::ReparentNativeWidget(nsIWidget* aNewParent)
     return NS_OK;
 
   NSView<mozView>* newParentView =
-   (NSView*)aNewParent->GetNativeData(NS_NATIVE_WIDGET); 
+   (NSView<mozView>*)aNewParent->GetNativeData(NS_NATIVE_WIDGET); 
   NS_ENSURE_TRUE(newParentView, NS_ERROR_FAILURE);
 
   // we hold a ref to mView, so this is safe
@@ -743,7 +740,7 @@ void nsChildView::ResetParent()
     if (mView)
       [mView removeFromSuperview];
   }
-  mParentWidget = nsnull;
+  mParentWidget = nullptr;
 }
 
 nsIWidget*
@@ -768,12 +765,9 @@ NS_IMETHODIMP nsChildView::Enable(bool aState)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsChildView::IsEnabled(bool *aState)
+bool nsChildView::IsEnabled() const
 {
-  // unimplemented
-  if (aState)
-   *aState = true;
-  return NS_OK;
+  return true;
 }
 
 class nsChildViewSetFocusEvent : public nsRunnable
@@ -1008,9 +1002,7 @@ NS_IMETHODIMP nsChildView::GetPluginClipRect(nsIntRect& outClipRect, nsIntPoint&
   outOrigin.x = -NSToIntRound(viewOrigin.x);
   outOrigin.y = -NSToIntRound(viewOrigin.y);
 
-  bool isVisible;
-  IsVisible(isVisible);
-  if (isVisible && [mView window] != nil) {
+  if (IsVisible() && [mView window] != nil) {
     outClipRect.width  = NSToIntRound(visibleBounds.origin.x + visibleBounds.size.width) - NSToIntRound(visibleBounds.origin.x);
     outClipRect.height = NSToIntRound(visibleBounds.origin.y + visibleBounds.size.height) - NSToIntRound(visibleBounds.origin.y);
 
@@ -1058,14 +1050,14 @@ void nsChildView::PaintQD()
 
   NS_SUCCEEDED(StartDrawPlugin());
   EventRecord updateEvent;
-  InitializeEventRecord(&updateEvent, nsnull);
+  InitializeEventRecord(&updateEvent, nullptr);
   updateEvent.what = updateEvt;
   updateEvent.message = UInt32(window);
 
   nsRefPtr<nsNPAPIPluginInstance> instance;
   mPluginInstanceOwner->GetInstance(getter_AddRefs(instance));
 
-  instance->HandleEvent(&updateEvent, nsnull);
+  instance->HandleEvent(&updateEvent, nullptr);
   EndDrawPlugin();
 #endif
 }
@@ -1128,7 +1120,7 @@ NS_IMETHODIMP nsChildView::StartDrawPlugin()
 
       if (portChanged) {
         ::GetGWorld(&oldPort, &oldDevice);
-        ::SetGWorld(port, ::IsPortOffscreen(port) ? nsnull : ::GetMainDevice());
+        ::SetGWorld(port, ::IsPortOffscreen(port) ? nullptr : ::GetMainDevice());
       }
 
       ::SetOrigin(0, 0);
@@ -1434,6 +1426,14 @@ nsChildView::GetShouldAccelerate()
   return nsBaseWidget::GetShouldAccelerate();
 }
 
+bool
+nsChildView::UseOffMainThreadCompositing()
+{
+  // OMTC doesn't work with Basic Layers on OS X right now. Once it works, we'll
+  // still want to disable it for certain kinds of windows (e.g. popups).
+  return nsBaseWidget::UseOffMainThreadCompositing() && GetShouldAccelerate();
+}
+
 inline PRUint16 COLOR8TOCOLOR16(PRUint8 color8)
 {
   // return (color8 == 0xFF ? 0xFFFF : (color8 << 8));
@@ -1495,7 +1495,7 @@ NS_IMETHODIMP nsChildView::DispatchEvent(nsGUIEvent* event, nsEventStatus& aStat
     mParentWidget->GetWindowType(type);
     if (type == eWindowType_popup) {
       // use the parent popup's widget if there is no view
-      void* clientData = nsnull;
+      void* clientData = nullptr;
       if (event->widget)
         event->widget->GetClientData(clientData);
       if (!clientData)
@@ -1839,7 +1839,7 @@ DrawResizer(CGContextRef aCtx)
 void
 nsChildView::DrawWindowOverlay(LayerManager* aManager, nsIntRect aRect)
 {
-  if (!ShowsResizeIndicator(nsnull)) {
+  if (!ShowsResizeIndicator(nullptr)) {
     return;
   }
 
@@ -1861,7 +1861,7 @@ nsChildView::DrawWindowOverlay(LayerManager* aManager, nsIntRect aRect)
     nsIntRegion update(nsIntRect(0, 0, 15, 15));
     gfxASurface *asurf = mResizerImage->BeginUpdate(update);
     if (!asurf) {
-      mResizerImage = nsnull;
+      mResizerImage = nullptr;
       return;
     }
 
@@ -1949,7 +1949,10 @@ nsChildView::EndSecureKeyboardInput()
 already_AddRefed<Accessible>
 nsChildView::GetDocumentAccessible()
 {
-  Accessible *docAccessible = nsnull;
+  if (!mozilla::a11y::ShouldA11yBeEnabled())
+    return nullptr;
+
+  Accessible *docAccessible = nullptr;
   if (mAccessible) {
     CallQueryReferent(mAccessible.get(), &docAccessible);
     return docAccessible;
@@ -2028,7 +2031,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
     mLastMouseDownEvent = nil;
     mClickThroughMouseDownEvent = nil;
-    mDragService = nsnull;
+    mDragService = nullptr;
 
     mGestureState = eGestureState_None;
     mCumulativeMagnification = 0.0;
@@ -2097,7 +2100,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
 - (void)uninstallTextInputHandler
 {
-  mTextInputHandler = nsnull;
+  mTextInputHandler = nullptr;
 }
 
 // Work around bug 603134.
@@ -2199,9 +2202,9 @@ NSEvent* gLastDragMouseDownEvent = nil;
 {
   if (mTextInputHandler) {
     mTextInputHandler->OnDestroyWidget(mGeckoChild);
-    mTextInputHandler = nsnull;
+    mTextInputHandler = nullptr;
   }
-  mGeckoChild = nsnull;
+  mGeckoChild = nullptr;
 
   // Just in case we're destroyed abruptly and missed the draggingExited
   // or performDragOperation message.
@@ -2517,9 +2520,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
   nsAutoLockChromeUnstickContent lock;
 
-  bool isVisible;
-  if (!mGeckoChild || NS_FAILED(mGeckoChild->IsVisible(isVisible)) ||
-      !isVisible)
+  if (!mGeckoChild || !mGeckoChild->IsVisible())
     return;
 
 #ifndef NP_NO_QUICKDRAW
@@ -2583,8 +2584,8 @@ NSEvent* gLastDragMouseDownEvent = nil;
   }
 #endif
 
-  LayerManager *layerManager = mGeckoChild->GetLayerManager(nsnull);
-  if (layerManager->GetBackendType() == LayerManager::LAYERS_OPENGL) {
+  LayerManager *layerManager = mGeckoChild->GetLayerManager(nullptr);
+  if (layerManager->GetBackendType() == mozilla::layers::LAYERS_OPENGL) {
     NSOpenGLContext *glContext;
 
     LayerManagerOGL *manager = static_cast<LayerManagerOGL*>(layerManager);
@@ -2630,7 +2631,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
   bool painted;
   {
     nsBaseWidget::AutoLayerManagerSetup
-      setupLayerManager(mGeckoChild, targetContext, BasicLayerManager::BUFFER_NONE);
+      setupLayerManager(mGeckoChild, targetContext, BUFFER_NONE);
     painted = mGeckoChild->DispatchWindowEvent(paintEvent);
   }
 
@@ -3770,17 +3771,26 @@ NSEvent* gLastDragMouseDownEvent = nil;
   }
 
   // Some scrolling devices supports pixel scrolling, e.g. a Macbook
-  // touchpad or a Mighty Mouse. On those devices, [event deviceDeltaX/Y]
-  // contains the amount of pixels to scroll. 
+  // touchpad or a Mighty Mouse. On those devices, [theEvent deviceDeltaX/Y]
+  // contains the amount of pixels to scroll. Since Lion this has changed 
+  // to [theEvent scrollingDeltaX/Y].
   if (inAxis & nsMouseScrollEvent::kIsVertical) {
     scrollDelta       = -[theEvent deltaY];
     if (checkPixels && (scrollDelta == 0 || scrollDelta != floor(scrollDelta))) {
-      scrollDeltaPixels = -[theEvent deviceDeltaY];
+      if ([theEvent respondsToSelector:@selector(scrollingDeltaY)]) {
+        scrollDeltaPixels = -[theEvent scrollingDeltaY];
+      } else {
+        scrollDeltaPixels = -[theEvent deviceDeltaY];
+      }
     }
   } else if (inAxis & nsMouseScrollEvent::kIsHorizontal) {
     scrollDelta       = -[theEvent deltaX];
     if (checkPixels && (scrollDelta == 0 || scrollDelta != floor(scrollDelta))) {
-      scrollDeltaPixels = -[theEvent deviceDeltaX];
+      if ([theEvent respondsToSelector:@selector(scrollingDeltaX)]) {
+        scrollDeltaPixels = -[theEvent scrollingDeltaX];
+      } else {
+        scrollDeltaPixels = -[theEvent deviceDeltaX];
+      }
     }
   } else {
     return; // caller screwed up
@@ -4250,7 +4260,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
   nsCOMPtr<nsIDragSession> dragSession;
   mDragService->GetCurrentSession(getter_AddRefs(dragSession));
-  return dragSession != nsnull;
+  return dragSession != nullptr;
 }
 
 - (BOOL)inactiveWindowAcceptsMouseEvent:(NSEvent*)aEvent
@@ -4623,11 +4633,11 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
   nsAutoLockChrome lock;
 
-  gDraggedTransferables = nsnull;
+  gDraggedTransferables = nullptr;
 
   NSEvent *currentEvent = [NSApp currentEvent];
   gUserCancelledDrag = ([currentEvent type] == NSKeyDown &&
-                        [currentEvent keyCode] == kEscapeKeyCode);
+                        [currentEvent keyCode] == kVK_Escape);
 
   if (!mDragService) {
     CallGetService(kDragServiceContractID, &mDragService);
@@ -4687,7 +4697,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
   PR_LOG(sCocoaLog, PR_LOG_ALWAYS, ("ChildView namesOfPromisedFilesDroppedAtDestination: entering callback for promised files\n"));
 
-  nsCOMPtr<nsILocalFile> targFile;
+  nsCOMPtr<nsIFile> targFile;
   NS_NewLocalFile(EmptyString(), true, getter_AddRefs(targFile));
   nsCOMPtr<nsILocalFileMac> macLocalFile = do_QueryInterface(targFile);
   if (!macLocalFile) {
@@ -4716,8 +4726,9 @@ NSEvent* gLastDragMouseDownEvent = nil;
       NS_ERROR("no transferable");
       return nil;
     }
+    item->Init(nullptr);
 
-    item->SetTransferData(kFilePromiseDirectoryMime, macLocalFile, sizeof(nsILocalFile*));
+    item->SetTransferData(kFilePromiseDirectoryMime, macLocalFile, sizeof(nsIFile*));
     
     // now request the kFilePromiseMime data, which will invoke the data provider
     // If successful, the returned data is a reference to the resulting file.
@@ -4872,6 +4883,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
   nsCOMPtr<nsITransferable> trans = do_CreateInstance("@mozilla.org/widget/transferable;1", &rv);
   if (NS_FAILED(rv))
     return NO;
+  trans->Init(nullptr);
 
   trans->AddDataFlavor(kUnicodeMime);
   trans->AddDataFlavor(kHTMLMime);

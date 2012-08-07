@@ -2,17 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH	 = ../../../../..
+DEPTH	 = @DEPTH@
 topsrcdir	 = @top_srcdir@
 srcdir	= @srcdir@
 VPATH	 = @srcdir@
-relativesrcdir	= dom/tests/mochitest/webapps/apps
+relativesrcdir	= @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-include $(topsrcdir)/config/rules.mk
-
-_TEST_FILES	= \
+MOCHITEST_CHROME_FILES	= \
+    bug_765063.xul \
     include.html \
     wild_crazy.webapp \
     wild_crazy.webapp^headers^ \
@@ -29,6 +28,4 @@ _TEST_FILES	= \
     manifest_with_bom.webapp^headers^ \
     $(NULL)
 
-libs:: 	$(_TEST_FILES)
-	$(INSTALL) $^ $(DEPTH)/_tests/testing/mochitest/chrome/$(relativesrcdir)
-
+include $(topsrcdir)/config/rules.mk

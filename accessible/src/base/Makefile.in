@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH = ../../..
+DEPTH = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir = @srcdir@
 VPATH = @srcdir@
@@ -31,7 +31,6 @@ CPPSRCS = \
   nsAccessibilityService.cpp \
   nsAccessiblePivot.cpp \
   nsAccTreeWalker.cpp \
-  nsBaseWidgetAccessible.cpp \
   nsEventShell.cpp \
   nsCaretAccessible.cpp \
   nsTextEquivUtils.cpp \
@@ -49,6 +48,7 @@ endif
 
 EXPORTS = \
   a11yGeneric.h \
+  AccEvent.h \
   nsAccDocManager.h \
   nsAccessibilityService.h \
   nsAccessNode.h \
@@ -61,6 +61,12 @@ EXPORTS_mozilla/a11y = \
   States.h \
   Role.h \
   $(NULL)
+
+ifdef MOZ_DEBUG
+EXPORTS_mozilla/a11y += \
+  Logging.h \
+  $(NULL)
+endif
 
 # we don't want the shared lib, but we want to force the creation of a static lib.
 FORCE_STATIC_LIB = 1

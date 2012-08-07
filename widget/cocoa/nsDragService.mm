@@ -27,7 +27,6 @@
 #include "nsNetUtil.h"
 #include "nsIDocument.h"
 #include "nsIContent.h"
-#include "nsIFrame.h"
 #include "nsIView.h"
 #include "gfxASurface.h"
 #include "gfxContext.h"
@@ -47,7 +46,7 @@ extern bool gUserCancelledDrag;
 
 // This global makes the transferable array available to Cocoa's promised
 // file destination callback.
-nsISupportsArray *gDraggedTransferables = nsnull;
+nsISupportsArray *gDraggedTransferables = nullptr;
 
 NSString* const kWildcardPboardType = @"MozillaWildcard";
 NSString* const kCorePboardType_url  = @"CorePasteboardFlavorType 0x75726C20"; // 'url '  url
@@ -372,7 +371,7 @@ nsDragService::GetData(nsITransferable* aTransferable, PRUint32 aItemIndex)
       [filePath getCharacters:clipboardDataPtr];
       clipboardDataPtr[stringLength] = 0; // null terminate
 
-      nsCOMPtr<nsILocalFile> file;
+      nsCOMPtr<nsIFile> file;
       nsresult rv = NS_NewLocalFile(nsDependentString(clipboardDataPtr), true, getter_AddRefs(file));
       free(clipboardDataPtr);
       if (NS_FAILED(rv))
@@ -428,7 +427,7 @@ nsDragService::GetData(nsITransferable* aTransferable, PRUint32 aItemIndex)
     // in is accomplished with a file path drag instead of the image data itself.
     /*
     if (flavorStr.EqualsLiteral(kPNGImageMime) || flavorStr.EqualsLiteral(kJPEGImageMime) ||
-        flavorStr.EqualsLiteral(kGIFImageMime)) {
+        flavorStr.EqualsLiteral(kJPGImageMime) || flavorStr.EqualsLiteral(kGIFImageMime)) {
 
     }
     */
@@ -557,7 +556,7 @@ nsDragService::EndDragSession(bool aDoneDrag)
   mUserCancelled = gUserCancelledDrag;
 
   nsresult rv = nsBaseDragService::EndDragSession(aDoneDrag);
-  mDataItems = nsnull;
+  mDataItems = nullptr;
   return rv;
 
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;

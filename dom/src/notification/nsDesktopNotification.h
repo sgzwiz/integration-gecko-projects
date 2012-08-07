@@ -25,7 +25,7 @@
 #include "nsThreadUtils.h"
 
 #include "nsDOMEventTargetHelper.h"
-#include "nsIPrivateDOMEvent.h"
+#include "nsIDOMEvent.h"
 #include "nsIDocument.h"
 
 class AlertServiceObserver;
@@ -56,7 +56,7 @@ public:
   }
 
   void Shutdown() {
-    mOwner = nsnull;
+    mOwner = nullptr;
   }
 
 private:
@@ -168,7 +168,7 @@ class AlertServiceObserver: public nsIObserver
   
   virtual ~AlertServiceObserver() {}
 
-  void Disconnect() { mNotification = nsnull; }
+  void Disconnect() { mNotification = nullptr; }
 
   NS_IMETHODIMP
   Observe(nsISupports *aSubject,

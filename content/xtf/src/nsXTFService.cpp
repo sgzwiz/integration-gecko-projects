@@ -12,11 +12,12 @@
 #include "nsInterfaceHashtable.h"
 #include "nsString.h"
 #include "nsXTFElementWrapper.h"
+#include "mozilla/Attributes.h"
 
 
 ////////////////////////////////////////////////////////////////////////
 // nsXTFService class 
-class nsXTFService : public nsIXTFService
+class nsXTFService MOZ_FINAL : public nsIXTFService
 {
 protected:
   friend nsresult NS_NewXTFService(nsIXTFService** aResult);
@@ -46,7 +47,7 @@ nsXTFService::nsXTFService()
 nsresult
 NS_NewXTFService(nsIXTFService** aResult)
 {
-  NS_PRECONDITION(aResult != nsnull, "null ptr");
+  NS_PRECONDITION(aResult != nullptr, "null ptr");
   if (! aResult)
     return NS_ERROR_NULL_POINTER;
 

@@ -14,13 +14,11 @@
 #include "jsobj.h"
 #include "jsscope.h"
 
+#include "gc/StoreBuffer.h"
 #include "vm/GlobalObject.h"
 #include "vm/RegExpObject.h"
 
 namespace js {
-
-/* Defined in jsapi.cpp */
-extern Class dummy_class;
 
 /*
  * A single-entry cache for some base-10 double-to-string conversions. This
@@ -52,20 +50,54 @@ class DtoaCache {
 /* If HashNumber grows, need to change WrapperHasher. */
 JS_STATIC_ASSERT(sizeof(HashNumber) == 4);
 
-struct WrapperHasher
+struct CrossCompartmentKey
 {
-    typedef Value Lookup;
+    enum Kind {
+        ObjectWrapper,
+        StringWrapper,
+        DebuggerScript,
+        DebuggerObject,
+        DebuggerEnvironment
+    };
 
-    static HashNumber hash(Value key) {
-        JS_ASSERT(!IsPoisonedValue(key));
-        uint64_t bits = JSVAL_TO_IMPL(key).asBits;
-        return uint32_t(bits) ^ uint32_t(bits >> 32);
-    }
+    Kind kind;
+    JSObject *debugger;
+    js::gc::Cell *wrapped;
 
-    static bool match(const Value &l, const Value &k) { return l == k; }
+    CrossCompartmentKey()
+      : kind(ObjectWrapper), debugger(NULL), wrapped(NULL) {}
+    CrossCompartmentKey(JSObject *wrapped)
+      : kind(ObjectWrapper), debugger(NULL), wrapped(wrapped) {}
+    CrossCompartmentKey(JSString *wrapped)
+      : kind(StringWrapper), debugger(NULL), wrapped(wrapped) {}
+    CrossCompartmentKey(Value wrapped)
+      : kind(wrapped.isString() ? StringWrapper : ObjectWrapper),
+        debugger(NULL),
+        wrapped((js::gc::Cell *)wrapped.toGCThing()) {}
+    CrossCompartmentKey(const RootedValue &wrapped)
+      : kind(wrapped.get().isString() ? StringWrapper : ObjectWrapper),
+        debugger(NULL),
+        wrapped((js::gc::Cell *)wrapped.get().toGCThing()) {}
+    CrossCompartmentKey(Kind kind, JSObject *dbg, js::gc::Cell *wrapped)
+      : kind(kind), debugger(dbg), wrapped(wrapped) {}
 };
 
-typedef HashMap<Value, ReadBarrieredValue, WrapperHasher, SystemAllocPolicy> WrapperMap;
+struct WrapperHasher
+{
+    typedef CrossCompartmentKey Lookup;
+
+    static HashNumber hash(const CrossCompartmentKey &key) {
+        JS_ASSERT(!IsPoisonedPtr(key.wrapped));
+        return uint32_t(uintptr_t(key.wrapped)) | uint32_t(key.kind);
+    }
+
+    static bool match(const CrossCompartmentKey &l, const CrossCompartmentKey &k) {
+        return l.kind == k.kind && l.debugger == k.debugger && l.wrapped == k.wrapped;
+    }
+};
+
+typedef HashMap<CrossCompartmentKey, ReadBarrieredValue,
+                WrapperHasher, SystemAllocPolicy> WrapperMap;
 
 } /* namespace js */
 
@@ -85,7 +117,38 @@ struct JSCompartment : public js::CompartmentFriendFields
 {
     JSPrincipals                 *principals;
 
+  private:
+    friend struct JSContext;
+    js::GlobalObject             *global_;
+  public:
+    // Nb: global_ might be NULL, if (a) it's the atoms compartment, or (b) the
+    // compartment's global has been collected.  The latter can happen if e.g.
+    // a string in a compartment is rooted but no object is, and thus the
+    // global isn't rooted, and thus the global can be finalized while the
+    // compartment lives on.
+    //
+    // In contrast, JSObject::global() is infallible because marking a JSObject
+    // always marks its global as well.
+    // TODO: add infallible JSScript::global()
+    //
+    js::GlobalObject *maybeGlobal() const {
+        JS_ASSERT_IF(global_, global_->compartment() == this);
+        return global_;
+    }
+
+    void initGlobal(js::GlobalObject &global) {
+        JS_ASSERT(global.compartment() == this);
+        JS_ASSERT(!global_);
+        global_ = &global;
+    }
+
+  public:
     js::gc::ArenaLists           arenas;
+
+#ifdef JSGC_GENERATIONAL
+    js::gc::Nursery              gcNursery;
+    js::gc::StoreBuffer          gcStoreBuffer;
+#endif
 
   private:
     bool                         needsBarrier_;
@@ -111,11 +174,12 @@ struct JSCompartment : public js::CompartmentFriendFields
 
     CompartmentGCState           gcState;
     bool                         gcPreserveCode;
+    bool                         gcStarted;
 
   public:
     bool isCollecting() const {
         /* Allow this if we're in the middle of an incremental GC. */
-        if (rt->gcRunning) {
+        if (rt->isHeapBusy()) {
             return gcState == GCRunning;
         } else {
             JS_ASSERT(gcState != GCRunning);
@@ -136,7 +200,7 @@ struct JSCompartment : public js::CompartmentFriendFields
     }
 
     void setCollecting(bool collecting) {
-        JS_ASSERT(rt->gcRunning);
+        JS_ASSERT(rt->isHeapBusy());
         if (collecting)
             gcState = GCRunning;
         else
@@ -144,13 +208,13 @@ struct JSCompartment : public js::CompartmentFriendFields
     }
 
     void scheduleGC() {
-        JS_ASSERT(!rt->gcRunning);
+        JS_ASSERT(!rt->isHeapBusy());
         JS_ASSERT(gcState != GCRunning);
         gcState = GCScheduled;
     }
 
     void unscheduleGC() {
-        JS_ASSERT(!rt->gcRunning);
+        JS_ASSERT(!rt->isHeapBusy());
         JS_ASSERT(gcState != GCRunning);
         gcState = NoGCScheduled;
     }
@@ -163,9 +227,23 @@ struct JSCompartment : public js::CompartmentFriendFields
         gcPreserveCode = preserving;
     }
 
+    bool wasGCStarted() const {
+        return gcStarted;
+    }
+
+    void setGCStarted(bool started) {
+        JS_ASSERT(rt->isHeapBusy());
+        gcStarted = started;
+    }
+
+    bool isGCSweeping() {
+        return wasGCStarted() && rt->gcIncrementalState == js::gc::SWEEP;
+    }
+
     size_t                       gcBytes;
     size_t                       gcTriggerBytes;
     size_t                       gcMaxMallocBytes;
+    double                       gcHeapGrowthFactor;
 
     bool                         hold;
     bool                         isSystemCompartment;
@@ -428,12 +506,16 @@ class js::AutoDebugModeGC
     explicit AutoDebugModeGC(JSRuntime *rt) : rt(rt), needGC(false) {}
 
     ~AutoDebugModeGC() {
+        // Under some circumstances (say, in the midst of an animation),
+        // the garbage collector may try to retain JIT code and analyses.
+        // The DEBUG_MODE_GC reason forces the collector to always throw
+        // everything away, as required for debug mode transitions.
         if (needGC)
             GC(rt, GC_NORMAL, gcreason::DEBUG_MODE_GC);
     }
 
     void scheduleGC(JSCompartment *compartment) {
-        JS_ASSERT(!rt->gcRunning);
+        JS_ASSERT(!rt->isHeapBusy());
         PrepareCompartmentForGC(compartment);
         needGC = true;
     }
@@ -459,6 +541,12 @@ inline void
 JSContext::assertConsistency()
 {
     JS_ASSERT(inferenceEnabled == (compartment && compartment->types.inferenceEnabled));
+}
+
+inline js::Handle<js::GlobalObject*>
+JSContext::global() const
+{
+    return js::Handle<js::GlobalObject*>::fromMarkedLocation(&compartment->global_);
 }
 
 namespace js {
@@ -526,7 +614,6 @@ class AutoCompartment
   public:
     JSContext * const context;
     JSCompartment * const origin;
-    JSObject * const target;
     JSCompartment * const destination;
   private:
     Maybe<DummyFrameGuard> frame;

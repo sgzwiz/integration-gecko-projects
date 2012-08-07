@@ -12,9 +12,9 @@
 #include "nsDOMError.h"
 #include "nsICharsetDetector.h"
 #include "nsICharsetConverterManager.h"
+#include "nsIClassInfo.h"
 #include "nsIConverterInputStream.h"
 #include "nsIDocument.h"
-#include "nsIDOMDocument.h"
 #include "nsIFileStreams.h"
 #include "nsIInputStream.h"
 #include "nsIIPCSerializable.h"
@@ -31,6 +31,7 @@
 #include "nsJSUtils.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Attributes.h"
 
 #include "plbase64.h"
 #include "prmem.h"
@@ -44,8 +45,10 @@ using namespace mozilla::dom;
 // ensure that the buffer underlying the stream we get
 // from NS_NewByteInputStream is held alive as long as the
 // stream is.  We do that by passing back this class instead.
-class DataOwnerAdapter : public nsIInputStream,
-                         public nsISeekableStream
+class DataOwnerAdapter MOZ_FINAL : public nsIInputStream,
+                                   public nsISeekableStream,
+                                   public nsIIPCSerializable,
+                                   public nsIClassInfo
 {
   typedef nsDOMMemoryFile::DataOwner DataOwner;
 public:
@@ -56,15 +59,22 @@ public:
 
   NS_DECL_ISUPPORTS
 
+  // These are mandatory.
   NS_FORWARD_NSIINPUTSTREAM(mStream->)
-
   NS_FORWARD_NSISEEKABLESTREAM(mSeekableStream->)
+
+  // These are optional. We use a conditional QI to keep them from being called
+  // if the underlying stream doesn't QI to either interface.
+  NS_FORWARD_NSIIPCSERIALIZABLE(mSerializable->)
+  NS_FORWARD_NSICLASSINFO(mClassInfo->)
 
 private:
   DataOwnerAdapter(DataOwner* aDataOwner,
                    nsIInputStream* aStream)
     : mDataOwner(aDataOwner), mStream(aStream),
-      mSeekableStream(do_QueryInterface(aStream))
+      mSeekableStream(do_QueryInterface(aStream)),
+      mSerializable(do_QueryInterface(aStream)),
+      mClassInfo(do_QueryInterface(aStream))
   {
     NS_ASSERTION(mSeekableStream, "Somebody gave us the wrong stream!");
   }
@@ -72,11 +82,20 @@ private:
   nsRefPtr<DataOwner> mDataOwner;
   nsCOMPtr<nsIInputStream> mStream;
   nsCOMPtr<nsISeekableStream> mSeekableStream;
+  nsCOMPtr<nsIIPCSerializable> mSerializable;
+  nsCOMPtr<nsIClassInfo> mClassInfo;
 };
 
-NS_IMPL_THREADSAFE_ISUPPORTS2(DataOwnerAdapter,
-                              nsIInputStream,
-                              nsISeekableStream)
+NS_IMPL_THREADSAFE_ADDREF(DataOwnerAdapter)
+NS_IMPL_THREADSAFE_RELEASE(DataOwnerAdapter)
+
+NS_INTERFACE_MAP_BEGIN(DataOwnerAdapter)
+  NS_INTERFACE_MAP_ENTRY(nsIInputStream)
+  NS_INTERFACE_MAP_ENTRY(nsISeekableStream)
+  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIIPCSerializable, mSerializable)
+  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIClassInfo, mClassInfo)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIInputStream)
+NS_INTERFACE_MAP_END
 
 nsresult DataOwnerAdapter::Create(DataOwner* aDataOwner,
                                   PRUint32 aStart,
@@ -102,23 +121,6 @@ nsresult DataOwnerAdapter::Create(DataOwner* aDataOwner,
 
 ////////////////////////////////////////////////////////////////////////////
 // nsDOMFileBase implementation
-
-DOMCI_DATA(File, nsDOMFileBase)
-DOMCI_DATA(Blob, nsDOMFileBase)
-
-NS_INTERFACE_MAP_BEGIN(nsDOMFileBase)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMFile)
-  NS_INTERFACE_MAP_ENTRY(nsIDOMBlob)
-  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIDOMFile, mIsFile)
-  NS_INTERFACE_MAP_ENTRY(nsIXHRSendable)
-  NS_INTERFACE_MAP_ENTRY(nsIMutable)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO_CONDITIONAL(File, mIsFile)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO_CONDITIONAL(Blob, !mIsFile)
-NS_INTERFACE_MAP_END
-
-// Threadsafe when GetMutable() == false
-NS_IMPL_THREADSAFE_ADDREF(nsDOMFileBase)
-NS_IMPL_THREADSAFE_RELEASE(nsDOMFileBase)
 
 NS_IMETHODIMP
 nsDOMFileBase::GetName(nsAString &aFileName)
@@ -216,7 +218,7 @@ nsDOMFileBase::Slice(PRInt64 aStart, PRInt64 aEnd,
                      const nsAString& aContentType, PRUint8 optional_argc,
                      nsIDOMBlob **aBlob)
 {
-  *aBlob = nsnull;
+  *aBlob = nullptr;
 
   // Truncate aStart and aEnd so that we stay within this file.
   PRUint64 thisLength;
@@ -302,7 +304,7 @@ nsDOMFileBase::GetFileId()
 {
   PRInt64 id = -1;
 
-  if (IsStoredFile() && IsWholeFile()) {
+  if (IsStoredFile() && IsWholeFile() && !IsSnapshot()) {
     if (!indexedDB::IndexedDatabaseManager::IsClosed()) {
       indexedDB::IndexedDatabaseManager::FileMutex().Lock();
     }
@@ -347,13 +349,20 @@ nsDOMFileBase::GetFileInfo(indexedDB::FileManager* aFileManager)
 {
   if (indexedDB::IndexedDatabaseManager::IsClosed()) {
     NS_ERROR("Shouldn't be called after shutdown!");
-    return nsnull;
+    return nullptr;
   }
 
   // A slice created from a stored file must keep the file info alive.
   // However, we don't support sharing of slices yet, so the slice must be
   // copied again. That's why we have to ignore the first file info.
-  PRUint32 startIndex = IsStoredFile() && !IsWholeFile() ? 1 : 0;
+  // Snapshots are handled in a similar way (they have to be copied).
+  PRUint32 startIndex;
+  if (IsStoredFile() && (!IsWholeFile() || IsSnapshot())) {
+    startIndex = 1;
+  }
+  else {
+    startIndex = 0;
+  }
 
   MutexAutoLock lock(indexedDB::IndexedDatabaseManager::FileMutex());
 
@@ -364,7 +373,7 @@ nsDOMFileBase::GetFileInfo(indexedDB::FileManager* aFileManager)
     }
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 NS_IMETHODIMP
@@ -420,9 +429,47 @@ nsDOMFileBase::SetMutable(bool aMutable)
 }
 
 ////////////////////////////////////////////////////////////////////////////
+// nsDOMFile implementation
+
+DOMCI_DATA(File, nsDOMFile)
+DOMCI_DATA(Blob, nsDOMFile)
+
+NS_INTERFACE_MAP_BEGIN(nsDOMFile)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMFile)
+  NS_INTERFACE_MAP_ENTRY(nsIDOMBlob)
+  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIDOMFile, mIsFile)
+  NS_INTERFACE_MAP_ENTRY(nsIXHRSendable)
+  NS_INTERFACE_MAP_ENTRY(nsIMutable)
+  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO_CONDITIONAL(File, mIsFile)
+  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO_CONDITIONAL(Blob, !mIsFile)
+NS_INTERFACE_MAP_END
+
+// Threadsafe when GetMutable() == false
+NS_IMPL_THREADSAFE_ADDREF(nsDOMFile)
+NS_IMPL_THREADSAFE_RELEASE(nsDOMFile)
+
+////////////////////////////////////////////////////////////////////////////
+// nsDOMFileCC implementation
+
+NS_IMPL_CYCLE_COLLECTION_0(nsDOMFileCC)
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsDOMFileCC)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMFile)
+  NS_INTERFACE_MAP_ENTRY(nsIDOMBlob)
+  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIDOMFile, mIsFile)
+  NS_INTERFACE_MAP_ENTRY(nsIXHRSendable)
+  NS_INTERFACE_MAP_ENTRY(nsIMutable)
+  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO_CONDITIONAL(File, mIsFile)
+  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO_CONDITIONAL(Blob, !mIsFile)
+NS_INTERFACE_MAP_END
+
+NS_IMPL_CYCLE_COLLECTING_ADDREF(nsDOMFileCC)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(nsDOMFileCC)
+
+////////////////////////////////////////////////////////////////////////////
 // nsDOMFileFile implementation
 
-NS_IMPL_ISUPPORTS_INHERITED1(nsDOMFileFile, nsDOMFileBase,
+NS_IMPL_ISUPPORTS_INHERITED1(nsDOMFileFile, nsDOMFile,
                              nsIJSNativeInitializer)
 
 already_AddRefed<nsIDOMBlob>
@@ -571,12 +618,8 @@ nsDOMFileFile::Initialize(nsISupports* aOwner,
       return NS_ERROR_XPC_BAD_CONVERT_JS;
     }
 
-    nsCOMPtr<nsILocalFile> localFile;
-    rv = NS_NewLocalFile(xpcomStr, false, getter_AddRefs(localFile));
+    rv = NS_NewLocalFile(xpcomStr, false, getter_AddRefs(file));
     NS_ENSURE_SUCCESS(rv, rv);
-
-    file = do_QueryInterface(localFile);
-    NS_ASSERTION(file, "This should never happen");
   }
 
   bool exists;

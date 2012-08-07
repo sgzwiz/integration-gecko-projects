@@ -11,7 +11,6 @@
 
 #include "builtin/RegExp.h"
 
-#include "vm/MethodGuard-inl.h"
 #include "vm/RegExpObject-inl.h"
 #include "vm/RegExpStatics-inl.h"
 
@@ -23,27 +22,31 @@ class RegExpMatchBuilder
     JSContext   * const cx;
     RootedObject array;
 
-    bool setProperty(JSAtom *name, Value v) {
-        return !!baseops::DefineProperty(cx, array, RootedId(cx, AtomToId(name)), &v,
+    bool setProperty(Handle<PropertyName*> name, HandleValue v) {
+        return !!baseops::DefineProperty(cx, array, name, v,
                                          JS_PropertyStub, JS_StrictPropertyStub, JSPROP_ENUMERATE);
     }
 
   public:
     RegExpMatchBuilder(JSContext *cx, JSObject *array) : cx(cx), array(cx, array) {}
 
-    bool append(uint32_t index, Value v) {
+    bool append(uint32_t index, HandleValue v) {
         JS_ASSERT(!array->getOps()->getElement);
-        return !!baseops::DefineElement(cx, array, index, &v, JS_PropertyStub, JS_StrictPropertyStub,
+        return !!baseops::DefineElement(cx, array, index, v, JS_PropertyStub, JS_StrictPropertyStub,
                                         JSPROP_ENUMERATE);
     }
 
     bool setIndex(int index) {
-        return setProperty(cx->runtime->atomState.indexAtom, Int32Value(index));
+        Rooted<PropertyName*> name(cx, cx->runtime->atomState.indexAtom);
+        RootedValue value(cx, Int32Value(index));
+        return setProperty(name, value);
     }
 
     bool setInput(JSString *str) {
         JS_ASSERT(str);
-        return setProperty(cx->runtime->atomState.inputAtom, StringValue(str));
+        Rooted<PropertyName*> name(cx, cx->runtime->atomState.inputAtom);
+        RootedValue value(cx, StringValue(str));
+        return setProperty(name, value);
     }
 };
 
@@ -73,6 +76,7 @@ CreateRegExpMatchResult(JSContext *cx, JSString *input_, const jschar *chars, si
     }
 
     RegExpMatchBuilder builder(cx, array);
+    RootedValue undefinedValue(cx, UndefinedValue());
 
     for (size_t i = 0; i < matchPairs->pairCount(); ++i) {
         MatchPair pair = matchPairs->pair(i);
@@ -80,11 +84,12 @@ CreateRegExpMatchResult(JSContext *cx, JSString *input_, const jschar *chars, si
         JSString *captured;
         if (pair.isUndefined()) {
             JS_ASSERT(i != 0); /* Since we had a match, first pair must be present. */
-            if (!builder.append(i, UndefinedValue()))
+            if (!builder.append(i, undefinedValue))
                 return false;
         } else {
             captured = js_NewDependentString(cx, input, pair.start, pair.length());
-            if (!captured || !builder.append(i, StringValue(captured)))
+            RootedValue value(cx, StringValue(captured));
+            if (!captured || !builder.append(i, value))
                 return false;
         }
     }
@@ -194,11 +199,11 @@ CompileRegExpObject(JSContext *cx, RegExpObjectBuilder &builder, CallArgs args)
 {
     if (args.length() == 0) {
         RegExpStatics *res = cx->regExpStatics();
-        RegExpObject *reobj = builder.build(RootedAtom(cx, cx->runtime->emptyString),
-                                            res->getFlags());
+        Rooted<JSAtom*> empty(cx, cx->runtime->emptyString);
+        RegExpObject *reobj = builder.build(empty, res->getFlags());
         if (!reobj)
             return false;
-        args.rval() = ObjectValue(*reobj);
+        args.rval().setObject(*reobj);
         return true;
     }
 
@@ -238,19 +243,20 @@ CompileRegExpObject(JSContext *cx, RegExpObjectBuilder &builder, CallArgs args)
          * 'toSource' is a permanent read-only property, so this is equivalent
          * to executing RegExpObject::getSource on the unwrapped object.
          */
-        Value v;
+        RootedValue v(cx);
         if (!sourceObj.getProperty(cx, cx->runtime->atomState.sourceAtom, &v))
             return false;
 
-        RegExpObject *reobj = builder.build(RootedAtom(cx, &v.toString()->asAtom()), flags);
+        Rooted<JSAtom*> sourceAtom(cx, &v.toString()->asAtom());
+        RegExpObject *reobj = builder.build(sourceAtom, flags);
         if (!reobj)
             return false;
 
-        args.rval() = ObjectValue(*reobj);
+        args.rval().setObject(*reobj);
         return true;
     }
 
-    JSAtom *source;
+    RootedAtom source(cx);
     if (sourceValue.isUndefined()) {
         source = cx->runtime->emptyString;
     } else {
@@ -284,24 +290,31 @@ CompileRegExpObject(JSContext *cx, RegExpObjectBuilder &builder, CallArgs args)
     RegExpStatics *res = cx->regExpStatics();
     RegExpObject *reobj = builder.build(escapedSourceStr, RegExpFlag(flags | res->getFlags()));
     if (!reobj)
-        return NULL;
+        return false;
 
-    args.rval() = ObjectValue(*reobj);
+    args.rval().setObject(*reobj);
     return true;
+}
+
+static bool
+IsRegExp(const Value &v)
+{
+    return v.isObject() && v.toObject().hasClass(&RegExpClass);
+}
+
+static bool
+regexp_compile_impl(JSContext *cx, CallArgs args)
+{
+    JS_ASSERT(IsRegExp(args.thisv()));
+    RegExpObjectBuilder builder(cx, &args.thisv().toObject().asRegExp());
+    return CompileRegExpObject(cx, builder, args);
 }
 
 static JSBool
 regexp_compile(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
-
-    bool ok;
-    JSObject *obj = NonGenericMethodGuard(cx, args, regexp_compile, &RegExpClass, &ok);
-    if (!obj)
-        return ok;
-
-    RegExpObjectBuilder builder(cx, &obj->asRegExp());
-    return CompileRegExpObject(cx, builder, args);
+    return CallNonGenericMethod(cx, IsRegExp, regexp_compile_impl, args);
 }
 
 static JSBool
@@ -319,7 +332,7 @@ regexp_construct(JSContext *cx, unsigned argc, Value *vp)
             IsObjectWithClass(args[0], ESClass_RegExp, cx) &&
             !args.hasDefined(1))
         {
-            args.rval() = args[0];
+            args.rval().set(args[0]);
             return true;
         }
     }
@@ -328,22 +341,24 @@ regexp_construct(JSContext *cx, unsigned argc, Value *vp)
     return CompileRegExpObject(cx, builder, args);
 }
 
+static bool
+regexp_toString_impl(JSContext *cx, CallArgs args)
+{
+    JS_ASSERT(IsRegExp(args.thisv()));
+
+    JSString *str = args.thisv().toObject().asRegExp().toString(cx);
+    if (!str)
+        return false;
+
+    args.rval().setString(str);
+    return true;
+}
+
 static JSBool
 regexp_toString(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
-
-    bool ok;
-    JSObject *obj = NonGenericMethodGuard(cx, args, regexp_toString, &RegExpClass, &ok);
-    if (!obj)
-        return ok;
-
-    JSString *str = obj->asRegExp().toString(cx);
-    if (!str)
-        return false;
-
-    *vp = StringValue(str);
-    return true;
+    return CallNonGenericMethod(cx, IsRegExp, regexp_toString_impl, args);
 }
 
 static JSFunctionSpec regexp_methods[] = {
@@ -372,33 +387,33 @@ static JSFunctionSpec regexp_methods[] = {
 
 #define DEFINE_STATIC_GETTER(name, code)                                        \
     static JSBool                                                               \
-    name(JSContext *cx, HandleObject obj, HandleId id, jsval *vp)               \
+    name(JSContext *cx, HandleObject obj, HandleId id, MutableHandleValue vp)   \
     {                                                                           \
         RegExpStatics *res = cx->regExpStatics();                               \
         code;                                                                   \
     }
 
-DEFINE_STATIC_GETTER(static_input_getter,        return res->createPendingInput(cx, vp))
-DEFINE_STATIC_GETTER(static_multiline_getter,    *vp = BOOLEAN_TO_JSVAL(res->multiline());
+DEFINE_STATIC_GETTER(static_input_getter,        return res->createPendingInput(cx, vp.address()))
+DEFINE_STATIC_GETTER(static_multiline_getter,    vp.set(BOOLEAN_TO_JSVAL(res->multiline()));
                                                  return true)
-DEFINE_STATIC_GETTER(static_lastMatch_getter,    return res->createLastMatch(cx, vp))
-DEFINE_STATIC_GETTER(static_lastParen_getter,    return res->createLastParen(cx, vp))
-DEFINE_STATIC_GETTER(static_leftContext_getter,  return res->createLeftContext(cx, vp))
-DEFINE_STATIC_GETTER(static_rightContext_getter, return res->createRightContext(cx, vp))
+DEFINE_STATIC_GETTER(static_lastMatch_getter,    return res->createLastMatch(cx, vp.address()))
+DEFINE_STATIC_GETTER(static_lastParen_getter,    return res->createLastParen(cx, vp.address()))
+DEFINE_STATIC_GETTER(static_leftContext_getter,  return res->createLeftContext(cx, vp.address()))
+DEFINE_STATIC_GETTER(static_rightContext_getter, return res->createRightContext(cx, vp.address()))
 
-DEFINE_STATIC_GETTER(static_paren1_getter,       return res->createParen(cx, 1, vp))
-DEFINE_STATIC_GETTER(static_paren2_getter,       return res->createParen(cx, 2, vp))
-DEFINE_STATIC_GETTER(static_paren3_getter,       return res->createParen(cx, 3, vp))
-DEFINE_STATIC_GETTER(static_paren4_getter,       return res->createParen(cx, 4, vp))
-DEFINE_STATIC_GETTER(static_paren5_getter,       return res->createParen(cx, 5, vp))
-DEFINE_STATIC_GETTER(static_paren6_getter,       return res->createParen(cx, 6, vp))
-DEFINE_STATIC_GETTER(static_paren7_getter,       return res->createParen(cx, 7, vp))
-DEFINE_STATIC_GETTER(static_paren8_getter,       return res->createParen(cx, 8, vp))
-DEFINE_STATIC_GETTER(static_paren9_getter,       return res->createParen(cx, 9, vp))
+DEFINE_STATIC_GETTER(static_paren1_getter,       return res->createParen(cx, 1, vp.address()))
+DEFINE_STATIC_GETTER(static_paren2_getter,       return res->createParen(cx, 2, vp.address()))
+DEFINE_STATIC_GETTER(static_paren3_getter,       return res->createParen(cx, 3, vp.address()))
+DEFINE_STATIC_GETTER(static_paren4_getter,       return res->createParen(cx, 4, vp.address()))
+DEFINE_STATIC_GETTER(static_paren5_getter,       return res->createParen(cx, 5, vp.address()))
+DEFINE_STATIC_GETTER(static_paren6_getter,       return res->createParen(cx, 6, vp.address()))
+DEFINE_STATIC_GETTER(static_paren7_getter,       return res->createParen(cx, 7, vp.address()))
+DEFINE_STATIC_GETTER(static_paren8_getter,       return res->createParen(cx, 8, vp.address()))
+DEFINE_STATIC_GETTER(static_paren9_getter,       return res->createParen(cx, 9, vp.address()))
 
 #define DEFINE_STATIC_SETTER(name, code)                                        \
     static JSBool                                                               \
-    name(JSContext *cx, HandleObject obj, HandleId id, JSBool strict, jsval *vp)\
+    name(JSContext *cx, HandleObject obj, HandleId id, JSBool strict, MutableHandleValue vp)\
     {                                                                           \
         RegExpStatics *res = cx->regExpStatics();                               \
         code;                                                                   \
@@ -406,13 +421,13 @@ DEFINE_STATIC_GETTER(static_paren9_getter,       return res->createParen(cx, 9, 
     }
 
 DEFINE_STATIC_SETTER(static_input_setter,
-                     if (!JSVAL_IS_STRING(*vp) && !JS_ConvertValue(cx, *vp, JSTYPE_STRING, vp))
+                     if (!JSVAL_IS_STRING(vp) && !JS_ConvertValue(cx, vp, JSTYPE_STRING, vp.address()))
                          return false;
-                     res->setPendingInput(JSVAL_TO_STRING(*vp)))
+                     res->setPendingInput(JSVAL_TO_STRING(vp)))
 DEFINE_STATIC_SETTER(static_multiline_setter,
-                     if (!JSVAL_IS_BOOLEAN(*vp) && !JS_ConvertValue(cx, *vp, JSTYPE_BOOLEAN, vp))
+                     if (!JSVAL_IS_BOOLEAN(vp) && !JS_ConvertValue(cx, vp, JSTYPE_BOOLEAN, vp.address()))
                          return false;
-                     res->setMultiline(cx, !!JSVAL_TO_BOOLEAN(*vp)))
+                     res->setMultiline(cx, !!JSVAL_TO_BOOLEAN(vp)))
 
 const uint8_t REGEXP_STATIC_PROP_ATTRS    = JSPROP_PERMANENT | JSPROP_SHARED | JSPROP_ENUMERATE;
 const uint8_t RO_REGEXP_STATIC_PROP_ATTRS = REGEXP_STATIC_PROP_ATTRS | JSPROP_READONLY;
@@ -460,7 +475,8 @@ js_InitRegExpClass(JSContext *cx, JSObject *obj)
     proto->setPrivate(NULL);
 
     RegExpObjectBuilder builder(cx, &proto->asRegExp());
-    if (!builder.build(RootedAtom(cx, cx->runtime->emptyString), RegExpFlag(0)))
+    Rooted<JSAtom*> empty(cx, cx->runtime->emptyString);
+    if (!builder.build(empty, RegExpFlag(0)))
         return NULL;
 
     if (!DefinePropertiesAndBrand(cx, proto, NULL, regexp_methods))
@@ -535,17 +551,10 @@ GetSharedForGreedyStar(JSContext *cx, JSAtom *source, RegExpFlag flags, RegExpGu
  * |execType| to perform this optimization.
  */
 static bool
-ExecuteRegExp(JSContext *cx, Native native, unsigned argc, Value *vp)
+ExecuteRegExp(JSContext *cx, RegExpExecType execType, CallArgs args)
 {
-    CallArgs args = CallArgsFromVp(argc, vp);
-
-    /* Step 1. */
-    bool ok;
-    JSObject *obj = NonGenericMethodGuard(cx, args, native, &RegExpClass, &ok);
-    if (!obj)
-        return ok;
-
-    Rooted<RegExpObject*> reobj(cx, &obj->asRegExp());
+    /* Step 1 was performed by CallNonGenericMethod. */
+    Rooted<RegExpObject*> reobj(cx, &args.thisv().toObject().asRegExp());
 
     RegExpGuard re;
     if (StartsWithGreedyStar(reobj->getSource())) {
@@ -564,14 +573,12 @@ ExecuteRegExp(JSContext *cx, Native native, unsigned argc, Value *vp)
         return false;
 
     /* Step 3. */
-    JSLinearString *linearInput = input->ensureLinear(cx);
+    Rooted<JSLinearString*> linearInput(cx, input->ensureLinear(cx));
     if (!linearInput)
         return false;
-    const jschar *chars = linearInput->chars();
-    size_t length = input->length();
 
     /* Step 4. */
-    const Value &lastIndex = reobj->getLastIndex();
+    Value lastIndex = reobj->getLastIndex();
 
     /* Step 5. */
     double i;
@@ -582,18 +589,20 @@ ExecuteRegExp(JSContext *cx, Native native, unsigned argc, Value *vp)
     if (!re->global() && !re->sticky())
         i = 0;
 
+    const jschar *chars = linearInput->chars();
+    size_t length = linearInput->length();
+
     /* Step 9a. */
     if (i < 0 || i > length) {
         reobj->zeroLastIndex();
-        args.rval() = NullValue();
+        args.rval().setNull();
         return true;
     }
 
     /* Steps 8-21. */
-    RegExpExecType execType = (native == regexp_test) ? RegExpTest : RegExpExec;
     size_t lastIndexInt(i);
     if (!ExecuteRegExp(cx, res, *re, linearInput, chars, length, &lastIndexInt, execType,
-                       &args.rval())) {
+                       args.rval().address())) {
         return false;
     }
 
@@ -609,19 +618,33 @@ ExecuteRegExp(JSContext *cx, Native native, unsigned argc, Value *vp)
 }
 
 /* ES5 15.10.6.2. */
+static bool
+regexp_exec_impl(JSContext *cx, CallArgs args)
+{
+    return ExecuteRegExp(cx, RegExpExec, args);
+}
+
 JSBool
 js::regexp_exec(JSContext *cx, unsigned argc, Value *vp)
 {
-    return ExecuteRegExp(cx, regexp_exec, argc, vp);
+    CallArgs args = CallArgsFromVp(argc, vp);
+    return CallNonGenericMethod(cx, IsRegExp, regexp_exec_impl, args);
 }
 
 /* ES5 15.10.6.3. */
+static bool
+regexp_test_impl(JSContext *cx, CallArgs args)
+{
+    if (!ExecuteRegExp(cx, RegExpTest, args))
+        return false;
+    if (!args.rval().isTrue())
+        args.rval().setBoolean(false);
+    return true;
+}
+
 JSBool
 js::regexp_test(JSContext *cx, unsigned argc, Value *vp)
 {
-    if (!ExecuteRegExp(cx, regexp_test, argc, vp))
-        return false;
-    if (!vp->isTrue())
-        vp->setBoolean(false);
-    return true;
+    CallArgs args = CallArgsFromVp(argc, vp);
+    return CallNonGenericMethod(cx, IsRegExp, regexp_test_impl, args);
 }

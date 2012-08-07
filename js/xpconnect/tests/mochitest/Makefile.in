@@ -3,16 +3,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir  = js/xpconnect/tests/mochitest
+relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
-include $(topsrcdir)/config/rules.mk
 
-_TEST_FILES =	bug500931_helper.html \
+MOCHITEST_FILES =	bug500931_helper.html \
 		inner.html \
 		bug92773_helper.html \
 		bug504877_helper.html \
@@ -38,7 +37,6 @@ _TEST_FILES =	bug500931_helper.html \
 		file_bug505915.html \
 		test_bug553407.html \
 		test_bug560351.html \
-		test_bug564330.html \
 		test_frameWrapping.html \
 		test_bug585745.html \
 		test_bug589028.html \
@@ -54,7 +52,6 @@ _TEST_FILES =	bug500931_helper.html \
 		test_bug629331.html \
 		test1_bug629331.html \
 		test2_bug629331.html \
-		test_bug618017.html \
 		test_bug636097.html \
 		test_bug661980.html \
 		test_bug650273.html \
@@ -62,30 +59,33 @@ _TEST_FILES =	bug500931_helper.html \
 		file_bug658560.html \
 		test_bug655297.html \
 		test_bug691059.html \
+		file_bug706301.html \
 		test_bug745483.html \
 		file_bug758563.html \
+		file_bug760131.html \
+		test_bug764389.html \
+		test_bug772288.html \
 		file_nodelists.html \
-		file_bug706301.html \
 		file_exnstack.html \
+		file_expandosharing.html \
+		file_empty.html \
+		file_documentdomain.html \
+		test_lookupMethod.html \
 		$(NULL)
 
-_CHROME_FILES	= \
+MOCHITEST_CHROME_FILES	= \
 		test_bug361111.xul \
+		test_bug760131.html \
 		$(NULL)
 
 ifneq ($(OS_TARGET),Android)
 ifndef MOZ_PLATFORM_MAEMO
-_TEST_FILES +=	test_bug657267.html \
-		bug657267.jar
+MOCHITEST_FILES +=	test_bug657267.html \
+		bug657267.jar \
+		test_bug564330.html \
+		test_bug618017.html
 endif
 endif
 
-
-		#test_bug484107.html \
-
-libs:: $(_TEST_FILES)
-	$(INSTALL) $^ $(DEPTH)/_tests/testing/mochitest/tests/$(relativesrcdir)
-
-libs:: $(_CHROME_FILES)
-	$(INSTALL) $^ $(DEPTH)/_tests/testing/mochitest/chrome/$(relativesrcdir)
+include $(topsrcdir)/config/rules.mk
 

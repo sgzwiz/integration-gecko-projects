@@ -132,6 +132,8 @@ class nsHashKey;
 
 #define NS_EVENT_FLAG_STOP_DISPATCH_IMMEDIATELY 0x80000
 
+#define NS_EVENT_FLAG_DONT_FORWARD_CROSS_PROCESS 0x100000
+
 #define NS_EVENT_CAPTURE_MASK             (~(NS_EVENT_FLAG_BUBBLE | NS_EVENT_FLAG_NO_CONTENT_DISPATCH))
 #define NS_EVENT_BUBBLE_MASK              (~(NS_EVENT_FLAG_CAPTURE | NS_EVENT_FLAG_NO_CONTENT_DISPATCH))
 
@@ -217,6 +219,10 @@ class nsHashKey;
 
 // Indicates a resize will occur
 #define NS_BEFORERESIZE_EVENT            (NS_WINDOW_START + 66)
+
+// Indicates that the user is either idle or active
+#define NS_MOZ_USER_IDLE                 (NS_WINDOW_START + 67)
+#define NS_MOZ_USER_ACTIVE               (NS_WINDOW_START + 68)
 
 #define NS_MOUSE_MESSAGE_START          300
 #define NS_MOUSE_MOVE                   (NS_MOUSE_MESSAGE_START)
@@ -431,6 +437,7 @@ class nsHashKey;
 #define NS_SIMPLE_GESTURE_ROTATE         (NS_SIMPLE_GESTURE_EVENT_START+6)
 #define NS_SIMPLE_GESTURE_TAP            (NS_SIMPLE_GESTURE_EVENT_START+7)
 #define NS_SIMPLE_GESTURE_PRESSTAP       (NS_SIMPLE_GESTURE_EVENT_START+8)
+#define NS_SIMPLE_GESTURE_EDGEUI         (NS_SIMPLE_GESTURE_EVENT_START+9)
 
 // These are used to send native events to plugins.
 #define NS_PLUGIN_EVENT_START            3600
@@ -565,6 +572,7 @@ protected:
 
   nsEvent()
   {
+    MOZ_COUNT_CTOR(nsEvent);
   }
 
 public:
@@ -583,6 +591,12 @@ public:
   ~nsEvent()
   {
     MOZ_COUNT_DTOR(nsEvent);
+  }
+
+  nsEvent(const nsEvent& aOther)
+  {
+    MOZ_COUNT_CTOR(nsEvent);
+    *this = aOther;
   }
 
   // See event struct types
@@ -617,19 +631,19 @@ class nsGUIEvent : public nsEvent
 protected:
   nsGUIEvent(bool isTrusted, PRUint32 msg, nsIWidget *w, PRUint8 structType)
     : nsEvent(isTrusted, msg, structType),
-      widget(w), pluginEvent(nsnull)
+      widget(w), pluginEvent(nullptr)
   {
   }
 
   nsGUIEvent()
-    : pluginEvent(nsnull)
+    : pluginEvent(nullptr)
   {
   }
 
 public:
   nsGUIEvent(bool isTrusted, PRUint32 msg, nsIWidget *w)
     : nsEvent(isTrusted, msg, NS_GUI_EVENT),
-      widget(w), pluginEvent(nsnull)
+      widget(w), pluginEvent(nullptr)
   {
   }
 
@@ -649,7 +663,7 @@ class nsScriptErrorEvent : public nsEvent
 public:
   nsScriptErrorEvent(bool isTrusted, PRUint32 msg)
     : nsEvent(isTrusted, msg, NS_SCRIPT_ERROR_EVENT),
-      lineNr(0), errorMsg(nsnull), fileName(nsnull)
+      lineNr(0), errorMsg(nullptr), fileName(nullptr)
   {
   }
 
@@ -667,7 +681,7 @@ class nsSizeEvent : public nsGUIEvent
 public:
   nsSizeEvent(bool isTrusted, PRUint32 msg, nsIWidget *w)
     : nsGUIEvent(isTrusted, msg, w, NS_SIZE_EVENT),
-      windowSize(nsnull), mWinWidth(0), mWinHeight(0)
+      windowSize(nullptr), mWinWidth(0), mWinHeight(0)
   {
   }
 
@@ -704,7 +718,7 @@ class nsZLevelEvent : public nsGUIEvent
 public:
   nsZLevelEvent(bool isTrusted, PRUint32 msg, nsIWidget *w)
     : nsGUIEvent(isTrusted, msg, w, NS_ZLEVEL_EVENT),
-      mPlacement(nsWindowZTop), mReqBelow(nsnull), mActualBelow(nsnull),
+      mPlacement(nsWindowZTop), mReqBelow(nullptr), mActualBelow(nullptr),
       mImmediate(false), mAdjusted(false)
   {
   }
@@ -823,10 +837,11 @@ public:
   {
     return ((modifiers & mozilla::widget::MODIFIER_META) != 0);
   }
-  // true indicates the win key is down (or, on Linux, the Super or Hyper key)
-  bool IsWin() const
+  // true indicates the win key is down on Windows. Or the Super or Hyper key
+  // is down on Linux.
+  bool IsOS() const
   {
-    return ((modifiers & mozilla::widget::MODIFIER_WIN) != 0);
+    return ((modifiers & mozilla::widget::MODIFIER_OS) != 0);
   }
   // true indicates the alt graph key is down
   // NOTE: on Mac, the option key press causes both IsAlt() and IsAltGrpah()
@@ -848,7 +863,7 @@ public:
   // true indeicates the ScrollLock LED is turn on.
   bool IsScrollLocked() const
   {
-    return ((modifiers & mozilla::widget::MODIFIER_SCROLL) != 0);
+    return ((modifiers & mozilla::widget::MODIFIER_SCROLLLOCK) != 0);
   }
 
   // true indeicates the Fn key is down, but this is not supported by native
@@ -989,7 +1004,7 @@ public:
     }
   }
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
   ~nsMouseEvent() {
     NS_WARN_IF_FALSE(message != NS_CONTEXTMENU ||
                      button ==
@@ -1045,7 +1060,7 @@ class nsAccessibleEvent : public nsInputEvent
 public:
   nsAccessibleEvent(bool isTrusted, PRUint32 msg, nsIWidget *w)
     : nsInputEvent(isTrusted, msg, w, NS_ACCESSIBLE_EVENT),
-      mAccessible(nsnull)
+      mAccessible(nullptr)
   {
   }
 
@@ -1236,7 +1251,7 @@ public:
 public:
   nsTextEvent(bool isTrusted, PRUint32 msg, nsIWidget *w)
     : nsInputEvent(isTrusted, msg, w, NS_TEXT_EVENT),
-      rangeCount(0), rangeArray(nsnull), isChar(false)
+      rangeCount(0), rangeArray(nullptr), isChar(false)
   {
   }
 
@@ -1406,8 +1421,8 @@ private:
 
   nsQueryContentEvent()
   {
-    mReply.mContentsRoot = nsnull;
-    mReply.mFocusedWidget = nsnull;
+    mReply.mContentsRoot = nullptr;
+    mReply.mFocusedWidget = nullptr;
   }
 
 public:
@@ -1610,6 +1625,9 @@ public:
 class nsTouchEvent : public nsInputEvent
 {
 public:
+  nsTouchEvent()
+  {
+  }
   nsTouchEvent(bool isTrusted, nsTouchEvent *aEvent)
     : nsInputEvent(isTrusted,
                    aEvent->message,
@@ -1646,7 +1664,7 @@ class nsFormEvent : public nsEvent
 public:
   nsFormEvent(bool isTrusted, PRUint32 msg)
     : nsEvent(isTrusted, msg, NS_FORM_EVENT),
-      originator(nsnull)
+      originator(nullptr)
   {
   }
 
@@ -1697,19 +1715,20 @@ public:
   nsSimpleGestureEvent(bool isTrusted, PRUint32 msg, nsIWidget* w,
                          PRUint32 directionArg, PRFloat64 deltaArg)
     : nsMouseEvent_base(isTrusted, msg, w, NS_SIMPLE_GESTURE_EVENT),
-      direction(directionArg), delta(deltaArg)
+      direction(directionArg), delta(deltaArg), clickCount(0)
   {
   }
 
   nsSimpleGestureEvent(const nsSimpleGestureEvent& other)
     : nsMouseEvent_base((other.flags & NS_EVENT_FLAG_TRUSTED) != 0,
                         other.message, other.widget, NS_SIMPLE_GESTURE_EVENT),
-      direction(other.direction), delta(other.delta)
+      direction(other.direction), delta(other.delta), clickCount(0)
   {
   }
 
   PRUint32 direction;   // See nsIDOMSimpleGestureEvent for values
   PRFloat64 delta;      // Delta for magnify and rotate events
+  PRUint32 clickCount;  // The number of taps for tap events
 };
 
 class nsTransitionEvent : public nsEvent
@@ -1785,6 +1804,17 @@ enum nsDragDropEventStatus {
   nsDragDropEventStatus_eDrop  
 };
 
+#define NS_IS_INPUT_EVENT(evnt) \
+       (((evnt)->eventStructType == NS_INPUT_EVENT) || \
+        ((evnt)->eventStructType == NS_ACCESSIBLE_EVENT) || \
+        ((evnt)->eventStructType == NS_MOUSE_EVENT) || \
+        ((evnt)->eventStructType == NS_KEY_EVENT) || \
+        ((evnt)->eventStructType == NS_TEXT_EVENT) || \
+        ((evnt)->eventStructType == NS_TOUCH_EVENT) || \
+        ((evnt)->eventStructType == NS_DRAG_EVENT) || \
+        ((evnt)->eventStructType == NS_MOUSE_SCROLL_EVENT) || \
+        ((evnt)->eventStructType == NS_MOZTOUCH_EVENT) || \
+        ((evnt)->eventStructType == NS_SIMPLE_GESTURE_EVENT))
 
 #define NS_IS_MOUSE_EVENT(evnt) \
        (((evnt)->message == NS_MOUSE_BUTTON_DOWN) || \

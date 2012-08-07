@@ -14,25 +14,27 @@
 #include "nsAttrAndChildArray.h"
 #include "nsMappedAttributeElement.h"
 #include "nsIStyleRule.h"
+#include "mozilla/Attributes.h"
 
 class nsIAtom;
 class nsHTMLStyleSheet;
 class nsRuleWalker;
 
-class nsMappedAttributes : public nsIStyleRule
+class nsMappedAttributes MOZ_FINAL : public nsIStyleRule
 {
 public:
   nsMappedAttributes(nsHTMLStyleSheet* aSheet,
                      nsMapRuleToAttributesFunc aMapRuleFunc);
 
+  // Do not return null.
   void* operator new(size_t size, PRUint32 aAttrCount = 1) CPP_THROW_NEW;
-
   nsMappedAttributes* Clone(bool aWillAddAttr);
 
   NS_DECL_ISUPPORTS
 
   nsresult SetAndTakeAttr(nsIAtom* aAttrName, nsAttrValue& aValue);
   const nsAttrValue* GetAttr(nsIAtom* aAttrName) const;
+  const nsAttrValue* GetAttr(const nsAString& aAttrName) const;
 
   PRUint32 Count() const
   {
@@ -44,7 +46,7 @@ public:
 
   void DropStyleSheetReference()
   {
-    mSheet = nsnull;
+    mSheet = nullptr;
   }
   void SetStyleSheet(nsHTMLStyleSheet* aSheet);
   nsHTMLStyleSheet* GetStyleSheet()
@@ -66,7 +68,7 @@ public:
   // aValue; any value that was already in aValue is destroyed.
   void RemoveAttrAt(PRUint32 aPos, nsAttrValue& aValue);
   const nsAttrName* GetExistingAttrNameFromQName(const nsAString& aName) const;
-  PRInt32 IndexOfAttr(nsIAtom* aLocalName, PRInt32 aNamespaceID) const;
+  PRInt32 IndexOfAttr(nsIAtom* aLocalName) const;
   
 
   // nsIStyleRule 

@@ -52,7 +52,6 @@ public:
   }
 #endif
 
-  // nsIBox
   virtual nsSize GetPrefSize(nsBoxLayoutState& aBoxLayoutState);
   virtual nsSize GetMinSize(nsBoxLayoutState& aBoxLayoutState);
   virtual nsSize GetMaxSize(nsBoxLayoutState& aBoxLayoutState);
@@ -97,7 +96,7 @@ public:
 
   virtual nsIAtom* GetType() const;
 
-  nsresult MouseDown(nsIDOMEvent* aMouseEvent);
+  nsresult StartDrag(nsIDOMEvent* aEvent);
 
   static PRInt32 GetCurrentPosition(nsIContent* content);
   static PRInt32 GetMinPosition(nsIContent* content);
@@ -127,7 +126,7 @@ public:
 private:
 
   bool GetScrollToClick();
-  nsIBox* GetScrollbar();
+  nsIFrame* GetScrollbar();
 
   void PageUpDown(nscoord change);
   void SetCurrentThumbPosition(nsIContent* aScrollbar, nscoord aNewPos, bool aIsSmooth,
@@ -138,6 +137,7 @@ private:
                                   bool aIsSmooth, bool aImmediateRedraw);
   nsresult CurrentPositionChanged(nsPresContext* aPresContext,
                                   bool aImmediateRedraw);
+
   void DragThumb(bool aGrabMouseEvents);
   void AddListener();
   void RemoveListener();

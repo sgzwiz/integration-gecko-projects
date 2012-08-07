@@ -14,7 +14,6 @@
 #include "workmonitor.h"
 #include "uachelper.h"
 #include "updatehelper.h"
-#include "prefetch.h"
 
 SERVICE_STATUS gSvcStatus = { 0 }; 
 SERVICE_STATUS_HANDLE gSvcStatusHandle = NULL; 
@@ -26,18 +25,6 @@ bool gServiceControlStopping = false;
 #define LOGS_TO_KEEP 10
 
 BOOL GetLogDirectoryPath(WCHAR *path);
-
-/**
- * Wraps all commands that should be executed by the service on each install
- * and upgrade.
-*/
-void
-RunCommandsForEachUpgrade()
-{
-  LOG(("Running install/upgrade commands...\n"));
-  ClearKnownPrefetch();
-  LOG(("Finished install/upgrade commands\n"));
-}
 
 int 
 wmain(int argc, WCHAR **argv)
@@ -84,9 +71,8 @@ wmain(int argc, WCHAR **argv)
     }
     LOG(("Upgrading service if installed...\n"));
 
-    bool ret = SvcInstall(UpgradeSvc);
-    RunCommandsForEachUpgrade();
-    if (!ret) {
+    
+    if (!SvcInstall(UpgradeSvc)) {
       LOG(("Could not upgrade service (%d)\n", GetLastError()));
       LogFinish();
       return 1;

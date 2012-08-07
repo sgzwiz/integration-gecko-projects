@@ -5,37 +5,36 @@
 
 package org.mozilla.gecko.gfx;
 
-import org.mozilla.gecko.FloatUtils;
-import org.mozilla.gecko.GeckoApp;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoEvent;
 import org.mozilla.gecko.GeckoEventResponder;
 import org.mozilla.gecko.Tab;
 import org.mozilla.gecko.Tabs;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.Point;
 import android.graphics.PointF;
-import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.SystemClock;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
-import java.util.Map;
-import java.util.HashMap;
 
-public class GeckoLayerClient implements GeckoEventResponder,
-                                         LayerView.Listener {
+import java.util.HashMap;
+import java.util.Map;
+
+public class GeckoLayerClient implements GeckoEventResponder, LayerView.Listener {
     private static final String LOGTAG = "GeckoLayerClient";
 
     private LayerController mLayerController;
     private LayerRenderer mLayerRenderer;
     private boolean mLayerRendererInitialized;
 
+    private Context mContext;
     private IntSize mScreenSize;
     private IntSize mWindowSize;
     private DisplayPortMetrics mDisplayPort;
@@ -63,15 +62,21 @@ public class GeckoLayerClient implements GeckoEventResponder,
     /* Used as a temporary ViewTransform by syncViewportInfo */
     private ViewTransform mCurrentViewTransform;
 
+    /* This is written by the compositor thread and read by the UI thread. */
+    private volatile boolean mCompositorCreated;
+
     public GeckoLayerClient(Context context) {
         // we can fill these in with dummy values because they are always written
         // to before being read
+        mContext = context;
         mScreenSize = new IntSize(0, 0);
         mWindowSize = new IntSize(0, 0);
         mDisplayPort = new DisplayPortMetrics();
         mRecordDrawTimes = true;
         mDrawTimingQueue = new DrawTimingQueue();
         mCurrentViewTransform = new ViewTransform(0, 0, 1);
+
+        mCompositorCreated = false;
     }
 
     /** Attaches the root layer to the layer controller so that Gecko appears. */
@@ -101,13 +106,21 @@ public class GeckoLayerClient implements GeckoEventResponder,
         GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Preferences:Get", prefs.toString()));
     }
 
+    public void destroy() {
+        GeckoAppShell.unregisterGeckoEventListener("Viewport:Update", this);
+        GeckoAppShell.unregisterGeckoEventListener("Viewport:PageSize", this);
+        GeckoAppShell.unregisterGeckoEventListener("Viewport:CalculateDisplayPort", this);
+        GeckoAppShell.unregisterGeckoEventListener("Checkerboard:Toggle", this);
+        GeckoAppShell.unregisterGeckoEventListener("Preferences:Data", this);
+    }
+
     DisplayPortMetrics getDisplayPort() {
         return mDisplayPort;
     }
 
     /* Informs Gecko that the screen size has changed. */
     private void sendResizeEventIfNecessary(boolean force) {
-        DisplayMetrics metrics = GeckoApp.mAppContext.getDisplayMetrics();
+        DisplayMetrics metrics = mContext.getResources().getDisplayMetrics();
         View view = mLayerController.getView();
 
         IntSize newScreenSize = new IntSize(metrics.widthPixels, metrics.heightPixels);
@@ -134,6 +147,7 @@ public class GeckoLayerClient implements GeckoEventResponder,
         GeckoEvent event = GeckoEvent.createSizeChangedEvent(mWindowSize.width, mWindowSize.height,
                                                              mScreenSize.width, mScreenSize.height);
         GeckoAppShell.sendEventToGecko(event);
+        GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Window:Resize", ""));
     }
 
     public Bitmap getBitmap() {
@@ -349,16 +363,11 @@ public class GeckoLayerClient implements GeckoEventResponder,
       * is invoked on a frame, then this function will not be. For any given frame, this
       * function will be invoked before syncViewportInfo.
       */
-    public void setPageRect(float zoom, float pageLeft, float pageTop, float pageRight, float pageBottom,
-            float cssPageLeft, float cssPageTop, float cssPageRight, float cssPageBottom) {
+    public void setPageRect(float cssPageLeft, float cssPageTop, float cssPageRight, float cssPageBottom) {
         synchronized (mLayerController) {
-            // adjust the page dimensions to account for differences in zoom
-            // between the rendered content (which is what the compositor tells us)
-            // and our zoom level (which may have diverged).
-            RectF pageRect = new RectF(pageLeft, pageTop, pageRight, pageBottom);
             RectF cssPageRect = new RectF(cssPageLeft, cssPageTop, cssPageRight, cssPageBottom);
             float ourZoom = mLayerController.getZoomFactor();
-            mLayerController.setPageRect(RectUtils.scale(pageRect, ourZoom / zoom), cssPageRect);
+            mLayerController.setPageRect(RectUtils.scale(cssPageRect, ourZoom), cssPageRect);
             // Here the page size of the document has changed, but the document being displayed
             // is still the same. Therefore, we don't need to send anything to browser.js; any
             // changes we need to make to the display port will get sent the next time we call
@@ -449,7 +458,9 @@ public class GeckoLayerClient implements GeckoEventResponder,
         // Gecko draw events have been processed.  When this returns, composition is
         // definitely paused -- it'll synchronize with the Gecko event loop, which
         // in turn will synchronize with the compositor thread.
-        GeckoAppShell.sendEventToGeckoSync(GeckoEvent.createCompositorPauseEvent());
+        if (mCompositorCreated) {
+            GeckoAppShell.sendEventToGeckoSync(GeckoEvent.createCompositorPauseEvent());
+        }
     }
 
     /** Implementation of LayerView.Listener */
@@ -458,8 +469,10 @@ public class GeckoLayerClient implements GeckoEventResponder,
         // https://bugzilla.mozilla.org/show_bug.cgi?id=735230#c23), so we
         // resume the compositor directly. We still need to inform Gecko about
         // the compositor resuming, so that Gecko knows that it can now draw.
-        GeckoAppShell.scheduleResumeComposition(width, height);
-        GeckoAppShell.sendEventToGecko(GeckoEvent.createCompositorResumeEvent());
+        if (mCompositorCreated) {
+            GeckoAppShell.scheduleResumeComposition(width, height);
+            GeckoAppShell.sendEventToGecko(GeckoEvent.createCompositorResumeEvent());
+        }
     }
 
     /** Implementation of LayerView.Listener */
@@ -473,6 +486,11 @@ public class GeckoLayerClient implements GeckoEventResponder,
         renderRequested();
     }
 
+    /** Implementation of LayerView.Listener */
+    public void compositorCreated() {
+        mCompositorCreated = true;
+    }
+
     /** Used by robocop for testing purposes. Not for production use! This is called via reflection by robocop. */
     public void setDrawListener(DrawListener listener) {
         mDrawListener = listener;
@@ -483,4 +501,3 @@ public class GeckoLayerClient implements GeckoEventResponder,
         public void drawFinished();
     }
 }
-

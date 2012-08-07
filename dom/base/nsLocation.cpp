@@ -35,9 +35,9 @@
 #include "nsIProtocolHandler.h"
 #include "nsReadableUtils.h"
 #include "nsITextToSubURI.h"
-#include "nsContentUtils.h"
 #include "nsJSUtils.h"
 #include "jsfriendapi.h"
+#include "nsContentUtils.h"
 
 static nsresult
 GetContextFromStack(nsIJSContextStack *aStack, JSContext **aContext)
@@ -64,7 +64,7 @@ GetContextFromStack(nsIJSContextStack *aStack, JSContext **aContext)
     }
   }
 
-  *aContext = nsnull;
+  *aContext = nullptr;
 
   return NS_OK;
 }
@@ -167,20 +167,20 @@ static already_AddRefed<nsIDocument>
 GetFrameDocument(JSContext *cx, JSStackFrame *fp)
 {
   if (!cx || !fp)
-    return nsnull;
+    return nullptr;
 
   JSObject* scope = JS_GetGlobalForFrame(fp);
   if (!scope)
-    return nsnull;
+    return nullptr;
 
   JSAutoEnterCompartment ac;
   if (!ac.enter(cx, scope))
-     return nsnull;
+     return nullptr;
 
   nsCOMPtr<nsIDOMWindow> window =
     do_QueryInterface(nsJSUtils::GetStaticScriptGlobal(cx, scope));
   if (!window)
-    return nsnull;
+    return nullptr;
 
   // If it's a window, get its document.
   nsCOMPtr<nsIDOMDocument> domDoc;
@@ -192,7 +192,15 @@ GetFrameDocument(JSContext *cx, JSStackFrame *fp)
 nsresult
 nsLocation::CheckURL(nsIURI* aURI, nsIDocShellLoadInfo** aLoadInfo)
 {
-  *aLoadInfo = nsnull;
+  *aLoadInfo = nullptr;
+  JSContext* cx;
+  if ((cx = nsContentUtils::GetCurrentJSContext())) {
+    nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
+    NS_ENSURE_STATE(ssm);
+    // Check to see if URI is allowed.
+    nsresult rv = ssm->CheckLoadURIFromScript(cx, aURI);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   nsCOMPtr<nsIDocShell> docShell(do_QueryReferent(mDocShell));
   NS_ENSURE_TRUE(docShell, NS_ERROR_NOT_AVAILABLE);
@@ -202,8 +210,6 @@ nsLocation::CheckURL(nsIURI* aURI, nsIDocShellLoadInfo** aLoadInfo)
   nsCOMPtr<nsIJSContextStack>
     stack(do_GetService("@mozilla.org/js/xpc/ContextStack;1", &rv));
   NS_ENSURE_SUCCESS(rv, rv);
-
-  JSContext *cx;
 
   NS_ENSURE_SUCCESS(GetContextFromStack(stack, &cx), NS_ERROR_FAILURE);
 
@@ -283,7 +289,7 @@ nsLocation::CheckURL(nsIURI* aURI, nsIDocShellLoadInfo** aLoadInfo)
 nsresult
 nsLocation::GetURI(nsIURI** aURI, bool aGetInnermostURI)
 {
-  *aURI = nsnull;
+  *aURI = nullptr;
 
   nsAutoLockChrome lock;
 
@@ -323,7 +329,7 @@ nsLocation::GetURI(nsIURI** aURI, bool aGetInnermostURI)
 nsresult
 nsLocation::GetWritableURI(nsIURI** aURI)
 {
-  *aURI = nsnull;
+  *aURI = nullptr;
 
   nsAutoLockChrome lock;
 
@@ -623,7 +629,7 @@ nsLocation::SetHrefWithBase(const nsAString& aHref, nsIURI* aBase,
   if (NS_SUCCEEDED(GetDocumentCharacterSetForURI(aHref, docCharset)))
     result = NS_NewURI(getter_AddRefs(newUri), aHref, docCharset.get(), aBase);
   else
-    result = NS_NewURI(getter_AddRefs(newUri), aHref, nsnull, aBase);
+    result = NS_NewURI(getter_AddRefs(newUri), aHref, nullptr, aBase);
 
   if (newUri) {
     /* Check with the scriptContext if it is currently processing a script tag.
@@ -996,7 +1002,7 @@ nsLocation::GetSourceDocument(JSContext* cx, nsIDocument** aDocument)
       return CallQueryInterface(domDoc, aDocument);
     }
   } else {
-    *aDocument = nsnull;
+    *aDocument = nullptr;
   }
 
   return rv;
@@ -1010,7 +1016,7 @@ nsLocation::GetSourceBaseURL(JSContext* cx, nsIURI** sourceURL)
   if (doc) {
     *sourceURL = doc->GetBaseURI().get();
   } else {
-    *sourceURL = nsnull;
+    *sourceURL = nullptr;
   }
 
   return rv;

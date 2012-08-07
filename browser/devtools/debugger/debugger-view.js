@@ -6,6 +6,7 @@
 "use strict";
 
 const PROPERTY_VIEW_FLASH_DURATION = 400; // ms
+const BREAKPOINT_LINE_TOOLTIP_MAX_SIZE = 1000;
 
 /**
  * Object mediating visual changes and event listeners between the debugger and
@@ -22,7 +23,7 @@ let DebuggerView = {
    * Initializes UI properties for all the displayed panes.
    */
   initializePanes: function DV_initializePanes() {
-    let stackframes = document.getElementById("stackframes");
+    let stackframes = document.getElementById("stackframes+breakpoints");
     stackframes.setAttribute("width", Prefs.stackframesWidth);
 
     let variables = document.getElementById("variables");
@@ -51,11 +52,19 @@ let DebuggerView = {
    * Removes the displayed panes and saves any necessary state.
    */
   destroyPanes: function DV_destroyPanes() {
-    let stackframes = document.getElementById("stackframes");
+    let stackframes = document.getElementById("stackframes+breakpoints");
     Prefs.stackframesWidth = stackframes.getAttribute("width");
 
     let variables = document.getElementById("variables");
     Prefs.variablesWidth = variables.getAttribute("width");
+
+    let bkps = document.getElementById("breakpoints");
+    let frames = document.getElementById("stackframes");
+    bkps.parentNode.removeChild(bkps);
+    frames.parentNode.removeChild(frames);
+
+    stackframes.parentNode.removeChild(stackframes);
+    variables.parentNode.removeChild(variables);
   },
 
   /**
@@ -72,6 +81,7 @@ let DebuggerView = {
    */
   _onEditorLoad: function DV__onEditorLoad() {
     DebuggerController.Breakpoints.initialize();
+    this.editor.focus();
   },
 
   /**
@@ -89,9 +99,9 @@ let DebuggerView = {
 function RemoteDebuggerPrompt() {
 
   /**
-   * The remote uri the user wants to connect to.
+   * The remote host and port the user wants to connect to.
    */
-  this.uri = null;
+  this.remote = {};
 }
 
 RemoteDebuggerPrompt.prototype = {
@@ -104,8 +114,8 @@ RemoteDebuggerPrompt.prototype = {
    */
   show: function RDP_show(aIsReconnectingFlag) {
     let check = { value: Prefs.remoteAutoConnect };
-    let input = { value: "http://" + Prefs.remoteHost +
-                               ":" + Prefs.remotePort + "/" };
+    let input = { value: Prefs.remoteHost + ":" + Prefs.remotePort };
+    let parts;
 
     while (true) {
       let result = Services.prompt.prompt(null,
@@ -117,15 +127,17 @@ RemoteDebuggerPrompt.prototype = {
 
       Prefs.remoteAutoConnect = check.value;
 
-      try {
-        let uri = Services.io.newURI(input.value, null, null);
-        let url = uri.QueryInterface(Ci.nsIURL);
-
-        // If a url could be successfully retrieved, then the uri is correct.
-        this.uri = uri;
-        return result;
+      if (!result) {
+        return false;
       }
-      catch(e) { }
+      if ((parts = input.value.split(":")).length === 2) {
+        let [host, port] = parts;
+
+        if (host.length && port.length) {
+          this.remote = { host: host, port: port };
+          return true;
+        }
+      }
     }
   }
 };
@@ -136,6 +148,7 @@ RemoteDebuggerPrompt.prototype = {
 function ScriptsView() {
   this._onScriptsChange = this._onScriptsChange.bind(this);
   this._onScriptsSearch = this._onScriptsSearch.bind(this);
+  this._onScriptsKeyUp = this._onScriptsKeyUp.bind(this);
 }
 
 ScriptsView.prototype = {
@@ -144,6 +157,10 @@ ScriptsView.prototype = {
    * Removes all elements from the scripts container, leaving it empty.
    */
   empty: function DVS_empty() {
+    this._scripts.selectedIndex = -1;
+    this._scripts.setAttribute("label", L10N.getStr("noScriptsText"));
+    this._scripts.removeAttribute("tooltiptext");
+
     while (this._scripts.firstChild) {
       this._scripts.removeChild(this._scripts.firstChild);
     }
@@ -155,6 +172,31 @@ ScriptsView.prototype = {
   clearSearch: function DVS_clearSearch() {
     this._searchbox.value = "";
     this._onScriptsSearch({});
+  },
+
+  /**
+   * Checks whether the script with the specified URL is among the scripts
+   * known to the debugger (ignoring the query & reference).
+   *
+   * @param string aUrl
+   *        The script URL.
+   * @return boolean
+   */
+  containsIgnoringQuery: function DVS_containsIgnoringQuery(aUrl) {
+    let sourceScripts = DebuggerController.SourceScripts;
+    aUrl = sourceScripts.trimUrlQuery(aUrl);
+
+    if (this._tmpScripts.some(function(element) {
+      return sourceScripts.trimUrlQuery(element.script.url) == aUrl;
+    })) {
+      return true;
+    }
+    if (this.scriptLocations.some(function(url) {
+      return sourceScripts.trimUrlQuery(url) == aUrl;
+    })) {
+      return true;
+    }
+    return false;
   },
 
   /**
@@ -198,6 +240,16 @@ ScriptsView.prototype = {
   },
 
   /**
+   * Selects the script with the specified index from the list.
+   *
+   * @param number aIndex
+   *        The script index.
+   */
+  selectIndex: function DVS_selectIndex(aIndex) {
+    this._scripts.selectedIndex = aIndex;
+  },
+
+  /**
    * Selects the script with the specified URL from the list.
    *
    * @param string aUrl
@@ -234,6 +286,13 @@ ScriptsView.prototype = {
     return this._scripts.selectedItem ?
            this._scripts.selectedItem.value : null;
   },
+
+  /**
+   * Gets the most recently selected script url.
+   * @return string | null
+   */
+  get preferredScriptUrl()
+    this._preferredScriptUrl ? this._preferredScriptUrl : null,
 
   /**
    * Returns the list of labels in the scripts container.
@@ -303,7 +362,7 @@ ScriptsView.prototype = {
       }
     }
     // The script is alphabetically the last one.
-    this._createScriptElement(aLabel, aScript, -1, true);
+    this._createScriptElement(aLabel, aScript, -1);
   },
 
   /**
@@ -323,7 +382,7 @@ ScriptsView.prototype = {
 
     for (let i = 0, l = newScripts.length; i < l; i++) {
       let item = newScripts[i];
-      this._createScriptElement(item.label, item.script, -1, true);
+      this._createScriptElement(item.label, item.script, -1);
     }
   },
 
@@ -338,15 +397,11 @@ ScriptsView.prototype = {
    * @param number aIndex
    *        The index where to insert to new script in the container.
    *        Pass -1 to append the script at the end.
-   * @param boolean aSelectIfEmptyFlag
-   *        True to set the newly created script as the currently selected item
-   *        if there are no other existing scripts in the container.
    */
-  _createScriptElement: function DVS__createScriptElement(
-    aLabel, aScript, aIndex, aSelectIfEmptyFlag)
+  _createScriptElement: function DVS__createScriptElement(aLabel, aScript, aIndex)
   {
     // Make sure we don't duplicate anything.
-    if (aLabel == "null" || this.containsLabel(aLabel)) {
+    if (aLabel == "null" || this.containsLabel(aLabel) || this.contains(aScript.url)) {
       return;
     }
 
@@ -356,32 +411,20 @@ ScriptsView.prototype = {
 
     scriptItem.setAttribute("tooltiptext", aScript.url);
     scriptItem.setUserData("sourceScript", aScript, null);
-
-    if (this._scripts.itemCount == 1 && aSelectIfEmptyFlag) {
-      this._scripts.selectedItem = scriptItem;
-    }
   },
 
   /**
-   * The click listener for the scripts container.
+   * Gets the entered file, line and token entered in the searchbox.
+   *
+   * @return array
+   *         A [file, line, token] array.
    */
-  _onScriptsChange: function DVS__onScriptsChange() {
-    let script = this._scripts.selectedItem.getUserData("sourceScript");
-    this._preferredScript = script;
-    DebuggerController.SourceScripts.showScript(script);
-  },
-
-  /**
-   * The search listener for the scripts search box.
-   */
-  _onScriptsSearch: function DVS__onScriptsSearch(e) {
-    let editor = DebuggerView.editor;
-    let scripts = this._scripts;
+  _getSearchboxInfo: function DVS__getSearchboxInfo() {
     let rawValue = this._searchbox.value.toLowerCase();
 
     let rawLength = rawValue.length;
     let lastColon = rawValue.lastIndexOf(":");
-    let lastAt = rawValue.lastIndexOf("@");
+    let lastAt = rawValue.lastIndexOf("#");
 
     let fileEnd = lastColon != -1 ? lastColon : lastAt != -1 ? lastAt : rawLength;
     let lineEnd = lastAt != -1 ? lastAt : rawLength;
@@ -390,8 +433,41 @@ ScriptsView.prototype = {
     let line = window.parseInt(rawValue.slice(fileEnd + 1, lineEnd)) || -1;
     let token = rawValue.slice(lineEnd + 1);
 
+    return [file, line, token];
+  },
+
+  /**
+   * The click listener for the scripts container.
+   */
+  _onScriptsChange: function DVS__onScriptsChange() {
+    let selectedItem = this._scripts.selectedItem;
+    if (!selectedItem) {
+      return;
+    }
+
+    this._preferredScript = selectedItem;
+    this._preferredScriptUrl = selectedItem.value;
+    this._scripts.setAttribute("tooltiptext", selectedItem.value);
+    DebuggerController.SourceScripts.showScript(selectedItem.getUserData("sourceScript"));
+  },
+
+  /**
+   * The search listener for the scripts search box.
+   */
+  _onScriptsSearch: function DVS__onScriptsSearch(e) {
+    let editor = DebuggerView.editor;
+    let scripts = this._scripts;
+    let [file, line, token] = this._getSearchboxInfo();
+
+    // If the webpage has no scripts, searching is redundant.
+    if (!scripts.itemCount) {
+      return;
+    }
+
     // Presume we won't find anything.
     scripts.selectedItem = this._preferredScript;
+    scripts.setAttribute("label", this._preferredScript.label);
+    scripts.setAttribute("tooltiptext", this._preferredScript.value);
 
     // If we're not searching for a file anymore, unhide all the scripts.
     if (!file) {
@@ -399,17 +475,21 @@ ScriptsView.prototype = {
         scripts.getItemAtIndex(i).hidden = false;
       }
     } else {
-      for (let i = 0, l = scripts.itemCount, found = false; i < l; i++) {
-        let item = scripts.getItemAtIndex(i);
-        let target = item.value.toLowerCase();
+      let found = false;
 
-        // Search is not case sensitive, and is tied to the url not the label.
+      for (let i = 0, l = scripts.itemCount; i < l; i++) {
+        let item = scripts.getItemAtIndex(i);
+        let target = item.label.toLowerCase();
+
+        // Search is not case sensitive, and is tied to the label not the url.
         if (target.match(file)) {
           item.hidden = false;
 
           if (!found) {
             found = true;
             scripts.selectedItem = item;
+            scripts.setAttribute("label", item.label);
+            scripts.setAttribute("tooltiptext", item.value);
           }
         }
         // Hide what doesn't match our search.
@@ -417,15 +497,18 @@ ScriptsView.prototype = {
           item.hidden = true;
         }
       }
+      if (!found) {
+        scripts.setAttribute("label", L10N.getStr("noMatchingScriptsText"));
+        scripts.removeAttribute("tooltiptext");
+      }
     }
     if (line > -1) {
       editor.setCaretPosition(line - 1);
     }
-    if (token) {
+    if (token.length) {
       let offset = editor.find(token, { ignoreCase: true });
       if (offset > -1) {
-        editor.setCaretPosition(0);
-        editor.setCaretOffset(offset);
+        editor.setSelection(offset, offset + token.length)
       }
     }
   },
@@ -440,13 +523,33 @@ ScriptsView.prototype = {
     }
 
     if (e.keyCode === e.DOM_VK_RETURN || e.keyCode === e.DOM_VK_ENTER) {
+      let token = this._getSearchboxInfo()[2];
+      if (!token.length) {
+        return;
+      }
+
       let editor = DebuggerView.editor;
       let offset = editor.findNext(true);
       if (offset > -1) {
-        editor.setCaretPosition(0);
-        editor.setCaretOffset(offset);
+        editor.setSelection(offset, offset + token.length)
       }
     }
+  },
+
+  /**
+   * Called when the scripts filter key sequence was pressed.
+   */
+  _onSearch: function DVS__onSearch() {
+    this._searchbox.focus();
+    this._searchbox.value = "";
+  },
+
+  /**
+   * Called when the scripts token filter key sequence was pressed.
+   */
+  _onTokenSearch: function DVS__onTokenSearch() {
+    this._searchbox.focus();
+    this._searchbox.value = "#";
   },
 
   /**
@@ -476,6 +579,8 @@ ScriptsView.prototype = {
     this._searchbox.removeEventListener("select", this._onScriptsSearch, false);
     this._searchbox.removeEventListener("input", this._onScriptsSearch, false);
     this._searchbox.removeEventListener("keyup", this._onScriptsKeyUp, false);
+
+    this.empty();
     this._scripts = null;
     this._searchbox = null;
   }
@@ -486,11 +591,12 @@ ScriptsView.prototype = {
  */
 function StackFramesView() {
   this._onFramesScroll = this._onFramesScroll.bind(this);
+  this._onPauseExceptionsClick = this._onPauseExceptionsClick.bind(this);
   this._onCloseButtonClick = this._onCloseButtonClick.bind(this);
-  this._onResumeButtonClick = this._onResumeButtonClick.bind(this);
-  this._onStepOverClick = this._onStepOverClick.bind(this);
-  this._onStepInClick = this._onStepInClick.bind(this);
-  this._onStepOutClick = this._onStepOutClick.bind(this);
+  this._onResume = this._onResume.bind(this);
+  this._onStepOver = this._onStepOver.bind(this);
+  this._onStepIn = this._onStepIn.bind(this);
+  this._onStepOut = this._onStepOut.bind(this);
 }
 
 StackFramesView.prototype = {
@@ -514,8 +620,6 @@ StackFramesView.prototype = {
        resume.setAttribute("tooltiptext", L10N.getStr("pauseTooltip"));
        resume.removeAttribute("checked");
      }
-
-     DebuggerView.Scripts.clearSearch();
    },
 
   /**
@@ -690,9 +794,17 @@ StackFramesView.prototype = {
   },
 
   /**
+   * Listener handling the pause-on-exceptions click event.
+   */
+  _onPauseExceptionsClick: function DVF__onPauseExceptionsClick() {
+    let option = document.getElementById("pause-exceptions");
+    DebuggerController.StackFrames.updatePauseOnExceptions(option.checked);
+  },
+
+  /**
    * Listener handling the pause/resume button click event.
    */
-  _onResumeButtonClick: function DVF__onResumeButtonClick() {
+  _onResume: function DVF__onResume(e) {
     if (DebuggerController.activeThread.paused) {
       DebuggerController.activeThread.resume();
     } else {
@@ -703,22 +815,28 @@ StackFramesView.prototype = {
   /**
    * Listener handling the step over button click event.
    */
-  _onStepOverClick: function DVF__onStepOverClick() {
-    DebuggerController.activeThread.stepOver();
+  _onStepOver: function DVF__onStepOver(e) {
+    if (DebuggerController.activeThread.paused) {
+      DebuggerController.activeThread.stepOver();
+    }
   },
 
   /**
    * Listener handling the step in button click event.
    */
-  _onStepInClick: function DVF__onStepInClick() {
-    DebuggerController.activeThread.stepIn();
+  _onStepIn: function DVF__onStepIn(e) {
+    if (DebuggerController.activeThread.paused) {
+      DebuggerController.activeThread.stepIn();
+    }
   },
 
   /**
    * Listener handling the step out button click event.
    */
-  _onStepOutClick: function DVF__onStepOutClick() {
-    DebuggerController.activeThread.stepOut();
+  _onStepOut: function DVF__onStepOut(e) {
+    if (DebuggerController.activeThread.paused) {
+      DebuggerController.activeThread.stepOut();
+    }
   },
 
   /**
@@ -736,6 +854,7 @@ StackFramesView.prototype = {
    */
   initialize: function DVF_initialize() {
     let close = document.getElementById("close");
+    let pauseOnExceptions = document.getElementById("pause-exceptions");
     let resume = document.getElementById("resume");
     let stepOver = document.getElementById("step-over");
     let stepIn = document.getElementById("step-in");
@@ -743,15 +862,18 @@ StackFramesView.prototype = {
     let frames = document.getElementById("stackframes");
 
     close.addEventListener("click", this._onCloseButtonClick, false);
-    resume.addEventListener("click", this._onResumeButtonClick, false);
-    stepOver.addEventListener("click", this._onStepOverClick, false);
-    stepIn.addEventListener("click", this._onStepInClick, false);
-    stepOut.addEventListener("click", this._onStepOutClick, false);
+    pauseOnExceptions.checked = DebuggerController.StackFrames.pauseOnExceptions;
+    pauseOnExceptions.addEventListener("click", this._onPauseExceptionsClick, false);
+    resume.addEventListener("click", this._onResume, false);
+    stepOver.addEventListener("click", this._onStepOver, false);
+    stepIn.addEventListener("click", this._onStepIn, false);
+    stepOut.addEventListener("click", this._onStepOut, false);
     frames.addEventListener("click", this._onFramesClick, false);
     frames.addEventListener("scroll", this._onFramesScroll, false);
     window.addEventListener("resize", this._onFramesScroll, false);
 
     this._frames = frames;
+    this.emptyText();
   },
 
   /**
@@ -759,6 +881,7 @@ StackFramesView.prototype = {
    */
   destroy: function DVF_destroy() {
     let close = document.getElementById("close");
+    let pauseOnExceptions = document.getElementById("pause-exceptions");
     let resume = document.getElementById("resume");
     let stepOver = document.getElementById("step-over");
     let stepIn = document.getElementById("step-in");
@@ -766,15 +889,558 @@ StackFramesView.prototype = {
     let frames = this._frames;
 
     close.removeEventListener("click", this._onCloseButtonClick, false);
-    resume.removeEventListener("click", this._onResumeButtonClick, false);
-    stepOver.removeEventListener("click", this._onStepOverClick, false);
-    stepIn.removeEventListener("click", this._onStepInClick, false);
-    stepOut.removeEventListener("click", this._onStepOutClick, false);
+    pauseOnExceptions.removeEventListener("click", this._onPauseExceptionsClick, false);
+    resume.removeEventListener("click", this._onResume, false);
+    stepOver.removeEventListener("click", this._onStepOver, false);
+    stepIn.removeEventListener("click", this._onStepIn, false);
+    stepOut.removeEventListener("click", this._onStepOut, false);
     frames.removeEventListener("click", this._onFramesClick, false);
     frames.removeEventListener("scroll", this._onFramesScroll, false);
     window.removeEventListener("resize", this._onFramesScroll, false);
 
+    this.empty();
     this._frames = null;
+  }
+};
+
+/**
+ * Functions handling the breakpoints view.
+ */
+function BreakpointsView() {
+  this._onBreakpointClick = this._onBreakpointClick.bind(this);
+  this._onBreakpointCheckboxChange = this._onBreakpointCheckboxChange.bind(this);
+}
+
+BreakpointsView.prototype = {
+
+  /**
+   * Removes all elements from the breakpoints container, leaving it empty.
+   */
+  empty: function DVB_empty() {
+    let firstChild;
+
+    while (firstChild = this._breakpoints.firstChild) {
+      this._destroyContextMenu(firstChild);
+      this._breakpoints.removeChild(firstChild);
+    }
+  },
+
+  /**
+   * Removes all elements from the breakpoints container, and adds a child node
+   * with an empty text note attached.
+   */
+  emptyText: function DVB_emptyText() {
+    // Make sure the container is empty first.
+    this.empty();
+
+    let item = document.createElement("label");
+
+    // The empty node should look grayed out to avoid confusion.
+    item.className = "list-item empty";
+    item.setAttribute("value", L10N.getStr("emptyBreakpointsText"));
+
+    this._breakpoints.appendChild(item);
+  },
+
+  /**
+   * Checks whether the breakpoint with the specified script URL and line is
+   * among the breakpoints known to the debugger and shown in the list, and
+   * returns the matched result or null if nothing is found.
+   *
+   * @param string aUrl
+   *        The original breakpoint script url.
+   * @param number aLine
+   *        The original breakpoint script line.
+   * @return object | null
+   *         The queried breakpoint
+   */
+  getBreakpoint: function DVB_getBreakpoint(aUrl, aLine) {
+    return this._breakpoints.getElementsByAttribute("location", aUrl + ":" + aLine)[0];
+  },
+
+  /**
+   * Removes a breakpoint only from the breakpoints container.
+   * This doesn't remove the breakpoint from the DebuggerController!
+   *
+   * @param string aId
+   *        A breakpoint identifier specified by the debugger.
+   */
+  removeBreakpoint: function DVB_removeBreakpoint(aId) {
+    let breakpoint = document.getElementById("breakpoint-" + aId);
+
+    // Make sure we have something to remove.
+    if (!breakpoint) {
+      return;
+    }
+    this._destroyContextMenu(breakpoint);
+    this._breakpoints.removeChild(breakpoint);
+
+    if (!this.count) {
+      this.emptyText();
+    }
+  },
+
+  /**
+   * Adds a breakpoint to the breakpoints container.
+   * If the breakpoint already exists (was previously added), null is returned.
+   * If it's already added but disabled, it will be enabled and null is returned.
+   * Otherwise, the newly created element is returned.
+   *
+   * @param string aId
+   *        A breakpoint identifier specified by the debugger.
+   * @param string aLineInfo
+   *        The script line information to be displayed in the list.
+   * @param string aLineText
+   *        The script line text to be displayed in the list.
+   * @param string aUrl
+   *        The original breakpoint script url.
+   * @param number aLine
+   *        The original breakpoint script line.
+   * @return object
+   *         The newly created html node representing the added breakpoint.
+   */
+  addBreakpoint: function DVB_addBreakpoint(aId, aLineInfo, aLineText, aUrl, aLine) {
+    // Make sure we don't duplicate anything.
+    if (document.getElementById("breakpoint-" + aId)) {
+      return null;
+    }
+    // Remove the empty list text if it was there.
+    if (!this.count) {
+      this.empty();
+    }
+
+    // If the breakpoint was already added but disabled, enable it now.
+    let breakpoint = this.getBreakpoint(aUrl, aLine);
+    if (breakpoint) {
+      breakpoint.id = "breakpoint-" + aId;
+      breakpoint.breakpointActor = aId;
+      breakpoint.getElementsByTagName("checkbox")[0].setAttribute("checked", "true");
+      return;
+    }
+
+    breakpoint = document.createElement("box");
+    let bkpCheckbox = document.createElement("checkbox");
+    let bkpLineInfo = document.createElement("label");
+    let bkpLineText = document.createElement("label");
+
+    // Create a list item to be added to the stackframes container.
+    breakpoint.id = "breakpoint-" + aId;
+    breakpoint.className = "dbg-breakpoint list-item";
+    breakpoint.setAttribute("location", aUrl + ":" + aLine);
+    breakpoint.breakpointUrl = aUrl;
+    breakpoint.breakpointLine = aLine;
+    breakpoint.breakpointActor = aId;
+
+    aLineInfo = aLineInfo.trim();
+    aLineText = aLineText.trim();
+
+    // A checkbox specifies if the breakpoint is enabled or not.
+    bkpCheckbox.setAttribute("checked", "true");
+    bkpCheckbox.addEventListener("click", this._onBreakpointCheckboxChange, false);
+
+    // This list should display the line info and text for the breakpoint.
+    bkpLineInfo.className = "dbg-breakpoint-info plain";
+    bkpLineText.className = "dbg-breakpoint-text plain";
+    bkpLineInfo.setAttribute("value", aLineInfo);
+    bkpLineText.setAttribute("value", aLineText);
+    bkpLineInfo.setAttribute("crop", "end");
+    bkpLineText.setAttribute("crop", "end");
+    bkpLineText.setAttribute("tooltiptext", aLineText.substr(0, BREAKPOINT_LINE_TOOLTIP_MAX_SIZE));
+
+    // Create a context menu for the breakpoint.
+    let menupopupId = this._createContextMenu(breakpoint);
+    breakpoint.setAttribute("contextmenu", menupopupId);
+
+    let state = document.createElement("vbox");
+    state.className = "state";
+    state.appendChild(bkpCheckbox);
+
+    let content = document.createElement("vbox");
+    content.className = "content";
+    content.setAttribute("flex", "1");
+    content.appendChild(bkpLineInfo);
+    content.appendChild(bkpLineText);
+
+    breakpoint.appendChild(state);
+    breakpoint.appendChild(content);
+
+    this._breakpoints.appendChild(breakpoint);
+
+    // Return the element for later use if necessary.
+    return breakpoint;
+  },
+
+  /**
+   * Enables a breakpoint.
+   *
+   * @param object aBreakpoint
+   *        An element representing a breakpoint.
+   * @param function aCallback
+   *        Optional function to invoke once the breakpoint is enabled.
+   * @param boolean aNoCheckboxUpdate
+   *        Pass true to not update the checkbox checked state.
+   *        This is usually necessary when the checked state will be updated
+   *        automatically (e.g: on a checkbox click).
+   */
+  enableBreakpoint:
+  function DVB_enableBreakpoint(aTarget, aCallback, aNoCheckboxUpdate) {
+    let { breakpointUrl: url, breakpointLine: line } = aTarget;
+    let breakpoint = DebuggerController.Breakpoints.getBreakpoint(url, line)
+
+    if (!breakpoint) {
+      if (!aNoCheckboxUpdate) {
+        aTarget.getElementsByTagName("checkbox")[0].setAttribute("checked", "true");
+      }
+      DebuggerController.Breakpoints.
+        addBreakpoint({ url: url, line: line }, aCallback);
+
+      return true;
+    }
+    return false;
+  },
+
+  /**
+   * Disables a breakpoint.
+   *
+   * @param object aTarget
+   *        An element representing a breakpoint.
+   * @param function aCallback
+   *        Optional function to invoke once the breakpoint is disabled.
+   * @param boolean aNoCheckboxUpdate
+   *        Pass true to not update the checkbox checked state.
+   *        This is usually necessary when the checked state will be updated
+   *        automatically (e.g: on a checkbox click).
+   */
+  disableBreakpoint:
+  function DVB_disableBreakpoint(aTarget, aCallback, aNoCheckboxUpdate) {
+    let { breakpointUrl: url, breakpointLine: line } = aTarget;
+    let breakpoint = DebuggerController.Breakpoints.getBreakpoint(url, line)
+
+    if (breakpoint) {
+      if (!aNoCheckboxUpdate) {
+        aTarget.getElementsByTagName("checkbox")[0].removeAttribute("checked");
+      }
+      DebuggerController.Breakpoints.
+        removeBreakpoint(breakpoint, aCallback, false, true);
+
+      return true;
+    }
+    return false;
+  },
+
+  /**
+   * Gets the current number of added breakpoints.
+   */
+  get count() {
+    return this._breakpoints.getElementsByClassName("dbg-breakpoint").length;
+  },
+
+  /**
+   * Iterates through all the added breakpoints.
+   *
+   * @param function aCallback
+   *        Function called for each element.
+   */
+  _iterate: function DVB_iterate(aCallback) {
+    Array.forEach(Array.slice(this._breakpoints.childNodes), aCallback);
+  },
+
+  /**
+   * Gets the real breakpoint target when an event is handled.
+   * @return object
+   */
+  _getBreakpointTarget: function DVB__getBreakpointTarget(aEvent) {
+    let target = aEvent.target;
+
+    while (target) {
+      if (target.breakpointActor) {
+        return target;
+      }
+      target = target.parentNode;
+    }
+  },
+
+  /**
+   * Listener handling the breakpoint click event.
+   */
+  _onBreakpointClick: function DVB__onBreakpointClick(aEvent) {
+    let target = this._getBreakpointTarget(aEvent);
+    let { breakpointUrl: url, breakpointLine: line } = target;
+
+    DebuggerController.StackFrames.updateEditorToLocation(url, line, 0, 0, 1);
+  },
+
+  /**
+   * Listener handling the breakpoint checkbox change event.
+   */
+  _onBreakpointCheckboxChange: function DVB__onBreakpointCheckboxChange(aEvent) {
+    aEvent.stopPropagation();
+
+    let target = this._getBreakpointTarget(aEvent);
+    let { breakpointUrl: url, breakpointLine: line } = target;
+
+    if (aEvent.target.getAttribute("checked") === "true") {
+      this.disableBreakpoint(target, null, true);
+    } else {
+      this.enableBreakpoint(target, null, true);
+    }
+  },
+
+  /**
+   * Listener handling the "enableSelf" menuitem command.
+   *
+   * @param object aTarget
+   *        The corresponding breakpoint element.
+   */
+  _onEnableSelf: function DVB__onEnableSelf(aTarget) {
+    if (!aTarget) {
+      return;
+    }
+    if (this.enableBreakpoint(aTarget)) {
+      aTarget.enableSelf.menuitem.setAttribute("hidden", "true");
+      aTarget.disableSelf.menuitem.removeAttribute("hidden");
+    }
+  },
+
+  /**
+   * Listener handling the "disableSelf" menuitem command.
+   *
+   * @param object aTarget
+   *        The corresponding breakpoint element.
+   */
+  _onDisableSelf: function DVB__onDisableSelf(aTarget) {
+    if (!aTarget) {
+      return;
+    }
+    if (this.disableBreakpoint(aTarget)) {
+      aTarget.enableSelf.menuitem.removeAttribute("hidden");
+      aTarget.disableSelf.menuitem.setAttribute("hidden", "true");
+    }
+  },
+
+  /**
+   * Listener handling the "deleteSelf" menuitem command.
+   *
+   * @param object aTarget
+   *        The corresponding breakpoint element.
+   */
+  _onDeleteSelf: function DVB__onDeleteSelf(aTarget) {
+    let { breakpointUrl: url, breakpointLine: line } = aTarget;
+    let breakpoint = DebuggerController.Breakpoints.getBreakpoint(url, line)
+
+    if (aTarget) {
+      this.removeBreakpoint(aTarget.breakpointActor);
+    }
+    if (breakpoint) {
+      DebuggerController.Breakpoints.removeBreakpoint(breakpoint);
+    }
+  },
+
+  /**
+   * Listener handling the "enableOthers" menuitem command.
+   *
+   * @param object aTarget
+   *        The corresponding breakpoint element.
+   */
+  _onEnableOthers: function DVB__onEnableOthers(aTarget) {
+    this._iterate(function(element) {
+      if (element !== aTarget) {
+        this._onEnableSelf(element);
+      }
+    }.bind(this));
+  },
+
+  /**
+   * Listener handling the "disableOthers" menuitem command.
+   *
+   * @param object aTarget
+   *        The corresponding breakpoint element.
+   */
+  _onDisableOthers: function DVB__onDisableOthers(aTarget) {
+    this._iterate(function(element) {
+      if (element !== aTarget) {
+        this._onDisableSelf(element);
+      }
+    }.bind(this));
+  },
+
+  /**
+   * Listener handling the "deleteOthers" menuitem command.
+   *
+   * @param object aTarget
+   *        The corresponding breakpoint element.
+   */
+  _onDeleteOthers: function DVB__onDeleteOthers(aTarget) {
+    this._iterate(function(element) {
+      if (element !== aTarget) {
+        this._onDeleteSelf(element);
+      }
+    }.bind(this));
+  },
+
+  /**
+   * Listener handling the "disableAll" menuitem command.
+   *
+   * @param object aTarget
+   *        The corresponding breakpoint element.
+   */
+  _onEnableAll: function DVB__onEnableAll(aTarget) {
+    this._onEnableOthers(aTarget);
+    this._onEnableSelf(aTarget);
+  },
+
+  /**
+   * Listener handling the "disableAll" menuitem command.
+   *
+   * @param object aTarget
+   *        The corresponding breakpoint element.
+   */
+  _onDisableAll: function DVB__onDisableAll(aTarget) {
+    this._onDisableOthers(aTarget);
+    this._onDisableSelf(aTarget);
+  },
+
+  /**
+   * Listener handling the "deleteAll" menuitem command.
+   *
+   * @param object aTarget
+   *        The corresponding breakpoint element.
+   */
+  _onDeleteAll: function DVB__onDeleteAll(aTarget) {
+    this._onDeleteOthers(aTarget);
+    this._onDeleteSelf(aTarget);
+  },
+
+  /**
+   * The cached breakpoints container.
+   */
+  _breakpoints: null,
+
+  /**
+   * Creates a breakpoint context menu.
+   *
+   * @param object aBreakpoint
+   *        An element representing a breakpoint.
+   * @return string
+   *         The popup id.
+   */
+  _createContextMenu: function DVB_createContextMenu(aBreakpoint) {
+    let commandsetId = "breakpointMenuCommands-" + aBreakpoint.id;
+    let menupopupId = "breakpointContextMenu-" + aBreakpoint.id;
+
+    let commandset = document.createElement("commandset");
+    commandset.setAttribute("id", commandsetId);
+
+    let menupopup = document.createElement("menupopup");
+    menupopup.setAttribute("id", menupopupId);
+
+    /**
+     * Creates a menu item specified by a name with the appropriate attributes
+     * (label and command handler).
+     *
+     * @param string aName
+     *        A global identifier for the menu item.
+     * @param boolean aHiddenFlag
+     *        True if this menuitem should be hidden.
+     */
+    function createMenuItem(aName, aHiddenFlag) {
+      let menuitem = document.createElement("menuitem");
+      let command = document.createElement("command");
+
+      let func = this["_on" + aName.charAt(0).toUpperCase() + aName.slice(1)];
+      let label = L10N.getStr("breakpointMenuItem." + aName);
+
+      let prefix = "bp-cMenu-";
+      let commandId = prefix + aName + "-" + aBreakpoint.id + "-command";
+      let menuitemId = prefix + aName + "-" + aBreakpoint.id + "-menuitem";
+
+      command.setAttribute("id", commandId);
+      command.setAttribute("label", label);
+      command.addEventListener("command", func.bind(this, aBreakpoint), true);
+
+      menuitem.setAttribute("id", menuitemId);
+      menuitem.setAttribute("command", commandId);
+      menuitem.setAttribute("hidden", aHiddenFlag);
+
+      commandset.appendChild(command);
+      menupopup.appendChild(menuitem);
+
+      aBreakpoint[aName] = {
+        menuitem: menuitem,
+        command: command
+      };
+    }
+
+    /**
+     * Creates a simple menu separator element and appends it to the current
+     * menupopup hierarchy.
+     */
+    function createMenuSeparator() {
+      let menuseparator = document.createElement("menuseparator");
+      menupopup.appendChild(menuseparator);
+    }
+
+    createMenuItem.call(this, "enableSelf", true);
+    createMenuItem.call(this, "disableSelf");
+    createMenuItem.call(this, "deleteSelf");
+    createMenuSeparator();
+    createMenuItem.call(this, "enableOthers");
+    createMenuItem.call(this, "disableOthers");
+    createMenuItem.call(this, "deleteOthers");
+    createMenuSeparator();
+    createMenuItem.call(this, "enableAll");
+    createMenuItem.call(this, "disableAll");
+    createMenuSeparator();
+    createMenuItem.call(this, "deleteAll");
+
+    let popupset = document.getElementById("debugger-popups");
+    popupset.appendChild(menupopup);
+    document.documentElement.appendChild(commandset);
+
+    aBreakpoint.commandsetId = commandsetId;
+    aBreakpoint.menupopupId = menupopupId;
+
+    return menupopupId;
+  },
+
+  /**
+   * Destroys a breakpoint context menu.
+   *
+   * @param object aBreakpoint
+   *        An element representing a breakpoint.
+   */
+  _destroyContextMenu: function DVB__destroyContextMenu(aBreakpoint) {
+    if (!aBreakpoint.commandsetId || !aBreakpoint.menupopupId) {
+      return;
+    }
+
+    let commandset = document.getElementById(aBreakpoint.commandsetId);
+    let menupopup = document.getElementById(aBreakpoint.menupopupId);
+
+    commandset.parentNode.removeChild(commandset);
+    menupopup.parentNode.removeChild(menupopup);
+  },
+
+  /**
+   * Initialization function, called when the debugger is initialized.
+   */
+  initialize: function DVB_initialize() {
+    let breakpoints = document.getElementById("breakpoints");
+    breakpoints.addEventListener("click", this._onBreakpointClick, false);
+
+    this._breakpoints = breakpoints;
+    this.emptyText();
+  },
+
+  /**
+   * Destruction function, called when the debugger is shut down.
+   */
+  destroy: function DVB_destroy() {
+    let breakpoints = this._breakpoints;
+    breakpoints.removeEventListener("click", this._onBreakpointClick, false);
+
+    this.empty();
+    this._breakpoints = null;
   }
 };
 
@@ -788,6 +1454,7 @@ function PropertiesView() {
 }
 
 PropertiesView.prototype = {
+
   /**
    * A monotonically-increasing counter, that guarantees the uniqueness of scope
    * IDs.
@@ -922,27 +1589,15 @@ PropertiesView.prototype = {
       let valueLabel = document.createElement("label");
       let title = element.getElementsByClassName("title")[0];
 
+      // Use attribute flags to specify the element type and tooltip text.
+      this._setAttributes(element, aName, aFlags);
+
       // Separator between the variable name and its value.
       separatorLabel.className = "plain";
       separatorLabel.setAttribute("value", ":");
 
       // The variable information (type, class and/or value).
       valueLabel.className = "value plain";
-
-      if (aFlags) {
-        // Use attribute flags to specify the element type and tooltip text.
-        let tooltip = [];
-
-        !aFlags.configurable ? element.setAttribute("non-configurable", "")
-                             : tooltip.push("configurable");
-        !aFlags.enumerable   ? element.setAttribute("non-enumerable", "")
-                             : tooltip.push("enumerable");
-        !aFlags.writable     ? element.setAttribute("non-writable", "")
-                             : tooltip.push("writable");
-
-        element.setAttribute("tooltiptext", tooltip.join(", "));
-      }
-      if (aName === "this") { element.setAttribute("self", ""); }
 
       // Handle the click event when pressing the element value label.
       valueLabel.addEventListener("click", this._activateElementInputMode.bind({
@@ -972,6 +1627,36 @@ PropertiesView.prototype = {
 
     // Return the element for later use if necessary.
     return element;
+  },
+
+  /**
+   * Sets a variable's configurable, enumerable or writable attributes.
+   *
+   * @param object aVar
+   *        The object to set the attributes on.
+   * @param object aName
+   *        The varialbe name.
+   * @param object aFlags
+   *        Contains configurable, enumerable or writable flags.
+   */
+  _setAttributes: function DVP_setAttributes(aVar, aName, aFlags) {
+    if (aFlags) {
+      if (!aFlags.configurable) {
+        aVar.setAttribute("non-configurable", "");
+      }
+      if (!aFlags.enumerable) {
+        aVar.setAttribute("non-enumerable", "");
+      }
+      if (!aFlags.writable) {
+        aVar.setAttribute("non-writable", "");
+      }
+    }
+    if (aName === "this") {
+      aVar.setAttribute("self", "");
+    }
+    if (aName === "__proto__ ") {
+      aVar.setAttribute("proto", "");
+    }
   },
 
   /**
@@ -1154,6 +1839,9 @@ PropertiesView.prototype = {
       let separatorLabel = document.createElement("label");
       let valueLabel = document.createElement("label");
 
+      // Use attribute flags to specify the element type and tooltip text.
+      this._setAttributes(element, pKey, aFlags);
+
       if ("undefined" !== typeof pKey) {
         // Use a key element to specify the property name.
         nameLabel.className = "key plain";
@@ -1172,21 +1860,6 @@ PropertiesView.prototype = {
         title.appendChild(separatorLabel);
         title.appendChild(valueLabel);
       }
-
-      if (aFlags) {
-        // Use attribute flags to specify the element type and tooltip text.
-        let tooltip = [];
-
-        !aFlags.configurable ? element.setAttribute("non-configurable", "")
-                             : tooltip.push("configurable");
-        !aFlags.enumerable   ? element.setAttribute("non-enumerable", "")
-                             : tooltip.push("enumerable");
-        !aFlags.writable     ? element.setAttribute("non-writable", "")
-                             : tooltip.push("writable");
-
-        element.setAttribute("tooltiptext", tooltip.join(", "));
-      }
-      if (pKey === "__proto__ ") { element.setAttribute("proto", ""); }
 
       // Handle the click event when pressing the element value label.
       valueLabel.addEventListener("click", this._activateElementInputMode.bind({
@@ -1443,6 +2116,7 @@ PropertiesView.prototype = {
     } else {
       arrow.addEventListener("click", function() { element.toggle(); }, false);
       name.addEventListener("click", function() { element.toggle(); }, false);
+      name.addEventListener("mouseover", function() { element.updateTooltip(name); }, false);
     }
 
     title.appendChild(arrow);
@@ -1674,6 +2348,52 @@ PropertiesView.prototype = {
     });
 
     /**
+     * Creates a tooltip for the element displaying certain attributes.
+     *
+     * @param object aAnchor
+     *        The element which will anchor the tooltip.
+     */
+    element.updateTooltip = function DVP_element_updateTooltip(aAnchor) {
+      let tooltip = document.getElementById("element-tooltip");
+      if (tooltip) {
+        document.documentElement.removeChild(tooltip);
+      }
+
+      tooltip = document.createElement("tooltip");
+      tooltip.id = "element-tooltip";
+
+      let configurableLabel = document.createElement("label");
+      configurableLabel.id = "configurableLabel";
+      configurableLabel.setAttribute("value", "configurable");
+
+      let enumerableLabel = document.createElement("label");
+      enumerableLabel.id = "enumerableLabel";
+      enumerableLabel.setAttribute("value", "enumerable");
+
+      let writableLabel = document.createElement("label");
+      writableLabel.id = "writableLabel";
+      writableLabel.setAttribute("value", "writable");
+
+      tooltip.setAttribute("orient", "horizontal")
+      tooltip.appendChild(configurableLabel);
+      tooltip.appendChild(enumerableLabel);
+      tooltip.appendChild(writableLabel);
+
+      if (element.hasAttribute("non-configurable")) {
+        configurableLabel.setAttribute("non-configurable", "");
+      }
+      if (element.hasAttribute("non-enumerable")) {
+        enumerableLabel.setAttribute("non-enumerable", "");
+      }
+      if (element.hasAttribute("non-writable")) {
+        writableLabel.setAttribute("non-writable", "");
+      }
+
+      document.documentElement.appendChild(tooltip);
+      aAnchor.setAttribute("tooltip", tooltip.id);
+    };
+
+    /**
      * Generic function refreshing the internal state of the element when
      * it's modified (e.g. a child detail, variable, property is added).
      *
@@ -1811,15 +2531,18 @@ PropertiesView.prototype = {
    * Initialization function, called when the debugger is initialized.
    */
   initialize: function DVP_initialize() {
-    this.createHierarchyStore();
-
     this._vars = document.getElementById("variables");
+
+    this.emptyText();
+    this.createHierarchyStore();
   },
 
   /**
    * Destruction function, called when the debugger is shut down.
    */
   destroy: function DVP_destroy() {
+    this.empty();
+
     this._currHierarchy = null;
     this._prevHierarchy = null;
     this._vars = null;
@@ -1831,6 +2554,7 @@ PropertiesView.prototype = {
  */
 DebuggerView.Scripts = new ScriptsView();
 DebuggerView.StackFrames = new StackFramesView();
+DebuggerView.Breakpoints = new BreakpointsView();
 DebuggerView.Properties = new PropertiesView();
 
 /**

@@ -13,7 +13,6 @@
 #include "nsAccEvent.h"
 #include "States.h"
 
-#include "nsIDOMDocument.h"
 #include "nsEventStateManager.h"
 #include "nsIServiceManager.h"
 #ifdef MOZ_XUL
@@ -74,7 +73,7 @@ AccEvent::GetDocAccessible()
   if (node)
     return GetAccService()->GetDocAccessible(node->OwnerDoc());
 
-  return nsnull;
+  return nullptr;
 }
 
 already_AddRefed<nsAccEvent>
@@ -88,7 +87,7 @@ AccEvent::CreateXPCOMObject()
 ////////////////////////////////////////////////////////////////////////////////
 // AccEvent cycle collection
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(AccEvent)
+NS_IMPL_CYCLE_COLLECTION_NATIVE_CLASS(AccEvent)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_NATIVE(AccEvent)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mAccessible)
@@ -115,7 +114,7 @@ AccEvent::GetAccessibleForNode() const
       return document->GetAccessible(mNode);
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 void
@@ -327,7 +326,7 @@ AccSelChangeEvent::
                     SelChangeType aSelChangeType) :
     AccEvent(0, aItem, eAutoDetect, eCoalesceSelectionChange),
     mWidget(aWidget), mItem(aItem), mSelChangeType(aSelChangeType),
-    mPreceedingCount(0), mPackedEvent(nsnull)
+    mPreceedingCount(0), mPackedEvent(nullptr)
 {
   if (aSelChangeType == eSelectionAdd) {
     if (mWidget->GetSelectedItem(1))
@@ -368,9 +367,11 @@ AccTableChangeEvent::CreateXPCOMObject()
 AccVCChangeEvent::
   AccVCChangeEvent(Accessible* aAccessible,
                    nsIAccessible* aOldAccessible,
-                   PRInt32 aOldStart, PRInt32 aOldEnd) :
+                   PRInt32 aOldStart, PRInt32 aOldEnd,
+                   PRInt16 aReason) :
     AccEvent(::nsIAccessibleEvent::EVENT_VIRTUALCURSOR_CHANGED, aAccessible),
-    mOldAccessible(aOldAccessible), mOldStart(aOldStart), mOldEnd(aOldEnd)
+    mOldAccessible(aOldAccessible), mOldStart(aOldStart), mOldEnd(aOldEnd),
+    mReason(aReason)
 {
 }
 

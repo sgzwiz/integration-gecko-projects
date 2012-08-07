@@ -26,6 +26,7 @@ public:
     : CanvasLayer(aManager, NULL),
       LayerOGL(aManager),
       mTexture(0),
+      mTextureTarget(LOCAL_GL_TEXTURE_2D),
       mDelayedUpdates(false)
 #if defined(MOZ_WIDGET_GTK2) && !defined(MOZ_PLATFORM_MAEMO)
       ,mPixmap(0)
@@ -53,8 +54,8 @@ protected:
   gl::ShaderProgramType mLayerProgram;
   RefPtr<gfx::DrawTarget> mDrawTarget;
 
-  void MakeTexture();
   GLuint mTexture;
+  GLenum mTextureTarget;
 
   bool mDelayedUpdates;
   bool mGLBufferIsPremultiplied;
@@ -84,7 +85,7 @@ protected:
 
   void DiscardTempSurface()
   {
-    mCachedTempSurface = nsnull;
+    mCachedTempSurface = nullptr;
   }
 };
 
@@ -127,6 +128,8 @@ private:
   nsRefPtr<TextureImage> mTexImage;
 
   bool mNeedsYFlip;
+  SurfaceDescriptor mFrontBufferDescriptor;
+  GLuint mTexture;
 };
 
 } /* layers */

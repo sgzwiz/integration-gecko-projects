@@ -35,6 +35,7 @@
 #include "nsGUIEvent.h"
 #include "nsContentUtils.h"
 #include "nsRefreshDriver.h"
+#include "mozilla/Attributes.h"
 
 class nsRange;
 class nsIDragService;
@@ -321,10 +322,11 @@ public:
   }
 
   void SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf,
-                           size_t *aArenasSize,
+                           nsArenaMemoryStats *aArenaObjectsSize,
+                           size_t *aPresShellSize,
                            size_t *aStyleSetsSize,
                            size_t *aTextRunsSize,
-                           size_t *aPresContextSize) const;
+                           size_t *aPresContextSize);
   size_t SizeOfTextRuns(nsMallocSizeOfFun aMallocSizeOf) const;
 
   // This data is stored as a content property (nsGkAtoms::scrolling) on
@@ -383,6 +385,15 @@ protected:
   // Helper for ScrollContentIntoView
   void DoScrollContentIntoView();
 
+  /**
+   * Initialize cached font inflation preference values.
+   *
+   * @see nsLayoutUtils::sFontSizeInflationEmPerLine
+   * @see nsLayoutUtils::sFontSizeInflationMinTwips
+   * @see nsLayoutUtils::sFontSizeInflationLineThreshold
+   */
+  void SetupFontInflation();
+
   friend struct AutoRenderingStateSaveRestore;
   friend struct RenderingState;
 
@@ -425,7 +436,7 @@ protected:
   friend class nsPresShellEventCB;
 
   bool mCaretEnabled;
-#ifdef NS_DEBUG
+#ifdef DEBUG
   nsStyleSet* CloneStyleSet(nsStyleSet* aSet);
   bool VerifyIncrementalReflow();
   bool mInVerifyReflow;
@@ -497,13 +508,13 @@ protected:
     }
     if (gCaptureInfo.mContent &&
         gCaptureInfo.mContent->OwnerDoc() == mDocument) {
-      SetCapturingContent(nsnull, 0);
+      SetCapturingContent(nullptr, 0);
     }
   }
 
   nsresult HandleRetargetedEvent(nsEvent* aEvent, nsEventStatus* aStatus, nsIContent* aTarget)
   {
-    PushCurrentEventInfo(nsnull, nsnull);
+    PushCurrentEventInfo(nullptr, nullptr);
     mCurrentEventContent = aTarget;
     nsresult rv = NS_OK;
     if (GetCurrentEventFrame()) {
@@ -541,7 +552,7 @@ protected:
     }
 
     nsDelayedInputEvent()
-    : nsDelayedEvent(), mEvent(nsnull) {}
+    : nsDelayedEvent(), mEvent(nullptr) {}
 
     nsInputEvent* mEvent;
   };
@@ -591,7 +602,7 @@ protected:
   // Check if aEvent is a mouse event and record the mouse location for later
   // synth mouse moves.
   void RecordMouseLocation(nsGUIEvent* aEvent);
-  class nsSynthMouseMoveEvent : public nsARefreshObserver {
+  class nsSynthMouseMoveEvent MOZ_FINAL : public nsARefreshObserver {
   public:
     nsSynthMouseMoveEvent(PresShell* aPresShell, bool aFromScroll)
       : mPresShell(aPresShell), mFromScroll(aFromScroll) {
@@ -607,7 +618,7 @@ protected:
       if (mPresShell) {
         mPresShell->GetPresContext()->RefreshDriver()->
           RemoveRefreshObserver(this, Flush_Display);
-        mPresShell = nsnull;
+        mPresShell = nullptr;
       }
     }
     virtual void WillRefresh(mozilla::TimeStamp aTime) {

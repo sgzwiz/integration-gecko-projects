@@ -40,10 +40,11 @@
 #include "prlog.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Attributes.h"
 
 using namespace mozilla;
 
-static nsOfflineCacheUpdateService *gOfflineCacheUpdateService = nsnull;
+static nsOfflineCacheUpdateService *gOfflineCacheUpdateService = nullptr;
 
 typedef mozilla::docshell::OfflineCacheUpdateParent OfflineCacheUpdateParent;
 typedef mozilla::docshell::OfflineCacheUpdateChild OfflineCacheUpdateChild;
@@ -78,8 +79,8 @@ private:
 // nsOfflineCachePendingUpdate
 //-----------------------------------------------------------------------------
 
-class nsOfflineCachePendingUpdate : public nsIWebProgressListener
-                                  , public nsSupportsWeakReference
+class nsOfflineCachePendingUpdate MOZ_FINAL : public nsIWebProgressListener
+                                            , public nsSupportsWeakReference
 {
 public:
     NS_DECL_ISUPPORTS
@@ -164,7 +165,7 @@ nsOfflineCachePendingUpdate::OnStateChange(nsIWebProgress* aWebProgress,
     if (NS_SUCCEEDED(aStatus)) {
         nsCOMPtr<nsIOfflineCacheUpdate> update;
         mService->Schedule(mManifestURI, mDocumentURI,
-                           updateDoc, window, getter_AddRefs(update));
+                           updateDoc, window, nullptr, getter_AddRefs(update));
     }
 
     aWebProgress->RemoveProgressListener(this);
@@ -223,7 +224,7 @@ nsOfflineCacheUpdateService::nsOfflineCacheUpdateService()
 
 nsOfflineCacheUpdateService::~nsOfflineCacheUpdateService()
 {
-    gOfflineCacheUpdateService = nsnull;
+    gOfflineCacheUpdateService = nullptr;
 }
 
 nsresult
@@ -257,12 +258,12 @@ nsOfflineCacheUpdateService::GetInstance()
     if (!gOfflineCacheUpdateService) {
         gOfflineCacheUpdateService = new nsOfflineCacheUpdateService();
         if (!gOfflineCacheUpdateService)
-            return nsnull;
+            return nullptr;
         NS_ADDREF(gOfflineCacheUpdateService);
         nsresult rv = gOfflineCacheUpdateService->Init();
         if (NS_FAILED(rv)) {
             NS_RELEASE(gOfflineCacheUpdateService);
-            return nsnull;
+            return nullptr;
         }
         return gOfflineCacheUpdateService;
     }
@@ -393,7 +394,7 @@ nsOfflineCacheUpdateService::GetUpdate(PRUint32 aIndex,
     if (aIndex < mUpdates.Length()) {
         NS_ADDREF(*aUpdate = mUpdates[aIndex]);
     } else {
-        *aUpdate = nsnull;
+        *aUpdate = nullptr;
     }
 
     return NS_OK;
@@ -439,6 +440,7 @@ nsOfflineCacheUpdateService::Schedule(nsIURI *aManifestURI,
                                       nsIURI *aDocumentURI,
                                       nsIDOMDocument *aDocument,
                                       nsIDOMWindow* aWindow,
+                                      nsIFile* aCustomProfileDir,
                                       nsIOfflineCacheUpdate **aUpdate)
 {
     nsCOMPtr<nsIOfflineCacheUpdate> update;
@@ -451,7 +453,7 @@ nsOfflineCacheUpdateService::Schedule(nsIURI *aManifestURI,
 
     nsresult rv;
 
-    rv = update->Init(aManifestURI, aDocumentURI, aDocument);
+    rv = update->Init(aManifestURI, aDocumentURI, aDocument, aCustomProfileDir);
     NS_ENSURE_SUCCESS(rv, rv);
 
     rv = update->Schedule();
@@ -468,7 +470,19 @@ nsOfflineCacheUpdateService::ScheduleUpdate(nsIURI *aManifestURI,
                                             nsIDOMWindow *aWindow,
                                             nsIOfflineCacheUpdate **aUpdate)
 {
-    return Schedule(aManifestURI, aDocumentURI, nsnull, aWindow, aUpdate);
+    return Schedule(aManifestURI, aDocumentURI, nullptr, aWindow, nullptr, aUpdate);
+}
+
+NS_IMETHODIMP
+nsOfflineCacheUpdateService::ScheduleCustomProfileUpdate(nsIURI *aManifestURI,
+                                                         nsIURI *aDocumentURI,
+                                                         nsIFile *aProfileDir,
+                                                         nsIOfflineCacheUpdate **aUpdate)
+{
+    // The profile directory is mandatory
+    NS_ENSURE_ARG(aProfileDir);
+
+    return Schedule(aManifestURI, aDocumentURI, nullptr, nullptr, aProfileDir, aUpdate);
 }
 
 //-----------------------------------------------------------------------------

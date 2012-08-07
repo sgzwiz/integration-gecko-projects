@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsDOMError.h"
 #include "nsHtml5TreeOpExecutor.h"
 #include "nsScriptLoader.h"
 #include "nsIMarkupDocumentViewer.h"
@@ -27,7 +28,9 @@
 #include "mozilla/Util.h" // DebugOnly
 #include "sampler.h"
 #include "nsIScriptError.h"
+#include "nsIScriptContext.h"
 #include "mozilla/Preferences.h"
+#include "nsIHTMLDocument.h"
 
 using namespace mozilla;
 
@@ -65,6 +68,9 @@ class nsHtml5ExecutorReflusher : public nsRunnable
     }
 };
 
+static mozilla::LinkedList<nsHtml5TreeOpExecutor>* gBackgroundFlushList = nullptr;
+static nsITimer* gFlushTimer = nullptr;
+
 nsHtml5TreeOpExecutor::nsHtml5TreeOpExecutor(bool aRunsToCompletion)
 {
   mRunsToCompletion = aRunsToCompletion;
@@ -74,6 +80,18 @@ nsHtml5TreeOpExecutor::nsHtml5TreeOpExecutor(bool aRunsToCompletion)
 
 nsHtml5TreeOpExecutor::~nsHtml5TreeOpExecutor()
 {
+  if (gBackgroundFlushList && isInList()) {
+    mOpQueue.Clear();
+    remove();
+    if (gBackgroundFlushList->isEmpty()) {
+      delete gBackgroundFlushList;
+      gBackgroundFlushList = nullptr;
+      if (gFlushTimer) {
+        gFlushTimer->Cancel();
+        NS_RELEASE(gFlushTimer);
+      }
+    }
+  }
   NS_ASSERTION(mOpQueue.IsEmpty(), "Somehow there's stuff in the op queue.");
 }
 
@@ -288,12 +306,45 @@ nsHtml5TreeOpExecutor::FlushTags()
 }
 
 void
+FlushTimerCallback(nsITimer* aTimer, void* aClosure)
+{
+  nsRefPtr<nsHtml5TreeOpExecutor> ex = gBackgroundFlushList->popFirst();
+  if (ex) {
+    ex->RunFlushLoop();
+  }
+  if (gBackgroundFlushList && gBackgroundFlushList->isEmpty()) {
+    delete gBackgroundFlushList;
+    gBackgroundFlushList = nullptr;
+    gFlushTimer->Cancel();
+    NS_RELEASE(gFlushTimer);
+  }
+}
+
+void
 nsHtml5TreeOpExecutor::ContinueInterruptedParsingAsync()
 {
-  nsCOMPtr<nsIRunnable> flusher = new nsHtml5ExecutorReflusher(this);  
-  if (NS_FAILED(NS_DispatchToMainThread(flusher, NS_DISPATCH_NORMAL, GetDocument()->GetZone()))) {
-    NS_WARNING("failed to dispatch executor flush event");
-  }          
+  if (!mDocument || !mDocument->IsInBackgroundWindow()) {
+    nsCOMPtr<nsIRunnable> flusher = new nsHtml5ExecutorReflusher(this);  
+    if (NS_FAILED(NS_DispatchToMainThread(flusher, NS_DISPATCH_NORMAL, GetDocument()->GetZone()))) {
+      NS_WARNING("failed to dispatch executor flush event");
+    }
+  } else {
+    if (!gBackgroundFlushList) {
+      gBackgroundFlushList = new mozilla::LinkedList<nsHtml5TreeOpExecutor>();
+    }
+    if (!isInList()) {
+      gBackgroundFlushList->insertBack(this);
+    }
+    if (!gFlushTimer) {
+      nsCOMPtr<nsITimer> t = do_CreateInstance("@mozilla.org/timer;1");
+      t.swap(gFlushTimer);
+      // The timer value 50 should not hopefully slow down background pages too
+      // much, yet lets event loop to process enough between ticks.
+      // See bug 734015.
+      gFlushTimer->InitWithFuncCallback(FlushTimerCallback, nullptr,
+                                        50, nsITimer::TYPE_REPEATING_SLACK);
+    }
+  }
 }
 
 void
@@ -315,7 +366,7 @@ nsHtml5TreeOpExecutor::UpdateStyleSheet(nsIContent* aElement)
 
   bool willNotify;
   bool isAlternate;
-  nsresult rv = ssle->UpdateStyleSheet(mRunsToCompletion ? nsnull : this,
+  nsresult rv = ssle->UpdateStyleSheet(mRunsToCompletion ? nullptr : this,
                                        &willNotify,
                                        &isAlternate);
   if (NS_SUCCEEDED(rv) && willNotify && !isAlternate && !mRunsToCompletion) {
@@ -498,8 +549,8 @@ nsHtml5TreeOpExecutor::RunFlushLoop()
 
     mFlushState = eInFlush;
 
-    nsIContent* scriptElement = nsnull;
-
+    nsIContent* scriptElement = nullptr;
+    
     BeginDocUpdate();
 
     PRUint32 numberOfOpsToFlush = mOpQueue.Length();
@@ -598,9 +649,8 @@ nsHtml5TreeOpExecutor::FlushDocumentWrite()
   mStage.AssertEmpty();
 #endif
   
-  nsIContent* scriptElement = nsnull;
-
   nsAutoLockChrome lock; // for doc update
+  nsIContent* scriptElement = nullptr;
   
   BeginDocUpdate();
 
@@ -717,6 +767,13 @@ nsHtml5TreeOpExecutor::StartLayout() {
 void
 nsHtml5TreeOpExecutor::RunScript(nsIContent* aScriptElement)
 {
+  if (mRunsToCompletion) {
+    // We are in createContextualFragment() or in the upcoming document.parse().
+    // Do nothing. Let's not even mark scripts malformed here, because that
+    // could cause serialization weirdness later.
+    return;
+  }
+
   NS_ASSERTION(aScriptElement, "No script to run");
   nsCOMPtr<nsIScriptElement> sele = do_QueryInterface(aScriptElement);
   
@@ -728,13 +785,6 @@ nsHtml5TreeOpExecutor::RunScript(nsIContent* aScriptElement)
     return;
   }
   
-  if (mPreventScriptExecution) {
-    sele->PreventExecution();
-  }
-  if (mRunsToCompletion) {
-    return;
-  }
-
   if (sele->GetScriptDeferred() || sele->GetScriptAsync()) {
     DebugOnly<bool> block = sele->AttemptToExecute();
     NS_ASSERTION(!block, "Defer or async script tried to block.");
@@ -856,9 +906,9 @@ nsHtml5TreeOpExecutor::MaybeComplainAboutCharset(const char* aMsgId,
                                   mDocument,
                                   nsContentUtils::eHTMLPARSER_PROPERTIES,
                                   aMsgId,
-                                  nsnull,
+                                  nullptr,
                                   0,
-                                  nsnull,
+                                  nullptr,
                                   EmptyString(),
                                   aLineNumber);
 }
@@ -899,15 +949,15 @@ nsHtml5TreeOpExecutor::Reset()
 void
 nsHtml5TreeOpExecutor::DropHeldElements()
 {
-  mScriptLoader = nsnull;
-  mDocument = nsnull;
-  mNodeInfoManager = nsnull;
-  mCSSLoader = nsnull;
+  mScriptLoader = nullptr;
+  mDocument = nullptr;
+  mNodeInfoManager = nullptr;
+  mCSSLoader = nullptr;
   {
     nsAutoLockChrome lock;
-    mDocumentURI = nsnull;
+    mDocumentURI = nullptr;
   }
-  mDocShell = nsnull;
+  mDocShell = nullptr;
   mOwnedElements.Clear();
 }
 
@@ -975,7 +1025,7 @@ already_AddRefed<nsIURI>
 nsHtml5TreeOpExecutor::ConvertIfNotPreloadedYet(const nsAString& aURL)
 {
   if (aURL.IsEmpty()) {
-    return nsnull;
+    return nullptr;
   }
   // The URL of the document without <base>
   nsIURI* documentURI = mDocument->GetDocumentURI();
@@ -994,12 +1044,12 @@ nsHtml5TreeOpExecutor::ConvertIfNotPreloadedYet(const nsAString& aURL)
   nsresult rv = NS_NewURI(getter_AddRefs(uri), aURL, charset.get(), base);
   if (NS_FAILED(rv)) {
     NS_WARNING("Failed to create a URI");
-    return nsnull;
+    return nullptr;
   }
   nsCAutoString spec;
   uri->GetSpec(spec);
   if (mPreloadedURLs.Contains(spec)) {
-    return nsnull;
+    return nullptr;
   }
   mPreloadedURLs.PutEntry(spec);
   return uri.forget();

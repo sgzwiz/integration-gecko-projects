@@ -31,14 +31,15 @@ public:
 
     already_AddRefed<gfxASurface> CreateOffscreenSurface(const gfxIntSize& size,
                                                          gfxASurface::gfxContentType contentType);
+    virtual already_AddRefed<gfxASurface>
+      CreateOffscreenImageSurface(const gfxIntSize& aSize,
+                                  gfxASurface::gfxContentType aContentType);
     
     already_AddRefed<gfxASurface> OptimizeImage(gfxImageSurface *aSurface,
                                                 gfxASurface::gfxImageFormat format);
     
     mozilla::RefPtr<mozilla::gfx::ScaledFont>
-      GetScaledFontForFont(gfxFont *aFont);
-
-    virtual bool SupportsAzure(mozilla::gfx::BackendType& aBackend);
+      GetScaledFontForFont(mozilla::gfx::DrawTarget* aTarget, gfxFont *aFont);
 
     nsresult ResolveFontName(const nsAString& aFontName,
                              FontResolverCallback aCallback,
@@ -71,8 +72,10 @@ public:
                                         nsTArray<const char*>& aFontList);
 
     // Returns the OS X version as returned from Gestalt(gestaltSystemVersion, ...)
-    // Ex: Mac OS X 10.4.x ==> 0x104x 
+    // Ex: Mac OS X 10.4.x ==> 0x104x
     PRInt32 OSXVersion();
+
+    bool UseAcceleratedCanvas();
 
     // lower threshold on font anti-aliasing
     PRUint32 GetAntiAliasingThreshold() { return mFontAntiAliasingThreshold; }

@@ -185,6 +185,8 @@ NS_IMETHODIMP nsDelayedPopupsEnabledEvent::Run()
   return NS_OK;	
 }
 
+static LRESULT CALLBACK PluginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
 /**
  *   New plugin window procedure
  */
@@ -313,10 +315,15 @@ static LRESULT CALLBACK PluginWndProcInternal(HWND hWnd, UINT msg, WPARAM wParam
   }
 
   sInMessageDispatch = true;
-
-  LRESULT res = CallWindowProc((WNDPROC)win->GetWindowProc(),
-                               hWnd, msg, wParam, lParam);
-
+  LRESULT res;
+  WNDPROC proc = (WNDPROC)win->GetWindowProc();
+  if (PluginWndProc == proc) {
+    NS_WARNING("Previous plugin window procedure references PluginWndProc! "
+               "Report this bug!");
+    res = CallWindowProc(DefWindowProc, hWnd, msg, wParam, lParam);
+  } else {
+    res = CallWindowProc(proc, hWnd, msg, wParam, lParam);
+  }
   sInMessageDispatch = false;
 
   if (inst) {
@@ -417,9 +424,9 @@ SetWindowLongAHook(HWND hWnd,
   nsPluginNativeWindowWin * win =
     (nsPluginNativeWindowWin *)GetProp(hWnd, NS_PLUGIN_WINDOW_PROPERTY_ASSOCIATION);
 
-  // Hook our subclass back up, just like we do on setwindow.   
+  // Hook our subclass back up, just like we do on setwindow.
   win->SetPrevWindowProc(
-    reinterpret_cast<WNDPROC>(sUser32SetWindowLongAHookStub(hWnd, nIndex,
+    reinterpret_cast<WNDPROC>(sUser32SetWindowLongWHookStub(hWnd, nIndex,
       reinterpret_cast<LONG_PTR>(PluginWndProc))));
   return proc;
 }
@@ -484,7 +491,7 @@ HookSetWindowLongPtr()
 nsPluginNativeWindowWin::nsPluginNativeWindowWin() : nsPluginNativeWindow()
 {
   // initialize the struct fields
-  window = nsnull; 
+  window = nullptr; 
   x = 0; 
   y = 0; 
   width = 0; 
@@ -557,7 +564,7 @@ nsPluginNativeWindowWin::GetPluginWindowEvent(HWND aWnd, UINT aMsg, WPARAM aWPar
   if (!mWeakRef) {
     mWeakRef = this;
     if (!mWeakRef)
-      return nsnull;
+      return nullptr;
   }
 
   PluginWindowEvent *event;
@@ -568,13 +575,13 @@ nsPluginNativeWindowWin::GetPluginWindowEvent(HWND aWnd, UINT aMsg, WPARAM aWPar
   if (!mCachedPluginWindowEvent) 
   {
     event = new PluginWindowEvent();
-    if (!event) return nsnull;
+    if (!event) return nullptr;
     mCachedPluginWindowEvent = event;
   }
   else if (mCachedPluginWindowEvent->InUse())
   {
     event = new PluginWindowEvent();
-    if (!event) return nsnull;
+    if (!event) return nullptr;
   }
   else
   {
@@ -599,7 +606,7 @@ nsresult nsPluginNativeWindowWin::CallSetWindow(nsRefPtr<nsNPAPIPluginInstance> 
 
   // check plugin mime type and cache it if it will need special treatment later
   if (mPluginType == nsPluginType_Unknown) {
-    const char* mimetype = nsnull;
+    const char* mimetype = nullptr;
     aPluginInstance->GetMIMEType(&mimetype);
     if (mimetype) { 
       if (!strcmp(mimetype, "application/x-shockwave-flash"))
@@ -699,7 +706,7 @@ nsresult nsPluginNativeWindowWin::SubclassAndAssociateWindow()
 nsresult nsPluginNativeWindowWin::UndoSubclassAndAssociateWindow()
 {
   // release plugin instance
-  SetPluginInstance(nsnull);
+  SetPluginInstance(nullptr);
 
   // remove window property
   HWND hWnd = (HWND)window;

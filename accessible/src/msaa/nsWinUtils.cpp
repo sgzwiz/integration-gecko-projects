@@ -13,6 +13,8 @@
 
 #include "mozilla/Preferences.h"
 #include "nsArrayUtils.h"
+#include "nsIArray.h"
+#include "nsIDocument.h"
 #include "nsIDocShellTreeItem.h"
 
 using namespace mozilla;
@@ -27,13 +29,13 @@ nsWinUtils::GetComputedStyleDeclaration(nsIContent* aContent)
 {
   nsIContent* elm = nsCoreUtils::GetDOMElementFor(aContent);
   if (!elm)
-    return nsnull;
+    return nullptr;
 
   // Returns number of items in style declaration
   nsCOMPtr<nsIDOMWindow> window =
     do_QueryInterface(elm->OwnerDoc()->GetWindow());
   if (!window)
-    return nsnull;
+    return nullptr;
 
   nsCOMPtr<nsIDOMCSSStyleDeclaration> cssDecl;
   nsCOMPtr<nsIDOMElement> domElement(do_QueryInterface(elm));

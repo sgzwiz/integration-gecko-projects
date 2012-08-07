@@ -119,9 +119,8 @@ nsXFormsInputAccessible::
 {
 }
 
-NS_IMPL_ISUPPORTS_INHERITED3(nsXFormsInputAccessible,
+NS_IMPL_ISUPPORTS_INHERITED2(nsXFormsInputAccessible,
                              Accessible,
-                             HyperTextAccessible,
                              nsIAccessibleText,
                              nsIAccessibleEditableText)
 
@@ -314,7 +313,7 @@ nsXFormsRangeAccessible::GetMaximumValue(double *aMaximumValue)
   nsresult rv = sXFormsService->GetRangeEnd(DOMNode, value);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  PRInt32 error = NS_OK;
+  nsresult error = NS_OK;
   *aMaximumValue = value.ToDouble(&error);
   return error;
 }
@@ -329,7 +328,7 @@ nsXFormsRangeAccessible::GetMinimumValue(double *aMinimumValue)
   nsresult rv = sXFormsService->GetRangeStart(DOMNode, value);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  PRInt32 error = NS_OK;
+  nsresult error = NS_OK;
   *aMinimumValue = value.ToDouble(&error);
   return error;
 }
@@ -344,7 +343,7 @@ nsXFormsRangeAccessible::GetMinimumIncrement(double *aMinimumIncrement)
   nsresult rv = sXFormsService->GetRangeStep(DOMNode, value);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  PRInt32 error = NS_OK;
+  nsresult error = NS_OK;
   *aMinimumIncrement = value.ToDouble(&error);
   return error;
 }
@@ -359,7 +358,7 @@ nsXFormsRangeAccessible::GetCurrentValue(double *aCurrentValue)
   nsresult rv = sXFormsService->GetValue(DOMNode, value);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  PRInt32 error = NS_OK;
+  nsresult error = NS_OK;
   *aCurrentValue = value.ToDouble(&error);
   return error;
 }
@@ -555,7 +554,13 @@ nsXFormsSelectComboboxAccessible::NativeState()
   else
     state |= states::COLLAPSED;
 
-  return state | states::HASPOPUP | states::FOCUSABLE;
+  return state | states::HASPOPUP;
+}
+
+PRUint64
+nsXFormsSelectComboboxAccessible::NativeInteractiveState() const
+{
+  return NativelyUnavailable() ? states::UNAVAILABLE : states::FOCUSABLE;
 }
 
 bool
@@ -585,15 +590,17 @@ PRUint64
 nsXFormsItemComboboxAccessible::NativeState()
 {
   PRUint64 state = nsXFormsSelectableItemAccessible::NativeState();
-
-  if (state & states::UNAVAILABLE)
-    return state;
-
-  state |= states::SELECTABLE;
   if (IsSelected())
     state |= states::SELECTED;
 
   return state;
+}
+
+PRUint64
+nsXFormsItemComboboxAccessible::NativeInteractiveState() const
+{
+  return NativelyUnavailable() ?
+    states::UNAVAILABLE : states::FOCUSABLE | states::SELECTABLE;
 }
 
 NS_IMETHODIMP

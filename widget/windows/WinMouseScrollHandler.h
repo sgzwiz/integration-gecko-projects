@@ -17,10 +17,11 @@ class nsWindow;
 class nsGUIEvent;
 class nsMouseScrollEvent;
 struct nsIntPoint;
-struct nsModifierKeyState;
 
 namespace mozilla {
 namespace widget {
+
+class ModifierKeyState;
 
 class MouseScrollHandler {
 public:
@@ -78,7 +79,7 @@ private:
    */
   static void InitEvent(nsWindow* aWindow,
                         nsGUIEvent& aEvent,
-                        nsIntPoint* aPoint = nsnull);
+                        nsIntPoint* aPoint = nullptr);
 
   /**
    * GetModifierKeyState() returns current modifier key state.
@@ -87,7 +88,7 @@ private:
    *
    * @param aMessage    Handling message.
    */
-  static nsModifierKeyState GetModifierKeyState(UINT aMessage);
+  static ModifierKeyState GetModifierKeyState(UINT aMessage);
 
   /**
    * MozGetMessagePos() returns the mouse cursor position when GetMessage()
@@ -205,7 +206,7 @@ private:
   ScrollTargetInfo GetScrollTargetInfo(
                      nsWindow* aWindow,
                      const EventInfo& aEvent,
-                     const nsModifierKeyState& aModiferKeyState);
+                     const ModifierKeyState& aModiferKeyState);
 
   class EventInfo {
   public:
@@ -237,7 +238,7 @@ private:
 
   protected:
     EventInfo() :
-      mIsVertical(false), mIsPage(false), mDelta(0), mWnd(nsnull)
+      mIsVertical(false), mIsPage(false), mDelta(0), mWnd(nullptr)
     {
     }
 
@@ -295,7 +296,7 @@ private:
     bool InitMouseScrollEvent(nsWindow* aWindow,
                               nsMouseScrollEvent& aMouseScrollEvent,
                               const ScrollTargetInfo& aScrollTargetInfo,
-                              const nsModifierKeyState& aModKeyState);
+                              const ModifierKeyState& aModKeyState);
 
     /**
      * InitMousePixelScrollEvent() initializes NS_MOUSE_PIXEL_SCROLL event and
@@ -314,7 +315,7 @@ private:
     bool InitMousePixelScrollEvent(nsWindow* aWindow,
                                    nsMouseScrollEvent& aPixelScrollEvent,
                                    const ScrollTargetInfo& aScrollTargetInfo,
-                                   const nsModifierKeyState& aModKeyState);
+                                   const ModifierKeyState& aModKeyState);
 
   private:
     static PRInt32 RoundDelta(double aDelta);

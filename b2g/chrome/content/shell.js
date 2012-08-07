@@ -12,7 +12,10 @@ const Cr = Components.results;
 Cu.import('resource://gre/modules/XPCOMUtils.jsm');
 Cu.import('resource://gre/modules/Services.jsm');
 Cu.import('resource://gre/modules/ContactService.jsm');
+Cu.import('resource://gre/modules/SettingsChangeNotifier.jsm');
 Cu.import('resource://gre/modules/Webapps.jsm');
+Cu.import('resource://gre/modules/AlarmService.jsm');
+Cu.import('resource://gre/modules/ActivitiesService.jsm');
 
 XPCOMUtils.defineLazyServiceGetter(Services, 'env',
                                    '@mozilla.org/process/environment;1',
@@ -21,10 +24,6 @@ XPCOMUtils.defineLazyServiceGetter(Services, 'env',
 XPCOMUtils.defineLazyServiceGetter(Services, 'ss',
                                    '@mozilla.org/content/style-sheet-service;1',
                                    'nsIStyleSheetService');
-
-XPCOMUtils.defineLazyServiceGetter(Services, 'idle',
-                                   '@mozilla.org/widget/idleservice;1',
-                                   'nsIIdleService');
 
 #ifdef MOZ_WIDGET_GONK
 XPCOMUtils.defineLazyServiceGetter(Services, 'audioManager',
@@ -45,30 +44,50 @@ XPCOMUtils.defineLazyGetter(this, 'DebuggerServer', function() {
   return DebuggerServer;
 });
 
+function getContentWindow() {
+  return shell.contentBrowser.contentWindow;
+}
+
 // FIXME Bug 707625
-// until we have a proper security model, add some rights to
-// the pre-installed web applications
+// Please don't add more permissions here.
 // XXX never grant 'content-camera' to non-gaia apps
 function addPermissions(urls) {
   let permissions = [
-    'indexedDB', 'indexedDB-unlimited', 'webapps-manage', 'offline-app', 'pin-app',
+    'indexedDB-unlimited', 'webapps-manage', 'offline-app', 'pin-app',
     'websettings-read', 'websettings-readwrite',
-    'content-camera', 'webcontacts-manage', 'wifi-manage', 'desktop-notification',
-    'geolocation', 'device-storage'
+    'content-camera', 'wifi-manage', 'desktop-notification',
+    'geolocation', 'device-storage', 'alarms'
   ];
+
   urls.forEach(function(url) {
     url = url.trim();
-    let uri = Services.io.newURI(url, null, null);
-    let allow = Ci.nsIPermissionManager.ALLOW_ACTION;
+    if (url) {
+      let uri = Services.io.newURI(url, null, null);
+      let allow = Ci.nsIPermissionManager.ALLOW_ACTION;
 
-    permissions.forEach(function(permission) {
-      Services.perms.add(uri, permission, allow);
-    });
+      permissions.forEach(function(permission) {
+        Services.perms.add(uri, permission, allow);
+      });
+    }
   });
 }
 
 var shell = {
-  isDebug: false,
+
+  get CrashSubmit() {
+    delete this.CrashSubmit;
+    Cu.import("resource://gre/modules/CrashSubmit.jsm", this);
+    return this.CrashSubmit;
+  },
+
+  reportCrash: function shell_reportCrash() {
+    let crashID = Cc["@mozilla.org/xre/app-info;1"]
+      .getService(Ci.nsIXULRuntime).lastRunCrashID;
+    if (Services.prefs.getBoolPref('app.reportCrashes') &&
+        crashID) {
+      this.CrashSubmit().submit(crashID)
+    }
+  },
 
   get contentBrowser() {
     delete this.contentBrowser;
@@ -85,6 +104,10 @@ var shell = {
     return Services.prefs.getCharPref('browser.homescreenURL');
   },
 
+  get manifestURL() {
+    return Services.prefs.getCharPref('browser.manifestURL');
+   },
+
   start: function shell_start() {
     let homeURL = this.homeURL;
     if (!homeURL) {
@@ -93,15 +116,39 @@ var shell = {
       return;
     }
 
-    ['keydown', 'keypress', 'keyup'].forEach((function listenKey(type) {
-      window.addEventListener(type, this, false, true);
-      window.addEventListener(type, this, true, true);
-    }).bind(this));
+    let manifestURL = this.manifestURL;
+    // <html:iframe id="homescreen"
+    //              mozbrowser="true" mozallowfullscreen="true"
+    //              style="overflow: hidden; -moz-box-flex: 1; border: none;"
+    //              src="data:text/html;charset=utf-8,%3C!DOCTYPE html>%3Cbody style='background:black;'>"/>
+    let browserFrame =
+      document.createElementNS('http://www.w3.org/1999/xhtml', 'html:iframe');
+    browserFrame.setAttribute('id', 'homescreen');
+    browserFrame.setAttribute('mozbrowser', 'true');
+    browserFrame.setAttribute('mozapp', manifestURL);
+    browserFrame.setAttribute('mozallowfullscreen', 'true');
+    browserFrame.setAttribute('style', "overflow: hidden; -moz-box-flex: 1; border: none;");
+    browserFrame.setAttribute('src', "data:text/html;charset=utf-8,%3C!DOCTYPE html>%3Cbody style='background:black;");
+    document.getElementById('shell').appendChild(browserFrame);
 
+    browserFrame.contentWindow
+                .QueryInterface(Ci.nsIInterfaceRequestor)
+                .getInterface(Ci.nsIWebNavigation)
+                .sessionHistory = Cc["@mozilla.org/browser/shistory;1"]
+                                    .createInstance(Ci.nsISHistory);
+
+    // Capture all key events so we can filter out hardware buttons
+    // And send them to Gaia via mozChromeEvents.
+    // Ideally, hardware buttons wouldn't generate key events at all, or
+    // if they did, they would use keycodes that conform to DOM 3 Events.
+    // See discussion in https://bugzilla.mozilla.org/show_bug.cgi?id=762362
+    window.addEventListener('keydown', this, true);
+    window.addEventListener('keypress', this, true);
+    window.addEventListener('keyup', this, true);
     window.addEventListener('MozApplicationManifest', this);
     window.addEventListener('mozfullscreenchange', this);
     window.addEventListener('sizemodechange', this);
-    this.contentBrowser.addEventListener('load', this, true);
+    this.contentBrowser.addEventListener('mozbrowserloadstart', this, true);
 
     // Until the volume can be set from the content side, set it to a
     // a specific value when the device starts. This way the front-end
@@ -121,130 +168,104 @@ var shell = {
 
     addPermissions(domains.split(","));
 
-    // Load webapi.js as a frame script
-    let frameScriptUrl = 'chrome://browser/content/webapi.js';
-    try {
-      messageManager.loadFrameScript(frameScriptUrl, true);
-    } catch (e) {
-      dump('Error loading ' + frameScriptUrl + ' as a frame script: ' + e + '\n');
-    }
-
     CustomEventManager.init();
-
     WebappsHelper.init();
 
-    let browser = this.contentBrowser;
-    browser.homePage = homeURL;
-    browser.goHome();
+    // XXX could factor out into a settings->pref map.  Not worth it yet.
+    SettingsListener.observe("debug.fps.enabled", false, function(value) {
+      Services.prefs.setBoolPref("layers.acceleration.draw-fps", value);
+    });
+    SettingsListener.observe("debug.paint-flashing.enabled", false, function(value) {
+      Services.prefs.setBoolPref("nglayout.debug.paint_flashing", value);
+    });
+
+    this.contentBrowser.src = homeURL;
   },
 
   stop: function shell_stop() {
-    ['keydown', 'keypress', 'keyup'].forEach((function unlistenKey(type) {
-      window.removeEventListener(type, this, false, true);
-      window.removeEventListener(type, this, true, true);
-    }).bind(this));
-
-    window.addEventListener('MozApplicationManifest', this);
+    window.removeEventListener('keydown', this, true);
+    window.removeEventListener('keypress', this, true);
+    window.removeEventListener('keyup', this, true);
     window.removeEventListener('MozApplicationManifest', this);
     window.removeEventListener('mozfullscreenchange', this);
     window.removeEventListener('sizemodechange', this);
-    this.contentBrowser.removeEventListener('load', this, true);
+    this.contentBrowser.removeEventListener('mozbrowserloadstart', this, true);
 
 #ifndef MOZ_WIDGET_GONK
     delete Services.audioManager;
 #endif
   },
 
-  toggleDebug: function shell_toggleDebug() {
-    this.isDebug = !this.isDebug;
+  // If this key event actually represents a hardware button, filter it here
+  // and send a mozChromeEvent with detail.type set to xxx-button-press or
+  // xxx-button-release instead.
+  filterHardwareKeys: function shell_filterHardwareKeys(evt) {
+    var type;
+    switch (evt.keyCode) {
+      case evt.DOM_VK_HOME:         // Home button
+        type = 'home-button';
+        break;
+      case evt.DOM_VK_SLEEP:        // Sleep button
+      case evt.DOM_VK_END:          // On desktop we don't have a sleep button
+        type = 'sleep-button';
+        break;
+      case evt.DOM_VK_PAGE_UP:      // Volume up button
+        type = 'volume-up-button';
+        break;
+      case evt.DOM_VK_PAGE_DOWN:    // Volume down button
+        type = 'volume-down-button';
+        break;
+      case evt.DOM_VK_ESCAPE:       // Back button (should be disabled)
+        type = 'back-button';
+        break;
+      case evt.DOM_VK_CONTEXT_MENU: // Menu button
+        type = 'menu-button';
+        break;
+      default:                      // Anything else is a real key
+        return;  // Don't filter it at all; let it propagate to Gaia
+    }
 
-    if (this.isDebug) {
-      Services.prefs.setBoolPref("layers.acceleration.draw-fps", true);
-      Services.prefs.setBoolPref("nglayout.debug.paint_flashing", true);
-    } else {
-      Services.prefs.setBoolPref("layers.acceleration.draw-fps", false);
-      Services.prefs.setBoolPref("nglayout.debug.paint_flashing", false);
+    // If we didn't return, then the key event represents a hardware key
+    // and we need to prevent it from propagating to Gaia
+    evt.stopImmediatePropagation();
+    evt.preventDefault(); // Prevent keypress events (when #501496 is fixed).
+
+    // If it is a key down or key up event, we send a chrome event to Gaia.
+    // If it is a keypress event we just ignore it.
+    switch (evt.type) {
+      case 'keydown':
+        type = type + '-press';
+        break;
+      case 'keyup':
+        type = type + '-release';
+        break;
+      case 'keypress':
+        return;
+    }
+  
+    // On my device, the physical hardware buttons (sleep and volume)
+    // send multiple events (press press release release), but the
+    // soft home button just sends one.  This hack is to manually
+    // "debounce" the keys. If the type of this event is the same as
+    // the type of the last one, then don't send it.  We'll never send
+    // two presses or two releases in a row.
+    // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=761067
+    if (type !== this.lastHardwareButtonEventType) {
+      this.lastHardwareButtonEventType = type;
+      this.sendChromeEvent({type: type});
     }
   },
- 
-  changeVolume: function shell_changeVolume(delta) {
-    let steps = 10;
-    try {
-      steps = Services.prefs.getIntPref("media.volume.steps");
-      if (steps <= 0)
-        steps = 1;
-    } catch(e) {}
-
-    let audioManager = Services.audioManager;
-    if (!audioManager)
-      return;
-
-    let currentVolume = audioManager.masterVolume;
-    let newStep = Math.round(steps * Math.sqrt(currentVolume)) + delta;
-    let volume = (newStep / steps) * (newStep / steps);
-
-    if (volume > 1)
-      volume = 1;
-    if (volume < 0)
-      volume = 0;
-    audioManager.masterVolume = volume;
-  },
-
-  forwardKeyToHomescreen: function shell_forwardKeyToHomescreen(evt) {
-    let generatedEvent = content.document.createEvent('KeyboardEvent');
-    generatedEvent.initKeyEvent(evt.type, true, true, evt.view, evt.ctrlKey,
-                                evt.altKey, evt.shiftKey, evt.metaKey,
-                                evt.keyCode, evt.charCode);
-
-    content.dispatchEvent(generatedEvent);
-  },
+  
+  lastHardwareButtonEventType: null, // property for the hack above
 
   handleEvent: function shell_handleEvent(evt) {
+    let content = this.contentBrowser.contentWindow;
     switch (evt.type) {
       case 'keydown':
       case 'keyup':
       case 'keypress':
-        // If the home key is pressed, always forward it to the homescreen
-        if (evt.eventPhase == evt.CAPTURING_PHASE) {
-          if (evt.keyCode == evt.VK_DOM_HOME) {
-            window.setTimeout(this.forwardKeyToHomescreen, 0, evt);
-            evt.preventDefault();
-            evt.stopPropagation();
-          } 
-          return;
-        }
-
-        // If one of the other keys is used in an application and is
-        // cancelled via preventDefault, do nothing.
-        let homescreen = (evt.target.ownerDocument.defaultView == content);
-        if (!homescreen && evt.defaultPrevented)
-          return;
-
-        // If one of the other keys is used in an application and is
-        // not used forward it to the homescreen
-        if (!homescreen)
-          window.setTimeout(this.forwardKeyToHomescreen, 0, evt);
-
-        // For debug purposes and because some of the APIs are not yet exposed
-        // to the content, let's react on some of the keyup events.
-        if (evt.type == 'keyup') {
-          switch (evt.keyCode) {
-            case evt.DOM_VK_F5:
-              if (Services.prefs.getBoolPref('b2g.keys.search.enabled'))
-                this.toggleDebug();
-              break;
-  
-            case evt.DOM_VK_PAGE_DOWN:
-              this.changeVolume(-1);
-              break;
-  
-            case evt.DOM_VK_PAGE_UP:
-              this.changeVolume(1);
-              break;
-          }
-        }
+        this.filterHardwareKeys(evt);
         break;
-
       case 'mozfullscreenchange':
         // When the screen goes fullscreen make sure to set the focus to the
         // main window so noboby can prevent the ESC key to get out fullscreen
@@ -254,13 +275,18 @@ var shell = {
         break;
       case 'sizemodechange':
         if (window.windowState == window.STATE_MINIMIZED) {
-          this.contentBrowser.docShell.isActive = false;
+          this.contentBrowser.setVisible(false);
         } else {
-          this.contentBrowser.docShell.isActive = true;
+          this.contentBrowser.setVisible(true);
         }
         break;
-      case 'load':
-        this.contentBrowser.removeEventListener('load', this, true);
+      case 'mozbrowserloadstart':
+        if (content.document.location == 'about:blank')
+          return;
+
+        this.contentBrowser.removeEventListener('mozbrowserloadstart', this, true);
+
+        this.reportCrash();
 
         let chromeWindow = window.QueryInterface(Ci.nsIDOMChromeWindow);
         chromeWindow.browserDOMWindow = new nsBrowserAccess();
@@ -281,8 +307,8 @@ var shell = {
           if (!manifest)
             return;
 
-          let documentURI = contentWindow.document.documentURIObject;
-          if (!Services.perms.testPermission(documentURI, 'offline-app')) {
+          let principal = contentWindow.document.nodePrincipal;
+          if (Services.perms.testPermissionFromPrincipal(principal, 'offline-app') == Ci.nsIPermissionManager.UNKNOWN_ACTION) {
             if (Services.prefs.getBoolPref('browser.offline-apps.notify')) {
               // FIXME Bug 710729 - Add a UI for offline cache notifications
               return;
@@ -290,8 +316,8 @@ var shell = {
             return;
           }
 
-          Services.perms.add(documentURI, 'offline-app',
-                             Ci.nsIPermissionManager.ALLOW_ACTION);
+          Services.perms.addFromPrincipal(principal, 'offline-app',
+                                          Ci.nsIPermissionManager.ALLOW_ACTION);
 
           let manifestURI = Services.io.newURI(manifest, null, documentURI);
           let updateService = Cc['@mozilla.org/offlinecacheupdate-service;1']
@@ -307,6 +333,9 @@ var shell = {
     let event = content.document.createEvent('CustomEvent');
     event.initCustomEvent(type, true, true, details ? details : {});
     content.dispatchEvent(event);
+  },
+  sendChromeEvent: function shell_sendChromeEvent(details) {
+    this.sendEvent(getContentWindow(), "mozChromeEvent", details);
   }
 };
 
@@ -318,6 +347,7 @@ nsBrowserAccess.prototype = {
 
   openURI: function openURI(uri, opener, where, context) {
     // TODO This should be replaced by an 'open-browser-window' intent
+    let content = shell.contentBrowser.contentWindow;
     let contentWindow = content.wrappedJSObject;
     if (!('getApplicationManager' in contentWindow))
       return null;
@@ -340,15 +370,23 @@ nsBrowserAccess.prototype = {
   }
 };
 
-// Pipe `console` log messages to the nsIConsoleService which writes them
-// to logcat.
-Services.obs.addObserver(function onConsoleAPILogEvent(subject, topic, data) {
-  let message = subject.wrappedJSObject;
-  let prefix = "Content JS " + message.level.toUpperCase() +
-               " at " + message.filename + ":" + message.lineNumber +
-               " in " + (message.functionName || "anonymous") + ": ";
-  Services.console.logStringMessage(prefix + Array.join(message.arguments, " "));
-}, "console-api-log-event", false);
+// Listen for system messages and relay them to Gaia.
+Services.obs.addObserver(function onSystemMessage(subject, topic, data) {
+  let msg = JSON.parse(data);
+  let origin = Services.io.newURI(msg.manifest, null, null).prePath;
+  shell.sendChromeEvent({
+    type: 'open-app',
+    url: msg.uri,
+    origin: origin,
+    manifest: msg.manifest
+  });
+}, 'system-messages-open-app', false);
+
+Services.obs.addObserver(function(aSubject, aTopic, aData) {
+  shell.sendEvent(shell.contentBrowser.contentWindow,
+                  "mozChromeEvent", { type: "fullscreenoriginchange",
+                                      fullscreenorigin: aData } );
+}, "fullscreen-origin-change", false);
 
 (function Repl() {
   if (!Services.prefs.getBoolPref('b2g.remote-js.enabled')) {
@@ -386,6 +424,11 @@ Services.obs.addObserver(function onConsoleAPILogEvent(subject, topic, data) {
       output = clientSocket.openOutputStream(Ci.nsITransport.OPEN_BLOCKING, 0, 0);
       output.write(prompt, prompt.length);
       input.asyncWait(reader, 0, 0, Services.tm.mainThread);
+    },
+    onStopListening: function repl_onStopListening() {
+      if (output) {
+        output.close();
+      }
     }
   }
   let serverPort = Services.prefs.getIntPref('b2g.remote-js.port');
@@ -399,22 +442,26 @@ Services.obs.addObserver(function onConsoleAPILogEvent(subject, topic, data) {
 var CustomEventManager = {
   init: function custevt_init() {
     window.addEventListener("ContentStart", (function(evt) {
+      let content = shell.contentBrowser.contentWindow;
       content.addEventListener("mozContentEvent", this, false, true);
     }).bind(this), false);
   },
 
   handleEvent: function custevt_handleEvent(evt) {
     let detail = evt.detail;
-    dump("XXX FIXME : Got a mozContentEvent: " + detail.type);
+    dump('XXX FIXME : Got a mozContentEvent: ' + detail.type + "\n");
 
     switch(detail.type) {
-      case "desktop-notification-click":
-      case "desktop-notification-close":
+      case 'desktop-notification-click':
+      case 'desktop-notification-close':
         AlertsHelper.handleEvent(detail);
         break;
-      case "webapps-install-granted":
-      case "webapps-install-denied":
+      case 'webapps-install-granted':
+      case 'webapps-install-denied':
         WebappsHelper.handleEvent(detail);
+        break;
+      case 'select-choicechange':
+        FormsHelper.handleEvent(detail);
         break;
     }
   }
@@ -443,11 +490,22 @@ var AlertsHelper = {
     return id;
   },
 
-  showAlertNotification: function alert_showAlertNotification(imageUrl, title, text, textClickable, 
-                                                              cookie, alertListener, name) {
+  showAlertNotification: function alert_showAlertNotification(imageUrl,
+                                                              title,
+                                                              text,
+                                                              textClickable,
+                                                              cookie,
+                                                              alertListener,
+                                                              name)
+  {
     let id = this.registerListener(cookie, alertListener);
-    shell.sendEvent(content, "mozChromeEvent", { type: "desktop-notification", id: id, icon: imageUrl, 
-                                                 title: title, text: text } );
+    shell.sendChromeEvent({
+      type: "desktop-notification",
+      id: id,
+      icon: imageUrl,
+      title: title,
+      text: text
+    });
   }
 }
 
@@ -458,6 +516,7 @@ var WebappsHelper = {
   init: function webapps_init() {
     Services.obs.addObserver(this, "webapps-launch", false);
     Services.obs.addObserver(this, "webapps-ask-install", false);
+    DOMApplicationRegistry.allAppsLaunchable = true;
   },
 
   registerInstaller: function webapps_registerInstaller(data) {
@@ -490,7 +549,7 @@ var WebappsHelper = {
             return;
 
           let manifest = new DOMApplicationManifest(aManifest, json.origin);
-          shell.sendEvent(content, "mozChromeEvent", {
+          shell.sendChromeEvent({
             "type": "webapps-launch",
             "url": manifest.fullLaunchPath(json.startPoint),
             "origin": json.origin
@@ -499,7 +558,11 @@ var WebappsHelper = {
         break;
       case "webapps-ask-install":
         let id = this.registerInstaller(json);
-        shell.sendEvent(content, "mozChromeEvent", { type: "webapps-ask-install", id: id, app: json.app } );
+        shell.sendChromeEvent({
+          type: "webapps-ask-install",
+          id: id,
+          app: json.app
+        });
         break;
     }
   }
@@ -510,151 +573,93 @@ function startDebugger() {
   if (!DebuggerServer.initialized) {
     // Allow remote connections.
     DebuggerServer.init(function () { return true; });
+    DebuggerServer.addBrowserActors();
     DebuggerServer.addActors('chrome://browser/content/dbg-browser-actors.js');
   }
 
-  let port = Services.prefs.getIntPref('devtools.debugger.port') || 6000;
+  let port = Services.prefs.getIntPref('devtools.debugger.remote-port') || 6000;
   try {
-    DebuggerServer.openListener(port, false);
+    DebuggerServer.openListener(port);
   } catch (e) {
     dump('Unable to start debugger server: ' + e + '\n');
   }
 }
 
 window.addEventListener('ContentStart', function(evt) {
-  if (Services.prefs.getBoolPref('devtools.debugger.enabled')) {
+  if (Services.prefs.getBoolPref('devtools.debugger.remote-enabled')) {
     startDebugger();
   }
 });
 
-
-// Once Bug 731746 - Allow chrome JS object to implement nsIDOMEventTarget
-// is resolved this helper could be removed.
-var SettingsListener = {
-  _callbacks: {},
-
-  init: function sl_init() {
-    if ('mozSettings' in navigator && navigator.mozSettings)
-      navigator.mozSettings.onsettingchange = this.onchange.bind(this);
-  },
-
-  onchange: function sl_onchange(evt) {
-    var callback = this._callbacks[evt.settingName];
-    if (callback) {
-      callback(evt.settingValue);
-    }
-  },
-
-  observe: function sl_observe(name, defaultValue, callback) {
-    var settings = window.navigator.mozSettings;
-    if (!settings) {
-      window.setTimeout(function() { callback(defaultValue); });
+// This is the backend for Gaia's screenshot feature.  Gaia requests a
+// screenshot by sending a mozContentEvent with detail.type set to
+// 'take-screenshot'.  Then we take a screenshot and send a
+// mozChromeEvent with detail.type set to 'take-screenshot-success'
+// and detail.file set to the an image/png blob
+window.addEventListener('ContentStart', function ss_onContentStart() {
+  let content = shell.contentBrowser.contentWindow;
+  content.addEventListener('mozContentEvent', function ss_onMozContentEvent(e) {
+    if (e.detail.type !== 'take-screenshot')
       return;
+
+    try {
+      var canvas = document.createElementNS('http://www.w3.org/1999/xhtml',
+                                            'canvas');
+      var width = window.innerWidth;
+      var height = window.innerHeight;
+      canvas.setAttribute('width', width);
+      canvas.setAttribute('height', height);
+
+      var context = canvas.getContext('2d');
+      var flags =
+        context.DRAWWINDOW_DRAW_CARET |
+        context.DRAWWINDOW_DRAW_VIEW |
+        context.DRAWWINDOW_USE_WIDGET_LAYERS;
+      context.drawWindow(window, 0, 0, width, height,
+                         'rgb(255,255,255)', flags);
+
+      shell.sendChromeEvent({
+        type: 'take-screenshot-success',
+        file: canvas.mozGetAsFile('screenshot', 'image/png')
+      });
+    } catch (e) {
+      dump('exception while creating screenshot: ' + e + '\n');
+      shell.sendChromeEvent({
+        type: 'take-screenshot-error',
+        error: String(e)
+      });
     }
-
-    if (!callback || typeof callback !== 'function') {
-      throw new Error('Callback is not a function');
-    }
-
-    var req = settings.getLock().get(name);
-    req.addEventListener('success', (function onsuccess() {
-      callback(typeof(req.result[name]) != 'undefined' ?
-        req.result[name] : defaultValue);
-    }));
-
-    this._callbacks[name] = callback;
-  }
-};
-
-SettingsListener.init();
-
-SettingsListener.observe('language.current', 'en-US', function(value) {
-  Services.prefs.setCharPref('intl.accept_languages', value);
+  });
 });
 
-
-(function PowerManager() {
-  // This will eventually be moved to content, so use content API as
-  // much as possible here. TODO: Bug 738530
-  let power = navigator.mozPower;
-  let idleHandler = function idleHandler(subject, topic, time) {
-    if (topic !== 'idle')
-      return;
-
-    if (power.getWakeLockState("screen") != "locked-foreground") {
-      navigator.mozPower.screenEnabled = false;
+Services.obs.addObserver(function ContentHandler(subject, topic, data) {
+  let handler = JSON.parse(data);
+  new MozActivity({
+    name: 'view',
+    data: {
+      type: handler.type,
+      url: handler.url
     }
-  }
+  });
+}, 'content-handler', false);
 
-  let wakeLockHandler = function(topic, state) {
-    // Turn off the screen when no one needs the it or all of them are
-    // invisible, otherwise turn the screen on. Note that the CPU
-    // might go to sleep as soon as the screen is turned off and
-    // acquiring wake lock will not bring it back (actually the code
-    // is not executed at all).
-    if (topic === 'screen') {
-      if (state != "locked-foreground") {
-        if (Services.idle.idleTime > idleTimeout*1000) {
-          navigator.mozPower.screenEnabled = false;
-        }
-      } else {
-        navigator.mozPower.screenEnabled = true;
-      }
-    } else if (topic == 'cpu') {
-      navigator.mozPower.cpuSleepAllowed = (state != 'locked-foreground' &&
-                                            state != 'locked-background');
+(function geolocationStatusTracker() {
+  let gGeolocationActiveCount = 0;
+
+  Services.obs.addObserver(function(aSubject, aTopic, aData) {
+    let oldCount = gGeolocationActiveCount;
+    if (aData == "starting") {
+      gGeolocationActiveCount += 1;
+    } else if (aData == "shutdown") {
+      gGeolocationActiveCount -= 1;
     }
-  }
 
-  let idleTimeout = Services.prefs.getIntPref('power.screen.timeout');
-  if (!('mozSettings' in navigator))
-    return;
-
-  let request = navigator.mozSettings.getLock().get('power.screen.timeout');
-  request.onsuccess = function onSuccess() {
-    idleTimeout = request.result['power.screen.timeout'] || idleTimeout;
-    if (!idleTimeout)
-      return;
-
-    Services.idle.addIdleObserver(idleHandler, idleTimeout);
-    power.addWakeLockListener(wakeLockHandler);
-  };
-
-  request.onerror = function onError() {
-    if (!idleTimeout)
-      return;
-
-    Services.idle.addIdleObserver(idleHandler, idleTimeout);
-    power.addWakeLockListener(wakeLockHandler);
-  };
-
-  SettingsListener.observe('power.screen.timeout', idleTimeout, function(value) {
-    if (!value)
-      return;
-
-    Services.idle.removeIdleObserver(idleHandler, idleTimeout);
-    idleTimeout = value;
-    Services.idle.addIdleObserver(idleHandler, idleTimeout);
-  });
-
-  window.addEventListener('unload', function removeIdleObjects() {
-    Services.idle.removeIdleObserver(idleHandler, idleTimeout);
-    power.removeWakeLockListener(wakeLockHandler);
-  });
+    // We need to track changes from 1 <-> 0
+    if (gGeolocationActiveCount + oldCount == 1) {
+      shell.sendChromeEvent({
+        type: 'geolocation-status',
+        active: (gGeolocationActiveCount == 1)
+      });
+    }
+}, "geolocation-device-events", false);
 })();
-
-
-(function RILSettingsToPrefs() {
-  ['ril.data.enabled', 'ril.data.roaming.enabled'].forEach(function(key) {
-    SettingsListener.observe(key, false, function(value) {
-      Services.prefs.setBoolPref(key, value);
-    });
-  });
-
-  ['ril.data.apn', 'ril.data.user', 'ril.data.passwd'].forEach(function(key) {
-    SettingsListener.observe(key, false, function(value) {
-      Services.prefs.setCharPref(key, value);
-    });
-  });
-})();
-

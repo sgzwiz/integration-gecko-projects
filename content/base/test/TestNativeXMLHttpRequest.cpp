@@ -43,11 +43,6 @@ nsresult TestNativeXMLHttpRequest()
   NS_NAMED_LITERAL_CSTRING(getString, "GET");
   NS_NAMED_LITERAL_CSTRING(testURL, TEST_URL);
   const nsAString& empty = EmptyString();
-  
-  printf("*** About to see an expected warning about mPrincipal:\n");
-  rv = xhr->Open(getString, testURL, false, empty, empty);
-  printf("*** End of expected warning output.\n");
-  TEST_ENSURE_FAILED(rv, "Open should have failed!");
 
   nsCOMPtr<nsIScriptSecurityManager> secman =
     do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID, &rv);
@@ -57,13 +52,13 @@ nsresult TestNativeXMLHttpRequest()
   rv = secman->GetSystemPrincipal(getter_AddRefs(systemPrincipal));
   TEST_ENSURE_SUCCESS(rv, "Couldn't get system principal!");
 
-  rv = xhr->Init(systemPrincipal, nsnull, nsnull, nsnull);
+  rv = xhr->Init(systemPrincipal, nullptr, nullptr, nullptr);
   TEST_ENSURE_SUCCESS(rv, "Couldn't initialize the XHR!");
 
   rv = xhr->Open(getString, testURL, false, empty, empty);
   TEST_ENSURE_SUCCESS(rv, "Open failed!");
 
-  rv = xhr->Send(nsnull, nsnull);
+  rv = xhr->Send(nullptr);
   TEST_ENSURE_SUCCESS(rv, "Send failed!");
 
   nsAutoString response;

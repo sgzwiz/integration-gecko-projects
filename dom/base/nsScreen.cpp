@@ -40,12 +40,12 @@ nsScreen::Create(nsPIDOMWindow* aWindow)
   MOZ_ASSERT(aWindow);
 
   if (!aWindow->GetDocShell()) {
-    return nsnull;
+    return nullptr;
   }
 
   nsCOMPtr<nsIScriptGlobalObject> sgo =
     do_QueryInterface(static_cast<nsPIDOMWindow*>(aWindow));
-  NS_ENSURE_TRUE(sgo, nsnull);
+  NS_ENSURE_TRUE(sgo, nullptr);
 
   nsRefPtr<nsScreen> screen = new nsScreen();
   screen->BindToOwner(aWindow);
@@ -59,12 +59,29 @@ nsScreen::Create(nsPIDOMWindow* aWindow)
 }
 
 nsScreen::nsScreen()
-  : mEventListener(nsnull)
+  : mEventListener(nullptr)
 {
+}
+
+void
+nsScreen::Reset()
+{
+  hal::UnlockScreenOrientation();
+
+  if (mEventListener) {
+    nsCOMPtr<nsIDOMEventTarget> target = do_QueryInterface(GetOwner());
+    if (target) {
+      target->RemoveSystemEventListener(NS_LITERAL_STRING("mozfullscreenchange"),
+                                        mEventListener, true);
+    }
+
+    mEventListener = nullptr;
+  }
 }
 
 nsScreen::~nsScreen()
 {
+  Reset();
   hal::UnregisterScreenConfigurationObserver(this);
 }
 
@@ -268,7 +285,7 @@ nsScreen::Notify(const hal::ScreenConfiguration& aConfiguration)
 
   if (mOrientation != previousOrientation) {
     // TODO: use an helper method, see bug 720768.
-    nsRefPtr<nsDOMEvent> event = new nsDOMEvent(nsnull, nsnull);
+    nsRefPtr<nsDOMEvent> event = new nsDOMEvent(nullptr, nullptr);
     nsresult rv = event->InitEvent(NS_LITERAL_STRING("mozorientationchange"), false, false);
     if (NS_FAILED(rv)) {
       return;
@@ -318,6 +335,7 @@ NS_IMETHODIMP
 nsScreen::MozLockOrientation(const nsAString& aOrientation, bool* aReturn)
 {
   ScreenOrientation orientation;
+  *aReturn = false;
 
   if (aOrientation.EqualsLiteral("portrait")) {
     orientation = eScreenOrientation_Portrait;
@@ -332,37 +350,31 @@ nsScreen::MozLockOrientation(const nsAString& aOrientation, bool* aReturn)
   } else if (aOrientation.EqualsLiteral("landscape-secondary")) {
     orientation = eScreenOrientation_LandscapeSecondary;
   } else {
-    *aReturn = false;
     return NS_OK;
   }
 
   if (!GetOwner()) {
-    *aReturn = false;
     return NS_OK;
   }
 
-  if (!IsChromeType(GetOwner()->GetDocShell())) {
+  // Chrome code and apps can always lock the screen orientation.
+  if (!IsChromeType(GetOwner()->GetDocShell()) &&
+      !static_cast<nsGlobalWindow*>(GetOwner())->IsPartOfApp()) {
     nsCOMPtr<nsIDOMDocument> doc;
     GetOwner()->GetDocument(getter_AddRefs(doc));
     if (!doc) {
-      *aReturn = false;
       return NS_OK;
     }
 
-    // Apps and frames contained in apps can lock orientation.
-    // But non-apps can lock orientation only if they're fullscreen.
-    if (!static_cast<nsGlobalWindow*>(GetOwner())->IsPartOfApp()) {
-      bool fullscreen;
-      doc->GetMozFullScreen(&fullscreen);
-      if (!fullscreen) {
-        *aReturn = false;
-        return NS_OK;
-      }
+    // Non-apps content can lock orientation only if fullscreen.
+    bool fullscreen;
+    doc->GetMozFullScreen(&fullscreen);
+    if (!fullscreen) {
+      return NS_OK;
     }
 
     nsCOMPtr<nsIDOMEventTarget> target = do_QueryInterface(GetOwner());
     if (!target) {
-      *aReturn = false;
       return NS_OK;
     }
 

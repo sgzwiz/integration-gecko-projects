@@ -26,7 +26,7 @@ public:
   {
     if (aContent && aContent->IsHTML(nsGkAtoms::option))
       return static_cast<nsHTMLOptionElement*>(aContent);
-    return nsnull;
+    return nullptr;
   }
 
   // nsISupports
@@ -73,7 +73,7 @@ public:
 
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
 
-  nsresult CopyInnerTo(nsGenericElement* aDest) const;
+  nsresult CopyInnerTo(nsGenericElement* aDest);
 
   virtual nsXPCClassInfo* GetClassInfo();
 

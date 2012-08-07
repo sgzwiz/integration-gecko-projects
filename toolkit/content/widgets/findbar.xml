@@ -185,7 +185,7 @@
       <xul:label anonid="find-label" class="findbar-find-fast" control="findbar-textbox"/>
       <xul:textbox class="findbar-textbox findbar-find-fast" anonid="findbar-textbox"
                    xbl:inherits="flash"/>
-#ifdef MOZ_WIDGET_GTK2
+#ifdef MOZ_WIDGET_GTK
       <xul:toolbarbutton anonid="find-previous"
                          class="findbar-find-previous tabbable"
                          label="&previous.label;"
@@ -203,7 +203,7 @@
                          oncommand="onFindAgainCommand(false);"
                          disabled="true"
                          xbl:inherits="accesskey=findnextaccesskey"/>
-#ifndef MOZ_WIDGET_GTK2
+#ifndef MOZ_WIDGET_GTK
       <xul:toolbarbutton anonid="find-previous"
                          class="findbar-find-previous tabbable"
                          label="&previous.label;"
@@ -942,14 +942,14 @@
             return textFound;
 
           if (aHighlight) {
-            this._searchRange = doc.createRange();
-            this._searchRange.selectNodeContents(doc.body);
+            var searchRange = doc.createRange();
+            searchRange.selectNodeContents(doc.body);
 
-            this._startPt = this._searchRange.cloneRange();
-            this._startPt.collapse(true);
+            var startPt = searchRange.cloneRange();
+            startPt.collapse(true);
 
-            this._endPt = this._searchRange.cloneRange();
-            this._endPt.collapse(false);
+            var endPt = searchRange.cloneRange();
+            endPt.collapse(false);
 
             var retRange = null;
             var finder = Components.classes["@mozilla.org/embedcomp/rangefind;1"]
@@ -958,11 +958,11 @@
 
             finder.caseSensitive = this._shouldBeCaseSensitive(aWord);
 
-            while ((retRange = finder.Find(aWord, this._searchRange,
-                                          this._startPt, this._endPt))) {
+            while ((retRange = finder.Find(aWord, searchRange,
+                                           startPt, endPt))) {
               this._highlight(retRange, controller);
-              this._startPt = retRange.cloneRange();
-              this._startPt.collapse(false);
+              startPt = retRange.cloneRange();
+              startPt.collapse(false);
 
               textFound = true;
             }

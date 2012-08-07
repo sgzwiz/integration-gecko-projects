@@ -19,7 +19,6 @@
 #include "nsIScriptGlobalObject.h"
 #include "nsIXPConnect.h"
 #include "nsServiceManagerUtils.h"
-#include "nsIDOMDocument.h"
 #include "nsContentErrors.h"
 #include "nsIArray.h"
 #include "nsTArray.h"
@@ -53,23 +52,23 @@ public:
 
   // nsIDOMHTMLElement
   NS_FORWARD_NSIDOMHTMLELEMENT_BASIC(nsGenericHTMLElement::)
-  NS_SCRIPTABLE NS_IMETHOD Click() {
+  NS_IMETHOD Click() {
     return nsGenericHTMLElement::Click();
   }
-  NS_SCRIPTABLE NS_IMETHOD GetTabIndex(PRInt32* aTabIndex) {
+  NS_IMETHOD GetTabIndex(PRInt32* aTabIndex) {
     return nsGenericHTMLElement::GetTabIndex(aTabIndex);
   }
-  NS_SCRIPTABLE NS_IMETHOD SetTabIndex(PRInt32 aTabIndex) {
+  NS_IMETHOD SetTabIndex(PRInt32 aTabIndex) {
     return nsGenericHTMLElement::SetTabIndex(aTabIndex);
   }
-  NS_SCRIPTABLE NS_IMETHOD Focus() {
+  NS_IMETHOD Focus() {
     return nsGenericHTMLElement::Focus();
   }
-  NS_SCRIPTABLE NS_IMETHOD GetDraggable(bool* aDraggable) {
+  NS_IMETHOD GetDraggable(bool* aDraggable) {
     return nsGenericHTMLElement::GetDraggable(aDraggable);
   }
-  NS_SCRIPTABLE NS_IMETHOD GetInnerHTML(nsAString& aInnerHTML);
-  NS_SCRIPTABLE NS_IMETHOD SetInnerHTML(const nsAString& aInnerHTML);
+  NS_IMETHOD GetInnerHTML(nsAString& aInnerHTML);
+  NS_IMETHOD SetInnerHTML(const nsAString& aInnerHTML);
 
   // nsIDOMHTMLScriptElement
   NS_DECL_NSIDOMHTMLSCRIPTELEMENT
@@ -175,14 +174,14 @@ nsHTMLScriptElement::ParseAttribute(PRInt32 aNamespaceID,
 nsresult
 nsHTMLScriptElement::Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const
 {
-  *aResult = nsnull;
+  *aResult = nullptr;
 
   nsCOMPtr<nsINodeInfo> ni = aNodeInfo;
   nsHTMLScriptElement* it =
     new nsHTMLScriptElement(ni.forget(), NOT_FROM_PARSER);
 
   nsCOMPtr<nsINode> kungFuDeathGrip = it;
-  nsresult rv = CopyInnerTo(it);
+  nsresult rv = const_cast<nsHTMLScriptElement*>(this)->CopyInnerTo(it);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // The clone should be marked evaluated if we are.

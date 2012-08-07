@@ -41,6 +41,8 @@
 
 #include "nsIDOMMouseEvent.h"
 
+#include "nsIIdleServiceInternal.h"
+
 /**
  * Forward class definitions
  */
@@ -53,6 +55,7 @@ class imgIContainer;
 namespace mozilla {
 namespace widget {
 class NativeKey;
+class ModifierKeyState;
 } // namespace widget
 } // namespacw mozilla;
 
@@ -83,14 +86,15 @@ public:
                                  const nsIntRect &aRect,
                                  EVENT_CALLBACK aHandleEventFunction,
                                  nsDeviceContext *aContext,
-                                 nsWidgetInitData *aInitData = nsnull);
+                                 nsWidgetInitData *aInitData = nullptr);
   NS_IMETHOD              Destroy();
   NS_IMETHOD              SetParent(nsIWidget *aNewParent);
   virtual nsIWidget*      GetParent(void);
   virtual float           GetDPI();
   NS_IMETHOD              Show(bool bState);
-  NS_IMETHOD              IsVisible(bool & aState);
+  virtual bool            IsVisible() const;
   NS_IMETHOD              ConstrainPosition(bool aAllowSlop, PRInt32 *aX, PRInt32 *aY);
+  virtual void            SetSizeConstraints(const SizeConstraints& aConstraints);
   NS_IMETHOD              Move(PRInt32 aX, PRInt32 aY);
   NS_IMETHOD              Resize(PRInt32 aWidth, PRInt32 aHeight, bool aRepaint);
   NS_IMETHOD              Resize(PRInt32 aX, PRInt32 aY, PRInt32 aWidth, PRInt32 aHeight, bool aRepaint);
@@ -98,7 +102,7 @@ public:
   NS_IMETHOD              PlaceBehind(nsTopLevelWidgetZPlacement aPlacement, nsIWidget *aWidget, bool aActivate);
   NS_IMETHOD              SetSizeMode(PRInt32 aMode);
   NS_IMETHOD              Enable(bool aState);
-  NS_IMETHOD              IsEnabled(bool *aState);
+  virtual bool            IsEnabled() const;
   NS_IMETHOD              SetFocus(bool aRaise);
   NS_IMETHOD              GetBounds(nsIntRect &aRect);
   NS_IMETHOD              GetScreenBounds(nsIntRect &aRect);
@@ -128,10 +132,10 @@ public:
                                               bool aDoCapture, bool aConsumeRollupEvent);
   NS_IMETHOD              GetAttention(PRInt32 aCycleCount);
   virtual bool            HasPendingInputEvent();
-  virtual LayerManager*   GetLayerManager(PLayersChild* aShadowManager = nsnull,
-                                          LayersBackend aBackendHint = LayerManager::LAYERS_NONE,
+  virtual LayerManager*   GetLayerManager(PLayersChild* aShadowManager = nullptr,
+                                          LayersBackend aBackendHint = mozilla::layers::LAYERS_NONE,
                                           LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT,
-                                          bool* aAllowRetaining = nsnull);
+                                          bool* aAllowRetaining = nullptr);
   gfxASurface             *GetThebesSurface();
   NS_IMETHOD              OnDefaultButtonLoaded(const nsIntRect &aButtonRect);
   NS_IMETHOD              OverrideSystemMouseScrollSpeed(PRInt32 aOriginalDelta, bool aIsHorizontal, PRInt32 &aOverriddenDelta);
@@ -180,7 +184,7 @@ public:
   /**
    * Event helpers
    */
-  void                    InitEvent(nsGUIEvent& event, nsIntPoint* aPoint = nsnull);
+  void                    InitEvent(nsGUIEvent& event, nsIntPoint* aPoint = nullptr);
   virtual bool            DispatchMouseEvent(PRUint32 aEventType, WPARAM wParam,
                                              LPARAM lParam,
                                              bool aIsContextMenuKey = false,
@@ -190,7 +194,7 @@ public:
   virtual bool            DispatchWindowEvent(nsGUIEvent*event, nsEventStatus &aStatus);
   void                    InitKeyEvent(nsKeyEvent& aKeyEvent,
                                        const NativeKey& aNativeKey,
-                                       const nsModifierKeyState &aModKeyState);
+                                       const mozilla::widget::ModifierKeyState &aModKeyState);
   virtual bool            DispatchKeyEvent(nsKeyEvent& aKeyEvent,
                                            const MSG *aMsgSentToPlugin);
   void                    DispatchPendingEvents();
@@ -275,6 +279,8 @@ public:
   bool                    const DestroyCalled() { return mDestroyCalled; }
 
   static void             SetupKeyModifiersSequence(nsTArray<KeyPair>* aArray, PRUint32 aModifiers);
+
+  virtual bool            UseOffMainThreadCompositing();
 protected:
 
   // A magic number to identify the FAKETRACKPOINTSCROLLABLE window created
@@ -332,7 +338,7 @@ protected:
   static void             RemoveNextCharMessage(HWND aWnd);
   void                    RemoveMessageAndDispatchPluginEvent(UINT aFirstMsg,
                             UINT aLastMsg,
-                            nsFakeCharMessage* aFakeCharMessage = nsnull);
+                            nsFakeCharMessage* aFakeCharMessage = nullptr);
   virtual bool            ProcessMessage(UINT msg, WPARAM &wParam,
                                          LPARAM &lParam, LRESULT *aRetValue);
   bool                    ProcessMessageForPlugin(const MSG &aMsg,
@@ -368,15 +374,15 @@ protected:
    */
   LRESULT                 OnChar(const MSG &aMsg,
                                  const NativeKey& aNativeKey,
-                                 nsModifierKeyState &aModKeyState,
+                                 const mozilla::widget::ModifierKeyState &aModKeyState,
                                  bool *aEventDispatched,
                                  PRUint32 aFlags = 0);
   LRESULT                 OnKeyDown(const MSG &aMsg,
-                                    nsModifierKeyState &aModKeyState,
+                                    const mozilla::widget::ModifierKeyState &aModKeyState,
                                     bool *aEventDispatched,
                                     nsFakeCharMessage* aFakeCharMessage);
   LRESULT                 OnKeyUp(const MSG &aMsg,
-                                  nsModifierKeyState &aModKeyState,
+                                  const mozilla::widget::ModifierKeyState &aModKeyState,
                                   bool *aEventDispatched);
   bool                    OnGesture(WPARAM wParam, LPARAM lParam);
   bool                    OnTouch(WPARAM wParam, LPARAM lParam);
@@ -426,6 +432,7 @@ private:
   nsTransparencyMode      GetWindowTranslucencyInner() const { return mTransparencyMode; }
   void                    ResizeTranslucentWindow(PRInt32 aNewWidth, PRInt32 aNewHeight, bool force = false);
   nsresult                UpdateTranslucentWindow();
+  void                    ClearTranslucentWindow();
   void                    SetupTranslucentWindowMemoryBitmap(nsTransparencyMode aMode);
   void                    UpdateGlass();
 protected:
@@ -445,8 +452,6 @@ protected:
                                            PAINTSTRUCT ps, HDC aDC);
   static void             ActivateOtherWindowHelper(HWND aWnd);
   void                    ClearCachedResources();
-
-  nsPopupType PopupType() { return mPopupType; }
 
 protected:
   nsCOMPtr<nsIWidget>   mParent;
@@ -473,12 +478,13 @@ protected:
   InputContext mInputContext;
   nsNativeDragTarget*   mNativeDragTarget;
   HKL                   mLastKeyboardLayout;
-  nsPopupType           mPopupType;
   nsSizeMode            mOldSizeMode;
   nsSizeMode            mLastSizeMode;
   WindowHook            mWindowHook;
   DWORD                 mAssumeWheelIsZoomUntil;
   PRUint32              mPickerDisplayCount;
+  HICON                 mIconSmall;
+  HICON                 mIconBig;
   static bool           sDropShadowEnabled;
   static PRUint32       sInstanceCount;
   static TriStateBool   sCanQuit;
@@ -514,7 +520,7 @@ protected:
   // Height of the caption plus border
   PRInt32               mCaptionHeight;
 
-  nsCOMPtr<nsIdleService> mIdleService;
+  nsCOMPtr<nsIIdleServiceInternal> mIdleService;
 
   // Hook Data Memebers for Dropdowns. sProcessHook Tells the
   // hook methods whether they should be processing the hook

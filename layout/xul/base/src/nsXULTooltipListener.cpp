@@ -7,12 +7,10 @@
 
 #include "nsIDOMMouseEvent.h"
 #include "nsIDOMEventTarget.h"
-#include "nsIDOMDocument.h"
 #include "nsIDOMXULDocument.h"
 #include "nsIDOMXULElement.h"
 #include "nsIDocument.h"
 #include "nsGkAtoms.h"
-#include "nsIFrame.h"
 #include "nsIPopupBoxObject.h"
 #include "nsMenuPopupFrame.h"
 #include "nsIServiceManager.h"
@@ -22,7 +20,6 @@
 #include "nsITreeView.h"
 #endif
 #include "nsGUIEvent.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsIScriptContext.h"
 #include "nsPIDOMWindow.h"
 #ifdef MOZ_XUL
@@ -37,7 +34,7 @@
 
 using namespace mozilla;
 
-nsXULTooltipListener* nsXULTooltipListener::mInstance = nsnull;
+nsXULTooltipListener* nsXULTooltipListener::mInstance = nullptr;
 
 //////////////////////////////////////////////////////////////////////////
 //// nsISupports
@@ -59,7 +56,7 @@ nsXULTooltipListener::nsXULTooltipListener()
                                   "browser.chrome.toolbar_tips");
 
     // Call the pref callback to initialize our state.
-    ToolbarTipsPrefChanged("browser.chrome.toolbar_tips", nsnull);
+    ToolbarTipsPrefChanged("browser.chrome.toolbar_tips", nullptr);
   }
 }
 
@@ -91,7 +88,7 @@ nsXULTooltipListener::MouseOut(nsIDOMEvent* aEvent)
   nsCOMPtr<nsIContent> currentTooltip = do_QueryReferent(mCurrentTooltip);
   if (mTooltipTimer && !currentTooltip) {
     mTooltipTimer->Cancel();
-    mTooltipTimer = nsnull;
+    mTooltipTimer = nullptr;
     return;
   }
 
@@ -120,7 +117,7 @@ nsXULTooltipListener::MouseOut(nsIDOMEvent* aEvent)
         // reset special tree tracking
         if (mIsSourceTree) {
           mLastTreeRow = -1;
-          mLastTreeCol = nsnull;
+          mLastTreeCol = nullptr;
         }
       }
     }
@@ -196,7 +193,7 @@ nsXULTooltipListener::MouseMove(nsIDOMEvent* aEvent)
             (tag == nsGkAtoms::menupopup ||
              tag == nsGkAtoms::panel ||
              tag == nsGkAtoms::tooltip)) {
-          mSourceNode = nsnull;
+          mSourceNode = nullptr;
           return;
         }
 
@@ -215,8 +212,8 @@ nsXULTooltipListener::MouseMove(nsIDOMEvent* aEvent)
             LookAndFeel::GetInt(LookAndFeel::eIntID_TooltipDelay, 500),
             nsITimer::TYPE_ONE_SHOT);
         if (NS_FAILED(rv)) {
-          mTargetNode = nsnull;
-          mSourceNode = nsnull;
+          mTargetNode = nullptr;
+          mSourceNode = nullptr;
         }
       }
     }
@@ -404,13 +401,13 @@ nsXULTooltipListener::ShowTooltip()
 #ifdef MOZ_XUL
       if (!mIsSourceTree) {
         mLastTreeRow = -1;
-        mLastTreeCol = nsnull;
+        mLastTreeCol = nullptr;
       }
 #endif
 
       mCurrentTooltip = do_GetWeakReference(tooltipNode);
       LaunchTooltip();
-      mTargetNode = nsnull;
+      mTargetNode = nullptr;
 
       nsCOMPtr<nsIContent> currentTooltip = do_QueryReferent(mCurrentTooltip);
       if (!currentTooltip)
@@ -438,7 +435,7 @@ nsXULTooltipListener::ShowTooltip()
         doc->AddSystemEventListener(NS_LITERAL_STRING("keydown"),
                                     this, true);
       }
-      mSourceNode = nsnull;
+      mSourceNode = nullptr;
     }
   }
 
@@ -501,9 +498,9 @@ nsXULTooltipListener::LaunchTooltip()
       // Because of mutation events, currentTooltip can be null.
       return;
     }
-    currentTooltip->SetAttr(nsnull, nsGkAtoms::titletip, NS_LITERAL_STRING("true"), true);
+    currentTooltip->SetAttr(kNameSpaceID_None, nsGkAtoms::titletip, NS_LITERAL_STRING("true"), true);
   } else {
-    currentTooltip->UnsetAttr(nsnull, nsGkAtoms::titletip, true);
+    currentTooltip->UnsetAttr(kNameSpaceID_None, nsGkAtoms::titletip, true);
   }
   if (!(currentTooltip = do_QueryReferent(mCurrentTooltip))) {
     // Because of mutation events, currentTooltip can be null.
@@ -520,7 +517,7 @@ nsXULTooltipListener::LaunchTooltip()
 
     // Clear the current tooltip if the popup was not opened successfully.
     if (!pm->IsPopupOpen(currentTooltip))
-      mCurrentTooltip = nsnull;
+      mCurrentTooltip = nullptr;
   }
 #endif
 
@@ -545,7 +542,7 @@ nsXULTooltipListener::HideTooltip()
 static void
 GetImmediateChild(nsIContent* aContent, nsIAtom *aTag, nsIContent** aResult) 
 {
-  *aResult = nsnull;
+  *aResult = nullptr;
   PRUint32 childCount = aContent->GetChildCount();
   for (PRUint32 i = 0; i < childCount; i++) {
     nsIContent *child = aContent->GetChildAt(i);
@@ -636,22 +633,24 @@ nsXULTooltipListener::FindTooltip(nsIContent* aTarget, nsIContent** aTooltip)
 nsresult
 nsXULTooltipListener::GetTooltipFor(nsIContent* aTarget, nsIContent** aTooltip)
 {
-  *aTooltip = nsnull;
+  *aTooltip = nullptr;
   nsCOMPtr<nsIContent> tooltip;
   nsresult rv = FindTooltip(aTarget, getter_AddRefs(tooltip));
   if (NS_FAILED(rv) || !tooltip) {
     return rv;
   }
 
+#ifdef MOZ_XUL
   // Submenus can't be used as tooltips, see bug 288763.
   nsIContent* parent = tooltip->GetParent();
   if (parent) {
-    nsIFrame* frame = parent->GetPrimaryFrame();
-    if (frame && frame->GetType() == nsGkAtoms::menuFrame) {
+    nsMenuFrame* menu = do_QueryFrame(parent->GetPrimaryFrame());
+    if (menu) {
       NS_WARNING("Menu cannot be used as a tooltip");
       return NS_ERROR_FAILURE;
     }
   }
+#endif
 
   tooltip.swap(*aTooltip);
   return rv;
@@ -680,16 +679,16 @@ nsXULTooltipListener::DestroyTooltip()
 
     // release tooltip before removing listener to prevent our destructor from
     // being called recursively (bug 120863)
-    mCurrentTooltip = nsnull;
+    mCurrentTooltip = nullptr;
 
     evtTarget->RemoveEventListener(NS_LITERAL_STRING("popuphiding"), this, false);
   }
   
   // kill any ongoing timers
   KillTooltipTimer();
-  mSourceNode = nsnull;
+  mSourceNode = nullptr;
 #ifdef MOZ_XUL
-  mLastTreeCol = nsnull;
+  mLastTreeCol = nullptr;
 #endif
 
   return NS_OK;
@@ -700,7 +699,7 @@ nsXULTooltipListener::KillTooltipTimer()
 {
   if (mTooltipTimer) {
     mTooltipTimer->Cancel();
-    mTooltipTimer = nsnull;
+    mTooltipTimer = nullptr;
     NS_ReleaseReference(mTargetNode);
   }
 }
@@ -717,7 +716,7 @@ nsXULTooltipListener::sTooltipCallback(nsITimer *aTimer, void *aListener)
 nsresult
 nsXULTooltipListener::GetSourceTreeBoxObject(nsITreeBoxObject** aBoxObject)
 {
-  *aBoxObject = nsnull;
+  *aBoxObject = nullptr;
 
   nsCOMPtr<nsIContent> sourceNode = do_QueryReferent(mSourceNode);
   if (mIsSourceTree && sourceNode) {

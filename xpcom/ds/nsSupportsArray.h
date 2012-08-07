@@ -9,10 +9,11 @@
 //#define DEBUG_SUPPORTSARRAY 1
 
 #include "nsISupportsArray.h"
+#include "mozilla/Attributes.h"
 
 static const PRUint32 kAutoArraySize = 8;
 
-class nsSupportsArray : public nsISupportsArray {
+class nsSupportsArray MOZ_FINAL : public nsISupportsArray {
 public:
   nsSupportsArray(void);
   ~nsSupportsArray(void); // nonvirtual since we're not subclassed
@@ -33,7 +34,7 @@ public:
   NS_IMETHOD QueryElementAt(PRUint32 aIndex, const nsIID & aIID, void * *aResult) {
     if (aIndex < mCount) {
       nsISupports* element = mArray[aIndex];
-      if (nsnull != element)
+      if (nullptr != element)
         return element->QueryInterface(aIID, aResult);
     }
     return NS_ERROR_FAILURE;
@@ -42,11 +43,13 @@ public:
     return ReplaceElementAt(value, aIndex) ? NS_OK : NS_ERROR_FAILURE;
   }
   NS_IMETHOD AppendElement(nsISupports *aElement) {
-    return InsertElementAt(aElement, mCount)/* ? NS_OK : NS_ERROR_FAILURE*/;
+    // XXX Invalid cast of bool to nsresult (bug 778110)
+    return (nsresult)InsertElementAt(aElement, mCount)/* ? NS_OK : NS_ERROR_FAILURE*/;
   }
   // XXX this is badly named - should be RemoveFirstElement
   NS_IMETHOD RemoveElement(nsISupports *aElement) {
-    return RemoveElement(aElement, 0)/* ? NS_OK : NS_ERROR_FAILURE*/;
+    // XXX Invalid cast of bool to nsresult (bug 778110)
+    return (nsresult)RemoveElement(aElement, 0)/* ? NS_OK : NS_ERROR_FAILURE*/;
   }
   NS_IMETHOD_(bool) MoveElement(PRInt32 aFrom, PRInt32 aTo);
   NS_IMETHOD Enumerate(nsIEnumerator* *result);

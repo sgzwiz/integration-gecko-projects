@@ -36,8 +36,8 @@ mozSpellChecker::~mozSpellChecker()
     //    mPersonalDictionary->Save();
     mPersonalDictionary->EndSession();
   }
-  mSpellCheckingEngine = nsnull;
-  mPersonalDictionary = nsnull;
+  mSpellCheckingEngine = nullptr;
+  mPersonalDictionary = nullptr;
 }
 
 nsresult 
@@ -45,7 +45,7 @@ mozSpellChecker::Init()
 {
   mPersonalDictionary = do_GetService("@mozilla.org/spellchecker/personaldictionary;1");
   
-  mSpellCheckingEngine = nsnull;
+  mSpellCheckingEngine = nullptr;
 
   return NS_OK;
 } 
@@ -333,7 +333,10 @@ mozSpellChecker::GetCurrentDictionary(nsAString &aDictionary)
 NS_IMETHODIMP 
 mozSpellChecker::SetCurrentDictionary(const nsAString &aDictionary)
 {
-  mSpellCheckingEngine = nsnull;
+  // Calls to mozISpellCheckingEngine::SetDictionary might destroy us
+  nsRefPtr<mozSpellChecker> kungFuDeathGrip = this;
+
+  mSpellCheckingEngine = nullptr;
 
   if (aDictionary.IsEmpty()) {
     return NS_OK;
@@ -390,7 +393,7 @@ mozSpellChecker::CheckCurrentDictionary()
   }
 
   // We had a current dictionary, but it has gone, so we cannot use it anymore.
-  mSpellCheckingEngine = nsnull;
+  mSpellCheckingEngine = nullptr;
   return NS_OK;
 }
 

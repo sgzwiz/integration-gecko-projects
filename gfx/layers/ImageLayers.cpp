@@ -6,11 +6,15 @@
 #include "mozilla/ipc/Shmem.h"
 #include "mozilla/ipc/CrossProcessMutex.h"
 #include "ImageLayers.h"
+#include "SharedTextureImage.h"
 #include "gfxImageSurface.h"
+#include "gfxSharedImageSurface.h"
 #include "yuv_convert.h"
+#include "mozilla/layers/ImageBridgeChild.h"
+#include "mozilla/layers/ImageContainerChild.h"
 
 #ifdef XP_MACOSX
-#include "nsCoreAnimationSupport.h"
+#include "mozilla/gfx/QuartzSupport.h"
 #endif
 
 #ifdef XP_WIN
@@ -22,6 +26,8 @@
 #endif
 
 using namespace mozilla::ipc;
+using mozilla::gfx::DataSourceSurface;
+using mozilla::gfx::SourceSurface;
 
 namespace mozilla {
 namespace layers {
@@ -33,16 +39,22 @@ ImageFactory::CreateImage(const Image::Format *aFormats,
                           BufferRecycleBin *aRecycleBin)
 {
   if (!aNumFormats) {
-    return nsnull;
+    return nullptr;
   }
   nsRefPtr<Image> img;
   if (FormatInList(aFormats, aNumFormats, Image::PLANAR_YCBCR)) {
     img = new PlanarYCbCrImage(aRecycleBin);
   } else if (FormatInList(aFormats, aNumFormats, Image::CAIRO_SURFACE)) {
     img = new CairoImage();
+  } else if (FormatInList(aFormats, aNumFormats, Image::SHARED_TEXTURE)) {
+    img = new SharedTextureImage();
 #ifdef XP_MACOSX
   } else if (FormatInList(aFormats, aNumFormats, Image::MAC_IO_SURFACE)) {
     img = new MacIOSurfaceImage();
+#endif
+#ifdef MOZ_WIDGET_GONK
+  } else if (FormatInList(aFormats, aNumFormats, Image::GONK_IO_SURFACE)) {
+    img = new GonkIOSurfaceImage();
 #endif
   }
   return img.forget();
@@ -79,8 +91,28 @@ BufferRecycleBin::GetBuffer(PRUint32 aSize)
   return result;
 }
 
+ImageContainer::ImageContainer(int flag) 
+: mReentrantMonitor("ImageContainer.mReentrantMonitor"),
+  mPaintCount(0),
+  mPreviousImagePainted(false),
+  mImageFactory(new ImageFactory()),
+  mRecycleBin(new BufferRecycleBin()),
+  mRemoteData(nullptr),
+  mRemoteDataMutex(nullptr),
+  mCompositionNotifySink(nullptr),
+  mImageContainerChild(nullptr)
+{
+  if (flag == ENABLE_ASYNC && ImageBridgeChild::IsCreated()) {
+    mImageContainerChild = 
+      ImageBridgeChild::GetSingleton()->CreateImageContainerChild();
+  }
+}
+
 ImageContainer::~ImageContainer()
 {
+  if (mImageContainerChild) {
+    mImageContainerChild->DispatchStop();
+  }
 }
 
 already_AddRefed<Image>
@@ -91,8 +123,8 @@ ImageContainer::CreateImage(const Image::Format *aFormats,
   return mImageFactory->CreateImage(aFormats, aNumFormats, mScaleHint, mRecycleBin);
 }
 
-void
-ImageContainer::SetCurrentImage(Image *aImage)
+void 
+ImageContainer::SetCurrentImageInternal(Image *aImage)
 {
   ReentrantMonitorAutoEnter mon(mReentrantMonitor);
 
@@ -108,6 +140,45 @@ ImageContainer::SetCurrentImage(Image *aImage)
 
   if (mRemoteData) {
     mRemoteDataMutex->Unlock();
+  }
+}
+
+void
+ImageContainer::SetCurrentImage(Image *aImage)
+{
+  ReentrantMonitorAutoEnter mon(mReentrantMonitor);
+
+  if (mImageContainerChild) {
+    if (aImage) {
+      mImageContainerChild->SendImageAsync(this, aImage);
+    } else {
+      mImageContainerChild->DispatchSetIdle();
+    }
+  }
+  
+  SetCurrentImageInternal(aImage);
+}
+
+void
+ImageContainer::SetCurrentImageInTransaction(Image *aImage)
+{
+  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  NS_ASSERTION(!mImageContainerChild, "Should use async image transfer with ImageBridge.");
+  
+  SetCurrentImageInternal(aImage);
+}
+
+bool ImageContainer::IsAsync() const {
+  return mImageContainerChild != nullptr;
+}
+
+PRUint64 ImageContainer::GetAsyncContainerID() const
+{
+  NS_ASSERTION(IsAsync(),"Shared image ID is only relevant to async ImageContainers");
+  if (IsAsync()) {
+    return mImageContainerChild->GetID();
+  } else {
+    return 0; // zero is always an invalid SharedImageID
   }
 }
 
@@ -160,7 +231,7 @@ ImageContainer::LockCurrentAsSurface(gfxIntSize *aSize, Image** aCurrentImage)
     }
 
     if (!mActiveImage) {
-      return nsnull;
+      return nullptr;
     } 
 
     if (mActiveImage->GetFormat() == Image::REMOTE_IMAGE_BITMAP) {
@@ -185,7 +256,7 @@ ImageContainer::LockCurrentAsSurface(gfxIntSize *aSize, Image** aCurrentImage)
   }
 
   if (!mActiveImage) {
-    return nsnull;
+    return nullptr;
   }
 
   *aSize = mActiveImage->GetSize();
@@ -211,11 +282,11 @@ ImageContainer::GetCurrentAsSurface(gfxIntSize *aSize)
     EnsureActiveImage();
 
     if (!mActiveImage)
-      return nsnull;
+      return nullptr;
     *aSize = mRemoteData->mSize;
   } else {
     if (!mActiveImage)
-      return nsnull;
+      return nullptr;
     *aSize = mActiveImage->GetSize();
   }
   return mActiveImage->GetAsSurface();
@@ -254,7 +325,7 @@ ImageContainer::SetRemoteImageData(RemoteImageData *aData, CrossProcessMutex *aM
   if (aData) {
     memset(aData, 0, sizeof(RemoteImageData));
   } else {
-    mActiveImage = nsnull;
+    mActiveImage = nullptr;
   }
 
   mRemoteDataMutex = aMutex;
@@ -265,7 +336,7 @@ ImageContainer::EnsureActiveImage()
 {
   if (mRemoteData) {
     if (mRemoteData->mWasUpdated) {
-      mActiveImage = nsnull;
+      mActiveImage = nullptr;
     }
 
     if (mRemoteData->mType == RemoteImageData::RAW_BITMAP &&
@@ -296,7 +367,7 @@ ImageContainer::EnsureActiveImage()
 }
 
 PlanarYCbCrImage::PlanarYCbCrImage(BufferRecycleBin *aRecycleBin)
-  : Image(nsnull, PLANAR_YCBCR)
+  : Image(nullptr, PLANAR_YCBCR)
   , mBufferSize(0)
   , mRecycleBin(aRecycleBin)
 {
@@ -425,14 +496,31 @@ PlanarYCbCrImage::GetAsSurface()
 void
 MacIOSurfaceImage::SetData(const Data& aData)
 {
-  mIOSurface = nsIOSurface::LookupSurface(aData.mIOSurface->GetIOSurfaceID());
+  mIOSurface = MacIOSurface::LookupSurface(aData.mIOSurface->GetIOSurfaceID());
   mSize = gfxIntSize(mIOSurface->GetWidth(), mIOSurface->GetHeight());
 }
 
 already_AddRefed<gfxASurface>
 MacIOSurfaceImage::GetAsSurface()
 {
-  return mIOSurface->GetAsSurface();
+  mIOSurface->Lock();
+  size_t bytesPerRow = mIOSurface->GetBytesPerRow();
+  size_t ioWidth = mIOSurface->GetWidth();
+  size_t ioHeight = mIOSurface->GetHeight();
+
+  unsigned char* ioData = (unsigned char*)mIOSurface->GetBaseAddress();
+
+  nsRefPtr<gfxImageSurface> imgSurface =
+    new gfxImageSurface(gfxIntSize(ioWidth, ioHeight), gfxASurface::ImageFormatARGB32);
+
+  for (int i = 0; i < ioHeight; i++) {
+    memcpy(imgSurface->Data() + i * imgSurface->Stride(),
+           ioData + i * bytesPerRow, ioWidth * 4);
+  }
+
+  mIOSurface->Unlock();
+
+  return imgSurface.forget();
 }
 
 void

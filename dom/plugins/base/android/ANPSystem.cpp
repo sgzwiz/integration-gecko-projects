@@ -41,7 +41,7 @@ jclass anp_system_loadJavaClass(NPP instance, const char* className)
 
   JNIEnv* env = GetJNIForThread();
   if (!env)
-    return nsnull;
+    return nullptr;
 
   jclass cls = env->FindClass("org/mozilla/gecko/GeckoAppShell");
   jmethodID method = env->GetStaticMethodID(cls,
@@ -63,7 +63,9 @@ jclass anp_system_loadJavaClass(NPP instance, const char* className)
 
 void anp_system_setPowerState(NPP instance, ANPPowerState powerState)
 {
-  NOT_IMPLEMENTED();
+  nsNPAPIPluginInstance* pinst = static_cast<nsNPAPIPluginInstance*>(instance->ndata);
+
+  pinst->SetWakeLock(powerState == kScreenOn_ANPPowerState);
 }
 
 void InitSystemInterface(ANPSystemInterfaceV0 *i) {

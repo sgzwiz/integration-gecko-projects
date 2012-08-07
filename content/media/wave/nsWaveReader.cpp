@@ -119,7 +119,8 @@ nsresult nsWaveReader::Init(nsBuiltinDecoderReader* aCloneDonor)
   return NS_OK;
 }
 
-nsresult nsWaveReader::ReadMetadata(nsVideoInfo* aInfo)
+nsresult nsWaveReader::ReadMetadata(nsVideoInfo* aInfo,
+                                    nsHTMLMediaElement::MetadataTags** aTags)
 {
   NS_ASSERTION(mDecoder->OnDecodeThread(), "Should be on decode thread.");
 
@@ -134,6 +135,8 @@ nsresult nsWaveReader::ReadMetadata(nsVideoInfo* aInfo)
   mInfo.mAudioChannels = mChannels;
 
   *aInfo = mInfo;
+
+  *aTags = nullptr;
 
   ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
 
@@ -239,6 +242,9 @@ static double RoundToUsecs(double aSeconds) {
 
 nsresult nsWaveReader::GetBuffered(nsTimeRanges* aBuffered, PRInt64 aStartTime)
 {
+  if (!mInfo.mHasAudio) {
+    return NS_OK;
+  }
   PRInt64 startOffset = mDecoder->GetResource()->GetNextCachedData(mWavePCMOffset);
   while (startOffset >= 0) {
     PRInt64 endOffset = mDecoder->GetResource()->GetCachedDataEnd(startOffset);

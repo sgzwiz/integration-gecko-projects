@@ -13,6 +13,7 @@ EXPORTS_mozilla += \
   Attributes.h \
   BloomFilter.h \
   CheckedInt.h \
+  Constants.h \
   FloatingPoint.h \
   GuardObjects.h \
   HashFunctions.h \
@@ -24,6 +25,7 @@ EXPORTS_mozilla += \
   Scoped.h \
   StandardInteger.h \
   ThreadLocal.h \
+  TypeTraits.h \
   Types.h \
   Util.h \
   $(NULL)

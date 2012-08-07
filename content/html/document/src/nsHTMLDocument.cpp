@@ -42,6 +42,7 @@
 #include "nsContentList.h"
 #include "nsDOMError.h"
 #include "nsIPrincipal.h"
+#include "nsJSPrincipals.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsAttrName.h"
 #include "nsNodeUtils.h"
@@ -282,19 +283,19 @@ nsHTMLDocument::ResetToURI(nsIURI *aURI, nsILoadGroup *aLoadGroup,
 
   nsDocument::ResetToURI(aURI, aLoadGroup, aPrincipal);
 
-  mImages = nsnull;
-  mApplets = nsnull;
-  mEmbeds = nsnull;
-  mLinks = nsnull;
-  mAnchors = nsnull;
-  mScripts = nsnull;
+  mImages = nullptr;
+  mApplets = nullptr;
+  mEmbeds = nullptr;
+  mLinks = nullptr;
+  mAnchors = nullptr;
+  mScripts = nullptr;
 
-  mForms = nsnull;
+  mForms = nullptr;
 
   NS_ASSERTION(!mWyciwygChannel,
                "nsHTMLDocument::Reset() - Wyciwyg Channel  still exists!");
 
-  mWyciwygChannel = nsnull;
+  mWyciwygChannel = nullptr;
 
   // Make the content type default to "text/html", we are a HTML
   // document, after all. Once we start getting data, this may be
@@ -370,7 +371,7 @@ nsHTMLDocument::TryUserForcedCharset(nsIMarkupDocumentViewer* aMarkupDV,
     if (csAtom) {
       csAtom->ToUTF8String(aCharset);
       aCharsetSource = kCharsetFromUserForced;
-      aDocShell->SetForcedCharset(nsnull);
+      aDocShell->SetForcedCharset(nullptr);
       return true;
     }
   }
@@ -554,6 +555,7 @@ nsHTMLDocument::StartDocumentLoad(const char* aCommand,
   bool xhtml = !html && contentType.EqualsLiteral(APPLICATION_XHTML_XML);
   bool plainText = !html && !xhtml && (contentType.EqualsLiteral(TEXT_PLAIN) ||
     contentType.EqualsLiteral(TEXT_CSS) ||
+    contentType.EqualsLiteral(TEXT_CACHE_MANIFEST) ||
     contentType.EqualsLiteral(APPLICATION_JAVASCRIPT) ||
     contentType.EqualsLiteral(APPLICATION_XJAVASCRIPT) ||
     contentType.EqualsLiteral(TEXT_ECMASCRIPT) ||
@@ -698,7 +700,7 @@ nsHTMLDocument::StartDocumentLoad(const char* aCommand,
   nsCOMPtr<nsIWyciwygChannel> wyciwygChannel;
   
   // For error reporting
-  nsHtml5TreeOpExecutor* executor = nsnull;
+  nsHtml5TreeOpExecutor* executor = nullptr;
   if (loadAsHtml5) {
     executor = static_cast<nsHtml5TreeOpExecutor*> (mParser->GetContentSink());
   }
@@ -846,7 +848,7 @@ nsHTMLDocument::StartDocumentLoad(const char* aCommand,
   }
 
   // parser the content of the URI
-  mParser->Parse(uri, nsnull, (void *)this);
+  mParser->Parse(uri, nullptr, (void *)this);
 
   return rv;
 }
@@ -1051,7 +1053,7 @@ nsHTMLDocument::GetBody()
 NS_IMETHODIMP
 nsHTMLDocument::GetBody(nsIDOMHTMLElement** aBody)
 {
-  *aBody = nsnull;
+  *aBody = nullptr;
 
   nsIContent *body = GetBody();
 
@@ -1089,7 +1091,7 @@ nsHTMLDocument::SetBody(nsIDOMHTMLElement* aBody)
 NS_IMETHODIMP
 nsHTMLDocument::GetHead(nsIDOMHTMLHeadElement** aHead)
 {
-  *aHead = nsnull;
+  *aHead = nullptr;
 
   Element* head = GetHeadElement();
 
@@ -1158,7 +1160,7 @@ NS_IMETHODIMP
 nsHTMLDocument::GetLinks(nsIDOMHTMLCollection** aLinks)
 {
   if (!mLinks) {
-    mLinks = new nsContentList(this, MatchLinks, nsnull, nsnull);
+    mLinks = new nsContentList(this, MatchLinks, nullptr, nullptr);
   }
 
   *aLinks = mLinks;
@@ -1195,7 +1197,7 @@ NS_IMETHODIMP
 nsHTMLDocument::GetAnchors(nsIDOMHTMLCollection** aAnchors)
 {
   if (!mAnchors) {
-    mAnchors = new nsContentList(this, MatchAnchors, nsnull, nsnull);
+    mAnchors = new nsContentList(this, MatchAnchors, nullptr, nullptr);
   }
 
   *aAnchors = mAnchors;
@@ -1449,7 +1451,7 @@ nsHTMLDocument::Open(const nsAString& aContentTypeOrUrl,
   nsCOMPtr<nsIChannel> channel;
   nsCOMPtr<nsILoadGroup> group = do_QueryReferent(mDocumentLoadGroup);
 
-  nsresult rv = NS_NewChannel(getter_AddRefs(channel), uri, nsnull, group);
+  nsresult rv = NS_NewChannel(getter_AddRefs(channel), uri, nullptr, group);
 
   if (NS_FAILED(rv)) {
     return rv;
@@ -1497,7 +1499,7 @@ nsHTMLDocument::Open(const nsAString& aContentTypeOrUrl,
 #endif
 
     // Should this pass true for aForceReuseInnerWindow?
-    rv = window->SetNewDocument(this, nsnull, false);
+    rv = window->SetNewDocument(this, nullptr, false);
     NS_ENSURE_SUCCESS(rv, rv);
 
 #ifdef DEBUG
@@ -1568,6 +1570,13 @@ nsHTMLDocument::Open(const nsAString& aContentTypeOrUrl,
 
   SetReadyStateInternal(nsIDocument::READYSTATE_LOADING);
 
+  // After changing everything around, make sure that the principal on the
+  // document's compartment exactly matches NodePrincipal().
+  DebugOnly<JSObject*> wrapper = GetWrapperPreserveColor();
+  MOZ_ASSERT_IF(wrapper,
+                JS_GetCompartmentPrincipals(js::GetObjectCompartment(wrapper)) ==
+                nsJSPrincipals::get(NodePrincipal()));
+
   NS_ENSURE_SUCCESS(rv, rv);
   return CallQueryInterface(this, aReturn);
 }
@@ -1594,7 +1603,7 @@ nsHTMLDocument::Close()
 
   ++mWriteLevel;
   nsresult rv = (static_cast<nsHtml5Parser*>(mParser.get()))->Parse(
-    EmptyString(), nsnull, GetContentTypeInternal(), true);
+    EmptyString(), nullptr, GetContentTypeInternal(), true);
   --mWriteLevel;
 
   // XXX Make sure that all the document.written content is
@@ -1667,7 +1676,7 @@ nsHTMLDocument::WriteCommon(JSContext *cx,
                                       "DOM Events", this,
                                       nsContentUtils::eDOM_PROPERTIES,
                                       "DocumentWriteIgnored",
-                                      nsnull, 0,
+                                      nullptr, 0,
                                       mDocumentURI);
       return NS_OK;
     }
@@ -1682,7 +1691,7 @@ nsHTMLDocument::WriteCommon(JSContext *cx,
                                       "DOM Events", this,
                                       nsContentUtils::eDOM_PROPERTIES,
                                       "DocumentWriteIgnored",
-                                      nsnull, 0,
+                                      nullptr, 0,
                                       mDocumentURI);
       return NS_OK;
     }
@@ -1779,6 +1788,84 @@ nsHTMLDocument::GetElementsByName(const nsAString& aElementName,
 
   return NS_OK;
 }
+
+static bool MatchItems(nsIContent* aContent, PRInt32 aNameSpaceID, 
+                       nsIAtom* aAtom, void* aData)
+{
+  if (!(aContent->IsElement() && aContent->AsElement()->IsHTML())) {
+    return false;
+  }
+
+  nsGenericHTMLElement* elem = static_cast<nsGenericHTMLElement*>(aContent);
+  if (!elem->HasAttr(kNameSpaceID_None, nsGkAtoms::itemscope) ||
+      elem->HasAttr(kNameSpaceID_None, nsGkAtoms::itemprop)) {
+    return false;
+  }
+
+  nsTArray<nsCOMPtr<nsIAtom> >* tokens = static_cast<nsTArray<nsCOMPtr<nsIAtom> >*>(aData);
+  if (tokens->IsEmpty()) {
+    return true;
+  }
+ 
+  const nsAttrValue* attr = elem->GetParsedAttr(nsGkAtoms::itemtype);
+  if (!attr)
+    return false;
+
+  for (PRUint32 i = 0; i < tokens->Length(); i++) {
+    if (!attr->Contains(tokens->ElementAt(i), eCaseMatters)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static void DestroyTokens(void* aData)
+{
+  nsTArray<nsCOMPtr<nsIAtom> >* tokens = static_cast<nsTArray<nsCOMPtr<nsIAtom> >*>(aData);
+  delete tokens;
+}
+
+static void* CreateTokens(nsINode* aRootNode, const nsString* types)
+{
+  nsTArray<nsCOMPtr<nsIAtom> >* tokens = new nsTArray<nsCOMPtr<nsIAtom> >();
+  nsAString::const_iterator iter, end;
+  types->BeginReading(iter);
+  types->EndReading(end);
+  
+  // skip initial whitespace
+  while (iter != end && nsContentUtils::IsHTMLWhitespace(*iter)) {
+    ++iter;
+  }
+
+  // parse the tokens
+  while (iter != end) {
+    nsAString::const_iterator start(iter);
+
+    do {
+      ++iter;
+    } while (iter != end && !nsContentUtils::IsHTMLWhitespace(*iter));
+
+    tokens->AppendElement(do_GetAtom(Substring(start, iter)));
+
+    // skip whitespace
+    while (iter != end && nsContentUtils::IsHTMLWhitespace(*iter)) {
+      ++iter;
+    }
+  }
+  return tokens;
+}
+
+NS_IMETHODIMP
+nsHTMLDocument::GetItems(const nsAString& types, nsIDOMNodeList** aReturn)
+{
+  nsRefPtr<nsContentList> elements = 
+    NS_GetFuncStringContentList(this, MatchItems, DestroyTokens, 
+                                CreateTokens, types);
+  NS_ENSURE_TRUE(elements, NS_ERROR_OUT_OF_MEMORY);
+  elements.forget(aReturn);
+  return NS_OK;
+}
+
 
 void
 nsHTMLDocument::AddedForm()
@@ -1993,7 +2080,7 @@ nsHTMLDocument::GetCompatMode(nsAString& aCompatMode)
 NS_IMETHODIMP
 nsHTMLDocument::GetPlugins(nsIDOMHTMLCollection** aPlugins)
 {
-  *aPlugins = nsnull;
+  *aPlugins = nullptr;
 
   return GetEmbeds(aPlugins);
 }
@@ -2004,8 +2091,8 @@ nsHTMLDocument::ResolveName(const nsAString& aName,
                             nsISupports **aResult,
                             nsWrapperCache **aCache)
 {
-  *aResult = nsnull;
-  *aCache = nsnull;
+  *aResult = nullptr;
+  *aCache = nullptr;
 
   nsIdentifierMapEntry *entry = mIdentifierMap.GetEntry(aName);
   if (!entry) {
@@ -2125,7 +2212,7 @@ nsContentList*
 nsHTMLDocument::GetFormControls()
 {
   if (!mFormControls) {
-    mFormControls = new nsContentList(this, MatchFormControls, nsnull, nsnull);
+    mFormControls = new nsContentList(this, MatchFormControls, nullptr, nullptr);
   }
 
   return mFormControls;
@@ -2185,7 +2272,7 @@ nsHTMLDocument::CreateAndAddWyciwygChannel(void)
 
     channel->SetOriginalURI(wcwgURI);
 
-    rv = loadGroup->AddRequest(mWyciwygChannel, nsnull);
+    rv = loadGroup->AddRequest(mWyciwygChannel, nullptr);
     NS_ASSERTION(NS_SUCCEEDED(rv), "Failed to add request to load group.");
   }
 
@@ -2201,10 +2288,10 @@ nsHTMLDocument::RemoveWyciwygChannel(void)
   // this is a synchronously constructed about:blank document
   if (loadGroup && mWyciwygChannel) {
     mWyciwygChannel->CloseCacheEntry(NS_OK);
-    loadGroup->RemoveRequest(mWyciwygChannel, nsnull, NS_OK);
+    loadGroup->RemoveRequest(mWyciwygChannel, nullptr, NS_OK);
   }
 
-  mWyciwygChannel = nsnull;
+  mWyciwygChannel = nullptr;
 
   return NS_OK;
 }
@@ -2215,7 +2302,7 @@ nsHTMLDocument::GenerateParserKey(void)
   if (!mScriptLoader) {
     // If we don't have a script loader, then the parser probably isn't parsing
     // anything anyway, so just return null.
-    return nsnull;
+    return nullptr;
   }
 
   // The script loader provides us with the currently executing script element,
@@ -2227,7 +2314,7 @@ nsHTMLDocument::GenerateParserKey(void)
       // Make scripts that aren't inserted by the active parser of this document
       // participate in the context of the script that document.open()ed
       // this document.
-      return nsnull;
+      return nullptr;
     }
   }
   return script;
@@ -2405,19 +2492,19 @@ nsHTMLDocument::GetDocumentAllResult(const nsAString& aID,
                                      nsWrapperCache** aCache,
                                      nsresult *aResult)
 {
-  *aCache = nsnull;
+  *aCache = nullptr;
   *aResult = NS_OK;
 
   nsIdentifierMapEntry *entry = mIdentifierMap.PutEntry(aID);
   if (!entry) {
     *aResult = NS_ERROR_OUT_OF_MEMORY;
 
-    return nsnull;
+    return nullptr;
   }
 
   Element* root = GetRootElement();
   if (!root) {
-    return nsnull;
+    return nullptr;
   }
 
   nsRefPtr<nsContentList> docAllList = entry->GetDocAllList();
@@ -2426,7 +2513,7 @@ nsHTMLDocument::GetDocumentAllResult(const nsAString& aID,
     nsCOMPtr<nsIAtom> id = do_GetAtom(aID);
 
     docAllList = new nsContentList(root, DocAllResultMatch,
-                                   nsnull, nsnull, true, id);
+                                   nullptr, nullptr, true, id);
     entry->SetDocAllList(docAllList);
   }
 
@@ -2518,7 +2605,7 @@ static bool HasPresShell(nsPIDOMWindow *aWindow)
     return false;
   nsCOMPtr<nsIPresShell> presShell;
   docShell->GetPresShell(getter_AddRefs(presShell));
-  return presShell != nsnull;
+  return presShell != nullptr;
 }
 
 nsresult
@@ -2774,7 +2861,7 @@ nsHTMLDocument::GetMidasCommandManager(nsICommandManager** aCmdMgr)
     return NS_OK;
   }
 
-  *aCmdMgr = nsnull;
+  *aCmdMgr = nullptr;
 
   nsPIDOMWindow *window = GetWindow();
   if (!window)
@@ -2812,8 +2899,8 @@ static const struct MidasCommand gMidasCommandTable[] = {
   { "cut",           "cmd_cut",             "", true,  false },
   { "copy",          "cmd_copy",            "", true,  false },
   { "paste",         "cmd_paste",           "", true,  false },
-  { "delete",        "cmd_delete",          "", true,  false },
-  { "forwarddelete", "cmd_forwardDelete",   "", true,  false },
+  { "delete",        "cmd_deleteCharBackward", "", true,  false },
+  { "forwarddelete", "cmd_deleteCharForward", "", true,  false },
   { "selectall",     "cmd_selectAll",       "", true,  false },
   { "undo",          "cmd_undo",            "", true,  false },
   { "redo",          "cmd_redo",            "", true,  false },
@@ -2831,7 +2918,6 @@ static const struct MidasCommand gMidasCommandTable[] = {
   { "insertimage",   "cmd_insertImageNoUI", "", false, false },
   { "inserthtml",    "cmd_insertHTML",      "", false, false },
   { "inserttext",    "cmd_insertText",      "", false, false },
-  { "insertparagraph", "cmd_insertText",  "\n", true,  false },
   { "gethtml",       "cmd_getContents",     "", false, false },
   { "justifyleft",   "cmd_align",       "left", true,  false },
   { "justifyright",  "cmd_align",      "right", true,  false },
@@ -2841,6 +2927,7 @@ static const struct MidasCommand gMidasCommandTable[] = {
   { "unlink",        "cmd_removeLinks",     "", true,  false },
   { "insertorderedlist",   "cmd_ol",        "", true,  false },
   { "insertunorderedlist", "cmd_ul",        "", true,  false },
+  { "insertparagraph", "cmd_paragraphState", "p", true,  false },
   { "formatblock",   "cmd_paragraphState",  "", false, false },
   { "heading",       "cmd_paragraphState",  "", false, false },
   { "styleWithCSS",  "cmd_setDocumentUseCSS", "", false, true },
@@ -3030,7 +3117,7 @@ nsHTMLDocument::DoClipboardSecurityCheck(bool aPaste)
     do_GetService("@mozilla.org/js/xpc/ContextStack;1");
 
   if (stack) {
-    JSContext *cx = nsnull;
+    JSContext *cx = nullptr;
     stack->Peek(&cx);
     if (!cx) {
       return NS_OK;
@@ -3047,7 +3134,7 @@ nsHTMLDocument::DoClipboardSecurityCheck(bool aPaste)
         nsHTMLDocument::sPasteInternal_id =
           INTERNED_STRING_TO_JSID(cx, ::JS_InternString(cx, "paste"));
       }
-      rv = secMan->CheckPropertyAccess(cx, nsnull, classNameStr.get(),
+      rv = secMan->CheckPropertyAccess(cx, nullptr, classNameStr.get(),
                                        nsHTMLDocument::sPasteInternal_id,
                                        nsIXPCSecurityManager::ACCESS_GET_PROPERTY);
     } else {
@@ -3055,7 +3142,7 @@ nsHTMLDocument::DoClipboardSecurityCheck(bool aPaste)
         nsHTMLDocument::sCutCopyInternal_id =
           INTERNED_STRING_TO_JSID(cx, ::JS_InternString(cx, "cutcopy"));
       }
-      rv = secMan->CheckPropertyAccess(cx, nsnull, classNameStr.get(),
+      rv = secMan->CheckPropertyAccess(cx, nullptr, classNameStr.get(),
                                        nsHTMLDocument::sCutCopyInternal_id,
                                        nsIXPCSecurityManager::ACCESS_GET_PROPERTY);
     }
@@ -3128,8 +3215,15 @@ nsHTMLDocument::ExecCommand(const nsAString& commandID,
     return NS_OK;
   }
 
+  // Return false for disabled commands (bug 760052)
+  bool enabled = false;
+  cmdMgr->IsCommandEnabled(cmdToDispatch.get(), window, &enabled);
+  if (!enabled) {
+    return NS_OK;
+  }
+
   if (!isBool && paramStr.IsEmpty()) {
-    rv = cmdMgr->DoCommand(cmdToDispatch.get(), nsnull, window);
+    rv = cmdMgr->DoCommand(cmdToDispatch.get(), nullptr, window);
   } else {
     // we have a command that requires a parameter, create params
     nsCOMPtr<nsICommandParams> cmdParams = do_CreateInstance(
@@ -3272,7 +3366,7 @@ nsHTMLDocument::QueryCommandState(const nsAString & commandID, bool *_retval)
   // return the boolean for this particular alignment rather than the
   // string of 'which alignment is this?'
   if (cmdToDispatch.EqualsLiteral("cmd_align")) {
-    char * actualAlignmentType = nsnull;
+    char * actualAlignmentType = nullptr;
     rv = cmdParams->GetCStringValue("state_attribute", &actualAlignmentType);
     if (NS_SUCCEEDED(rv) && actualAlignmentType && actualAlignmentType[0]) {
       *_retval = paramToCheck.Equals(actualAlignmentType);

@@ -12,9 +12,6 @@ DOMCI_CLASS(MimeType)
 DOMCI_CLASS(MimeTypeArray)
 DOMCI_CLASS(BarProp)
 DOMCI_CLASS(History)
-DOMCI_CLASS(PerformanceTiming)
-DOMCI_CLASS(PerformanceNavigation)
-DOMCI_CLASS(Performance)
 DOMCI_CLASS(Screen)
 DOMCI_CLASS(DOMPrototype)
 DOMCI_CLASS(DOMConstructor)
@@ -46,10 +43,10 @@ DOMCI_CLASS(DragEvent)
 DOMCI_CLASS(KeyboardEvent)
 DOMCI_CLASS(CompositionEvent)
 DOMCI_CLASS(PopupBlockedEvent)
-DOMCI_CLASS(DeviceLightEvent)
-DOMCI_CLASS(DeviceProximityEvent)
-DOMCI_CLASS(UserProximityEvent)
-DOMCI_CLASS(DeviceOrientationEvent)
+#define MOZ_GENERATED_EVENT_LIST
+#define MOZ_GENERATED_EVENT(_event_interface) DOMCI_CLASS(_event_interface)
+#include "GeneratedEvents.h"
+#undef MOZ_GENERATED_EVENT_LIST
 DOMCI_CLASS(DeviceMotionEvent)
 DOMCI_CLASS(DeviceAcceleration)
 DOMCI_CLASS(DeviceRotationRate)
@@ -58,6 +55,8 @@ DOMCI_CLASS(DeviceRotationRate)
 DOMCI_CLASS(HTMLDocument)
 DOMCI_CLASS(HTMLOptionsCollection)
 DOMCI_CLASS(HTMLCollection)
+DOMCI_CLASS(HTMLPropertiesCollection)
+DOMCI_CLASS(PropertyNodeList)
 
 // HTML element classes
 DOMCI_CLASS(HTMLElement)
@@ -93,6 +92,7 @@ DOMCI_CLASS(HTMLMapElement)
 DOMCI_CLASS(HTMLMenuElement)
 DOMCI_CLASS(HTMLMenuItemElement)
 DOMCI_CLASS(HTMLMetaElement)
+DOMCI_CLASS(HTMLMeterElement)
 DOMCI_CLASS(HTMLModElement)
 DOMCI_CLASS(HTMLOListElement)
 DOMCI_CLASS(HTMLObjectElement)
@@ -193,6 +193,7 @@ DOMCI_CLASS(TreeColumns)
 #endif
 
 DOMCI_CLASS(CSSMozDocumentRule)
+DOMCI_CLASS(CSSSupportsRule)
 
 DOMCI_CLASS(BeforeUnloadEvent)
 
@@ -280,7 +281,6 @@ DOMCI_CLASS(SVGAnimatedRect)
 DOMCI_CLASS(SVGAnimatedString)
 DOMCI_CLASS(SVGAnimatedTransformList)
 DOMCI_CLASS(SVGEvent)
-DOMCI_CLASS(SVGException)
 DOMCI_CLASS(SVGLength)
 DOMCI_CLASS(SVGLengthList)
 DOMCI_CLASS(SVGMatrix)
@@ -325,9 +325,6 @@ DOMCI_CLASS(ImageData)
 
 // SmartCard Events
 DOMCI_CLASS(SmartCardEvent)
-  
-// PageTransition Events
-DOMCI_CLASS(PageTransitionEvent)
 
 // WindowUtils
 DOMCI_CLASS(WindowUtils)
@@ -337,7 +334,6 @@ DOMCI_CLASS(XSLTProcessor)
 
 // DOM Level 3 XPath objects
 DOMCI_CLASS(XPathEvaluator)
-DOMCI_CLASS(XPathException)
 DOMCI_CLASS(XPathExpression)
 DOMCI_CLASS(XPathNSResolver)
 DOMCI_CLASS(XPathResult)
@@ -346,7 +342,6 @@ DOMCI_CLASS(XPathResult)
 DOMCI_CLASS(StorageObsolete)
 DOMCI_CLASS(Storage)
 DOMCI_CLASS(StorageItem)
-DOMCI_CLASS(StorageEvent)
 
 // DOMParser, XMLSerializer
 DOMCI_CLASS(DOMParser)
@@ -372,6 +367,8 @@ DOMCI_CLASS(FileList)
 DOMCI_CLASS(Blob)
 DOMCI_CLASS(File)
 DOMCI_CLASS(FileReader)
+DOMCI_CLASS(ArchiveReader)
+DOMCI_CLASS(ArchiveRequest)
 DOMCI_CLASS(MozURLProperty)
 DOMCI_CLASS(MozBlobBuilder)
 
@@ -396,7 +393,7 @@ DOMCI_CLASS(GeoPosition)
 DOMCI_CLASS(GeoPositionCoords)
 DOMCI_CLASS(GeoPositionError)
 
-DOMCI_CLASS(MozBatteryManager)
+DOMCI_CLASS(BatteryManager)
 
 DOMCI_CLASS(MozPowerManager)
 DOMCI_CLASS(MozWakeLock)
@@ -410,6 +407,8 @@ DOMCI_CLASS(MozSmsCursor)
 
 DOMCI_CLASS(MozConnection)
 DOMCI_CLASS(MozMobileConnection)
+
+DOMCI_CLASS(USSDReceivedEvent)
 
 // @font-face in CSS
 DOMCI_CLASS(CSSFontFaceRule)
@@ -467,8 +466,6 @@ DOMCI_CLASS(PaintRequest)
 DOMCI_CLASS(PaintRequestList)
 
 DOMCI_CLASS(ScrollAreaEvent)
-DOMCI_CLASS(PopStateEvent)
-DOMCI_CLASS(HashChangeEvent)
 
 DOMCI_CLASS(EventListenerInfo)
 
@@ -484,9 +481,9 @@ DOMCI_CLASS(DesktopNotificationCenter)
 
 // WebSocket
 DOMCI_CLASS(WebSocket)
-DOMCI_CLASS(CloseEvent)
 
 DOMCI_CLASS(IDBFactory)
+DOMCI_CLASS(IDBFileHandle)
 DOMCI_CLASS(IDBRequest)
 DOMCI_CLASS(IDBDatabase)
 DOMCI_CLASS(IDBObjectStore)
@@ -506,23 +503,38 @@ DOMCI_CLASS(MozCSSKeyframeRule)
 DOMCI_CLASS(MozCSSKeyframesRule)
 
 DOMCI_CLASS(MediaQueryList)
-DOMCI_CLASS(CustomEvent)
 
 DOMCI_CLASS(MutationObserver)
 DOMCI_CLASS(MutationRecord)
 
-DOMCI_CLASS(MozSettingsEvent)
-
 #ifdef MOZ_B2G_RIL
+DOMCI_CLASS(MozWifiStatusChangeEvent)
+DOMCI_CLASS(MozWifiConnectionInfoEvent)
 DOMCI_CLASS(Telephony)
 DOMCI_CLASS(TelephonyCall)
 DOMCI_CLASS(CallEvent)
+DOMCI_CLASS(MozVoicemail)
+DOMCI_CLASS(MozVoicemailEvent)
 #endif
 
 #ifdef MOZ_B2G_BT
 DOMCI_CLASS(BluetoothManager)
 DOMCI_CLASS(BluetoothAdapter)
+DOMCI_CLASS(BluetoothDevice)
+DOMCI_CLASS(BluetoothDeviceEvent)
+DOMCI_CLASS(BluetoothPropertyEvent)
 #endif
+
+DOMCI_CLASS(CameraManager)
+DOMCI_CLASS(CameraControl)
+DOMCI_CLASS(CameraCapabilities)
 
 DOMCI_CLASS(DOMError)
 DOMCI_CLASS(DOMRequest)
+DOMCI_CLASS(OpenWindowEventDetail)
+
+DOMCI_CLASS(DOMFileHandle)
+DOMCI_CLASS(FileRequest)
+DOMCI_CLASS(LockedFile)
+
+DOMCI_CLASS(MozActivity)

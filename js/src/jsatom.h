@@ -295,7 +295,7 @@ struct JSAtomState
 extern bool
 AtomIsInterned(JSContext *cx, JSAtom *atom);
 
-#define ATOM(name) cx->runtime->atomState.name##Atom
+#define ATOM(name) js::HandlePropertyName::fromMarkedLocation(&cx->runtime->atomState.name##Atom)
 
 #define COMMON_ATOM_INDEX(name)                                               \
     ((offsetof(JSAtomState, name##Atom) - JSAtomState::commonAtomsOffset)     \
@@ -412,29 +412,21 @@ js_DumpAtoms(JSContext *cx, FILE *fp);
 
 #endif
 
-inline bool
-js_ValueToAtom(JSContext *cx, const js::Value &v, JSAtom **atomp);
-
 namespace js {
+
+inline JSAtom *
+ToAtom(JSContext *cx, const js::Value &v);
 
 bool
 InternNonIntElementId(JSContext *cx, JSObject *obj, const Value &idval,
-                      jsid *idp, Value *vp);
+                      jsid *idp, MutableHandleValue vp);
 
 inline bool
 InternNonIntElementId(JSContext *cx, JSObject *obj, const Value &idval, jsid *idp)
 {
-    Value dummy;
+    RootedValue dummy(cx);
     return InternNonIntElementId(cx, obj, idval, idp, &dummy);
 }
-
-/*
- * For all unmapped atoms recorded in al, add a mapping from the atom's index
- * to its address. map->length must already be set to the number of atoms in
- * the list and map->vector must point to pre-allocated memory.
- */
-extern void
-InitAtomMap(JSContext *cx, AtomIndexMap *indices, HeapPtr<JSAtom> *atoms);
 
 template<XDRMode mode>
 bool

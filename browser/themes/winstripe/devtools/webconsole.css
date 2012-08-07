@@ -2,19 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-.hud-box {
-  border-bottom: 1px solid #aaa;
-  text-shadow: none;
-}
-
-.hud-box.animated {
-  -moz-transition: height 100ms;
-}
-
-.hud-splitter {
-  border-top: none;
-}
-
 .hud-outer-wrapper {
   width: 100%;
   height: 100%;
@@ -205,6 +192,15 @@
   -moz-image-region: rect(24px, 32px, 32px, 24px);
 }
 
+.webconsole-mixed-content {
+  color: #FF0000;
+}
+
+.webconsole-mixed-content-link {
+  color: #0000EE;
+  margin: 0;
+}
+
 /* Input and output styles */
 .webconsole-msg-input > .webconsole-msg-icon-container,
 .webconsole-msg-output > .webconsole-msg-icon-container {
@@ -296,15 +292,4 @@
   -moz-appearance: none;
   background-color: -moz-dialog;
   border-top: none;
-}
-
-.web-console-panel {
-  -moz-appearance: none;
-  background-color: white;
-}
-
-.web-console-panel > .hud-box {
-  height: 100%;
-  width: 100%;
-  background-color: white;
 }

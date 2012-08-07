@@ -6,35 +6,6 @@
 
 pref("toolkit.defaultChromeURI", "chrome://browser/content/shell.xul");
 pref("browser.chromeURL", "chrome://browser/content/");
-#ifdef MOZ_OFFICIAL_BRANDING
-pref("browser.homescreenURL", "http://homescreen.gaiamobile.org/");
-#else
-pref("browser.homescreenURL", "http://homescreen.gaiamobile.org/");
-#endif
-
-// All the privileged domains
-// XXX TODO : we should read them from a file somewhere
-pref("b2g.privileged.domains", "http://browser.gaiamobile.org,
-	                            http://calculator.gaiamobile.org,
-	                            http://contacts.gaiamobile.org,
-	                            http://camera.gaiamobile.org,
-	                            http://clock.gaiamobile.org,
-	                            http://crystalskull.gaiamobile.org,
-	                            http://cubevid.gaiamobile.org,
-	                            http://dialer.gaiamobile.org,
-	                            http://gallery.gaiamobile.org,
-	                            http://homescreen.gaiamobile.org,
-	                            http://maps.gaiamobile.org,
-	                            http://market.gaiamobile.org,
-	                            http://music.gaiamobile.org,
-	                            http://penguinpop.gaiamobile.org,
-	                            http://settings.gaiamobile.org,
-	                            http://sms.gaiamobile.org,
-	                            http://towerjelly.gaiamobile.org,
-	                            http://video.gaiamobile.org");
-
-// URL for the dialer application.
-pref("dom.telephony.app.phone.url", "http://dialer.gaiamobile.org,http://homescreen.gaiamobile.org");
 
 // Device pixel to CSS px ratio, in percent. Set to -1 to calculate based on display density.
 pref("browser.viewport.scaleRatio", -1);
@@ -74,7 +45,6 @@ pref("network.http.proxy.pipelining", true);
 pref("network.http.pipelining.maxrequests" , 6);
 pref("network.http.keep-alive.timeout", 600);
 pref("network.http.max-connections", 6);
-pref("network.http.max-connections-per-server", 4);
 pref("network.http.max-persistent-connections-per-server", 4);
 pref("network.http.max-persistent-connections-per-proxy", 4);
 
@@ -98,7 +68,6 @@ pref("mozilla.widget.force-24bpp", true);
 pref("mozilla.widget.use-buffer-pixmap", true);
 pref("mozilla.widget.disable-native-theme", true);
 pref("layout.reflow.synthMouseMove", false);
-pref("dom.send_after_paint_to_content", true);
 
 /* download manager (don't show the window or alert) */
 pref("browser.download.useDownloadDir", true);
@@ -228,6 +197,8 @@ pref("app.privacyURL", "http://www.mozilla.com/%LOCALE%/m/privacy.html");
 pref("app.creditsURL", "http://www.mozilla.org/credits/");
 pref("app.featuresURL", "http://www.mozilla.com/%LOCALE%/b2g/features/");
 pref("app.faqURL", "http://www.mozilla.com/%LOCALE%/b2g/faq/");
+// Whether we want to report crashes (headless)
+pref("app.reportCrashes", true);
 
 // Name of alternate about: page for certificate errors (when undefined, defaults to about:neterror)
 pref("security.alternate_certificate_error_page", "certerror");
@@ -274,7 +245,11 @@ pref("ui.dragThresholdY", 25);
 
 // Layers Acceleration
 pref("layers.acceleration.disabled", false);
-pref("layers.offmainthreadcomposition.enabled", false);
+pref("layers.offmainthreadcomposition.enabled", true);
+pref("layers.offmainthreadcomposition.animate-opacity", true);
+pref("layers.offmainthreadcomposition.animate-transform", true);
+pref("layers.async-video.enabled", true);
+pref("layers.async-pan-zoom.enabled", true);
 
 // Web Notifications
 pref("notification.feature.enabled", true);
@@ -286,6 +261,7 @@ pref("dom.indexedDB.warningQuota", 5);
 // prevent video elements from preloading too much data
 pref("media.preload.default", 1); // default to preload none
 pref("media.preload.auto", 2);    // preload metadata if preload=auto
+pref("media.cache_size", 4096);    // 4MB media cache
 
 //  0: don't show fullscreen keyboard
 //  1: always show fullscreen keyboard
@@ -395,32 +371,22 @@ pref("browser.link.open_newwindow.restriction", 0);
 // Enable browser frames (including OOP, except on Windows, where it doesn't
 // work), but make in-process browser frames the default.
 pref("dom.mozBrowserFramesEnabled", true);
-pref("dom.mozBrowserFramesWhitelist", "http://homescreen.gaiamobile.org,http://browser.gaiamobile.org");
 
-#ifdef XP_WIN
-pref("dom.ipc.tabs.disabled", true);
-#else
 pref("dom.ipc.tabs.disabled", false);
-#endif
 
 pref("dom.ipc.browser_frames.oop_by_default", false);
 
 // Temporary permission hack for WebSMS
 pref("dom.sms.enabled", true);
-pref("dom.sms.whitelist", "file://,http://homescreen.gaiamobile.org,http://sms.gaiamobile.org");
-
-// Temporary permission hack for WebMobileConnection
-pref("dom.mobileconnection.whitelist", "http://system.gaiamobile.org,http://homescreen.gaiamobile.org,http://dialer.gaiamobile.org");
 
 // Temporary permission hack for WebContacts
 pref("dom.mozContacts.enabled", true);
-pref("dom.mozContacts.whitelist", "http://dialer.gaiamobile.org,http://sms.gaiamobile.org");
+
+// WebAlarms
+pref("dom.mozAlarms.enabled", true);
 
 // WebSettings
 pref("dom.mozSettings.enabled", true);
-
-// Ignore X-Frame-Options headers.
-pref("b2g.ignoreXFrameOptions", true);
 
 // controls if we want camera support
 pref("device.camera.enabled", true);
@@ -441,13 +407,21 @@ pref("b2g.remote-js.port", 9999);
 
 // Handle hardware buttons in the b2g chrome package
 pref("b2g.keys.menu.enabled", true);
-pref("b2g.keys.search.enabled", false);
 
-// Screen timeout in minutes
+// Screen timeout in seconds
 pref("power.screen.timeout", 60);
-pref("dom.power.whitelist", "http://homescreen.gaiamobile.org,http://settings.gaiamobile.org");
 
 pref("full-screen-api.enabled", true);
+
+#ifndef MOZ_WIDGET_GONK
+// If we're not actually on physical hardware, don't make the top level widget
+// fullscreen when transitioning to fullscreen. This means in emulated
+// environments (like the b2g desktop client) we won't make the client window
+// fill the whole screen, we'll just make the content fill the client window,
+// i.e. it won't give the impression to content that the number of device
+// screen pixels changes!
+pref("full-screen-api.ignore-widgets", true);
+#endif
 
 pref("media.volume.steps", 10);
 
@@ -491,3 +465,33 @@ pref("ui.click_hold_context_menus.delay", 1000);
 pref("device.storage.enabled", true);
 
 pref("media.plugins.enabled", true);
+
+// Disable printing (particularly, window.print())
+pref("dom.disable_window_print", true);
+
+// Disable window.showModalDialog
+pref("dom.disable_window_showModalDialog", true);
+
+// Turns on gralloc-based direct texturing for Gonk
+pref("gfx.gralloc.enabled", false);
+
+// XXXX REMOVE FOR PRODUCTION. Turns on GC and CC logging 
+pref("javascript.options.mem.log", true);
+
+// Increase mark slice time from 10ms to 30ms
+pref("javascript.options.mem.gc_incremental_slice_ms", 30);
+
+// Show/Hide scrollbars when active/inactive
+pref("ui.showHideScrollbars", 1);
+
+// Enable the ProcessPriorityManager, and give processes with no visible
+// documents a 1s grace period before they're eligible to be marked as
+// background.
+pref("dom.ipc.processPriorityManager.enabled", true);
+pref("dom.ipc.processPriorityManager.gracePeriodMS", 1000);
+pref("hal.processPriorityManager.gonk.masterOomAdjust", 0);
+pref("hal.processPriorityManager.gonk.foregroundOomAdjust", 1);
+pref("hal.processPriorityManager.gonk.backgroundOomAdjust", 2);
+pref("hal.processPriorityManager.gonk.masterNice", -1);
+pref("hal.processPriorityManager.gonk.foregroundNice", 0);
+pref("hal.processPriorityManager.gonk.backgroundNice", 10);

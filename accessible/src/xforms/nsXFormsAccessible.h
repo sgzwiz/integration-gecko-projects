@@ -52,6 +52,7 @@ public:
   // Returns state of xforms element taking into account state of instance node
   // that it is bound to.
   virtual PRUint64 NativeState();
+  virtual bool NativelyUnavailable() const;
 
   // Denies accessible nodes in anonymous content of xforms element by
   // always returning false value.
@@ -70,7 +71,7 @@ protected:
   // are hidden and therefore aren't accessible.
   //
   // @param aContainerNode - node that contains item elements
-  void CacheSelectChildren(nsIDOMNode *aContainerNode = nsnull);
+  void CacheSelectChildren(nsIDOMNode *aContainerNode = nullptr);
 };
 
 
@@ -139,7 +140,7 @@ public:
 
 protected:
   nsIContent* GetItemByIndex(PRUint32* aIndex,
-                             Accessible* aAccessible = nsnull);
+                             Accessible* aAccessible = nullptr);
 
   bool mIsSelect1Element;
 };

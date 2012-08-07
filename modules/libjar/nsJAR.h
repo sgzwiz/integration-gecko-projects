@@ -30,6 +30,7 @@
 #include "nsIObserverService.h"
 #include "nsWeakReference.h"
 #include "nsIObserver.h"
+#include "mozilla/Attributes.h"
 
 class nsIInputStream;
 class nsJARManifestItem;
@@ -112,7 +113,7 @@ class nsJAR : public nsIZipReader
     nsresult ParseManifest();
     void     ReportError(const nsACString &aFilename, PRInt16 errorCode);
     nsresult LoadEntry(const nsACString &aFilename, char** aBuf, 
-                       PRUint32* aBufLen = nsnull);
+                       PRUint32* aBufLen = nullptr);
     PRInt32  ReadLine(const char** src); 
     nsresult ParseOneFile(const char* filebuf, PRInt16 aFileType);
     nsresult VerifyEntry(nsJARManifestItem* aEntry, const char* aEntryData, 
@@ -153,13 +154,13 @@ private:
  * Enumerates a list of files in a zip archive 
  * (based on a pattern match in its member nsZipFind).
  */
-class nsJAREnumerator : public nsIUTF8StringEnumerator
+class nsJAREnumerator MOZ_FINAL : public nsIUTF8StringEnumerator
 {
 public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSIUTF8STRINGENUMERATOR
 
-    nsJAREnumerator(nsZipFind *aFind) : mFind(aFind), mName(nsnull) { 
+    nsJAREnumerator(nsZipFind *aFind) : mFind(aFind), mName(nullptr) { 
       NS_ASSERTION(mFind, "nsJAREnumerator: Missing zipFind.");
     }
 

@@ -53,7 +53,7 @@ nsIndexedToHTML::Create(nsISupports *aOuter, REFNSIID aIID, void **aResult) {
         return NS_ERROR_NO_AGGREGATION;
     
     nsIndexedToHTML* _s = new nsIndexedToHTML();
-    if (_s == nsnull)
+    if (_s == nullptr)
         return NS_ERROR_OUT_OF_MEMORY;
     
     rv = _s->QueryInterface(aIID, aResult);
@@ -205,9 +205,7 @@ nsIndexedToHTML::DoOnStartRequest(nsIRequest* request, nsISupports *aContext,
         nsCOMPtr<nsIFile> file;
         rv = fileUrl->GetFile(getter_AddRefs(file));
         if (NS_FAILED(rv)) return rv;
-        nsCOMPtr<nsILocalFile> lfile = do_QueryInterface(file, &rv);
-        if (NS_FAILED(rv)) return rv;
-        lfile->SetFollowLinks(true);
+        file->SetFollowLinks(true);
         
         nsCAutoString url;
         rv = net_GetURLSpecFromFile(file, url);
@@ -693,12 +691,12 @@ nsIndexedToHTML::FormatInputStream(nsIRequest* aRequest, nsISupports *aContext, 
                                                           getter_AddRefs(mUnicodeEncoder));
         if (NS_SUCCEEDED(rv))
             rv = mUnicodeEncoder->SetOutputErrorBehavior(nsIUnicodeEncoder::kOnError_Replace, 
-                                                       nsnull, (PRUnichar)'?');
+                                                       nullptr, (PRUnichar)'?');
       }
     }
 
     // convert the data with unicode encoder
-    char *buffer = nsnull;
+    char *buffer = nullptr;
     PRInt32 dstLength;
     if (NS_SUCCEEDED(rv)) {
       PRInt32 unicharLength = aBuffer.Length();
@@ -724,7 +722,7 @@ nsIndexedToHTML::FormatInputStream(nsIRequest* aRequest, nsISupports *aContext, 
       rv = NS_OK;
       if (buffer) {
         nsMemory::Free(buffer);
-        buffer = nsnull;
+        buffer = nullptr;
       }
     }
 
@@ -879,7 +877,7 @@ nsIndexedToHTML::OnIndexAvailable(nsIRequest *aRequest,
     // if so, and if the location indeed appears to be a valid URI, then go
     // ahead and treat it like one.
     if (mExpectAbsLoc &&
-        NS_SUCCEEDED(net_ExtractURLScheme(utf8UnEscapeSpec, nsnull, nsnull, nsnull))) {
+        NS_SUCCEEDED(net_ExtractURLScheme(utf8UnEscapeSpec, nullptr, nullptr, nullptr))) {
         // escape as absolute 
         escFlags = esc_Forced | esc_OnlyASCII | esc_AlwaysCopy | esc_Minimal;
     }
@@ -956,14 +954,14 @@ nsIndexedToHTML::OnIndexAvailable(nsIRequest *aRequest,
         pushBuffer.AppendInt(t);
         pushBuffer.AppendLiteral("\">");
         nsAutoString formatted;
-        mDateTime->FormatPRTime(nsnull,
+        mDateTime->FormatPRTime(nullptr,
                                 kDateFormatShort,
                                 kTimeFormatNone,
                                 t,
                                 formatted);
         AppendNonAsciiToNCR(formatted, pushBuffer);
         pushBuffer.AppendLiteral("</td>\n <td>");
-        mDateTime->FormatPRTime(nsnull,
+        mDateTime->FormatPRTime(nullptr,
                                 kDateFormatNone,
                                 kTimeFormatSeconds,
                                 t,

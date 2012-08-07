@@ -31,7 +31,7 @@ NS_IMETHODIMP
 nsAccEvent::GetAccessible(nsIAccessible** aAccessible)
 {
   NS_ENSURE_ARG_POINTER(aAccessible);
-  *aAccessible = nsnull;
+  *aAccessible = nullptr;
 
   NS_IF_ADDREF(*aAccessible = mEvent->GetAccessible());
   return NS_OK;
@@ -41,7 +41,7 @@ NS_IMETHODIMP
 nsAccEvent::GetDOMNode(nsIDOMNode** aDOMNode)
 {
   NS_ENSURE_ARG_POINTER(aDOMNode);
-  *aDOMNode = nsnull;
+  *aDOMNode = nullptr;
 
   nsINode* node = mEvent->GetNode();
   if (node)
@@ -255,5 +255,14 @@ nsAccVirtualCursorChangeEvent::GetOldEndOffset(PRInt32* aOldEndOffset)
 
   *aOldEndOffset =
     static_cast<AccVCChangeEvent*>(mEvent.get())->OldEndOffset();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsAccVirtualCursorChangeEvent::GetReason(PRInt16* aReason)
+{
+  NS_ENSURE_ARG_POINTER(aReason);
+
+  *aReason = static_cast<AccVCChangeEvent*>(mEvent.get())->Reason();
   return NS_OK;
 }

@@ -8,6 +8,7 @@
  * JS math package.
  */
 
+#include "mozilla/Constants.h"
 #include "mozilla/FloatingPoint.h"
 
 #include <stdlib.h>
@@ -42,9 +43,6 @@ using namespace js;
 #endif
 #ifndef M_LN10
 #define M_LN10          2.30258509299404568402
-#endif
-#ifndef M_PI
-#define M_PI            3.14159265358979323846
 #endif
 #ifndef M_SQRT2
 #define M_SQRT2         1.41421356237309504880
@@ -475,8 +473,13 @@ js_math_pow(JSContext *cx, unsigned argc, Value *vp)
         return JS_TRUE;
     }
 
-    if (vp[3].isInt32())
-        z = powi(x, vp[3].toInt32());
+    /*
+     * Use powi if the exponent is an integer or an integer-valued double.
+     * We don't have to check for NaN since a comparison with NaN is always
+     * false.
+     */
+    if (int32_t(y) == y)
+        z = powi(x, int32_t(y));
     else
         z = pow(x, y);
 
@@ -660,7 +663,6 @@ JSObject *
 js_InitMathClass(JSContext *cx, JSObject *obj_)
 {
     RootedObject obj(cx, obj_);
-
     RootedObject Math(cx, NewObjectWithClassProto(cx, &MathClass, NULL, obj));
     if (!Math || !Math->setSingletonType(cx))
         return NULL;

@@ -29,7 +29,7 @@ nsBasicDecoderSupport::~nsBasicDecoderSupport()
 //----------------------------------------------------------------------
 // Interface nsISupports [implementation]
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
 NS_IMPL_THREADSAFE_ISUPPORTS2(nsBasicDecoderSupport,
                               nsIUnicodeDecoder,
                               nsIBasicDecoder)
@@ -333,7 +333,7 @@ nsBasicEncoder::~nsBasicEncoder()
 
 NS_IMPL_ADDREF(nsBasicEncoder)
 NS_IMPL_RELEASE(nsBasicEncoder)
-#ifdef NS_DEBUG
+#ifdef DEBUG
 NS_IMPL_QUERY_INTERFACE2(nsBasicEncoder,
                          nsIUnicodeEncoder,
                          nsIBasicEncoder)
@@ -539,7 +539,7 @@ NS_IMETHODIMP nsEncoderSupport::SetOutputErrorBehavior(
                                 nsIUnicharEncoder * aEncoder,
                                 PRUnichar aChar)
 {
-  if (aBehavior == kOnError_CallBack && aEncoder == nsnull)
+  if (aBehavior == kOnError_CallBack && aEncoder == nullptr)
     return NS_ERROR_NULL_POINTER;
 
   mErrEncoder = aEncoder;
@@ -578,7 +578,7 @@ nsTableEncoderSupport::nsTableEncoderSupport(uScanClassID aScanClass,
 : nsEncoderSupport(aMaxLengthFactor)
 {
   mScanClass = aScanClass;
-  mShiftOutTable = nsnull;
+  mShiftOutTable = nullptr;
   mMappingTable = aMappingTable;
 }
 

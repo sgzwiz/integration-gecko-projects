@@ -35,7 +35,7 @@ gfxAndroidPlatform::gfxAndroidPlatform()
 
     mOffscreenFormat = mScreenDepth == 16
                        ? gfxASurface::ImageFormatRGB16_565
-                       : gfxASurface::ImageFormatARGB32;
+                       : gfxASurface::ImageFormatRGB24;
 }
 
 gfxAndroidPlatform::~gfxAndroidPlatform()
@@ -54,17 +54,6 @@ gfxAndroidPlatform::CreateOffscreenSurface(const gfxIntSize& size,
     newSurface = new gfxImageSurface(size, OptimalFormatForContent(contentType));
 
     return newSurface.forget();
-}
-
-mozilla::gfx::SurfaceFormat
-gfxAndroidPlatform::Optimal2DFormatForContent(gfxASurface::gfxContentType aContent)
-{
-    // On Android we always use RGB565 for now.
-    if (aContent == gfxASurface::CONTENT_COLOR) {
-        return mozilla::gfx::FORMAT_R5G6B5;
-    } else {
-        return gfxPlatform::Optimal2DFormatForContent(aContent);
-    }
 }
 
 nsresult
@@ -122,7 +111,7 @@ gfxAndroidPlatform::CreatePlatformFontList()
         return list;
     }
     gfxPlatformFontList::Shutdown();
-    return nsnull;
+    return nullptr;
 }
 
 bool
@@ -172,16 +161,19 @@ gfxAndroidPlatform::MakePlatformFont(const gfxProxyFontEntry *aProxyEntry,
 }
 
 RefPtr<ScaledFont>
-gfxAndroidPlatform::GetScaledFontForFont(gfxFont *aFont)
+gfxAndroidPlatform::GetScaledFontForFont(DrawTarget* aTarget, gfxFont *aFont)
 {
-    NS_ASSERTION(aFont->GetType() == gfxFont::FONT_TYPE_FT2, "Expecting Freetype font");
     NativeFont nativeFont;
+    if (aTarget->GetType() == BACKEND_CAIRO) {
+        nativeFont.mType = NATIVE_FONT_CAIRO_FONT_FACE;
+        nativeFont.mFont = NULL;
+        return Factory::CreateScaledFontWithCairo(nativeFont, aFont->GetAdjustedSize(), aFont->GetCairoScaledFont());
+    }
+ 
+    NS_ASSERTION(aFont->GetType() == gfxFont::FONT_TYPE_FT2, "Expecting Freetype font");
     nativeFont.mType = NATIVE_FONT_SKIA_FONT_FACE;
     nativeFont.mFont = static_cast<gfxFT2FontBase*>(aFont)->GetFontOptions();
-    RefPtr<ScaledFont> scaledFont =
-      Factory::CreateScaledFontForNativeFont(nativeFont, aFont->GetAdjustedSize());
-
-    return scaledFont;
+    return Factory::CreateScaledFontForNativeFont(nativeFont, aFont->GetAdjustedSize());
 }
 
 bool

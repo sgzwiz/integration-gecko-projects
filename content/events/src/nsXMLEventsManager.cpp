@@ -7,7 +7,6 @@
 #include "nsXMLEventsManager.h"
 #include "nsGkAtoms.h"
 #include "nsIDOMElement.h"
-#include "nsIDOMDocument.h"
 #include "nsIDOMEventTarget.h"
 #include "nsNetUtil.h"
 #include "nsIURL.h"
@@ -37,7 +36,7 @@ bool nsXMLEventsListener::InitXMLEventsListener(nsIDocument * aDocument,
     return false;
   nsAutoString handlerURIStr;
   bool hasHandlerURI = false;
-  nsIContent *handler = nsnull;
+  nsIContent *handler = nullptr;
   nsAutoString observerID;
   nsAutoString targetIdref;
   
@@ -48,7 +47,7 @@ bool nsXMLEventsListener::InitXMLEventsListener(nsIDocument * aDocument,
     bool equals = false;
     nsIURI *docURI = aDocument->GetDocumentURI();
     nsIURI *baseURI = aDocument->GetDocBaseURI();
-    rv = NS_NewURI( getter_AddRefs(handlerURI), handlerURIStr, nsnull, baseURI);
+    rv = NS_NewURI( getter_AddRefs(handlerURI), handlerURIStr, nullptr, baseURI);
     if (NS_SUCCEEDED(rv)) {
       handlerURI->GetRef(handlerRef);
       // We support only XML Events Basic.
@@ -80,7 +79,7 @@ bool nsXMLEventsListener::InitXMLEventsListener(nsIDocument * aDocument,
     aContent->AttrValueIs(nameSpaceID, nsGkAtoms::defaultAction,
                           nsGkAtoms::cancel, eCaseMatters);
 
-  nsIContent *observer = nsnull;
+  nsIContent *observer = nullptr;
   if (!hasObserver) {
     if (!hasHandlerURI) //Parent should be the observer
       observer = aContent->GetParent();
@@ -148,15 +147,15 @@ void nsXMLEventsListener::Unregister()
   if (target) {
     target->RemoveEventListener(mEvent, this, mPhase);
   }
-  mObserver = nsnull;
-  mHandler = nsnull;
+  mObserver = nullptr;
+  mHandler = nullptr;
 }
 
 void nsXMLEventsListener::SetIncomplete()
 {
   Unregister();
   mManager->AddXMLEventsContent(mElement);
-  mElement = nsnull;
+  mElement = nullptr;
 }
 
 bool nsXMLEventsListener::ObserverEquals(nsIContent * aTarget)

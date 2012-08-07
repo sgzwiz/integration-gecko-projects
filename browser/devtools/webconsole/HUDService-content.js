@@ -39,7 +39,6 @@ let _alive = true; // Track if this content script should still be alive.
  */
 let Manager = {
   get window() content,
-  sandbox: null,
   hudId: null,
   _sequence: 0,
   _messageListeners: ["WebConsole:Init", "WebConsole:EnableFeature",
@@ -89,21 +88,19 @@ let Manager = {
    */
   receiveMessage: function Manager_receiveMessage(aMessage)
   {
-    if (!_alive) {
+    if (!_alive || !aMessage.json) {
       return;
     }
 
-    if (!aMessage.json || (aMessage.name != "WebConsole:Init" &&
-                           aMessage.json.hudId != this.hudId)) {
-      Cu.reportError("Web Console content script: received message " +
-                     aMessage.name + " from wrong hudId!");
+    if (aMessage.name == "WebConsole:Init" && !this.hudId) {
+      this._onInit(aMessage.json);
+      return;
+    }
+    if (aMessage.json.hudId != this.hudId) {
       return;
     }
 
     switch (aMessage.name) {
-      case "WebConsole:Init":
-        this._onInit(aMessage.json);
-        break;
       case "WebConsole:EnableFeature":
         this.enableFeature(aMessage.json.feature, aMessage.json);
         break;
@@ -292,7 +289,8 @@ let Manager = {
       case "LocationChange":
         ConsoleProgressListener.startMonitor(ConsoleProgressListener
                                              .MONITOR_LOCATION_CHANGE);
-        ConsoleProgressListener.sendLocation();
+        ConsoleProgressListener.sendLocation(this.window.location.href,
+                                             this.window.document.title);
         break;
       default:
         Cu.reportError("Web Console content: unknown feature " + aFeature);
@@ -499,9 +497,8 @@ let Manager = {
     Manager = ConsoleAPIObserver = JSTerm = ConsoleListener = NetworkMonitor =
       NetworkResponseListener = ConsoleProgressListener = null;
 
-    Cc = Ci = Cu = XPCOMUtils = Services = gConsoleStorage =
-      WebConsoleUtils = l10n = JSPropertyProvider = NetworkHelper =
-      NetUtil = activityDistributor = null;
+    XPCOMUtils = gConsoleStorage = WebConsoleUtils = l10n = JSPropertyProvider =
+      null;
   },
 };
 
@@ -526,11 +523,11 @@ function JSTermHelper(aJSTerm)
    * @param string aId
    *        The ID of the element you want.
    * @return nsIDOMNode or null
-   *         The result of calling document.getElementById(aId).
+   *         The result of calling document.querySelector(aSelector).
    */
-  aJSTerm.sandbox.$ = function JSTH_$(aId)
+  aJSTerm.sandbox.$ = function JSTH_$(aSelector)
   {
-    return aJSTerm.window.document.getElementById(aId);
+    return aJSTerm.window.document.querySelector(aSelector);
   };
 
   /**
@@ -739,6 +736,7 @@ let JSTerm = {
    */
   sandbox: null,
 
+  _sandboxLocation: null,
   _messageHandlers: {},
 
   /**
@@ -774,8 +772,6 @@ let JSTerm = {
       let handler = this._messageHandlers[name].bind(this);
       Manager.addMessageHandler(name, handler);
     }
-
-    this._createSandbox();
 
     if (aMessage && aMessage.notifyNonNativeConsoleAPI) {
       let consoleObject = WebConsoleUtils.unwrap(this.window).console;
@@ -987,6 +983,7 @@ let JSTerm = {
    */
   _createSandbox: function JST__createSandbox()
   {
+    this._sandboxLocation = this.window.location;
     this.sandbox = new Cu.Sandbox(this.window, {
       sandboxPrototype: this.window,
       wantXrays: false,
@@ -1002,11 +999,17 @@ let JSTerm = {
    *
    * @param string aString
    *        String to evaluate in the sandbox.
-   * @returns something
-   *          The result of the evaluation.
+   * @return mixed
+   *         The result of the evaluation.
    */
   evalInSandbox: function JST_evalInSandbox(aString)
   {
+    // If the user changed to a different location, we need to update the
+    // sandbox.
+    if (this._sandboxLocation !== this.window.location) {
+      this._createSandbox();
+    }
+
     // The help function needs to be easy to guess, so we make the () optional
     if (aString.trim() == "help" || aString.trim() == "?") {
       aString = "help()";
@@ -1049,6 +1052,7 @@ let JSTerm = {
     }
 
     delete this.sandbox;
+    delete this._sandboxLocation;
     delete this._messageHandlers;
     delete this._objectCache;
   },
@@ -1157,27 +1161,28 @@ let ConsoleAPIObserver = {
           WebConsoleUtils.cloneObject(aOriginalMessage.arguments, true);
         break;
 
-      case "log":
-      case "info":
-      case "warn":
-      case "error":
-      case "debug":
       case "groupEnd":
         aRemoteMessage.argumentsToString =
           Array.map(aOriginalMessage.arguments || [],
                     this._formatObject.bind(this));
         break;
 
+      case "log":
+      case "info":
+      case "warn":
+      case "error":
+      case "debug":
       case "dir": {
         aRemoteMessage.objectsCacheId = Manager.sequenceId;
         aRemoteMessage.argumentsToString = [];
         let mapFunction = function(aItem) {
-          aRemoteMessage.argumentsToString.push(this._formatObject(aItem));
+          let formattedObject = this._formatObject(aItem);
+          aRemoteMessage.argumentsToString.push(formattedObject);
           if (WebConsoleUtils.isObjectInspectable(aItem)) {
             return JSTerm.prepareObjectForRemote(aItem,
                                                  aRemoteMessage.objectsCacheId);
           }
-          return aItem;
+          return formattedObject;
         }.bind(this);
 
         aRemoteMessage.apiMessage.arguments =
@@ -1281,17 +1286,8 @@ let ConsoleListener = {
       return;
     }
 
-    switch (aScriptError.category) {
-      // We ignore chrome-originating errors as we only care about content.
-      case "XPConnect JavaScript":
-      case "component javascript":
-      case "chrome javascript":
-      case "chrome registration":
-      case "XBL":
-      case "XBL Prototype Handler":
-      case "XBL Content Sink":
-      case "xbl javascript":
-        return;
+    if (!this.isCategoryAllowed(aScriptError.category)) {
+      return;
     }
 
     let errorWindow =
@@ -1302,6 +1298,33 @@ let ConsoleListener = {
     }
 
     Manager.sendMessage("WebConsole:PageError", { pageError: aScriptError });
+  },
+
+
+  /**
+   * Check if the given script error category is allowed to be tracked or not.
+   * We ignore chrome-originating errors as we only care about content.
+   *
+   * @param string aCategory
+   *        The nsIScriptError category you want to check.
+   * @return boolean
+   *         True if the category is allowed to be logged, false otherwise.
+   */
+  isCategoryAllowed: function CL_isCategoryAllowed(aCategory)
+  {
+    switch (aCategory) {
+      case "XPConnect JavaScript":
+      case "component javascript":
+      case "chrome javascript":
+      case "chrome registration":
+      case "XBL":
+      case "XBL Prototype Handler":
+      case "XBL Content Sink":
+      case "xbl javascript":
+        return false;
+    }
+
+    return true;
   },
 
   /**
@@ -1321,14 +1344,15 @@ let ConsoleListener = {
 
     (errors.value || []).forEach(function(aError) {
       if (!(aError instanceof Ci.nsIScriptError) ||
-          aError.innerWindowID != innerWindowId) {
+          aError.innerWindowID != innerWindowId ||
+          !this.isCategoryAllowed(aError.category)) {
         return;
       }
 
       let remoteMessage = WebConsoleUtils.cloneObject(aError);
       remoteMessage._type = "PageError";
       result.push(remoteMessage);
-    });
+    }, this);
 
     return result;
   },
@@ -1503,7 +1527,7 @@ NetworkResponseListener.prototype = {
    */
   _findOpenResponse: function NRL__findOpenResponse()
   {
-    if (this._foundOpenResponse) {
+    if (!_alive || this._foundOpenResponse) {
       return;
     }
 
@@ -1611,7 +1635,9 @@ NetworkResponseListener.prototype = {
 
     this.receivedData = "";
 
-    NetworkMonitor.sendActivity(this.httpActivity);
+    if (_alive) {
+      NetworkMonitor.sendActivity(this.httpActivity);
+    }
 
     this.httpActivity.channel = null;
     this.httpActivity = null;
@@ -1745,7 +1771,7 @@ let NetworkMonitor = {
     // NetworkResponseListener is responsible with updating the httpActivity
     // object with the data from the new object in openResponses.
 
-    if (aTopic != "http-on-examine-response" ||
+    if (!_alive || aTopic != "http-on-examine-response" ||
         !(aSubject instanceof Ci.nsIHttpChannel)) {
       return;
     }
@@ -2201,7 +2227,7 @@ let NetworkMonitor = {
 
     // DNS timing information is available only in when the DNS record is not
     // cached.
-    harTimings.dns = timings.STATUS_RESOLVING ?
+    harTimings.dns = timings.STATUS_RESOLVING && timings.STATUS_RESOLVED ?
                      timings.STATUS_RESOLVED.last -
                      timings.STATUS_RESOLVING.first : -1;
 
@@ -2447,17 +2473,24 @@ let ConsoleProgressListener = {
   _checkLocationChange:
   function CPL__checkLocationChange(aProgress, aRequest, aState, aStatus)
   {
+    let isStart = aState & Ci.nsIWebProgressListener.STATE_START;
     let isStop = aState & Ci.nsIWebProgressListener.STATE_STOP;
     let isNetwork = aState & Ci.nsIWebProgressListener.STATE_IS_NETWORK;
     let isWindow = aState & Ci.nsIWebProgressListener.STATE_IS_WINDOW;
 
     // Skip non-interesting states.
-    if (!isStop || !isNetwork || !isWindow ||
+    if (!isNetwork || !isWindow ||
         aProgress.DOMWindow != Manager.window) {
       return;
     }
 
-    this.sendLocation();
+    if (isStart && aRequest instanceof Ci.nsIChannel) {
+      this.sendLocation(aRequest.URI.spec, "");
+    }
+    else if (isStop) {
+      this.sendLocation(Manager.window.location.href,
+                        Manager.window.document.title);
+    }
   },
 
   onLocationChange: function() {},
@@ -2469,12 +2502,17 @@ let ConsoleProgressListener = {
    * Send the location of the current top window to the remote Web Console.
    * A "WebConsole:LocationChange" message is sent. The JSON object holds two
    * properties: location and title.
+   *
+   * @param string aLocation
+   *        Current page address.
+   * @param string aTitle
+   *        Current page title.
    */
-  sendLocation: function CPL_sendLocation()
+  sendLocation: function CPL_sendLocation(aLocation, aTitle)
   {
     let message = {
-      "location": Manager.window.location.href,
-      "title": Manager.window.document.title,
+      "location": aLocation,
+      "title": aTitle,
     };
     Manager.sendMessage("WebConsole:LocationChange", message);
   },

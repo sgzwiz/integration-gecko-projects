@@ -6,16 +6,19 @@
 #ifndef __wsrunobject_h__
 #define __wsrunobject_h__
 
-#include "nsCOMPtr.h"
-#include "nsIDOMNode.h"
 #include "nsCOMArray.h"
+#include "nsCOMPtr.h"
 #include "nsIContent.h"
+#include "nsIDOMNode.h"
 #include "nsIEditor.h"
-#include "nsEditorUtils.h"
+#include "nsINode.h"
+#include "nscore.h"
+#include "prtypes.h"
 
+class nsHTMLEditor;
 class nsIDOMDocument;
 class nsIDOMNode;
-class nsHTMLEditor;
+struct DOMPoint;
 
 // class nsWSRunObject represents the entire whitespace situation
 // around a given point.  It collects up a list of nodes that contain
@@ -35,10 +38,109 @@ class nsHTMLEditor;
 // will only render as one space (in non-preformatted stlye html), yet both
 // spaces count as NormalWS.  Together, they render as the one visible space.
 
+/**
+ * A type-safe bitfield indicating various types of whitespace or other things.
+ * Used as a member variable in nsWSRunObject and WSFragment.
+ *
+ * XXX: If this idea is useful in other places, we should generalize it using a
+ * template.
+ */
+class WSType {
+public:
+  enum Enum {
+    none       = 0,
+    leadingWS  = 1,      // leading insignificant ws, ie, after block or br
+    trailingWS = 1 << 1, // trailing insignificant ws, ie, before block
+    normalWS   = 1 << 2, // normal significant ws, ie, after text, image, ...
+    text       = 1 << 3, // indicates regular (non-ws) text
+    special    = 1 << 4, // indicates an inline non-container, like image
+    br         = 1 << 5, // indicates a br node
+    otherBlock = 1 << 6, // indicates a block other than one ws run is in
+    thisBlock  = 1 << 7, // indicates the block ws run is in
+    block      = otherBlock | thisBlock // block found
+  };
+
+  /**
+   * Implicit constructor, because the enums are logically just WSTypes
+   * themselves, and are only a separate type because there's no other obvious
+   * way to name specific WSType values.
+   */
+  WSType(const Enum& aEnum = none) : mEnum(aEnum) {}
+  // operator==, &, and | need to access mEnum
+  friend bool operator==(const WSType& aLeft, const WSType& aRight);
+  friend const WSType operator&(const WSType& aLeft, const WSType& aRight);
+  friend const WSType operator|(const WSType& aLeft, const WSType& aRight);
+  WSType& operator=(const WSType& aOther) {
+    // This handles self-assignment fine
+    mEnum = aOther.mEnum;
+    return *this;
+  }
+  WSType& operator&=(const WSType& aOther) {
+    mEnum &= aOther.mEnum;
+    return *this;
+  }
+  WSType& operator|=(const WSType& aOther) {
+    mEnum |= aOther.mEnum;
+    return *this;
+  }
+private:
+  PRUint16 mEnum;
+  void bool_conversion_helper() {};
+public:
+  // Allow boolean conversion with no numeric conversion
+  typedef void (WSType::*bool_type)();
+  operator bool_type() const
+  {
+    return mEnum ? &WSType::bool_conversion_helper : nullptr;
+  }
+};
+
+/**
+ * These are declared as global functions so "WSType::Enum == WSType" et al.
+ * will work using the implicit constructor.
+ */
+inline bool operator==(const WSType& aLeft, const WSType& aRight)
+{
+  return aLeft.mEnum == aRight.mEnum;
+}
+inline bool operator!=(const WSType& aLeft, const WSType& aRight)
+{
+  return !(aLeft == aRight);
+}
+inline const WSType operator&(const WSType& aLeft, const WSType& aRight)
+{
+  WSType ret;
+  ret.mEnum = aLeft.mEnum & aRight.mEnum;
+  return ret;
+}
+inline const WSType operator|(const WSType& aLeft, const WSType& aRight)
+{
+  WSType ret;
+  ret.mEnum = aLeft.mEnum | aRight.mEnum;
+  return ret;
+}
+
+/**
+ * Make sure that & and | of WSType::Enum creates a WSType instead of an int,
+ * because operators between WSType and int shouldn't work
+ */
+inline const WSType operator&(const WSType::Enum& aLeft,
+                              const WSType::Enum& aRight)
+{
+  return WSType(aLeft) & WSType(aRight);
+}
+inline const WSType operator|(const WSType::Enum& aLeft,
+                              const WSType::Enum& aRight)
+{
+  return WSType(aLeft) | WSType(aRight);
+}
+
+
 class NS_STACK_CLASS nsWSRunObject
 {
   public:
 
+    // public enums ---------------------------------------------------------
     enum BlockBoundary
     {
       kBeforeBlock,
@@ -46,6 +148,10 @@ class NS_STACK_CLASS nsWSRunObject
       kBlockEnd,
       kAfterBlock
     };
+
+    enum {eBefore = 1};
+    enum {eAfter  = 1 << 1};
+    enum {eBoth   = eBefore | eAfter};
 
     // constructor / destructor -----------------------------------------------
     nsWSRunObject(nsHTMLEditor *aEd, nsIDOMNode *aNode, PRInt32 aOffset);
@@ -132,43 +238,27 @@ class NS_STACK_CLASS nsWSRunObject
     // it returns what is before the ws run.  Note that 
     // {outVisNode,outVisOffset} is set to just AFTER the visible
     // object.
-    nsresult PriorVisibleNode(nsIDOMNode *aNode, 
-                              PRInt32 aOffset, 
-                              nsCOMPtr<nsIDOMNode> *outVisNode, 
-                              PRInt32 *outVisOffset,
-                              PRInt16 *outType);
+    void PriorVisibleNode(nsIDOMNode *aNode,
+                          PRInt32 aOffset,
+                          nsCOMPtr<nsIDOMNode> *outVisNode,
+                          PRInt32 *outVisOffset,
+                          WSType *outType);
 
     // NextVisibleNode returns the first piece of visible thing
     // after {aNode,aOffset}.  If there is no visible ws qualifying
     // it returns what is after the ws run.  Note that 
     // {outVisNode,outVisOffset} is set to just BEFORE the visible
     // object.
-    nsresult NextVisibleNode (nsIDOMNode *aNode, 
-                              PRInt32 aOffset, 
-                              nsCOMPtr<nsIDOMNode> *outVisNode, 
-                              PRInt32 *outVisOffset,
-                              PRInt16 *outType);
+    void NextVisibleNode(nsIDOMNode *aNode,
+                         PRInt32 aOffset,
+                         nsCOMPtr<nsIDOMNode> *outVisNode,
+                         PRInt32 *outVisOffset,
+                         WSType *outType);
     
     // AdjustWhitespace examines the ws object for nbsp's that can
     // be safely converted to regular ascii space and converts them.
     nsresult AdjustWhitespace();
-    
-    // public enums ---------------------------------------------------------
-    enum {eNone = 0};
-    enum {eLeadingWS  = 1};          // leading insignificant ws, ie, after block or br
-    enum {eTrailingWS = 1 << 1};     // trailing insignificant ws, ie, before block
-    enum {eNormalWS   = 1 << 2};     // normal significant ws, ie, after text, image, ...
-    enum {eText       = 1 << 3};     // indicates regular (non-ws) text
-    enum {eSpecial    = 1 << 4};     // indicates an inline non-container, like image
-    enum {eBreak      = 1 << 5};     // indicates a br node
-    enum {eOtherBlock = 1 << 6};     // indicates a block other than one ws run is in
-    enum {eThisBlock  = 1 << 7};     // indicates the block ws run is in
-    enum {eBlock      = eOtherBlock | eThisBlock};   // block found
-    
-    enum {eBefore = 1};
-    enum {eAfter  = 1 << 1};
-    enum {eBoth   = eBefore | eAfter};
-    
+
   protected:
     
     // WSFragment struct ---------------------------------------------------------
@@ -179,14 +269,19 @@ class NS_STACK_CLASS nsWSRunObject
     {
       nsCOMPtr<nsIDOMNode> mStartNode;  // node where ws run starts
       nsCOMPtr<nsIDOMNode> mEndNode;    // node where ws run ends
-      PRInt16 mStartOffset;             // offset where ws run starts
-      PRInt16 mEndOffset;               // offset where ws run ends
-      PRInt16 mType, mLeftType, mRightType;  // type of ws, and what is to left and right of it
-      WSFragment *mLeft, *mRight;            // other ws runs to left or right.  may be null.
+      PRInt32 mStartOffset;             // offset where ws run starts
+      PRInt32 mEndOffset;               // offset where ws run ends
+      // type of ws, and what is to left and right of it
+      WSType mType, mLeftType, mRightType;
+      // other ws runs to left or right.  may be null.
+      WSFragment *mLeft, *mRight;
 
-      WSFragment() : mStartNode(0),mEndNode(0),mStartOffset(0),
-                     mEndOffset(0),mType(0),mLeftType(0),
-                     mRightType(0),mLeft(0),mRight(0) {}
+      WSFragment() : mStartNode(0), mEndNode(0),
+                     mStartOffset(0), mEndOffset(0),
+                     mType(), mLeftType(), mRightType(),
+                     mLeft(0), mRight(0)
+      {
+      }
     };
     
     // WSPoint struct ------------------------------------------------------------
@@ -207,7 +302,7 @@ class NS_STACK_CLASS nsWSRunObject
         if (!mTextNode->IsNodeOfType(nsINode::eDATA_NODE)) {
           // Not sure if this is needed, but it'll maintain the same
           // functionality
-          mTextNode = nsnull;
+          mTextNode = nullptr;
         }
       }
       WSPoint(nsIContent *aTextNode, PRInt32 aOffset, PRUnichar aChar) : 
@@ -230,16 +325,16 @@ class NS_STACK_CLASS nsWSRunObject
     already_AddRefed<nsIDOMNode> GetWSBoundingParent();
 
     nsresult GetWSNodes();
-    nsresult GetRuns();
+    void     GetRuns();
     void     ClearRuns();
-    nsresult MakeSingleWSRun(PRInt16 aType);
+    void     MakeSingleWSRun(WSType aType);
     nsresult PrependNodeToList(nsIDOMNode *aNode);
     nsresult AppendNodeToList(nsIDOMNode *aNode);
     nsresult GetPreviousWSNode(nsIDOMNode *aStartNode, 
                                nsIDOMNode *aBlockParent, 
                                nsCOMPtr<nsIDOMNode> *aPriorNode);
     nsresult GetPreviousWSNode(nsIDOMNode *aStartNode,
-                               PRInt16      aOffset, 
+                               PRInt32      aOffset,
                                nsIDOMNode  *aBlockParent, 
                                nsCOMPtr<nsIDOMNode> *aPriorNode);
     nsresult GetPreviousWSNode(DOMPoint aPoint,
@@ -249,7 +344,7 @@ class NS_STACK_CLASS nsWSRunObject
                            nsIDOMNode *aBlockParent, 
                            nsCOMPtr<nsIDOMNode> *aNextNode);
     nsresult GetNextWSNode(nsIDOMNode *aStartNode,
-                           PRInt16     aOffset, 
+                           PRInt32     aOffset,
                            nsIDOMNode *aBlockParent, 
                            nsCOMPtr<nsIDOMNode> *aNextNode);
     nsresult GetNextWSNode(DOMPoint aPoint,
@@ -260,19 +355,19 @@ class NS_STACK_CLASS nsWSRunObject
     nsresult DeleteChars(nsIDOMNode *aStartNode, PRInt32 aStartOffset, 
                          nsIDOMNode *aEndNode, PRInt32 aEndOffset,
                          AreaRestriction aAR = eAnywhere);
-    nsresult GetCharAfter(nsIDOMNode *aNode, PRInt32 aOffset, WSPoint *outPoint);
-    nsresult GetCharBefore(nsIDOMNode *aNode, PRInt32 aOffset, WSPoint *outPoint);
-    nsresult GetCharAfter(WSPoint &aPoint, WSPoint *outPoint);
-    nsresult GetCharBefore(WSPoint &aPoint, WSPoint *outPoint);
+    WSPoint  GetCharAfter(nsIDOMNode *aNode, PRInt32 aOffset);
+    WSPoint  GetCharBefore(nsIDOMNode *aNode, PRInt32 aOffset);
+    WSPoint  GetCharAfter(const WSPoint &aPoint);
+    WSPoint  GetCharBefore(const WSPoint &aPoint);
     nsresult ConvertToNBSP(WSPoint aPoint,
                            AreaRestriction aAR = eAnywhere);
-    nsresult GetAsciiWSBounds(PRInt16 aDir, nsIDOMNode *aNode, PRInt32 aOffset,
+    void     GetAsciiWSBounds(PRInt16 aDir, nsIDOMNode *aNode, PRInt32 aOffset,
                                 nsCOMPtr<nsIDOMNode> *outStartNode, PRInt32 *outStartOffset,
                                 nsCOMPtr<nsIDOMNode> *outEndNode, PRInt32 *outEndOffset);
-    nsresult FindRun(nsIDOMNode *aNode, PRInt32 aOffset, WSFragment **outRun, bool after);
+    void     FindRun(nsIDOMNode *aNode, PRInt32 aOffset, WSFragment **outRun, bool after);
     PRUnichar GetCharAt(nsIContent *aTextNode, PRInt32 aOffset);
-    nsresult GetWSPointAfter(nsIDOMNode *aNode, PRInt32 aOffset, WSPoint *outPoint);
-    nsresult GetWSPointBefore(nsIDOMNode *aNode, PRInt32 aOffset, WSPoint *outPoint);
+    WSPoint  GetWSPointAfter(nsIDOMNode *aNode, PRInt32 aOffset);
+    WSPoint  GetWSPointBefore(nsIDOMNode *aNode, PRInt32 aOffset);
     nsresult CheckTrailingNBSPOfRun(WSFragment *aRun);
     nsresult CheckTrailingNBSP(WSFragment *aRun, nsIDOMNode *aNode, PRInt32 aOffset);
     nsresult CheckLeadingNBSP(WSFragment *aRun, nsIDOMNode *aNode, PRInt32 aOffset);
@@ -291,12 +386,12 @@ class NS_STACK_CLASS nsWSRunObject
     bool    mPRE;                         // true if we are in preformatted whitespace context
     nsCOMPtr<nsIDOMNode> mStartNode;      // node/offset where ws starts
     PRInt32 mStartOffset;                 // ...
-    PRInt16 mStartReason;                 // reason why ws starts (eText, eOtherBlock, etc)
+    WSType mStartReason;                  // reason why ws starts (eText, eOtherBlock, etc)
     nsCOMPtr<nsIDOMNode> mStartReasonNode;// the node that implicated by start reason
     
     nsCOMPtr<nsIDOMNode> mEndNode;        // node/offset where ws ends
     PRInt32 mEndOffset;                   // ...
-    PRInt16 mEndReason;                   // reason why ws ends (eText, eOtherBlock, etc)
+    WSType mEndReason;                    // reason why ws ends (eText, eOtherBlock, etc)
     nsCOMPtr<nsIDOMNode> mEndReasonNode;  // the node that implicated by end reason
     
     nsCOMPtr<nsIDOMNode> mFirstNBSPNode;  // location of first nbsp in ws run, if any

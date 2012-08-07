@@ -9,6 +9,8 @@
 #include "mozilla/net/NeckoChild.h"
 #include "WebSocketChannelChild.h"
 #include "nsITabChild.h"
+#include "nsILoadContext.h"
+#include "nsNetUtil.h"
 
 namespace mozilla {
 namespace net {
@@ -317,7 +319,7 @@ WebSocketChannelChild::AsyncOpen(nsIURI *aURI,
   NS_ABORT_IF_FALSE(aURI && aListener && !mListener, 
                     "Invalid state for WebSocketChannelChild::AsyncOpen");
 
-  mozilla::dom::TabChild* tabChild = nsnull;
+  mozilla::dom::TabChild* tabChild = nullptr;
   nsCOMPtr<nsITabChild> iTabChild;
   NS_QueryNotificationCallbacks(mCallbacks, mLoadGroup,
                                 NS_GET_IID(nsITabChild),
@@ -330,7 +332,8 @@ WebSocketChannelChild::AsyncOpen(nsIURI *aURI,
   AddIPDLReference();
 
   gNeckoChild->SendPWebSocketConstructor(this, tabChild);
-  if (!SendAsyncOpen(aURI, nsCString(aOrigin), mProtocol, mEncrypted))
+  if (!SendAsyncOpen(aURI, nsCString(aOrigin), mProtocol, mEncrypted,
+                     IPC::SerializedLoadContext(this)))
     return NS_ERROR_UNEXPECTED;
 
   mOriginalURI = aURI;

@@ -245,7 +245,7 @@ function openWindow(parent, url, target, features, args, noExternalArgs) {
   }
 
   // Pass these as null to ensure that we always trigger the "single URL"
-  // behavior in browser.js's BrowserStartup (which handles the window
+  // behavior in browser.js's gBrowserInit.onLoad (which handles the window
   // arguments)
   argArray.AppendElement(null); // charset
   argArray.AppendElement(null); // referer
@@ -841,7 +841,7 @@ let AboutHomeUtils = {
     let aboutHomeURI = Services.io.newURI("moz-safe-about:home", null, null);
     let principal = Components.classes["@mozilla.org/scriptsecuritymanager;1"].
                     getService(Components.interfaces.nsIScriptSecurityManager).
-                    getCodebasePrincipal(aboutHomeURI);
+                    getNoAppCodebasePrincipal(aboutHomeURI);
     let dsm = Components.classes["@mozilla.org/dom/storagemanager;1"].
               getService(Components.interfaces.nsIDOMStorageManager);
     return dsm.getLocalStorageForPrincipal(principal, "");
@@ -862,7 +862,7 @@ let AboutHomeUtils = {
 
   loadSnippetsURL: function AHU_loadSnippetsURL()
   {
-    const STARTPAGE_VERSION = 2;
+    const STARTPAGE_VERSION = 3;
     let updateURL = Services.prefs
                             .getCharPref(this.SNIPPETS_URL_PREF)
                             .replace("%STARTPAGE_VERSION%", STARTPAGE_VERSION);

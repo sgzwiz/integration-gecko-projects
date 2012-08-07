@@ -54,6 +54,10 @@ public:
   {
     return mHeight;
   }
+  JSObject* GetData(JSContext* cx)
+  {
+    return GetDataObject();
+  }
   JSObject* GetDataObject()
   {
     xpc_UnmarkGrayObject(mData);

@@ -41,6 +41,10 @@ ReadStructuredClone(JSContext *cx, const uint64_t *data, size_t nbytes, Value *v
                     const JSStructuredCloneCallbacks *cb, void *cbClosure)
 {
     SCInput in(cx, data, nbytes);
+
+    /* XXX disallow callers from using internal pointers to GC things. */
+    SkipRoot skip(cx, &in);
+
     JSStructuredCloneReader r(in, cb, cbClosure);
     return r.read(vp);
 }
@@ -375,7 +379,7 @@ JSStructuredCloneWriter::checkStack()
     /* To avoid making serialization O(n^2), limit stack-checking at 10. */
     const size_t MAX = 10;
 
-    size_t limit = JS_MIN(counts.length(), MAX);
+    size_t limit = Min(counts.length(), MAX);
     JS_ASSERT(objs.length() == counts.length());
     size_t total = 0;
     for (size_t i = 0; i < limit; i++) {
@@ -397,29 +401,30 @@ JS_PUBLIC_API(JSBool)
 JS_WriteTypedArray(JSStructuredCloneWriter *w, jsval v)
 {
     JS_ASSERT(v.isObject());
-    return w->writeTypedArray(&v.toObject());
+    RootedObject obj(w->context(), &v.toObject());
+    return w->writeTypedArray(obj);
 }
 
 bool
-JSStructuredCloneWriter::writeTypedArray(JSObject *arr)
+JSStructuredCloneWriter::writeTypedArray(HandleObject arr)
 {
-    if (!out.writePair(ArrayTypeToTag(TypedArray::getType(arr)), TypedArray::getLength(arr)))
+    if (!out.writePair(ArrayTypeToTag(TypedArray::type(arr)), TypedArray::length(arr)))
         return false;
 
-    switch (TypedArray::getType(arr)) {
+    switch (TypedArray::type(arr)) {
     case TypedArray::TYPE_INT8:
     case TypedArray::TYPE_UINT8:
     case TypedArray::TYPE_UINT8_CLAMPED:
-        return out.writeArray((const uint8_t *) TypedArray::getDataOffset(arr), TypedArray::getLength(arr));
+        return out.writeArray((const uint8_t *) TypedArray::viewData(arr), TypedArray::length(arr));
     case TypedArray::TYPE_INT16:
     case TypedArray::TYPE_UINT16:
-        return out.writeArray((const uint16_t *) TypedArray::getDataOffset(arr), TypedArray::getLength(arr));
+        return out.writeArray((const uint16_t *) TypedArray::viewData(arr), TypedArray::length(arr));
     case TypedArray::TYPE_INT32:
     case TypedArray::TYPE_UINT32:
     case TypedArray::TYPE_FLOAT32:
-        return out.writeArray((const uint32_t *) TypedArray::getDataOffset(arr), TypedArray::getLength(arr));
+        return out.writeArray((const uint32_t *) TypedArray::viewData(arr), TypedArray::length(arr));
     case TypedArray::TYPE_FLOAT64:
-        return out.writeArray((const uint64_t *) TypedArray::getDataOffset(arr), TypedArray::getLength(arr));
+        return out.writeArray((const uint64_t *) TypedArray::viewData(arr), TypedArray::length(arr));
     default:
         JS_NOT_REACHED("unknown TypedArray type");
         return false;
@@ -427,7 +432,7 @@ JSStructuredCloneWriter::writeTypedArray(JSObject *arr)
 }
 
 bool
-JSStructuredCloneWriter::writeArrayBuffer(JSObject *obj)
+JSStructuredCloneWriter::writeArrayBuffer(JSHandleObject obj)
 {
     ArrayBufferObject &buffer = obj->asArrayBuffer();
     return out.writePair(SCTAG_ARRAY_BUFFER_OBJECT, buffer.byteLength()) &&
@@ -435,7 +440,7 @@ JSStructuredCloneWriter::writeArrayBuffer(JSObject *obj)
 }
 
 bool
-JSStructuredCloneWriter::startObject(JSObject *obj)
+JSStructuredCloneWriter::startObject(JSHandleObject obj)
 {
     JS_ASSERT(obj->isArray() || obj->isObject());
 
@@ -472,37 +477,6 @@ JSStructuredCloneWriter::startObject(JSObject *obj)
     return out.writePair(obj->isArray() ? SCTAG_ARRAY_OBJECT : SCTAG_OBJECT_OBJECT, 0);
 }
 
-class AutoEnterCompartmentAndPushPrincipal : public JSAutoEnterCompartment
-{
-  public:
-    bool enter(JSContext *cx, JSObject *target) {
-        // First, enter the compartment.
-        if (!JSAutoEnterCompartment::enter(cx, target))
-            return false;
-
-        // We only need to push a principal if we changed compartments.
-        if (state != STATE_OTHER_COMPARTMENT)
-            return true;
-
-        // Push.
-        const JSSecurityCallbacks *cb = cx->runtime->securityCallbacks;
-        if (cb->pushContextPrincipal)
-          return cb->pushContextPrincipal(cx, target->principals(cx));
-        return true;
-    };
-
-    ~AutoEnterCompartmentAndPushPrincipal() {
-        // Pop the principal if necessary.
-        if (state == STATE_OTHER_COMPARTMENT) {
-            AutoCompartment *ac = getAutoCompartment();
-            const JSSecurityCallbacks *cb = ac->context->runtime->securityCallbacks;
-            if (cb->popContextPrincipal)
-              cb->popContextPrincipal(ac->context);
-        }
-    };
-};
-
-
 bool
 JSStructuredCloneWriter::startWrite(const Value &v)
 {
@@ -519,7 +493,7 @@ JSStructuredCloneWriter::startWrite(const Value &v)
     } else if (v.isUndefined()) {
         return out.writePair(SCTAG_UNDEFINED, 0);
     } else if (v.isObject()) {
-        JSObject *obj = &v.toObject();
+        RootedObject obj(context(), &v.toObject());
 
         // The object might be a security wrapper. See if we can clone what's
         // behind it. If we can, unwrap the object.
@@ -529,7 +503,7 @@ JSStructuredCloneWriter::startWrite(const Value &v)
 
         // If we unwrapped above, we'll need to enter the underlying compartment.
         // Let the AutoEnterCompartment do the right thing for us.
-        AutoEnterCompartmentAndPushPrincipal ac;
+        JSAutoEnterCompartment ac;
         if (!ac.enter(context(), obj))
             return false;
 
@@ -574,7 +548,7 @@ JSStructuredCloneWriter::write(const Value &v)
         RootedObject obj(context(), &objs.back().toObject());
 
         // The objects in |obj| can live in other compartments.
-        AutoEnterCompartmentAndPushPrincipal ac;
+        JSAutoEnterCompartment ac;
         if (!ac.enter(context(), obj))
             return false;
 
@@ -589,15 +563,15 @@ JSStructuredCloneWriter::write(const Value &v)
                  * The cost of re-checking could be avoided by using
                  * NativeIterators.
                  */
-                JSObject *obj2;
-                JSProperty *prop;
+                RootedObject obj2(context());
+                RootedShape prop(context());
                 if (!js_HasOwnProperty(context(), obj->getOps()->lookupGeneric, obj, id,
                                        &obj2, &prop)) {
                     return false;
                 }
 
                 if (prop) {
-                    Value val;
+                    RootedValue val(context());
                     if (!writeId(id) ||
                         !obj->getGeneric(context(), id, &val) ||
                         !startWrite(val))
@@ -680,7 +654,7 @@ JS_ReadTypedArray(JSStructuredCloneReader *r, jsval *vp)
 bool
 JSStructuredCloneReader::readTypedArray(uint32_t tag, uint32_t nelems, Value *vp)
 {
-    JSObject *obj = NULL;
+    RootedObject obj(context(), NULL);
 
     switch (tag) {
       case SCTAG_TYPED_ARRAY_INT8:
@@ -719,7 +693,7 @@ JSStructuredCloneReader::readTypedArray(uint32_t tag, uint32_t nelems, Value *vp
         return false;
     vp->setObject(*obj);
 
-    JS_ASSERT(TypedArray::getLength(obj) == nelems);
+    JS_ASSERT(TypedArray::length(obj) == nelems);
     switch (tag) {
       case SCTAG_TYPED_ARRAY_INT8:
         return in.readArray((uint8_t*) JS_GetInt8ArrayData(obj, context()), nelems);
@@ -938,8 +912,8 @@ JSStructuredCloneReader::read(Value *vp)
         if (JSID_IS_VOID(id)) {
             objs.popBack();
         } else {
-            Value v;
-            if (!startRead(&v) || !obj->defineGeneric(context(), id, v))
+            RootedValue v(context());
+            if (!startRead(v.address()) || !obj->defineGeneric(context(), id, v))
                 return false;
         }
     }

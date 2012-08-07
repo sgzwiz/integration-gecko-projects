@@ -29,6 +29,7 @@
 #include "IndexedDatabaseInlines.h"
 
 USING_INDEXEDDB_NAMESPACE
+using namespace mozilla::dom::indexedDB::ipc;
 
 MOZ_STATIC_ASSERT(sizeof(size_t) >= sizeof(IDBCursor::Direction),
                   "Relying on conversion between size_t and "
@@ -39,11 +40,9 @@ namespace {
 class CursorHelper : public AsyncConnectionHelper
 {
 public:
-  typedef ipc::CursorRequestParams CursorRequestParams;
-
   CursorHelper(IDBCursor* aCursor)
   : AsyncConnectionHelper(aCursor->Transaction(), aCursor->Request()),
-    mCursor(aCursor), mActor(nsnull)
+    mCursor(aCursor), mActor(nullptr)
   {
     NS_ASSERTION(aCursor, "Null cursor!");
   }
@@ -64,15 +63,6 @@ protected:
 private:
   IndexedDBCursorRequestChild* mActor;
 };
-
-inline
-already_AddRefed<IDBRequest>
-GenerateRequest(IDBCursor* aCursor)
-{
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-  IDBDatabase* database = aCursor->Transaction()->Database();
-  return IDBRequest::Create(aCursor, database, aCursor->Transaction());
-}
 
 } // anonymous namespace
 
@@ -330,7 +320,7 @@ IDBCursor::CreateCommon(IDBRequest* aRequest,
 
   if (cursor->mScriptOwner) {
     if (NS_FAILED(NS_HOLD_JS_OBJECTS(cursor, IDBCursor))) {
-      return nsnull;
+      return nullptr;
     }
 
     cursor->mRooted = true;
@@ -348,14 +338,14 @@ IDBCursor::CreateCommon(IDBRequest* aRequest,
 }
 
 IDBCursor::IDBCursor()
-: mScriptOwner(nsnull),
+: mScriptOwner(nullptr),
   mType(OBJECTSTORE),
   mDirection(IDBCursor::NEXT),
   mCachedKey(JSVAL_VOID),
   mCachedPrimaryKey(JSVAL_VOID),
   mCachedValue(JSVAL_VOID),
-  mActorChild(nsnull),
-  mActorParent(nsnull),
+  mActorChild(nullptr),
+  mActorParent(nullptr),
   mHaveCachedKey(false),
   mHaveCachedPrimaryKey(false),
   mHaveCachedValue(false),
@@ -457,29 +447,17 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(IDBCursor)
                "Should have a cached primary key");
   NS_ASSERTION(tmp->mHaveCachedValue || JSVAL_IS_VOID(tmp->mCachedValue),
                "Should have a cached value");
-  if (tmp->mScriptOwner) {
-    NS_IMPL_CYCLE_COLLECTION_TRACE_JS_CALLBACK(tmp->mScriptOwner,
-                                               "mScriptOwner")
-  }
-  if (JSVAL_IS_GCTHING(tmp->mCachedKey)) {
-    void *gcThing = JSVAL_TO_GCTHING(tmp->mCachedKey);
-    NS_IMPL_CYCLE_COLLECTION_TRACE_JS_CALLBACK(gcThing, "mCachedKey")
-  }
-  if (JSVAL_IS_GCTHING(tmp->mCachedPrimaryKey)) {
-    void *gcThing = JSVAL_TO_GCTHING(tmp->mCachedPrimaryKey);
-    NS_IMPL_CYCLE_COLLECTION_TRACE_JS_CALLBACK(gcThing, "mCachedPrimaryKey")
-  }
-  if (JSVAL_IS_GCTHING(tmp->mCachedValue)) {
-    void *gcThing = JSVAL_TO_GCTHING(tmp->mCachedValue);
-    NS_IMPL_CYCLE_COLLECTION_TRACE_JS_CALLBACK(gcThing, "mCachedValue")
-  }
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mScriptOwner)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mCachedKey)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mCachedPrimaryKey)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mCachedValue)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(IDBCursor)
   // Don't unlink mObjectStore, mIndex, or mTransaction!
   if (tmp->mRooted) {
     NS_DROP_JS_OBJECTS(tmp, IDBCursor);
-    tmp->mScriptOwner = nsnull;
+    tmp->mScriptOwner = nullptr;
     tmp->mCachedKey = JSVAL_VOID;
     tmp->mCachedPrimaryKey = JSVAL_VOID;
     tmp->mCachedValue = JSVAL_VOID;
@@ -707,23 +685,12 @@ IDBCursor::Update(const jsval& aValue,
 
   Key& objectKey = (mType == OBJECTSTORE) ? mKey : mObjectKey;
 
-  if (!mObjectStore->KeyPath().IsEmpty()) {
-    // This has to be an object.
-    if (JSVAL_IS_PRIMITIVE(aValue)) {
-      return NS_ERROR_DOM_INDEXEDDB_DATA_ERR;
-    }
-
+  if (mObjectStore->HasValidKeyPath()) {
     // Make sure the object given has the correct keyPath value set on it.
-    const nsString& keyPath = mObjectStore->KeyPath();
-
-    jsval prop;
-    JSBool ok = JS_GetUCProperty(aCx, JSVAL_TO_OBJECT(aValue),
-                                 reinterpret_cast<const jschar*>(keyPath.get()),
-                                 keyPath.Length(), &prop);
-    NS_ENSURE_TRUE(ok, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
-
+    const KeyPath& keyPath = mObjectStore->GetKeyPath();
     Key key;
-    rv = key.SetFromJSVal(aCx, prop);
+
+    rv = keyPath.ExtractKey(aCx, aValue, key);
     if (NS_FAILED(rv)) {
       return rv;
     }
@@ -773,22 +740,22 @@ IDBCursor::Delete(JSContext* aCx,
 }
 
 NS_IMETHODIMP
-IDBCursor::Advance(PRInt32 aCount)
+IDBCursor::Advance(PRInt64 aCount)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
-  if (aCount < 1) {
+  if (aCount < 1 || aCount > PR_UINT32_MAX) {
     return NS_ERROR_TYPE_ERR;
   }
 
   Key key;
-  return ContinueInternal(key, aCount);
+  return ContinueInternal(key, PRInt32(aCount));
 }
 
 void
 CursorHelper::ReleaseMainThreadObjects()
 {
-  mCursor = nsnull;
+  mCursor = nullptr;
   AsyncConnectionHelper::ReleaseMainThreadObjects();
 }
 
@@ -876,7 +843,7 @@ ContinueHelper::GetSuccessResult(JSContext* aCx,
   UpdateCursorState();
 
   if (mKey.IsUnset()) {
-    *aVal = JSVAL_VOID;
+    *aVal = JSVAL_NULL;
   }
   else {
     nsresult rv = WrapNative(aCx, mCursor, aVal);
@@ -889,7 +856,7 @@ ContinueHelper::GetSuccessResult(JSContext* aCx,
 nsresult
 ContinueHelper::PackArgumentsForParentProcess(CursorRequestParams& aParams)
 {
-  ipc::ContinueParams params;
+  ContinueParams params;
 
   params.key() = mCursor->mContinueToKey;
   params.count() = uint32_t(mCount);
@@ -909,20 +876,38 @@ ContinueHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
     return Success_NotSent;
   }
 
-  if (!mCloneReadInfo.mFileInfos.IsEmpty()) {
-    NS_WARNING("No support for transferring blobs across processes yet!");
-    return Error;
+  InfallibleTArray<PBlobParent*> blobsParent;
+
+  if (NS_SUCCEEDED(aResultCode)) {
+    IDBDatabase* database = mTransaction->Database();
+    NS_ASSERTION(database, "This should never be null!");
+
+    ContentParent* contentParent = database->GetContentParent();
+    NS_ASSERTION(contentParent, "This should never be null!");
+
+    FileManager* fileManager = database->Manager();
+    NS_ASSERTION(fileManager, "This should never be null!");
+
+    const nsTArray<StructuredCloneFile>& files = mCloneReadInfo.mFiles;
+
+    aResultCode =
+      IDBObjectStore::ConvertBlobsToActors(contentParent, fileManager, files,
+                                           blobsParent);
+    if (NS_FAILED(aResultCode)) {
+      NS_WARNING("ConvertBlobsToActors failed!");
+    }
   }
 
-  ipc::ResponseValue response;
+  ResponseValue response;
   if (NS_FAILED(aResultCode)) {
     response = aResultCode;
   }
   else {
-    ipc::ContinueResponse continueResponse;
+    ContinueResponse continueResponse;
     continueResponse.key() = mKey;
     continueResponse.objectKey() = mObjectKey;
     continueResponse.cloneInfo() = mCloneReadInfo;
+    continueResponse.blobsParent().SwapElements(blobsParent);
     response = continueResponse;
   }
 
@@ -942,7 +927,7 @@ ContinueHelper::UnpackResponseFromParentProcess(
   NS_ASSERTION(aResponseValue.type() == ResponseValue::TContinueResponse,
                "Bad response type!");
 
-  const ipc::ContinueResponse& response = aResponseValue.get_ContinueResponse();
+  const ContinueResponse& response = aResponseValue.get_ContinueResponse();
 
   mKey = response.key();
   mObjectKey = response.objectKey();
@@ -958,6 +943,8 @@ ContinueHelper::UnpackResponseFromParentProcess(
     return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
   }
 
+  IDBObjectStore::ConvertActorsToBlobs(response.blobsChild(),
+                                       mCloneReadInfo.mFiles);
   return NS_OK;
 }
 
@@ -1001,7 +988,7 @@ ContinueObjectStoreHelper::GatherResultsFromStatement(
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = IDBObjectStore::GetStructuredCloneReadInfoFromStatement(aStatement, 1, 2,
-    mDatabase->Manager(), mCloneReadInfo);
+    mDatabase, mCloneReadInfo);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1071,7 +1058,7 @@ ContinueIndexObjectHelper::GatherResultsFromStatement(
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = IDBObjectStore::GetStructuredCloneReadInfoFromStatement(aStatement, 2, 3,
-    mDatabase->Manager(), mCloneReadInfo);
+    mDatabase, mCloneReadInfo);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;

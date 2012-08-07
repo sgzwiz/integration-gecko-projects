@@ -39,8 +39,8 @@ gfxGDIFont::gfxGDIFont(GDIFontEntry *aFontEntry,
                        AntialiasOption anAAOption)
     : gfxFont(aFontEntry, aFontStyle, anAAOption),
       mFont(NULL),
-      mFontFace(nsnull),
-      mMetrics(nsnull),
+      mFontFace(nullptr),
+      mMetrics(nullptr),
       mSpaceGlyph(0),
       mNeedsBold(aNeedsBold)
 {
@@ -274,11 +274,30 @@ gfxGDIFont::Initialize()
 
     LOGFONTW logFont;
 
+    // Figure out if we want to do synthetic oblique styling.
+    GDIFontEntry* fe = static_cast<GDIFontEntry*>(GetFontEntry());
+    bool wantFakeItalic =
+        (mStyle.style & (NS_FONT_STYLE_ITALIC | NS_FONT_STYLE_OBLIQUE)) &&
+        !fe->IsItalic();
+
+    // If the font's family has an actual italic face (but font matching
+    // didn't choose it), we have to use a cairo transform instead of asking
+    // GDI to italicize, because that would use a different face and result
+    // in a possible glyph ID mismatch between shaping and rendering.
+    //
+    // The font entry's mFamilyHasItalicFace flag is needed for user fonts
+    // where the *CSS* family may not know about italic faces that are present
+    // in the *GDI* family, and which GDI would use if we asked it to perform
+    // the "italicization".
+    bool useCairoFakeItalic = wantFakeItalic &&
+        (fe->Family()->HasItalicFace() || fe->mFamilyHasItalicFace);
+
     if (mAdjustedSize == 0.0) {
         mAdjustedSize = mStyle.size;
         if (mStyle.sizeAdjust != 0.0 && mAdjustedSize > 0.0) {
             // to implement font-size-adjust, we first create the "unadjusted" font
-            FillLogFont(logFont, mAdjustedSize);
+            FillLogFont(logFont, mAdjustedSize,
+                        wantFakeItalic && !useCairoFakeItalic);
             mFont = ::CreateFontIndirectW(&logFont);
 
             // initialize its metrics so we can calculate size adjustment
@@ -291,9 +310,9 @@ gfxGDIFont::Initialize()
 
             // delete the temporary font and metrics
             ::DeleteObject(mFont);
-            mFont = nsnull;
+            mFont = nullptr;
             delete mMetrics;
-            mMetrics = nsnull;
+            mMetrics = nullptr;
         }
     }
 
@@ -306,7 +325,7 @@ gfxGDIFont::Initialize()
 
     // this may end up being zero
     mAdjustedSize = ROUND(mAdjustedSize);
-    FillLogFont(logFont, mAdjustedSize);
+    FillLogFont(logFont, mAdjustedSize, wantFakeItalic && !useCairoFakeItalic);
     mFont = ::CreateFontIndirectW(&logFont);
 
     mMetrics = new gfxFont::Metrics;
@@ -333,7 +352,7 @@ gfxGDIFont::Initialize()
 
             const MAT2 kIdentityMatrix = { {0, 1}, {0, 0}, {0, 0}, {0, 1} };
             GLYPHMETRICS gm;
-            DWORD len = GetGlyphOutlineW(dc.GetDC(), PRUnichar('x'), GGO_METRICS, &gm, 0, nsnull, &kIdentityMatrix);
+            DWORD len = GetGlyphOutlineW(dc.GetDC(), PRUnichar('x'), GGO_METRICS, &gm, 0, nullptr, &kIdentityMatrix);
             if (len == GDI_ERROR || gm.gmptGlyphOrigin.y <= 0) {
                 // 56% of ascent, best guess for true type
                 mMetrics->xHeight =
@@ -351,7 +370,7 @@ gfxGDIFont::Initialize()
         } else {
             // Make a best-effort guess at extended metrics
             // this is based on general typographic guidelines
-            
+
             // GetTextMetrics can fail if the font file has been removed
             // or corrupted recently.
             BOOL result = GetTextMetrics(dc.GetDC(), &metrics);
@@ -428,8 +447,9 @@ gfxGDIFont::Initialize()
     cairo_matrix_init_identity(&ctm);
     cairo_matrix_init_scale(&sizeMatrix, mAdjustedSize, mAdjustedSize);
 
-    bool italic = (mStyle.style & (NS_FONT_STYLE_ITALIC | NS_FONT_STYLE_OBLIQUE));
-    if (italic && !mFontEntry->IsItalic()) {
+    if (useCairoFakeItalic) {
+        // Skew the matrix to do fake italic if it wasn't already applied
+        // via the LOGFONT
         double skewfactor = OBLIQUE_SKEW_FACTOR;
         cairo_matrix_t style;
         cairo_matrix_init(&style,
@@ -479,7 +499,8 @@ gfxGDIFont::Initialize()
 }
 
 void
-gfxGDIFont::FillLogFont(LOGFONTW& aLogFont, gfxFloat aSize)
+gfxGDIFont::FillLogFont(LOGFONTW& aLogFont, gfxFloat aSize,
+                        bool aUseGDIFakeItalic)
 {
     GDIFontEntry *fe = static_cast<GDIFontEntry*>(GetFontEntry());
 
@@ -501,6 +522,11 @@ gfxGDIFont::FillLogFont(LOGFONTW& aLogFont, gfxFloat aSize)
 
     fe->FillLogFont(&aLogFont, weight, aSize, 
                     (mAntialiasOption == kAntialiasSubpixel) ? true : false);
+
+    // If GDI synthetic italic is wanted, force the lfItalic field to true
+    if (aUseGDIFakeItalic) {
+        aLogFont.lfItalic = 1;
+    }
 }
 
 PRInt32
@@ -535,7 +561,7 @@ gfxGDIFont::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf,
 {
     gfxFont::SizeOfExcludingThis(aMallocSizeOf, aSizes);
     aSizes->mFontInstances += aMallocSizeOf(mMetrics) +
-        mGlyphWidths.SizeOfExcludingThis(nsnull, aMallocSizeOf);
+        mGlyphWidths.SizeOfExcludingThis(nullptr, aMallocSizeOf);
 }
 
 void

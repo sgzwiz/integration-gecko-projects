@@ -13,6 +13,7 @@
 #include "nsString.h"
 #include "plstr.h"
 #include "nsCRT.h"
+#include "nsIProtocolProxyService.h"
 
 //-----------------------------------------------------------------------------
 // nsHttpConnectionInfo - holds the properties of a connection
@@ -27,10 +28,20 @@ public:
         : mRef(0)
         , mProxyInfo(proxyInfo)
         , mUsingSSL(usingSSL)
+        , mUsingConnect(false)
     {
         LOG(("Creating nsHttpConnectionInfo @%x\n", this));
 
         mUsingHttpProxy = (proxyInfo && !nsCRT::strcmp(proxyInfo->Type(), "http"));
+
+        if (mUsingHttpProxy) {
+            mUsingConnect = mUsingSSL;  // SSL always uses CONNECT
+            PRUint32 resolveFlags = 0;
+            if (NS_SUCCEEDED(mProxyInfo->GetResolveFlags(&resolveFlags)) &&
+                resolveFlags & nsIProtocolProxyService::RESOLVE_ALWAYS_TUNNEL) {
+                mUsingConnect = true;
+            }
+        }
 
         SetOriginServer(host, port);
     }
@@ -68,9 +79,9 @@ public:
     // OK to treat this as an infalible allocation
     nsHttpConnectionInfo* Clone() const;
 
-    const char *ProxyHost() const { return mProxyInfo ? mProxyInfo->Host().get() : nsnull; }
+    const char *ProxyHost() const { return mProxyInfo ? mProxyInfo->Host().get() : nullptr; }
     PRInt32     ProxyPort() const { return mProxyInfo ? mProxyInfo->Port() : -1; }
-    const char *ProxyType() const { return mProxyInfo ? mProxyInfo->Type() : nsnull; }
+    const char *ProxyType() const { return mProxyInfo ? mProxyInfo->Type() : nullptr; }
 
     // Compare this connection info to another...
     // Two connections are 'equal' if they end up talking the same
@@ -89,6 +100,7 @@ public:
     nsProxyInfo  *ProxyInfo()            { return mProxyInfo; }
     bool          UsingHttpProxy() const { return mUsingHttpProxy; }
     bool          UsingSSL() const       { return mUsingSSL; }
+    bool          UsingConnect() const   { return mUsingConnect; }
     PRInt32       DefaultPort() const    { return mUsingSSL ? NS_HTTPS_DEFAULT_PORT : NS_HTTP_DEFAULT_PORT; }
     void          SetAnonymous(bool anon)         
                                          { mHashKey.SetCharAt(anon ? 'A' : '.', 2); }
@@ -96,7 +108,6 @@ public:
     void          SetPrivate(bool priv)  { mHashKey.SetCharAt(priv ? 'P' : '.', 3); }
     bool          GetPrivate() const     { return mHashKey.CharAt(3) == 'P'; }
 
-    bool          ShouldForceConnectMethod();
     const nsCString &GetHost() { return mHost; }
 
 private:
@@ -107,6 +118,7 @@ private:
     nsCOMPtr<nsProxyInfo>  mProxyInfo;
     bool                   mUsingHttpProxy;
     bool                   mUsingSSL;
+    bool                   mUsingConnect;  // if will use CONNECT with http proxy
 };
 
 #endif // nsHttpConnectionInfo_h__

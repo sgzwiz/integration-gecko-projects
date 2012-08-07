@@ -28,8 +28,7 @@ namespace mozilla {
 namespace net {
 
 HttpBaseChannel::HttpBaseChannel()
-  : PrivateBrowsingConsumer(this)
-  , mStartPos(LL_MAXUINT)
+  : mStartPos(LL_MAXUINT)
   , mStatus(NS_OK)
   , mLoadFlags(LOAD_NORMAL)
   , mPriority(PRIORITY_NORMAL)
@@ -50,6 +49,7 @@ HttpBaseChannel::HttpBaseChannel()
   , mTracingEnabled(true)
   , mTimingEnabled(false)
   , mAllowSpdy(true)
+  , mPrivateBrowsing(false)
   , mSuspendCount(0)
 {
   LOG(("Creating HttpBaseChannel @%x\n", this));
@@ -91,7 +91,7 @@ HttpBaseChannel::Init(nsIURI *aURI,
 
   mURI = aURI;
   mOriginalURI = aURI;
-  mDocumentURI = nsnull;
+  mDocumentURI = nullptr;
   mCaps = aCaps;
 
   // Construct connection info object
@@ -136,7 +136,7 @@ HttpBaseChannel::Init(nsIURI *aURI,
 
   rv = gHttpHandler->
       AddStandardRequestHeaders(&mRequestHead.Headers(), aCaps,
-                                !mConnectionInfo->UsingSSL() &&
+                                !mConnectionInfo->UsingConnect() &&
                                 mConnectionInfo->UsingHttpProxy());
 
   return rv;
@@ -146,8 +146,8 @@ HttpBaseChannel::Init(nsIURI *aURI,
 // HttpBaseChannel::nsISupports
 //-----------------------------------------------------------------------------
 
-NS_IMPL_ISUPPORTS_INHERITED10(HttpBaseChannel,
-                              nsHashPropertyBag, 
+NS_IMPL_ISUPPORTS_INHERITED9( HttpBaseChannel,
+                              nsHashPropertyBag,
                               nsIRequest,
                               nsIChannel,
                               nsIEncodedChannel,
@@ -156,8 +156,7 @@ NS_IMPL_ISUPPORTS_INHERITED10(HttpBaseChannel,
                               nsIUploadChannel,
                               nsIUploadChannel2,
                               nsISupportsPriority,
-                              nsITraceableChannel,
-                              nsIPrivateBrowsingConsumer)
+                              nsITraceableChannel)
 
 //-----------------------------------------------------------------------------
 // HttpBaseChannel::nsIRequest
@@ -199,7 +198,7 @@ NS_IMETHODIMP
 HttpBaseChannel::SetLoadGroup(nsILoadGroup *aLoadGroup)
 {
   mLoadGroup = aLoadGroup;
-  mProgressSink = nsnull;
+  mProgressSink = nullptr;
   return NS_OK;
 }
 
@@ -278,7 +277,10 @@ NS_IMETHODIMP
 HttpBaseChannel::SetNotificationCallbacks(nsIInterfaceRequestor *aCallbacks)
 {
   mCallbacks = aCallbacks;
-  mProgressSink = nsnull;
+  mProgressSink = nullptr;
+
+  // Will never change unless SetNotificationCallbacks called again, so cache
+  mPrivateBrowsing = NS_UsePrivateBrowsing(this);
   return NS_OK;
 }
 
@@ -631,13 +633,13 @@ NS_IMETHODIMP
 HttpBaseChannel::GetContentEncodings(nsIUTF8StringEnumerator** aEncodings)
 {
   if (!mResponseHead) {
-    *aEncodings = nsnull;
+    *aEncodings = nullptr;
     return NS_OK;
   }
     
   const char *encoding = mResponseHead->PeekHeader(nsHttp::Content_Encoding);
   if (!encoding) {
-    *aEncodings = nsnull;
+    *aEncodings = nullptr;
     return NS_OK;
   }
   nsContentEncodings* enumerator = new nsContentEncodings(this, encoding);
@@ -825,7 +827,7 @@ HttpBaseChannel::SetReferrer(nsIURI *referrer)
   ENSURE_CALLED_BEFORE_ASYNC_OPEN();
 
   // clear existing referrer, if any
-  mReferrer = nsnull;
+  mReferrer = nullptr;
   mRequestHead.ClearHeader(nsHttp::Referer);
 
   if (!referrer)
@@ -889,7 +891,7 @@ HttpBaseChannel::SetReferrer(nsIURI *referrer)
     "https",
     "ftp",
     "gopher",
-    nsnull
+    nullptr
   };
   match = false;
   const char *const *scheme = referrerWhiteList;
@@ -1200,7 +1202,7 @@ HttpBaseChannel::SetCookie(const char *aCookieHeader)
   nsICookieService *cs = gHttpHandler->GetCookieService();
   NS_ENSURE_TRUE(cs, NS_ERROR_FAILURE);
 
-  return cs->SetCookieStringFromHttp(mURI, nsnull, nsnull, aCookieHeader,
+  return cs->SetCookieStringFromHttp(mURI, nullptr, nullptr, aCookieHeader,
                                      mResponseHead->PeekHeader(nsHttp::Date),
                                      this);
 }
@@ -1446,8 +1448,8 @@ HttpBaseChannel::DoNotifyListener()
     mIsPending = false;
   }
   // We have to make sure to drop the reference to the callbacks too
-  mCallbacks = nsnull;
-  mProgressSink = nsnull;
+  mCallbacks = nullptr;
+  mProgressSink = nullptr;
 
   DoNotifyListenerCleanup();
 }
@@ -1466,7 +1468,7 @@ HttpBaseChannel::AddCookiesToRequest()
     nsICookieService *cs = gHttpHandler->GetCookieService();
     if (cs) {
       cs->GetCookieStringFromHttp(mURI,
-                                  nsnull,
+                                  nullptr,
                                   this, getter_Copies(cookie));
     }
 
@@ -1532,12 +1534,11 @@ HttpBaseChannel::IsSafeMethod(nsHttpAtom method)
 nsresult
 HttpBaseChannel::SetupReplacementChannel(nsIURI       *newURI, 
                                          nsIChannel   *newChannel,
-                                         bool          preserveMethod,
-                                         bool          forProxy)
+                                         bool          preserveMethod)
 {
   LOG(("HttpBaseChannel::SetupReplacementChannel "
-     "[this=%p newChannel=%p preserveMethod=%d forProxy=%d]",
-     this, newChannel, preserveMethod, forProxy));
+     "[this=%p newChannel=%p preserveMethod=%d]",
+     this, newChannel, preserveMethod));
   PRUint32 newLoadFlags = mLoadFlags | LOAD_REPLACE;
   // if the original channel was using SSL and this channel is not using
   // SSL, then no need to inhibit persistent caching.  however, if the
@@ -1659,21 +1660,6 @@ HttpBaseChannel::SetupReplacementChannel(nsIURI       *newURI,
   nsCOMPtr<nsITimedChannel> timed(do_QueryInterface(newChannel));
   if (timed)
     timed->SetTimingEnabled(mTimingEnabled);
-
-  if (forProxy) {
-    // Transfer all the headers from the previous channel
-    //  this is needed for any headers that are not covered by the code above
-    //  or have been set separately. e.g. manually setting Referer without
-    //  setting up mReferrer
-    PRUint32 count = mRequestHead.Headers().Count();
-    for (PRUint32 i = 0; i < count; ++i) {
-      nsHttpAtom header;
-      const char *value = mRequestHead.Headers().PeekHeaderAt(i, header);
-
-      httpChannel->SetRequestHeader(nsDependentCString(header),
-                                    nsDependentCString(value), false);
-    }
-  }
 
   return NS_OK;
 }

@@ -14,7 +14,6 @@
 #include "nsIScriptContext.h"
 #include "nsDOMJSUtils.h" // for GetScriptContextFromJSContext
 #include "nsIScriptGlobalObject.h"
-#include "nsContentUtils.h"
 #include "xpcpublic.h"
 
 namespace mozilla {
@@ -25,8 +24,10 @@ class DOMSVGPointList;
 class DOMSVGStringList;
 class DOMSVGTransformList;
 }
+
+class nsContentList;
 class nsGlobalWindow;
-class nsIDOMDocument;
+class nsICanvasRenderingContextInternal;
 class nsIDOMHTMLOptionsCollection;
 class nsIDOMSVGLength;
 class nsIDOMSVGLengthList;
@@ -70,7 +71,7 @@ struct nsDOMClassInfoData
   PRUint32 mInterfacesBitmap;
   bool mChromeOnly;
   bool mDisabled;
-#ifdef NS_DEBUG
+#ifdef DEBUG
   PRUint32 mDebugID;
 #endif
 };
@@ -123,8 +124,6 @@ public:
     return new nsDOMClassInfo(aData);
   }
 
-  static nsresult ThrowJSException(JSContext *cx, nsresult aResult);
-
   /*
    * The following two functions exist because of the way that Xray wrappers
    * work. In order to allow scriptable helpers to define non-IDL defined but
@@ -170,7 +169,7 @@ protected:
   // non-null it's set to true if the id is a number and false if it's
   // not a number. If id is not a number this method returns -1
   static PRInt32 GetArrayIndexFromId(JSContext *cx, jsid id,
-                                     bool *aIsNumber = nsnull);
+                                     bool *aIsNumber = nullptr);
 
   static inline bool IsReadonlyReplaceable(jsid id)
   {
@@ -362,20 +361,15 @@ public:
   {
     nsCOMPtr<nsIScriptGlobalObject> sgo(do_QueryWrappedNative(wrapper));
 
-    NS_ASSERTION(!sgo || sgo->GetGlobalJSObject() == nsnull,
+    NS_ASSERTION(!sgo || sgo->GetGlobalJSObject() == nullptr,
                  "Multiple wrappers created for global object!");
 
     return NS_OK;
   }
-  NS_IMETHOD GetScriptableFlags(PRUint32 *aFlags)
+  virtual PRUint32 GetScriptableFlags()
   {
-    PRUint32 flags;
-    nsresult rv = nsDOMGenericSH::GetScriptableFlags(&flags);
-    if (NS_SUCCEEDED(rv)) {
-      *aFlags = flags | nsIXPCScriptable::WANT_POSTCREATE;
-    }
-
-    return rv;
+    return nsDOMGenericSH::GetScriptableFlags() |
+           nsIXPCScriptable::WANT_POSTCREATE;
   }
 #endif
   NS_IMETHOD GetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
@@ -392,13 +386,13 @@ public:
 
   static JSBool GlobalScopePolluterNewResolve(JSContext *cx, JSHandleObject obj,
                                               JSHandleId id, unsigned flags,
-                                              JSObject **objp);
+                                              JSMutableHandleObject objp);
   static JSBool GlobalScopePolluterGetProperty(JSContext *cx, JSHandleObject obj,
-                                               JSHandleId id, jsval *vp);
+                                               JSHandleId id, JSMutableHandleValue vp);
   static JSBool SecurityCheckOnAddDelProp(JSContext *cx, JSHandleObject obj, JSHandleId id,
-                                          jsval *vp);
+                                          JSMutableHandleValue vp);
   static JSBool SecurityCheckOnSetProp(JSContext *cx, JSHandleObject obj, JSHandleId id,
-                                       JSBool strict, jsval *vp);
+                                       JSBool strict, JSMutableHandleValue vp);
   static void InvalidateGlobalScopePolluter(JSContext *cx, JSObject *obj);
   static nsresult InstallGlobalScopePolluter(JSContext *cx, JSObject *obj,
                                              nsIHTMLDocument *doc);
@@ -488,6 +482,28 @@ public:
   }
 };
 
+// scriptable helper for new-binding objects without wrapper caches
+
+class nsNewDOMBindingNoWrapperCacheSH : public nsDOMGenericSH
+{
+protected:
+  nsNewDOMBindingNoWrapperCacheSH(nsDOMClassInfoData* aData) : nsDOMGenericSH(aData)
+  {
+  }
+
+  virtual ~nsNewDOMBindingNoWrapperCacheSH()
+  {
+  }
+
+public:
+  NS_IMETHOD PreCreate(nsISupports *nativeObj, JSContext *cx,
+                       JSObject *globalObj, JSObject **parentObj);
+
+  static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
+  {
+    return new nsNewDOMBindingNoWrapperCacheSH(aData);
+  }
+};
 
 // DOM Node helper, this class deals with setting the parent for the
 // wrappers
@@ -548,8 +564,8 @@ public:
                        JSObject *globalObj, JSObject **parentObj);
   NS_IMETHOD PostCreate(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
                         JSObject *obj);
-  NS_IMETHOD Enumerate(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
-                       JSObject *obj, bool *_retval);
+  NS_IMETHOD PostTransplant(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
+                            JSObject *obj);
 
   static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
   {
@@ -737,6 +753,8 @@ public:
   NS_IMETHOD GetFlags(PRUint32* aFlags);
   NS_IMETHOD PostCreate(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
                         JSObject *obj);
+  NS_IMETHOD  PostTransplant(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
+                             JSObject *obj);
 
   static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
   {
@@ -764,19 +782,19 @@ protected:
 
 public:
   static JSBool DocumentAllGetProperty(JSContext *cx, JSHandleObject obj, JSHandleId id,
-                                       jsval *vp);
+                                       JSMutableHandleValue vp);
   static JSBool DocumentAllNewResolve(JSContext *cx, JSHandleObject obj, JSHandleId id,
-                                      unsigned flags, JSObject **objp);
+                                      unsigned flags, JSMutableHandleObject objp);
   static void ReleaseDocument(JSFreeOp *fop, JSObject *obj);
   static JSBool CallToGetPropMapper(JSContext *cx, unsigned argc, jsval *vp);
   static JSBool DocumentAllHelperGetProperty(JSContext *cx, JSHandleObject obj,
-                                             JSHandleId id, jsval *vp);
+                                             JSHandleId id, JSMutableHandleValue vp);
   static JSBool DocumentAllHelperNewResolve(JSContext *cx, JSHandleObject obj,
                                             JSHandleId id, unsigned flags,
-                                            JSObject **objp);
+                                            JSMutableHandleObject objp);
   static JSBool DocumentAllTagsNewResolve(JSContext *cx, JSHandleObject obj,
                                           JSHandleId id, unsigned flags,
-                                          JSObject **objp);
+                                          JSMutableHandleObject objp);
 
   NS_IMETHOD NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
                         JSObject *obj, jsid id, PRUint32 flags,
@@ -891,6 +909,8 @@ public:
                        JSObject *globalObj, JSObject **parentObj);
   NS_IMETHOD PostCreate(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
                         JSObject *obj);
+  NS_IMETHOD PostTransplant(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
+                            JSObject *obj);
   NS_IMETHOD GetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
                          JSObject *obj, jsid id, jsval *vp, bool *_retval);
   NS_IMETHOD SetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
@@ -1076,31 +1096,6 @@ public:
 };
 
 
-// DOMTokenList scriptable helper
-
-class nsDOMTokenListSH : public nsStringArraySH
-{
-protected:
-  nsDOMTokenListSH(nsDOMClassInfoData* aData) : nsStringArraySH(aData)
-  {
-  }
-
-  virtual ~nsDOMTokenListSH()
-  {
-  }
-
-  virtual nsresult GetStringAt(nsISupports *aNative, PRInt32 aIndex,
-                               nsAString& aResult);
-
-public:
-
-  static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
-  {
-    return new nsDOMTokenListSH(aData);
-  }
-};
-
-
 // MediaList helper
 
 class nsMediaListSH : public nsStringArraySH
@@ -1223,56 +1218,9 @@ public:
   }
 };
 
-// ClientRectList helper
-
-class nsClientRectListSH : public nsArraySH
-{
-protected:
-  nsClientRectListSH(nsDOMClassInfoData* aData) : nsArraySH(aData)
-  {
-  }
-
-  virtual ~nsClientRectListSH()
-  {
-  }
-
-  virtual nsISupports* GetItemAt(nsISupports *aNative, PRUint32 aIndex,
-                                 nsWrapperCache **aCache, nsresult *aResult);
-
-public:
-  static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
-  {
-    return new nsClientRectListSH(aData);
-  }
-};
-
-
-// PaintRequestList helper
-
-class nsPaintRequestListSH : public nsArraySH
-{
-protected:
-  nsPaintRequestListSH(nsDOMClassInfoData* aData) : nsArraySH(aData)
-  {
-  }
-
-  virtual ~nsPaintRequestListSH()
-  {
-  }
-
-  virtual nsISupports* GetItemAt(nsISupports *aNative, PRUint32 aIndex,
-                                 nsWrapperCache **aCache, nsresult *aResult);
-
-public:
-  static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
-  {
-    return new nsPaintRequestListSH(aData);
-  }
-};
-
 class nsDOMTouchListSH : public nsArraySH
 {
-protected:
+  protected:
   nsDOMTouchListSH(nsDOMClassInfoData* aData) : nsArraySH(aData)
   {
   }
@@ -1284,7 +1232,7 @@ protected:
   virtual nsISupports* GetItemAt(nsISupports *aNative, PRUint32 aIndex,
                                  nsWrapperCache **aCache, nsresult *aResult);
 
-public:
+  public:
   static nsIClassInfo* doCreate(nsDOMClassInfoData* aData)
   {
     return new nsDOMTouchListSH(aData);
@@ -1495,87 +1443,6 @@ public:
   }
 };
 
-class nsFileListSH : public nsArraySH
-{
-protected:
-  nsFileListSH(nsDOMClassInfoData *aData) : nsArraySH(aData)
-  {
-  }
-
-  virtual ~nsFileListSH()
-  {
-  }
-
-  virtual nsISupports* GetItemAt(nsISupports *aNative, PRUint32 aIndex,
-                                 nsWrapperCache **aCache, nsresult *aResult);
-
-public:
-  static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
-  {
-    return new nsFileListSH(aData);
-  }
-};
-
-class nsWebGLViewportHandlerSH : public nsDOMGenericSH
-{
-protected:
-  nsWebGLViewportHandlerSH(nsDOMClassInfoData *aData) : nsDOMGenericSH(aData)
-  {
-  }
-
-  virtual ~nsWebGLViewportHandlerSH()
-  {
-  }
-
-public:
-  NS_IMETHOD PostCreatePrototype(JSContext * cx, JSObject * proto) {
-    nsresult rv = nsDOMGenericSH::PostCreatePrototype(cx, proto);
-    if (NS_SUCCEEDED(rv)) {
-      if (!::JS_DefineProperty(cx, proto, "VIEWPORT", INT_TO_JSVAL(0x0BA2),
-                               nsnull, nsnull, JSPROP_ENUMERATE))
-      {
-        return NS_ERROR_UNEXPECTED;
-      }
-    }
-    return rv;
-  }
-
-  NS_IMETHOD PreCreate(nsISupports *nativeObj, JSContext *cx,
-                       JSObject *globalObj, JSObject **parentObj);
-
-  static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
-  {
-    return new nsWebGLViewportHandlerSH(aData);
-  }
-};
-
-
-// Template for SVGXXXList helpers
- 
-template<class ListInterfaceType, class ListType>
-class nsSVGListSH : public nsArraySH
-{
-protected:
-  nsSVGListSH(nsDOMClassInfoData* aData) : nsArraySH(aData)
-  {
-  }
-
-public:
-  virtual nsISupports* GetItemAt(nsISupports *aNative, PRUint32 aIndex,
-                                 nsWrapperCache **aCache, nsresult *aResult);
- 
-  static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
-  {
-    return new nsSVGListSH(aData);
-  }
-};
-
-typedef nsSVGListSH<nsIDOMSVGLengthList, mozilla::DOMSVGLengthList> nsSVGLengthListSH;
-typedef nsSVGListSH<nsIDOMSVGNumberList, mozilla::DOMSVGNumberList> nsSVGNumberListSH;
-typedef nsSVGListSH<nsIDOMSVGPathSegList, mozilla::DOMSVGPathSegList> nsSVGPathSegListSH;
-typedef nsSVGListSH<nsIDOMSVGPointList, mozilla::DOMSVGPointList> nsSVGPointListSH;
-typedef nsSVGListSH<nsIDOMSVGTransformList, mozilla::DOMSVGTransformList> nsSVGTransformListSH;
-
 // SVGStringList helper
 
 class nsSVGStringListSH : public nsStringArraySH
@@ -1596,6 +1463,60 @@ public:
   static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
   {
     return new nsSVGStringListSH(aData);
+  }
+};
+
+template<class T, class BaseType = T>
+class nsNewDOMBindingSH : public nsDOMGenericSH
+{
+protected:
+  nsNewDOMBindingSH(nsDOMClassInfoData* aData) : nsDOMGenericSH(aData)
+  {
+  }
+
+  virtual ~nsNewDOMBindingSH()
+  {
+  }
+
+public:
+  NS_IMETHOD PreCreate(nsISupports *nativeObj, JSContext *cx,
+                       JSObject *globalObj, JSObject **parentObj);
+
+  static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
+  {
+    return new nsNewDOMBindingSH<T, BaseType>(aData);
+  }
+};
+
+class nsWebGLViewportHandlerSH
+  : public nsNewDOMBindingSH<nsICanvasRenderingContextInternal>
+{
+protected:
+  nsWebGLViewportHandlerSH(nsDOMClassInfoData *aData)
+    : nsNewDOMBindingSH<nsICanvasRenderingContextInternal>(aData)
+  {
+  }
+
+  virtual ~nsWebGLViewportHandlerSH()
+  {
+  }
+
+public:
+  NS_IMETHOD PostCreatePrototype(JSContext * cx, JSObject * proto) {
+    nsresult rv = nsDOMGenericSH::PostCreatePrototype(cx, proto);
+    if (NS_SUCCEEDED(rv)) {
+      if (!::JS_DefineProperty(cx, proto, "VIEWPORT", INT_TO_JSVAL(0x0BA2),
+                               nullptr, nullptr, JSPROP_ENUMERATE))
+      {
+        return NS_ERROR_UNEXPECTED;
+      }
+    }
+    return rv;
+  }
+
+  static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
+  {
+    return new nsWebGLViewportHandlerSH(aData);
   }
 };
 

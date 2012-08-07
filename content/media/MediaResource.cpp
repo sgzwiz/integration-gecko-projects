@@ -22,7 +22,6 @@
 #include "nsIScriptSecurityManager.h"
 #include "nsCrossSiteListenerProxy.h"
 #include "nsHTMLMediaElement.h"
-#include "nsIDocument.h"
 #include "nsDOMError.h"
 #include "nsICachingChannel.h"
 #include "nsURILoader.h"
@@ -186,7 +185,7 @@ ChannelMediaResource::OnStartRequest(nsIRequest* aRequest)
       // 4) X-Content-Duration.
       // 5) Perform a seek in the decoder to find the value.
       nsCAutoString durationText;
-      PRInt32 ec = 0;
+      nsresult ec = NS_OK;
       rv = hc->GetResponseHeader(NS_LITERAL_CSTRING("Content-Duration"), durationText);
       if (NS_FAILED(rv)) {
         rv = hc->GetResponseHeader(NS_LITERAL_CSTRING("X-AMZ-Meta-Content-Duration"), durationText);
@@ -428,7 +427,7 @@ nsresult ChannelMediaResource::OpenChannel(nsIStreamListener** aStreamListener)
   NS_ASSERTION(!mListener, "Listener should have been removed by now");
 
   if (aStreamListener) {
-    *aStreamListener = nsnull;
+    *aStreamListener = nullptr;
   }
 
   mListener = new Listener(this);
@@ -467,7 +466,7 @@ nsresult ChannelMediaResource::OpenChannel(nsIStreamListener** aStreamListener)
 
     SetupChannelHeaders();
 
-    nsresult rv = mChannel->AsyncOpen(listener, nsnull);
+    nsresult rv = mChannel->AsyncOpen(listener, nullptr);
     NS_ENSURE_SUCCESS(rv, rv);
     // Tell the media element that we are fetching data from a channel.
     element->DownloadResumed(true);
@@ -528,7 +527,7 @@ MediaResource* ChannelMediaResource::CloneData(nsMediaDecoder* aDecoder)
   MOZ_ASSERT(NS_IsChromeOwningThread());
   NS_ASSERTION(mCacheStream.IsAvailableForSharing(), "Stream can't be cloned");
 
-  ChannelMediaResource* resource = new ChannelMediaResource(aDecoder, nsnull, mURI);
+  ChannelMediaResource* resource = new ChannelMediaResource(aDecoder, nullptr, mURI);
   if (resource) {
     // Initially the clone is treated as suspended by the cache, because
     // we don't have a channel. If the cache needs to read data from the clone
@@ -556,7 +555,7 @@ void ChannelMediaResource::CloseChannel()
   if (mListener) {
     NS_StickLock(mListener);
     mListener->Revoke();
-    mListener = nsnull;
+    mListener = nullptr;
   }
 
   if (mChannel) {
@@ -572,7 +571,7 @@ void ChannelMediaResource::CloseChannel()
     // NS_ERROR_PARSED_DATA_CACHED is the best thing we have for that
     // at the moment.
     mChannel->Cancel(NS_ERROR_PARSED_DATA_CACHED);
-    mChannel = nsnull;
+    mChannel = nullptr;
   }
 }
 
@@ -701,9 +700,9 @@ ChannelMediaResource::RecreateChannel()
 
   return NS_NewChannel(getter_AddRefs(mChannel),
                        mURI,
-                       nsnull,
+                       nullptr,
                        loadGroup,
-                       nsnull,
+                       nullptr,
                        loadFlags);
 }
 
@@ -776,12 +775,23 @@ ChannelMediaResource::CacheClientSeek(PRInt64 aOffset, bool aResume)
     --mSuspendCount;
   }
 
+  mOffset = aOffset;
+
+  if (mSuspendCount > 0) {
+    // Close the existing channel to force the channel to be recreated at
+    // the correct offset upon resume.
+    if (mChannel) {
+      mIgnoreClose = true;
+      CloseChannel();
+    }
+    return NS_OK;
+  }
+
   nsresult rv = RecreateChannel();
   if (NS_FAILED(rv))
     return rv;
 
-  mOffset = aOffset;
-  return OpenChannel(nsnull);
+  return OpenChannel(nullptr);
 }
 
 nsresult
@@ -949,7 +959,7 @@ public:
   virtual bool    IsSuspendedByCache(MediaResource** aActiveResource)
   {
     if (aActiveResource) {
-      *aActiveResource = nsnull;
+      *aActiveResource = nullptr;
     }
     return false;
   }
@@ -1014,7 +1024,7 @@ nsresult FileMediaResource::Open(nsIStreamListener** aStreamListener)
   MOZ_ASSERT(NS_IsChromeOwningThread());
 
   if (aStreamListener) {
-    *aStreamListener = nsnull;
+    *aStreamListener = nullptr;
   }
 
   nsresult rv = NS_OK;
@@ -1076,9 +1086,9 @@ nsresult FileMediaResource::Close()
   MutexAutoLock lock(mLock);
   if (mChannel) {
     mChannel->Cancel(NS_ERROR_PARSED_DATA_CACHED);
-    mChannel = nsnull;
-    mInput = nsnull;
-    mSeekable = nsnull;
+    mChannel = nullptr;
+    mInput = nullptr;
+    mSeekable = nullptr;
   }
 
   return NS_OK;
@@ -1091,7 +1101,7 @@ already_AddRefed<nsIPrincipal> FileMediaResource::GetCurrentPrincipal()
   nsCOMPtr<nsIPrincipal> principal;
   nsIScriptSecurityManager* secMan = nsContentUtils::GetSecurityManager();
   if (!secMan || !mChannel)
-    return nsnull;
+    return nullptr;
   secMan->GetChannelPrincipal(mChannel, getter_AddRefs(principal));
   return principal.forget();
 }
@@ -1108,16 +1118,16 @@ MediaResource* FileMediaResource::CloneData(nsMediaDecoder* aDecoder)
   nsHTMLMediaElement* element = aDecoder->GetMediaElement();
   if (!element) {
     // The decoder is being shut down, so we can't clone
-    return nsnull;
+    return nullptr;
   }
   nsCOMPtr<nsILoadGroup> loadGroup = element->GetDocumentLoadGroup();
-  NS_ENSURE_TRUE(loadGroup, nsnull);
+  NS_ENSURE_TRUE(loadGroup, nullptr);
 
   nsCOMPtr<nsIChannel> channel;
   nsresult rv =
-    NS_NewChannel(getter_AddRefs(channel), mURI, nsnull, loadGroup, nsnull, 0);
+    NS_NewChannel(getter_AddRefs(channel), mURI, nullptr, loadGroup, nullptr, 0);
   if (NS_FAILED(rv))
-    return nsnull;
+    return nullptr;
 
   return new FileMediaResource(aDecoder, channel, mURI);
 }
@@ -1192,7 +1202,7 @@ MediaResource::Create(nsMediaDecoder* aDecoder, nsIChannel* aChannel)
   // we want the original URI.
   nsCOMPtr<nsIURI> uri;
   nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(uri));
-  NS_ENSURE_SUCCESS(rv, nsnull);
+  NS_ENSURE_SUCCESS(rv, nullptr);
 
   nsCOMPtr<nsIFileChannel> fc = do_QueryInterface(aChannel);
   if (fc) {
@@ -1239,7 +1249,7 @@ void MediaResource::ModifyLoadFlags(nsLoadFlags aFlags)
   // Note: if (NS_FAILED(status)), the channel won't be in the load group.
   if (loadGroup &&
       NS_SUCCEEDED(status)) {
-    rv = loadGroup->RemoveRequest(mChannel, nsnull, status);
+    rv = loadGroup->RemoveRequest(mChannel, nullptr, status);
     NS_ASSERTION(NS_SUCCEEDED(rv), "RemoveRequest() failed!");
   }
 
@@ -1248,7 +1258,7 @@ void MediaResource::ModifyLoadFlags(nsLoadFlags aFlags)
 
   if (loadGroup &&
       NS_SUCCEEDED(status)) {
-    rv = loadGroup->AddRequest(mChannel, nsnull);
+    rv = loadGroup->AddRequest(mChannel, nullptr);
     NS_ASSERTION(NS_SUCCEEDED(rv), "AddRequest() failed!");
   }
 }

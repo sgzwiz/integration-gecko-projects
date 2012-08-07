@@ -101,7 +101,7 @@ public:
     return do_QueryFrame(mDropdownFrame);
   }
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
   NS_IMETHOD GetFrameName(nsAString& aResult) const;
 #endif
   virtual void DestroyFrom(nsIFrame* aDestructRoot);
@@ -220,7 +220,7 @@ protected:
   public:
     NS_DECL_NSIRUNNABLE
     RedisplayTextEvent(nsComboboxControlFrame *c) : mControlFrame(c) {}
-    void Revoke() { mControlFrame = nsnull; }
+    void Revoke() { mControlFrame = nullptr; }
   private:
     nsComboboxControlFrame *mControlFrame;
   };

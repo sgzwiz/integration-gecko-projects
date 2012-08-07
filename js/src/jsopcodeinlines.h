@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef jsopcodeinlines_h__
+#define jsopcodeinlines_h__
+
 #include "jsautooplen.h"
 
 #include "frontend/BytecodeEmitter.h"
@@ -11,7 +14,7 @@
 namespace js {
 
 static inline PropertyName *
-GetNameFromBytecode(JSContext *cx, jsbytecode *pc, JSOp op, const JSCodeSpec &cs)
+GetNameFromBytecode(JSContext *cx, JSScript *script, jsbytecode *pc, JSOp op)
 {
     if (op == JSOP_LENGTH)
         return cx->runtime->atomState.lengthAtom;
@@ -21,7 +24,6 @@ GetNameFromBytecode(JSContext *cx, jsbytecode *pc, JSOp op, const JSCodeSpec &cs
     if (op == JSOP_INSTANCEOF)
         return cx->runtime->atomState.classPrototypeAtom;
 
-    JSScript *script = cx->stack.currentScriptWithDiagnostics();
     PropertyName *name;
     GET_NAME_FROM_BYTECODE(script, pc, 0, name);
     return name;
@@ -119,3 +121,5 @@ public:
 };
 
 }
+
+#endif /* jsopcodeinlines_h__ */

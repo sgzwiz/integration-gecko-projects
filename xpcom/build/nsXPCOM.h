@@ -83,16 +83,16 @@ struct Module;
  *
  * @param binDirectory     The directory containing the component
  *                         registry and runtime libraries;
- *                         or use <CODE>nsnull</CODE> to use the working
+ *                         or use <CODE>nullptr</CODE> to use the working
  *                         directory.
  *
  * @param appFileLocationProvider The object to be used by Gecko that specifies
  *                         to Gecko where to find profiles, the component
  *                         registry preferences and so on; or use
- *                         <CODE>nsnull</CODE> for the default behaviour.
+ *                         <CODE>nullptr</CODE> for the default behaviour.
  *
  * @see NS_NewLocalFile
- * @see nsILocalFile
+ * @see nsIFile
  * @see nsIDirectoryServiceProvider
  *
  * @return NS_OK for success;
@@ -171,7 +171,7 @@ XPCOM_API(nsresult)
 NS_GetMemoryManager(nsIMemory* *result);
 
 /**
- * Public Method to create an instance of a nsILocalFile.  This function
+ * Public Method to create an instance of a nsIFile.  This function
  * may be called prior to NS_InitXPCOM.
  * 
  *   @param path       
@@ -185,7 +185,7 @@ NS_GetMemoryManager(nsIMemory* *result);
  *       resolve symbolic links.  By default, this value will be false
  *       on all non unix systems.  On unix, this attribute is effectively
  *       a noop.  
- * @param result Interface pointer to a new instance of an nsILocalFile 
+ * @param result Interface pointer to a new instance of an nsIFile 
  *
  * @return NS_OK for success;
  *         other error codes indicate a failure.
@@ -196,12 +196,12 @@ NS_GetMemoryManager(nsIMemory* *result);
 XPCOM_API(nsresult)
 NS_NewLocalFile(const nsAString &path, 
                 bool followLinks, 
-                nsILocalFile* *result);
+                nsIFile* *result);
 
 XPCOM_API(nsresult)
 NS_NewNativeLocalFile(const nsACString &path, 
                       bool followLinks, 
-                      nsILocalFile* *result);
+                      nsIFile* *result);
 
 #endif
 

@@ -4,12 +4,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsDOMKeyboardEvent.h"
-#include "nsContentUtils.h"
+#include "nsDOMClassInfoID.h"
 
 nsDOMKeyboardEvent::nsDOMKeyboardEvent(nsPresContext* aPresContext,
                                        nsKeyEvent* aEvent)
   : nsDOMUIEvent(aPresContext, aEvent ? aEvent :
-                 new nsKeyEvent(false, 0, nsnull))
+                 new nsKeyEvent(false, 0, nullptr))
 {
   NS_ASSERTION(mEvent->eventStructType == NS_KEY_EVENT, "event type mismatch");
 
@@ -26,7 +26,7 @@ nsDOMKeyboardEvent::~nsDOMKeyboardEvent()
 {
   if (mEventIsInternal) {
     delete static_cast<nsKeyEvent*>(mEvent);
-    mEvent = nsnull;
+    mEvent = nullptr;
   }
 }
 
@@ -96,6 +96,7 @@ nsDOMKeyboardEvent::GetCharCode(PRUint32* aCharCode)
     *aCharCode = ((nsKeyEvent*)mEvent)->charCode;
     break;
   default:
+    *aCharCode = 0;
     break;
   }
   return NS_OK;

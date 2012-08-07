@@ -15,6 +15,7 @@
 #include "nsIDOMSVGTransform.h"
 #include "nsTArray.h"
 #include "SVGTransform.h"
+#include "mozilla/Attributes.h"
 
 class nsSVGElement;
 
@@ -38,7 +39,7 @@ class DOMSVGMatrix;
 /**
  * DOM wrapper for an SVG transform. See DOMSVGLength.h.
  */
-class DOMSVGTransform : public nsIDOMSVGTransform
+class DOMSVGTransform MOZ_FINAL : public nsIDOMSVGTransform
 {
 public:
   NS_DECLARE_STATIC_IID_ACCESSOR(MOZILLA_DOMSVGTRANSFORM_IID)
@@ -78,7 +79,7 @@ public:
     // unlinked us using the cycle collector code, then that has already
     // happened, and mList is null.
     if (mList) {
-      mList->mItems[mListIndex] = nsnull;
+      mList->mItems[mListIndex] = nullptr;
     }
   };
 

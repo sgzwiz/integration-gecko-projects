@@ -11,14 +11,12 @@
 #define nsDOMAttributeMap_h___
 
 #include "nsIDOMNamedNodeMap.h"
-#include "nsString.h"
+#include "nsStringGlue.h"
 #include "nsRefPtrHashtable.h"
 #include "nsCycleCollectionParticipant.h"
-#include "prbit.h"
 #include "nsIDOMNode.h"
 
 class nsIAtom;
-class nsIContent;
 class nsDOMAttribute;
 class nsINodeInfo;
 class nsIDocument;

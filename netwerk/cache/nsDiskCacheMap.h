@@ -13,7 +13,7 @@
 #include "prnetdb.h"
 #include "nsDebug.h"
 #include "nsError.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 
 #include "nsDiskCache.h"
 #include "nsDiskCacheBlockFile.h"
@@ -376,11 +376,11 @@ class nsDiskCacheMap {
 public:
 
      nsDiskCacheMap() : 
-        mCacheDirectory(nsnull),
-        mMapFD(nsnull),
-        mRecordArray(nsnull),
+        mCacheDirectory(nullptr),
+        mMapFD(nullptr),
+        mRecordArray(nullptr),
         mBufferSize(0),
-        mBuffer(nsnull),
+        mBuffer(nullptr),
         mMaxRecordCount(16384) // this default value won't matter
     { }
 
@@ -396,7 +396,8 @@ public:
  *  Creates a new cache map file if one doesn't exist.
  *  Returns error if it detects change in format or cache wasn't closed.
  */
-    nsresult  Open( nsILocalFile *  cacheDirectory);
+    nsresult  Open( nsIFile *  cacheDirectory,
+                    nsDiskCache::CorruptCacheInfo *  corruptInfo);
     nsresult  Close(bool flush);
     nsresult  Trim();
 
@@ -428,7 +429,7 @@ public:
     nsresult    GetLocalFileForDiskCacheRecord( nsDiskCacheRecord *  record,
                                                 bool                 meta,
                                                 bool                 createPath,
-                                                nsILocalFile **      result);
+                                                nsIFile **           result);
 
     // On success, this returns the buffer owned by nsDiskCacheMap,
     // so it must not be deleted by the caller.
@@ -478,7 +479,7 @@ private:
     /**
      *  Private methods
      */
-    nsresult    OpenBlockFiles();
+    nsresult    OpenBlockFiles(nsDiskCache::CorruptCacheInfo *  corruptInfo);
     nsresult    CloseBlockFiles(bool flush);
     bool        CacheFilesExist();
 
@@ -486,7 +487,7 @@ private:
 
     PRUint32    CalculateFileIndex(PRUint32 size);
 
-    nsresult    GetBlockFileForIndex( PRUint32 index, nsILocalFile ** result);
+    nsresult    GetBlockFileForIndex( PRUint32 index, nsIFile ** result);
     PRUint32    GetBlockSizeForIndex( PRUint32 index) const {
         return BLOCK_SIZE_FOR_INDEX(index);
     }
@@ -529,7 +530,7 @@ private:
  *  data members
  */
 private:
-    nsCOMPtr<nsILocalFile>  mCacheDirectory;
+    nsCOMPtr<nsIFile>       mCacheDirectory;
     PRFileDesc *            mMapFD;
     nsDiskCacheRecord *     mRecordArray;
     nsDiskCacheBlockFile    mBlockFile[kNumBlockFiles];

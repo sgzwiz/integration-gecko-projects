@@ -14,10 +14,9 @@
 
 //#define DEBUG_SPANNING_CELL_SORTER
 
-SpanningCellSorter::SpanningCellSorter(nsIPresShell *aPresShell)
-  : mPresShell(aPresShell)
-  , mState(ADDING)
-  , mSortedHashTable(nsnull)
+SpanningCellSorter::SpanningCellSorter()
+  : mState(ADDING)
+  , mSortedHashTable(nullptr)
 {
     memset(mArray, 0, sizeof(mArray));
     mHashTable.entryCount = 0;
@@ -41,7 +40,7 @@ SpanningCellSorter::HashTableOps = {
     PL_DHashMoveEntryStub,
     PL_DHashClearEntryStub,
     PL_DHashFinalizeStub,
-    nsnull
+    nullptr
 };
 
 /* static */ PLDHashNumber
@@ -66,7 +65,7 @@ SpanningCellSorter::AddCell(PRInt32 aColSpan, PRInt32 aRow, PRInt32 aCol)
     NS_ASSERTION(aColSpan >= ARRAY_BASE, "cannot add cells with colspan<2");
 
     Item *i = (Item*) mozilla::AutoStackArena::Allocate(sizeof(Item));
-    NS_ENSURE_TRUE(i != nsnull, false);
+    NS_ENSURE_TRUE(i != nullptr, false);
 
     i->row = aRow;
     i->col = aCol;
@@ -77,7 +76,7 @@ SpanningCellSorter::AddCell(PRInt32 aColSpan, PRInt32 aRow, PRInt32 aCol)
         mArray[index] = i;
     } else {
         if (!mHashTable.entryCount &&
-            !PL_DHashTableInit(&mHashTable, &HashTableOps, nsnull,
+            !PL_DHashTableInit(&mHashTable, &HashTableOps, nullptr,
                                sizeof(HashTableEntry), PL_DHASH_MIN_SIZE)) {
             NS_NOTREACHED("table init failed");
             mHashTable.entryCount = 0;
@@ -90,7 +89,7 @@ SpanningCellSorter::AddCell(PRInt32 aColSpan, PRInt32 aRow, PRInt32 aCol)
 
         NS_ASSERTION(entry->mColSpan == 0 || entry->mColSpan == aColSpan,
                      "wrong entry");
-        NS_ASSERTION((entry->mColSpan == 0) == (entry->mItems == nsnull),
+        NS_ASSERTION((entry->mColSpan == 0) == (entry->mItems == nullptr),
                      "entry should be either new or properly initialized");
         entry->mColSpan = aColSpan;
 
@@ -161,11 +160,11 @@ SpanningCellSorter::GetNext(PRInt32 *aColSpan)
                 if (!sh) {
                     // give up
                     mState = DONE;
-                    return nsnull;
+                    return nullptr;
                 }
                 PL_DHashTableEnumerate(&mHashTable, FillSortedArray, sh);
                 NS_QuickSort(sh, mHashTable.entryCount, sizeof(sh[0]),
-                             SortArray, nsnull);
+                             SortArray, nullptr);
                 mSortedHashTable = sh;
             }
             /* fall through */
@@ -187,5 +186,5 @@ SpanningCellSorter::GetNext(PRInt32 *aColSpan)
         case DONE:
             ;
     }
-    return nsnull;
+    return nullptr;
 }

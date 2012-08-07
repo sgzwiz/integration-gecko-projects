@@ -27,7 +27,7 @@ nsAbsoluteContainingBlock::SetInitialChildList(nsIFrame*       aDelegatingFrame,
                                                nsFrameList&    aChildList)
 {
   NS_PRECONDITION(GetChildListID() == aListID, "unexpected child list name");
-#ifdef NS_DEBUG
+#ifdef DEBUG
   nsFrame::VerifyDirtyBitSet(aChildList);
 #endif
   mAbsoluteFrames.SetFrames(aChildList);
@@ -42,10 +42,10 @@ nsAbsoluteContainingBlock::AppendFrames(nsIFrame*      aDelegatingFrame,
   NS_ASSERTION(GetChildListID() == aListID, "unexpected child list");
 
   // Append the frames to our list of absolutely positioned frames
-#ifdef NS_DEBUG
+#ifdef DEBUG
   nsFrame::VerifyDirtyBitSet(aFrameList);
 #endif
-  mAbsoluteFrames.AppendFrames(nsnull, aFrameList);
+  mAbsoluteFrames.AppendFrames(nullptr, aFrameList);
 
   // no damage to intrinsic widths, since absolutely positioned frames can't
   // change them
@@ -66,10 +66,10 @@ nsAbsoluteContainingBlock::InsertFrames(nsIFrame*      aDelegatingFrame,
   NS_ASSERTION(!aPrevFrame || aPrevFrame->GetParent() == aDelegatingFrame,
                "inserting after sibling frame with different parent");
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
   nsFrame::VerifyDirtyBitSet(aFrameList);
 #endif
-  mAbsoluteFrames.InsertFrames(nsnull, aPrevFrame, aFrameList);
+  mAbsoluteFrames.InsertFrames(nullptr, aPrevFrame, aFrameList);
 
   // no damage to intrinsic widths, since absolutely positioned frames can't
   // change them

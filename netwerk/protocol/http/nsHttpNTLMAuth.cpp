@@ -22,6 +22,7 @@
 #include "nsIX509Cert.h"
 #include "nsISSLStatus.h"
 #include "nsISSLStatusProvider.h"
+#include "mozilla/Attributes.h"
 
 static const char kAllowProxies[] = "network.automatic-ntlm-auth.allow-proxies";
 static const char kAllowNonFqdn[] = "network.automatic-ntlm-auth.allow-non-fqdn";
@@ -207,7 +208,7 @@ CanUseDefaultCredentials(nsIHttpAuthenticableChannel *channel,
 
 // Dummy class for session state object.  This class doesn't hold any data.
 // Instead we use its existence as a flag.  See ChallengeReceived.
-class nsNTLMSessionState : public nsISupports
+class nsNTLMSessionState MOZ_FINAL : public nsISupports
 {
 public:
     NS_DECL_ISUPPORTS
@@ -330,7 +331,7 @@ nsHttpNTLMAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChannel,
 {
     LOG(("nsHttpNTLMAuth::GenerateCredentials\n"));
 
-    *creds = nsnull;
+    *creds = nullptr;
     *aFlags = 0;
 
     // if user or password is empty, ChallengeReceived returned
@@ -350,12 +351,8 @@ nsHttpNTLMAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChannel,
     // initial challenge
     if (PL_strcasecmp(challenge, "NTLM") == 0) {
         // NTLM service name format is 'HTTP@host' for both http and https
-        nsCOMPtr<nsIURI> uri;
-        rv = authChannel->GetURI(getter_AddRefs(uri));
-        if (NS_FAILED(rv))
-            return rv;
         nsCAutoString serviceName, host;
-        rv = uri->GetAsciiHost(host);
+        rv = authChannel->GetAsciiHostForAuth(host);
         if (NS_FAILED(rv))
             return rv;
         serviceName.AppendLiteral("HTTP@");
@@ -414,11 +411,11 @@ nsHttpNTLMAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChannel,
         } else { 
             // If there is no server certificate, we don't pass anything.
             inBufLen = 0;
-            inBuf = nsnull;
+            inBuf = nullptr;
         }
 #else // Extended protection update is just for Linux and Windows machines.
         inBufLen = 0;
-        inBuf = nsnull;
+        inBuf = nullptr;
 #endif
     }
     else {
@@ -440,7 +437,7 @@ nsHttpNTLMAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChannel,
         if (!inBuf)
             return NS_ERROR_OUT_OF_MEMORY;
 
-        if (PL_Base64Decode(challenge, len, (char *) inBuf) == nsnull) {
+        if (PL_Base64Decode(challenge, len, (char *) inBuf) == nullptr) {
             nsMemory::Free(inBuf);
             return NS_ERROR_UNEXPECTED; // improper base64 encoding
         }

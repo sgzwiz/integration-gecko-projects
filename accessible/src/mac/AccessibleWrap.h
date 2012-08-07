@@ -13,7 +13,6 @@
 #include <objc/objc.h>
 
 #include "Accessible.h"
-#include "nsAccUtils.h"
 #include "States.h"
 
 #include "nsCOMPtr.h"
@@ -108,9 +107,5 @@ private:
    */
   bool mNativeInited;  
 };
-
-// Define unsupported wrap classes here
-typedef class nsHTMLTableCellAccessible    nsHTMLTableCellAccessibleWrap;
-typedef class nsHTMLTableAccessible        nsHTMLTableAccessibleWrap;
 
 #endif

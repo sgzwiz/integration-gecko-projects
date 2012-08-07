@@ -13,18 +13,23 @@ let loader = Cc["@mozilla.org/moz/jssubscript-loader;1"]
 
 loader.loadSubScript("chrome://marionette/content/marionette-simpletest.js");
 loader.loadSubScript("chrome://marionette/content/marionette-log-obj.js");
+loader.loadSubScript("chrome://marionette/content/marionette-perf.js");
 Cu.import("chrome://marionette/content/marionette-elements.js");
+Cu.import("resource://gre/modules/FileUtils.jsm");
+Cu.import("resource://gre/modules/NetUtil.jsm");  
 let utils = {};
 utils.window = content;
 // Load Event/ChromeUtils for use with JS scripts:
 loader.loadSubScript("chrome://marionette/content/EventUtils.js", utils);
 loader.loadSubScript("chrome://marionette/content/ChromeUtils.js", utils);
 loader.loadSubScript("chrome://marionette/content/atoms.js", utils);
+loader.loadSubScript("chrome://marionette/content/marionette-sendkeys.js", utils);
 
 loader.loadSubScript("chrome://specialpowers/content/specialpowersAPI.js");
 loader.loadSubScript("chrome://specialpowers/content/specialpowers.js");
 
 let marionetteLogObj = new MarionetteLogObj();
+let marionettePerf = new MarionettePerfData();
 
 let isB2G = false;
 
@@ -35,6 +40,7 @@ let listenerId = null; //unique ID of this listener
 let activeFrame = null;
 let curWindow = content;
 let elementManager = new ElementManager([]);
+let importedScripts = FileUtils.getFile('TmpD', ['marionettescript']);
 
 // The sandbox we execute test scripts in. Gets lazily created in
 // createExecuteContentSandbox().
@@ -85,6 +91,7 @@ function startListeners() {
   addMessageListenerId("Marionette:setSearchTimeout", setSearchTimeout);
   addMessageListenerId("Marionette:goUrl", goUrl);
   addMessageListenerId("Marionette:getUrl", getUrl);
+  addMessageListenerId("Marionette:getTitle", getTitle);
   addMessageListenerId("Marionette:goBack", goBack);
   addMessageListenerId("Marionette:goForward", goForward);
   addMessageListenerId("Marionette:refresh", refresh);
@@ -102,6 +109,7 @@ function startListeners() {
   addMessageListenerId("Marionette:deleteSession", deleteSession);
   addMessageListenerId("Marionette:sleepSession", sleepSession);
   addMessageListenerId("Marionette:emulatorCmdResult", emulatorCmdResult);
+  addMessageListenerId("Marionette:importScript", importScript);
 }
 
 /**
@@ -142,6 +150,7 @@ function deleteSession(msg) {
   removeMessageListenerId("Marionette:executeJSScript", executeJSScript);
   removeMessageListenerId("Marionette:setSearchTimeout", setSearchTimeout);
   removeMessageListenerId("Marionette:goUrl", goUrl);
+  removeMessageListenerId("Marionette:getTitle", getTitle);
   removeMessageListenerId("Marionette:getUrl", getUrl);
   removeMessageListenerId("Marionette:goBack", goBack);
   removeMessageListenerId("Marionette:goForward", goForward);
@@ -160,7 +169,13 @@ function deleteSession(msg) {
   removeMessageListenerId("Marionette:deleteSession", deleteSession);
   removeMessageListenerId("Marionette:sleepSession", sleepSession);
   removeMessageListenerId("Marionette:emulatorCmdResult", emulatorCmdResult);
+  removeMessageListenerId("Marionette:importScript", importScript);
   this.elementManager.reset();
+  try {
+    importedScripts.remove(false);
+  }
+  catch (e) {
+  }
 }
 
 /*
@@ -222,7 +237,6 @@ function errUnload() {
   sendError("unload was called", 17, null);
 }
 
-
 /*
  * Marionette Methods
  */
@@ -239,7 +253,7 @@ function createExecuteContentSandbox(aWindow) {
   sandbox.__proto__ = sandbox.window;
   sandbox.testUtils = utils;
 
-  let marionette = new Marionette(this, aWindow, "content", marionetteLogObj);
+  let marionette = new Marionette(this, aWindow, "content", marionetteLogObj, marionettePerf);
   sandbox.marionette = marionette;
   marionette.exports.forEach(function(fn) {
     sandbox[fn] = marionette[fn].bind(marionette);
@@ -261,9 +275,10 @@ function createExecuteContentSandbox(aWindow) {
       curWindow.clearTimeout(i);
     }
 
-    sendSyncMessage("Marionette:testLog",
-                    {value: elementManager.wrapValue(marionetteLogObj.getLogs())});
+    sendSyncMessage("Marionette:shareData", {log: elementManager.wrapValue(marionetteLogObj.getLogs()),
+                                             perf: elementManager.wrapValue(marionettePerf.getPerfData())});
     marionetteLogObj.clearLogs();
+    marionettePerf.clearPerfData();
     if (status == 0){
       sendResponse({value: elementManager.wrapValue(value), status: status}, asyncTestCommandId);
     }
@@ -306,9 +321,18 @@ function executeScript(msg, directInject) {
 
   try {
     if (directInject) {
+      if (importedScripts.exists()) {
+        let stream = Components.classes["@mozilla.org/network/file-input-stream;1"].  
+                      createInstance(Components.interfaces.nsIFileInputStream);
+        stream.init(importedScripts, -1, 0, 0);
+        let data = NetUtil.readInputStreamToString(stream, stream.available());
+        script = data + script;
+      }
       let res = Cu.evalInSandbox(script, sandbox, "1.8");
-      sendSyncMessage("Marionette:testLog", {value: elementManager.wrapValue(marionetteLogObj.getLogs())});
+      sendSyncMessage("Marionette:shareData", {log: elementManager.wrapValue(marionetteLogObj.getLogs()),
+                                               perf: elementManager.wrapValue(marionettePerf.getPerfData())});
       marionetteLogObj.clearLogs();
+      marionettePerf.clearPerfData();
       if (res == undefined || res.passed == undefined) {
         sendError("Marionette.finish() not called", 17, null);
       }
@@ -322,15 +346,24 @@ function executeScript(msg, directInject) {
           msg.json.args, curWindow);
       }
       catch(e) {
-        sendError(e.message, e.num, e.stack);
+        sendError(e.message, e.code, e.stack);
         return;
       }
 
       let scriptSrc = "let __marionetteFunc = function(){" + script + "};" +
                       "__marionetteFunc.apply(null, __marionetteParams);";
+      if (importedScripts.exists()) {
+        let stream = Components.classes["@mozilla.org/network/file-input-stream;1"].  
+                      createInstance(Components.interfaces.nsIFileInputStream);
+        stream.init(importedScripts, -1, 0, 0);
+        let data = NetUtil.readInputStreamToString(stream, stream.available());
+        scriptSrc = data + scriptSrc;
+      }
       let res = Cu.evalInSandbox(scriptSrc, sandbox, "1.8");
-      sendSyncMessage("Marionette:testLog", {value: elementManager.wrapValue(marionetteLogObj.getLogs())});
+      sendSyncMessage("Marionette:shareData", {log: elementManager.wrapValue(marionetteLogObj.getLogs()),
+                                               perf: elementManager.wrapValue(marionettePerf.getPerfData())});
       marionetteLogObj.clearLogs();
+      marionettePerf.clearPerfData();
       sendResponse({value: elementManager.wrapValue(res)});
     }
   }
@@ -345,6 +378,7 @@ function executeScript(msg, directInject) {
  */
 function setScriptTimeout(msg) {
   marionetteTimeout = msg.json.value;
+  sendOk();
 }
 
 /**
@@ -416,7 +450,7 @@ function executeWithCallback(msg, timeout) {
         msg.json.args, curWindow);
     }
     catch(e) {
-      sendError(e.message, e.num, e.stack);
+      sendError(e.message, e.code, e.stack);
       return;
     }
 
@@ -427,6 +461,13 @@ function executeWithCallback(msg, timeout) {
 
   try {
     asyncTestRunning = true;
+    if (importedScripts.exists()) {
+      let stream = Components.classes["@mozilla.org/network/file-input-stream;1"].  
+                      createInstance(Components.interfaces.nsIFileInputStream);
+      stream.init(importedScripts, -1, 0, 0);
+      let data = NetUtil.readInputStreamToString(stream, stream.available());
+      scriptSrc = data + scriptSrc;
+    }
     Cu.evalInSandbox(scriptSrc, sandbox, "1.8");
   } catch (e) {
     // 17 = JavascriptException
@@ -442,7 +483,7 @@ function setSearchTimeout(msg) {
     elementManager.setSearchTimeout(msg.json.value);
   }
   catch (e) {
-    sendError(e.message, e.num, e.stack);
+    sendError(e.message, e.code, e.stack);
     return;
   }
   sendOk();
@@ -471,6 +512,13 @@ function goUrl(msg) {
  */
 function getUrl(msg) {
   sendResponse({value: curWindow.location.href});
+}
+
+/**
+ * Get the current Title of the window
+ */
+function getTitle(msg) {
+  sendResponse({value: curWindow.top.document.title});
 }
 
 /**
@@ -508,7 +556,7 @@ function findElementContent(msg) {
     id = elementManager.find(curWindow, msg.json, notify, false);
   }
   catch (e) {
-    sendError(e.message, e.num, e.stack);
+    sendError(e.message, e.code, e.stack);
   }
 }
 
@@ -522,7 +570,7 @@ function findElementsContent(msg) {
     id = elementManager.find(curWindow, msg.json, notify, true);
   }
   catch (e) {
-    sendError(e.message, e.num, e.stack);
+    sendError(e.message, e.code, e.stack);
   }
 }
 
@@ -537,7 +585,7 @@ function clickElement(msg) {
     sendOk();
   }
   catch (e) {
-    sendError(e.message, e.num, e.stack);
+    sendError(e.message, e.code, e.stack);
   }
 }
 
@@ -550,7 +598,7 @@ function getElementAttribute(msg) {
     sendResponse({value: utils.getElementAttribute(el, msg.json.name)});
   }
   catch (e) {
-    sendError(e.message, e.num, e.stack);
+    sendError(e.message, e.code, e.stack);
   }
 }
 
@@ -563,7 +611,7 @@ function getElementText(msg) {
     sendResponse({value: utils.getElementText(el)});
   }
   catch (e) {
-    sendError(e.message, e.num, e.stack);
+    sendError(e.message, e.code, e.stack);
   }
 }
 
@@ -576,7 +624,7 @@ function isElementDisplayed(msg) {
     sendResponse({value: utils.isElementDisplayed(el)});
   }
   catch (e) {
-    sendError(e.message, e.num, e.stack);
+    sendError(e.message, e.code, e.stack);
   }
 }
 
@@ -589,7 +637,7 @@ function isElementEnabled(msg) {
     sendResponse({value: utils.isElementEnabled(el)});
   }
   catch (e) {
-    sendError(e.message, e.num, e.stack);
+    sendError(e.message, e.code, e.stack);
   }
 }
 
@@ -602,7 +650,7 @@ function isElementSelected(msg) {
     sendResponse({value: utils.isElementSelected(el)});
   }
   catch (e) {
-    sendError(e.message, e.num, e.stack);
+    sendError(e.message, e.code, e.stack);
   }
 }
 
@@ -612,11 +660,11 @@ function isElementSelected(msg) {
 function sendKeysToElement(msg) {
   try {
     let el = elementManager.getKnownElement(msg.json.element, curWindow);
-    utils.sendKeysToElement(el, msg.json.value);
+    utils.type(curWindow.document, el, msg.json.value.join(""), true);
     sendOk();
   }
   catch (e) {
-    sendError(e.message, e.num, e.stack);
+    sendError(e.message, e.code, e.stack);
   }
 }
 
@@ -630,7 +678,7 @@ function clearElement(msg) {
     sendOk();
   }
   catch (e) {
-    sendError(e.message, e.num, e.stack);
+    sendError(e.message, e.code, e.stack);
   }
 }
 
@@ -722,9 +770,22 @@ function emulatorCmdResult(msg) {
     cb(message.result);
   }
   catch(e) {
-    sendError(e.message, e.num, e.stack);
+    sendError(e.message, e.code, e.stack);
     return;
   }
+}
+
+function importScript(msg) {
+  let file;
+  if (importedScripts.exists()) {
+    file = FileUtils.openFileOutputStream(importedScripts, FileUtils.MODE_APPEND | FileUtils.MODE_WRONLY);
+  }
+  else {
+    file = FileUtils.openFileOutputStream(importedScripts, FileUtils.MODE_WRONLY | FileUtils.MODE_CREATE);
+  }
+  file.write(msg.json.script, msg.json.script.length);
+  file.close();
+  sendOk();
 }
 
 //call register self when we get loaded

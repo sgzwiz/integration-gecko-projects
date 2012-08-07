@@ -26,7 +26,6 @@
 
 #include "nsIServiceManager.h"
 #include "nsIComponentManager.h"
-#include "nsContentUtils.h"
 
 #ifdef ACCESSIBILITY
 #include "nsAccessibilityService.h"
@@ -34,7 +33,7 @@
 
 using namespace mozilla;
 
-NS_DECLARE_FRAME_PROPERTY(FontSizeInflationProperty, nsnull)
+NS_DECLARE_FRAME_PROPERTY(FontSizeInflationProperty, nullptr)
 
 NS_IMPL_FRAMEARENA_HELPERS(nsBulletFrame)
 
@@ -52,18 +51,18 @@ nsBulletFrame::DestroyFrom(nsIFrame* aDestructRoot)
                                           mImageRequest,
                                           &mRequestRegistered);
     mImageRequest->CancelAndForgetObserver(NS_ERROR_FAILURE);
-    mImageRequest = nsnull;
+    mImageRequest = nullptr;
   }
 
   if (mListener) {
-    mListener->SetFrame(nsnull);
+    mListener->SetFrame(nullptr);
   }
 
   // Let base class do the rest
   nsFrame::DestroyFrom(aDestructRoot);
 }
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
 NS_IMETHODIMP
 nsBulletFrame::GetFrameName(nsAString& aResult) const
 {
@@ -120,7 +119,7 @@ nsBulletFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
           nsLayoutUtils::DeregisterImageRequest(PresContext(), mImageRequest,
                                                 &mRequestRegistered);
           mImageRequest->Cancel(NS_ERROR_FAILURE);
-          mImageRequest = nsnull;
+          mImageRequest = nullptr;
         }
       }
     }
@@ -140,7 +139,7 @@ nsBulletFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
                                             &mRequestRegistered);
 
       mImageRequest->Cancel(NS_ERROR_FAILURE);
-      mImageRequest = nsnull;
+      mImageRequest = nullptr;
     }
   }
 
@@ -412,7 +411,7 @@ static bool OtherDecimalToText(PRInt32 ordinal, PRUnichar zeroChar, nsString& re
      // skip the leading '-'
      ++p;
    }     
-   for(; nsnull != *p ; p++) 
+   for(; '\0' != *p ; p++) 
       *p += diff;
    return true;
 }
@@ -425,7 +424,7 @@ static bool TamilToText(PRInt32 ordinal,  nsString& result)
      return false;
    }
    PRUnichar* p = result.BeginWriting();
-   for(; nsnull != *p ; p++) 
+   for(; '\0' != *p ; p++) 
       if(*p != PRUnichar('0'))
          *p += diff;
    return true;
@@ -1277,11 +1276,8 @@ nsBulletFrame::GetDesiredSize(nsPresContext*  aCX,
     if (status & imgIRequest::STATUS_SIZE_AVAILABLE &&
         !(status & imgIRequest::STATUS_ERROR)) {
       // auto size the image
-      mComputedSize.width = mIntrinsicSize.width;
-      mComputedSize.height = mIntrinsicSize.height;
-
-      aMetrics.width = mComputedSize.width;
-      aMetrics.ascent = aMetrics.height = mComputedSize.height;
+      aMetrics.width = mIntrinsicSize.width;
+      aMetrics.ascent = aMetrics.height = mIntrinsicSize.height;
 
       AddStateBits(BULLET_FRAME_IMAGE_LOADING);
 
@@ -1534,7 +1530,7 @@ nsBulletFrame::GetLoadGroup(nsPresContext *aPresContext, nsILoadGroup **aLoadGro
   if (!aPresContext)
     return;
 
-  NS_PRECONDITION(nsnull != aLoadGroup, "null OUT parameter pointer");
+  NS_PRECONDITION(nullptr != aLoadGroup, "null OUT parameter pointer");
 
   nsIPresShell *shell = aPresContext->GetPresShell();
 
@@ -1549,7 +1545,7 @@ nsBulletFrame::GetLoadGroup(nsPresContext *aPresContext, nsILoadGroup **aLoadGro
 }
 
 union VoidPtrOrFloat {
-  VoidPtrOrFloat() : p(nsnull) {}
+  VoidPtrOrFloat() : p(nullptr) {}
 
   void *p;
   float f;
@@ -1626,7 +1622,7 @@ nsBulletFrame::GetBaseline() const
 NS_IMPL_ISUPPORTS2(nsBulletListener, imgIDecoderObserver, imgIContainerObserver)
 
 nsBulletListener::nsBulletListener() :
-  mFrame(nsnull)
+  mFrame(nullptr)
 {
 }
 

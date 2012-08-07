@@ -11,6 +11,7 @@
 #include "nsCharsetSource.h"
 #include "nsISerializable.h"
 #include "nsSerializationHelper.h"
+#include "mozilla/LoadContext.h"
 
 namespace mozilla {
 namespace net {
@@ -40,8 +41,9 @@ WyciwygChannelParent::ActorDestroy(ActorDestroyReason why)
 // WyciwygChannelParent::nsISupports
 //-----------------------------------------------------------------------------
 
-NS_IMPL_ISUPPORTS2(WyciwygChannelParent,
+NS_IMPL_ISUPPORTS3(WyciwygChannelParent,
                    nsIStreamListener,
+                   nsIInterfaceRequestor,
                    nsIRequestObserver);
 
 //-----------------------------------------------------------------------------
@@ -79,7 +81,7 @@ WyciwygChannelParent::RecvInit(const IPC::URI& aURI)
 bool
 WyciwygChannelParent::RecvAsyncOpen(const IPC::URI& aOriginal,
                                     const PRUint32& aLoadFlags,
-                                    const bool& aUsingPrivateBrowsing)
+                                    const IPC::SerializedLoadContext& loadContext)
 {
   nsCOMPtr<nsIURI> original(aOriginal);
 
@@ -98,10 +100,10 @@ WyciwygChannelParent::RecvAsyncOpen(const IPC::URI& aOriginal,
   if (NS_FAILED(rv))
     return SendCancelEarly(rv);
 
-  static_cast<nsWyciwygChannel*>(mChannel.get())->
-    OverridePrivateBrowsing(aUsingPrivateBrowsing);
+  if (loadContext.IsNotNull())
+    mLoadContext = new LoadContext(loadContext);
 
-  rv = mChannel->AsyncOpen(this, nsnull);
+  rv = mChannel->AsyncOpen(this, nullptr);
   if (NS_FAILED(rv))
     return SendCancelEarly(rv);
 
@@ -240,5 +242,23 @@ WyciwygChannelParent::OnDataAvailable(nsIRequest *aRequest,
 
   return NS_OK;
 }
+
+//-----------------------------------------------------------------------------
+// WyciwygChannelParent::nsIInterfaceRequestor
+//-----------------------------------------------------------------------------
+
+NS_IMETHODIMP
+WyciwygChannelParent::GetInterface(const nsIID& uuid, void** result)
+{
+  // Only support nsILoadContext if child channel's callbacks did too
+  if (uuid.Equals(NS_GET_IID(nsILoadContext)) && mLoadContext) {
+    NS_ADDREF(mLoadContext);
+    *result = static_cast<nsILoadContext*>(mLoadContext);
+    return NS_OK;
+  }
+
+  return QueryInterface(uuid, result);
+}
+
 
 }} // mozilla::net

@@ -16,13 +16,13 @@
 #include "nsIDOMEventTarget.h"
 #include "nsIDOMDocument.h"
 #include "nsCOMPtr.h"
-#include "nsEvent.h"
 #include "nsIURI.h"
 
 #define DOM_WINDOW_DESTROYED_TOPIC "dom-window-destroyed"
 #define DOM_WINDOW_FROZEN_TOPIC "dom-window-frozen"
 #define DOM_WINDOW_THAWED_TOPIC "dom-window-thawed"
 
+class nsIIdleObserver;
 class nsIPrincipal;
 
 // Popup control state enum. The values in this enum must go from most
@@ -48,8 +48,8 @@ class nsIArray;
 class nsPIWindowRoot;
 
 #define NS_PIDOMWINDOW_IID \
-{ 0xfcc2db29, 0x03ba, 0x4eb3, \
-  { 0x96, 0xb8, 0xea, 0x0f, 0x6f, 0x1f, 0x61, 0x55 } }
+{ 0x0c4d0b84, 0xb524, 0x4572, \
+  { 0x8e, 0xd1, 0x7f, 0x78, 0x14, 0x7c, 0x4d, 0xf1 } }
 
 class nsPIDOMWindow : public nsIDOMWindowInternal
 {
@@ -71,6 +71,9 @@ public:
                     "active state is only maintained on outer windows");
     mIsActive = aActive;
   }
+
+  virtual nsresult RegisterIdleObserver(nsIIdleObserver* aIdleObserver) = 0;
+  virtual nsresult UnregisterIdleObserver(nsIIdleObserver* aIdleObserver) = 0;
 
   bool IsActive()
   {
@@ -171,6 +174,20 @@ public:
     return mDoc;
   }
 
+  nsIDocument* GetDoc()
+  {
+    if (!mDoc) {
+      MaybeCreateDoc();
+    }
+    return mDoc;
+  }
+
+protected:
+  // Lazily instantiate an about:blank document if necessary, and if
+  // we have what it takes to do so.
+  void MaybeCreateDoc();
+
+public:
   // Internal getter/setter for the frame element, this version of the
   // getter crosses chrome boundaries whereas the public scriptable
   // one doesn't for security reasons.
@@ -372,6 +389,8 @@ public:
    * called with a pointer to the current document, in that case the
    * document remains unchanged, but a new inner window will be
    * created.
+   *
+   * aDocument must not be null.
    */
   virtual nsresult SetNewDocument(nsIDocument *aDocument,
                                   nsISupports *aState,
@@ -483,7 +502,7 @@ public:
   nsIContent* GetFocusedNode()
   {
     if (IsOuterWindow()) {
-      return mInnerWindow ? mInnerWindow->mFocusedNode.get() : nsnull;
+      return mInnerWindow ? mInnerWindow->mFocusedNode.get() : nullptr;
     }
     return mFocusedNode;
   }
@@ -586,6 +605,25 @@ public:
    */
   virtual bool DispatchCustomEvent(const char *aEventName) = 0;
 
+  /**
+   * Notify the active inner window that the document principal may have changed
+   * and that the compartment principal needs to be updated.
+   */
+  virtual void RefreshCompartmentPrincipal() = 0;
+
+  /**
+   * Returns if the window is part of an application.
+   * It will check for the window app state and its parents until a window has
+   * an app state different from |TriState_Unknown|.
+   */
+  virtual bool IsPartOfApp() = 0;
+
+  /**
+   * Returns true if this window is part of a web app and has the same origin
+   * (principal) as the app.
+   */
+  virtual bool IsInAppOrigin() = 0;
+
 protected:
   // The nsPIDOMWindow constructor. The aOuterWindow argument should
   // be null if and only if the created window itself is an outer
@@ -598,7 +636,7 @@ protected:
   void SetChromeEventHandlerInternal(nsIDOMEventTarget* aChromeEventHandler) {
     mChromeEventHandler = aChromeEventHandler;
     // mParentTarget will be set when the next event is dispatched.
-    mParentTarget = nsnull;
+    mParentTarget = nullptr;
   }
 
   virtual void UpdateParentTarget() = 0;
@@ -722,7 +760,7 @@ protected:
 
 private:
   // Hide so that this class can only be stack-allocated
-  static void* operator new(size_t /*size*/) CPP_THROW_NEW { return nsnull; }
+  static void* operator new(size_t /*size*/) CPP_THROW_NEW { return nullptr; }
   static void operator delete(void* /*memory*/) {}
 };
 

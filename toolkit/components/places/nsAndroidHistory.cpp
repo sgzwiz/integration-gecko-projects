@@ -9,7 +9,7 @@
 using namespace mozilla;
 using mozilla::dom::Link;
 
-NS_IMPL_ISUPPORTS1(nsAndroidHistory, IHistory)
+NS_IMPL_ISUPPORTS2(nsAndroidHistory, IHistory, nsIRunnable)
 
 nsAndroidHistory* nsAndroidHistory::sHistory = NULL;
 
@@ -19,7 +19,7 @@ nsAndroidHistory::GetSingleton()
 {
   if (!sHistory) {
     sHistory = new nsAndroidHistory();
-    NS_ENSURE_TRUE(sHistory, nsnull);
+    NS_ENSURE_TRUE(sHistory, nullptr);
   }
 
   NS_ADDREF(sHistory);

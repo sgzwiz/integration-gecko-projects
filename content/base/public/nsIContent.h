@@ -5,32 +5,22 @@
 #ifndef nsIContent_h___
 #define nsIContent_h___
 
-#include "nsCOMPtr.h" // for already_AddRefed
-#include "nsStringGlue.h"
-#include "nsCaseTreatment.h"
-#include "nsChangeHint.h"
-#include "nsINode.h"
-#include "nsIDocument.h" // for IsInHTMLDocument
+#include "nsCaseTreatment.h" // for enum, cannot be forward-declared
+#include "nsCOMPtr.h"        // for already_AddRefed in constructor
+#include "nsIDocument.h"     // for use in inline function (IsInHTMLDocument)
+#include "nsINode.h"         // for base class
 
 // Forward declarations
+class nsAString;
 class nsIAtom;
-class nsIDOMEvent;
-class nsIContent;
-class nsEventListenerManager;
 class nsIURI;
 class nsRuleWalker;
 class nsAttrValue;
 class nsAttrName;
 class nsTextFragment;
-class nsIDocShell;
 class nsIFrame;
-class nsISMILAttr;
-class nsIDOMCSSStyleDeclaration;
 
 namespace mozilla {
-namespace css {
-class StyleRule;
-} // namespace css
 namespace widget {
 struct IMEState;
 } // namespace widget
@@ -45,8 +35,8 @@ enum nsLinkState {
 
 // IID for the nsIContent interface
 #define NS_ICONTENT_IID \
-{ 0xa887c108, 0xc25e, 0x42ab, \
-  { 0x87, 0xef, 0xad, 0x4b, 0xee, 0x50, 0x28, 0x28 } }
+{ 0x98fb308d, 0xc6dd, 0x4c6d, \
+  { 0xb7, 0x7c, 0x91, 0x18, 0x0c, 0xf0, 0x6f, 0x23 } }
 
 /**
  * A node of content in a document's content model. This interface
@@ -65,6 +55,7 @@ public:
   {
     NS_ASSERTION(mNodeInfo,
                  "No nsINodeInfo passed to nsIContent, PREPARE TO CRASH!!!");
+    SetNodeIsContent();
   }
 #endif // MOZILLA_INTERNAL_API
 
@@ -237,7 +228,7 @@ public:
   {
     NS_ASSERTION(!IsInNativeAnonymousSubtree() || GetBindingParent() || !GetParent(),
                  "must have binding parent when in native anonymous subtree with a parent node");
-    return IsInNativeAnonymousSubtree() || GetBindingParent() != nsnull;
+    return IsInNativeAnonymousSubtree() || GetBindingParent() != nullptr;
   }
 
   /**
@@ -253,58 +244,57 @@ public:
    * Get the namespace that this element's tag is defined in
    * @return the namespace
    */
-  PRInt32 GetNameSpaceID() const
+  inline PRInt32 GetNameSpaceID() const
   {
     return mNodeInfo->NamespaceID();
-  }
-
-  /**
-   * Get the tag for this element. This will always return a non-null
-   * atom pointer (as implied by the naming of the method).
-   */
-  nsIAtom *Tag() const
-  {
-    return mNodeInfo->NameAtom();
   }
 
   /**
    * Get the NodeInfo for this element
    * @return the nodes node info
    */
-  nsINodeInfo *NodeInfo() const
+  inline nsINodeInfo* NodeInfo() const
   {
     return mNodeInfo;
   }
 
-  inline bool IsInNamespace(PRInt32 aNamespace) const {
+  inline bool IsInNamespace(PRInt32 aNamespace) const
+  {
     return mNodeInfo->NamespaceID() == aNamespace;
   }
 
-  inline bool IsHTML() const {
+  inline bool IsHTML() const
+  {
     return IsInNamespace(kNameSpaceID_XHTML);
   }
 
-  inline bool IsHTML(nsIAtom* aTag) const {
+  inline bool IsHTML(nsIAtom* aTag) const
+  {
     return mNodeInfo->Equals(aTag, kNameSpaceID_XHTML);
   }
 
-  inline bool IsSVG() const {
+  inline bool IsSVG() const
+  {
     return IsInNamespace(kNameSpaceID_SVG);
   }
 
-  inline bool IsSVG(nsIAtom* aTag) const {
+  inline bool IsSVG(nsIAtom* aTag) const
+  {
     return mNodeInfo->Equals(aTag, kNameSpaceID_SVG);
   }
 
-  inline bool IsXUL() const {
+  inline bool IsXUL() const
+  {
     return IsInNamespace(kNameSpaceID_XUL);
   }
 
-  inline bool IsMathML() const {
+  inline bool IsMathML() const
+  {
     return IsInNamespace(kNameSpaceID_MathML);
   }
 
-  inline bool IsMathML(nsIAtom* aTag) const {
+  inline bool IsMathML(nsIAtom* aTag) const
+  {
     return mNodeInfo->Equals(aTag, kNameSpaceID_MathML);
   }
 
@@ -323,7 +313,7 @@ public:
    * null otherwise.
    *
    * @param aStr the unparsed attribute string
-   * @return the node info. May be nsnull.
+   * @return the node info. May be nullptr.
    */
   virtual already_AddRefed<nsINodeInfo> GetExistingAttrNameFromQName(const nsAString& aStr) const = 0;
 
@@ -343,7 +333,7 @@ public:
   nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
                    const nsAString& aValue, bool aNotify)
   {
-    return SetAttr(aNameSpaceID, aName, nsnull, aValue, aNotify);
+    return SetAttr(aNameSpaceID, aName, nullptr, aValue, aNotify);
   }
 
   /**
@@ -557,7 +547,7 @@ public:
    *         > 0 can be tabbed to in the order specified by this value
    * @return whether the content is focusable via mouse, kbd or script.
    */
-  virtual bool IsFocusable(PRInt32 *aTabIndex = nsnull, bool aWithMouse = false)
+  virtual bool IsFocusable(PRInt32 *aTabIndex = nullptr, bool aWithMouse = false)
   {
     if (aTabIndex) 
       *aTabIndex = -1; // Default, not tabbable
@@ -649,7 +639,7 @@ public:
     */
   virtual already_AddRefed<nsIURI> GetHrefURI() const
   {
-    return nsnull;
+    return nullptr;
   }
 
   /**
@@ -739,7 +729,7 @@ public:
     if (HasID()) {
       return DoGetID();
     }
-    return nsnull;
+    return nullptr;
   }
 
   /**
@@ -752,7 +742,7 @@ public:
     if (HasFlag(NODE_MAY_HAVE_CLASS)) {
       return DoGetClasses();
     }
-    return nsnull;
+    return nullptr;
   }
 
   /**
@@ -760,31 +750,6 @@ public:
    * hint rules) for this content node.
    */
   NS_IMETHOD WalkContentStyleRules(nsRuleWalker* aRuleWalker) = 0;
-
-  /**
-   * Is the attribute named stored in the mapped attributes?
-   *
-   * // XXXbz we use this method in HasAttributeDependentStyle, so svg
-   *    returns true here even though it stores nothing in the mapped
-   *    attributes.
-   */
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const = 0;
-
-  /**
-   * Get a hint that tells the style system what to do when 
-   * an attribute on this node changes, if something needs to happen
-   * in response to the change *other* than the result of what is
-   * mapped into style data via any type of style rule.
-   */
-  virtual nsChangeHint GetAttributeChangeHint(const nsIAtom* aAttribute,
-                                              PRInt32 aModType) const = 0;
-
-  /**
-   * Returns an atom holding the name of the "class" attribute on this
-   * content node (if applicable).  Returns null if there is no
-   * "class" attribute for this type of content node.
-   */
-  virtual nsIAtom *GetClassAttributeName() const = 0;
 
   /**
    * Should be called when the node can become editable or when it can stop
@@ -818,7 +783,7 @@ public:
    */
   nsIFrame* GetPrimaryFrame() const
   {
-    return IsInDoc() ? mPrimaryFrame : nsnull;
+    return IsInDoc() ? mPrimaryFrame : nullptr;
   }
   void SetPrimaryFrame(nsIFrame* aFrame) {
     NS_ASSERTION(IsInDoc(), "This will end badly!");
@@ -876,6 +841,7 @@ public:
   virtual bool IsPurple() = 0;
   virtual void RemovePurple() = 0;
 
+  virtual bool OwnedOnlyByTheDOMTree() { return false; }
 protected:
   /**
    * Hook for implementing GetID.  This is guaranteed to only be
@@ -922,5 +888,11 @@ public:
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIContent, NS_ICONTENT_IID)
+
+inline nsIContent* nsINode::AsContent()
+{
+  MOZ_ASSERT(IsContent());
+  return static_cast<nsIContent*>(this);
+}
 
 #endif /* nsIContent_h___ */

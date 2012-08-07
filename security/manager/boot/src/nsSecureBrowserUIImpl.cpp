@@ -64,7 +64,7 @@ using namespace mozilla;
 // this enables PR_LOG_DEBUG level information and places all output in
 // the file nspr.log
 //
-PRLogModuleInfo* gSecureDocLog = nsnull;
+PRLogModuleInfo* gSecureDocLog = nullptr;
 #endif /* PR_LOGGING */
 
 struct RequestHashEntry : PLDHashEntryHdr {
@@ -133,11 +133,12 @@ nsSecureBrowserUIImpl::nsSecureBrowserUIImpl()
   , mSubRequestsBrokenSecurity(0)
   , mSubRequestsNoSecurity(0)
   , mRestoreSubrequests(false)
+  , mOnLocationChangeSeen(false)
 #ifdef DEBUG
   , mOnStateLocationChangeReentranceDetection(0)
 #endif
 {
-  mTransferringRequests.ops = nsnull;
+  mTransferringRequests.ops = nullptr;
   ResetStateTracking();
   
 #if defined(PR_LOGGING)
@@ -150,7 +151,7 @@ nsSecureBrowserUIImpl::~nsSecureBrowserUIImpl()
 {
   if (mTransferringRequests.ops) {
     PL_DHashTableFinish(&mTransferringRequests);
-    mTransferringRequests.ops = nsnull;
+    mTransferringRequests.ops = nullptr;
   }
 }
 
@@ -249,7 +250,7 @@ nsSecureBrowserUIImpl::GetState(PRUint32* aState)
 already_AddRefed<nsISupports> 
 nsSecureBrowserUIImpl::ExtractSecurityInfo(nsIRequest* aRequest)
 {
-  nsISupports *retval = nsnull; 
+  nsISupports *retval = nullptr; 
   nsCOMPtr<nsIChannel> channel(do_QueryInterface(aRequest));
   if (channel)
     channel->GetSecurityInfo(&retval);
@@ -466,9 +467,9 @@ void nsSecureBrowserUIImpl::ResetStateTracking()
   mDocumentRequestsInProgress = 0;
   if (mTransferringRequests.ops) {
     PL_DHashTableFinish(&mTransferringRequests);
-    mTransferringRequests.ops = nsnull;
+    mTransferringRequests.ops = nullptr;
   }
-  PL_DHashTableInit(&mTransferringRequests, &gMapOps, nsnull,
+  PL_DHashTableInit(&mTransferringRequests, &gMapOps, nullptr,
                     sizeof(RequestHashEntry), 16);
 }
 
@@ -1221,9 +1222,10 @@ nsSecureBrowserUIImpl::OnStateChange(nsIWebProgress* aWebProgress,
       // But when the target sink changes between OnLocationChange and
       // OnStateChange, we have to fire the notification here (again).
 
-      if (sinkChanged)
+      if (sinkChanged || mOnLocationChangeSeen)
         return EvaluateAndUpdateSecurityState(aRequest, securityInfo, false);
     }
+    mOnLocationChangeSeen = false;
 
     if (mRestoreSubrequests && !inProgress)
     {
@@ -1474,7 +1476,7 @@ bool nsSecureBrowserUIImpl::UpdateMyFlags(bool &showWarning, lockIconState &warn
 
     if (lis_no_security == newSecurityState)
     {
-      mSSLStatus = nsnull;
+      mSSLStatus = nullptr;
       mInfoTooltip.Truncate();
     }
   }
@@ -1614,6 +1616,7 @@ nsSecureBrowserUIImpl::OnLocationChange(nsIWebProgress* aWebProgress,
 
   if (windowForProgress.get() == window.get()) {
     // For toplevel channels, update the security state right away.
+    mOnLocationChangeSeen = true;
     return EvaluateAndUpdateSecurityState(aRequest, securityInfo, true);
   }
 
@@ -1697,7 +1700,7 @@ nsSecureBrowserUIImpl::GetSSLStatus(nsISSLStatus** _result)
       NS_NOTREACHED("if this is reached you must add more entries to the switch");
     case lis_no_security:
     case lis_broken_security:
-      *_result = nsnull;
+      *_result = nullptr;
       return NS_OK;
   }
  
@@ -1741,7 +1744,7 @@ nsSecureBrowserUIImpl::GetBundleString(const PRUnichar* name,
   }
 
   if (temp_StringBundle && name) {
-    PRUnichar *ptrv = nsnull;
+    PRUnichar *ptrv = nullptr;
     if (NS_SUCCEEDED(temp_StringBundle->GetStringFromName(name,
                                                           &ptrv)))
       outString = ptrv;

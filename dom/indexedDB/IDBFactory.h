@@ -17,6 +17,12 @@
 class nsIAtom;
 class nsPIDOMWindow;
 
+namespace mozilla {
+namespace dom {
+class ContentParent;
+}
+}
+
 BEGIN_INDEXEDDB_NAMESPACE
 
 struct DatabaseInfo;
@@ -29,6 +35,7 @@ struct ObjectStoreInfo;
 
 class IDBFactory MOZ_FINAL : public nsIIDBFactory
 {
+  typedef mozilla::dom::ContentParent ContentParent;
   typedef nsTArray<nsRefPtr<ObjectStoreInfo> > ObjectStoreInfoArray;
 
 public:
@@ -36,23 +43,36 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(IDBFactory)
   NS_DECL_NSIIDBFACTORY
 
+  // Called when using IndexedDB from a window in a different process.
   static nsresult Create(nsPIDOMWindow* aWindow,
                          const nsACString& aASCIIOrigin,
+                         ContentParent* aContentParent,
                          IDBFactory** aFactory);
 
+  // Called when using IndexedDB from a window in the current process.
   static nsresult Create(nsPIDOMWindow* aWindow,
+                         ContentParent* aContentParent,
                          nsIIDBFactory** aFactory)
   {
     nsRefPtr<IDBFactory> factory;
-    nsresult rv = Create(aWindow, EmptyCString(), getter_AddRefs(factory));
+    nsresult rv =
+      Create(aWindow, EmptyCString(), aContentParent, getter_AddRefs(factory));
     NS_ENSURE_SUCCESS(rv, rv);
 
     factory.forget(aFactory);
     return NS_OK;
   }
 
+  // Called when using IndexedDB from a JS component or a JSM in the current
+  // process.
   static nsresult Create(JSContext* aCx,
                          JSObject* aOwningObject,
+                         ContentParent* aContentParent,
+                         IDBFactory** aFactory);
+
+  // Called when using IndexedDB from a JS component or a JSM in a different
+  // process.
+  static nsresult Create(ContentParent* aContentParent,
                          IDBFactory** aFactory);
 
   static already_AddRefed<mozIStorageConnection>
@@ -73,6 +93,7 @@ public:
   OpenCommon(const nsAString& aName,
              PRInt64 aVersion,
              bool aDeleting,
+             JSContext* aCallingCx,
              IDBOpenDBRequest** _retval);
 
   void
@@ -89,6 +110,12 @@ public:
     mActorParent = aActorParent;
   }
 
+  const nsCString&
+  GetASCIIOrigin() const
+  {
+    return mASCIIOrigin;
+  }
+
 private:
   IDBFactory();
   ~IDBFactory();
@@ -102,6 +129,10 @@ private:
 
   IndexedDBChild* mActorChild;
   IndexedDBParent* mActorParent;
+
+  mozilla::dom::ContentParent* mContentParent;
+
+  bool mRootedOwningObject;
 };
 
 END_INDEXEDDB_NAMESPACE

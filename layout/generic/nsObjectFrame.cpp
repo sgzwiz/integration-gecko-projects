@@ -45,8 +45,6 @@
 #include "nsIDOMHTMLAppletElement.h"
 #include "nsIDOMWindow.h"
 #include "nsIDOMEventTarget.h"
-#include "nsIDOMNSEvent.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsIDocumentEncoder.h"
 #include "nsXPIDLString.h"
 #include "nsIDOMRange.h"
@@ -119,7 +117,7 @@ static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
 #ifdef XP_MACOSX
 #include "gfxQuartzNativeDrawing.h"
 #include "nsPluginUtilsOSX.h"
-#include "nsCoreAnimationSupport.h"
+#include "mozilla/gfx/QuartzSupport.h"
 #endif
 
 #ifdef MOZ_WIDGET_GTK2
@@ -144,6 +142,11 @@ using mozilla::DefaultXDisplay;
 #define INCL_GPI
 #include <os2.h>
 #include "gfxOS2Surface.h"
+#endif
+
+#ifdef MOZ_WIDGET_ANDROID
+#include "AndroidBridge.h"
+#include "GLContext.h"
 #endif
 
 #ifdef CreateEvent // Thank you MS.
@@ -204,7 +207,7 @@ public:
   ~PluginBackgroundSink()
   {
     if (mFrame) {
-      mFrame->mBackgroundSink = nsnull;
+      mFrame->mBackgroundSink = nullptr;
     }
   }
 
@@ -219,7 +222,7 @@ public:
       BeginUpdate(const nsIntRect& aRect, PRUint64 aSequenceNumber)
   {
     if (!AcceptUpdate(aSequenceNumber))
-      return nsnull;
+      return nullptr;
     return mFrame->mInstanceOwner->BeginUpdateBackground(aRect);
   }
 
@@ -228,7 +231,7 @@ public:
     return mFrame->mInstanceOwner->EndUpdateBackground(aContext, aRect);
   }
 
-  void Destroy() { mFrame = nsnull; }
+  void Destroy() { mFrame = nullptr; }
 
 protected:
   bool AcceptUpdate(PRUint64 aSequenceNumber) {
@@ -270,7 +273,7 @@ nsObjectFrame::CreateAccessible()
   return accService ?
     accService->CreateHTMLObjectFrameAccessible(this, mContent,
                                                 PresContext()->PresShell()) :
-    nsnull;
+    nullptr;
 }
 
 #ifdef XP_WIN
@@ -312,9 +315,9 @@ nsObjectFrame::DestroyFrom(nsIFrame* aDestructRoot)
   }
 
   if (mInstanceOwner) {
-    mInstanceOwner->SetFrame(nsnull);
+    mInstanceOwner->SetFrame(nullptr);
   }
-  SetInstanceOwner(nsnull);
+  SetInstanceOwner(nullptr);
 
   nsObjectFrameSuper::DestroyFrom(aDestructRoot);
 }
@@ -398,9 +401,10 @@ nsObjectFrame::PrepForDrawing(nsIWidget *aWidget)
   }
 
   if (mWidget) {
-    // XXX this breaks plugins in popups ... do we care?
-    nsIWidget* parentWidget = rpc->PresShell()->FrameManager()->GetRootFrame()->GetNearestWidget();
-    if (!parentWidget) {
+    // Disallow plugins in popups
+    nsIFrame* rootFrame = rpc->PresShell()->FrameManager()->GetRootFrame();
+    nsIWidget* parentWidget = rootFrame->GetNearestWidget();
+    if (!parentWidget || nsLayoutUtils::GetDisplayRootFrame(this) != rootFrame) {
       return NS_ERROR_FAILURE;
     }
 
@@ -409,7 +413,7 @@ nsObjectFrame::PrepForDrawing(nsIWidget *aWidget)
       NS_ERROR("Could not create inner view");
       return NS_ERROR_OUT_OF_MEMORY;
     }
-    viewMan->InsertChild(view, mInnerView, nsnull, true);
+    viewMan->InsertChild(view, mInnerView, nullptr, true);
 
     mWidget->SetParent(parentWidget);
 
@@ -691,7 +695,7 @@ nsObjectFrame::FixupWindow(const nsSize& aSize)
 nsresult
 nsObjectFrame::CallSetWindow(bool aCheckIsHidden)
 {
-  NPWindow *win = nsnull;
+  NPWindow *win = nullptr;
  
   nsresult rv = NS_ERROR_FAILURE;
   nsRefPtr<nsNPAPIPluginInstance> pi;
@@ -761,20 +765,20 @@ nsObjectFrame::SetInstanceOwner(nsPluginInstanceOwner* aOwner)
       if (mWidget) {
         if (mInnerView) {
           mInnerView->DetachWidgetEventHandler(mWidget);
-        }
 
-        rpc->UnregisterPluginForGeometryUpdates(this);
-        // Make sure the plugin is hidden in case an update of plugin geometry
-        // hasn't happened since this plugin became hidden.
-        nsIWidget* parent = mWidget->GetParent();
-        if (parent) {
-          nsTArray<nsIWidget::Configuration> configurations;
-          this->GetEmptyClipConfiguration(&configurations);
-          parent->ConfigureChildren(configurations);
+          rpc->UnregisterPluginForGeometryUpdates(this);
+          // Make sure the plugin is hidden in case an update of plugin geometry
+          // hasn't happened since this plugin became hidden.
+          nsIWidget* parent = mWidget->GetParent();
+          if (parent) {
+            nsTArray<nsIWidget::Configuration> configurations;
+            this->GetEmptyClipConfiguration(&configurations);
+            parent->ConfigureChildren(configurations);
 
-          mWidget->Show(false);
-          mWidget->Enable(false);
-          mWidget->SetParent(nsnull);
+            mWidget->Show(false);
+            mWidget->Enable(false);
+            mWidget->SetParent(nullptr);
+          }
         }
       } else {
 #ifndef XP_MACOSX
@@ -952,6 +956,66 @@ nsDisplayPluginReadback::ComputeVisibility(nsDisplayListBuilder* aBuilder,
   return true;
 }
 
+#ifdef MOZ_WIDGET_ANDROID
+
+class nsDisplayPluginVideo : public nsDisplayItem {
+public:
+  nsDisplayPluginVideo(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame, nsNPAPIPluginInstance::VideoInfo* aVideoInfo)
+    : nsDisplayItem(aBuilder, aFrame), mVideoInfo(aVideoInfo)
+  {
+    MOZ_COUNT_CTOR(nsDisplayPluginVideo);
+  }
+#ifdef NS_BUILD_REFCNT_LOGGING
+  virtual ~nsDisplayPluginVideo() {
+    MOZ_COUNT_DTOR(nsDisplayPluginVideo);
+  }
+#endif
+
+  virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap);
+  virtual bool ComputeVisibility(nsDisplayListBuilder* aBuilder,
+                                   nsRegion* aVisibleRegion,
+                                   const nsRect& aAllowVisibleRegionExpansion);
+
+  NS_DISPLAY_DECL_NAME("PluginVideo", TYPE_PLUGIN_VIDEO)
+
+  virtual already_AddRefed<Layer> BuildLayer(nsDisplayListBuilder* aBuilder,
+                                             LayerManager* aManager,
+                                             const ContainerParameters& aContainerParameters)
+  {
+    return static_cast<nsObjectFrame*>(mFrame)->BuildLayer(aBuilder, aManager, this);
+  }
+
+  virtual LayerState GetLayerState(nsDisplayListBuilder* aBuilder,
+                                   LayerManager* aManager,
+                                   const ContainerParameters& aParameters)
+  {
+    return LAYER_ACTIVE;
+  }
+
+  nsNPAPIPluginInstance::VideoInfo* VideoInfo() { return mVideoInfo; }
+
+private:
+  nsNPAPIPluginInstance::VideoInfo* mVideoInfo;
+};
+
+nsRect
+nsDisplayPluginVideo::GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap)
+{
+  *aSnap = false;
+  return GetDisplayItemBounds(aBuilder, this, mFrame);
+}
+
+bool
+nsDisplayPluginVideo::ComputeVisibility(nsDisplayListBuilder* aBuilder,
+                                           nsRegion* aVisibleRegion,
+                                           const nsRect& aAllowVisibleRegionExpansion)
+{
+  return nsDisplayItem::ComputeVisibility(aBuilder, aVisibleRegion,
+                                          aAllowVisibleRegionExpansion);
+}
+
+#endif
+
 nsRect
 nsDisplayPlugin::GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap)
 {
@@ -1039,6 +1103,10 @@ nsObjectFrame::ComputeWidgetGeometry(const nsRegion& aRegion,
     return;
   }
 
+  if (!mInnerView) {
+    return;
+  }
+
   nsPresContext* presContext = PresContext();
   nsRootPresContext* rootPC = presContext->GetRootPresContext();
   if (!rootPC)
@@ -1076,7 +1144,7 @@ nsresult
 nsObjectFrame::PluginEventNotifier::Run() {
   nsCOMPtr<nsIObserverService> obsSvc =
     mozilla::services::GetObserverService();
-  obsSvc->NotifyObservers(nsnull, "plugin-changed-event", mEventType.get());
+  obsSvc->NotifyObservers(nullptr, "plugin-changed-event", mEventType.get());
   return NS_OK;
 }
 
@@ -1102,6 +1170,9 @@ nsObjectFrame::IsOpaque() const
 #if defined(XP_MACOSX)
   // ???
   return false;
+#elif defined(MOZ_WIDGET_ANDROID)
+  // We don't know, so just assume transparent
+  return false;
 #else
   return !IsTransparentMode();
 #endif
@@ -1117,7 +1188,7 @@ nsObjectFrame::IsTransparentMode() const
   if (!mInstanceOwner)
     return false;
 
-  NPWindow *window = nsnull;
+  NPWindow *window = nullptr;
   mInstanceOwner->GetWindow(window);
   if (!window) {
     return false;
@@ -1168,7 +1239,7 @@ nsObjectFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
   nsDisplayList replacedContent;
 
   if (aBuilder->IsForPainting() && mInstanceOwner && mInstanceOwner->UseAsyncRendering()) {
-    NPWindow* window = nsnull;
+    NPWindow* window = nullptr;
     mInstanceOwner->GetWindow(window);
     bool isVisible = window && window->width > 0 && window->height > 0;
     if (isVisible && aBuilder->ShouldSyncDecodeImages()) {
@@ -1190,13 +1261,31 @@ nsObjectFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
         nsDisplayGeneric(aBuilder, this, PaintPrintPlugin, "PrintPlugin",
                          nsDisplayItem::TYPE_PRINT_PLUGIN));
   } else {
+    // We don't need this on Android, and it just confuses things
+#if !MOZ_WIDGET_ANDROID
     if (aBuilder->IsPaintingToWindow() &&
-        GetLayerState(aBuilder, nsnull) == LAYER_ACTIVE &&
+        GetLayerState(aBuilder, nullptr) == LAYER_ACTIVE &&
         IsTransparentMode()) {
       rv = replacedContent.AppendNewToTop(new (aBuilder)
           nsDisplayPluginReadback(aBuilder, this));
       NS_ENSURE_SUCCESS(rv, rv);
     }
+#endif
+
+#if MOZ_WIDGET_ANDROID
+    if (aBuilder->IsPaintingToWindow() &&
+        GetLayerState(aBuilder, nullptr) == LAYER_ACTIVE) {
+
+      nsTArray<nsNPAPIPluginInstance::VideoInfo*> videos;
+      mInstanceOwner->GetVideos(videos);
+      
+      for (int i = 0; i < videos.Length(); i++) {
+        rv = replacedContent.AppendNewToTop(new (aBuilder)
+          nsDisplayPluginVideo(aBuilder, this, videos[i]));
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+    }
+#endif
 
     rv = replacedContent.AppendNewToTop(new (aBuilder)
         nsDisplayPlugin(aBuilder, this));
@@ -1215,7 +1304,7 @@ GetPSFromRC(nsRenderingContext& aRenderingContext)
   nsRefPtr<gfxASurface>
     surf = aRenderingContext.ThebesContext()->CurrentSurface();
   if (!surf || surf->CairoStatus())
-    return nsnull;
+    return nullptr;
   return (void *)(static_cast<gfxOS2Surface*>
                   (static_cast<gfxASurface*>(surf.get()))->GetPS());
 }
@@ -1229,7 +1318,7 @@ nsObjectFrame::PrintPlugin(nsRenderingContext& aRenderingContext,
   if (!obj)
     return;
 
-  nsIFrame* frame = nsnull;
+  nsIFrame* frame = nullptr;
   obj->GetPrintFrame(&frame);
   if (!frame)
     return;
@@ -1250,7 +1339,7 @@ nsObjectFrame::PrintPlugin(nsRenderingContext& aRenderingContext,
 
   // now we need to setup the correct location for printing
   NPWindow window;
-  window.window = nsnull;
+  window.window = nullptr;
 
   // prepare embedded mode printing struct
   NPPrint npprint;
@@ -1437,7 +1526,7 @@ nsObjectFrame::PrintPlugin(nsRenderingContext& aRenderingContext,
   // XXX Calling DidReflow here makes no sense!!!
   nsDidReflowStatus status = NS_FRAME_REFLOW_FINISHED; // should we use a special status?
   frame->DidReflow(presContext,
-                   nsnull, status);  // DidReflow will take care of it
+                   nullptr, status);  // DidReflow will take care of it
 }
 
 already_AddRefed<ImageContainer>
@@ -1479,7 +1568,7 @@ nsObjectFrame::UpdateImageLayer(const gfxRect& aRect)
 
 #ifdef XP_MACOSX
   if (!mInstanceOwner->UseAsyncRendering()) {
-    mInstanceOwner->DoCocoaEventDrawRect(aRect, nsnull);
+    mInstanceOwner->DoCocoaEventDrawRect(aRect, nullptr);
     // This makes sure the image on the container is up to date.
     // XXX - Eventually we probably just want to make sure DoCocoaEventDrawRect
     // updates the image container, to make this truly use 'push' semantics
@@ -1504,6 +1593,12 @@ nsObjectFrame::GetLayerState(nsDisplayListBuilder* aBuilder,
   }
 #endif
 
+#ifdef MOZ_WIDGET_ANDROID
+  // We always want a layer on Honeycomb and later
+  if (AndroidBridge::Bridge()->GetAPIVersion() >= 11)
+    return LAYER_ACTIVE;
+#endif
+
   if (!mInstanceOwner->UseAsyncRendering()) {
     return LAYER_NONE;
   }
@@ -1517,22 +1612,22 @@ nsObjectFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
                           nsDisplayItem* aItem)
 {
   if (!mInstanceOwner)
-    return nsnull;
+    return nullptr;
 
-  NPWindow* window = nsnull;
+  NPWindow* window = nullptr;
   mInstanceOwner->GetWindow(window);
   if (!window)
-    return nsnull;
+    return nullptr;
 
   if (window->width <= 0 || window->height <= 0)
-    return nsnull;
+    return nullptr;
 
   // Create image
   nsRefPtr<ImageContainer> container = mInstanceOwner->GetImageContainer();
 
   if (!container) {
     // This can occur if our instance is gone.
-    return nsnull;
+    return nullptr;
   }
 
   gfxIntSize size;
@@ -1551,7 +1646,7 @@ nsObjectFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
   // to provide crisper and faster drawing.
   r.Round();
   nsRefPtr<Layer> layer =
-    (aBuilder->LayerBuilder()->GetLeafLayerFor(aBuilder, aManager, aItem));
+    (GetLayerBuilderForManager(aManager)->GetLeafLayerFor(aBuilder, aManager, aItem));
 
   if (aItem->GetType() == nsDisplayItem::TYPE_PLUGIN) {
     if (!layer) {
@@ -1559,7 +1654,7 @@ nsObjectFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
       // Initialize ImageLayer
       layer = aManager->CreateImageLayer();
       if (!layer)
-        return nsnull;
+        return nullptr;
     }
 
     NS_ASSERTION(layer->GetType() == Layer::TYPE_IMAGE, "Bad layer type");
@@ -1582,6 +1677,32 @@ nsObjectFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
     imglayer->SetFilter(filter);
 
     layer->SetContentFlags(IsOpaque() ? Layer::CONTENT_OPAQUE : 0);
+#ifdef MOZ_WIDGET_ANDROID
+  } else if (aItem->GetType() == nsDisplayItem::TYPE_PLUGIN_VIDEO) {
+    nsDisplayPluginVideo* videoItem = reinterpret_cast<nsDisplayPluginVideo*>(aItem);
+    nsNPAPIPluginInstance::VideoInfo* videoInfo = videoItem->VideoInfo();
+
+    nsRefPtr<ImageContainer> container = mInstanceOwner->GetImageContainerForVideo(videoInfo);
+    if (!container)
+      return nullptr;
+
+    if (!layer) {
+      // Initialize ImageLayer
+      layer = aManager->CreateImageLayer();
+      if (!layer)
+        return nullptr;
+    }
+
+    ImageLayer* imglayer = static_cast<ImageLayer*>(layer.get());
+    imglayer->SetContainer(container);
+
+    layer->SetContentFlags(IsOpaque() ? Layer::CONTENT_OPAQUE : 0);
+
+    // Set the offset and size according to the video dimensions
+    r.MoveBy(videoInfo->mDimensions.TopLeft());
+    size.width = videoInfo->mDimensions.width;
+    size.height = videoInfo->mDimensions.height;
+#endif
   } else {
     NS_ASSERTION(aItem->GetType() == nsDisplayItem::TYPE_PLUGIN_READBACK,
                  "Unknown item type");
@@ -1590,7 +1711,7 @@ nsObjectFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
     if (!layer) {
       layer = aManager->CreateReadbackLayer();
       if (!layer)
-        return nsnull;
+        return nullptr;
     }
     NS_ASSERTION(layer->GetType() == Layer::TYPE_READBACK, "Bad layer type");
 
@@ -1598,7 +1719,7 @@ nsObjectFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
     if (readback->GetSize() != nsIntSize(size.width, size.height)) {
       // This will destroy any old background sink and notify us that the
       // background is now unknown
-      readback->SetSink(nsnull);
+      readback->SetSink(nullptr);
       readback->SetSize(nsIntSize(size.width, size.height));
 
       if (mBackgroundSink) {
@@ -1621,7 +1742,7 @@ nsObjectFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
   gfxMatrix transform;
   transform.Translate(r.TopLeft());
 
-  layer->SetTransform(gfx3DMatrix::From2D(transform));
+  layer->SetBaseTransform(gfx3DMatrix::From2D(transform));
   layer->SetVisibleRegion(nsIntRect(0, 0, size.width, size.height));
   return layer.forget();
 }
@@ -1801,7 +1922,7 @@ nsObjectFrame::PaintPlugin(nsDisplayListBuilder* aBuilder,
         pluginEvent.wParam = 0;
         pluginEvent.lParam = 0;
         if (pluginEvent.event)
-          inst->HandleEvent(&pluginEvent, nsnull);
+          inst->HandleEvent(&pluginEvent, nullptr);
       }
       do {
         HDC hdc = nativeDraw.BeginNativeDrawing();
@@ -1857,7 +1978,7 @@ nsObjectFrame::PaintPlugin(nsDisplayListBuilder* aBuilder,
           pluginEvent.event = WM_WINDOWPOSCHANGED;
           pluginEvent.wParam = 0;
           pluginEvent.lParam = (LPARAM)&winpos;
-          inst->HandleEvent(&pluginEvent, nsnull);
+          inst->HandleEvent(&pluginEvent, nullptr);
         }
 
         inst->SetWindow(window);
@@ -2037,7 +2158,7 @@ nsObjectFrame::HandlePress(nsPresContext* aPresContext,
 nsresult
 nsObjectFrame::GetPluginInstance(nsNPAPIPluginInstance** aPluginInstance)
 {
-  *aPluginInstance = nsnull;
+  *aPluginInstance = nullptr;
 
   if (!mInstanceOwner) {
     return NS_OK;
@@ -2098,7 +2219,7 @@ nsObjectFrame::GetNextObjectFrame(nsPresContext* aPresContext, nsIFrame* aRoot)
     child = child->GetNextSibling();
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 /*static*/ void
@@ -2134,7 +2255,7 @@ nsObjectFrame::EndSwapDocShells(nsIContent* aContent, void*)
   nsObjectFrame* objectFrame = static_cast<nsObjectFrame*>(obj);
   nsRootPresContext* rootPC = objectFrame->PresContext()->GetRootPresContext();
   NS_ASSERTION(rootPC, "unable to register the plugin frame");
-  nsIWidget* widget = objectFrame->GetWidget();
+  nsIWidget* widget = objectFrame->mWidget;
   if (widget) {
     // Reparent the widget.
     nsIWidget* parent =

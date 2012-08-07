@@ -40,6 +40,7 @@ public:
   // nsSVGPaintServerFrame methods:
   virtual already_AddRefed<gfxPattern>
     GetPaintServerPattern(nsIFrame *aSource,
+                          const gfxMatrix& aContextMatrix,
                           nsStyleSVGPaint nsStyleSVG::*aFillOrStroke,
                           float aOpacity,
                           const gfxRect *aOverrideBounds);
@@ -48,7 +49,7 @@ public:
   typedef mozilla::SVGAnimatedPreserveAspectRatio SVGAnimatedPreserveAspectRatio;
 
   // nsSVGContainerFrame methods:
-  virtual gfxMatrix GetCanvasTM();
+  virtual gfxMatrix GetCanvasTM(PRUint32 aFor);
 
   // nsIFrame interface:
   virtual void DidSetStyleContext(nsStyleContext* aOldStyleContext);
@@ -108,25 +109,22 @@ protected:
 
   nsresult PaintPattern(gfxASurface **surface,
                         gfxMatrix *patternMatrix,
+                        const gfxMatrix &aContextMatrix,
                         nsIFrame *aSource,
                         nsStyleSVGPaint nsStyleSVG::*aFillOrStroke,
                         float aGraphicOpacity,
                         const gfxRect *aOverrideBounds);
   nsIFrame*  GetPatternFirstChild();
-  gfxRect    GetPatternRect(const gfxRect &bbox,
+  gfxRect    GetPatternRect(PRUint16 aPatternUnits,
+                            const gfxRect &bbox,
                             const gfxMatrix &callerCTM,
                             nsIFrame *aTarget);
-  gfxMatrix  GetPatternMatrix(const gfxMatrix &patternTransform,
-                              const gfxRect &bbox,
-                              const gfxRect &callerBBox,
-                              const gfxMatrix &callerCTM);
-  gfxMatrix  ConstructCTM(const gfxRect &callerBBox,
+  gfxMatrix  ConstructCTM(const nsSVGViewBox& aViewBox,
+                          PRUint16 aPatternContentUnits,
+                          PRUint16 aPatternUnits,
+                          const gfxRect &callerBBox,
                           const gfxMatrix &callerCTM,
                           nsIFrame *aTarget);
-  nsresult   GetTargetGeometry(gfxMatrix *aCTM,
-                               gfxRect *aBBox,
-                               nsIFrame *aTarget,
-                               const gfxRect *aOverrideBounds);
 
 private:
   // this is a *temporary* reference to the frame of the element currently

@@ -39,7 +39,7 @@ using namespace mozilla::net;
 //-----------------------------------------------------------------------------
 
 nsHttpConnection::nsHttpConnection()
-    : mTransaction(nsnull)
+    : mTransaction(nullptr)
     , mIdleTimeout(0)
     , mConsiderReusedAfterInterval(0)
     , mConsiderReusedAfterEpoch(0)
@@ -49,6 +49,7 @@ nsHttpConnection::nsHttpConnection()
     , mTotalBytesWritten(0)
     , mKeepAlive(true) // assume to keep-alive by default
     , mKeepAliveMask(true)
+    , mDontReuse(false)
     , mSupportsPipelining(false) // assume low-grade server
     , mIsReused(false)
     , mCompletedProxyConnect(false)
@@ -77,7 +78,7 @@ nsHttpConnection::~nsHttpConnection()
     LOG(("Destroying nsHttpConnection @%x\n", this));
 
     if (mCallbacks) {
-        nsIInterfaceRequestor *cbs = nsnull;
+        nsIInterfaceRequestor *cbs = nullptr;
         mCallbacks.swap(cbs);
         NS_ProxyRelease(mCallbackTarget, cbs);
     }
@@ -135,7 +136,7 @@ nsHttpConnection::Init(nsHttpConnectionInfo *info,
     mSocketTransport = transport;
     mSocketIn = instream;
     mSocketOut = outstream;
-    nsresult rv = mSocketTransport->SetEventSink(this, nsnull);
+    nsresult rv = mSocketTransport->SetEventSink(this, nullptr);
     NS_ENSURE_SUCCESS(rv, rv);
 
     mCallbacks = callbacks;
@@ -349,8 +350,7 @@ nsHttpConnection::Activate(nsAHttpTransaction *trans, PRUint8 caps, PRInt32 pri)
 
     // need to handle HTTP CONNECT tunnels if this is the first time if
     // we are tunneling through a proxy
-    if (((mConnInfo->UsingSSL() && mConnInfo->UsingHttpProxy()) ||
-         mConnInfo->ShouldForceConnectMethod()) && !mCompletedProxyConnect) {
+    if (mConnInfo->UsingConnect() && !mCompletedProxyConnect) {
         rv = SetupProxyConnect();
         if (NS_FAILED(rv))
             goto failed_activation;
@@ -361,13 +361,13 @@ nsHttpConnection::Activate(nsAHttpTransaction *trans, PRUint8 caps, PRInt32 pri)
     mCurrentBytesRead = 0;
 
     // The overflow state is not needed between activations
-    mInputOverflow = nsnull;
+    mInputOverflow = nullptr;
 
     rv = OnOutputStreamReady(mSocketOut);
     
 failed_activation:
     if (NS_FAILED(rv)) {
-        mTransaction = nsnull;
+        mTransaction = nullptr;
     }
 
     return rv;
@@ -485,8 +485,8 @@ nsHttpConnection::Close(nsresult reason)
             EndIdleMonitoring();
 
         if (mSocketTransport) {
-            mSocketTransport->SetSecurityCallbacks(nsnull);
-            mSocketTransport->SetEventSink(nsnull, nsnull);
+            mSocketTransport->SetSecurityCallbacks(nullptr);
+            mSocketTransport->SetEventSink(nullptr, nullptr);
             mSocketTransport->Close(reason);
         }
         mKeepAlive = false;
@@ -517,6 +517,7 @@ nsHttpConnection::DontReuse()
 {
     mKeepAliveMask = false;
     mKeepAlive = false;
+    mDontReuse = true;
     mIdleTimeout = 0;
     if (mSpdySession)
         mSpdySession->DontReuse();
@@ -533,12 +534,15 @@ nsHttpConnection::SupportsPipelining()
              this, mTransaction->PipelineDepth(), mRemainingConnectionUses));
         return false;
     }
-    return mSupportsPipelining && IsKeepAlive();
+    return mSupportsPipelining && IsKeepAlive() && !mDontReuse;
 }
 
 bool
 nsHttpConnection::CanReuse()
 {
+    if (mDontReuse)
+        return false;
+
     if ((mTransaction ? mTransaction->PipelineDepth() : 0) >=
         mRemainingConnectionUses) {
         return false;
@@ -637,7 +641,7 @@ nsHttpConnection::SupportsPipelining(nsHttpResponseHead *responseHead)
         return false;
 
     // assuming connection is HTTP/1.1 with keep-alive enabled
-    if (mConnInfo->UsingHttpProxy() && !mConnInfo->UsingSSL()) {
+    if (mConnInfo->UsingHttpProxy() && !mConnInfo->UsingConnect()) {
         // XXX check for bad proxy servers...
         return true;
     }
@@ -655,24 +659,24 @@ nsHttpConnection::SupportsPipelining(nsHttpResponseHead *responseHead)
     // so we can do a leading match. 
 
     static const char *bad_servers[26][6] = {
-        { nsnull }, { nsnull }, { nsnull }, { nsnull },                 // a - d
-        { "EFAServer/", nsnull },                                       // e
-        { nsnull }, { nsnull }, { nsnull }, { nsnull },                 // f - i
-        { nsnull }, { nsnull }, { nsnull },                             // j - l 
-        { "Microsoft-IIS/4.", "Microsoft-IIS/5.", nsnull },             // m
+        { nullptr }, { nullptr }, { nullptr }, { nullptr },                 // a - d
+        { "EFAServer/", nullptr },                                       // e
+        { nullptr }, { nullptr }, { nullptr }, { nullptr },                 // f - i
+        { nullptr }, { nullptr }, { nullptr },                             // j - l 
+        { "Microsoft-IIS/4.", "Microsoft-IIS/5.", nullptr },             // m
         { "Netscape-Enterprise/3.", "Netscape-Enterprise/4.", 
-          "Netscape-Enterprise/5.", "Netscape-Enterprise/6.", nsnull }, // n
-        { nsnull }, { nsnull }, { nsnull }, { nsnull },                 // o - r
-        { nsnull }, { nsnull }, { nsnull }, { nsnull },                 // s - v
+          "Netscape-Enterprise/5.", "Netscape-Enterprise/6.", nullptr }, // n
+        { nullptr }, { nullptr }, { nullptr }, { nullptr },                 // o - r
+        { nullptr }, { nullptr }, { nullptr }, { nullptr },                 // s - v
         { "WebLogic 3.", "WebLogic 4.","WebLogic 5.", "WebLogic 6.",
-          "Winstone Servlet Engine v0.", nsnull },                      // w 
-        { nsnull }, { nsnull }, { nsnull }                              // x - z
+          "Winstone Servlet Engine v0.", nullptr },                      // w 
+        { nullptr }, { nullptr }, { nullptr }                              // x - z
     };  
 
     int index = val[0] - 'A'; // the whole table begins with capital letters
     if ((index >= 0) && (index <= 25))
     {
-        for (int i = 0; bad_servers[index][i] != nsnull; i++) {
+        for (int i = 0; bad_servers[index][i] != nullptr; i++) {
             if (!PL_strncmp (val, bad_servers[index][i], strlen (bad_servers[index][i]))) {
                 LOG(("looks like this server does not support pipelining"));
                 gHttpHandler->ConnMgr()->PipelineFeedbackInfo(
@@ -849,7 +853,7 @@ nsHttpConnection::OnHeadersAvailable(nsAHttpTransaction *trans,
             }
             mCompletedProxyConnect = true;
             mProxyConnectInProgress = false;
-            rv = mSocketOut->AsyncWait(this, 0, 0, nsnull);
+            rv = mSocketOut->AsyncWait(this, 0, 0, nullptr);
             // XXX what if this fails -- need to handle this error
             NS_ASSERTION(NS_SUCCEEDED(rv), "mSocketOut->AsyncWait failed");
         }
@@ -923,11 +927,11 @@ nsHttpConnection::TakeTransport(nsISocketTransport  **aTransport,
     NS_IF_ADDREF(*aInputStream = mSocketIn);
     NS_IF_ADDREF(*aOutputStream = mSocketOut);
 
-    mSocketTransport->SetSecurityCallbacks(nsnull);
-    mSocketTransport->SetEventSink(nsnull, nsnull);
-    mSocketTransport = nsnull;
-    mSocketIn = nsnull;
-    mSocketOut = nsnull;
+    mSocketTransport->SetSecurityCallbacks(nullptr);
+    mSocketTransport->SetEventSink(nullptr, nullptr);
+    mSocketTransport = nullptr;
+    mSocketIn = nullptr;
+    mSocketOut = nullptr;
     
     return NS_OK;
 }
@@ -963,24 +967,23 @@ nsHttpConnection::ReadTimeoutTick(PRIntervalTime now)
 
     PRUint32 pipelineDepth = mTransaction->PipelineDepth();
 
-    if (delta >= gHttpHandler->GetPipelineRescheduleTimeout()) {
+    if (delta >= gHttpHandler->GetPipelineRescheduleTimeout() &&
+        pipelineDepth > 1) {
 
         // this just reschedules blocked transactions. no transaction
         // is aborted completely.
         LOG(("cancelling pipeline due to a %ums stall - depth %d\n",
              PR_IntervalToMilliseconds(delta), pipelineDepth));
 
-        if (pipelineDepth > 1) {
-            nsHttpPipeline *pipeline = mTransaction->QueryPipeline();
-            NS_ABORT_IF_FALSE(pipeline, "pipelinedepth > 1 without pipeline");
-            // code this defensively for the moment and check for null in opt build
-            // This will reschedule blocked members of the pipeline, but the
-            // blocking transaction (i.e. response 0) will not be changed.
-            if (pipeline) {
-                pipeline->CancelPipeline(NS_ERROR_NET_TIMEOUT);
-                LOG(("Rescheduling the head of line blocked members of a pipeline "
-                     "because reschedule-timeout idle interval exceeded"));
-            }
+        nsHttpPipeline *pipeline = mTransaction->QueryPipeline();
+        NS_ABORT_IF_FALSE(pipeline, "pipelinedepth > 1 without pipeline");
+        // code this defensively for the moment and check for null in opt build
+        // This will reschedule blocked members of the pipeline, but the
+        // blocking transaction (i.e. response 0) will not be changed.
+        if (pipeline) {
+            pipeline->CancelPipeline(NS_ERROR_NET_TIMEOUT);
+            LOG(("Rescheduling the head of line blocked members of a pipeline "
+                 "because reschedule-timeout idle interval exceeded"));
         }
     }
 
@@ -1012,7 +1015,7 @@ nsHttpConnection::GetSecurityInfo(nsISupports **secinfo)
 
     if (mSocketTransport) {
         if (NS_FAILED(mSocketTransport->GetSecurityInfo(secinfo)))
-            *secinfo = nsnull;
+            *secinfo = nullptr;
     }
 }
 
@@ -1038,7 +1041,7 @@ nsHttpConnection::ResumeSend()
     NS_ASSERTION(PR_GetCurrentThread() == gSocketThread, "wrong thread");
 
     if (mSocketOut)
-        return mSocketOut->AsyncWait(this, 0, 0, nsnull);
+        return mSocketOut->AsyncWait(this, 0, 0, nullptr);
 
     NS_NOTREACHED("no socket output stream");
     return NS_ERROR_UNEXPECTED;
@@ -1060,7 +1063,7 @@ nsHttpConnection::ResumeRecv()
     mLastReadTime = PR_IntervalNow();
 
     if (mSocketIn)
-        return mSocketIn->AsyncWait(this, 0, 0, nsnull);
+        return mSocketIn->AsyncWait(this, 0, 0, nullptr);
 
     NS_NOTREACHED("no socket input stream");
     return NS_ERROR_UNEXPECTED;
@@ -1077,7 +1080,7 @@ nsHttpConnection::BeginIdleMonitoring()
     LOG(("Entering Idle Monitoring Mode [this=%p]", this));
     mIdleMonitoring = true;
     if (mSocketIn)
-        mSocketIn->AsyncWait(this, 0, 0, nsnull);
+        mSocketIn->AsyncWait(this, 0, 0, nullptr);
 }
 
 void
@@ -1091,7 +1094,7 @@ nsHttpConnection::EndIdleMonitoring()
         LOG(("Leaving Idle Monitoring Mode [this=%p]", this));
         mIdleMonitoring = false;
         if (mSocketIn)
-            mSocketIn->AsyncWait(nsnull, 0, 0, nsnull);
+            mSocketIn->AsyncWait(nullptr, 0, 0, nullptr);
     }
 }
 
@@ -1119,18 +1122,18 @@ nsHttpConnection::CloseTransaction(nsAHttpTransaction *trans, nsresult reason)
         DontReuse();
         // if !mSpdySession then mUsingSpdyVersion must be false for canreuse()
         mUsingSpdyVersion = 0;
-        mSpdySession = nsnull;
+        mSpdySession = nullptr;
     }
 
     if (mTransaction) {
         mHttp1xTransactionCount += mTransaction->Http1xTransactionCount();
 
         mTransaction->Close(reason);
-        mTransaction = nsnull;
+        mTransaction = nullptr;
     }
 
     if (mCallbacks) {
-        nsIInterfaceRequestor *cbs = nsnull;
+        nsIInterfaceRequestor *cbs = nullptr;
         mCallbacks.swap(cbs);
         NS_ProxyRelease(mCallbackTarget, cbs);
     }
@@ -1251,7 +1254,7 @@ nsHttpConnection::OnSocketWritable()
         }
         else if (NS_FAILED(mSocketOutCondition)) {
             if (mSocketOutCondition == NS_BASE_STREAM_WOULD_BLOCK)
-                rv = mSocketOut->AsyncWait(this, 0, 0, nsnull); // continue writing
+                rv = mSocketOut->AsyncWait(this, 0, 0, nullptr); // continue writing
             else
                 rv = mSocketOutCondition;
             again = false;
@@ -1264,7 +1267,7 @@ nsHttpConnection::OnSocketWritable()
             // trumped (overwritten) if the server responds quickly.
             //
             mTransaction->OnTransportStatus(mSocketTransport,
-                                            nsISocketTransport::STATUS_WAITING_FOR,
+                                            NS_NET_STATUS_WAITING_FOR,
                                             LL_ZERO);
 
             rv = ResumeRecv(); // start reading
@@ -1366,6 +1369,20 @@ nsHttpConnection::OnSocketReadable()
     bool again = true;
 
     do {
+        if (!mProxyConnectInProgress && !mNPNComplete) {
+            // Unless we are setting up a tunnel via CONNECT, prevent reading
+            // from the socket until the results of NPN
+            // negotiation are known (which is determined from the write path).
+            // If the server speaks SPDY it is likely the readable data here is
+            // a spdy settings frame and without NPN it would be misinterpreted
+            // as HTTP/*
+
+            LOG(("nsHttpConnection::OnSocketReadable %p return due to inactive "
+                 "tunnel setup but incomplete NPN state\n", this));
+            rv = NS_OK;
+            break;
+        }
+
         rv = mTransaction->WriteSegments(this, nsIOService::gDefaultSegmentSize, &n);
         if (NS_FAILED(rv)) {
             // if the transaction didn't want to take any more data, then

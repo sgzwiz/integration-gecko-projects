@@ -102,11 +102,12 @@ function ContentPrefService() {
 
   // detect if we are in private browsing mode
   this._inPrivateBrowsing = false;
-  try { // The Private Browsing service might not be available.
+  // The Private Browsing service might not be available.
+  if (["@mozilla.org/privatebrowsing;1"] in Cc) {
     var pbs = Cc["@mozilla.org/privatebrowsing;1"].
                 getService(Ci.nsIPrivateBrowsingService);
     this._inPrivateBrowsing = pbs.privateBrowsingEnabled;
-  } catch (e) {}
+  }
   this._observerSvc.addObserver(this, "private-browsing", false);
 
   // Observe shutdown so we can shut down the database connection.
@@ -117,8 +118,8 @@ var inMemoryPrefsProto = {
   getPref: function(aName, aGroup) {
     aGroup = aGroup || "__GlobalPrefs__";
 
-    if (this._prefCache[aGroup] && this._prefCache[aGroup].hasOwnProperty(aName)) {
-      let value = this._prefCache[aGroup][aName];
+    if (this._prefCache[aGroup] && this._prefCache[aGroup].has(aName)) {
+      let value = this._prefCache[aGroup].get(aName);
       return [true, value];
     }
     return [false, undefined];
@@ -136,9 +137,9 @@ var inMemoryPrefsProto = {
   removePref: function(aName, aGroup) {
     aGroup = aGroup || "__GlobalPrefs__";
 
-    if (this._prefCache[aGroup].hasOwnProperty(aName)) {
-      delete this._prefCache[aGroup][aName];
-      if (Object.keys(this._prefCache[aGroup]).length == 0) {
+    if (this._prefCache[aGroup].has(aName)) {
+      this._prefCache[aGroup].delete(aName);
+      if (this._prefCache[aGroup].size() == 0) {
         // remove empty group
         delete this._prefCache[aGroup];
       }
@@ -309,7 +310,6 @@ ContentPrefService.prototype = {
 
   //**************************************************************************//
   // Prefs cache
-
   _cache: Object.create(inMemoryPrefsProto, {
     _prefCache: { 
       value: {}, configurable: true, writable: true, enumerable: true
@@ -321,11 +321,11 @@ ContentPrefService.prototype = {
 
         if (!this._prefCache[aGroup]) {
           this._possiblyCleanCache();
-          this._prefCache[aGroup] = {};
+          this._prefCache[aGroup] = new Map();
         }
 
-        this._prefCache[aGroup][aName] = aValue;
-      },
+        this._prefCache[aGroup].set(aName, aValue);
+      }
     },
 
     _possiblyCleanCache: { value:
@@ -358,10 +358,10 @@ ContentPrefService.prototype = {
         aGroup = aGroup || "__GlobalPrefs__";
 
         if (!this._prefCache[aGroup]) {
-          this._prefCache[aGroup] = {};
+          this._prefCache[aGroup] = new Map();
         }
 
-        this._prefCache[aGroup][aName] = aValue;
+        this._prefCache[aGroup].set(aName, aValue);
       }
     },
 
@@ -594,10 +594,8 @@ ContentPrefService.prototype = {
         let prefs = Cc["@mozilla.org/hash-property-bag;1"].
                     createInstance(Ci.nsIWritablePropertyBag);
         let [hasbranch,properties] = this._privModeStorage.getPrefs(group);
-        for (let entry in properties) {
-          if (properties.hasOwnProperty(entry)) {
-            prefs.setProperty(entry, properties[entry]);
-          }
+        for (let [entry, value] of properties) {
+          prefs.setProperty(entry, value);
         }
         return prefs;
     }

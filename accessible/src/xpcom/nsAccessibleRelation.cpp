@@ -11,12 +11,14 @@
 #include "nsArrayUtils.h"
 #include "nsComponentManagerUtils.h"
 
+using namespace mozilla::a11y;
+
 nsAccessibleRelation::nsAccessibleRelation(PRUint32 aType,
                                            Relation* aRel) :
   mType(aType)
 {
   mTargets = do_CreateInstance(NS_ARRAY_CONTRACTID);
-  nsIAccessible* targetAcc = nsnull;
+  nsIAccessible* targetAcc = nullptr;
   while ((targetAcc = aRel->Next()))
     mTargets->AppendElement(targetAcc, false);
 }

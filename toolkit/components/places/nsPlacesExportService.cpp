@@ -99,10 +99,10 @@ char*
 nsEscapeHTML(const char* string)
 {
   /* XXX Hardcoded max entity len. The +1 is for the trailing null. */
-  char* escaped = nsnull;
+  char* escaped = nullptr;
   PRUint32 len = strlen(string);
   if (len >= (PR_UINT32_MAX / 6))
-    return nsnull;
+    return nullptr;
 
   escaped = (char*)NS_Alloc((len * 6) + 1);
   if (escaped) {
@@ -168,7 +168,7 @@ nsPlacesExportService::~nsPlacesExportService()
   NS_ASSERTION(gExportService == this,
                "Deleting a non-singleton instance of the service");
   if (gExportService == this)
-    gExportService = nsnull;
+    gExportService = nullptr;
 }
 
 nsresult
@@ -187,28 +187,6 @@ nsPlacesExportService::Init()
   NS_ENSURE_TRUE(mLivemarkService, NS_ERROR_OUT_OF_MEMORY);
   return NS_OK;
 }
-
-// SyncChannelStatus
-//
-//    If a function returns an error, we need to set the channel status to be
-//    the same, but only if the channel doesn't have its own error. This returns
-//    the error code that should be sent to OnStopRequest.
-static nsresult
-SyncChannelStatus(nsIChannel* channel, nsresult status)
-{
-  nsresult channelStatus;
-  channel->GetStatus(&channelStatus);
-  if (NS_FAILED(channelStatus))
-    return channelStatus;
-
-  if (NS_SUCCEEDED(status))
-    return NS_OK; // caller and the channel are happy
-
-  // channel was OK, but caller wasn't: set the channel state
-  channel->Cancel(status);
-  return status;
-}
-
 
 static char kFileIntro[] =
     "<!DOCTYPE NETSCAPE-Bookmark-file-1>" NS_LINEBREAK
@@ -581,7 +559,7 @@ nsPlacesExportService::WriteItem(nsINavHistoryResultNode* aItem,
   nsresult rv = aItem->GetUri(uri);
   NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIURI> pageURI;
-  rv = NS_NewURI(getter_AddRefs(pageURI), uri, nsnull);
+  rv = NS_NewURI(getter_AddRefs(pageURI), uri, nullptr);
   if (NS_FAILED(rv)) {
     nsCAutoString warnMsg;
     warnMsg.Append("Bookmarks Export: Found invalid item uri '");
@@ -946,7 +924,7 @@ nsPlacesExportService::WriteContainerContents(nsINavHistoryResultNode* aFolder,
 
 
 NS_IMETHODIMP
-nsPlacesExportService::ExportHTMLToFile(nsILocalFile* aBookmarksFile)
+nsPlacesExportService::ExportHTMLToFile(nsIFile* aBookmarksFile)
 {
   NS_ENSURE_ARG(aBookmarksFile);
 
@@ -1105,14 +1083,12 @@ nsPlacesExportService::BackupBookmarksFile()
                               getter_AddRefs(bookmarksFileDir));
 
   NS_ENSURE_SUCCESS(rv, rv);
-  nsCOMPtr<nsILocalFile> bookmarksFile = do_QueryInterface(bookmarksFileDir);
-  NS_ENSURE_STATE(bookmarksFile);
 
   // Create the file if it doesn't exist.
   bool exists;
-  rv = bookmarksFile->Exists(&exists);
+  rv = bookmarksFileDir->Exists(&exists);
   if (NS_FAILED(rv) || !exists) {
-    rv = bookmarksFile->Create(nsIFile::NORMAL_FILE_TYPE, 0600);
+    rv = bookmarksFileDir->Create(nsIFile::NORMAL_FILE_TYPE, 0600);
     if (NS_FAILED(rv)) {
       NS_WARNING("Unable to create bookmarks.html!");
       return rv;
@@ -1120,7 +1096,7 @@ nsPlacesExportService::BackupBookmarksFile()
   }
 
   // export bookmarks.html
-  rv = ExportHTMLToFile(bookmarksFile);
+  rv = ExportHTMLToFile(bookmarksFileDir);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;

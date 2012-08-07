@@ -14,6 +14,7 @@
 #include "nsSVGElement.h"
 #include "nsTArray.h"
 #include "SVGPathData.h" // IWYU pragma: keep
+#include "mozilla/Attributes.h"
 
 class nsIDOMSVGPathSeg;
 
@@ -47,8 +48,8 @@ class SVGAnimatedPathSegList;
  *
  * Our DOM items are created lazily on demand as and when script requests them.
  */
-class DOMSVGPathSegList : public nsIDOMSVGPathSegList,
-                          public nsWrapperCache
+class DOMSVGPathSegList MOZ_FINAL : public nsIDOMSVGPathSegList,
+                                    public nsWrapperCache
 {
   friend class DOMSVGPathSeg;
 
@@ -90,7 +91,7 @@ public:
   /**
    * This method returns the DOMSVGPathSegList wrapper for an internal
    * SVGPathData object if it currently has a wrapper. If it does
-   * not, then nsnull is returned.
+   * not, then nullptr is returned.
    */
   static DOMSVGPathSegList*
   GetDOMWrapperIfExists(void *aList);

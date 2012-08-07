@@ -5,6 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/Assertions.h"
+
 #include "jstypes.h"
 
 #include "js/Utility.h"
@@ -24,7 +26,8 @@ InitMemorySubsystem()
 {
     SYSTEM_INFO sysinfo;
     GetSystemInfo(&sysinfo);
-    JS_OPT_ASSERT(sysinfo.dwPageSize == PageSize);
+    if (sysinfo.dwPageSize != PageSize)
+        MOZ_CRASH();
     AllocationGranularity = sysinfo.dwAllocationGranularity;
 }
 
@@ -292,14 +295,15 @@ GetPageFaultCount()
 #elif defined(XP_UNIX) || defined(XP_MACOSX) || defined(DARWIN)
 
 #include <sys/mman.h>
-#include <unistd.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <unistd.h>
 
 void
 InitMemorySubsystem()
 {
-    JS_OPT_ASSERT(size_t(sysconf(_SC_PAGESIZE)) == PageSize);
+    if (size_t(sysconf(_SC_PAGESIZE)) != PageSize)
+        MOZ_CRASH();
 }
 
 void *
@@ -319,7 +323,7 @@ MapAlignedPages(size_t size, size_t alignment)
     }
 
     /* Overallocate and unmap the region's edges. */
-    size_t reqSize = JS_MIN(size + 2 * alignment, 2 * size);
+    size_t reqSize = Min(size + 2 * alignment, 2 * size);
     void *region = mmap(NULL, reqSize, prot, flags, -1, 0);
     if (region == MAP_FAILED)
         return NULL;

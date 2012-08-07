@@ -14,8 +14,7 @@
 #include "nsIDOMNodeFilter.h"
 #include "nsDOMError.h"
 #include "nsINode.h"
-#include "nsIContent.h"
-
+#include "nsDOMClassInfoID.h"
 #include "nsContentUtils.h"
 
 /*
@@ -66,7 +65,7 @@ NS_IMETHODIMP nsTreeWalker::GetRoot(nsIDOMNode * *aRoot)
         return CallQueryInterface(mRoot, aRoot);
     }
 
-    *aRoot = nsnull;
+    *aRoot = nullptr;
 
     return NS_OK;
 }
@@ -104,7 +103,7 @@ NS_IMETHODIMP nsTreeWalker::GetCurrentNode(nsIDOMNode * *aCurrentNode)
         return CallQueryInterface(mCurrentNode, aCurrentNode);
     }
 
-    *aCurrentNode = nsnull;
+    *aCurrentNode = nullptr;
 
     return NS_OK;
 }
@@ -130,7 +129,7 @@ NS_IMETHODIMP nsTreeWalker::SetCurrentNode(nsIDOMNode * aCurrentNode)
 /* nsIDOMNode parentNode (); */
 NS_IMETHODIMP nsTreeWalker::ParentNode(nsIDOMNode **_retval)
 {
-    *_retval = nsnull;
+    *_retval = nullptr;
 
     nsresult rv;
 
@@ -183,7 +182,7 @@ NS_IMETHODIMP nsTreeWalker::PreviousNode(nsIDOMNode **_retval)
     nsresult rv;
     PRInt16 filtered;
 
-    *_retval = nsnull;
+    *_retval = nullptr;
 
     nsCOMPtr<nsINode> node = mCurrentNode;
 
@@ -233,7 +232,7 @@ NS_IMETHODIMP nsTreeWalker::NextNode(nsIDOMNode **_retval)
     nsresult rv;
     PRInt16 filtered = nsIDOMNodeFilter::FILTER_ACCEPT; // pre-init for inner loop
 
-    *_retval = nsnull;
+    *_retval = nullptr;
 
     nsCOMPtr<nsINode> node = mCurrentNode;
 
@@ -254,7 +253,7 @@ NS_IMETHODIMP nsTreeWalker::NextNode(nsIDOMNode **_retval)
             }
         }
 
-        nsINode *sibling = nsnull;
+        nsINode *sibling = nullptr;
         nsINode *temp = node;
         do {
             if (temp == mRoot)
@@ -302,7 +301,7 @@ nsresult nsTreeWalker::FirstChildInternal(bool aReversed, nsIDOMNode **_retval)
     nsresult rv;
     PRInt16 filtered;
 
-    *_retval = nsnull;
+    *_retval = nullptr;
 
     nsCOMPtr<nsINode> node = aReversed ? mCurrentNode->GetLastChild()
                                        : mCurrentNode->GetFirstChild();
@@ -364,7 +363,7 @@ nsresult nsTreeWalker::NextSiblingInternal(bool aReversed, nsIDOMNode **_retval)
     nsresult rv;
     PRInt16 filtered;
 
-    *_retval = nsnull;
+    *_retval = nullptr;
 
     nsCOMPtr<nsINode> node = mCurrentNode;
 

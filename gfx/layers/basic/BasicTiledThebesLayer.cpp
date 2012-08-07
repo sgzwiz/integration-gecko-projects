@@ -106,7 +106,7 @@ BasicTiledLayerBuffer::PaintThebes(BasicTiledThebesLayer* aLayer,
     if (aPaintRegion.IsComplex()) {
       printf_stderr("Complex region\n");
       nsIntRegionRectIterator it(aPaintRegion);
-      for (const nsIntRect* rect = it.Next(); rect != nsnull; rect = it.Next()) {
+      for (const nsIntRect* rect = it.Next(); rect != nullptr; rect = it.Next()) {
         printf_stderr(" rect %i, %i, %i, %i\n", rect->x, rect->y, rect->width, rect->height);
       }
     }
@@ -124,10 +124,10 @@ BasicTiledLayerBuffer::PaintThebes(BasicTiledThebesLayer* aLayer,
   }
 #endif
 
-  mThebesLayer = nsnull;
-  mCallback = nsnull;
-  mCallbackData = nsnull;
-  mSinglePaintBuffer = nsnull;
+  mThebesLayer = nullptr;
+  mCallback = nullptr;
+  mCallbackData = nullptr;
+  mSinglePaintBuffer = nullptr;
 }
 
 BasicTiledLayerTile
@@ -169,7 +169,6 @@ BasicTiledLayerBuffer::ValidateTileInternal(BasicTiledLayerTile aTile,
 
 #ifdef GFX_TILEDLAYER_DEBUG_OVERLAY
   DrawDebugOverlay(writableSurface, aTileOrigin.x, aTileOrigin.y);
-  //aTile->DumpAsDataURL();
 #endif
 
   return aTile;
@@ -190,7 +189,7 @@ BasicTiledLayerBuffer::ValidateTile(BasicTiledLayerTile aTile,
 #endif
 
   nsIntRegionRectIterator it(aDirtyRegion);
-  for (const nsIntRect* rect = it.Next(); rect != nsnull; rect = it.Next()) {
+  for (const nsIntRect* rect = it.Next(); rect != nullptr; rect = it.Next()) {
 #ifdef GFX_TILEDLAYER_PREF_WARNINGS
     printf_stderr(" break into subrect %i, %i, %i, %i\n", rect->x, rect->y, rect->width, rect->height);
 #endif
@@ -228,12 +227,67 @@ BasicTiledThebesLayer::PaintThebes(gfxContext* aContext,
   if (regionToPaint.IsEmpty())
     return;
 
-  mTiledBuffer.PaintThebes(this, mVisibleRegion, regionToPaint, aCallback, aCallbackData);
+  if (gfxPlatform::UseProgressiveTilePainting()) {
+    nsIntRegionRectIterator it(regionToPaint);
+    const nsIntRect* rect = it.Next();
+    if (!rect)
+      return;
+
+    // Currently we start painting from the first rect of the invalid
+    // region and convert that into a tile.
+    // TODO: Use a smart tile prioritization such as:
+    //         (1) Paint tiles that have no content first
+    //         (2) Then paint tiles that have stale content
+    //         (3) Order tiles using they position from relevant
+    //             user interaction events.
+    int paintTileStartX = mTiledBuffer.RoundDownToTileEdge(rect->x);
+    int paintTileStartY = mTiledBuffer.RoundDownToTileEdge(rect->y);
+
+    nsIntRegion maxPaint(
+      nsIntRect(paintTileStartX, paintTileStartY,
+                mTiledBuffer.GetTileLength(), mTiledBuffer.GetTileLength()));
+
+    if (!maxPaint.Contains(regionToPaint)) {
+      // The region needed to paint is larger then our progressive chunk size
+      // therefore update what we want to paint and ask for a new paint transaction.
+      regionToPaint.And(regionToPaint, maxPaint);
+      BasicManager()->SetRepeatTransaction();
+    }
+
+    // We want to continue to retain invalidated tiles that we're about to paint soon
+    // to prevent them from disapearing while doing progressive paint. However we only
+    // want to this if they were painted at the same resolution.
+    gfxSize resolution(1, 1);
+    for (ContainerLayer* parent = GetParent(); parent; parent = parent->GetParent()) {
+      const FrameMetrics& metrics = parent->GetFrameMetrics();
+      resolution.width *= metrics.mResolution.width;
+      resolution.height *= metrics.mResolution.height;
+    }
+
+    nsIntRegion regionToRetain(mTiledBuffer.GetValidRegion());
+    if (false && mTiledBuffer.GetResolution() == resolution) {
+      // Retain stale tiles but keep them marked as invalid in mValidRegion
+      // so that they will be eventually repainted.
+      regionToRetain.And(regionToRetain, mVisibleRegion);
+      regionToRetain.Or(regionToRetain, regionToPaint);
+    } else {
+      regionToRetain = mValidRegion;
+      regionToRetain.Or(regionToRetain, regionToPaint);
+      mTiledBuffer.SetResolution(resolution);
+    }
+
+    // Paint and keep track of what we refreshed
+    mTiledBuffer.PaintThebes(this, regionToRetain, regionToPaint, aCallback, aCallbackData);
+    mValidRegion.Or(mValidRegion, regionToPaint);
+  } else {
+    mTiledBuffer.PaintThebes(this, mVisibleRegion, regionToPaint, aCallback, aCallbackData);
+    mValidRegion = mVisibleRegion;
+  }
+
   mTiledBuffer.ReadLock();
-  mValidRegion = mVisibleRegion;
   if (aMaskLayer) {
     static_cast<BasicImplData*>(aMaskLayer->ImplData())
-      ->Paint(aContext, nsnull);
+      ->Paint(aContext, nullptr);
   }
 
   // Create a heap copy owned and released by the compositor. This is needed

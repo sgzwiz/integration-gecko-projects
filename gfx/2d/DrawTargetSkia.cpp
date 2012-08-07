@@ -206,10 +206,14 @@ void SetPaintPattern(SkPaint& aPaint, const Pattern& aPattern, Float aAlpha = 1.
                                                           &stops->mPositions.front(), 
                                                           stops->mCount, 
                                                           mode);
-        SkMatrix mat;
-        GfxMatrixToSkiaMatrix(pat.mMatrix, mat);
-        shader->setLocalMatrix(mat);
-        SkSafeUnref(aPaint.setShader(shader));
+
+        if (shader) {
+            SkMatrix mat;
+            GfxMatrixToSkiaMatrix(pat.mMatrix, mat);
+            shader->setLocalMatrix(mat);
+            SkSafeUnref(aPaint.setShader(shader));
+        }
+
       } else {
         aPaint.setColor(SkColorSetARGB(0, 0, 0, 0));
       }
@@ -233,10 +237,13 @@ void SetPaintPattern(SkPaint& aPaint, const Pattern& aPattern, Float aAlpha = 1.
                                                                   &stops->mPositions.front(), 
                                                                   stops->mCount, 
                                                                   mode);
-        SkMatrix mat;
-        GfxMatrixToSkiaMatrix(pat.mMatrix, mat);
-        shader->setLocalMatrix(mat);
-        SkSafeUnref(aPaint.setShader(shader));
+        if (shader) {
+            SkMatrix mat;
+            GfxMatrixToSkiaMatrix(pat.mMatrix, mat);
+            shader->setLocalMatrix(mat);
+            SkSafeUnref(aPaint.setShader(shader));
+        }
+
       } else {
         aPaint.setColor(SkColorSetARGB(0, 0, 0, 0));
       }
@@ -442,6 +449,7 @@ DrawTargetSkia::Stroke(const Path *aPath,
                        const DrawOptions &aOptions)
 {
   MarkChanged();
+  MOZ_ASSERT(aPath, "Null path");
   if (aPath->GetBackendType() != BACKEND_SKIA) {
     return;
   }
@@ -514,7 +522,9 @@ DrawTargetSkia::FillGlyphs(ScaledFont *aFont,
                            const DrawOptions &aOptions,
                            const GlyphRenderingOptions*)
 {
-  if (aFont->GetType() != FONT_MAC && aFont->GetType() != FONT_SKIA) {
+  if (aFont->GetType() != FONT_MAC &&
+      aFont->GetType() != FONT_SKIA &&
+      aFont->GetType() != FONT_GDI) {
     return;
   }
 
@@ -630,7 +640,17 @@ DrawTargetSkia::CopySurface(SourceSurface *aSurface,
   SkIRect source = IntRectToSkIRect(aSourceRect);
   mCanvas->clipRect(dest, SkRegion::kReplace_Op);
   SkPaint paint;
-  paint.setXfermodeMode(GfxOpToSkiaOp(OP_SOURCE));
+
+  if (mBitmap.config() == SkBitmap::kRGB_565_Config &&
+      mCanvas->getDevice()->config() == SkBitmap::kRGB_565_Config) {
+    // Set the xfermode to SOURCE_OVER to workaround
+    // http://code.google.com/p/skia/issues/detail?id=628
+    // RGB565 is opaque so they're equivalent anyway
+    paint.setXfermodeMode(SkXfermode::kSrcOver_Mode);
+  } else {
+    paint.setXfermodeMode(SkXfermode::kSrc_Mode);
+  }
+
   mCanvas->drawBitmapRect(bitmap, &source, dest, &paint);
   mCanvas->restore();
 }

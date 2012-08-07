@@ -67,7 +67,7 @@ public:
                                      nsISupports* aContainer,
                                      nsIStreamListener **aDocListener,
                                      bool aReset = true,
-                                     nsIContentSink* aSink = nsnull);
+                                     nsIContentSink* aSink = nullptr);
   virtual void StopDocumentLoad();
 
   virtual void BeginLoad();
@@ -80,9 +80,6 @@ public:
   {
     return mWriteLevel != PRUint32(0);
   }
-
-  virtual bool GetIsFrameset() { return mIsFrameset; }
-  virtual void SetIsFrameset(bool aFrameset) { mIsFrameset = aFrameset; }
 
   virtual NS_HIDDEN_(nsContentList*) GetForms();
  
@@ -110,10 +107,9 @@ public:
   Element *GetHead() { return GetHeadElement(); }
   already_AddRefed<nsContentList> GetElementsByName(const nsAString & aName)
   {
-    return NS_GetFuncStringContentList(this, MatchNameAttribute, nsnull,
+    return NS_GetFuncStringContentList(this, MatchNameAttribute, nullptr,
                                        UseExistingNameString, aName);
   }
-
 
   virtual nsresult ResolveName(const nsAString& aName,
                                nsIContent *aForm,
@@ -255,8 +251,6 @@ protected:
 
   // Load flags of the document's channel
   PRUint32 mLoadFlags;
-
-  bool mIsFrameset;
 
   bool mTooDeepWriteRecursion;
 

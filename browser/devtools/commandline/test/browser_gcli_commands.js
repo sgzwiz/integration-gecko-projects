@@ -11,8 +11,7 @@ const TEST_URI = "data:text/html;charset=utf-8,gcli-commands";
 function test() {
   DeveloperToolbarTest.test(TEST_URI, function(browser, tab) {
     testEcho();
-    testConsoleClear();
-    testConsoleOpenClose(tab);
+    testConsole(tab);
 
     imported = undefined;
     finish();
@@ -20,36 +19,57 @@ function test() {
 }
 
 function testEcho() {
+  /*
   DeveloperToolbarTest.exec({
     typed: "echo message",
     args: { message: "message" },
     outputMatch: /^message$/,
   });
+  */
 }
 
-function testConsoleClear() {
-  DeveloperToolbarTest.exec({
-    typed: "console clear",
-    args: {},
-    blankOutput: true,
-  });
-}
+function testConsole(tab) {
+  let hud = null;
+  function onWebConsoleOpen(aSubject) {
+    Services.obs.removeObserver(onWebConsoleOpen, "web-console-created");
 
-function testConsoleOpenClose(tab) {
+    aSubject.QueryInterface(Ci.nsISupportsString);
+    hud = imported.HUDService.getHudReferenceById(aSubject.data);
+    ok(hud.hudId in imported.HUDService.hudReferences, "console open");
+
+    hud.jsterm.execute("pprint(window)", onExecute);
+  }
+
+  Services.obs.addObserver(onWebConsoleOpen, "web-console-created", false);
+
   DeveloperToolbarTest.exec({
     typed: "console open",
     args: {},
     blankOutput: true,
   });
 
-  let hud = imported.HUDService.getHudByWindow(content);
-  ok(hud.hudId in imported.HUDService.hudReferences, "console open");
+  function onExecute() {
+    let labels = hud.outputNode.querySelectorAll(".webconsole-msg-output");
+    ok(labels.length > 0, "output for pprint(window)");
 
-  DeveloperToolbarTest.exec({
-    typed: "console close",
-    args: {},
-    blankOutput: true,
-  });
+    DeveloperToolbarTest.exec({
+      typed: "console clear",
+      args: {},
+      blankOutput: true,
+    });
 
-  ok(!(hud.hudId in imported.HUDService.hudReferences), "console closed");
+    let labels = hud.outputNode.querySelectorAll(".webconsole-msg-output");
+    is(labels.length, 0, "no output in console");
+
+    DeveloperToolbarTest.exec({
+      typed: "console close",
+      args: {},
+      blankOutput: true,
+    });
+
+    ok(!(hud.hudId in imported.HUDService.hudReferences), "console closed");
+
+    imported = undefined;
+    finish();
+  }
 }

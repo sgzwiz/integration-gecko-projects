@@ -8,8 +8,10 @@ package org.mozilla.gecko.ui;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoEvent;
 import org.mozilla.gecko.GeckoEventListener;
-import org.json.JSONObject;
+
 import org.json.JSONException;
+import org.json.JSONObject;
+
 import android.graphics.PointF;
 import android.os.Handler;
 import android.util.Log;
@@ -54,6 +56,12 @@ class SubdocumentScrollHelper implements GeckoEventListener {
         GeckoAppShell.registerGeckoEventListener(MESSAGE_PANNING_OVERRIDE, this);
         GeckoAppShell.registerGeckoEventListener(MESSAGE_CANCEL_OVERRIDE, this);
         GeckoAppShell.registerGeckoEventListener(MESSAGE_SCROLL_ACK, this);
+    }
+
+    void destroy() {
+        GeckoAppShell.unregisterGeckoEventListener(MESSAGE_PANNING_OVERRIDE, this);
+        GeckoAppShell.unregisterGeckoEventListener(MESSAGE_CANCEL_OVERRIDE, this);
+        GeckoAppShell.unregisterGeckoEventListener(MESSAGE_SCROLL_ACK, this);
     }
 
     boolean scrollBy(PointF displacement) {

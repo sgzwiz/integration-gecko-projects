@@ -5,36 +5,35 @@
 
 package org.mozilla.gecko;
 
+import org.mozilla.gecko.db.BrowserDB;
+import org.mozilla.gecko.gfx.Layer;
+import org.mozilla.gecko.mozglue.DirectBufferAllocator;
+import org.mozilla.gecko.util.GeckoAsyncTask;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import android.content.ContentResolver;
 import android.database.ContentObserver;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
-import android.os.AsyncTask;
+import android.net.Uri;
 import android.util.Log;
-import android.view.Surface;
 import android.view.View;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.mozilla.gecko.db.BrowserDB;
-import org.mozilla.gecko.gfx.Layer;
-
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
-import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class Tab {
     private static final String LOGTAG = "GeckoTab";
-    private static final int kThumbnailWidth = 136;
-    private static final int kThumbnailHeight = 78;
 
-    private static float sDensity = 0.0f;
     private static Pattern sColorPattern;
     private int mId;
     private String mUrl;
@@ -44,13 +43,13 @@ public final class Tab {
     private int mFaviconSize;
     private JSONObject mIdentityData;
     private boolean mReaderEnabled;
-    private Drawable mThumbnail;
+    private BitmapDrawable mThumbnail;
     private int mHistoryIndex;
     private int mHistorySize;
     private int mParentId;
     private boolean mExternal;
     private boolean mBookmark;
-    private HashMap<String, DoorHanger> mDoorHangers;
+    private boolean mReadingListItem;
     private long mFaviconLoadId;
     private String mDocumentURI;
     private String mContentType;
@@ -65,6 +64,9 @@ public final class Tab {
     private ContentObserver mContentObserver;
     private int mCheckerboardColor = Color.WHITE;
     private int mState;
+    private ByteBuffer mThumbnailBuffer;
+    private Bitmap mThumbnailBitmap;
+    private boolean mDesktopMode;
 
     public static final int STATE_DELAYED = 0;
     public static final int STATE_LOADING = 1;
@@ -86,7 +88,7 @@ public final class Tab {
         mHistoryIndex = -1;
         mHistorySize = 0;
         mBookmark = false;
-        mDoorHangers = new HashMap<String, DoorHanger>();
+        mReadingListItem = false;
         mFaviconLoadId = 0;
         mDocumentURI = "";
         mContentType = "";
@@ -103,7 +105,6 @@ public final class Tab {
     }
 
     public void onDestroy() {
-        mDoorHangers = new HashMap<String, DoorHanger>();
         BrowserDB.unregisterContentObserver(mContentResolver, mContentObserver);
     }
 
@@ -118,10 +119,6 @@ public final class Tab {
     // may be null if user-entered query hasn't yet been resolved to a URI
     public String getURL() {
         return mUrl;
-    }
-
-    public String getTitle() {
-        return mTitle;
     }
 
     public String getDisplayTitle() {
@@ -140,19 +137,36 @@ public final class Tab {
         return mThumbnail;
     }
 
-    float getDensity() {
-        if (sDensity == 0.0f) {
-            sDensity = GeckoApp.mAppContext.getDisplayMetrics().density;
-        }
-        return sDensity;
+    synchronized public ByteBuffer getThumbnailBuffer() {
+        int capacity = getThumbnailWidth() * getThumbnailHeight() * 2 /* 16 bpp */;
+        if (mThumbnailBuffer != null && mThumbnailBuffer.capacity() == capacity)
+            return mThumbnailBuffer;
+        freeBuffer();
+        mThumbnailBuffer = DirectBufferAllocator.allocate(capacity);
+        return mThumbnailBuffer;
+    }
+
+    public Bitmap getThumbnailBitmap() {
+        if (mThumbnailBitmap != null)
+            return mThumbnailBitmap;
+        return mThumbnailBitmap = Bitmap.createBitmap(getThumbnailWidth(), getThumbnailHeight(), Bitmap.Config.RGB_565);
+    }
+
+    public void finalize() {
+        freeBuffer();
+    }
+
+    synchronized void freeBuffer() {
+        DirectBufferAllocator.free(mThumbnailBuffer);
+        mThumbnailBuffer = null;
     }
 
     int getThumbnailWidth() {
-        return (int)(kThumbnailWidth * getDensity());
+        return (int) (GeckoApp.mAppContext.getResources().getDimension(R.dimen.tab_thumbnail_width));
     }
 
     int getThumbnailHeight() {
-        return (int)(kThumbnailHeight * getDensity());
+        return (int) (GeckoApp.mAppContext.getResources().getDimension(R.dimen.tab_thumbnail_height));
     }
 
     public void updateThumbnail(final Bitmap b) {
@@ -161,13 +175,9 @@ public final class Tab {
             public void run() {
                 if (b != null) {
                     try {
-                        Bitmap bitmap = Bitmap.createScaledBitmap(b, getThumbnailWidth(), getThumbnailHeight(), false);
-
+                        mThumbnail = new BitmapDrawable(b);
                         if (mState == Tab.STATE_SUCCESS)
-                            saveThumbnailToDB(new BitmapDrawable(bitmap));
-
-                        mThumbnail = new BitmapDrawable(bitmap);
-                        b.recycle();
+                            saveThumbnailToDB();
                     } catch (OutOfMemoryError oom) {
                         Log.e(LOGTAG, "Unable to create/scale bitmap", oom);
                         mThumbnail = null;
@@ -209,6 +219,10 @@ public final class Tab {
         return mBookmark;
     }
 
+    public boolean isReadingListItem() {
+        return mReadingListItem;
+    }
+
     public boolean isExternal() {
         return mExternal;
     }
@@ -243,6 +257,13 @@ public final class Tab {
 
         Log.i(LOGTAG, "Updated title: " + mTitle + " for tab with id: " + mId);
         updateHistory(mUrl, mTitle);
+        final Tab tab = this;
+
+        GeckoAppShell.getMainHandler().post(new Runnable() {
+            public void run() {
+                Tabs.getInstance().notifyListeners(tab, Tabs.TabEvents.TITLE);
+            }
+        });
     }
 
     private void updateHistory(final String uri, final String title) {
@@ -321,7 +342,7 @@ public final class Tab {
 
         // Only update the favicon if it's bigger than the current favicon.
         // We use -1 to represent icons with sizes="any".
-        if (size == -1 || size > mFaviconSize) {
+        if (size == -1 || size >= mFaviconSize) {
             mFaviconUrl = faviconUrl;
             mFaviconSize = size;
             Log.i(LOGTAG, "Updated favicon URL for tab with id: " + mId);
@@ -341,6 +362,11 @@ public final class Tab {
 
     public void setReaderEnabled(boolean readerEnabled) {
         mReaderEnabled = readerEnabled;
+        GeckoAppShell.getMainHandler().post(new Runnable() {
+            public void run() {
+                Tabs.getInstance().notifyListeners(Tab.this, Tabs.TabEvents.MENU_UPDATED);
+            }
+        });
     }
 
     private void updateBookmark() {
@@ -348,14 +374,21 @@ public final class Tab {
         if (url == null)
             return;
 
-        GeckoBackgroundThread.getHandler().post(new Runnable() {
-            public void run() {
-                boolean bookmark = BrowserDB.isBookmark(mContentResolver, url);
+        (new GeckoAsyncTask<Void, Void, Void>(GeckoApp.mAppContext, GeckoAppShell.getHandler()) {
+            @Override
+            public Void doInBackground(Void... params) {
                 if (url.equals(getURL())) {
-                    mBookmark = bookmark;
+                    mBookmark = BrowserDB.isBookmark(mContentResolver, url);
+                    mReadingListItem = BrowserDB.isReadingListItem(mContentResolver, url);
                 }
+                return null;
             }
-        });
+
+            @Override
+            public void onPostExecute(Void result) {
+                Tabs.getInstance().notifyListeners(Tab.this, Tabs.TabEvents.MENU_UPDATED);
+            }
+        }).execute();
     }
 
     public void addBookmark() {
@@ -365,7 +398,7 @@ public final class Tab {
                 if (url == null)
                     return;
 
-                BrowserDB.addBookmark(mContentResolver, getTitle(), url);
+                BrowserDB.addBookmark(mContentResolver, mTitle, url);
             }
         });
     }
@@ -386,13 +419,28 @@ public final class Tab {
         if (!mReaderEnabled)
             return;
 
+        GeckoEvent e = GeckoEvent.createBroadcastEvent("Reader:Add", String.valueOf(getId()));
+        GeckoAppShell.sendEventToGecko(e);
+    }
+
+    public void removeFromReadingList() {
+        if (!mReaderEnabled)
+            return;
+
         GeckoAppShell.getHandler().post(new Runnable() {
             public void run() {
                 String url = getURL();
                 if (url == null)
                     return;
 
-                BrowserDB.addReadingListItem(mContentResolver, getTitle(), url);
+                BrowserDB.removeReadingListItemWithURL(mContentResolver, url);
+
+                GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
+                    public void run() {
+                        GeckoEvent e = GeckoEvent.createBroadcastEvent("Reader:Remove", getURL());
+                        GeckoAppShell.sendEventToGecko(e);
+                    }
+                });
             }
         });
     }
@@ -401,102 +449,65 @@ public final class Tab {
         if (!mReaderEnabled)
             return;
 
-        // Do nothing for now
+        GeckoApp.mAppContext.loadUrl("about:reader?url=" + Uri.encode(getURL()));
     }
 
-    public boolean doReload() {
+    public void doReload() {
         GeckoEvent e = GeckoEvent.createBroadcastEvent("Session:Reload", "");
         GeckoAppShell.sendEventToGecko(e);
-        return true;
     }
 
+    // Our version of nsSHistory::GetCanGoBack
     public boolean canDoBack() {
-        return (mHistoryIndex < 1 ? false : true);
+        return mHistoryIndex > 0;
     }
 
     public boolean doBack() {
-        if (mHistoryIndex < 1) {
+        if (!canDoBack())
             return false;
-        }
+
         GeckoEvent e = GeckoEvent.createBroadcastEvent("Session:Back", "");
         GeckoAppShell.sendEventToGecko(e);
         return true;
     }
 
-    public boolean doStop() {
+    public void doStop() {
         GeckoEvent e = GeckoEvent.createBroadcastEvent("Session:Stop", "");
         GeckoAppShell.sendEventToGecko(e);
-        return true;
     }
 
+    // Our version of nsSHistory::GetCanGoForward
     public boolean canDoForward() {
-        return (mHistoryIndex + 1 < mHistorySize);
+        return mHistoryIndex < mHistorySize - 1;
     }
 
     public boolean doForward() {
-        if (mHistoryIndex + 1 >= mHistorySize) {
+        if (!canDoForward())
             return false;
-        }
+
         GeckoEvent e = GeckoEvent.createBroadcastEvent("Session:Forward", "");
         GeckoAppShell.sendEventToGecko(e);
         return true;
     }
 
-    public void addDoorHanger(String value, DoorHanger dh) {
-        mDoorHangers.put(value, dh);
-    }
-
-    public void removeDoorHanger(String value) {
-        mDoorHangers.remove(value);
-    }
-
-    public void removeTransientDoorHangers() {
-        // Make a temporary set to avoid a ConcurrentModificationException
-        final HashSet<String> valuesToRemove = new HashSet<String>(); 
-
-        for (String value : mDoorHangers.keySet()) {
-            DoorHanger dh = mDoorHangers.get(value);
-            if (dh.shouldRemove())
-                valuesToRemove.add(value);
-        }
-
-        for (String value : valuesToRemove) {
-            mDoorHangers.remove(value);
-        }
-    }
-
-    public DoorHanger getDoorHanger(String value) {
-        if (mDoorHangers == null)
-            return null;
-
-        if (mDoorHangers.containsKey(value))
-            return mDoorHangers.get(value);
-
-        return null;
-    }
-
-    public HashMap<String, DoorHanger> getDoorHangers() {
-        return mDoorHangers;
-    }
-
     void handleSessionHistoryMessage(String event, JSONObject message) throws JSONException {
         if (event.equals("New")) {
-            final String uri = message.getString("uri");
+            final String url = message.getString("url");
             mHistoryIndex++;
             mHistorySize = mHistoryIndex + 1;
             GeckoAppShell.getHandler().post(new Runnable() {
                 public void run() {
-                    GlobalHistory.getInstance().add(uri);
+                    GlobalHistory.getInstance().add(url);
                 }
             });
         } else if (event.equals("Back")) {
-            if (mHistoryIndex - 1 < 0) {
+            if (!canDoBack()) {
                 Log.e(LOGTAG, "Received unexpected back notification");
                 return;
             }
             mHistoryIndex--;
         } else if (event.equals("Forward")) {
-            if (mHistoryIndex + 1 >= mHistorySize) {
+            if (!canDoForward()) {
                 Log.e(LOGTAG, "Received unexpected forward notification");
                 return;
             }
@@ -509,24 +520,30 @@ public final class Tab {
             }
             mHistoryIndex = index;
         } else if (event.equals("Purge")) {
-            int numEntries = message.getInt("index");
+            int numEntries = message.getInt("numEntries");
+            if (numEntries > mHistorySize) {
+                Log.e(LOGTAG, "Received unexpectedly large number of history entries to purge");
+                mHistoryIndex = -1;
+                mHistorySize = 0;
+                return;
+            }
+
             mHistorySize -= numEntries;
             mHistoryIndex -= numEntries;
-            if (mHistorySize < 0 || mHistoryIndex < -1) {
-                Log.e(LOGTAG, "Unexpected history state: index = " + mHistoryIndex + ", size = " + mHistorySize);
-                mHistorySize = 0;
-                mHistoryIndex = -1;
-            }
+
+            // If we weren't at the last history entry, mHistoryIndex may have become too small
+            if (mHistoryIndex < -1)
+                 mHistoryIndex = -1;
         }
     }
 
-    private void saveThumbnailToDB(BitmapDrawable thumbnail) {
+    private void saveThumbnailToDB() {
         try {
             String url = getURL();
             if (url == null)
                 return;
 
-            BrowserDB.updateThumbnailForUrl(mContentResolver, url, thumbnail);
+            BrowserDB.updateThumbnailForUrl(mContentResolver, url, mThumbnail);
         } catch (Exception e) {
             // ignore
         }
@@ -590,5 +607,13 @@ public final class Tab {
         int g = Integer.parseInt(matcher.group(2));
         int b = Integer.parseInt(matcher.group(3));
         return Color.rgb(r, g, b);
+    }
+
+    public void setDesktopMode(boolean enabled) {
+        mDesktopMode = enabled;
+    }
+
+    public boolean getDesktopMode() {
+        return mDesktopMode;
     }
 }

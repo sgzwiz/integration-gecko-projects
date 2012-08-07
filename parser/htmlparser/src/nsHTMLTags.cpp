@@ -172,6 +172,8 @@ static const PRUnichar sHTMLTagUnicodeName_menuitem[] =
   {'m', 'e', 'n', 'u', 'i', 't', 'e', 'm', '\0'};
 static const PRUnichar sHTMLTagUnicodeName_meta[] =
   {'m', 'e', 't', 'a', '\0'};
+static const PRUnichar sHTMLTagUnicodeName_meter[] =
+  {'m', 'e', 't', 'e', 'r', '\0'};
 static const PRUnichar sHTMLTagUnicodeName_multicol[] =
   {'m', 'u', 'l', 't', 'i', 'c', 'o', 'l', '\0'};
 static const PRUnichar sHTMLTagUnicodeName_nav[] =
@@ -348,12 +350,12 @@ nsHTMLTags::AddRefTable(void)
 
     gTagTable = PL_NewHashTable(64, HTMLTagsHashCodeUCPtr,
                                 HTMLTagsKeyCompareUCPtr, PL_CompareValues,
-                                nsnull, nsnull);
+                                nullptr, nullptr);
     NS_ENSURE_TRUE(gTagTable, NS_ERROR_OUT_OF_MEMORY);
 
     gTagAtomTable = PL_NewHashTable(64, HTMLTagsHashCodeAtom,
                                     PL_CompareValues, PL_CompareValues,
-                                    nsnull, nsnull);
+                                    nullptr, nullptr);
     NS_ENSURE_TRUE(gTagAtomTable, NS_ERROR_OUT_OF_MEMORY);
 
     // Fill in gTagTable with the above static PRUnichar strings as
@@ -414,8 +416,8 @@ nsHTMLTags::ReleaseTable(void)
 
       PL_HashTableDestroy(gTagTable);
       PL_HashTableDestroy(gTagAtomTable);
-      gTagTable = nsnull;
-      gTagAtomTable = nsnull;
+      gTagTable = nullptr;
+      gTagAtomTable = nullptr;
     }
   }
 }

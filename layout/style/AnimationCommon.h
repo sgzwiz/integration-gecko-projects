@@ -15,6 +15,7 @@
 #include "mozilla/dom/Element.h"
 #include "nsSMILKeySpline.h"
 #include "nsStyleStruct.h"
+#include "mozilla/Attributes.h"
 
 class nsPresContext;
 
@@ -66,7 +67,7 @@ protected:
 /**
  * A style rule that maps property-nsStyleAnimation::Value pairs.
  */
-class AnimValuesStyleRule : public nsIStyleRule
+class AnimValuesStyleRule MOZ_FINAL : public nsIStyleRule
 {
 public:
   // nsISupports implementation
@@ -106,6 +107,12 @@ public:
   typedef nsTimingFunction::Type Type;
   void Init(const nsTimingFunction &aFunction);
   double GetValue(double aPortion) const;
+  const nsSMILKeySpline* GetFunction() const {
+    NS_ASSERTION(mType == nsTimingFunction::Function, "Type mismatch");
+    return &mTimingFunction;
+  }
+  Type GetType() const { return mType; }
+  PRUint32 GetSteps() const { return mSteps; }
 private:
   Type mType;
   nsSMILKeySpline mTimingFunction;
@@ -140,6 +147,10 @@ struct CommonElementAnimationData : public PRCList
     // This will call our destructor.
     mElement->DeleteProperty(mElementProperty);
   }
+
+  static bool
+  CanAnimatePropertyOnCompositor(const dom::Element *aElement,
+                                 nsCSSProperty aProperty);
 
   dom::Element *mElement;
 

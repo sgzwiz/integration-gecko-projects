@@ -11,18 +11,17 @@
 
 #include "mozilla/dom/PrototypeList.h" // auto-generated
 
-// For non-global objects we use slot 0 for holding the raw object.
+// We use slot 0 for holding the raw object.  This is safe for both
+// globals and non-globals.
 #define DOM_OBJECT_SLOT 0
 
-// All DOM globals must have two slots at DOM_GLOBAL_OBJECT_SLOT and
-// DOM_PROTOTYPE_SLOT. We have to start at 1 past JSCLASS_GLOBAL_SLOT_COUNT
-// because XPConnect uses that one.
-#define DOM_GLOBAL_OBJECT_SLOT (JSCLASS_GLOBAL_SLOT_COUNT + 1)
-#define DOM_PROTOTYPE_SLOT (JSCLASS_GLOBAL_SLOT_COUNT + 2)
+// All DOM globals must have a slot at DOM_PROTOTYPE_SLOT. We have to
+// start at 1 past JSCLASS_GLOBAL_SLOT_COUNT because XPConnect uses
+// that one.
+#define DOM_PROTOTYPE_SLOT (JSCLASS_GLOBAL_SLOT_COUNT + 1)
 
 // We use these flag bits for the new bindings.
-#define JSCLASS_IS_DOMJSCLASS JSCLASS_USERBIT1
-#define JSCLASS_DOM_GLOBAL JSCLASS_USERBIT2
+#define JSCLASS_DOM_GLOBAL JSCLASS_USERBIT1
 
 namespace mozilla {
 namespace dom {
@@ -64,9 +63,6 @@ struct DOMJSClass
   // us which it is.
   const bool mDOMObjectIsISupports;
 
-  // The slot to use to get the object reference from the object
-  const size_t mNativeSlot;
-
   const NativePropertyHooks* mNativeHooks;
 
   static DOMJSClass* FromJSClass(JSClass* base) {
@@ -87,6 +83,14 @@ struct DOMJSClass
 
   JSClass* ToJSClass() { return &mBase; }
 };
+
+inline bool
+HasProtoOrIfaceArray(JSObject* global)
+{
+  MOZ_ASSERT(js::GetObjectClass(global)->flags & JSCLASS_DOM_GLOBAL);
+  // This can be undefined if we GC while creating the global
+  return !js::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).isUndefined();
+}
 
 inline JSObject**
 GetProtoOrIfaceArray(JSObject* global)

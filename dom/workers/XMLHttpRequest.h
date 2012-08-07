@@ -12,6 +12,7 @@
 // Need this for XMLHttpRequestResponseType.
 #include "mozilla/dom/XMLHttpRequestBinding.h"
 
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/TypedArray.h"
 
 BEGIN_WORKERS_NAMESPACE
@@ -70,8 +71,9 @@ public:
   _finalize(JSFreeOp* aFop) MOZ_OVERRIDE;
 
   static XMLHttpRequest*
-  Constructor(JSContext* aCx, JSObject* aGlobal, ErrorResult& aRv);
-
+  Constructor(JSContext* aCx, JSObject* aGlobal,
+              const MozXMLHttpRequestParametersWorkers& aParams,
+              ErrorResult& aRv);
   void
   Unpin();
 
@@ -160,7 +162,7 @@ public:
 
   void
   Send(ArrayBuffer& aBody, ErrorResult& aRv) {
-    return Send(aBody.mObj, aRv);
+    return Send(aBody.Obj(), aRv);
   }
 
   void
@@ -243,6 +245,16 @@ public:
   {
     mStateData.mResponseText.SetIsVoid(true);
     mStateData.mResponse = JSVAL_NULL;
+  }
+
+  bool GetMozAnon() {
+    // TODO: bug 761227
+    return false;
+  }
+
+  bool GetMozSystem() {
+    // TODO: bug 761227
+    return false;
   }
 
 private:

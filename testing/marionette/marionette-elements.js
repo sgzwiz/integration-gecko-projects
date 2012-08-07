@@ -27,7 +27,7 @@ let XPATH = "xpath";
 
 function ElementException(msg, num, stack) {
   this.message = msg;
-  this.num = num;
+  this.code = num;
   this.stack = stack;
 }
 
@@ -62,7 +62,7 @@ ElementManager.prototype = {
   */
   addToKnownElements: function EM_addToKnownElements(element) {
     for (let i in this.seenItems) {
-      if (this.seenItems[i] == element) {
+      if (XPCNativeWrapper(this.seenItems[i]) == XPCNativeWrapper(element)) {
         return i;
       }
     }

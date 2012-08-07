@@ -11,7 +11,6 @@
 
 class nsIContent;
 class nsIAtom;
-class nsIDocument;
 class nsIScriptContext;
 class nsSupportsHashtable;
 class nsXBLPrototypeResources;
@@ -27,7 +26,7 @@ struct nsXBLResource {
 
   nsXBLResource(nsIAtom* aType, const nsAString& aSrc) {
     MOZ_COUNT_CTOR(nsXBLResource);
-    mNext = nsnull;
+    mNext = nullptr;
     mType = aType;
     mSrc = aSrc;
   }

@@ -15,10 +15,11 @@
 #include "nsToolkitCompsCID.h"
 #include "Database.h"
 #include "nsString.h"
+#include "mozilla/Attributes.h"
 
-class nsAnnotationService : public nsIAnnotationService
-                          , public nsIObserver
-                          , public nsSupportsWeakReference
+class nsAnnotationService MOZ_FINAL : public nsIAnnotationService
+                                    , public nsIObserver
+                                    , public nsSupportsWeakReference
 {
 public:
   NS_DECL_ISUPPORTS
@@ -53,7 +54,7 @@ public:
     if (!gAnnotationService) {
       nsCOMPtr<nsIAnnotationService> serv =
         do_GetService(NS_ANNOTATIONSERVICE_CONTRACTID);
-      NS_ENSURE_TRUE(serv, nsnull);
+      NS_ENSURE_TRUE(serv, nullptr);
       NS_ASSERTION(gAnnotationService,
                    "Should have static instance pointer now");
     }

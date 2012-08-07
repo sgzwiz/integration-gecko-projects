@@ -3,7 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -59,13 +59,17 @@ SHARED_LIBRARY_LIBS = \
 	$(DEPTH)/content/xbl/src/$(LIB_PREFIX)gkconxbl_s.$(LIB_SUFFIX) \
 	$(DEPTH)/content/xul/document/src/$(LIB_PREFIX)gkconxuldoc_s.$(LIB_SUFFIX) \
 	$(DEPTH)/view/src/$(LIB_PREFIX)gkview_s.$(LIB_SUFFIX) \
+	$(DEPTH)/dom/activities/src/$(LIB_PREFIX)dom_activities_s.$(LIB_SUFFIX) \
 	$(DEPTH)/dom/base/$(LIB_PREFIX)jsdombase_s.$(LIB_SUFFIX) \
 	$(DEPTH)/dom/battery/$(LIB_PREFIX)dom_battery_s.$(LIB_SUFFIX) \
 	$(DEPTH)/dom/contacts/$(LIB_PREFIX)jsdomcontacts_s.$(LIB_SUFFIX) \
+	$(DEPTH)/dom/alarm/$(LIB_PREFIX)domalarm_s.$(LIB_SUFFIX) \
 	$(DEPTH)/dom/devicestorage/$(LIB_PREFIX)domdevicestorage_s.$(LIB_SUFFIX) \
+	$(DEPTH)/dom/file/$(LIB_PREFIX)domfile_s.$(LIB_SUFFIX) \
 	$(DEPTH)/dom/power/$(LIB_PREFIX)dom_power_s.$(LIB_SUFFIX) \
 	$(DEPTH)/dom/settings/$(LIB_PREFIX)jsdomsettings_s.$(LIB_SUFFIX) \
 	$(DEPTH)/dom/network/src/$(LIB_PREFIX)dom_network_s.$(LIB_SUFFIX) \
+	$(DEPTH)/dom/media/$(LIB_PREFIX)dom_media_s.$(LIB_SUFFIX) \
 	$(DEPTH)/dom/sms/src/$(LIB_PREFIX)dom_sms_s.$(LIB_SUFFIX) \
 	$(DEPTH)/dom/src/events/$(LIB_PREFIX)jsdomevents_s.$(LIB_SUFFIX) \
 	$(DEPTH)/dom/src/json/$(LIB_PREFIX)json_s.$(LIB_SUFFIX) \
@@ -78,6 +82,7 @@ SHARED_LIBRARY_LIBS = \
 	$(DEPTH)/dom/workers/$(LIB_PREFIX)domworkers_s.$(LIB_SUFFIX) \
 	$(DEPTH)/dom/indexedDB/$(LIB_PREFIX)dom_indexeddb_s.$(LIB_SUFFIX) \
 	$(DEPTH)/dom/indexedDB/ipc/$(LIB_PREFIX)dom_indexeddb_ipc_s.$(LIB_SUFFIX) \
+	$(DEPTH)/dom/browser-element/$(LIB_PREFIX)dom_browserelement_s.$(LIB_SUFFIX) \
 	$(DEPTH)/editor/libeditor/text/$(LIB_PREFIX)texteditor_s.$(LIB_SUFFIX) \
 	$(DEPTH)/editor/libeditor/base/$(LIB_PREFIX)editorbase_s.$(LIB_SUFFIX) \
 	$(DEPTH)/parser/html/$(LIB_PREFIX)html5p_s.$(LIB_SUFFIX) \
@@ -116,6 +121,8 @@ ifdef MOZ_B2G_BT #{
 SHARED_LIBRARY_LIBS	+= $(DEPTH)/dom/bluetooth/$(LIB_PREFIX)dombluetooth_s.$(LIB_SUFFIX)
 endif #}
 
+SHARED_LIBRARY_LIBS	+= $(DEPTH)/dom/camera/$(LIB_PREFIX)domcamera_s.$(LIB_SUFFIX)
+
 ifdef MOZ_B2G_RIL #{
 SHARED_LIBRARY_LIBS	+= \
   $(DEPTH)/dom/system/gonk/$(LIB_PREFIX)domsystemgonk_s.$(LIB_SUFFIX) \
@@ -126,6 +133,7 @@ endif #}
 ifdef MOZ_MEDIA
 SHARED_LIBRARY_LIBS 	+= \
 	$(DEPTH)/content/media/$(LIB_PREFIX)gkconmedia_s.$(LIB_SUFFIX) \
+	$(DEPTH)/content/media/webrtc/$(LIB_PREFIX)gkconwebrtc_s.$(LIB_SUFFIX) \
 	$(NULL)
 endif
 
@@ -236,6 +244,7 @@ LOCAL_INCLUDES	+= -I$(srcdir)/../base \
 		   -I$(topsrcdir)/content/xbl/src \
 		   -I$(topsrcdir)/view/src \
 		   -I$(topsrcdir)/dom/base \
+		   -I$(topsrcdir)/dom/file \
 		   -I$(topsrcdir)/dom/src/json \
 		   -I$(topsrcdir)/dom/src/jsurl \
 		   -I$(topsrcdir)/dom/src/storage \
@@ -248,6 +257,7 @@ LOCAL_INCLUDES	+= -I$(srcdir)/../base \
 		   -I$(topsrcdir)/editor/libeditor/base \
 		   -I$(topsrcdir)/editor/libeditor/text \
 		   -I$(topsrcdir)/editor/libeditor/html \
+		   -I$(topsrcdir)/editor/txmgr/src \
 		   -I$(topsrcdir)/editor/txtsvc/src \
 		   -I$(topsrcdir)/editor/composer/src \
 		   -I$(topsrcdir)/js/xpconnect/src \
@@ -264,5 +274,7 @@ endif #}
 ifdef MOZ_B2G_BT #{
 LOCAL_INCLUDES	+= -I$(topsrcdir)/dom/bluetooth
 endif #}
+
+LOCAL_INCLUDES	+= -I$(topsrcdir)/dom/camera
 
 DEFINES += -D_IMPL_NS_LAYOUT

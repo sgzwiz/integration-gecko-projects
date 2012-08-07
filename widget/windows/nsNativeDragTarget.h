@@ -14,6 +14,8 @@
 #include <shobjidl.h> // Vista drag image interfaces
 #endif
 
+#include "mozilla/Attributes.h"
+
 class nsIDragService;
 class nsIWidget;
 
@@ -24,10 +26,10 @@ struct IDataObject;
  * behavior from the associated adapter (m_dragDrop).
  */
 
-class nsNativeDragTarget : public IDropTarget
+class nsNativeDragTarget MOZ_FINAL : public IDropTarget
 {
 public:
-  nsNativeDragTarget(nsIWidget * aWnd);
+  nsNativeDragTarget(nsIWidget * aWidget);
   ~nsNativeDragTarget();
 
   // IUnknown members - see iunknown.h for documentation
@@ -83,7 +85,7 @@ protected:
   bool             mTookOwnRef;
 
   // Gecko Stuff
-  nsIWidget      * mWindow;
+  nsIWidget      * mWidget;
   nsIDragService * mDragService;
   // Drag target helper 
   IDropTargetHelper * GetDropTargetHelper();

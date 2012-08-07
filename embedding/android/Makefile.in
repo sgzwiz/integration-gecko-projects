@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -62,11 +62,6 @@ DEFINES += \
   -DANDROID_VERSION_CODE=$(ANDROID_VERSION_CODE) \
   -DMOZILLA_OFFICIAL=$(MOZILLA_OFFICIAL) \
   $(NULL)
-
-MOZ_MOBILE_COMPAT = @MOZ_MOBILE_COMPAT@
-ifeq (Tablets,$(MOZ_MOBILE_COMPAT))
-DEFINES += -DMOZ_TABLETS_ONLY=1
-endif
 
 GARBAGE += \
   AndroidManifest.xml  \

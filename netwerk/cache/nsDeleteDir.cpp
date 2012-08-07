@@ -43,7 +43,7 @@ private:
 };
 
 
-nsDeleteDir * nsDeleteDir::gInstance = nsnull;
+nsDeleteDir * nsDeleteDir::gInstance = nullptr;
 
 nsDeleteDir::nsDeleteDir()
   : mLock("nsDeleteDir.mLock"),
@@ -51,12 +51,12 @@ nsDeleteDir::nsDeleteDir()
     mShutdownPending(false),
     mStopDeleting(false)
 {
-  NS_ASSERTION(gInstance==nsnull, "multiple nsCacheService instances!");
+  NS_ASSERTION(gInstance==nullptr, "multiple nsCacheService instances!");
 }
 
 nsDeleteDir::~nsDeleteDir()
 {
-  gInstance = nsnull;
+  gInstance = nullptr;
 }
 
 nsresult
@@ -132,7 +132,7 @@ nsDeleteDir::InitThread()
   if (mThread)
     return NS_OK;
 
-  nsresult rv = NS_NewThread(getter_AddRefs(mThread));
+  nsresult rv = NS_NewNamedThread("Cache Deleter", getter_AddRefs(mThread));
   if (NS_FAILED(rv)) {
     NS_WARNING("Can't create background thread");
     return rv;
@@ -156,7 +156,7 @@ nsDeleteDir::DestroyThread()
     return;
 
   NS_DispatchToMainThread(new nsDestroyThreadEvent(mThread));
-  mThread = nsnull;
+  mThread = nullptr;
 }
 
 void
@@ -179,8 +179,16 @@ nsDeleteDir::TimerCallback(nsITimer *aTimer, void *arg)
   dirList = static_cast<nsCOMArray<nsIFile> *>(arg);
 
   bool shuttingDown = false;
-  for (PRInt32 i = 0; i < dirList->Count() && !shuttingDown; i++) {
-    gInstance->RemoveDir((*dirList)[i], &shuttingDown);
+
+  // Intentional extra braces to control variable sope.
+  {
+    // Low IO priority can only be set when running in the context of the
+    // current thread.  So this shouldn't be moved to where we set the priority
+    // of the Cache deleter thread using the nsThread's NSPR priority constants.
+    nsAutoLowPriorityIO autoLowPriority;
+    for (PRInt32 i = 0; i < dirList->Count() && !shuttingDown; i++) {
+      gInstance->RemoveDir((*dirList)[i], &shuttingDown);
+    }
   }
 
   {
@@ -215,9 +223,6 @@ nsDeleteDir::DeleteDir(nsIFile *dirIn, bool moveToTrash, PRUint32 delay)
     if (NS_FAILED(rv))
       return rv;
 
-    // Important: must rename directory w/o changing parent directory: else on
-    // NTFS we'll wait (with cache lock) while nsIFile's ACL reset walks file
-    // tree: was hanging GUI for *minutes* on large cache dirs.
     // Append random number to the trash directory and check if it exists.
     srand(PR_Now());
     nsCAutoString leaf;
@@ -240,7 +245,18 @@ nsDeleteDir::DeleteDir(nsIFile *dirIn, bool moveToTrash, PRUint32 delay)
     if (!leaf.Length())
       return NS_ERROR_FAILURE;
 
-    rv = dir->MoveToNative(nsnull, leaf);
+#if defined(MOZ_WIDGET_ANDROID)
+    nsCOMPtr<nsIFile> parent;
+    rv = trash->GetParent(getter_AddRefs(parent));
+    if (NS_FAILED(rv))
+      return rv;
+    rv = dir->MoveToNative(parent, leaf);
+#else
+    // Important: must rename directory w/o changing parent directory: else on
+    // NTFS we'll wait (with cache lock) while nsIFile's ACL reset walks file
+    // tree: was hanging GUI for *minutes* on large cache dirs.
+    rv = dir->MoveToNative(nullptr, leaf);
+#endif
     if (NS_FAILED(rv))
       return rv;
   } else {
@@ -262,7 +278,25 @@ nsDeleteDir::DeleteDir(nsIFile *dirIn, bool moveToTrash, PRUint32 delay)
 nsresult
 nsDeleteDir::GetTrashDir(nsIFile *target, nsCOMPtr<nsIFile> *result)
 {
-  nsresult rv = target->Clone(getter_AddRefs(*result));
+  nsresult rv;
+#if defined(MOZ_WIDGET_ANDROID)
+  // Try to use the app cache folder for cache trash on Android
+  char* cachePath = getenv("CACHE_DIRECTORY");
+  if (cachePath) {
+    rv = NS_NewNativeLocalFile(nsDependentCString(cachePath),
+                               true, getter_AddRefs(*result));
+    if (NS_FAILED(rv))
+      return rv;
+
+    // Add a sub folder with the cache folder name
+    nsCAutoString leaf;
+    rv = target->GetNativeLeafName(leaf);
+    (*result)->AppendNative(leaf);
+  } else
+#endif
+  {
+    rv = target->Clone(getter_AddRefs(*result));
+  }
   if (NS_FAILED(rv))
     return rv;
 
@@ -301,7 +335,11 @@ nsDeleteDir::RemoveOldTrashes(nsIFile *cacheDir)
     return rv;
 
   nsCOMPtr<nsIFile> parent;
+#if defined(MOZ_WIDGET_ANDROID)
+  rv = trash->GetParent(getter_AddRefs(parent));
+#else
   rv = cacheDir->GetParent(getter_AddRefs(parent));
+#endif
   if (NS_FAILED(rv))
     return rv;
 

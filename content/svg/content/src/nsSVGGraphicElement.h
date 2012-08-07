@@ -34,9 +34,11 @@ public:
 
   virtual gfxMatrix PrependLocalTransformsTo(const gfxMatrix &aMatrix,
                       TransformTypes aWhich = eAllTransforms) const;
+  virtual const gfxMatrix* GetAnimateMotionTransform() const;
   virtual void SetAnimateMotionTransform(const gfxMatrix* aMatrix);
 
-  virtual mozilla::SVGAnimatedTransformList* GetAnimatedTransformList();
+  virtual mozilla::SVGAnimatedTransformList*
+    GetAnimatedTransformList(PRUint32 aFlags = 0);
   virtual nsIAtom* GetTransformListAttrName() const {
     return nsGkAtoms::transform;
   }

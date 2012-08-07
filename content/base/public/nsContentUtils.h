@@ -31,25 +31,16 @@ static fp_except_t oldmask = fpsetmask(~allmask);
 
 #include "nsAString.h"
 #include "nsIStatefulFrame.h"
-#include "nsINodeInfo.h"
 #include "nsNodeInfoManager.h"
-#include "nsContentList.h"
-#include "nsDOMClassInfoID.h"
 #include "nsIXPCScriptable.h"
 #include "nsDataHashtable.h"
-#include "nsIScriptRuntime.h"
-#include "nsIScriptGlobalObject.h"
 #include "nsIDOMEvent.h"
 #include "nsTArray.h"
-#include "nsTextFragment.h"
 #include "nsReadableUtils.h"
 #include "nsINode.h"
-#include "nsHashtable.h"
 #include "nsIDOMNode.h"
 #include "nsHtml5StringParser.h"
-#include "nsIParser.h"
 #include "nsIDocument.h"
-#include "nsIFragmentContentSink.h"
 #include "nsContentSink.h"
 #include "nsMathUtils.h"
 #include "nsThreadUtils.h"
@@ -70,9 +61,13 @@ class nsIDocument;
 class nsIDocumentObserver;
 class nsIDocShell;
 class nsINameSpaceManager;
+class nsIFragmentContentSink;
+class nsIScriptGlobalObject;
 class nsIScriptSecurityManager;
+class nsTextFragment;
 class nsIJSContextStack;
 class nsIThreadJSContextStack;
+class nsIParser;
 class nsIParserService;
 class nsIIOService;
 class nsIURI;
@@ -95,6 +90,7 @@ class nsEventListenerManager;
 class nsIScriptContext;
 class nsIRunnable;
 class nsIInterfaceRequestor;
+class nsINodeInfo;
 template<class E> class nsCOMArray;
 template<class K, class V> class nsRefPtrHashtable;
 struct JSRuntime;
@@ -119,6 +115,8 @@ class nsIDocumentLoaderFactory;
 class nsIDOMHTMLInputElement;
 
 namespace mozilla {
+
+class Selection;
 
 namespace layers {
   class LayerManager;
@@ -326,10 +324,10 @@ public:
    */
   static PRInt32 ComparePoints(nsINode* aParent1, PRInt32 aOffset1,
                                nsINode* aParent2, PRInt32 aOffset2,
-                               bool* aDisconnected = nsnull);
+                               bool* aDisconnected = nullptr);
   static PRInt32 ComparePoints(nsIDOMNode* aParent1, PRInt32 aOffset1,
                                nsIDOMNode* aParent2, PRInt32 aOffset2,
-                               bool* aDisconnected = nsnull);
+                               bool* aDisconnected = nullptr);
 
   /**
    * Brute-force search of the element subtree rooted at aContent for
@@ -551,8 +549,10 @@ public:
    * @return boolean indicating whether a BOM was detected.
    */
   static bool CheckForBOM(const unsigned char* aBuffer, PRUint32 aLength,
-                            nsACString& aCharset, bool *bigEndian = nsnull);
+                          nsACString& aCharset, bool *bigEndian = nullptr);
 
+  static nsresult GuessCharset(const char *aData, PRUint32 aDataLen,
+                               nsACString &aCharset);
 
   /**
    * Determine whether aContent is in some way associated with aForm.  If the
@@ -567,7 +567,7 @@ public:
 
   static nsresult CheckQName(const nsAString& aQualifiedName,
                              bool aNamespaceAware = true,
-                             const PRUnichar** aColon = nsnull);
+                             const PRUnichar** aColon = nullptr);
 
   static nsresult SplitQName(const nsIContent* aNamespaceResolver,
                              const nsAFlatString& aQName,
@@ -625,8 +625,8 @@ public:
    * Method that gets the primary presContext for the node.
    * 
    * @param aContent The content node.
-   * @return the presContext, or nsnull if the content is not in a document
-   *         (if GetCurrentDoc returns nsnull)
+   * @return the presContext, or nullptr if the content is not in a document
+   *         (if GetCurrentDoc returns nullptr)
    */
   static nsPresContext* GetContextForContent(const nsIContent* aContent);
 
@@ -650,7 +650,7 @@ public:
                              nsISupports* aContext,
                              nsIDocument* aLoadingDocument,
                              nsIPrincipal* aLoadingPrincipal,
-                             PRInt16* aImageBlockingStatus = nsnull);
+                             PRInt16* aImageBlockingStatus = nullptr);
   /**
    * Method to start an image load.  This does not do any security checks.
    * This method will attempt to make aURI immutable; a caller that wants to
@@ -684,7 +684,7 @@ public:
    * @param aRequest The image request [out]
    * @return the imgIContainer corresponding to the first frame of the image
    */
-  static already_AddRefed<imgIContainer> GetImageFromContent(nsIImageLoadingContent* aContent, imgIRequest **aRequest = nsnull);
+  static already_AddRefed<imgIContainer> GetImageFromContent(nsIImageLoadingContent* aContent, imgIRequest **aRequest = nullptr);
 
   /**
    * Helper method to call imgIRequest::GetStaticRequest.
@@ -771,10 +771,10 @@ public:
    *   @param aDocument Reference to the document which triggered the message.
    *   @param aFile Properties file containing localized message.
    *   @param aMessageName Name of localized message.
-   *   @param [aParams=nsnull] (Optional) Parameters to be substituted into
+   *   @param [aParams=nullptr] (Optional) Parameters to be substituted into
               localized message.
    *   @param [aParamsLength=0] (Optional) Length of aParams.
-   *   @param [aURI=nsnull] (Optional) URI of resource containing error.
+   *   @param [aURI=nullptr] (Optional) URI of resource containing error.
    *   @param [aSourceLine=EmptyString()] (Optional) The text of the line that
               contains the error (may be empty).
    *   @param [aLineNumber=0] (Optional) Line number within resource
@@ -802,9 +802,9 @@ public:
                                   nsIDocument* aDocument,
                                   PropertiesFile aFile,
                                   const char *aMessageName,
-                                  const PRUnichar **aParams = nsnull,
+                                  const PRUnichar **aParams = nullptr,
                                   PRUint32 aParamsLength = 0,
-                                  nsIURI* aURI = nsnull,
+                                  nsIURI* aURI = nullptr,
                                   const nsAFlatString& aSourceLine
                                     = EmptyString(),
                                   PRUint32 aLineNumber = 0,
@@ -937,7 +937,7 @@ public:
                                        const nsAString& aEventName,
                                        bool aCanBubble,
                                        bool aCancelable,
-                                       bool *aDefaultAction = nsnull);
+                                       bool *aDefaultAction = nullptr);
                                        
   /**
    * This method creates and dispatches a untrusted event.
@@ -957,7 +957,7 @@ public:
                                          const nsAString& aEventName,
                                          bool aCanBubble,
                                          bool aCancelable,
-                                         bool *aDefaultAction = nsnull);
+                                         bool *aDefaultAction = nullptr);
 
   /**
    * This method creates and dispatches a trusted event to the chrome
@@ -979,7 +979,7 @@ public:
                                       const nsAString& aEventName,
                                       bool aCanBubble,
                                       bool aCancelable,
-                                      bool *aDefaultAction = nsnull);
+                                      bool *aDefaultAction = nullptr);
 
   /**
    * Determines if an event attribute name (such as onclick) is valid for
@@ -1283,6 +1283,8 @@ public:
   static nsresult DropJSObjects(void* aScriptObjectHolder);
 
 #ifdef DEBUG
+  static bool AreJSObjectsHeld(void* aScriptObjectHolder); 
+
   static void CheckCCWrapperTraversal(nsISupports* aScriptObjectHolder,
                                       nsWrapperCache* aCache);
 #endif
@@ -1343,7 +1345,7 @@ public:
                                           PRUint32 aContentPolicyType,
                                           nsISupports* aContext,
                                           const nsACString& aMimeGuess = EmptyCString(),
-                                          nsISupports* aExtra = nsnull);
+                                          nsISupports* aExtra = nullptr);
 
   /**
    * Returns true if aPrincipal is the system principal.
@@ -1570,6 +1572,7 @@ public:
                                                       nsresult* aRv);
 
   static JSContext *GetCurrentJSContext();
+  static JSContext *GetSafeJSContext();
 
   /**
    * Case insensitive comparison between two strings. However it only ignores
@@ -1630,6 +1633,11 @@ public:
   static nsresult ASCIIToUpper(nsAString& aStr);
   static nsresult ASCIIToUpper(const nsAString& aSource, nsAString& aDest);
 
+  /**
+   * Return whether aStr contains an ASCII uppercase character.
+   */
+  static bool StringContainsASCIIUpper(const nsAString& aStr);
+
   // Returns NS_OK for same origin, error (NS_ERROR_DOM_BAD_URI) if not.
   static nsresult CheckSameOrigin(nsIChannel *aOldChannel, nsIChannel *aNewChannel);
   static nsIInterfaceRequestor* GetSameOriginChecker();
@@ -1671,15 +1679,15 @@ public:
    */
   static nsresult DispatchXULCommand(nsIContent* aTarget,
                                      bool aTrusted,
-                                     nsIDOMEvent* aSourceEvent = nsnull,
-                                     nsIPresShell* aShell = nsnull,
+                                     nsIDOMEvent* aSourceEvent = nullptr,
+                                     nsIPresShell* aShell = nullptr,
                                      bool aCtrl = false,
                                      bool aAlt = false,
                                      bool aShift = false,
                                      bool aMeta = false);
 
   /**
-   * Gets the nsIDocument given the script context. Will return nsnull on failure.
+   * Gets the nsIDocument given the script context. Will return nullptr on failure.
    *
    * @param aScriptContext the script context to get the document for; can be null
    *
@@ -1701,10 +1709,10 @@ public:
                              nsISupports *native, const nsIID* aIID, jsval *vp,
                              // If non-null aHolder will keep the jsval alive
                              // while there's a ref to it
-                             nsIXPConnectJSObjectHolder** aHolder = nsnull,
+                             nsIXPConnectJSObjectHolder** aHolder = nullptr,
                              bool aAllowWrapping = false)
   {
-    return WrapNative(cx, scope, native, nsnull, aIID, vp, aHolder,
+    return WrapNative(cx, scope, native, nullptr, aIID, vp, aHolder,
                       aAllowWrapping);
   }
 
@@ -1713,10 +1721,10 @@ public:
                              nsISupports *native, jsval *vp,
                              // If non-null aHolder will keep the jsval alive
                              // while there's a ref to it
-                             nsIXPConnectJSObjectHolder** aHolder = nsnull,
+                             nsIXPConnectJSObjectHolder** aHolder = nullptr,
                              bool aAllowWrapping = false)
   {
-    return WrapNative(cx, scope, native, nsnull, nsnull, vp, aHolder,
+    return WrapNative(cx, scope, native, nullptr, nullptr, vp, aHolder,
                       aAllowWrapping);
   }
   static nsresult WrapNative(JSContext *cx, JSObject *scope,
@@ -1724,10 +1732,10 @@ public:
                              jsval *vp,
                              // If non-null aHolder will keep the jsval alive
                              // while there's a ref to it
-                             nsIXPConnectJSObjectHolder** aHolder = nsnull,
+                             nsIXPConnectJSObjectHolder** aHolder = nullptr,
                              bool aAllowWrapping = false)
   {
-    return WrapNative(cx, scope, native, cache, nsnull, vp, aHolder,
+    return WrapNative(cx, scope, native, cache, nullptr, vp, aHolder,
                       aAllowWrapping);
   }
 
@@ -1787,7 +1795,7 @@ public:
    * layer manager should be used for retained layers
    */
   static already_AddRefed<mozilla::layers::LayerManager>
-  LayerManagerForDocument(nsIDocument *aDoc, bool *aAllowRetaining = nsnull);
+  LayerManagerForDocument(nsIDocument *aDoc, bool *aAllowRetaining = nullptr);
 
   /**
    * Returns a layer manager to use for the given document. Basically we
@@ -1804,7 +1812,7 @@ public:
    * layer manager should be used for retained layers
    */
   static already_AddRefed<mozilla::layers::LayerManager>
-  PersistentLayerManagerForDocument(nsIDocument *aDoc, bool *aAllowRetaining = nsnull);
+  PersistentLayerManagerForDocument(nsIDocument *aDoc, bool *aAllowRetaining = nullptr);
 
   /**
    * Determine whether a content node is focused or not,
@@ -1827,6 +1835,11 @@ public:
    */
   static bool IsRequestFullScreenAllowed();
 
+  /**
+   * Returns true if the idle observers API is enabled.
+   */
+  static bool IsIdleObserverAPIEnabled() { return sIsIdleObserverAPIEnabled; }
+  
   /**
    * Returns true if the doc tree branch which contains aDoc contains any
    * plugins which we don't control event dispatch for, i.e. do any plugins
@@ -1859,6 +1872,7 @@ public:
   static void GetShiftText(nsAString& text);
   static void GetControlText(nsAString& text);
   static void GetMetaText(nsAString& text);
+  static void GetOSText(nsAString& text);
   static void GetAltText(nsAString& text);
   static void GetModifierSeparatorText(nsAString& text);
 
@@ -1901,7 +1915,7 @@ public:
 
   static already_AddRefed<nsIDocumentLoaderFactory>
   FindInternalContentViewer(const char* aType,
-                            ContentViewerType* aLoaderType = nsnull);
+                            ContentViewerType* aLoaderType = nullptr);
 
   /**
    * This helper method returns true if the aPattern pattern matches aValue.
@@ -2007,8 +2021,59 @@ public:
    */
   static bool IsJavaScriptLanguage(const nsString& aName, PRUint32 *aVerFlags);
 
+  /**
+   * Returns the JSVersion for a string of the form '1.n', n = 0, ..., 8, and
+   * JSVERSION_UNKNOWN for other strings.
+   */
+  static JSVersion ParseJavascriptVersion(const nsAString& aVersionStr);
+
+  static bool IsJavascriptMIMEType(const nsAString& aMIMEType)
+  {
+    // Table ordered from most to least likely JS MIME types.
+    static const char* jsTypes[] = {
+      "text/javascript",
+      "text/ecmascript",
+      "application/javascript",
+      "application/ecmascript",
+      "application/x-javascript",
+      "application/x-ecmascript",
+      "text/javascript1.0",
+      "text/javascript1.1",
+      "text/javascript1.2",
+      "text/javascript1.3",
+      "text/javascript1.4",
+      "text/javascript1.5",
+      "text/jscript",
+      "text/livescript",
+      "text/x-ecmascript",
+      "text/x-javascript",
+      nullptr
+    };
+
+    for (PRUint32 i = 0; jsTypes[i]; ++i) {
+      if (aMIMEType.LowerCaseEqualsASCII(jsTypes[i])) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   static void SplitMimeType(const nsAString& aValue, nsString& aType,
                             nsString& aParams);
+
+  /**
+   * Function checks if the user is idle.
+   * 
+   * @param aRequestedIdleTimeInMS    The idle observer's requested idle time.
+   * @param aUserIsIdle               boolean indicating if the user 
+   *                                  is currently idle or not.   *
+   * @return NS_OK                    NS_OK returned if the requested idle service and 
+   *                                  the current idle time were successfully obtained.
+   *                                  NS_ERROR_FAILURE returned if the the requested
+   *                                  idle service or the current idle were not obtained.
+   */
+  static nsresult IsUserIdle(PRUint32 aRequestedIdleTimeInMS, bool* aUserIsIdle);
 
   /** 
    * Takes a window and a string to check prefs against. Assumes that
@@ -2027,7 +2092,25 @@ public:
    */
   static nsresult IsOnPrefWhitelist(nsPIDOMWindow* aWindow,
                                     const char* aPrefURL, bool *aAllowed);
-  
+
+  /**
+   * Takes a selection, and a text control element (<input> or <textarea>), and
+   * returns the offsets in the text content corresponding to the selection.
+   * The selection's anchor and focus must both be in the root node passed or a
+   * descendant.
+   *
+   * @param aSelection      Selection to check
+   * @param aRoot           Root <input> or <textarea> element
+   * @param aOutStartOffset Output start offset
+   * @param aOutEndOffset   Output end offset
+   */
+  static void GetSelectionInTextControl(mozilla::Selection* aSelection,
+                                        Element* aRoot,
+                                        PRInt32& aOutStartOffset,
+                                        PRInt32& aOutEndOffset);
+
+  static nsIEditor* GetHTMLEditor(nsPresContext* aPresContext);
+
 private:
   static bool InitializeEventTable();
 
@@ -2048,7 +2131,7 @@ private:
                                 bool aCanBubble,
                                 bool aCancelable,
                                 bool aTrusted,
-                                bool *aDefaultAction = nsnull);
+                                bool *aDefaultAction = nullptr);
 
   static void InitializeModifierStrings();
 
@@ -2117,6 +2200,7 @@ private:
   static bool sIsFullScreenApiEnabled;
   static bool sTrustedFullScreenOnly;
   static PRUint32 sHandlingInputTimeout;
+  static bool sIsIdleObserverAPIEnabled;
 
   static nsHtml5StringParser* sHTMLFragmentParser;
   static nsIParser* sXMLFragmentParser;
@@ -2130,6 +2214,7 @@ private:
   static nsString* sShiftText;
   static nsString* sControlText;
   static nsString* sMetaText;
+  static nsString* sOSText;
   static nsString* sAltText;
   static nsString* sModifierSeparator;
 };
@@ -2139,7 +2224,7 @@ typedef nsCharSeparatedTokenizerTemplate<nsContentUtils::IsHTMLWhitespace>
 
 #define NS_HOLD_JS_OBJECTS(obj, clazz)                                         \
   nsContentUtils::HoldJSObjects(NS_CYCLE_COLLECTION_UPCAST(obj, clazz),        \
-                                &NS_CYCLE_COLLECTION_NAME(clazz))
+                                NS_CYCLE_COLLECTION_PARTICIPANT(clazz))
 
 #define NS_DROP_JS_OBJECTS(obj, clazz)                                         \
   nsContentUtils::DropJSObjects(NS_CYCLE_COLLECTION_UPCAST(obj, clazz))
@@ -2223,7 +2308,7 @@ public:
   if (aIID.Equals(NS_GET_IID(_interface))) {                                  \
     foundInterface = static_cast<_interface *>(_allocator);                   \
     if (!foundInterface) {                                                    \
-      *aInstancePtr = nsnull;                                                 \
+      *aInstancePtr = nullptr;                                                 \
       return NS_ERROR_OUT_OF_MEMORY;                                          \
     }                                                                         \
   } else
@@ -2267,10 +2352,10 @@ public:
 #define NS_CONTENT_DELETE_LIST_MEMBER(type_, ptr_, member_)                   \
   {                                                                           \
     type_ *cur = (ptr_)->member_;                                             \
-    (ptr_)->member_ = nsnull;                                                 \
+    (ptr_)->member_ = nullptr;                                                 \
     while (cur) {                                                             \
       type_ *next = cur->member_;                                             \
-      cur->member_ = nsnull;                                                  \
+      cur->member_ = nullptr;                                                  \
       delete cur;                                                             \
       cur = next;                                                             \
     }                                                                         \
@@ -2284,7 +2369,7 @@ public:
   nsresult GetParameter(const char* aParameterName, nsAString& aResult);
   nsresult GetType(nsAString& aResult)
   {
-    return GetParameter(nsnull, aResult);
+    return GetParameter(nullptr, aResult);
   }
 
 private:

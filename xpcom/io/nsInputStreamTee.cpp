@@ -7,6 +7,7 @@
 #include "prlog.h"
 
 #include "mozilla/Mutex.h"
+#include "mozilla/Attributes.h"
 #include "nsIInputStreamTee.h"
 #include "nsIInputStream.h"
 #include "nsIOutputStream.h"
@@ -24,7 +25,7 @@ static PRLogModuleInfo* gInputStreamTeeLog = PR_NewLogModule("nsInputStreamTee")
 #define LOG(args)
 #endif
 
-class nsInputStreamTee : public nsIInputStreamTee
+class nsInputStreamTee MOZ_FINAL : public nsIInputStreamTee
 {
 public:
     NS_DECL_ISUPPORTS
@@ -112,7 +113,7 @@ protected:
     virtual ~nsInputStreamTeeWriteEvent()
     {
         if (mBuf) free(mBuf);
-        mBuf = nsnull;
+        mBuf = nullptr;
     }
     
 private:
@@ -123,7 +124,7 @@ private:
     nsRefPtr<nsInputStreamTee> mTee;
 };
 
-nsInputStreamTee::nsInputStreamTee(): mLock(nsnull)
+nsInputStreamTee::nsInputStreamTee(): mLock(nullptr)
                                     , mSinkIsValid(true)
 {
 }
@@ -335,5 +336,5 @@ NS_NewInputStreamTee(nsIInputStream **result,
                      nsIInputStream *source,
                      nsIOutputStream *sink)
 {
-    return NS_NewInputStreamTeeAsync(result, source, sink, nsnull);
+    return NS_NewInputStreamTeeAsync(result, source, sink, nullptr);
 }

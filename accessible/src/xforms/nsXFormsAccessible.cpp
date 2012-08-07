@@ -29,7 +29,7 @@ using namespace mozilla::a11y;
 // nsXFormsAccessibleBase
 ////////////////////////////////////////////////////////////////////////////////
 
-nsIXFormsUtilityService *nsXFormsAccessibleBase::sXFormsService = nsnull;
+nsIXFormsUtilityService *nsXFormsAccessibleBase::sXFormsService = nullptr;
 
 nsXFormsAccessibleBase::nsXFormsAccessibleBase()
 {
@@ -119,12 +119,8 @@ nsXFormsAccessible::NativeState()
 
   nsCOMPtr<nsIDOMNode> DOMNode(do_QueryInterface(mContent));
 
-  bool isRelevant = false;
-  nsresult rv = sXFormsService->IsRelevant(DOMNode, &isRelevant);
-  NS_ENSURE_SUCCESS(rv, 0);
-
   bool isReadonly = false;
-  rv = sXFormsService->IsReadonly(DOMNode, &isReadonly);
+  nsresult rv = sXFormsService->IsReadonly(DOMNode, &isReadonly);
   NS_ENSURE_SUCCESS(rv, 0);
 
   bool isRequired = false;
@@ -137,7 +133,7 @@ nsXFormsAccessible::NativeState()
 
   PRUint64 states = HyperTextAccessibleWrap::NativeState();
 
-  if (!isRelevant)
+  if (NativelyUnavailable())
     states |= states::UNAVAILABLE;
 
   if (isReadonly)
@@ -150,6 +146,16 @@ nsXFormsAccessible::NativeState()
     states |= states::INVALID;
 
   return states;
+}
+
+bool
+nsXFormsAccessible::NativelyUnavailable() const
+{
+  nsCOMPtr<nsIDOMNode> DOMNode(do_QueryInterface(mContent));
+
+  bool isRelevant = false;
+  sXFormsService->IsRelevant(DOMNode, &isRelevant);
+  return !isRelevant;
 }
 
 nsresult
@@ -265,7 +271,7 @@ nsXFormsEditableAccessible::GetEditor() const
 
 nsXFormsSelectableAccessible::
   nsXFormsSelectableAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-  nsXFormsEditableAccessible(aContent, aDoc), mIsSelect1Element(nsnull)
+  nsXFormsEditableAccessible(aContent, aDoc), mIsSelect1Element(nullptr)
 {
   mIsSelect1Element =
     mContent->NodeInfo()->Equals(nsGkAtoms::select1);
@@ -283,7 +289,7 @@ nsXFormsSelectableAccessible::SelectedItems()
   nsCOMPtr<nsIMutableArray> selectedItems =
     do_CreateInstance(NS_ARRAY_CONTRACTID);
   if (!selectedItems)
-    return nsnull;
+    return nullptr;
 
   nsresult rv;
   nsCOMPtr<nsIDOMNode> DOMNode(do_QueryInterface(mContent));
@@ -293,14 +299,14 @@ nsXFormsSelectableAccessible::SelectedItems()
     rv = sXFormsService->GetSelectedItemForSelect1(DOMNode,
                                                    getter_AddRefs(itemDOMNode));
     if (NS_FAILED(rv) || !itemDOMNode || !mDoc)
-      return nsnull;
+      return nullptr;
 
     nsCOMPtr<nsINode> itemNode(do_QueryInterface(itemDOMNode));
     nsIAccessible* item = mDoc->GetAccessible(itemNode);
     if (item)
       selectedItems->AppendElement(item, false);
 
-    nsIMutableArray* items = nsnull;
+    nsIMutableArray* items = nullptr;
     selectedItems.forget(&items);
     return items;
   }
@@ -309,7 +315,7 @@ nsXFormsSelectableAccessible::SelectedItems()
   rv = sXFormsService->GetSelectedItemsForSelect(DOMNode,
                                                  getter_AddRefs(itemNodeList));
   if (NS_FAILED(rv) || !itemNodeList || !mDoc)
-    return nsnull;
+    return nullptr;
 
   PRUint32 length = 0;
   itemNodeList->GetLength(&length);
@@ -318,7 +324,7 @@ nsXFormsSelectableAccessible::SelectedItems()
     nsCOMPtr<nsIDOMNode> itemDOMNode;
     itemNodeList->Item(index, getter_AddRefs(itemDOMNode));
     if (!itemDOMNode)
-      return nsnull;
+      return nullptr;
 
     nsCOMPtr<nsINode> itemNode(do_QueryInterface(itemDOMNode));
     nsIAccessible* item = mDoc->GetAccessible(itemNode);
@@ -326,7 +332,7 @@ nsXFormsSelectableAccessible::SelectedItems()
       selectedItems->AppendElement(item, false);
   }
 
-  nsIMutableArray* items = nsnull;
+  nsIMutableArray* items = nullptr;
   selectedItems.forget(&items);
   return items;
 }
@@ -384,7 +390,7 @@ nsXFormsSelectableAccessible::RemoveItemFromSelection(PRUint32 aIndex)
     sXFormsService->GetSelectedItemForSelect1(DOMNode,
                                               getter_AddRefs(selItemDOMNode));
     if (selItemDOMNode == itemDOMNode)
-      sXFormsService->SetSelectedItemForSelect1(DOMNode, nsnull);
+      sXFormsService->SetSelectedItemForSelect1(DOMNode, nullptr);
 
     return true;
   }
@@ -397,13 +403,13 @@ Accessible*
 nsXFormsSelectableAccessible::GetSelectedItem(PRUint32 aIndex)
 {
   if (!mDoc)
-    return nsnull;
+    return nullptr;
 
   nsresult rv;
   nsCOMPtr<nsIDOMNode> DOMNode(do_QueryInterface(mContent));
   if (mIsSelect1Element) {
     if (aIndex != 0)
-      return nsnull;
+      return nullptr;
 
     nsCOMPtr<nsIDOMNode> itemDOMNode;
     rv = sXFormsService->GetSelectedItemForSelect1(DOMNode,
@@ -412,14 +418,14 @@ nsXFormsSelectableAccessible::GetSelectedItem(PRUint32 aIndex)
       nsCOMPtr<nsINode> itemNode(do_QueryInterface(itemDOMNode));
       return mDoc->GetAccessible(itemNode);
     }
-    return nsnull;
+    return nullptr;
   }
 
   nsCOMPtr<nsIDOMNodeList> itemNodeList;
   rv = sXFormsService->GetSelectedItemsForSelect(DOMNode,
                                                  getter_AddRefs(itemNodeList));
   if (NS_FAILED(rv) || !itemNodeList)
-    return nsnull;
+    return nullptr;
 
   nsCOMPtr<nsIDOMNode> itemDOMNode;
   itemNodeList->Item(aIndex, getter_AddRefs(itemDOMNode));
@@ -453,7 +459,7 @@ nsXFormsSelectableAccessible::UnselectAll()
 {
   nsCOMPtr<nsIDOMNode> DOMNode(do_QueryInterface(mContent));
   if (mIsSelect1Element)
-    sXFormsService->SetSelectedItemForSelect1(DOMNode, nsnull);
+    sXFormsService->SetSelectedItemForSelect1(DOMNode, nullptr);
 
   sXFormsService->ClearSelectionForSelect(DOMNode);
   return true;
@@ -494,7 +500,7 @@ nsXFormsSelectableAccessible::GetItemByIndex(PRUint32* aIndex,
     }
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 

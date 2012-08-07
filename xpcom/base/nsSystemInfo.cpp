@@ -12,7 +12,7 @@
 #include "mozilla/SSE.h"
 #include "mozilla/arm.h"
 
-#ifdef MOZ_WIDGET_GTK2
+#ifdef MOZ_WIDGET_GTK
 #include <gtk/gtk.h>
 #endif
 
@@ -114,7 +114,7 @@ nsSystemInfo::Init()
 
 
 #ifdef MOZ_PLATFORM_MAEMO
-    char *  line = nsnull;
+    char *  line = nullptr;
     size_t  len = 0;
     ssize_t read;
 #if MOZ_PLATFORM_MAEMO > 5

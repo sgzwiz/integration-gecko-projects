@@ -27,6 +27,7 @@
 #include "nsContentUtils.h"
 #include "base/thread.h"
 #include "prenv.h"
+#include "mozilla/Attributes.h"
 
 #ifdef DEBUG
 #include "nsIObserver.h"
@@ -40,15 +41,12 @@ static bool debug_InSecureKeyboardInputMode = false;
 static PRInt32 gNumWidgets;
 #endif
 
-static void InitOnlyOnce();
-static bool sUseOffMainThreadCompositing = false;
-
 using namespace mozilla::layers;
 using namespace mozilla;
 using base::Thread;
 using mozilla::ipc::AsyncChannel;
 
-nsIContent* nsBaseWidget::mLastRollup = nsnull;
+nsIContent* nsBaseWidget::mLastRollup = nullptr;
 // Global user preference for disabling native theme. Used
 // in NativeWindowTheme.
 bool            gDisableNativeTheme               = false;
@@ -79,12 +77,11 @@ nsAutoRollup::~nsAutoRollup()
 //-------------------------------------------------------------------------
 
 nsBaseWidget::nsBaseWidget()
-: mClientData(nsnull)
-, mViewWrapperPtr(nsnull)
-, mEventCallback(nsnull)
-, mViewCallback(nsnull)
-, mContext(nsnull)
-, mCompositorThread(nsnull)
+: mClientData(nullptr)
+, mViewWrapperPtr(nullptr)
+, mEventCallback(nullptr)
+, mViewCallback(nullptr)
+, mContext(nullptr)
 , mCursor(eCursor_standard)
 , mWindowType(eWindowType_child)
 , mBorderStyle(eBorderStyle_none)
@@ -93,11 +90,12 @@ nsBaseWidget::nsBaseWidget()
 , mForceLayersAcceleration(false)
 , mTemporarilyUseBasicLayerManager(false)
 , mBounds(0,0,0,0)
-, mOriginalBounds(nsnull)
+, mOriginalBounds(nullptr)
 , mClipRectCount(0)
 , mZIndex(0)
 , mSizeMode(nsSizeMode_Normal)
 , mPopupLevel(ePopupLevelTop)
+, mPopupType(ePopupTypeAny)
 {
 #ifdef NOISY_WIDGET_LEAKS
   gNumWidgets++;
@@ -107,16 +105,13 @@ nsBaseWidget::nsBaseWidget()
 #ifdef DEBUG
   debug_RegisterPrefCallbacks();
 #endif
-  InitOnlyOnce();
 }
 
 
 static void DeferredDestroyCompositor(CompositorParent* aCompositorParent,
-                              CompositorChild* aCompositorChild,
-                              Thread* aCompositorThread)
+                              CompositorChild* aCompositorChild)
 {
     aCompositorChild->Destroy();
-    delete aCompositorThread;
     aCompositorParent->Release();
     aCompositorChild->Release();
 }
@@ -135,7 +130,7 @@ void nsBaseWidget::DestroyCompositor()
     // handle compositor desctruction.
     MessageLoop::current()->PostTask(FROM_HERE,
                NewRunnableFunction(DeferredDestroyCompositor, mCompositorParent,
-                                   mCompositorChild, mCompositorThread));
+                                   mCompositorChild));
     // The DestroyCompositor task we just added to the MessageLoop will handle
     // releasing mCompositorParent and mCompositorChild.
     mCompositorParent.forget();
@@ -151,13 +146,13 @@ void nsBaseWidget::DestroyCompositor()
 nsBaseWidget::~nsBaseWidget()
 {
   if (mLayerManager &&
-      mLayerManager->GetBackendType() == LayerManager::LAYERS_BASIC) {
+      mLayerManager->GetBackendType() == LAYERS_BASIC) {
     static_cast<BasicLayerManager*>(mLayerManager.get())->ClearRetainerWidget();
   }
 
   if (mLayerManager) {
     mLayerManager->Destroy();
-    mLayerManager = nsnull;
+    mLayerManager = nullptr;
   }
 
   DestroyCompositor();
@@ -185,9 +180,9 @@ void nsBaseWidget::BaseCreate(nsIWidget *aParent,
 {
   static bool gDisableNativeThemeCached = false;
   if (!gDisableNativeThemeCached) {
-    mozilla::Preferences::AddBoolVarCache(&gDisableNativeTheme,
-                                          "mozilla.widget.disable-native-theme",
-                                          gDisableNativeTheme);
+    Preferences::AddBoolVarCache(&gDisableNativeTheme,
+                                 "mozilla.widget.disable-native-theme",
+                                 gDisableNativeTheme);
     gDisableNativeThemeCached = true;
   }
 
@@ -202,13 +197,14 @@ void nsBaseWidget::BaseCreate(nsIWidget *aParent,
   else {
     mContext = new nsDeviceContext();
     NS_ADDREF(mContext);
-    mContext->Init(nsnull);
+    mContext->Init(nullptr);
   }
 
-  if (nsnull != aInitData) {
+  if (nullptr != aInitData) {
     mWindowType = aInitData->mWindowType;
     mBorderStyle = aInitData->mBorderStyle;
     mPopupLevel = aInitData->mPopupLevel;
+    mPopupType = aInitData->mPopupHint;
   }
 
   if (aParent) {
@@ -247,14 +243,14 @@ nsBaseWidget::CreateChild(const nsIntRect  &aRect,
                           bool             aForceUseIWidgetParent)
 {
   nsIWidget* parent = this;
-  nsNativeWidget nativeParent = nsnull;
+  nsNativeWidget nativeParent = nullptr;
 
   if (!aForceUseIWidgetParent) {
     // Use only either parent or nativeParent, not both, to match
     // existing code.  Eventually Create() should be divested of its
     // nativeWidget parameter.
-    nativeParent = parent ? parent->GetNativeData(NS_NATIVE_WIDGET) : nsnull;
-    parent = nativeParent ? nsnull : parent;
+    nativeParent = parent ? parent->GetNativeData(NS_NATIVE_WIDGET) : nullptr;
+    parent = nativeParent ? nullptr : parent;
     NS_ABORT_IF_FALSE(!parent || !nativeParent, "messed up logic");
   }
 
@@ -273,7 +269,7 @@ nsBaseWidget::CreateChild(const nsIntRect  &aRect,
     return widget.forget();
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 NS_IMETHODIMP
@@ -365,7 +361,7 @@ NS_IMETHODIMP nsBaseWidget::SetParent(nsIWidget* aNewParent)
 //-------------------------------------------------------------------------
 nsIWidget* nsBaseWidget::GetParent(void)
 {
-  return nsnull;
+  return nullptr;
 }
 
 //-------------------------------------------------------------------------
@@ -375,7 +371,7 @@ nsIWidget* nsBaseWidget::GetParent(void)
 //-------------------------------------------------------------------------
 nsIWidget* nsBaseWidget::GetTopLevelWidget()
 {
-  nsIWidget *topLevelWidget = nsnull, *widget = this;
+  nsIWidget *topLevelWidget = nullptr, *widget = this;
   while (widget) {
     topLevelWidget = widget;
     widget = widget->GetParent();
@@ -390,7 +386,7 @@ nsIWidget* nsBaseWidget::GetTopLevelWidget()
 //-------------------------------------------------------------------------
 nsIWidget* nsBaseWidget::GetSheetWindowParent(void)
 {
-  return nsnull;
+  return nullptr;
 }
 
 float nsBaseWidget::GetDPI()
@@ -453,8 +449,8 @@ void nsBaseWidget::RemoveChild(nsIWidget* aChild)
     next->SetPrevSibling(prev);
   }
   
-  aChild->SetNextSibling(nsnull);
-  aChild->SetPrevSibling(nsnull);
+  aChild->SetNextSibling(nullptr);
+  aChild->SetPrevSibling(nullptr);
 }
 
 
@@ -736,15 +732,15 @@ NS_IMETHODIMP nsBaseWidget::MakeFullScreen(bool aFullScreen)
 
 nsBaseWidget::AutoLayerManagerSetup::AutoLayerManagerSetup(
     nsBaseWidget* aWidget, gfxContext* aTarget,
-    BasicLayerManager::BufferMode aDoubleBuffering)
+    BufferMode aDoubleBuffering, ScreenRotation aRotation)
   : mWidget(aWidget)
 {
   BasicLayerManager* manager =
     static_cast<BasicLayerManager*>(mWidget->GetLayerManager());
   if (manager) {
-    NS_ASSERTION(manager->GetBackendType() == LayerManager::LAYERS_BASIC,
+    NS_ASSERTION(manager->GetBackendType() == LAYERS_BASIC,
       "AutoLayerManagerSetup instantiated for non-basic layer backend!");
-    manager->SetDefaultTarget(aTarget, aDoubleBuffering);
+    manager->SetDefaultTarget(aTarget, aDoubleBuffering, aRotation);
   }
 }
 
@@ -753,9 +749,10 @@ nsBaseWidget::AutoLayerManagerSetup::~AutoLayerManagerSetup()
   BasicLayerManager* manager =
     static_cast<BasicLayerManager*>(mWidget->GetLayerManager());
   if (manager) {
-    NS_ASSERTION(manager->GetBackendType() == LayerManager::LAYERS_BASIC,
+    NS_ASSERTION(manager->GetBackendType() == LAYERS_BASIC,
       "AutoLayerManagerSetup instantiated for non-basic layer backend!");
-    manager->SetDefaultTarget(nsnull, BasicLayerManager::BUFFER_NONE);
+    manager->SetDefaultTarget(nullptr, mozilla::layers::BUFFER_NONE,
+                              ROTATION_0);
   }
 }
 
@@ -806,8 +803,12 @@ nsBaseWidget::GetShouldAccelerate()
   bool accelerateByDefault = false;
 #endif
 
+  // We don't want to accelerate small popup windows like menu, but we still 
+  // want to accelerate xul panels that may contain arbitrarily complex content.
+  bool isSmallPopup = ((mWindowType == eWindowType_popup) && 
+                      (mPopupType != ePopupTypePanel));
   // we should use AddBoolPrefVarCache
-  bool disableAcceleration = (mWindowType == eWindowType_popup) || 
+  bool disableAcceleration = isSmallPopup || 
     Preferences::GetBool("layers.acceleration.disabled", false);
   mForceLayersAcceleration =
     Preferences::GetBool("layers.acceleration.force-enabled", false);
@@ -847,6 +848,10 @@ nsBaseWidget::GetShouldAccelerate()
   
   if (!whitelisted) {
     NS_WARNING("OpenGL-accelerated layers are not supported on this system.");
+#ifdef MOZ_JAVA_COMPOSITOR
+    NS_RUNTIMEABORT("OpenGL-accelerated layers are a hard requirement on this platform. "
+                    "Cannot continue without support for them.");
+#endif
     return false;
   }
 
@@ -859,58 +864,53 @@ nsBaseWidget::GetShouldAccelerate()
 
 void nsBaseWidget::CreateCompositor()
 {
-  mCompositorThread = new Thread("CompositorThread");
-  if (mCompositorThread->Start()) {
-    bool renderToEGLSurface = false;
+  bool renderToEGLSurface = false;
 #ifdef MOZ_JAVA_COMPOSITOR
-    renderToEGLSurface = true;
+  renderToEGLSurface = true;
 #endif
-    nsIntRect rect;
-    GetBounds(rect);
-    mCompositorParent =
-      new CompositorParent(this, mCompositorThread->message_loop(), mCompositorThread->thread_id(),
-                           renderToEGLSurface, rect.width, rect.height);
-    LayerManager* lm = CreateBasicLayerManager();
-    MessageLoop *childMessageLoop = mCompositorThread->message_loop();
-    mCompositorChild = new CompositorChild(lm);
-    AsyncChannel *parentChannel = mCompositorParent->GetIPCChannel();
-    AsyncChannel::Side childSide = mozilla::ipc::AsyncChannel::Child;
-    mCompositorChild->Open(parentChannel, childMessageLoop, childSide);
-    PRInt32 maxTextureSize;
-    PLayersChild* shadowManager;
-    if (mUseAcceleratedRendering) {
-      shadowManager = mCompositorChild->SendPLayersConstructor(LayerManager::LAYERS_OPENGL, &maxTextureSize);
-    } else {
-      shadowManager = mCompositorChild->SendPLayersConstructor(LayerManager::LAYERS_BASIC, &maxTextureSize);
-    }
+  nsIntRect rect;
+  GetBounds(rect);
+  mCompositorParent =
+    new CompositorParent(this, renderToEGLSurface, rect.width, rect.height);
+  LayerManager* lm = CreateBasicLayerManager();
+  MessageLoop *childMessageLoop = CompositorParent::CompositorLoop();
+  mCompositorChild = new CompositorChild(lm);
+  AsyncChannel *parentChannel = mCompositorParent->GetIPCChannel();
+  AsyncChannel::Side childSide = mozilla::ipc::AsyncChannel::Child;
+  mCompositorChild->Open(parentChannel, childMessageLoop, childSide);
+  PRInt32 maxTextureSize;
+  PLayersChild* shadowManager;
+  mozilla::layers::LayersBackend backendHint =
+    mUseAcceleratedRendering ? mozilla::layers::LAYERS_OPENGL : mozilla::layers::LAYERS_BASIC;
+  mozilla::layers::LayersBackend parentBackend;
+  shadowManager = mCompositorChild->SendPLayersConstructor(
+    backendHint, 0, &parentBackend, &maxTextureSize);
 
-    if (shadowManager) {
-      ShadowLayerForwarder* lf = lm->AsShadowForwarder();
-      if (!lf) {
-        delete lm;
-        mCompositorChild = nsnull;
-        return;
-      }
-      lf->SetShadowManager(shadowManager);
-      if (mUseAcceleratedRendering)
-        lf->SetParentBackendType(LayerManager::LAYERS_OPENGL);
-      else
-        lf->SetParentBackendType(LayerManager::LAYERS_BASIC);
-      lf->SetMaxTextureSize(maxTextureSize);
-
-      mLayerManager = lm;
-    } else {
-      // We don't currently want to support not having a LayersChild
-      NS_RUNTIMEABORT("failed to construct LayersChild");
+  if (shadowManager) {
+    ShadowLayerForwarder* lf = lm->AsShadowForwarder();
+    if (!lf) {
       delete lm;
-      mCompositorChild = nsnull;
+      mCompositorChild = nullptr;
+      return;
     }
+    lf->SetShadowManager(shadowManager);
+    lf->SetParentBackendType(parentBackend);
+    lf->SetMaxTextureSize(maxTextureSize);
+
+    mLayerManager = lm;
+  } else {
+    // We don't currently want to support not having a LayersChild
+    NS_RUNTIMEABORT("failed to construct LayersChild");
+    delete lm;
+    mCompositorChild = nullptr;
   }
 }
 
 bool nsBaseWidget::UseOffMainThreadCompositing()
 {
-  return sUseOffMainThreadCompositing;
+  bool isSmallPopup = ((mWindowType == eWindowType_popup) && 
+                      (mPopupType != ePopupTypePanel));
+  return CompositorParent::CompositorLoop() && !isSmallPopup;
 }
 
 LayerManager* nsBaseWidget::GetLayerManager(PLayersChild* aShadowManager,
@@ -926,7 +926,7 @@ LayerManager* nsBaseWidget::GetLayerManager(PLayersChild* aShadowManager,
     if (UseOffMainThreadCompositing()) {
       // e10s uses the parameter to pass in the shadow manager from the TabChild
       // so we don't expect to see it there since this doesn't support e10s.
-      NS_ASSERTION(aShadowManager == nsnull, "Async Compositor not supported with e10s");
+      NS_ASSERTION(aShadowManager == nullptr, "Async Compositor not supported with e10s");
       CreateCompositor();
     }
 
@@ -985,7 +985,7 @@ gfxASurface *nsBaseWidget::GetThebesSurface()
 {
   // in theory we should get our parent's surface,
   // clone it, and set a device offset before returning
-  return nsnull;
+  return nullptr;
 }
 
 
@@ -1311,7 +1311,7 @@ nsBaseWidget::OverrideSystemMouseScrollSpeed(PRInt32 aOriginalDelta,
  * Returns true if the icon file exists and can be read.
  */
 static bool
-ResolveIconNameHelper(nsILocalFile *aFile,
+ResolveIconNameHelper(nsIFile *aFile,
                       const nsAString &aIconName,
                       const nsAString &aIconSuffix)
 {
@@ -1333,9 +1333,9 @@ ResolveIconNameHelper(nsILocalFile *aFile,
 void
 nsBaseWidget::ResolveIconName(const nsAString &aIconName,
                               const nsAString &aIconSuffix,
-                              nsILocalFile **aResult)
+                              nsIFile **aResult)
 { 
-  *aResult = nsnull;
+  *aResult = nullptr;
 
   nsCOMPtr<nsIProperties> dirSvc = do_GetService(NS_DIRECTORY_SERVICE_CONTRACTID);
   if (!dirSvc)
@@ -1353,7 +1353,7 @@ nsBaseWidget::ResolveIconName(const nsAString &aIconName,
       dirs->GetNext(getter_AddRefs(element));
       if (!element)
         continue;
-      nsCOMPtr<nsILocalFile> file = do_QueryInterface(element);
+      nsCOMPtr<nsIFile> file = do_QueryInterface(element);
       if (!file)
         continue;
       if (ResolveIconNameHelper(file, aIconName, aIconSuffix)) {
@@ -1365,8 +1365,8 @@ nsBaseWidget::ResolveIconName(const nsAString &aIconName,
 
   // then check the main app chrome directory
 
-  nsCOMPtr<nsILocalFile> file;
-  dirSvc->Get(NS_APP_CHROME_DIR, NS_GET_IID(nsILocalFile),
+  nsCOMPtr<nsIFile> file;
+  dirSvc->Get(NS_APP_CHROME_DIR, NS_GET_IID(nsIFile),
               getter_AddRefs(file));
   if (file && ResolveIconNameHelper(file, aIconName, aIconSuffix))
     NS_ADDREF(*aResult = file);
@@ -1388,7 +1388,7 @@ PRUint32
 nsBaseWidget::GetGLFrameBufferFormat()
 {
   if (mLayerManager &&
-      mLayerManager->GetBackendType() == LayerManager::LAYERS_OPENGL) {
+      mLayerManager->GetBackendType() == LAYERS_OPENGL) {
     // Assume that the default framebuffer has RGBA format.  Specific
     // backends that know differently will override this method.
     return LOCAL_GL_RGBA;
@@ -1396,23 +1396,16 @@ nsBaseWidget::GetGLFrameBufferFormat()
   return LOCAL_GL_NONE;
 }
 
-static void InitOnlyOnce()
+void nsBaseWidget::SetSizeConstraints(const SizeConstraints& aConstraints)
 {
-  static bool once = true;
-  if (!once) {
-    return;
-  }
-  once = false;
+  mSizeConstraints = aConstraints;
+  // We can't ensure that the size is honored at this point because we're
+  // probably in the middle of a reflow.
+}
 
-#ifdef MOZ_X11
-  // On X11 platforms only use OMTC if firefox was initalized with thread-safe 
-  // X11 (else it would crash).
-  sUseOffMainThreadCompositing = (PR_GetEnv("MOZ_USE_OMTC") != NULL);
-#else
-  sUseOffMainThreadCompositing = mozilla::Preferences::GetBool(
-        "layers.offmainthreadcomposition.enabled", 
-        false);
-#endif
+const widget::SizeConstraints& nsBaseWidget::GetSizeConstraints() const
+{
+  return mSizeConstraints;
 }
 
 #ifdef DEBUG
@@ -1429,7 +1422,7 @@ static void InitOnlyOnce()
 /* static */ nsAutoString
 nsBaseWidget::debug_GuiEventToString(nsGUIEvent * aGuiEvent)
 {
-  NS_ASSERTION(nsnull != aGuiEvent,"cmon, null gui event.");
+  NS_ASSERTION(nullptr != aGuiEvent,"cmon, null gui event.");
 
   nsAutoString eventName(NS_LITERAL_STRING("UNKNOWN"));
 
@@ -1522,7 +1515,7 @@ static PrefPair debug_PrefValues[] =
 bool
 nsBaseWidget::debug_GetCachedBoolPref(const char * aPrefName)
 {
-  NS_ASSERTION(nsnull != aPrefName,"cmon, pref name is null.");
+  NS_ASSERTION(nullptr != aPrefName,"cmon, pref name is null.");
 
   for (PRUint32 i = 0; i < ArrayLength(debug_PrefValues); i++)
   {
@@ -1537,7 +1530,7 @@ nsBaseWidget::debug_GetCachedBoolPref(const char * aPrefName)
 //////////////////////////////////////////////////////////////
 static void debug_SetCachedBoolPref(const char * aPrefName,bool aValue)
 {
-  NS_ASSERTION(nsnull != aPrefName,"cmon, pref name is null.");
+  NS_ASSERTION(nullptr != aPrefName,"cmon, pref name is null.");
 
   for (PRUint32 i = 0; i < ArrayLength(debug_PrefValues); i++)
   {
@@ -1553,7 +1546,7 @@ static void debug_SetCachedBoolPref(const char * aPrefName,bool aValue)
 }
 
 //////////////////////////////////////////////////////////////
-class Debug_PrefObserver : public nsIObserver {
+class Debug_PrefObserver MOZ_FINAL : public nsIObserver {
   public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSIOBSERVER
@@ -1658,9 +1651,9 @@ nsBaseWidget::debug_DumpPaintEvent(FILE *                aFileOut,
                                    const nsCAutoString & aWidgetName,
                                    PRInt32               aWindowID)
 {
-  NS_ASSERTION(nsnull != aFileOut,"cmon, null output FILE");
-  NS_ASSERTION(nsnull != aWidget,"cmon, the widget is null");
-  NS_ASSERTION(nsnull != aPaintEvent,"cmon, the paint event is null");
+  NS_ASSERTION(nullptr != aFileOut,"cmon, null output FILE");
+  NS_ASSERTION(nullptr != aWidget,"cmon, the widget is null");
+  NS_ASSERTION(nullptr != aPaintEvent,"cmon, the paint event is null");
 
   if (!debug_GetCachedBoolPref("nglayout.debug.paint_dumping"))
     return;
@@ -1688,8 +1681,8 @@ nsBaseWidget::debug_DumpInvalidate(FILE *                aFileOut,
   if (!debug_GetCachedBoolPref("nglayout.debug.invalidate_dumping"))
     return;
 
-  NS_ASSERTION(nsnull != aFileOut,"cmon, null output FILE");
-  NS_ASSERTION(nsnull != aWidget,"cmon, the widget is null");
+  NS_ASSERTION(nullptr != aFileOut,"cmon, null output FILE");
+  NS_ASSERTION(nullptr != aWidget,"cmon, the widget is null");
 
   fprintf(aFileOut,
           "%4d Invalidate widget=%p name=%-12s id=%-8p",

@@ -7,12 +7,12 @@
 /* Mac OS X-specific local file uri parsing */
 #include "nsURLHelper.h"
 #include "nsEscape.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsTArray.h"
 #include "nsReadableUtils.h"
 #include <Carbon/Carbon.h>
 
-static nsTArray<nsCString> *gVolumeList = nsnull;
+static nsTArray<nsCString> *gVolumeList = nullptr;
 
 static bool pathBeginsWithVolName(const nsACString& path, nsACString& firstPathComponent)
 {
@@ -66,7 +66,7 @@ void
 net_ShutdownURLHelperOSX()
 {
   delete gVolumeList;
-  gVolumeList = nsnull;
+  gVolumeList = nullptr;
 }
 
 static nsresult convertHFSPathtoPOSIX(const nsACString& hfsPath, nsACString& posixPath)
@@ -148,7 +148,7 @@ net_GetFileFromURLSpec(const nsACString &aURL, nsIFile **result)
 
   nsresult rv;
 
-  nsCOMPtr<nsILocalFile> localFile;
+  nsCOMPtr<nsIFile> localFile;
   rv = NS_NewNativeLocalFile(EmptyCString(), true, getter_AddRefs(localFile));
   if (NS_FAILED(rv))
     return rv;
@@ -176,7 +176,7 @@ net_GetFileFromURLSpec(const nsACString &aURL, nsIFile **result)
       // directory doesn't exist, we'll assume this is an HFS path.
       FSRef testRef;
       possibleVolName.Insert("/", 0);
-      if (::FSPathMakeRef((UInt8*)possibleVolName.get(), &testRef, nsnull) != noErr)
+      if (::FSPathMakeRef((UInt8*)possibleVolName.get(), &testRef, nullptr) != noErr)
         bHFSPath = true;
     }
 

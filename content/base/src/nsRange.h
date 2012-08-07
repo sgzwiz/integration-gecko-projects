@@ -13,7 +13,7 @@
 #include "nsIDOMRange.h"
 #include "nsCOMPtr.h"
 #include "nsIDOMDocumentFragment.h"
-#include "nsIContent.h"
+#include "nsINode.h"
 #include "nsIDOMNode.h"
 #include "prmon.h"
 #include "nsStubMutationObserver.h"
@@ -24,7 +24,7 @@ class nsRange : public nsIDOMRange,
 {
 public:
   nsRange()
-    : mRoot(nsnull)
+    : mRoot(nullptr)
     , mZone(JS_ZONE_NONE)
     , mStartOffset(0)
     , mEndOffset(0)
@@ -122,7 +122,7 @@ public:
   void Reset();
   nsresult SetStart(nsINode* aParent, PRInt32 aOffset);
   nsresult SetEnd(nsINode* aParent, PRInt32 aOffset);
-  nsresult CloneRange(nsRange** aNewRange) const;
+  already_AddRefed<nsRange> CloneRange() const;
 
   nsresult Set(nsINode* aStartParent, PRInt32 aStartOffset,
                nsINode* aEndParent, PRInt32 aEndOffset)

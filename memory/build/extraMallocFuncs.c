@@ -5,10 +5,12 @@
 #include <string.h>
 #include "mozilla/Types.h"
 
-#ifdef ANDROID
+#ifdef MOZ_WIDGET_ANDROID
 #define wrap(a) __wrap_ ## a
 #elif defined(XP_WIN) || defined(XP_MACOSX)
 #define wrap(a) je_ ## a
+#elif defined(MOZ_WIDGET_GONK)
+#define wrap(a) a
 #endif
 
 #ifdef wrap
@@ -90,3 +92,26 @@ wrap(wcsdup)(const wchar_t *src)
 #endif /* XP_WIN */
 
 #endif
+
+#ifdef MOZ_JEMALLOC
+/* Override some jemalloc defaults */
+const char *je_malloc_conf = "narenas:1,lg_chunk:20";
+
+#ifdef ANDROID
+#include <android/log.h>
+
+static void
+_je_malloc_message(void *cbopaque, const char *s)
+{
+  __android_log_print(ANDROID_LOG_INFO, "GeckoJemalloc", "%s", s);
+}
+
+void (*je_malloc_message)(void *, const char *s) = _je_malloc_message;
+#endif
+#endif /* MOZ_JEMALLOC */
+
+#include <mozilla/Assertions.h>
+
+void moz_abort() {
+  MOZ_CRASH();
+}

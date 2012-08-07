@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Mutex.h"
+#include "mozilla/Attributes.h"
 #include "nsStreamUtils.h"
 #include "nsCOMPtr.h"
 #include "nsIPipe.h"
@@ -17,8 +18,8 @@ using namespace mozilla;
 
 //-----------------------------------------------------------------------------
 
-class nsInputStreamReadyEvent : public nsIRunnable
-                              , public nsIInputStreamCallback
+class nsInputStreamReadyEvent MOZ_FINAL : public nsIRunnable
+                                        , public nsIInputStreamCallback
 {
 public:
     NS_DECL_ISUPPORTS
@@ -50,7 +51,7 @@ private:
                                         mTarget);
             mCallback = 0;
             if (event) {
-                rv = event->OnInputStreamReady(nsnull);
+                rv = event->OnInputStreamReady(nullptr);
                 if (NS_FAILED(rv)) {
                     NS_NOTREACHED("leaking stream event");
                     nsISupports *sup = event;
@@ -81,7 +82,7 @@ public:
             NS_StickLock(mCallback);
             if (mStream)
                 mCallback->OnInputStreamReady(mStream);
-            mCallback = nsnull;
+            mCallback = nullptr;
         }
         return NS_OK;
     }
@@ -97,8 +98,8 @@ NS_IMPL_THREADSAFE_ISUPPORTS2(nsInputStreamReadyEvent, nsIRunnable,
 
 //-----------------------------------------------------------------------------
 
-class nsOutputStreamReadyEvent : public nsIRunnable
-                               , public nsIOutputStreamCallback
+class nsOutputStreamReadyEvent MOZ_FINAL : public nsIRunnable
+                                         , public nsIOutputStreamCallback
 {
 public:
     NS_DECL_ISUPPORTS
@@ -130,7 +131,7 @@ private:
                                          mTarget);
             mCallback = 0;
             if (event) {
-                rv = event->OnOutputStreamReady(nsnull);
+                rv = event->OnOutputStreamReady(nullptr);
                 if (NS_FAILED(rv)) {
                     NS_NOTREACHED("leaking stream event");
                     nsISupports *sup = event;
@@ -160,7 +161,7 @@ public:
         if (mCallback) {
             if (mStream)
                 mCallback->OnOutputStreamReady(mStream);
-            mCallback = nsnull;
+            mCallback = nullptr;
         }
         return NS_OK;
     }
@@ -217,8 +218,8 @@ public:
 
     nsAStreamCopier()
         : mLock("nsAStreamCopier.mLock")
-        , mCallback(nsnull)
-        , mClosure(nsnull)
+        , mCallback(nullptr)
+        , mClosure(nullptr)
         , mChunkSize(0)
         , mEventInProcess(false)
         , mEventIsPending(false)
@@ -297,24 +298,24 @@ public:
                 if (sourceCondition == NS_BASE_STREAM_WOULD_BLOCK && mAsyncSource) {
                     // need to wait for more data from source.  while waiting for
                     // more source data, be sure to observe failures on output end.
-                    mAsyncSource->AsyncWait(this, 0, 0, nsnull);
+                    mAsyncSource->AsyncWait(this, 0, 0, nullptr);
 
                     if (mAsyncSink)
                         mAsyncSink->AsyncWait(this,
                                               nsIAsyncOutputStream::WAIT_CLOSURE_ONLY,
-                                              0, nsnull);
+                                              0, nullptr);
                     break;
                 }
                 else if (sinkCondition == NS_BASE_STREAM_WOULD_BLOCK && mAsyncSink) {
                     // need to wait for more room in the sink.  while waiting for
                     // more room in the sink, be sure to observer failures on the
                     // input end.
-                    mAsyncSink->AsyncWait(this, 0, 0, nsnull);
+                    mAsyncSink->AsyncWait(this, 0, 0, nullptr);
 
                     if (mAsyncSource)
                         mAsyncSource->AsyncWait(this,
                                                 nsIAsyncInputStream::WAIT_CLOSURE_ONLY,
-                                                0, nsnull);
+                                                0, nullptr);
                     break;
                 }
             }
@@ -327,8 +328,8 @@ public:
                     else
                         mSource->Close();
                 }
-                mAsyncSource = nsnull;
-                mSource = nsnull;
+                mAsyncSource = nullptr;
+                mSource = nullptr;
 
                 if (mCloseSink) {
                     // close sink
@@ -348,8 +349,8 @@ public:
                             mSink->Close();
                     }
                 }
-                mAsyncSink = nsnull;
-                mSink = nsnull;
+                mAsyncSink = nullptr;
+                mSink = nullptr;
 
                 // notify state complete...
                 if (mCallback) {
@@ -465,7 +466,7 @@ NS_IMPL_THREADSAFE_ISUPPORTS3(nsAStreamCopier,
                               nsIOutputStreamCallback,
                               nsIRunnable)
 
-class nsStreamCopierIB : public nsAStreamCopier
+class nsStreamCopierIB MOZ_FINAL : public nsAStreamCopier
 {
 public:
     nsStreamCopierIB() : nsAStreamCopier() {}
@@ -508,7 +509,7 @@ public:
     }
 };
 
-class nsStreamCopierOB : public nsAStreamCopier
+class nsStreamCopierOB MOZ_FINAL : public nsAStreamCopier
 {
 public:
     nsStreamCopierOB() : nsAStreamCopier() {}
@@ -727,6 +728,20 @@ NS_CopySegmentToBuffer(nsIInputStream *inStr,
     char *toBuf = static_cast<char *>(closure);
     memcpy(&toBuf[offset], buffer, count);
     *countWritten = count;
+    return NS_OK;
+}
+
+NS_METHOD
+NS_CopySegmentToBuffer(nsIOutputStream *outStr,
+                       void *closure,
+                       char *buffer,
+                       PRUint32 offset,
+                       PRUint32 count,
+                       PRUint32 *countRead)
+{
+    const char* fromBuf = static_cast<const char*>(closure);
+    memcpy(buffer, &fromBuf[offset], count);
+    *countRead = count;
     return NS_OK;
 }
 

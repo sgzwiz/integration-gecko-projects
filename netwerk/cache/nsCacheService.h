@@ -17,8 +17,10 @@
 #include "nsIObserver.h"
 #include "nsString.h"
 #include "nsTArray.h"
+#include "nsRefPtrHashtable.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/Telemetry.h"
 
 class nsCacheRequest;
 class nsCacheProfilePrefObserver;
@@ -112,13 +114,22 @@ public:
 
     nsresult GetOfflineDevice(nsOfflineCacheDevice ** aDevice);
 
+    /**
+     * Creates an offline cache device that works over a specific profile directory.
+     * A tool to preload offline cache for profiles different from the current
+     * application's profile directory.
+     */
+    nsresult GetCustomOfflineDevice(nsIFile *aProfileDir,
+                                    PRInt32 aQuota,
+                                    nsOfflineCacheDevice **aDevice);
+
     // This method may be called to release an object while the cache service
     // lock is being held.  If a non-null target is specified and the target
     // does not correspond to the current thread, then the release will be
     // proxied to the specified target.  Otherwise, the object will be added to
     // the list of objects to be released when the cache service is unlocked.
     static void      ReleaseObject_Locked(nsISupports *    object,
-                                          nsIEventTarget * target = nsnull);
+                                          nsIEventTarget * target = nullptr);
 
     static nsresult DispatchToCacheIOThread(nsIRunnable* event);
 
@@ -178,12 +189,17 @@ private:
      * Internal Methods
      */
 
-    static void      Lock();
+    static void      Lock(::mozilla::Telemetry::ID mainThreadLockerID);
     static void      Unlock();
 
     nsresult         CreateDiskDevice();
     nsresult         CreateOfflineDevice();
+    nsresult         CreateCustomOfflineDevice(nsIFile *aProfileDir,
+                                               PRInt32 aQuota,
+                                               nsOfflineCacheDevice **aDevice);
     nsresult         CreateMemoryDevice();
+
+    nsresult         RemoveCustomOfflineDevice(nsOfflineCacheDevice *aDevice);
 
     nsresult         CreateRequest(nsCacheSession *   session,
                                    const nsACString & clientKey,
@@ -237,6 +253,11 @@ private:
                                        PLDHashEntryHdr * hdr,
                                        PRUint32          number,
                                        void *            arg);
+
+    static
+    PLDHashOperator  ShutdownCustomCacheDeviceEnum(const nsAString& aProfileDir,
+                                                   nsRefPtr<nsOfflineCacheDevice>& aDevice,
+                                                   void* aUserArg);
 #if defined(PR_LOGGING)
     void LogCacheStatistics();
 #endif
@@ -270,6 +291,8 @@ private:
     nsDiskCacheDevice *             mDiskDevice;
     nsOfflineCacheDevice *          mOfflineDevice;
 
+    nsRefPtrHashtable<nsStringHashKey, nsOfflineCacheDevice> mCustomOfflineDevices;
+
     nsCacheEntryHashTable           mActiveEntries;
     PRCList                         mDoomedEntries;
 
@@ -291,12 +314,15 @@ private:
  *  nsCacheServiceAutoLock
  ******************************************************************************/
 
+#define LOCK_TELEM(x) \
+  (::mozilla::Telemetry::CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_##x)
+
 // Instantiate this class to acquire the cache service lock for a particular
 // execution scope.
 class nsCacheServiceAutoLock {
 public:
-    nsCacheServiceAutoLock() {
-        nsCacheService::Lock();
+    nsCacheServiceAutoLock(mozilla::Telemetry::ID mainThreadLockerID) {
+        nsCacheService::Lock(mainThreadLockerID);
     }
     ~nsCacheServiceAutoLock() {
         nsCacheService::Unlock();

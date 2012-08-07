@@ -192,25 +192,33 @@ struct NS_STACK_CLASS TreeMatchContext {
   // Whether this document is using PB mode
   bool mUsingPrivateBrowsing;
 
+  enum MatchVisited {
+    eNeverMatchVisited,
+    eMatchVisitedDefault
+  };
+
   // Constructor to use when creating a tree match context for styling
   TreeMatchContext(bool aForStyling,
                    nsRuleWalker::VisitedHandlingType aVisitedHandling,
-                   nsIDocument* aDocument)
+                   nsIDocument* aDocument,
+                   MatchVisited aMatchVisited = eMatchVisitedDefault)
     : mForStyling(aForStyling)
     , mHaveRelevantLink(false)
     , mVisitedHandling(aVisitedHandling)
     , mDocument(aDocument)
-    , mScopedRoot(nsnull)
+    , mScopedRoot(nullptr)
     , mIsHTMLDocument(aDocument->IsHTML())
     , mCompatMode(aDocument->GetCompatibilityMode())
     , mUsingPrivateBrowsing(false)
   {
-    nsCOMPtr<nsISupports> container = mDocument->GetContainer();
-    if (container) {
-      nsCOMPtr<nsILoadContext> loadContext = do_QueryInterface(container);
-      NS_ASSERTION(loadContext, "Couldn't get loadContext from container; assuming no private browsing.");
-      if (loadContext) {
-        mUsingPrivateBrowsing = loadContext->UsePrivateBrowsing();
+    if (aMatchVisited != eNeverMatchVisited) {
+      nsCOMPtr<nsISupports> container = mDocument->GetContainer();
+      if (container) {
+        nsCOMPtr<nsILoadContext> loadContext = do_QueryInterface(container);
+        NS_ASSERTION(loadContext, "Couldn't get loadContext from container; assuming no private browsing.");
+        if (loadContext) {
+          mUsingPrivateBrowsing = loadContext->UsePrivateBrowsing();
+        }
       }
     }
   }
@@ -323,7 +331,7 @@ struct NS_STACK_CLASS StateRuleProcessorData : public RuleProcessorData {
                          mozilla::dom::Element* aElement,
                          nsEventStates aStateMask,
                          TreeMatchContext& aTreeMatchContext)
-    : RuleProcessorData(aPresContext, aElement, nsnull, aTreeMatchContext),
+    : RuleProcessorData(aPresContext, aElement, nullptr, aTreeMatchContext),
       mStateMask(aStateMask)
   {
     NS_PRECONDITION(aPresContext, "null pointer");
@@ -340,7 +348,7 @@ struct NS_STACK_CLASS AttributeRuleProcessorData : public RuleProcessorData {
                              PRInt32 aModType,
                              bool aAttrHasChanged,
                              TreeMatchContext& aTreeMatchContext)
-    : RuleProcessorData(aPresContext, aElement, nsnull, aTreeMatchContext),
+    : RuleProcessorData(aPresContext, aElement, nullptr, aTreeMatchContext),
       mAttribute(aAttribute),
       mModType(aModType),
       mAttrHasChanged(aAttrHasChanged)

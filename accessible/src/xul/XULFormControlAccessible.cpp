@@ -12,10 +12,10 @@
 #include "nsCoreUtils.h"
 #include "DocAccessible.h"
 #include "nsIAccessibleRelation.h"
-#include "nsXULMenuAccessible.h"
 #include "Relation.h"
 #include "Role.h"
 #include "States.h"
+#include "XULMenuAccessible.h"
 
 #include "nsIDOMHTMLInputElement.h"
 #include "nsIDOMNSEditableElement.h"
@@ -95,16 +95,6 @@ XULButtonAccessible::NativeState()
   // get focus and disable status from base class
   PRUint64 state = Accessible::NativeState();
 
-  bool disabled = false;
-  nsCOMPtr<nsIDOMXULControlElement> xulFormElement(do_QueryInterface(mContent));
-  if (xulFormElement) {
-    xulFormElement->GetDisabled(&disabled);
-    if (disabled)
-      state |= states::UNAVAILABLE;
-    else 
-      state |= states::FOCUSABLE;
-  }
-
   // Buttons can be checked -- they simply appear pressed in rather than checked
   nsCOMPtr<nsIDOMXULButtonElement> xulButtonElement(do_QueryInterface(mContent));
   if (xulButtonElement) {
@@ -153,7 +143,7 @@ bool
 XULButtonAccessible::AreItemsOperable() const
 {
   if (IsMenuButton()) {
-    Accessible* menuPopup = mChildren.SafeElementAt(0, nsnull);
+    Accessible* menuPopup = mChildren.SafeElementAt(0, nullptr);
     if (menuPopup) {
       nsMenuPopupFrame* menuPopupFrame = do_QueryFrame(menuPopup->GetFrame());
       return menuPopupFrame->IsOpen();
@@ -167,7 +157,7 @@ XULButtonAccessible::ContainerWidget() const
 {
   if (IsMenuButton() && mParent && mParent->IsAutoComplete())
     return mParent;
-  return nsnull;
+  return nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -196,12 +186,12 @@ XULButtonAccessible::CacheChildren()
   if (!isMenu && !isMenuButton)
     return;
 
-  Accessible* menupopup = nsnull;
-  Accessible* button = nsnull;
+  Accessible* menupopup = nullptr;
+  Accessible* button = nullptr;
 
   nsAccTreeWalker walker(mDoc, mContent, true);
 
-  Accessible* child = nsnull;
+  Accessible* child = nullptr;
   while ((child = walker.NextChild())) {
     roles::Role role = child->Role();
 
@@ -236,7 +226,7 @@ bool
 XULButtonAccessible::ContainsMenu()
 {
   static nsIContent::AttrValuesArray strings[] =
-    {&nsGkAtoms::menu, &nsGkAtoms::menuButton, nsnull};
+    {&nsGkAtoms::menu, &nsGkAtoms::menuButton, nullptr};
 
   return mContent->FindAttrValueIn(kNameSpaceID_None,
                                    nsGkAtoms::type,
@@ -249,7 +239,7 @@ XULButtonAccessible::ContainsMenu()
 
 XULDropmarkerAccessible::
   XULDropmarkerAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-  nsLeafAccessible(aContent, aDoc)
+  LeafAccessible(aContent, aDoc)
 {
 }
 
@@ -333,7 +323,7 @@ XULDropmarkerAccessible::NativeState()
 
 XULCheckboxAccessible::
   XULCheckboxAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-  nsLeafAccessible(aContent, aDoc)
+  LeafAccessible(aContent, aDoc)
 {
 }
 
@@ -386,7 +376,7 @@ XULCheckboxAccessible::NativeState()
 {
   // Possible states: focused, focusable, unavailable(disabled), checked
   // Get focus and disable status from base class
-  PRUint64 state = nsLeafAccessible::NativeState();
+  PRUint64 state = LeafAccessible::NativeState();
   
   state |= states::CHECKABLE;
   
@@ -453,7 +443,7 @@ XULGroupboxAccessible::RelationByType(PRUint32 aType)
       // Ensure that it's our label
       Relation reverseRel =
         childAcc->RelationByType(nsIAccessibleRelation::RELATION_LABEL_FOR);
-      Accessible* testGroupbox = nsnull;
+      Accessible* testGroupbox = nullptr;
       while ((testGroupbox = reverseRel.Next()))
         if (testGroupbox == this) {
           // The <label> points back to this groupbox
@@ -478,11 +468,8 @@ XULRadioButtonAccessible::
 PRUint64
 XULRadioButtonAccessible::NativeState()
 {
-  PRUint64 state = nsLeafAccessible::NativeState();
+  PRUint64 state = LeafAccessible::NativeState();
   state |= states::CHECKABLE;
-
-  if (!(state & states::UNAVAILABLE))
-    state |= states::FOCUSABLE;
 
   nsCOMPtr<nsIDOMXULSelectControlItemElement> radioButton =
     do_QueryInterface(mContent);
@@ -495,6 +482,12 @@ XULRadioButtonAccessible::NativeState()
   }
 
   return state;
+}
+
+PRUint64
+XULRadioButtonAccessible::NativeInteractiveState() const
+{
+  return NativelyUnavailable() ? states::UNAVAILABLE : states::FOCUSABLE;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -533,12 +526,12 @@ XULRadioGroupAccessible::NativeRole()
 }
 
 PRUint64
-XULRadioGroupAccessible::NativeState()
+XULRadioGroupAccessible::NativeInteractiveState() const
 {
   // The radio group is not focusable. Sometimes the focus controller will
   // report that it is focused. That means that the actual selected radio button
   // should be considered focused.
-  return Accessible::NativeState() & ~(states::FOCUSABLE | states::FOCUSED);
+  return NativelyUnavailable() ? states::UNAVAILABLE : 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -666,7 +659,7 @@ XULToolbarAccessible::GetNameInternal(nsAString& aName)
 
 XULToolbarSeparatorAccessible::
   XULToolbarSeparatorAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-  nsLeafAccessible(aContent, aDoc)
+  LeafAccessible(aContent, aDoc)
 {
 }
 
@@ -692,9 +685,8 @@ XULTextFieldAccessible::
 {
 }
 
-NS_IMPL_ISUPPORTS_INHERITED3(XULTextFieldAccessible,
+NS_IMPL_ISUPPORTS_INHERITED2(XULTextFieldAccessible,
                              Accessible,
-                             HyperTextAccessible,
                              nsIAccessibleText,
                              nsIAccessibleEditableText)
 
@@ -819,7 +811,7 @@ XULTextFieldAccessible::GetEditor() const
   nsCOMPtr<nsIContent> inputField = GetInputField();
   nsCOMPtr<nsIDOMNSEditableElement> editableElt(do_QueryInterface(inputField));
   if (!editableElt)
-    return nsnull;
+    return nullptr;
 
   nsCOMPtr<nsIEditor> editor;
   editableElt->GetEditor(getter_AddRefs(editor));
@@ -841,7 +833,7 @@ XULTextFieldAccessible::CacheChildren()
 
   nsAccTreeWalker walker(mDoc, inputContent, false);
 
-  Accessible* child = nsnull;
+  Accessible* child = nullptr;
   while ((child = walker.NextChild()) && AppendChild(child));
 }
 
@@ -853,7 +845,7 @@ XULTextFieldAccessible::FrameSelection()
 {
   nsCOMPtr<nsIContent> inputContent(GetInputField());
   nsIFrame* frame = inputContent->GetPrimaryFrame();
-  return frame ? frame->GetFrameSelection() : nsnull;
+  return frame ? frame->GetFrameSelection() : nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -876,7 +868,7 @@ XULTextFieldAccessible::GetInputField() const
 
   NS_ASSERTION(inputFieldDOMNode, "No input field for XULTextFieldAccessible");
 
-  nsIContent* inputField = nsnull;
+  nsIContent* inputField = nullptr;
   if (inputFieldDOMNode)
     CallQueryInterface(inputFieldDOMNode, &inputField);
 

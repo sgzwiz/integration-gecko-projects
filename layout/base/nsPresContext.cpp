@@ -19,6 +19,8 @@
 #include "nsIFrame.h"
 #include "nsIURL.h"
 #include "nsIDocument.h"
+#include "nsIPrintSettings.h"
+#include "nsILanguageAtomService.h"
 #include "nsStyleContext.h"
 #include "mozilla/LookAndFeel.h"
 #include "nsIComponentManager.h"
@@ -33,7 +35,6 @@
 #include "nsIWeakReferenceUtils.h"
 #include "nsCSSRendering.h"
 #include "prprf.h"
-#include "nsIDOMDocument.h"
 #include "nsAutoPtr.h"
 #include "nsEventStateManager.h"
 #include "nsThreadUtils.h"
@@ -53,7 +54,6 @@
 #include "nsStyleStructInlines.h"
 #include "nsIAppShell.h"
 #include "prenv.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsIDOMEventTarget.h"
 #include "nsObjectFrame.h"
 #include "nsTransitionManager.h"
@@ -110,18 +110,20 @@ private:
 
 } // anonymous namespace
 
-static nscolor
-MakeColorPref(const nsString& aColor)
+nscolor
+nsPresContext::MakeColorPref(const nsString& aColor)
 {
-  nscolor color;
   nsCSSParser parser;
-  nsresult rv =
-    parser.ParseColorString(aColor, nsnull, 0, &color);
-  if (NS_FAILED(rv)) {
+  nsCSSValue value;
+  if (!parser.ParseColorString(aColor, nullptr, 0, value)) {
     // Any better choices?
-    color = NS_RGB(0, 0, 0);
+    return NS_RGB(0, 0, 0);
   }
-  return color;
+
+  nscolor color;
+  return nsRuleNode::ComputeColor(value, this, nullptr, color)
+    ? color
+    : NS_RGB(0, 0, 0);
 }
 
 int
@@ -129,8 +131,8 @@ nsPresContext::PrefChangedCallback(const char* aPrefName, void* instance_data)
 {
   nsPresContext*  presContext = (nsPresContext*)instance_data;
 
-  NS_ASSERTION(nsnull != presContext, "bad instance data");
-  if (nsnull != presContext) {
+  NS_ASSERTION(nullptr != presContext, "bad instance data");
+  if (nullptr != presContext) {
     presContext->PreferenceChanged(aPrefName);
   }
   return 0;  // PREF_OK
@@ -141,8 +143,7 @@ void
 nsPresContext::PrefChangedUpdateTimerCallback(nsITimer *aTimer, void *aClosure)
 {
   nsPresContext*  presContext = (nsPresContext*)aClosure;
-  NS_ASSERTION(presContext != nsnull, "bad instance data");
-
+  NS_ASSERTION(presContext != nullptr, "bad instance data");
   if (presContext)
     presContext->UpdateAfterPreferencesChanged();
 }
@@ -224,7 +225,7 @@ nsPresContext::nsPresContext(nsIDocument* aDocument, nsPresContextType aType)
     mNeverAnimate = false;
   }
   NS_ASSERTION(mDocument, "Null document");
-  mUserFontSet = nsnull;
+  mUserFontSet = nullptr;
   mUserFontSetDirty = true;
 
   PR_INIT_CLIST(&mDOMMediaQueryLists);
@@ -233,7 +234,7 @@ nsPresContext::nsPresContext(nsIDocument* aDocument, nsPresContextType aType)
 nsPresContext::~nsPresContext()
 {
   NS_PRECONDITION(!mShell, "Presshell forgot to clear our mShell pointer");
-  SetShell(nsnull);
+  SetShell(nullptr);
 
   NS_ABORT_IF_FALSE(PR_CLIST_IS_EMPTY(&mDOMMediaQueryLists),
                     "must not have media query lists left");
@@ -247,15 +248,13 @@ nsPresContext::~nsPresContext()
   if (mEventManager) {
     // unclear if these are needed, but can't hurt
     mEventManager->NotifyDestroyPresContext(this);
-    mEventManager->SetPresContext(nsnull);
-
-    NS_RELEASE(mEventManager);
+    mEventManager->SetPresContext(nullptr);
   }
 
   if (mPrefChangedTimer)
   {
     mPrefChangedTimer->Cancel();
-    mPrefChangedTimer = nsnull;
+    mPrefChangedTimer = nullptr;
   }
 
   // Unregister preference callbacks
@@ -297,9 +296,6 @@ nsPresContext::~nsPresContext()
   Preferences::UnregisterCallback(nsPresContext::PrefChangedCallback,
                                   "layout.css.devPixelsPerPx",
                                   this);
-
-  NS_IF_RELEASE(mDeviceContext);
-  NS_IF_RELEASE(mLanguage);
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsPresContext)
@@ -354,13 +350,12 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsPresContext)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mDocument);
-  NS_RELEASE(tmp->mDeviceContext); // worth bothering?
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mDeviceContext); // worth bothering?
   if (tmp->mEventManager) {
     // unclear if these are needed, but can't hurt
     tmp->mEventManager->NotifyDestroyPresContext(tmp);
-    tmp->mEventManager->SetPresContext(nsnull);
-
-    NS_RELEASE(tmp->mEventManager);
+    tmp->mEventManager->SetPresContext(nullptr);
+    tmp->mEventManager = nullptr;
   }
 
   // We own only the items in mDOMMediaQueryLists that have listeners;
@@ -382,7 +377,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsPresContext)
   if (tmp->mPrefChangedTimer)
   {
     tmp->mPrefChangedTimer->Cancel();
-    tmp->mPrefChangedTimer = nsnull;
+    tmp->mPrefChangedTimer = nullptr;
   }
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -423,7 +418,7 @@ nsPresContext::GetFontPrefsForLang(nsIAtom *aLanguage) const
   nsAutoLockChrome lock; // for atoms, language service
 
   nsresult rv;
-  nsIAtom *langGroupAtom = nsnull;
+  nsIAtom *langGroupAtom = nullptr;
   if (!aLanguage) {
     aLanguage = mLanguage;
   }
@@ -882,7 +877,7 @@ nsPresContext::PreferenceChanged(const char* aPrefName)
 void
 nsPresContext::UpdateAfterPreferencesChanged()
 {
-  mPrefChangedTimer = nsnull;
+  mPrefChangedTimer = nullptr;
 
   nsCOMPtr<nsIDocShellTreeItem> docShell(do_QueryReferent(mContainer));
   if (docShell) {
@@ -919,7 +914,6 @@ nsPresContext::Init(nsDeviceContext* aDeviceContext)
   NS_ENSURE_ARG(aDeviceContext);
 
   mDeviceContext = aDeviceContext;
-  NS_ADDREF(mDeviceContext);
 
   if (mDeviceContext->SetPixelScale(mFullZoom))
     mDeviceContext->FlushFontCache();
@@ -930,7 +924,6 @@ nsPresContext::Init(nsDeviceContext* aDeviceContext)
   }
 
   mEventManager = new nsEventStateManager();
-  NS_ADDREF(mEventManager);
 
   mTransitionManager = new nsTransitionManager(this);
 
@@ -1088,11 +1081,11 @@ nsPresContext::SetShell(nsIPresShell* aShell)
   } else {
     if (mTransitionManager) {
       mTransitionManager->Disconnect();
-      mTransitionManager = nsnull;
+      mTransitionManager = nullptr;
     }
     if (mAnimationManager) {
       mAnimationManager->Disconnect();
-      mAnimationManager = nsnull;
+      mAnimationManager = nullptr;
     }
 
     if (IsRoot()) {
@@ -1110,7 +1103,7 @@ nsPresContext::DestroyImageLoaders()
   // destroyed because imageloaders can have pointers to frames and we don't
   // want those pointers to outlive the destruction of the frame arena.
   for (PRUint32 i = 0; i < IMAGE_LOAD_TYPE_COUNT; ++i) {
-    mImageLoaders[i].Enumerate(destroy_loads, nsnull);
+    mImageLoaders[i].Enumerate(destroy_loads, nullptr);
     mImageLoaders[i].Clear();
   }
 }
@@ -1127,14 +1120,12 @@ void
 nsPresContext::UpdateCharSet(const nsCString& aCharSet)
 {
   if (mLangService) {
-    NS_IF_RELEASE(mLanguage);
-    mLanguage = mLangService->LookupCharSet(aCharSet.get()).get();  // addrefs
+    mLanguage = mLangService->LookupCharSet(aCharSet.get());
     // this will be a language group (or script) code rather than a true language code
 
     // bug 39570: moved from nsLanguageAtomService::LookupCharSet()
     if (mLanguage == nsGkAtoms::Unicode) {
-      NS_RELEASE(mLanguage);
-      NS_IF_ADDREF(mLanguage = mLangService->GetLocaleLanguage()); 
+      mLanguage = mLangService->GetLocaleLanguage();
     }
     ResetCachedFontPrefs();
   }
@@ -1185,14 +1176,14 @@ nsPresContext::GetParentPresContext()
         return f->PresContext();
     }
   }
-  return nsnull;
+  return nullptr;
 }
 
 nsPresContext*
 nsPresContext::GetToplevelContentDocumentPresContext()
 {
   if (IsChrome())
-    return nsnull;
+    return nullptr;
   nsPresContext* pc = this;
   for (;;) {
     nsPresContext* parent = pc->GetParentPresContext();
@@ -1213,7 +1204,34 @@ nsPresContext::GetRootPresContext()
       break;
     pc = parent;
   }
-  return pc->IsRoot() ? static_cast<nsRootPresContext*>(pc) : nsnull;
+  return pc->IsRoot() ? static_cast<nsRootPresContext*>(pc) : nullptr;
+}
+
+nsRootPresContext*
+nsPresContext::GetDisplayRootPresContext()
+{
+  nsPresContext* pc = this;
+  for (;;) {
+    nsPresContext* parent = pc->GetParentPresContext();
+    if (!parent) {
+      // Not sure if this is always strictly the parent, but it works for GetRootPresContext
+      // where the current pres context has no frames.
+      nsIDocument *doc = pc->Document();
+      if (doc) {
+        doc = doc->GetParentDocument();
+        if (doc) {
+          nsIPresShell* shell = doc->GetShell();
+          if (shell) {
+            parent = shell->GetPresContext();
+          }
+        }
+      }
+    }
+    if (!parent || parent == pc)
+      break;
+    pc = parent;
+  }
+  return pc->IsRoot() ? static_cast<nsRootPresContext*>(pc) : nullptr;
 }
 
 void
@@ -1311,7 +1329,7 @@ nsPresContext::SetImageAnimationModeInternal(PRUint16 aMode)
 
   // Now walk the content tree and set the animation mode 
   // on all the images.
-  if (mShell != nsnull) {
+  if (mShell != nullptr) {
     nsIDocument *doc = mShell->GetDocument();
     if (doc) {
       Element *rootElement = doc->GetRootElement();
@@ -1362,7 +1380,7 @@ nsPresContext::GetDefaultFont(PRUint8 aFontID, nsIAtom *aLanguage) const
       font = &prefs->mDefaultFantasyFont;
       break;
     default:
-      font = nsnull;
+      font = nullptr;
       NS_ERROR("invalid arg");
       break;
   }
@@ -1412,15 +1430,12 @@ nsPresContext::ScreenWidthInchesForFontInflation(bool* aChanged)
   float deviceWidthInches =
     float(clientRect.width) / float(dx->AppUnitsPerPhysicalInch());
 
-  if (deviceWidthInches != mLastFontInflationScreenWidth) {
-    if (mLastFontInflationScreenWidth != -1.0) {
-      if (aChanged) {
-        *aChanged = true;
-      } else {
-        NS_NOTREACHED("somebody should have checked for screen width change "
-                      "and triggered a reflow");
-      }
-    }
+  if (mLastFontInflationScreenWidth == -1.0) {
+    mLastFontInflationScreenWidth = deviceWidthInches;
+  }
+
+  if (deviceWidthInches != mLastFontInflationScreenWidth && aChanged) {
+    *aChanged = true;
     mLastFontInflationScreenWidth = deviceWidthInches;
   }
 
@@ -1472,13 +1487,13 @@ nsPresContext::SetupBorderImageLoaders(nsIFrame* aFrame,
   // non-null to null).
   imgIRequest *borderImage = aStyleBorder->GetBorderImage();
   if (!borderImage) {
-    SetImageLoaders(aFrame, BORDER_IMAGE, nsnull);
+    SetImageLoaders(aFrame, BORDER_IMAGE, nullptr);
     return;
   }
 
   PRUint32 actions = nsImageLoader::ACTION_REDRAW_ON_LOAD;
   nsRefPtr<nsImageLoader> loader =
-    nsImageLoader::Create(aFrame, borderImage, actions, nsnull);
+    nsImageLoader::Create(aFrame, borderImage, actions, nullptr);
   SetImageLoaders(aFrame, BORDER_IMAGE, loader);
 }
 
@@ -1486,7 +1501,7 @@ void
 nsPresContext::StopImagesFor(nsIFrame* aTargetFrame)
 {
   for (PRUint32 i = 0; i < IMAGE_LOAD_TYPE_COUNT; ++i)
-    SetImageLoaders(aTargetFrame, ImageLoadType(i), nsnull);
+    SetImageLoaders(aTargetFrame, ImageLoadType(i), nullptr);
 }
 
 void
@@ -1502,7 +1517,7 @@ nsPresContext::SetContainer(nsISupports* aHandler)
 already_AddRefed<nsISupports>
 nsPresContext::GetContainerInternal() const
 {
-  nsISupports *result = nsnull;
+  nsISupports *result = nullptr;
   if (mContainer)
     CallQueryReferent(mContainer.get(), &result);
 
@@ -1516,6 +1531,18 @@ nsPresContext::GetContainerExternal() const
 }
 
 #ifdef IBMBIDI
+bool
+nsPresContext::BidiEnabledExternal() const
+{
+  return BidiEnabledInternal();
+}
+
+bool
+nsPresContext::BidiEnabledInternal() const
+{
+  return Document()->GetBidiEnabled();
+}
+
 void
 nsPresContext::SetBidiEnabled() const
 {
@@ -1802,6 +1829,12 @@ nsPresContext::MatchMedia(const nsAString& aMediaQueryList,
   result.forget(aResult);
 }
 
+nsCompatibility
+nsPresContext::CompatibilityMode() const
+{
+  return Document()->GetCompatibilityMode();
+}
+
 void
 nsPresContext::SetPaginatedScrolling(bool aPaginated)
 {
@@ -1829,8 +1862,10 @@ nsPresContext::EnsureVisible()
       cv->GetPresContext(getter_AddRefs(currentPresContext));
       if (currentPresContext == this) {
         // OK, this is us.  We want to call Show() on the content viewer.
-        cv->Show();
-        return true;
+        nsresult result = cv->Show();
+        if (NS_SUCCEEDED(result)) {
+          return true;
+        }
       }
     }
   }
@@ -2082,18 +2117,19 @@ nsPresContext::FireDOMPaintEvent()
   // This will empty our list in case dispatching the event causes more damage
   // (hopefully it won't, or we're likely to get an infinite loop! At least
   // it won't be blocking app execution though).
-  NS_NewDOMNotifyPaintEvent(getter_AddRefs(event), this, nsnull,
+  NS_NewDOMNotifyPaintEvent(getter_AddRefs(event), this, nullptr,
                             NS_AFTERPAINT,
                             &mInvalidateRequests);
-  nsCOMPtr<nsIPrivateDOMEvent> pEvent = do_QueryInterface(event);
-  if (!pEvent) return;
+  if (!event) {
+    return;
+  }
 
   // Even if we're not telling the window about the event (so eventTarget is
   // the chrome event handler, not the window), the window is still
   // logically the event target.
-  pEvent->SetTarget(eventTarget);
-  pEvent->SetTrusted(true);
-  nsEventDispatcher::DispatchDOMEvent(dispatchTarget, nsnull, event, this, nsnull);
+  event->SetTarget(eventTarget);
+  event->SetTrusted(true);
+  nsEventDispatcher::DispatchDOMEvent(dispatchTarget, nullptr, event, this, nullptr);
 }
 
 static bool
@@ -2110,7 +2146,7 @@ MayHavePaintEventListener(nsPIDOMWindow* aInnerWindow)
   if (!parentTarget)
     return false;
 
-  nsEventListenerManager* manager = nsnull;
+  nsEventListenerManager* manager = nullptr;
   if ((manager = parentTarget->GetListenerManager(false)) &&
       manager->MayHavePaintEventListener()) {
     return true;
@@ -2217,7 +2253,7 @@ nsPresContext::NotifyDidPaintForSubtree()
   mDocument->TryLockSubDocuments();
   nsAutoCantLockNewContent cantLock;
 
-  mDocument->EnumerateSubDocuments(NotifyDidPaintSubdocumentCallback, nsnull);
+  mDocument->EnumerateSubDocuments(NotifyDidPaintSubdocumentCallback, nullptr);
 }
 
 bool
@@ -2382,6 +2418,18 @@ nsPresContext::CheckForInterrupt(nsIFrame* aFrame)
   return mHasPendingInterrupt;
 }
 
+nsIFrame*
+nsPresContext::GetPrimaryFrameFor(nsIContent* aContent)
+{
+  NS_PRECONDITION(aContent, "Don't do that");
+  if (GetPresShell() &&
+      GetPresShell()->GetDocument() == aContent->GetCurrentDoc()) {
+    return aContent->GetPrimaryFrame();
+  }
+  return nullptr;
+}
+
+
 size_t
 nsPresContext::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
 {
@@ -2424,7 +2472,7 @@ nsPresContext::IsRootContentDocument()
 nsRootPresContext::nsRootPresContext(nsIDocument* aDocument,
                                      nsPresContextType aType)
   : nsPresContext(aDocument, aType),
-    mUpdatePluginGeometryForFrame(nsnull),
+    mUpdatePluginGeometryForFrame(nullptr),
     mDOMGeneration(0),
     mNeedsToUpdatePluginGeometry(false)
 {
@@ -2687,7 +2735,7 @@ nsRootPresContext::UpdatePluginGeometry()
   if (f) {
     mUpdatePluginGeometryForFrame->PresContext()->
       SetContainsUpdatePluginGeometryFrame(false);
-    mUpdatePluginGeometryForFrame = nsnull;
+    mUpdatePluginGeometryForFrame = nullptr;
   } else {
     f = FrameManager()->GetRootFrame();
   }
@@ -2742,7 +2790,7 @@ nsRootPresContext::RequestUpdatePluginGeometry(nsIFrame* aFrame)
       return;
     mUpdatePluginGeometryForFrame->PresContext()->
       SetContainsUpdatePluginGeometryFrame(false);
-    mUpdatePluginGeometryForFrame = nsnull;
+    mUpdatePluginGeometryForFrame = nullptr;
   }
 }
 
@@ -2757,7 +2805,7 @@ PluginDidSetGeometryEnumerator(nsPtrHashKey<nsObjectFrame>* aEntry, void* userAr
 void
 nsRootPresContext::DidApplyPluginGeometryUpdates()
 {
-  mRegisteredPlugins.EnumerateEntries(PluginDidSetGeometryEnumerator, nsnull);
+  mRegisteredPlugins.EnumerateEntries(PluginDidSetGeometryEnumerator, nullptr);
 }
 
 void
@@ -2766,7 +2814,7 @@ nsRootPresContext::RootForgetUpdatePluginGeometryFrame(nsIFrame* aFrame)
   if (aFrame == mUpdatePluginGeometryForFrame) {
     mUpdatePluginGeometryForFrame->PresContext()->
       SetContainsUpdatePluginGeometryFrame(false);
-    mUpdatePluginGeometryForFrame = nsnull;
+    mUpdatePluginGeometryForFrame = nullptr;
   }
 }
 
@@ -2776,7 +2824,7 @@ nsRootPresContext::RootForgetUpdatePluginGeometryFrameForPresContext(
 {
   if (aPresContext->GetContainsUpdatePluginGeometryFrame()) {
     aPresContext->SetContainsUpdatePluginGeometryFrame(false);
-    mUpdatePluginGeometryForFrame = nsnull;
+    mUpdatePluginGeometryForFrame = nullptr;
   }
 }
 
@@ -2821,7 +2869,7 @@ nsRootPresContext::AddWillPaintObserver(nsIRunnable* aRunnable)
 void
 nsRootPresContext::FlushWillPaintObservers()
 {
-  mWillPaintFallbackEvent = nsnull;
+  mWillPaintFallbackEvent = nullptr;
   nsTArray<nsCOMPtr<nsIRunnable> > observers;
   observers.SwapElements(mWillPaintObservers);
   for (PRUint32 i = 0; i < observers.Length(); ++i) {

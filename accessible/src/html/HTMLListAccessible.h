@@ -7,8 +7,8 @@
 #ifndef mozilla_a11y_HTMLListAccessible_h__
 #define mozilla_a11y_HTMLListAccessible_h__
 
+#include "BaseAccessibles.h"
 #include "HyperTextAccessibleWrap.h"
-#include "nsBaseWidgetAccessible.h"
 
 namespace mozilla {
 namespace a11y {
@@ -72,11 +72,11 @@ private:
 /**
  * Used for bullet of HTML list item element (for example, HTML li).
  */
-class HTMLListBulletAccessible : public nsLeafAccessible
+class HTMLListBulletAccessible : public LeafAccessible
 {
 public:
   HTMLListBulletAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-    nsLeafAccessible(aContent, aDoc) { }
+    LeafAccessible(aContent, aDoc) { }
   virtual ~HTMLListBulletAccessible() { }
 
   // nsAccessNode
@@ -106,7 +106,7 @@ inline mozilla::a11y::HTMLLIAccessible*
 Accessible::AsHTMLListItem()
 {
   return mFlags & eHTMLListItemAccessible ?
-    static_cast<mozilla::a11y::HTMLLIAccessible*>(this) : nsnull;
+    static_cast<mozilla::a11y::HTMLLIAccessible*>(this) : nullptr;
 }
 
 #endif

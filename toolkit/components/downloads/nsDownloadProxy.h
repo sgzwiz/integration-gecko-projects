@@ -30,7 +30,7 @@ public:
                      const nsAString& aDisplayName,
                      nsIMIMEInfo *aMIMEInfo,
                      PRTime aStartTime,
-                     nsILocalFile* aTempFile,
+                     nsIFile* aTempFile,
                      nsICancelable* aCancelable) {
     nsresult rv;
     nsCOMPtr<nsIDownloadManager> dm = do_GetService("@mozilla.org/download-manager;1", &rv);
@@ -68,14 +68,14 @@ public:
       if (visible && !focusWhenStarting)
         return NS_OK;
 
-      return dmui->Show(nsnull, id, nsIDownloadManagerUI::REASON_NEW_DOWNLOAD);
+      return dmui->Show(nullptr, id, nsIDownloadManagerUI::REASON_NEW_DOWNLOAD);
     }
     return rv;
   }
 
   NS_IMETHODIMP OnStateChange(nsIWebProgress* aWebProgress,
                               nsIRequest* aRequest, PRUint32 aStateFlags,
-                              PRUint32 aStatus)
+                              nsresult aStatus)
   {
     NS_ENSURE_TRUE(mInner, NS_ERROR_NOT_INITIALIZED);
     return mInner->OnStateChange(aWebProgress, aRequest, aStateFlags, aStatus);

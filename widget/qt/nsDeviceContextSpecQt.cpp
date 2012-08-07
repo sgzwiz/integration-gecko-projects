@@ -26,7 +26,7 @@
 #include "nsIServiceManager.h"
 #include "nsPrintSettingsQt.h"
 #include "nsIFileStreams.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsTArray.h"
 
 #include <unistd.h>
@@ -59,7 +59,7 @@ NS_IMETHODIMP nsDeviceContextSpecQt::GetSurfaceForPrinter(
         gfxASurface** aSurface)
 {
     NS_ENSURE_ARG_POINTER(aSurface);
-    *aSurface = nsnull;
+    *aSurface = nullptr;
 
     double width, height;
     mPrintSettings->GetEffectivePageSize(&width, &height);
@@ -179,7 +179,7 @@ NS_IMETHODIMP nsDeviceContextSpecQt::EndDocument()
     }
     // Handle print-to-file ourselves for the benefit of embedders
     nsXPIDLString targetPath;
-    nsCOMPtr<nsILocalFile> destFile;
+    nsCOMPtr<nsIFile> destFile;
     mPrintSettings->GetToFileName(getter_Copies(targetPath));
 
     nsresult rv = NS_NewNativeLocalFile(NS_ConvertUTF16toUTF8(targetPath),
@@ -220,7 +220,7 @@ NS_IMETHODIMP nsPrinterEnumeratorQt::GetPrinterNameList(
         nsIStringEnumerator** aPrinterNameList)
 {
     NS_ENSURE_ARG_POINTER(aPrinterNameList);
-    *aPrinterNameList = nsnull;
+    *aPrinterNameList = nullptr;
 
     QList<QPrinterInfo> qprinters = QPrinterInfo::availablePrinters();
     if (qprinters.size() == 0)

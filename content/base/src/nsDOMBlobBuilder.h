@@ -9,10 +9,11 @@
 #include "nsDOMFile.h"
 
 #include "mozilla/CheckedInt.h"
+#include "mozilla/Attributes.h"
 
 using namespace mozilla;
 
-class nsDOMMultipartFile : public nsDOMFileBase,
+class nsDOMMultipartFile : public nsDOMFile,
                            public nsIJSNativeInitializer
 {
 public:
@@ -20,7 +21,7 @@ public:
   nsDOMMultipartFile(nsTArray<nsCOMPtr<nsIDOMBlob> > aBlobs,
                      const nsAString& aName,
                      const nsAString& aContentType)
-    : nsDOMFileBase(aName, aContentType, UINT64_MAX),
+    : nsDOMFile(aName, aContentType, UINT64_MAX),
       mBlobs(aBlobs)
   {
   }
@@ -28,14 +29,20 @@ public:
   // Create as a blob
   nsDOMMultipartFile(nsTArray<nsCOMPtr<nsIDOMBlob> > aBlobs,
                      const nsAString& aContentType)
-    : nsDOMFileBase(aContentType, UINT64_MAX),
+    : nsDOMFile(aContentType, UINT64_MAX),
       mBlobs(aBlobs)
+  {
+  }
+
+  // Create as a file to be later initialized
+  nsDOMMultipartFile(const nsAString& aName)
+    : nsDOMFile(aName, EmptyString(), UINT64_MAX)
   {
   }
 
   // Create as a blob to be later initialized
   nsDOMMultipartFile()
-    : nsDOMFileBase(EmptyString(), UINT64_MAX)
+    : nsDOMFile(EmptyString(), UINT64_MAX)
   {
   }
 
@@ -60,6 +67,9 @@ public:
   NS_IMETHOD GetSize(PRUint64*);
   NS_IMETHOD GetInternalStream(nsIInputStream**);
 
+  static nsresult
+  NewFile(const nsAString& aName, nsISupports* *aNewObject);
+
   // DOMClassInfo constructor (for Blob([b1, "foo"], { type: "image/png" }))
   static nsresult
   NewBlob(nsISupports* *aNewObject);
@@ -74,7 +84,7 @@ protected:
 class BlobSet {
 public:
   BlobSet()
-    : mData(nsnull), mDataLen(0), mDataBufferLen(0)
+    : mData(nullptr), mDataLen(0), mDataBufferLen(0)
   {}
 
   nsresult AppendVoidPtr(const void* aData, PRUint32 aLength);
@@ -120,7 +130,7 @@ protected:
       nsCOMPtr<nsIDOMBlob> blob =
         new nsDOMMemoryFile(mData, mDataLen, EmptyString(), EmptyString());
       mBlobs.AppendElement(blob);
-      mData = nsnull; // The nsDOMMemoryFile takes ownership of the buffer
+      mData = nullptr; // The nsDOMMemoryFile takes ownership of the buffer
       mDataLen = 0;
       mDataBufferLen = 0;
     }
@@ -132,8 +142,8 @@ protected:
   PRUint64 mDataBufferLen;
 };
 
-class nsDOMBlobBuilder : public nsIDOMMozBlobBuilder,
-                         public nsIJSNativeInitializer
+class nsDOMBlobBuilder MOZ_FINAL : public nsIDOMMozBlobBuilder,
+                                   public nsIJSNativeInitializer
 {
 public:
   nsDOMBlobBuilder()

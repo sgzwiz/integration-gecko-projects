@@ -16,6 +16,7 @@
 
 #include "nsIMemoryReporter.h"
 #include "mozilla/FunctionTimer.h"
+#include "mozilla/Attributes.h"
 
 class CharMapHashKey : public PLDHashEntryHdr
 {
@@ -100,7 +101,7 @@ public:
 
     static void Shutdown() {
         delete sPlatformFontList;
-        sPlatformFontList = nsnull;
+        sPlatformFontList = nullptr;
     }
 
     virtual ~gfxPlatformFontList();
@@ -180,7 +181,7 @@ public:
     void RemoveCmap(const gfxCharacterMap *aCharMap);
 
 protected:
-    class MemoryReporter
+    class MemoryReporter MOZ_FINAL
         : public nsIMemoryMultiReporter
     {
     public:

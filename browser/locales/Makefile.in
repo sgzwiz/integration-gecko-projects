@@ -3,11 +3,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir = browser/locales
+relativesrcdir = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -179,12 +179,15 @@ endif
 clobber-zip:
 	$(RM) $(STAGEDIST)/chrome/$(AB_CD).jar \
 	  $(STAGEDIST)/chrome/$(AB_CD).manifest \
+	  $(STAGEDIST)/webapprt/chrome/$(AB_CD).jar \
+	  $(STAGEDIST)/webapprt/chrome/$(AB_CD).manifest \
 	  $(STAGEDIST)/$(PREF_DIR)/firefox-l10n.js
 	$(RM) -rf  $(STAGEDIST)/searchplugins \
 	  $(STAGEDIST)/dictionaries \
 	  $(STAGEDIST)/hyphenation \
 	  $(STAGEDIST)/defaults/profile \
-	  $(STAGEDIST)/chrome/$(AB_CD)
+	  $(STAGEDIST)/chrome/$(AB_CD) \
+	  $(STAGEDIST)/webapprt/chrome/$(AB_CD)
 
 
 langpack: langpack-$(AB_CD)

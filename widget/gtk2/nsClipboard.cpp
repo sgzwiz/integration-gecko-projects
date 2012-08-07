@@ -78,7 +78,7 @@ struct retrieval_context
     retrieval_context()
       : completed(false),
         timed_out(false),
-        data(nsnull)
+        data(nullptr)
     { }
 };
 
@@ -238,6 +238,7 @@ nsClipboard::SetData(nsITransferable *aTransferable,
             if (flavorStr.EqualsLiteral(kNativeImageMime) ||
                 flavorStr.EqualsLiteral(kPNGImageMime) ||
                 flavorStr.EqualsLiteral(kJPEGImageMime) ||
+                flavorStr.EqualsLiteral(kJPGImageMime) ||
                 flavorStr.EqualsLiteral(kGIFImageMime)) {
                 // don't bother adding image targets twice
                 if (!imagesAdded) {
@@ -350,12 +351,16 @@ nsClipboard::GetData(nsITransferable *aTransferable, PRInt32 aWhichClipboard)
 
             // For images, we must wrap the data in an nsIInputStream then return instead of break,
             // because that code below won't help us.
-            if (!strcmp(flavorStr, kJPEGImageMime) || !strcmp(flavorStr, kPNGImageMime) || !strcmp(flavorStr, kGIFImageMime)) {
-                GdkAtom atom;
-                if (!strcmp(flavorStr, kJPEGImageMime)) // This is image/jpg, but X only understands image/jpeg
-                    atom = gdk_atom_intern("image/jpeg", FALSE);
-                else
-                    atom = gdk_atom_intern(flavorStr, FALSE);
+            if (!strcmp(flavorStr, kJPEGImageMime) ||
+                !strcmp(flavorStr, kJPGImageMime) ||
+                !strcmp(flavorStr, kPNGImageMime) ||
+                !strcmp(flavorStr, kGIFImageMime)) {
+                // Emulate support for image/jpg
+                if (!strcmp(flavorStr, kJPGImageMime)) {
+                    flavorStr.Assign(kJPEGImageMime);
+                }
+
+                GdkAtom atom = gdk_atom_intern(flavorStr, FALSE);
 
                 GtkSelectionData *selectionData = wait_for_contents(clipboard, atom);
                 if (!selectionData)
@@ -378,7 +383,7 @@ nsClipboard::GetData(nsITransferable *aTransferable, PRInt32 aWhichClipboard)
                 length = selectionData->length;
                 // Special case text/html since we can convert into UCS2
                 if (!strcmp(flavorStr, kHTMLMime)) {
-                    PRUnichar* htmlBody= nsnull;
+                    PRUnichar* htmlBody= nullptr;
                     PRInt32 htmlBodyLen = 0;
                     // Convert text/html into our unicode format
                     ConvertHTMLtoUCS2((guchar *)selectionData->data, length,
@@ -422,16 +427,16 @@ nsClipboard::EmptyClipboard(PRInt32 aWhichClipboard)
     if (aWhichClipboard == kSelectionClipboard) {
         if (mSelectionOwner) {
             mSelectionOwner->LosingOwnership(mSelectionTransferable);
-            mSelectionOwner = nsnull;
+            mSelectionOwner = nullptr;
         }
-        mSelectionTransferable = nsnull;
+        mSelectionTransferable = nullptr;
     }
     else {
         if (mGlobalOwner) {
             mGlobalOwner->LosingOwnership(mGlobalTransferable);
-            mGlobalOwner = nsnull;
+            mGlobalOwner = nullptr;
         }
-        mGlobalTransferable = nsnull;
+        mGlobalTransferable = nullptr;
     }
 
     return NS_OK;
@@ -477,8 +482,9 @@ nsClipboard::HasDataMatchingFlavors(const char** aFlavorList, PRUint32 aLength,
             if (!strcmp(atom_name, aFlavorList[i]))
                 *_retval = true;
 
-            // X clipboard wants image/jpeg, not image/jpg
-            if (!strcmp(aFlavorList[i], kJPEGImageMime) && !strcmp(atom_name, "image/jpeg"))
+            // X clipboard supports image/jpeg, but we want to emulate support
+            // for image/jpg as well
+            if (!strcmp(aFlavorList[i], kJPGImageMime) && !strcmp(atom_name, kJPEGImageMime))
                 *_retval = true;
 
             g_free(atom_name);
@@ -600,7 +606,7 @@ nsClipboard::SelectionGetEvent(GtkClipboard     *aClipboard,
     if (gtk_targets_include_image(&aSelectionData->target, 1, TRUE)) {
         // Look through our transfer data for the image
         static const char* const imageMimeTypes[] = {
-            kNativeImageMime, kPNGImageMime, kJPEGImageMime, kGIFImageMime };
+            kNativeImageMime, kPNGImageMime, kJPEGImageMime, kJPGImageMime, kGIFImageMime };
         nsCOMPtr<nsISupports> item;
         PRUint32 len;
         nsCOMPtr<nsISupportsInterfacePointer> ptrPrimitive;
@@ -639,7 +645,7 @@ nsClipboard::SelectionGetEvent(GtkClipboard     *aClipboard,
         return;
     }
 
-    void *primitive_data = nsnull;
+    void *primitive_data = nullptr;
     nsPrimitiveHelpers::CreateDataFromPrimitive(target_name, item,
                                                 &primitive_data, len);
 
@@ -1010,7 +1016,7 @@ wait_for_contents(GtkClipboard *clipboard, GdkAtom target)
                                    &context);
 
     if (!wait_for_retrieval(clipboard, &context)) {
-        return nsnull;
+        return nullptr;
     }
 
     return static_cast<GtkSelectionData *>(context.data);
@@ -1062,7 +1068,7 @@ wait_for_text(GtkClipboard *clipboard)
     gtk_clipboard_request_text(clipboard, clipboard_text_received, &context);
 
     if (!wait_for_retrieval(clipboard, &context)) {
-        return nsnull;
+        return nullptr;
     }
 
     return static_cast<gchar *>(context.data);

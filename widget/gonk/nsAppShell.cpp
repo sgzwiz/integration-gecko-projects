@@ -1,8 +1,19 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* vim: set ts=4 sw=4 sts=4 tw=80 et: */
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* Copyright 2012 Mozilla Foundation and Mozilla contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #define _GNU_SOURCE
 
@@ -37,6 +48,8 @@
 #include "libui/EventHub.h"
 #include "libui/InputReader.h"
 #include "libui/InputDispatcher.h"
+
+#include "sampler.h"
 
 #define LOG(args...)                                            \
     __android_log_print(ANDROID_LOG_INFO, "Gonk" , ## args)
@@ -108,7 +121,7 @@ struct UserInputData {
 };
 
 static void
-sendMouseEvent(PRUint32 msg, uint64_t timeMs, int x, int y)
+sendMouseEvent(PRUint32 msg, uint64_t timeMs, int x, int y, bool forwardToChildren)
 {
     nsMouseEvent event(true, msg, NULL,
                        nsMouseEvent::eReal, nsMouseEvent::eNormal);
@@ -119,6 +132,9 @@ sendMouseEvent(PRUint32 msg, uint64_t timeMs, int x, int y)
     event.button = nsMouseEvent::eLeftButton;
     if (msg != NS_MOUSE_MOVE)
         event.clickCount = 1;
+
+    if (!forwardToChildren)
+        event.flags |= NS_EVENT_FLAG_DONT_FORWARD_CROSS_PROCESS;
 
     nsWindow::DispatchInputEvent(event);
 }
@@ -203,38 +219,17 @@ sendKeyEvent(PRUint32 keyCode, bool down, uint64_t timeMs)
     }
 }
 
+// Defines kKeyMapping
+#include "GonkKeyMapping.h"
+
 static void
 maybeSendKeyEvent(int keyCode, bool pressed, uint64_t timeMs)
 {
-    switch (keyCode) {
-    case KEY_BACK:
-        sendKeyEvent(NS_VK_ESCAPE, pressed, timeMs);
-        break;
-    case KEY_MENU:
-         sendKeyEvent(NS_VK_CONTEXT_MENU, pressed, timeMs);
-        break;
-    case KEY_SEARCH:
-        sendKeyEvent(NS_VK_F5, pressed, timeMs);
-        break;
-    case KEY_HOME:
-        sendKeyEvent(NS_VK_HOME, pressed, timeMs);
-        break;
-    case KEY_POWER:
-        sendKeyEvent(NS_VK_SLEEP, pressed, timeMs);
-        break;
-    case KEY_VOLUMEUP:
-        sendKeyEvent(NS_VK_PAGE_UP, pressed, timeMs);
-        break;
-    case KEY_VOLUMEDOWN:
-        sendKeyEvent(NS_VK_PAGE_DOWN, pressed, timeMs);
-        break;
-    case KEY_CAMERA:
-        sendKeyEvent(NS_VK_PRINTSCREEN, pressed, timeMs);
-        break;
-    default:
+    if (keyCode < ArrayLength(kKeyMapping) && kKeyMapping[keyCode])
+        sendKeyEvent(kKeyMapping[keyCode], pressed, timeMs);
+    else
         VERBOSE_LOG("Got unknown key event code. type 0x%04x code 0x%04x value %d",
                     keyCode, pressed);
-    }
 }
 
 class GeckoInputReaderPolicy : public InputReaderPolicyInterface {
@@ -353,8 +348,6 @@ GeckoInputDispatcher::dispatchOnce()
     switch (data.type) {
     case UserInputData::MOTION_DATA: {
         nsEventStatus status = sendTouchEvent(data);
-        if (status == nsEventStatus_eConsumeNoDefault)
-            break;
 
         PRUint32 msg;
         switch (data.action & AMOTION_EVENT_ACTION_MASK) {
@@ -375,11 +368,12 @@ GeckoInputDispatcher::dispatchOnce()
         sendMouseEvent(msg,
                        data.timeMs,
                        data.motion.touches[0].coords.getX(),
-                       data.motion.touches[0].coords.getY());
+                       data.motion.touches[0].coords.getY(),
+                       status != nsEventStatus_eConsumeNoDefault);
         break;
     }
     case UserInputData::KEY_DATA:
-        maybeSendKeyEvent(data.key.scanCode,
+        maybeSendKeyEvent(data.key.keyCode,
                           data.action == AKEY_EVENT_ACTION_DOWN,
                           data.timeMs);
         break;
@@ -527,6 +521,13 @@ nsAppShell::Init()
     return rv;
 }
 
+NS_IMETHODIMP
+nsAppShell::Exit()
+{
+  OrientationObserver::GetInstance()->DisableAutoOrientation();
+  return nsBaseAppShell::Exit();
+}
+
 void
 nsAppShell::InitInputDevices()
 {
@@ -572,11 +573,15 @@ nsAppShell::ScheduleNativeEventCallback()
 bool
 nsAppShell::ProcessNextNativeEvent(bool mayWait)
 {
+    SAMPLE_LABEL("nsAppShell", "ProcessNextNativeEvent");
     epoll_event events[16] = {{ 0 }};
 
     int event_count;
-    if ((event_count = epoll_wait(epollfd, events, 16,  mayWait ? -1 : 0)) <= 0)
-        return true;
+    {
+        SAMPLE_LABEL("nsAppShell", "ProcessNextNativeEvent::Wait");
+        if ((event_count = epoll_wait(epollfd, events, 16,  mayWait ? -1 : 0)) <= 0)
+            return true;
+    }
 
     for (int i = 0; i < event_count; i++)
         mHandlers[events[i].data.u32].run();

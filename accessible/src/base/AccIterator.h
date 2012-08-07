@@ -22,7 +22,7 @@ public:
   virtual Accessible* Next() = 0;
 
 private:
-  friend class Relation;
+  friend class mozilla::a11y::Relation;
   nsAutoPtr<AccIterable> mNextIter;
 };
 
@@ -66,7 +66,7 @@ private:
 
   struct IteratorState
   {
-    IteratorState(Accessible* aParent, IteratorState* mParentState = nsnull);
+    IteratorState(Accessible* aParent, IteratorState* mParentState = nullptr);
 
     Accessible* mParent;
     PRInt32 mIndex;

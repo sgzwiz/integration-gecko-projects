@@ -33,6 +33,7 @@
 #include "nsIContentPermissionPrompt.h"
 #include "DictionaryHelpers.h"
 #include "PCOMContentPermissionRequestChild.h"
+#include "mozilla/Attributes.h"
 
 class nsGeolocationService;
 class nsGeolocation;
@@ -91,7 +92,7 @@ class nsGeolocationRequest
 /**
  * Singleton that manages the geolocation provider
  */
-class nsGeolocationService : public nsIGeolocationUpdate, public nsIObserver
+class nsGeolocationService MOZ_FINAL : public nsIGeolocationUpdate, public nsIObserver
 {
 public:
 
@@ -108,6 +109,8 @@ public:
   }
 
   nsresult Init();
+
+  void HandleMozsettingChanged(const PRUnichar* aData);
 
   // Management of the nsGeolocation objects
   void AddLocator(nsGeolocation* locator);
@@ -156,7 +159,7 @@ private:
 /**
  * Can return a geolocation info
  */ 
-class nsGeolocation : public nsIDOMGeoGeolocation
+class nsGeolocation MOZ_FINAL : public nsIDOMGeoGeolocation
 {
 public:
 
@@ -167,7 +170,7 @@ public:
 
   nsGeolocation();
 
-  nsresult Init(nsIDOMWindow* contentDom=nsnull);
+  nsresult Init(nsIDOMWindow* contentDom=nullptr);
 
   // Called by the geolocation device to notify that a location has changed.
   void Update(nsIDOMGeoPosition* aPosition);

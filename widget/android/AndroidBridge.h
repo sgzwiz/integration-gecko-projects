@@ -23,7 +23,6 @@
 #include "nsIMutableArray.h"
 #include "nsIMIMEInfo.h"
 #include "nsColor.h"
-#include "BasicLayers.h"
 #include "gfxRect.h"
 
 #include "nsIAndroidBridge.h"
@@ -102,8 +101,7 @@ public:
         LAYER_CLIENT_TYPE_GL = 2            // AndroidGeckoGLLayerClient
     };
 
-    static AndroidBridge *ConstructBridge(JNIEnv *jEnv,
-                                          jclass jGeckoAppShellClass);
+    static void ConstructBridge(JNIEnv *jEnv, jclass jGeckoAppShellClass);
 
     static AndroidBridge *Bridge() {
         return sBridge;
@@ -112,7 +110,7 @@ public:
     static JavaVM *GetVM() {
         if (NS_LIKELY(sBridge))
             return sBridge->mJavaVM;
-        return nsnull;
+        return nullptr;
     }
 
     static JNIEnv *GetJNIEnv() {
@@ -121,12 +119,12 @@ public:
                 __android_log_print(ANDROID_LOG_INFO, "AndroidBridge",
                                     "###!!!!!!! Something's grabbing the JNIEnv from the wrong thread! (thr %p should be %p)",
                                     (void*)pthread_self(), (void*)sBridge->mThread);
-                return nsnull;
+                return nullptr;
             }
             return sBridge->mJNIEnv;
 
         }
-        return nsnull;
+        return nullptr;
     }
     
     static jclass GetGeckoAppShellClass() {
@@ -155,7 +153,7 @@ public:
         SCREENSHOT_UPDATE = 2
     };
 
-    nsresult TakeScreenshot(nsIDOMWindow *window, PRInt32 srcX, PRInt32 srcY, PRInt32 srcW, PRInt32 srcH, PRInt32 dstW, PRInt32 dstH, PRInt32 tabId, float scale, PRInt32 token);
+    nsresult TakeScreenshot(nsIDOMWindow *window, PRInt32 srcX, PRInt32 srcY, PRInt32 srcW, PRInt32 srcH, PRInt32 dstY, PRInt32 dstX, PRInt32 dstW, PRInt32 dstH, PRInt32 bufW, PRInt32 bufH, PRInt32 tabId, PRInt32 token, jobject buffer);
 
     static void NotifyPaintedRect(float top, float left, float bottom, float right);
 
@@ -174,20 +172,20 @@ public:
 
     void ScheduleRestart();
 
-    void SetLayerClient(jobject jobj);
+    void SetLayerClient(JNIEnv* env, jobject jobj);
     AndroidGeckoLayerClient &GetLayerClient() { return *mLayerClient; }
 
     void SetSurfaceView(jobject jobj);
     AndroidGeckoSurfaceView& SurfaceView() { return mSurfaceView; }
 
     bool GetHandlersForURL(const char *aURL, 
-                             nsIMutableArray* handlersArray = nsnull,
-                             nsIHandlerApp **aDefaultApp = nsnull,
+                             nsIMutableArray* handlersArray = nullptr,
+                             nsIHandlerApp **aDefaultApp = nullptr,
                              const nsAString& aAction = EmptyString());
 
     bool GetHandlersForMimeType(const char *aMimeType,
-                                  nsIMutableArray* handlersArray = nsnull,
-                                  nsIHandlerApp **aDefaultApp = nsnull,
+                                  nsIMutableArray* handlersArray = nullptr,
+                                  nsIHandlerApp **aDefaultApp = nullptr,
                                   const nsAString& aAction = EmptyString());
 
     bool OpenUriExternal(const nsACString& aUriSpec, const nsACString& aMimeType,
@@ -260,12 +258,12 @@ public:
     void *CallEglCreateWindowSurface(void *dpy, void *config, AndroidGeckoSurfaceView& surfaceView);
 
     // Switch Java to composite with the Gecko Compositor thread
-    void RegisterCompositor();
+    void RegisterCompositor(JNIEnv* env = NULL, bool resetting = false);
     EGLSurface ProvideEGLSurface();
 
-    bool GetStaticStringField(const char *classID, const char *field, nsAString &result, JNIEnv* env = nsnull);
+    bool GetStaticStringField(const char *classID, const char *field, nsAString &result, JNIEnv* env = nullptr);
 
-    bool GetStaticIntField(const char *className, const char *fieldName, PRInt32* aInt, JNIEnv* env = nsnull);
+    bool GetStaticIntField(const char *className, const char *fieldName, PRInt32* aInt, JNIEnv* env = nullptr);
 
     void SetKeepScreenOn(bool on);
 
@@ -297,6 +295,10 @@ public:
 
     void *AcquireNativeWindow(JNIEnv* aEnv, jobject aSurface);
     void ReleaseNativeWindow(void *window);
+
+    void *AcquireNativeWindowFromSurfaceTexture(JNIEnv* aEnv, jobject aSurface);
+    void ReleaseNativeWindowForSurfaceTexture(void *window);
+
     bool SetNativeWindowFormat(void *window, int width, int height, int format);
 
     bool LockWindow(void *window, unsigned char **bits, int *width, int *height, int *format, int *stride);
@@ -331,16 +333,11 @@ public:
     void DisableNetworkNotifications();
 
     void SetFirstPaintViewport(const nsIntPoint& aOffset, float aZoom, const nsIntRect& aPageRect, const gfx::Rect& aCssPageRect);
-    void SetPageRect(float aZoom, const nsIntRect& aPageRect, const gfx::Rect& aCssPageRect);
+    void SetPageRect(const gfx::Rect& aCssPageRect);
     void SyncViewportInfo(const nsIntRect& aDisplayPort, float aDisplayResolution, bool aLayersUpdated,
                           nsIntPoint& aScrollOffset, float& aScaleX, float& aScaleY);
 
-    jobject CreateSurface();
-    void DestroySurface(jobject surface);
-    void ShowSurface(jobject surface, const gfxRect& aRect, bool aInverted, bool aBlend);
-    void HideSurface(jobject surface);
-
-    void AddPluginView(jobject view, const gfxRect& rect, bool isFullScreen, int orientation);
+    void AddPluginView(jobject view, const gfxRect& rect, bool isFullScreen);
     void RemovePluginView(jobject view, bool isFullScreen);
 
     // These methods don't use a ScreenOrientation because it's an
@@ -354,6 +351,17 @@ public:
     void UnlockScreenOrientation();
 
     void PumpMessageLoop();
+
+    void NotifyWakeLockChanged(const nsAString& topic, const nsAString& state);
+
+    int GetAPIVersion() { return mAPIVersion; }
+    bool IsHoneycomb() { return mAPIVersion >= 11 && mAPIVersion <= 13; }
+
+    void ScheduleComposite();
+    void RegisterSurfaceTextureFrameListener(jobject surfaceTexture, int id);
+    void UnregisterSurfaceTextureFrameListener(jobject surfaceTexture);
+
+    void GetGfxInfoData(nsACString& aRet);
 
 protected:
     static AndroidBridge *sBridge;
@@ -385,6 +393,8 @@ protected:
     bool mHasNativeBitmapAccess;
     bool mHasNativeWindowAccess;
     bool mHasNativeWindowFallback;
+
+    int mAPIVersion;
 
     nsCOMArray<nsIRunnable> mRunnableQueue;
 
@@ -474,6 +484,12 @@ protected:
     jmethodID jLockScreenOrientation;
     jmethodID jUnlockScreenOrientation;
     jmethodID jPumpMessageLoop;
+    jmethodID jNotifyWakeLockChanged;
+    jmethodID jRegisterSurfaceTextureFrameListener;
+    jmethodID jUnregisterSurfaceTextureFrameListener;
+
+    // for GfxInfo (gfx feature detection and blacklisting)
+    jmethodID jGetGfxInfoData;
 
     // For native surface stuff
     jclass jSurfaceClass;
@@ -499,6 +515,7 @@ protected:
     int (* AndroidBitmap_unlockPixels)(JNIEnv *env, jobject bitmap);
 
     void* (*ANativeWindow_fromSurface)(JNIEnv *env, jobject surface);
+    void* (*ANativeWindow_fromSurfaceTexture)(JNIEnv *env, jobject surfaceTexture);
     void (*ANativeWindow_release)(void *window);
     int (*ANativeWindow_setBuffersGeometry)(void *window, int width, int height, int format);
 

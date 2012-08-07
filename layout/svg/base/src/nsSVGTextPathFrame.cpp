@@ -46,7 +46,6 @@ nsSVGTextPathFrame::Init(nsIContent* aContent,
   nsCOMPtr<nsIDOMSVGTextPathElement> textPath = do_QueryInterface(aContent);
   NS_ASSERTION(textPath, "Content is not an SVG textPath");
 
-
   return nsSVGTextPathFrameBase::Init(aContent, aParent, aPrevInFlow);
 }
 #endif /* DEBUG */
@@ -76,7 +75,7 @@ nsSVGTextPathFrame::GetDxDy(SVGUserUnitList *aDx, SVGUserUnitList *aDy)
 const SVGNumberList*
 nsSVGTextPathFrame::GetRotate()
 {
-  return nsnull;
+  return nullptr;
 }
 
 //----------------------------------------------------------------------
@@ -93,7 +92,7 @@ nsSVGTextPathFrame::GetPathFrame()
     nsAutoString href;
     tp->mStringAttributes[nsSVGTextPathElement::HREF].GetAnimValue(href, tp);
     if (href.IsEmpty()) {
-      return nsnull; // no URL
+      return nullptr; // no URL
     }
 
     nsCOMPtr<nsIURI> targetURI;
@@ -104,10 +103,10 @@ nsSVGTextPathFrame::GetPathFrame()
     property =
       nsSVGEffects::GetTextPathProperty(targetURI, this, nsSVGEffects::HrefProperty());
     if (!property)
-      return nsnull;
+      return nullptr;
   }
 
-  return property->GetReferencedFrame(nsGkAtoms::svgPathGeometryFrame, nsnull);
+  return property->GetReferencedFrame(nsGkAtoms::svgPathGeometryFrame, nullptr);
 }
 
 already_AddRefed<gfxFlattenedPath>
@@ -121,7 +120,7 @@ nsSVGTextPathFrame::GetFlattenedPath()
 
     return element->GetFlattenedPath(element->PrependLocalTransformsTo(gfxMatrix()));
   }
-  return nsnull;
+  return nullptr;
 }
  
 gfxFloat
@@ -158,9 +157,11 @@ nsSVGTextPathFrame::AttributeChanged(PRInt32         aNameSpaceID,
 {
   if (aNameSpaceID == kNameSpaceID_None &&
       aAttribute == nsGkAtoms::startOffset) {
+    nsSVGUtils::InvalidateAndScheduleReflowSVG(this);
     NotifyGlyphMetricsChange();
   } else if (aNameSpaceID == kNameSpaceID_XLink &&
              aAttribute == nsGkAtoms::href) {
+    nsSVGUtils::InvalidateAndScheduleReflowSVG(this);
     // Blow away our reference, if any
     Properties().Delete(nsSVGEffects::HrefProperty());
     NotifyGlyphMetricsChange();

@@ -68,8 +68,8 @@
 #include "nsIStringBundle.h"
 #include "nsGfxCIID.h"
 #include "nsIObserverService.h"
-
-#include "nsIdleService.h"
+#include "LayersTypes.h"
+#include "nsIIdleServiceInternal.h"
 #include "nsIPropertyBag2.h"
 
 #ifdef ACCESSIBILITY
@@ -84,7 +84,6 @@ using namespace mozilla::widget;
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsXPIDLString.h"
 #include "nsIFile.h"
-#include "nsILocalFile.h"
 
 /* SetCursor(imgIContainer*) */
 #include <gdk/gdk.h>
@@ -94,6 +93,7 @@ using namespace mozilla::widget;
 #include "nsImageToPixbuf.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsAutoPtr.h"
+#include "BasicLayers.h"
 
 extern "C" {
 #define PIXMAN_DONT_DEFINE_STDINT
@@ -291,14 +291,14 @@ class nsSimpleRef<pixman_region32> : public pixman_region32 {
 protected:
     typedef pixman_region32 RawRef;
 
-    nsSimpleRef() { data = nsnull; }
+    nsSimpleRef() { data = nullptr; }
     nsSimpleRef(const RawRef &aRawRef) : pixman_region32(aRawRef) { }
 
     static void Release(pixman_region32& region) {
         pixman_region32_fini(&region);
     }
     // Whether this needs to be released:
-    bool HaveResource() const { return data != nsnull; }
+    bool HaveResource() const { return data != nullptr; }
 
     pixman_region32& get() { return *this; }
 };
@@ -323,10 +323,10 @@ static inline bool TimestampIsNewerThan(guint32 a, guint32 b)
 static void
 UpdateLastInputEventTime(void *aGdkEvent)
 {
-    nsCOMPtr<nsIdleService> idleService =
+    nsCOMPtr<nsIIdleServiceInternal> idleService =
         do_GetService("@mozilla.org/widget/idleservice;1");
     if (idleService) {
-        idleService->ResetIdleTimeOut();
+        idleService->ResetIdleTimeOut(0);
     }
 
     guint timestamp = gdk_event_get_time(static_cast<GdkEvent*>(aGdkEvent));
@@ -348,14 +348,14 @@ nsWindow::nsWindow()
     mEnabled          = true;
     mCreated          = false;
 
-    mContainer           = nsnull;
-    mGdkWindow           = nsnull;
-    mShell               = nsnull;
-    mWindowGroup         = nsnull;
+    mContainer           = nullptr;
+    mGdkWindow           = nullptr;
+    mShell               = nullptr;
+    mWindowGroup         = nullptr;
     mHasMappedToplevel   = false;
     mIsFullyObscured     = false;
     mRetryPointerGrab    = false;
-    mTransientParent     = nsnull;
+    mTransientParent     = nullptr;
     mWindowType          = eWindowType_child;
     mSizeState           = nsSizeMode_Normal;
     mLastSizeMode        = nsSizeMode_Normal;
@@ -375,11 +375,11 @@ nsWindow::nsWindow()
     mLastMotionPressure = 0;
 
 #ifdef ACCESSIBILITY
-    mRootAccessible  = nsnull;
+    mRootAccessible  = nullptr;
 #endif
 
     mIsTransparent = false;
-    mTransparencyBitmap = nsnull;
+    mTransparencyBitmap = nullptr;
 
     mTransparencyBitmapWidth  = 0;
     mTransparencyBitmapHeight = 0;
@@ -390,7 +390,7 @@ nsWindow::~nsWindow()
     LOG(("nsWindow::~nsWindow() [%p]\n", (void *)this));
 
     delete[] mTransparencyBitmap;
-    mTransparencyBitmap = nsnull;
+    mTransparencyBitmap = nullptr;
 
     Destroy();
 }
@@ -401,7 +401,7 @@ nsWindow::ReleaseGlobals()
   for (PRUint32 i = 0; i < ArrayLength(gCursorCache); ++i) {
     if (gCursorCache[i]) {
       gdk_cursor_unref(gCursorCache[i]);
-      gCursorCache[i] = nsnull;
+      gCursorCache[i] = nullptr;
     }
   }
 }
@@ -493,7 +493,7 @@ nsWindow::OnDestroy(void)
     
     // Remove association between this object and its parent and siblings.
     nsBaseWidget::Destroy();
-    mParent = nsnull;
+    mParent = nullptr;
 
     nsGUIEvent event(true, NS_DESTROY, this);
     nsEventStatus status;
@@ -614,8 +614,8 @@ nsWindow::Destroy(void)
 
     /** Need to clean our LayerManager up while still alive */
     if (mLayerManager) {
-        nsRefPtr<GLContext> gl = nsnull;
-        if (mLayerManager->GetBackendType() == LayerManager::LAYERS_OPENGL) {
+        nsRefPtr<GLContext> gl = nullptr;
+        if (mLayerManager->GetBackendType() == mozilla::layers::LAYERS_OPENGL) {
             LayerManagerOGL *ogllm = static_cast<LayerManagerOGL*>(mLayerManager.get());
             gl = ogllm->gl();
         }
@@ -626,7 +626,7 @@ nsWindow::Destroy(void)
             gl->MarkDestroyed();
         }
     }
-    mLayerManager = nsnull;
+    mLayerManager = nullptr;
 
     // It is safe to call DestroyeCompositor several times (here and 
     // in the parent class) since it will take effect only once.
@@ -646,8 +646,8 @@ nsWindow::Destroy(void)
     if (static_cast<nsIWidget *>(this) == rollupWidget.get()) {
         if (gRollupListener)
             gRollupListener->Rollup(0);
-        gRollupWindow = nsnull;
-        gRollupListener = nsnull;
+        gRollupWindow = nullptr;
+        gRollupListener = nullptr;
     }
 
     // dragService will be null after shutdown of the service manager.
@@ -665,7 +665,7 @@ nsWindow::Destroy(void)
     // make sure that we remove ourself as the focus window
     if (gFocusWindow == this) {
         LOGFOCUS(("automatically losing focus...\n"));
-        gFocusWindow = nsnull;
+        gFocusWindow = nullptr;
     }
 
 #if defined(MOZ_WIDGET_GTK2) && defined(MOZ_X11)
@@ -677,12 +677,12 @@ nsWindow::Destroy(void)
   
     if (mWindowGroup) {
         g_object_unref(mWindowGroup);
-        mWindowGroup = nsnull;
+        mWindowGroup = nullptr;
     }
 
     // Destroy thebes surface now. Badness can happen if we destroy
     // the surface after its X Window.
-    mThebesSurface = nsnull;
+    mThebesSurface = nullptr;
 
     GtkWidget *owningWidget = GetMozContainerWidget();
     if (mShell) {
@@ -690,8 +690,8 @@ nsWindow::Destroy(void)
             nsAutoUnlockEverything unlock;
             gtk_widget_destroy(mShell);
         }
-        mShell = nsnull;
-        mContainer = nsnull;
+        mShell = nullptr;
+        mContainer = nullptr;
         NS_ABORT_IF_FALSE(!mGdkWindow,
                           "mGdkWindow should be NULL when mContainer is destroyed");
     }
@@ -700,7 +700,7 @@ nsWindow::Destroy(void)
             nsAutoUnlockEverything unlock;
             gtk_widget_destroy(GTK_WIDGET(mContainer));
         }
-        mContainer = nsnull;
+        mContainer = nullptr;
         NS_ABORT_IF_FALSE(!mGdkWindow,
                           "mGdkWindow should be NULL when mContainer is destroyed");
     }
@@ -717,7 +717,7 @@ nsWindow::Destroy(void)
             g_object_set_data(G_OBJECT(mGdkWindow), "nsWindow", NULL);
             gdk_window_destroy(mGdkWindow);
         }
-        mGdkWindow = nsnull;
+        mGdkWindow = nullptr;
     }
 
     if (gInvisibleContainer && owningWidget == gInvisibleContainer) {
@@ -726,7 +726,7 @@ nsWindow::Destroy(void)
 
 #ifdef ACCESSIBILITY
      if (mRootAccessible) {
-         mRootAccessible = nsnull;
+         mRootAccessible = nullptr;
      }
 #endif
 
@@ -922,11 +922,10 @@ nsWindow::SetModal(bool aModal)
 }
 
 // nsIWidget method, which means IsShown.
-NS_IMETHODIMP
-nsWindow::IsVisible(bool& aState)
+bool
+nsWindow::IsVisible() const
 {
-    aState = mIsShown;
-    return NS_OK;
+    return mIsShown;
 }
 
 NS_IMETHODIMP
@@ -956,6 +955,23 @@ nsWindow::ConstrainPosition(bool aAllowSlop, PRInt32 *aX, PRInt32 *aY)
         }
     }
     return NS_OK;
+}
+
+void nsWindow::SetSizeConstraints(const SizeConstraints& aConstraints)
+{
+  if (mShell) {
+    GdkGeometry geometry;
+    geometry.min_width = aConstraints.mMinSize.width;
+    geometry.min_height = aConstraints.mMinSize.height;
+    geometry.max_width = aConstraints.mMaxSize.width;
+    geometry.max_height = aConstraints.mMaxSize.height;
+
+    PRUint32 hints = GDK_HINT_MIN_SIZE | GDK_HINT_MAX_SIZE;
+    gtk_window_set_geometry_hints(GTK_WINDOW(mShell), nullptr,
+                                  &geometry, GdkWindowHints(hints));
+  }
+
+  nsBaseWidget::SetSizeConstraints(aConstraints);
 }
 
 NS_IMETHODIMP
@@ -1016,6 +1032,8 @@ nsWindow::Show(bool aState)
 NS_IMETHODIMP
 nsWindow::Resize(PRInt32 aWidth, PRInt32 aHeight, bool aRepaint)
 {
+    ConstrainSize(&aWidth, &aHeight);
+
     // For top-level windows, aWidth and aHeight should possibly be
     // interpreted as frame bounds, but NativeResize treats these as window
     // bounds (Bug 581866).
@@ -1093,6 +1111,8 @@ NS_IMETHODIMP
 nsWindow::Resize(PRInt32 aX, PRInt32 aY, PRInt32 aWidth, PRInt32 aHeight,
                        bool aRepaint)
 {
+    ConstrainSize(&aWidth, &aHeight);
+
     mBounds.x = aX;
     mBounds.y = aY;
     mBounds.SizeTo(GetSafeWindowSize(nsIntSize(aWidth, aHeight)));
@@ -1163,12 +1183,10 @@ nsWindow::Enable(bool aState)
     return NS_OK;
 }
 
-NS_IMETHODIMP
-nsWindow::IsEnabled(bool *aState)
+bool
+nsWindow::IsEnabled() const
 {
-    *aState = mEnabled;
-
-    return NS_OK;
+    return mEnabled;
 }
 
 
@@ -1324,7 +1342,7 @@ SetUserTimeAndStartupIDForActivatedWindow(GtkWidget* aWindow)
     GdkScreen* screen = gdk_window_get_screen(gdkWindow);
     SnDisplay* snd =
         sn_display_new(gdk_x11_display_get_xdisplay(gdk_window_get_display(gdkWindow)), 
-                       nsnull, nsnull);
+                       nullptr, nullptr);
     if (!snd)
         return;
     SnLauncheeContext* ctx =
@@ -1395,7 +1413,7 @@ nsWindow::SetFocus(bool aRaise)
     if (gRaiseWindows && aRaise && toplevelWidget &&
         !gtk_widget_has_focus(owningWidget) &&
         !gtk_widget_has_focus(toplevelWidget)) {
-        GtkWidget* top_window = nsnull;
+        GtkWidget* top_window = nullptr;
         GetToplevelWidget(&top_window);
         if (top_window && (gtk_widget_get_visible(top_window)))
         {
@@ -1600,7 +1618,7 @@ nsWindow::SetCursor(nsCursor aCursor)
 
         newCursor = get_gtk_cursor(aCursor);
 
-        if (nsnull != newCursor) {
+        if (nullptr != newCursor) {
             mCursor = aCursor;
 
             if (!mContainer)
@@ -1700,7 +1718,7 @@ nsWindow::GetNativeData(PRUint32 aDataType)
     case NS_NATIVE_WINDOW:
     case NS_NATIVE_WIDGET: {
         if (!mGdkWindow)
-            return nsnull;
+            return nullptr;
 
         return mGdkWindow;
         break;
@@ -1714,17 +1732,17 @@ nsWindow::GetNativeData(PRUint32 aDataType)
 #ifdef MOZ_X11
         return GDK_DISPLAY_XDISPLAY(gdk_display_get_default());
 #else
-        return nsnull;
+        return nullptr;
 #endif /* MOZ_X11 */
         break;
 
     case NS_NATIVE_GRAPHIC: {
 #if defined(MOZ_WIDGET_GTK2)
         nsGTKToolkit* toolkit = nsGTKToolkit::GetToolkit();
-        NS_ASSERTION(nsnull != toolkit, "NULL toolkit, unable to get a GC");    
+        NS_ASSERTION(nullptr != toolkit, "NULL toolkit, unable to get a GC");    
         return toolkit->GetSharedGC();
 #else
-        return nsnull;
+        return nullptr;
 #endif
         break;
     }
@@ -1737,7 +1755,7 @@ nsWindow::GetNativeData(PRUint32 aDataType)
 
     default:
         NS_WARNING("nsWindow::GetNativeData called with bad value");
-        return nsnull;
+        return nullptr;
     }
 }
 
@@ -1780,7 +1798,7 @@ nsWindow::SetIcon(const nsAString& aIconSpec)
         AppendUTF16toUTF8(aIconSpec, iconName);
     }
     
-    nsCOMPtr<nsILocalFile> iconFile;
+    nsCOMPtr<nsIFile> iconFile;
     nsCAutoString path;
 
     gint *iconSizes =
@@ -1911,8 +1929,8 @@ nsWindow::CaptureRollupEvents(nsIRollupListener *aListener,
             nsAutoUnlockEverything unlock;
             gtk_grab_remove(widget);
         }
-        gRollupListener = nsnull;
-        gRollupWindow = nsnull;
+        gRollupListener = nullptr;
+        gRollupWindow = nullptr;
     }
 
     return NS_OK;
@@ -1923,8 +1941,8 @@ nsWindow::GetAttention(PRInt32 aCycleCount)
 {
     LOG(("nsWindow::GetAttention [%p]\n", (void *)this));
 
-    GtkWidget* top_window = nsnull;
-    GtkWidget* top_focused_window = nsnull;
+    GtkWidget* top_window = nullptr;
+    GtkWidget* top_focused_window = nullptr;
     GetToplevelWidget(&top_window);
     if (gFocusWindow)
         gFocusWindow->GetToplevelWidget(&top_focused_window);
@@ -2174,7 +2192,7 @@ nsWindow::OnExposeEvent(cairo_t *cr)
         nsRefPtr<gfxContext> ctx = new gfxContext(GetThebesSurface(cr));
 #endif
         nsBaseWidget::AutoLayerManagerSetup
-          setupLayerManager(this, ctx, BasicLayerManager::BUFFER_NONE);
+          setupLayerManager(this, ctx, mozilla::layers::BUFFER_NONE);
         DispatchEvent(&event, status);
 
         g_free(rects);
@@ -2182,8 +2200,8 @@ nsWindow::OnExposeEvent(cairo_t *cr)
         DispatchDidPaint(this);
 
         return TRUE;
-    
-    } else if (GetLayerManager()->GetBackendType() == LayerManager::LAYERS_OPENGL) {
+
+    } else if (GetLayerManager()->GetBackendType() == mozilla::layers::LAYERS_OPENGL) {
         LayerManagerOGL *manager = static_cast<LayerManagerOGL*>(GetLayerManager());
         manager->SetClippingRegion(event.region);
 
@@ -2196,7 +2214,7 @@ nsWindow::OnExposeEvent(cairo_t *cr)
 
         return TRUE;
     }
-            
+
 #if defined(MOZ_WIDGET_GTK2)
     nsRefPtr<gfxContext> ctx = new gfxContext(GetThebesSurface());
 #else
@@ -2220,21 +2238,21 @@ nsWindow::OnExposeEvent(cairo_t *cr)
     }
     ctx->Clip();
 
-    BasicLayerManager::BufferMode layerBuffering;
+    BufferMode layerBuffering;
     if (translucent) {
         // The double buffering is done here to extract the shape mask.
         // (The shape mask won't be necessary when a visual with an alpha
         // channel is used on compositing window managers.)
-        layerBuffering = BasicLayerManager::BUFFER_NONE;
+        layerBuffering = mozilla::layers::BUFFER_NONE;
         ctx->PushGroup(gfxASurface::CONTENT_COLOR_ALPHA);
 #ifdef MOZ_HAVE_SHMIMAGE
     } else if (nsShmImage::UseShm()) {
         // We're using an xshm mapping as a back buffer.
-        layerBuffering = BasicLayerManager::BUFFER_NONE;
+        layerBuffering = mozilla::layers::BUFFER_NONE;
 #endif // MOZ_HAVE_SHMIMAGE
     } else {
         // Get the layer manager to do double buffering (if necessary).
-        layerBuffering = BasicLayerManager::BUFFER_BUFFERED;
+        layerBuffering = mozilla::layers::BUFFER_BUFFERED;
     }
 
 #if 0
@@ -2861,7 +2879,7 @@ nsWindow::OnContainerFocusInEvent(GtkWidget *aWidget, GdkEventFocus *aEvent)
     LOGFOCUS(("OnContainerFocusInEvent [%p]\n", (void *)this));
 
     // Unset the urgency hint, if possible
-    GtkWidget* top_window = nsnull;
+    GtkWidget* top_window = nullptr;
     GetToplevelWidget(&top_window);
     if (top_window && (gtk_widget_get_visible(top_window)))
         SetUrgencyHint(top_window, false);
@@ -2903,7 +2921,7 @@ nsWindow::OnContainerFocusOutEvent(GtkWidget *aWidget, GdkEventFocus *aEvent)
             // we also roll up when a drag is from a different application
             nsCOMPtr<nsIDOMNode> sourceNode;
             dragSession->GetSourceNode(getter_AddRefs(sourceNode));
-            shouldRollup = (sourceNode == nsnull);
+            shouldRollup = (sourceNode == nullptr);
         }
 
         if (shouldRollup) {
@@ -2924,7 +2942,7 @@ nsWindow::OnContainerFocusOutEvent(GtkWidget *aWidget, GdkEventFocus *aEvent)
         if (gFocusWindow->mIMModule) {
             gFocusWindow->mIMModule->OnBlurWindow(gFocusWindow);
         }
-        gFocusWindow = nsnull;
+        gFocusWindow = nullptr;
     }
 
     DispatchDeactivateEvent();
@@ -3434,7 +3452,7 @@ nsWindow::Create(nsIWidget        *aParent,
         (aInitData->mWindowType == eWindowType_dialog ||
          aInitData->mWindowType == eWindowType_toplevel ||
          aInitData->mWindowType == eWindowType_invisible) ?
-        nsnull : aParent;
+        nullptr : aParent;
 
     NS_ASSERTION(!mWindowGroup, "already have window group (leaking it)");
 
@@ -3461,10 +3479,10 @@ nsWindow::Create(nsIWidget        *aParent,
     mBounds = aRect;
 
     // figure out our parent window
-    GtkWidget      *parentMozContainer = nsnull;
-    GtkContainer   *parentGtkContainer = nsnull;
-    GdkWindow      *parentGdkWindow = nsnull;
-    GtkWindow      *topLevelParent = nsnull;
+    GtkWidget      *parentMozContainer = nullptr;
+    GtkContainer   *parentGtkContainer = nullptr;
+    GdkWindow      *parentGdkWindow = nullptr;
+    GtkWindow      *topLevelParent = nullptr;
 
     if (aParent)
         parentGdkWindow = GDK_WINDOW(aParent->GetNativeData(NS_NATIVE_WINDOW));
@@ -4101,7 +4119,7 @@ nsWindow::SetTransparencyMode(nsTransparencyMode aMode)
 {
     if (!mShell) {
         // Pass the request to the toplevel window
-        GtkWidget *topWidget = nsnull;
+        GtkWidget *topWidget = nullptr;
         GetToplevelWidget(&topWidget);
         if (!topWidget)
             return;
@@ -4121,7 +4139,7 @@ nsWindow::SetTransparencyMode(nsTransparencyMode aMode)
     if (!isTransparent) {
         if (mTransparencyBitmap) {
             delete[] mTransparencyBitmap;
-            mTransparencyBitmap = nsnull;
+            mTransparencyBitmap = nullptr;
             mTransparencyBitmapWidth = 0;
             mTransparencyBitmapHeight = 0;
 #if defined(MOZ_WIDGET_GTK2)
@@ -4141,7 +4159,7 @@ nsWindow::GetTransparencyMode()
 {
     if (!mShell) {
         // Pass the request to the toplevel window
-        GtkWidget *topWidget = nsnull;
+        GtkWidget *topWidget = nullptr;
         GetToplevelWidget(&topWidget);
         if (!topWidget) {
             return eTransparencyOpaque;
@@ -4306,7 +4324,7 @@ nsWindow::ResizeTransparencyBitmap(PRInt32 aNewWidth, PRInt32 aNewHeight)
     gchar* newBits = new gchar[newSize];
     if (!newBits) {
         delete[] mTransparencyBitmap;
-        mTransparencyBitmap = nsnull;
+        mTransparencyBitmap = nullptr;
         mTransparencyBitmapWidth = 0;
         mTransparencyBitmapHeight = 0;
         return;
@@ -4438,7 +4456,7 @@ nsWindow::UpdateTranslucentWindowAlphaInternal(const nsIntRect& aRect,
 {
     if (!mShell) {
         // Pass the request to the toplevel window
-        GtkWidget *topWidget = nsnull;
+        GtkWidget *topWidget = nullptr;
         GetToplevelWidget(&topWidget);
         if (!topWidget)
             return NS_ERROR_FAILURE;
@@ -4452,10 +4470,10 @@ nsWindow::UpdateTranslucentWindowAlphaInternal(const nsIntRect& aRect,
 
     NS_ASSERTION(mIsTransparent, "Window is not transparent");
 
-    if (mTransparencyBitmap == nsnull) {
+    if (mTransparencyBitmap == nullptr) {
         PRInt32 size = GetBitmapStride(mBounds.width)*mBounds.height;
         mTransparencyBitmap = new gchar[size];
-        if (mTransparencyBitmap == nsnull)
+        if (mTransparencyBitmap == nullptr)
             return NS_ERROR_FAILURE;
         memset(mTransparencyBitmap, 255, size);
         mTransparencyBitmapWidth = mBounds.width;
@@ -4538,7 +4556,7 @@ nsWindow::ReleaseGrabs(void)
 void
 nsWindow::GetToplevelWidget(GtkWidget **aWidget)
 {
-    *aWidget = nsnull;
+    *aWidget = nullptr;
 
     if (mShell) {
         *aWidget = mShell;
@@ -4568,7 +4586,7 @@ nsWindow::GetContainerWindow()
 {
     GtkWidget *owningWidget = GetMozContainerWidget();
     if (!owningWidget)
-        return nsnull;
+        return nullptr;
 
     nsWindow *window = get_window_for_gtk_widget(owningWidget);
     NS_ASSERTION(window, "No nsWindow for container widget");
@@ -4588,10 +4606,10 @@ void *
 nsWindow::SetupPluginPort(void)
 {
     if (!mGdkWindow)
-        return nsnull;
+        return nullptr;
 
     if (gdk_window_is_destroyed(mGdkWindow) == TRUE)
-        return nsnull;
+        return nullptr;
 
     Window window = gdk_x11_window_get_xid(mGdkWindow);
     
@@ -4782,7 +4800,7 @@ nsWindow::HideWindowChrome(bool aShouldHide)
 {
     if (!mShell) {
         // Pass the request to the toplevel window
-        GtkWidget *topWidget = nsnull;
+        GtkWidget *topWidget = nullptr;
         GetToplevelWidget(&topWidget);
         if (!topWidget)
             return NS_ERROR_FAILURE;
@@ -4883,8 +4901,8 @@ check_for_rollup(gdouble aMouseX, gdouble aMouseY,
             }
         }
     } else {
-        gRollupWindow = nsnull;
-        gRollupListener = nsnull;
+        gRollupWindow = nullptr;
+        gRollupListener = nullptr;
     }
 
     return retVal;
@@ -4902,7 +4920,7 @@ nsWindow::DragInProgress(void)
     nsCOMPtr<nsIDragSession> currentDragSession;
     dragService->GetCurrentSession(getter_AddRefs(currentDragSession));
 
-    return currentDragSession != nsnull;
+    return currentDragSession != nullptr;
 }
 
 static bool
@@ -4979,7 +4997,7 @@ get_gtk_widget_for_gdk_window(GdkWindow *window)
 static GdkCursor *
 get_gtk_cursor(nsCursor aCursor)
 {
-    GdkCursor *gdkcursor = nsnull;
+    GdkCursor *gdkcursor = nullptr;
     PRUint8 newType = 0xff;
 
     if ((gdkcursor = gCursorCache[aCursor])) {
@@ -5314,7 +5332,7 @@ GetFirstNSWindowForGDKWindow(GdkWindow *aGdkWindow)
         // event->window and find the first ancestor nsWindow of it because event->window may be in a plugin.
         aGdkWindow = gdk_window_get_parent(aGdkWindow);
         if (!aGdkWindow) {
-            window = nsnull;
+            window = nullptr;
             break;
         }
     }
@@ -5507,8 +5525,10 @@ plugin_window_filter_func(GdkXEvent *gdk_xevent, GdkEvent *event, gpointer data)
                 else 
 #endif
                 if(GTK_IS_SOCKET(widget)) {
-                    nswindow->SetPluginType(nsWindow::PluginType_XEMBED);
-                    break;
+                    if (!g_object_get_data(G_OBJECT(widget), "enable-xt-focus")) {
+                        nswindow->SetPluginType(nsWindow::PluginType_XEMBED);
+                        break;
+                    }
                 }
             }
             nswindow->SetPluginType(nsWindow::PluginType_NONXEMBED);
@@ -6092,7 +6112,7 @@ nsWindow::GetSurfaceForGdkDrawable(GdkDrawable* aDrawable,
     Display* xDisplay = DisplayOfScreen(xScreen);
     Drawable xDrawable = gdk_x11_drawable_get_xid(aDrawable);
 
-    gfxASurface* result = nsnull;
+    gfxASurface* result = nullptr;
 
     if (visual) {
         Visual* xVisual = gdk_x11_visual_get_xvisual(visual);
@@ -6133,7 +6153,7 @@ nsWindow::GetThebesSurface(cairo_t *cr)
 #endif
 {
     if (!mGdkWindow)
-        return nsnull;
+        return nullptr;
 
 #if !defined(MOZ_WIDGET_GTK2)
     cairo_surface_t *surf = cairo_get_target(cr);
@@ -6171,7 +6191,7 @@ nsWindow::GetThebesSurface(cairo_t *cr)
             nsShmImage::EnsureShmImage(size,
                                        visual, gdk_visual_get_depth(gdkVisual),
                                        mShmImage);
-        usingShm = mThebesSurface != nsnull;
+        usingShm = mThebesSurface != nullptr;
     }
     if (!usingShm)
 #  endif  // MOZ_HAVE_SHMIMAGE
@@ -6195,7 +6215,7 @@ nsWindow::GetThebesSurface(cairo_t *cr)
     // if the surface creation is reporting an error, then
     // we don't have a surface to give back
     if (mThebesSurface && mThebesSurface->CairoStatus() != 0) {
-        mThebesSurface = nsnull;
+        mThebesSurface = nullptr;
     }
 
     return mThebesSurface;
@@ -6319,8 +6339,8 @@ void
 nsWindow::ClearCachedResources()
 {
     if (mLayerManager &&
-        mLayerManager->GetBackendType() == LayerManager::LAYERS_BASIC) {
-        static_cast<BasicLayerManager*> (mLayerManager.get())->
+        mLayerManager->GetBackendType() == mozilla::layers::LAYERS_BASIC) {
+        static_cast<mozilla::layers::BasicLayerManager*> (mLayerManager.get())->
             ClearCachedResources();
     }
 

@@ -27,6 +27,7 @@
 #include "nsIImageLoadingContent.h"
 #include "nsCSSRendering.h"
 #include "nsContentUtils.h"
+#include "mozilla/layers/ShadowLayers.h"
 
 #ifdef ACCESSIBILITY
 #include "nsAccessibilityService.h"
@@ -67,7 +68,7 @@ nsVideoFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
     // image. We may not have a poster image now, but one could be added
     // before we load, or on a subsequent load.
     nodeInfo = nodeInfoManager->GetNodeInfo(nsGkAtoms::img,
-                                            nsnull,
+                                            nullptr,
                                             kNameSpaceID_XHTML,
                                             nsIDOMNode::ELEMENT_NODE);
     NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
@@ -102,7 +103,7 @@ nsVideoFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
   // Set up "videocontrols" XUL element which will be XBL-bound to the
   // actual controls.
   nodeInfo = nodeInfoManager->GetNodeInfo(nsGkAtoms::videocontrols,
-                                          nsnull,
+                                          nullptr,
                                           kNameSpaceID_XUL,
                                           nsIDOMNode::ELEMENT_NODE);
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
@@ -161,19 +162,19 @@ nsVideoFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
   nsHTMLVideoElement* element = static_cast<nsHTMLVideoElement*>(GetContent());
   nsIntSize videoSize;
   if (NS_FAILED(element->GetVideoSize(&videoSize)) || area.IsEmpty()) {
-    return nsnull;
+    return nullptr;
   }
 
   nsRefPtr<ImageContainer> container = element->GetImageContainer();
   if (!container)
-    return nsnull;
+    return nullptr;
   
   // Retrieve the size of the decoded video frame, before being scaled
   // by pixel aspect ratio.
   gfxIntSize frameSize = container->GetCurrentSize();
   if (frameSize.width == 0 || frameSize.height == 0) {
     // No image, or zero-sized image. No point creating a layer.
-    return nsnull;
+    return nullptr;
   }
 
   // Compute the rectangle in which to paint the video. We need to use
@@ -191,11 +192,11 @@ nsVideoFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
   container->SetScaleHint(scaleHint);
 
   nsRefPtr<ImageLayer> layer = static_cast<ImageLayer*>
-    (aBuilder->LayerBuilder()->GetLeafLayerFor(aBuilder, aManager, aItem));
+    (GetLayerBuilderForManager(aManager)->GetLeafLayerFor(aBuilder, aManager, aItem));
   if (!layer) {
     layer = aManager->CreateImageLayer();
     if (!layer)
-      return nsnull;
+      return nullptr;
   }
 
   layer->SetContainer(container);
@@ -205,7 +206,7 @@ nsVideoFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
   gfxMatrix transform;
   transform.Translate(r.TopLeft());
   transform.Scale(r.Width()/frameSize.width, r.Height()/frameSize.height);
-  layer->SetTransform(gfx3DMatrix::From2D(transform));
+  layer->SetBaseTransform(gfx3DMatrix::From2D(transform));
   layer->SetVisibleRegion(nsIntRect(0, 0, frameSize.width, frameSize.height));
   nsRefPtr<Layer> result = layer.forget();
   return result.forget();
@@ -349,14 +350,13 @@ public:
                                    LayerManager* aManager,
                                    const FrameLayerBuilder::ContainerParameters& aParameters)
   {
-    if (aManager->GetBackendType() != LayerManager::LAYERS_BASIC) {
-      // For non-basic layer managers we can assume that compositing
-      // layers is very cheap, and since ImageLayers don't require
-      // additional memory of the video frames we have to have anyway,
-      // we can't save much by making layers inactive. Also, for many
-      // accelerated layer managers calling
-      // imageContainer->GetCurrentAsSurface can be very expensive. So
-      // just always be active for these managers.
+    if (aManager->IsCompositingCheap()) {
+      // Since ImageLayers don't require additional memory of the
+      // video frames we have to have anyway, we can't save much by
+      // making layers inactive. Also, for many accelerated layer
+      // managers calling imageContainer->GetCurrentAsSurface can be
+      // very expensive. So just always be active when compositing is
+      // cheap (i.e. hardware accelerated).
       return LAYER_ACTIVE;
     }
     nsHTMLMediaElement* elem =
@@ -422,7 +422,7 @@ nsVideoFrame::CreateAccessible()
   nsAccessibilityService* accService = nsIPresShell::AccService();
   return accService ?
     accService->CreateHTMLMediaAccessible(mContent, PresContext()->PresShell()) :
-    nsnull;
+    nullptr;
 }
 #endif
 
@@ -476,7 +476,7 @@ nscoord nsVideoFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
 
 nsSize nsVideoFrame::GetIntrinsicRatio()
 {
-  return GetVideoIntrinsicSize(nsnull);
+  return GetVideoIntrinsicSize(nullptr);
 }
 
 bool nsVideoFrame::ShouldDisplayPoster()
@@ -573,7 +573,7 @@ nsVideoFrame::AttributeChanged(PRInt32 aNameSpaceID,
 
 bool nsVideoFrame::HasVideoElement() {
   nsCOMPtr<nsIDOMHTMLVideoElement> videoDomElement = do_QueryInterface(mContent);
-  return videoDomElement != nsnull;
+  return videoDomElement != nullptr;
 }
 
 bool nsVideoFrame::HasVideoData()

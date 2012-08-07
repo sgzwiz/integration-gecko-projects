@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsContentUtils.h"
 #include "txExpr.h"
 #include "txNodeSet.h"
 #include "txIXPathContext.h"
@@ -147,7 +146,7 @@ RelationalExpr::compareResults(txIEvalContext* aContext, txAExprResult* aLeft,
 nsresult
 RelationalExpr::evaluate(txIEvalContext* aContext, txAExprResult** aResult)
 {
-    *aResult = nsnull;
+    *aResult = nullptr;
     nsRefPtr<txAExprResult> lResult;
     nsresult rv = mLeftExpr->evaluate(aContext, getter_AddRefs(lResult));
     NS_ENSURE_SUCCESS(rv, rv);

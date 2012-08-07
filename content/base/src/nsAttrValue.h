@@ -12,7 +12,7 @@
 #define nsAttrValue_h___
 
 #include "nscore.h"
-#include "nsString.h"
+#include "nsStringGlue.h"
 #include "nsStringBuffer.h"
 #include "nsColor.h"
 #include "nsCaseTreatment.h"
@@ -23,7 +23,6 @@
 typedef PRUptrdiff PtrBits;
 class nsAString;
 class nsIAtom;
-class nsIDocument;
 template<class E, class A> class nsTArray;
 struct nsTArrayDefaultAllocator;
 
@@ -250,7 +249,7 @@ public:
   bool ParseEnumValue(const nsAString& aValue,
                         const EnumTable* aTable,
                         bool aCaseSensitive,
-                        const EnumTable* aDefaultValue = nsnull);
+                        const EnumTable* aDefaultValue = nullptr);
 
   /**
    * Parse a string into an integer. Can optionally parse percent (n%).
@@ -421,7 +420,7 @@ private:
                           bool* aStrict,
                           PRInt32* aErrorCode,
                           bool aCanBePercent = false,
-                          bool* aIsPercent = nsnull) const;
+                          bool* aIsPercent = nullptr) const;
   // Given an enum table and a particular entry in that table, return
   // the actual integer value we should store.
   PRInt32 EnumTableEntryToValue(const EnumTable* aEnumTable,

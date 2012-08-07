@@ -14,8 +14,8 @@
 #include "nsIAccessibleHyperLink.h"
 #include "nsIAccessibleSelectable.h"
 #include "nsIAccessibleValue.h"
-#include "nsIAccessibleRole.h"
 #include "nsIAccessibleStates.h"
+#include "nsIContent.h"
 
 #include "nsStringGlue.h"
 #include "nsTArray.h"
@@ -27,17 +27,18 @@ class EmbeddedObjCollector;
 class KeyBinding;
 class Accessible;
 class HyperTextAccessible;
-class nsHTMLImageMapAccessible;
 struct nsRoleMapEntry;
-class Relation;
 
 namespace mozilla {
 namespace a11y {
 
+class HTMLImageMapAccessible;
 class HTMLLIAccessible;
 class ImageAccessible;
+class Relation;
 class TableAccessible;
 class TextLeafAccessible;
+class XULTreeAccessible;
 
 /**
  * Name type flags.
@@ -67,8 +68,6 @@ struct GroupPos
 
 } // namespace a11y
 } // namespace mozilla
-
-class nsXULTreeAccessible;
 
 struct nsRect;
 class nsIContent;
@@ -100,8 +99,8 @@ NS_ERROR_GENERATE_SUCCESS(NS_ERROR_MODULE_GENERAL, 0x25)
   { 0xbd, 0x50, 0x42, 0x6b, 0xd1, 0xd6, 0xe1, 0xad }    \
 }
 
-class Accessible : public nsAccessNodeWrap, 
-                   public nsIAccessible, 
+class Accessible : public nsAccessNodeWrap,
+                   public nsIAccessible,
                    public nsIAccessibleHyperLink,
                    public nsIAccessibleSelectable,
                    public nsIAccessibleValue
@@ -128,6 +127,11 @@ public:
   // Public methods
 
   /**
+   * Initialize the accessible.
+   */
+  virtual void Init();
+
+  /**
    * Get the description of this accessible.
    */
   virtual void Description(nsString& aDescription);
@@ -147,7 +151,7 @@ public:
    */
   inline already_AddRefed<nsIDOMNode> DOMNode() const
   {
-    nsIDOMNode *DOMNode = nsnull;
+    nsIDOMNode *DOMNode = nullptr;
     if (GetNode())
       CallQueryInterface(GetNode(), &DOMNode);
     return DOMNode;
@@ -208,6 +212,17 @@ public:
   virtual PRUint64 State();
 
   /**
+   * Return interactive states present on the accessible
+   * (@see NativeInteractiveState).
+   */
+  PRUint64 InteractiveState() const
+  {
+    PRUint64 state = NativeInteractiveState();
+    ApplyARIAState(&state);
+    return state;
+  }
+
+  /**
    * Return link states present on the accessible.
    */
   PRUint64 LinkState() const
@@ -224,6 +239,11 @@ public:
   virtual PRUint64 NativeState();
 
   /**
+   * Return native interactice state (unavailable, focusable or selectable).
+   */
+  virtual PRUint64 NativeInteractiveState() const;
+
+  /**
    * Return native link states present on the accessible.
    */
   virtual PRUint64 NativeLinkState() const;
@@ -232,6 +252,11 @@ public:
    * Return bit set of invisible and offscreen states.
    */
   PRUint64 VisibilityState();
+
+  /**
+   * Return true if native unavailable state present.
+   */
+  virtual bool NativelyUnavailable() const;
 
   /**
    * Returns attributes for accessible without explicitly setted ARIA
@@ -286,7 +311,7 @@ public:
   /**
    * Get the relation of the given type.
    */
-  virtual Relation RelationByType(PRUint32 aType);
+  virtual mozilla::a11y::Relation RelationByType(PRUint32 aType);
 
   //////////////////////////////////////////////////////////////////////////////
   // Initializing methods
@@ -295,8 +320,8 @@ public:
    * Set the ARIA role map entry for a new accessible.
    * For a newly created accessible, specify which role map entry should be used.
    *
-   * @param aRoleMapEntry The ARIA nsRoleMapEntry* for the accessible, or 
-   *                      nsnull if none.
+   * @param aRoleMapEntry The ARIA nsRoleMapEntry* for the accessible, or
+   *                      nullptr if none.
    */
   virtual void SetRoleMapEntry(nsRoleMapEntry* aRoleMapEntry);
 
@@ -374,7 +399,7 @@ public:
   inline Accessible* LastChild()
   {
     PRUint32 childCount = ChildCount();
-    return childCount != 0 ? GetChildAt(childCount - 1) : nsnull;
+    return childCount != 0 ? GetChildAt(childCount - 1) : nullptr;
   }
 
 
@@ -483,10 +508,12 @@ public:
   mozilla::a11y::ImageAccessible* AsImage();
 
   bool IsImageMapAccessible() const { return mFlags & eImageMapAccessible; }
-  nsHTMLImageMapAccessible* AsImageMap();
+  mozilla::a11y::HTMLImageMapAccessible* AsImageMap();
 
   inline bool IsXULTree() const { return mFlags & eXULTreeAccessible; }
-  nsXULTreeAccessible* AsXULTree();
+  mozilla::a11y::XULTreeAccessible* AsXULTree();
+
+  inline bool IsXULDeck() const { return mFlags & eXULDeckAccessible; }
 
   inline bool IsListControl() const { return mFlags & eListControlAccessible; }
 
@@ -497,7 +524,7 @@ public:
   inline bool IsRoot() const { return mFlags & eRootAccessible; }
   mozilla::a11y::RootAccessible* AsRoot();
 
-  virtual mozilla::a11y::TableAccessible* AsTable() { return nsnull; }
+  virtual mozilla::a11y::TableAccessible* AsTable() { return nullptr; }
 
   inline bool IsTextLeaf() const { return mFlags & eTextLeafAccessible; }
   mozilla::a11y::TextLeafAccessible* AsTextLeaf();
@@ -669,6 +696,11 @@ public:
    */
   bool IsDefunct() const { return mFlags & eIsDefunct; }
 
+  /**
+   * Return true if the accessible is no longer in the document.
+   */
+  bool IsInDocument() const { return !(mFlags & eIsNotInDocument); }
+
 protected:
 
   //////////////////////////////////////////////////////////////////////////////
@@ -689,7 +721,7 @@ protected:
    * Return sibling accessible at the given offset.
    */
   virtual Accessible* GetSiblingAtOffset(PRInt32 aOffset,
-                                         nsresult *aError = nsnull) const;
+                                         nsresult *aError = nullptr) const;
 
   /**
    * Flags used to describe the state and type of children.
@@ -717,7 +749,8 @@ protected:
    * @note keep these flags in sync with ChildrenFlags
    */
   enum StateFlags {
-    eIsDefunct = 1 << 2 // accessible is defunct
+    eIsDefunct = 1 << 2, // accessible is defunct
+    eIsNotInDocument = 1 << 3 // accessible is not in document
   };
 
   /**
@@ -725,22 +758,23 @@ protected:
    * @note keep these flags in sync with ChildrenFlags and StateFlags
    */
   enum AccessibleTypes {
-    eApplicationAccessible = 1 << 3,
-    eAutoCompleteAccessible = 1 << 4,
-    eAutoCompletePopupAccessible = 1 << 5,
-    eComboboxAccessible = 1 << 6,
-    eDocAccessible = 1 << 7,
-    eHyperTextAccessible = 1 << 8,
-    eHTMLFileInputAccessible = 1 << 9,
-    eHTMLListItemAccessible = 1 << 10,
-    eImageAccessible = 1 << 11,
-    eImageMapAccessible = 1 << 12,
-    eListControlAccessible = 1 << 13,
-    eMenuButtonAccessible = 1 << 14,
-    eMenuPopupAccessible = 1 << 15,
-    eRootAccessible = 1 << 16,
-    eTextLeafAccessible = 1 << 17,
-    eXULTreeAccessible = 1 << 18
+    eApplicationAccessible = 1 << 4,
+    eAutoCompleteAccessible = 1 << 5,
+    eAutoCompletePopupAccessible = 1 << 6,
+    eComboboxAccessible = 1 << 7,
+    eDocAccessible = 1 << 8,
+    eHyperTextAccessible = 1 << 9,
+    eHTMLFileInputAccessible = 1 << 10,
+    eHTMLListItemAccessible = 1 << 11,
+    eImageAccessible = 1 << 12,
+    eImageMapAccessible = 1 << 13,
+    eListControlAccessible = 1 << 14,
+    eMenuButtonAccessible = 1 << 15,
+    eMenuPopupAccessible = 1 << 16,
+    eRootAccessible = 1 << 17,
+    eTextLeafAccessible = 1 << 18,
+    eXULDeckAccessible = 1 << 19,
+    eXULTreeAccessible = 1 << 20
   };
 
   //////////////////////////////////////////////////////////////////////////////
@@ -792,7 +826,7 @@ protected:
    * @param  aContent      [in, optional] element to click
    * @param  aActionIndex  [in, optional] index of accessible action
    */
-  void DoCommand(nsIContent *aContent = nsnull, PRUint32 aActionIndex = 0);
+  void DoCommand(nsIContent *aContent = nullptr, PRUint32 aActionIndex = 0);
 
   /**
    * Dispatch click event.
@@ -824,10 +858,8 @@ protected:
   /**
    * Return the action rule based on ARIA enum constants EActionRule
    * (see nsARIAMap.h). Used by ActionCount() and GetActionName().
-   *
-   * @param aStates  [in] states of the accessible
    */
-  PRUint32 GetActionRule(PRUint64 aStates);
+  PRUint32 GetActionRule();
 
   /**
    * Return group info.
@@ -853,6 +885,7 @@ protected:
     eChildrenUninitialized | eMixedChildren | eEmbeddedChildren;
 
   PRUint32 mFlags;
+  friend class DocAccessible;
 
   nsAutoPtr<EmbeddedObjCollector> mEmbeddedObjCollector;
   PRInt32 mIndexOfEmbeddedChild;
@@ -860,7 +893,7 @@ protected:
 
   nsAutoPtr<AccGroupInfo> mGroupInfo;
   friend class AccGroupInfo;
-  
+
   /**
    * Non-null indicates author-supplied role; possibly state & value as well
    */
@@ -885,6 +918,7 @@ public:
   static const PRUint32 kControl = 2;
   static const PRUint32 kAlt = 4;
   static const PRUint32 kMeta = 8;
+  static const PRUint32 kOS = 16;
 
   KeyBinding() : mKey(0), mModifierMask(0) {}
   KeyBinding(PRUint32 aKey, PRUint32 aModifierMask) :

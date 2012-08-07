@@ -84,7 +84,7 @@ NS_IMPL_ISUPPORTS4(
 , nsISupportsWeakReference
 )
 
-nsDownloadManager *nsDownloadManager::gDownloadManagerService = nsnull;
+nsDownloadManager *nsDownloadManager::gDownloadManagerService = nullptr;
 
 nsDownloadManager *
 nsDownloadManager::GetSingleton()
@@ -112,10 +112,10 @@ nsDownloadManager::~nsDownloadManager()
 #ifdef DOWNLOAD_SCANNER
   if (mScanner) {
     delete mScanner;
-    mScanner = nsnull;
+    mScanner = nullptr;
   }
 #endif
-  gDownloadManagerService = nsnull;
+  gDownloadManagerService = nullptr;
 }
 
 nsresult
@@ -257,7 +257,7 @@ nsDownloadManager::GetFileDBConnection(nsIFile *dbFile) const
 
   nsCOMPtr<mozIStorageService> storage =
     do_GetService(MOZ_STORAGE_SERVICE_CONTRACTID);
-  NS_ENSURE_TRUE(storage, nsnull);
+  NS_ENSURE_TRUE(storage, nullptr);
 
   nsCOMPtr<mozIStorageConnection> conn;
   nsresult rv = storage->OpenDatabase(dbFile, getter_AddRefs(conn));
@@ -265,10 +265,10 @@ nsDownloadManager::GetFileDBConnection(nsIFile *dbFile) const
     // delete and try again, since we don't care so much about losing a user's
     // download history
     rv = dbFile->Remove(false);
-    NS_ENSURE_SUCCESS(rv, nsnull);
+    NS_ENSURE_SUCCESS(rv, nullptr);
     rv = storage->OpenDatabase(dbFile, getter_AddRefs(conn));
   }
-  NS_ENSURE_SUCCESS(rv, nsnull);
+  NS_ENSURE_SUCCESS(rv, nullptr);
 
   return conn.forget();
 }
@@ -278,11 +278,11 @@ nsDownloadManager::GetMemoryDBConnection() const
 {
   nsCOMPtr<mozIStorageService> storage =
     do_GetService(MOZ_STORAGE_SERVICE_CONTRACTID);
-  NS_ENSURE_TRUE(storage, nsnull);
+  NS_ENSURE_TRUE(storage, nullptr);
 
   nsCOMPtr<mozIStorageConnection> conn;
   nsresult rv = storage->OpenSpecialDatabase("memory", getter_AddRefs(conn));
-  NS_ENSURE_SUCCESS(rv, nsnull);
+  NS_ENSURE_SUCCESS(rv, nullptr);
 
   return conn.forget();
 }
@@ -294,7 +294,7 @@ nsDownloadManager::CloseDB()
   MOZ_ASSERT(NS_SUCCEEDED(rv));
   rv = mUpdateDownloadStatement->Finalize();
   MOZ_ASSERT(NS_SUCCEEDED(rv));
-  rv = mDBConn->AsyncClose(nsnull);
+  rv = mDBConn->AsyncClose(nullptr);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 }
 
@@ -562,7 +562,7 @@ nsDownloadManager::InitFileDB()
         do_GetService(MOZ_STORAGE_SERVICE_CONTRACTID);
       NS_ENSURE_TRUE(storage, NS_ERROR_NOT_AVAILABLE);
       nsCOMPtr<nsIFile> backup;
-      rv = storage->BackupDatabaseFile(dbFile, DM_DB_CORRUPT_FILENAME, nsnull,
+      rv = storage->BackupDatabaseFile(dbFile, DM_DB_CORRUPT_FILENAME, nullptr,
                                        getter_AddRefs(backup));
       NS_ENSURE_SUCCESS(rv, rv);
 
@@ -844,7 +844,7 @@ nsDownloadManager::Init()
   rv = mScanner->Init();
   if (NS_FAILED(rv)) {
     delete mScanner;
-    mScanner = nsnull;
+    mScanner = nullptr;
   }
 #endif
 
@@ -870,7 +870,7 @@ nsDownloadManager::Init()
   (void)mObserverService->NotifyObservers(
                                 static_cast<nsIDownloadManager *>(this),
                                 "download-manager-initialized",
-                                nsnull);
+                                nullptr);
 
   // The following AddObserver calls must be the last lines in this function,
   // because otherwise, this function may fail (and thus, this object would be not
@@ -916,7 +916,7 @@ nsDownloadManager::GetRetentionBehavior()
   retentionBehavior->SetData(val);
   (void)mObserverService->NotifyObservers(retentionBehavior,
                                           "download-manager-change-retention",
-                                          nsnull);
+                                          nullptr);
   retentionBehavior->GetData(&val);
 
   return val;
@@ -975,7 +975,7 @@ nsDownloadManager::GetDownloadFromDB(PRUint32 aID, nsDownload **retVal)
 
   PRInt32 i = 0;
   // Setting all properties of the download now
-  dl->mCancelable = nsnull;
+  dl->mCancelable = nullptr;
   dl->mID = stmt->AsInt64(i++);
   dl->mDownloadState = stmt->AsInt32(i++);
   dl->mStartTime = stmt->AsInt64(i++);
@@ -1040,7 +1040,7 @@ nsDownloadManager::GetDownloadFromDB(PRUint32 aID, nsDownload **retVal)
         do_CreateInstance(NS_LOCALHANDLERAPP_CONTRACTID, &rv);
       NS_ENSURE_SUCCESS(rv, rv);
 
-      nsCOMPtr<nsILocalFile> localExecutable;
+      nsCOMPtr<nsIFile> localExecutable;
       rv = NS_NewNativeLocalFile(EmptyCString(), false,
                                  getter_AddRefs(localExecutable));
       NS_ENSURE_SUCCESS(rv, rv);
@@ -1080,7 +1080,7 @@ nsDownloadManager::AddToCurrentDownloads(nsDownload *aDl)
 void
 nsDownloadManager::SendEvent(nsDownload *aDownload, const char *aTopic)
 {
-  (void)mObserverService->NotifyObservers(aDownload, aTopic, nsnull);
+  (void)mObserverService->NotifyObservers(aDownload, aTopic, nullptr);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1105,9 +1105,9 @@ nsDownloadManager::GetActiveDownloads(nsISimpleEnumerator **aResult)
  * this should be kept in sync with nsExternalHelperAppService.cpp
  */
 NS_IMETHODIMP
-nsDownloadManager::GetDefaultDownloadsDirectory(nsILocalFile **aResult)
+nsDownloadManager::GetDefaultDownloadsDirectory(nsIFile **aResult)
 {
-  nsCOMPtr<nsILocalFile> downloadDir;
+  nsCOMPtr<nsIFile> downloadDir;
 
   nsresult rv;
   nsCOMPtr<nsIProperties> dirService =
@@ -1131,12 +1131,12 @@ nsDownloadManager::GetDefaultDownloadsDirectory(nsILocalFile **aResult)
 
 #if defined (XP_MACOSX)
   rv = dirService->Get(NS_OSX_DEFAULT_DOWNLOAD_DIR,
-                       NS_GET_IID(nsILocalFile),
+                       NS_GET_IID(nsIFile),
                        getter_AddRefs(downloadDir));
   NS_ENSURE_SUCCESS(rv, rv);
 #elif defined(XP_WIN)
   rv = dirService->Get(NS_WIN_DEFAULT_DOWNLOAD_DIR,
-                       NS_GET_IID(nsILocalFile),
+                       NS_GET_IID(nsIFile),
                        getter_AddRefs(downloadDir));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1152,7 +1152,7 @@ nsDownloadManager::GetDefaultDownloadsDirectory(nsILocalFile **aResult)
   if (version < 6) { // XP/2K
     // First get "My Documents"
     rv = dirService->Get(NS_WIN_PERSONAL_DIR,
-                         NS_GET_IID(nsILocalFile),
+                         NS_GET_IID(nsIFile),
                          getter_AddRefs(downloadDir));
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1177,7 +1177,7 @@ nsDownloadManager::GetDefaultDownloadsDirectory(nsILocalFile **aResult)
     // we found most apropriate to be the default target folder for downloads
     // on the platform.
     rv = dirService->Get(NS_UNIX_XDG_DOCUMENTS_DIR,
-                         NS_GET_IID(nsILocalFile),
+                         NS_GET_IID(nsIFile),
                          getter_AddRefs(downloadDir));
 #elif defined(MOZ_WIDGET_ANDROID)
     // Android doesn't have a $HOME directory, and by default we only have
@@ -1193,12 +1193,12 @@ nsDownloadManager::GetDefaultDownloadsDirectory(nsILocalFile **aResult)
     }
 #else
   rv = dirService->Get(NS_UNIX_DEFAULT_DOWNLOAD_DIR,
-                       NS_GET_IID(nsILocalFile),
+                       NS_GET_IID(nsIFile),
                        getter_AddRefs(downloadDir));
   // fallback to Home/Downloads
   if (NS_FAILED(rv)) {
     rv = dirService->Get(NS_UNIX_HOME_DIR,
-                         NS_GET_IID(nsILocalFile),
+                         NS_GET_IID(nsIFile),
                          getter_AddRefs(downloadDir));
     NS_ENSURE_SUCCESS(rv, rv);
     rv = downloadDir->Append(folderName);
@@ -1207,7 +1207,7 @@ nsDownloadManager::GetDefaultDownloadsDirectory(nsILocalFile **aResult)
 #endif
 #else
   rv = dirService->Get(NS_OS_HOME_DIR,
-                       NS_GET_IID(nsILocalFile),
+                       NS_GET_IID(nsIFile),
                        getter_AddRefs(downloadDir));
   NS_ENSURE_SUCCESS(rv, rv);
   rv = downloadDir->Append(folderName);
@@ -1224,7 +1224,7 @@ nsDownloadManager::GetDefaultDownloadsDirectory(nsILocalFile **aResult)
 #define NS_PREF_DIR            "dir"
 
 NS_IMETHODIMP
-nsDownloadManager::GetUserDownloadsDirectory(nsILocalFile **aResult)
+nsDownloadManager::GetUserDownloadsDirectory(nsIFile **aResult)
 {
   nsresult rv;
   nsCOMPtr<nsIProperties> dirService =
@@ -1248,12 +1248,12 @@ nsDownloadManager::GetUserDownloadsDirectory(nsILocalFile **aResult)
   switch(val) {
     case 0: // Desktop
       {
-        nsCOMPtr<nsILocalFile> downloadDir;
+        nsCOMPtr<nsIFile> downloadDir;
         nsCOMPtr<nsIProperties> dirService =
            do_GetService(NS_DIRECTORY_SERVICE_CONTRACTID, &rv);
         NS_ENSURE_SUCCESS(rv, rv);
         rv = dirService->Get(NS_OS_DESKTOP_DIR,
-                             NS_GET_IID(nsILocalFile),
+                             NS_GET_IID(nsIFile),
                              getter_AddRefs(downloadDir));
         NS_ENSURE_SUCCESS(rv, rv);
         downloadDir.forget(aResult);
@@ -1264,9 +1264,9 @@ nsDownloadManager::GetUserDownloadsDirectory(nsILocalFile **aResult)
       return GetDefaultDownloadsDirectory(aResult);
     case 2: // Custom
       {
-        nsCOMPtr<nsILocalFile> customDirectory;
+        nsCOMPtr<nsIFile> customDirectory;
         prefBranch->GetComplexValue(NS_PREF_DIR,
-                                    NS_GET_IID(nsILocalFile),
+                                    NS_GET_IID(nsIFile),
                                     getter_AddRefs(customDirectory));
         if (customDirectory) {
           bool exists = false;
@@ -1296,7 +1296,7 @@ nsDownloadManager::GetUserDownloadsDirectory(nsILocalFile **aResult)
         rv = GetDefaultDownloadsDirectory(aResult);
         if (NS_SUCCEEDED(rv)) {
           (void)prefBranch->SetComplexValue(NS_PREF_DIR,
-                                            NS_GET_IID(nsILocalFile),
+                                            NS_GET_IID(nsIFile),
                                             *aResult);
         }
         return rv;
@@ -1313,7 +1313,7 @@ nsDownloadManager::AddDownload(DownloadType aDownloadType,
                                const nsAString& aDisplayName,
                                nsIMIMEInfo *aMIMEInfo,
                                PRTime aStartTime,
-                               nsILocalFile *aTempFile,
+                               nsIFile *aTempFile,
                                nsICancelable *aCancelable,
                                nsIDownload **aDownload)
 {
@@ -1374,10 +1374,7 @@ nsDownloadManager::AddDownload(DownloadType aDownloadType,
     if (locHandlerApp) {
       nsCOMPtr<nsIFile> executable;
       (void)locHandlerApp->GetExecutable(getter_AddRefs(executable));
-      nsCOMPtr<nsILocalFile> locExecutable = do_QueryInterface(executable);
-
-      if (locExecutable)
-        (void)locExecutable->GetPersistentDescriptor(persistentDescriptor);
+      (void)executable->GetPersistentDescriptor(persistentDescriptor);
     }
 
     (void)aMIMEInfo->GetPreferredAction(&action);
@@ -1440,7 +1437,7 @@ nsDownloadManager::AddDownload(DownloadType aDownloadType,
       (void)pc->Log(nsIParentalControlsService::ePCLog_FileDownload,
                     enabled,
                     aSource,
-                    nsnull);
+                    nullptr);
     }
   }
 
@@ -1478,7 +1475,7 @@ nsDownloadManager::FindDownload(PRUint32 aID)
       return dl;
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 NS_IMETHODIMP
@@ -1513,7 +1510,7 @@ nsDownloadManager::CancelDownload(PRUint32 aID)
       dl->mTempFile->Remove(false);
   }
 
-  nsCOMPtr<nsILocalFile> file;
+  nsCOMPtr<nsIFile> file;
   if (NS_SUCCEEDED(dl->GetTargetFile(getter_AddRefs(file))))
   {
     bool exists;
@@ -1572,10 +1569,10 @@ nsDownloadManager::RetryDownload(PRUint32 aID)
   dl->mCancelable = wbp;
   (void)wbp->SetProgressListener(dl);
 
-  rv = wbp->SaveURI(dl->mSource, nsnull, nsnull, nsnull, nsnull, dl->mTarget);
+  rv = wbp->SaveURI(dl->mSource, nullptr, nullptr, nullptr, nullptr, dl->mTarget);
   if (NS_FAILED(rv)) {
-    dl->mCancelable = nsnull;
-    (void)wbp->SetProgressListener(nsnull);
+    dl->mCancelable = nullptr;
+    (void)wbp->SetProgressListener(nullptr);
     return rv;
   }
 
@@ -1611,7 +1608,7 @@ nsDownloadManager::RemoveDownload(PRUint32 aID)
   // Notify the UI with the topic and download id
   return mObserverService->NotifyObservers(id,
                                            "download-manager-remove-download",
-                                           nsnull);
+                                           nullptr);
 }
 
 NS_IMETHODIMP
@@ -1645,9 +1642,9 @@ nsDownloadManager::RemoveDownloadsByTimeframe(PRInt64 aStartTime,
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Notify the UI with the topic and null subject to indicate "remove multiple"
-  return mObserverService->NotifyObservers(nsnull,
+  return mObserverService->NotifyObservers(nullptr,
                                            "download-manager-remove-download",
-                                           nsnull);
+                                           nullptr);
 }
 
 NS_IMETHODIMP
@@ -1679,9 +1676,9 @@ nsDownloadManager::CleanUp()
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Notify the UI with the topic and null subject to indicate "remove multiple"
-  return mObserverService->NotifyObservers(nsnull,
+  return mObserverService->NotifyObservers(nullptr,
                                            "download-manager-remove-download",
-                                           nsnull);
+                                           nullptr);
 }
 
 NS_IMETHODIMP
@@ -1831,7 +1828,7 @@ nsDownloadManager::SwitchDatabaseTypeTo(enum nsDownloadManager::DatabaseType aTy
   (void)mObserverService->NotifyObservers(
                                 static_cast<nsIDownloadManager *>(this),
                                 "download-manager-database-type-changed",
-                                nsnull);
+                                nullptr);
 
   rv = RestoreActiveDownloads();
   NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "Failed to restore all active downloads");
@@ -1859,7 +1856,7 @@ NS_IMETHODIMP
 nsDownloadManager::OnEndUpdateBatch()
 {
   // Get rid of the transaction and cause it to commit
-  mHistoryTransaction = nsnull;
+  mHistoryTransaction = nullptr;
 
   return NS_OK;
 }
@@ -2011,7 +2008,7 @@ nsDownloadManager::Observe(nsISupports *aSubject,
     nsCOMPtr<nsIDownloadManagerUI> dmui =
       do_GetService("@mozilla.org/download-manager-ui;1", &rv);
     NS_ENSURE_SUCCESS(rv, rv);
-    return dmui->Show(nsnull, 0, nsIDownloadManagerUI::REASON_USER_INTERACTED);
+    return dmui->Show(nullptr, 0, nsIDownloadManagerUI::REASON_USER_INTERACTED);
   } else if (strcmp(aTopic, "sleep_notification") == 0) {
     // Pause downloads if we're sleeping, and mark the downloads as auto-resume
     (void)PauseAllDownloads(true);
@@ -2135,7 +2132,7 @@ nsDownloadManager::ConfirmCancelDownloads(PRInt32 aCount,
     PRInt32 flags = (nsIPromptService::BUTTON_TITLE_IS_STRING * nsIPromptService::BUTTON_POS_0) + (nsIPromptService::BUTTON_TITLE_IS_STRING * nsIPromptService::BUTTON_POS_1);
     bool nothing = false;
     PRInt32 button;
-    prompter->ConfirmEx(dmWindow, title, message, flags, quitButton.get(), dontQuitButton.get(), nsnull, nsnull, &nothing, &button);
+    prompter->ConfirmEx(dmWindow, title, message, flags, quitButton.get(), dontQuitButton.get(), nullptr, nullptr, &nothing, &button);
 
     aCancelDownloads->SetData(button == 1);
   }
@@ -2195,6 +2192,15 @@ nsDownload::SetState(DownloadState aState)
     case nsIDownloadManager::DOWNLOAD_DIRTY:
     case nsIDownloadManager::DOWNLOAD_CANCELED:
     case nsIDownloadManager::DOWNLOAD_FAILED:
+#ifdef ANDROID
+      // If we still have a temp file, remove it
+      bool tempExists;
+      if (mTempFile && NS_SUCCEEDED(mTempFile->Exists(&tempExists)) && tempExists) {
+        nsresult rv = mTempFile->Remove(false);
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+#endif
+
       // Transfers are finished, so break the reference cycle
       Finalize();
       break;
@@ -2215,7 +2221,7 @@ nsDownload::SetState(DownloadState aState)
       if (NS_FAILED(rv)) {
         // We've failed to execute the desired action.  As a result, we should
         // fail the download so the user can try again.
-        (void)FailDownload(rv, nsnull);
+        (void)FailDownload(rv, nullptr);
         return rv;
       }
 
@@ -2557,7 +2563,7 @@ nsDownload::OnStateChange(nsIWebProgress *aWebProgress,
       // Our best bet is the file itself, but if for some reason it's gone or
       // if we have multiple files, the next best is what we've calculated.
       PRInt64 fileSize;
-      nsCOMPtr<nsILocalFile> file;
+      nsCOMPtr<nsIFile> file;
       //  We need a nsIFile clone to deal with file size caching issues. :(
       nsCOMPtr<nsIFile> clone;
       if (!mHasMultipleFiles &&
@@ -2593,7 +2599,7 @@ nsDownload::OnStateChange(nsIWebProgress *aWebProgress,
 #endif
     } else {
       // We failed for some unknown reason -- fail with a generic message
-      (void)FailDownload(aStatus, nsnull);
+      (void)FailDownload(aStatus, nullptr);
     }
   }
 
@@ -2618,7 +2624,7 @@ nsDownload::Init(nsIURI *aSource,
                  const nsAString& aDisplayName,
                  nsIMIMEInfo *aMIMEInfo,
                  PRTime aStartTime,
-                 nsILocalFile *aTempFile,
+                 nsIFile *aTempFile,
                  nsICancelable *aCancelable)
 {
   NS_WARNING("Huh...how did we get here?!");
@@ -2700,7 +2706,7 @@ nsDownload::GetMIMEInfo(nsIMIMEInfo **aMIMEInfo)
 }
 
 NS_IMETHODIMP
-nsDownload::GetTargetFile(nsILocalFile **aTargetFile)
+nsDownload::GetTargetFile(nsIFile **aTargetFile)
 {
   nsresult rv;
 
@@ -2749,11 +2755,11 @@ void
 nsDownload::Finalize()
 {
   // We're stopping, so break the cycle we created at download start
-  mCancelable = nsnull;
+  mCancelable = nullptr;
 
   // Reset values that aren't needed anymore, so the DB can be updated as well
   mEntityID.Truncate();
-  mTempFile = nsnull;
+  mTempFile = nullptr;
 
   // Remove ourself from the active downloads
   (void)mDownloadManager->mCurrentDownloads.RemoveObject(this);
@@ -2804,7 +2810,7 @@ nsDownload::ExecuteDesiredAction()
 nsresult
 nsDownload::MoveTempToTarget()
 {
-  nsCOMPtr<nsILocalFile> target;
+  nsCOMPtr<nsIFile> target;
   nsresult rv = GetTargetFile(getter_AddRefs(target));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -2833,7 +2839,7 @@ nsresult
 nsDownload::OpenWithApplication()
 {
   // First move the temporary file to the target location
-  nsCOMPtr<nsILocalFile> target;
+  nsCOMPtr<nsIFile> target;
   nsresult rv = GetTargetFile(getter_AddRefs(target));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -2873,8 +2879,13 @@ nsDownload::OpenWithApplication()
 
     // Even if we are unable to get this service we return the result
     // of LaunchWithFile() which makes more sense.
-    if (appLauncher)
-      (void)appLauncher->DeleteTemporaryFileOnExit(target);
+    if (appLauncher) {
+      if (nsDownloadManager::gDownloadManagerService->mInPrivateBrowsing) {
+        (void)appLauncher->DeleteTemporaryPrivateFileWhenPossible(target);
+      } else {
+        (void)appLauncher->DeleteTemporaryFileOnExit(target);
+      }
+    }
   }
 
   return retVal;
@@ -2925,7 +2936,7 @@ nsDownload::Cancel()
   if (mCancelable) {
     rv = mCancelable->Cancel(NS_BINDING_ABORTED);
     // we're done with this, so break the cycle
-    mCancelable = nsnull;
+    mCancelable = nullptr;
   }
 
   return rv;
@@ -2949,12 +2960,12 @@ nsDownload::Resume()
   // Create a new channel for the source URI
   nsCOMPtr<nsIChannel> channel;
   nsCOMPtr<nsIInterfaceRequestor> ir(do_QueryInterface(wbp));
-  rv = NS_NewChannel(getter_AddRefs(channel), mSource, nsnull, nsnull, ir);
+  rv = NS_NewChannel(getter_AddRefs(channel), mSource, nullptr, nullptr, ir);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Make sure we can get a file, either the temporary or the real target, for
   // both purposes of file size and a target to write to
-  nsCOMPtr<nsILocalFile> targetLocalFile(mTempFile);
+  nsCOMPtr<nsIFile> targetLocalFile(mTempFile);
   if (!targetLocalFile) {
     rv = GetTargetFile(getter_AddRefs(targetLocalFile));
     NS_ENSURE_SUCCESS(rv, rv);
@@ -2999,8 +3010,8 @@ nsDownload::Resume()
   // Save the channel using nsIWBP
   rv = wbp->SaveChannel(channel, targetLocalFile);
   if (NS_FAILED(rv)) {
-    mCancelable = nsnull;
-    (void)wbp->SetProgressListener(nsnull);
+    mCancelable = nullptr;
+    (void)wbp->SetProgressListener(nullptr);
     return rv;
   }
 

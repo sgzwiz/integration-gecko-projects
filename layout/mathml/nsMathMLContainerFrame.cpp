@@ -520,7 +520,7 @@ nsMathMLContainerFrame::FinalizeReflow(nsRenderingContext& aRenderingContext,
       }
       Stretch(aRenderingContext, NS_STRETCH_DIRECTION_DEFAULT, defaultSize,
               aDesiredSize);
-#ifdef NS_DEBUG
+#ifdef DEBUG
       {
         // The Place() call above didn't request FinishReflowChild(),
         // so let's check that we eventually did through Stretch().
@@ -639,7 +639,7 @@ nsMathMLContainerFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                                            DISPLAY_CHILD_INLINE);
   NS_ENSURE_SUCCESS(rv, rv);
 
-#if defined(NS_DEBUG) && defined(SHOW_BOUNDING_BOX)
+#if defined(DEBUG) && defined(SHOW_BOUNDING_BOX)
   // for visual debug
   // ----------------
   // if you want to see your bounding box, make sure to properly fill
@@ -1311,7 +1311,7 @@ nsMathMLContainerFrame::PositionRowChildFrames(nscoord aOffsetX,
   while (child.Frame()) {
     nscoord dx = aOffsetX + child.X();
     nscoord dy = aBaseline - child.Ascent();
-    FinishReflowChild(child.Frame(), PresContext(), nsnull,
+    FinishReflowChild(child.Frame(), PresContext(), nullptr,
                       child.ReflowMetrics(), dx, dy, 0);
     ++child;
   }
@@ -1434,9 +1434,9 @@ nsMathMLContainerFrame::DidReflowChildren(nsIFrame* aFirst, nsIFrame* aStop)
       // finish off principal descendants, too
       nsIFrame* grandchild = frame->GetFirstPrincipalChild();
       if (grandchild)
-        DidReflowChildren(grandchild, nsnull);
+        DidReflowChildren(grandchild, nullptr);
 
-      frame->DidReflow(frame->PresContext(), nsnull,
+      frame->DidReflow(frame->PresContext(), nullptr,
                        NS_FRAME_REFLOW_FINISHED);
     }
   }
@@ -1500,9 +1500,9 @@ nsMathMLContainerFrame::TransmitAutomaticDataForMrowLikeElement()
 
   if (childFrame || !embellishedOpFound) {
     // The element is not embellished operator
-    mPresentationData.baseFrame = nsnull;
+    mPresentationData.baseFrame = nullptr;
     mEmbellishData.flags = 0;
-    mEmbellishData.coreFrame = nsnull;
+    mEmbellishData.coreFrame = nullptr;
     mEmbellishData.direction = NS_STRETCH_DIRECTION_UNSUPPORTED;
     mEmbellishData.leadingSpace = 0;
     mEmbellishData.trailingSpace = 0;

@@ -17,7 +17,6 @@
 #include "nsIDocument.h"
 #include "nsCOMArray.h"
 #include "nsIFrameLoader.h"
-#include "nsIFrame.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIMarkupDocumentViewer.h"
 #include "nsIScrollableFrame.h"
@@ -26,6 +25,7 @@
 #include "nsEventStates.h"
 #include "mozilla/TimeStamp.h"
 #include "nsContentUtils.h"
+#include "nsIFrame.h"
 
 class nsIPresShell;
 class nsIDocShell;
@@ -34,6 +34,7 @@ class nsIDocShellTreeItem;
 class imgIContainer;
 class nsDOMDataTransfer;
 class MouseEnterLeaveDispatcher;
+class nsIFrame;
 
 namespace mozilla {
 namespace dom {
@@ -198,8 +199,19 @@ public:
 
   static bool IsRemoteTarget(nsIContent* aTarget);
 
+  // Holds the point in screen coords that a mouse event was dispatched to,
+  // before we went into pointer lock mode. This is constantly updated while
+  // the pointer is not locked, but we don't update it while the pointer is
+  // locked. This is used by nsDOMEvent::GetScreenCoords() to make mouse
+  // events' screen coord appear frozen at the last mouse position while
+  // the pointer is locked.
   static nsIntPoint sLastScreenPoint;
+
+  // Holds the point in client coords of the last mouse event. Used by
+  // nsDOMEvent::GetClientCoords() to make mouse events' client coords appear
+  // frozen at the last mouse position while the pointer is locked.
   static nsIntPoint sLastClientPoint;
+
   static bool sIsPointerLocked;
   static nsWeakPtr sPointerLockedElement;
   static nsWeakPtr sPointerLockedDoc;
@@ -284,7 +296,7 @@ protected:
    * @param aBubbledFrom is used by an ancestor to avoid calling HandleAccessKey()
    *        on the child the call originally came from, i.e. this is the child
    *        that recursively called us in its Up phase. The initial caller
-   *        passes |nsnull| here. This is to avoid an infinite loop.
+   *        passes |nullptr| here. This is to avoid an infinite loop.
    * @param aAccessKeyState Normal, Down or Up processing phase (see enums
    *        above). The initial event receiver uses 'normal', then 'down' when
    *        processing children and Up when recursively calling its ancestor.
@@ -329,8 +341,8 @@ protected:
                         nsMouseScrollEvent* aMouseEvent,
                         nsIScrollableFrame::ScrollUnit aScrollQuantity,
                         bool aAllowScrollSpeedOverride,
-                        nsQueryContentEvent* aQueryEvent = nsnull,
-                        nsIAtom *aOrigin = nsnull);
+                        nsQueryContentEvent* aQueryEvent = nullptr,
+                        nsIAtom *aOrigin = nullptr);
   void DoScrollHistory(PRInt32 direction);
   void DoScrollZoom(nsIFrame *aTargetFrame, PRInt32 adjustment);
   nsresult GetMarkupDocumentViewer(nsIMarkupDocumentViewer** aMv);
@@ -419,7 +431,7 @@ protected:
                             nsIContent* aDragTarget,
                             nsISelection* aSelection);
 
-  bool IsTrackingDragGesture ( ) const { return mGestureDownContent != nsnull; }
+  bool IsTrackingDragGesture ( ) const { return mGestureDownContent != nullptr; }
   /**
    * Set the fields of aEvent to reflect the mouse position and modifier keys
    * that were set when the user first pressed the mouse button (stored by
@@ -439,7 +451,8 @@ protected:
   mozilla::dom::TabParent *GetCrossProcessTarget();
   bool IsTargetCrossProcess(nsGUIEvent *aEvent);
 
-  void DispatchCrossProcessEvent(nsEvent* aEvent, nsIFrameLoader* remote);
+  bool DispatchCrossProcessEvent(nsEvent* aEvent, nsFrameLoader* remote,
+                                 nsEventStatus *aStatus);
   bool HandleCrossProcessEvent(nsEvent *aEvent,
                                  nsIFrame* aTargetFrame,
                                  nsEventStatus *aStatus);
@@ -456,7 +469,9 @@ private:
 
   PRInt32     mLockCursor;
 
-  // Point when mouse was locked, used to reposition after unlocking.
+  // Last mouse event refPoint (the offset from the widget's origin in
+  // device pixels) when mouse was locked, used to restore mouse position
+  // after unlocking.
   nsIntPoint  mPreLockPoint;
 
   nsWeakFrame mCurrentTarget;
@@ -464,8 +479,10 @@ private:
   nsWeakFrame mLastMouseOverFrame;
   nsCOMPtr<nsIContent> mLastMouseOverElement;
   static nsWeakFrame sLastDragOverFrame;
+
+  // Stores the refPoint (the offset from the widget's origin in device
+  // pixels) of the last mouse event.
   static nsIntPoint sLastRefPoint;
-  static nsIntPoint sLastScreenOffset;
 
   // member variables for the d&d gesture state machine
   nsIntPoint mGestureDownPoint; // screen coordinates
@@ -537,7 +554,6 @@ public:
   void FireContextClick ( ) ;
 
   void SetPointerLock(nsIWidget* aWidget, nsIContent* aElement) ;
-  nsIntPoint GetMouseCoords(nsIntRect aBounds);
   static void sClickHoldCallback ( nsITimer* aTimer, void* aESM ) ;
 };
 
@@ -558,7 +574,7 @@ public:
     if (aIsHandlingUserInput) {
       nsEventStateManager::StartHandlingUserInput();
       if (mIsMouseDown) {
-        nsIPresShell::SetCapturingContent(nsnull, 0);
+        nsIPresShell::SetCapturingContent(nullptr, 0);
         nsIPresShell::AllowMouseCapture(true);
         if (aDocument && NS_IS_TRUSTED_EVENT(aEvent)) {
           nsFocusManager* fm = nsFocusManager::GetFocusManager();
@@ -580,7 +596,7 @@ public:
         if (mResetFMMouseDownState) {
           nsFocusManager* fm = nsFocusManager::GetFocusManager();
           if (fm) {
-            fm->SetMouseButtonDownHandlingDocument(nsnull);
+            fm->SetMouseButtonDownHandlingDocument(nullptr);
           }
         }
       }
@@ -594,10 +610,14 @@ protected:
 
 private:
   // Hide so that this class can only be stack-allocated
-  static void* operator new(size_t /*size*/) CPP_THROW_NEW { return nsnull; }
+  static void* operator new(size_t /*size*/) CPP_THROW_NEW { return nullptr; }
   static void operator delete(void* /*memory*/) {}
 };
 
-#define NS_EVENT_NEEDS_FRAME(event) (!NS_IS_ACTIVATION_EVENT(event))
+// Click and double-click events need to be handled even for content that
+// has no frame. This is required for Web compatibility.
+#define NS_EVENT_NEEDS_FRAME(event) \
+    (!NS_IS_ACTIVATION_EVENT(event) && (event)->message != NS_MOUSE_CLICK && \
+     (event)->message != NS_MOUSE_DOUBLECLICK)
 
 #endif // nsEventStateManager_h__

@@ -12,9 +12,11 @@
 #include "mozilla/Attributes.h"
 
 #include "mozilla/css/GroupRule.h"
+#include "mozilla/Preferences.h"
+#include "nsIDOMCSSFontFaceRule.h"
 #include "nsIDOMCSSMediaRule.h"
 #include "nsIDOMCSSMozDocumentRule.h"
-#include "nsIDOMCSSFontFaceRule.h"
+#include "nsIDOMCSSSupportsRule.h"
 #include "nsIDOMMozCSSKeyframeRule.h"
 #include "nsIDOMMozCSSKeyframesRule.h"
 #include "nsIDOMCSSStyleDeclaration.h"
@@ -135,11 +137,11 @@ public:
     nsCString url;
     URL *next;
 
-    URL() : next(nsnull) {}
+    URL() : next(nullptr) {}
     URL(const URL& aOther)
       : func(aOther.func)
       , url(aOther.url)
-      , next(aOther.next ? new URL(*aOther.next) : nsnull)
+      , next(aOther.next ? new URL(*aOther.next) : nullptr)
     {
     }
     ~URL();
@@ -159,14 +161,17 @@ protected:
 
 // A nsCSSFontFaceStyleDecl is always embedded in a nsCSSFontFaceRule.
 class nsCSSFontFaceRule;
-class nsCSSFontFaceStyleDecl : public nsIDOMCSSStyleDeclaration
+class nsCSSFontFaceStyleDecl : public nsICSSDeclaration
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIDOMCSSSTYLEDECLARATION
+  NS_DECL_NSICSSDECLARATION
+
+  virtual nsINode *GetParentObject();
 
   nsresult GetPropertyValue(nsCSSFontDesc aFontDescID,
-                            nsAString & aResult NS_OUTPARAM) const;
+                            nsAString & aResult) const;
 
 protected:
   friend class nsCSSFontFaceRule;
@@ -195,7 +200,9 @@ public:
     // copy everything except our reference count
     : mozilla::css::Rule(aCopy), mDecl(aCopy.mDecl) {}
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsCSSFontFaceRule,
+                                                         mozilla::css::Rule)
 
   NS_IMETHODIMP_(JSZoneId) GetZone() { return mozilla::css::Rule::GetZone(); }
 
@@ -301,25 +308,21 @@ public:
   virtual ~nsCSSKeyframeStyleDeclaration();
 
   NS_IMETHOD GetParentRule(nsIDOMCSSRule **aParent);
-  void DropReference() { mRule = nsnull; }
+  void DropReference() { mRule = nullptr; }
   virtual mozilla::css::Declaration* GetCSSDeclaration(bool aAllocate);
   virtual nsresult SetCSSDeclaration(mozilla::css::Declaration* aDecl);
   virtual void GetCSSParsingEnvironment(CSSParsingEnvironment& aCSSParseEnv);
   virtual nsIDocument* DocToUpdate();
 
-  NS_IMETHOD_(nsrefcnt) AddRef();
-  NS_IMETHOD_(nsrefcnt) Release();
   NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
 
-  virtual nsINode *GetParentObject()
-  {
-    return nsnull;
-  }
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsCSSKeyframeStyleDeclaration,
+                                                         nsICSSDeclaration)
+
+  virtual nsINode* GetParentObject();
 
 protected:
-  nsAutoRefCnt mRefCnt;
-  NS_DECL_OWNINGTHREAD
-
   // This reference is not reference-counted. The rule object tells us
   // when it's about to go away.
   nsCSSKeyframeRule *mRule;
@@ -422,5 +425,51 @@ private:
 
   nsString                                   mName;
 };
+
+namespace mozilla {
+
+class CSSSupportsRule : public css::GroupRule,
+                        public nsIDOMCSSSupportsRule
+{
+public:
+  CSSSupportsRule(bool aConditionMet, const nsString& aCondition);
+  CSSSupportsRule(const CSSSupportsRule& aCopy);
+
+  // nsIStyleRule methods
+#ifdef DEBUG
+  virtual void List(FILE* out = stdout, PRInt32 aIndent = 0) const;
+#endif
+
+  // Rule methods
+  virtual PRInt32 GetType() const;
+  virtual already_AddRefed<mozilla::css::Rule> Clone() const;
+  virtual bool UseForPresentation(nsPresContext* aPresContext,
+                                  nsMediaQueryResultCacheKey& aKey);
+  virtual nsIDOMCSSRule* GetDOMRule()
+  {
+    return this;
+  }
+
+  NS_DECL_ISUPPORTS_INHERITED
+
+  // nsIDOMCSSRule interface
+  NS_DECL_NSIDOMCSSRULE
+
+  // nsIDOMCSSSupportsRule interface
+  NS_DECL_NSIDOMCSSSUPPORTSRULE
+
+  virtual size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
+
+  static bool PrefEnabled()
+  {
+    return Preferences::GetBool("layout.css.supports-rule.enabled");
+  }
+
+protected:
+  bool mUseGroup;
+  nsString mCondition;
+};
+
+} // namespace mozilla
 
 #endif /* !defined(nsCSSRules_h_) */

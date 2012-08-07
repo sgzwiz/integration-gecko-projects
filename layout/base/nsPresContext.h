@@ -11,34 +11,25 @@
 #include "nsISupports.h"
 #include "nsColor.h"
 #include "nsCoord.h"
-#include "nsAString.h"
 #include "nsCOMPtr.h"
 #include "nsIPresShell.h"
 #include "nsRect.h"
 #include "nsDeviceContext.h"
 #include "nsFont.h"
-#include "nsIWeakReference.h"
-#include "nsITheme.h"
-#include "nsILanguageAtomService.h"
 #include "nsIObserver.h"
 #include "nsITimer.h"
 #include "nsCRT.h"
-#include "nsIPrintSettings.h"
 #include "FramePropertyTable.h"
 #include "nsGkAtoms.h"
-#include "nsIDocument.h"
 #include "nsRefPtrHashtable.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsChangeHint.h"
 // This also pulls in gfxTypes.h, which we cannot include directly.
 #include "gfxRect.h"
-#include "nsRegion.h"
 #include "nsTArray.h"
 #include "nsAutoPtr.h"
-#include "nsThreadUtils.h"
 #include "nsIWidget.h"
 #include "mozilla/TimeStamp.h"
-#include "nsIContent.h"
 #include "prclist.h"
 
 class nsImageLoader;
@@ -50,6 +41,12 @@ struct nsRect;
 
 class imgIRequest;
 
+class nsAString;
+class nsIPrintSettings;
+class nsIDocument;
+class nsILanguageAtomService;
+class nsITheme;
+class nsIContent;
 class nsFontMetrics;
 class nsIFrame;
 class nsFrameManager;
@@ -59,7 +56,6 @@ class nsIAtom;
 class nsEventStateManager;
 class nsIURI;
 class nsICSSPseudoComparator;
-class nsIAtom;
 struct nsStyleBackground;
 struct nsStyleBorder;
 class nsIRunnable;
@@ -120,6 +116,7 @@ public:
 #define NS_AUTHOR_SPECIFIED_BACKGROUND      (1 << 0)
 #define NS_AUTHOR_SPECIFIED_BORDER          (1 << 1)
 #define NS_AUTHOR_SPECIFIED_PADDING         (1 << 2)
+#define NS_AUTHOR_SPECIFIED_TEXT_SHADOW     (1 << 3)
 
 class nsRootPresContext;
 
@@ -188,10 +185,11 @@ public:
 
   /**
    * Return the presentation context for the root of the view manager
-   * hierarchy that contains this presentation context, or nsnull if it can't
+   * hierarchy that contains this presentation context, or nullptr if it can't
    * be found (e.g. it's detached).
    */
   nsRootPresContext* GetRootPresContext();
+  nsRootPresContext* GetDisplayRootPresContext();
   virtual bool IsRoot() { return false; }
 
   nsIDocument* Document() const
@@ -206,7 +204,7 @@ public:
   nsStyleSet* StyleSet() { return GetPresShell()->StyleSet(); }
 
   nsFrameManager* FrameManager()
-    { return GetPresShell()->FrameManager(); } 
+    { return GetPresShell()->FrameManager(); }
 
   nsTransitionManager* TransitionManager() { return mTransitionManager; }
   nsAnimationManager* AnimationManager() { return mAnimationManager; }
@@ -245,9 +243,8 @@ public:
    * Access compatibility mode for this context.  This is the same as
    * our document's compatibility mode.
    */
-  nsCompatibility CompatibilityMode() const {
-    return Document()->GetCompatibilityMode();
-  }
+  nsCompatibility CompatibilityMode() const;
+
   /**
    * Notify the context that the document's compatibility mode has changed
    */
@@ -276,7 +273,7 @@ public:
   {
     if (mShell)
       return mShell->AllocateMisc(aSize);
-    return nsnull;
+    return nullptr;
   }
 
   void FreeToShell(size_t aSize, void* aFreeChunk)
@@ -288,7 +285,7 @@ public:
 
   /**
    * Get the default font for the given language and generic font ID.
-   * If aLanguage is nsnull, the document's language is used.
+   * If aLanguage is nullptr, the document's language is used.
    *
    * This object is read-only, you must copy the font to modify it.
    * 
@@ -521,7 +518,7 @@ public:
 
   /**
    * Get the minimum font size for the specified language. If aLanguage
-   * is nsnull, then the document's language is used.
+   * is nullptr, then the document's language is used.
    */
   PRInt32 MinFontSize(nsIAtom *aLanguage) const {
     const LangGroupFontPrefs *prefs = GetFontPrefsForLang(aLanguage);
@@ -552,12 +549,12 @@ public:
    * Return the device's screen width in inches, for font size
    * inflation.
    *
-   * Set |aChanged| to true if the result returned is different from a
-   * previous call to this method.  If a caller passes |aChanged| as
-   * null, then something else must have already checked whether there
-   * was a change (by calling this method).
+   * If |aChanged| is non-null, then aChanged is filled in with whether
+   * the return value has changed since either:
+   *  a. the last time the function was called with non-null aChanged, or
+   *  b. the first time the function was called.
    */
-  float ScreenWidthInchesForFontInflation(bool* aChanged = nsnull);
+  float ScreenWidthInchesForFontInflation(bool* aChanged = nullptr);
 
   static PRInt32 AppUnitsPerCSSPixel() { return nsDeviceContext::AppUnitsPerCSSPixel(); }
   PRUint32 AppUnitsPerDevPixel() const  { return mDeviceContext->AppUnitsPerDevPixel(); }
@@ -679,13 +676,13 @@ public:
    *
    *  @lina 07/12/2000
    */
-  virtual bool BidiEnabledExternal() const { return BidiEnabledInternal(); }
-  bool BidiEnabledInternal() const { return Document()->GetBidiEnabled(); }
 #ifdef _IMPL_NS_LAYOUT
   bool BidiEnabled() const { return BidiEnabledInternal(); }
 #else
   bool BidiEnabled() const { return BidiEnabledExternal(); }
 #endif
+  virtual bool BidiEnabledExternal() const;
+  bool BidiEnabledInternal() const;
 
   /**
    *  Set bidi enabled. This means we should apply the Unicode Bidi Algorithm
@@ -732,7 +729,7 @@ public:
    * Get the Bidi options for the presentation context
    * Not inline so consumers of nsPresContext are not forced to
    * include nsIDocument.
-   */  
+   */
   NS_HIDDEN_(PRUint32) GetBidi() const;
 #endif // IBMBIDI
 
@@ -933,14 +930,7 @@ public:
    * content's primary frame.  Otherwise, return null.  Only use this
    * if you care about which presshell the primary frame is in.
    */
-  nsIFrame* GetPrimaryFrameFor(nsIContent* aContent) {
-    NS_PRECONDITION(aContent, "Don't do that");
-    if (GetPresShell() &&
-        GetPresShell()->GetDocument() == aContent->GetCurrentDoc()) {
-      return aContent->GetPrimaryFrame();
-    }
-    return nsnull;
-  }
+  nsIFrame* GetPrimaryFrameFor(nsIContent* aContent);
 
   void NotifyDestroyingFrame(nsIFrame* aFrame)
   {
@@ -995,7 +985,7 @@ protected:
   struct LangGroupFontPrefs {
     // Font sizes default to zero; they will be set in GetFontPreferences
     LangGroupFontPrefs()
-      : mLangGroup(nsnull)
+      : mLangGroup(nullptr)
       , mMinimumFontSize(0)
       , mDefaultVariableFont("serif", NS_FONT_STYLE_NORMAL, NS_FONT_VARIANT_NORMAL,
                              NS_FONT_WEIGHT_NORMAL, NS_FONT_STRETCH_NORMAL, 0, 0)
@@ -1054,10 +1044,10 @@ protected:
 
   void ResetCachedFontPrefs() {
     // Throw away any other LangGroupFontPrefs objects:
-    mLangGroupFontPrefs.mNext = nsnull;
+    mLangGroupFontPrefs.mNext = nullptr;
 
     // Make GetFontPreferences reinitialize mLangGroupFontPrefs:
-    mLangGroupFontPrefs.mLangGroup = nsnull;
+    mLangGroupFontPrefs.mLangGroup = nullptr;
   }
 
   NS_HIDDEN_(void) UpdateCharSet(const nsCString& aCharSet);
@@ -1087,16 +1077,16 @@ protected:
   // IMPORTANT: The ownership implicit in the following member variables
   // has been explicitly checked.  If you add any members to this class,
   // please make the ownership explicit (pinkerton, scc).
-  
+
   nsPresContextType     mType;
   nsIPresShell*         mShell;         // [WEAK]
   nsCOMPtr<nsIDocument> mDocument;
-  nsDeviceContext*     mDeviceContext; // [STRONG] could be weak, but
-                                        // better safe than sorry.
-                                        // Cannot reintroduce cycles
-                                        // since there is no dependency
-                                        // from gfx back to layout.
-  nsEventStateManager* mEventManager;   // [STRONG]
+  nsRefPtr<nsDeviceContext> mDeviceContext; // [STRONG] could be weak, but
+                                            // better safe than sorry.
+                                            // Cannot reintroduce cycles
+                                            // since there is no dependency
+                                            // from gfx back to layout.
+  nsRefPtr<nsEventStateManager> mEventManager;
   nsRefPtr<nsRefreshDriver> mRefreshDriver;
   nsRefPtr<nsTransitionManager> mTransitionManager;
   nsRefPtr<nsAnimationManager> mAnimationManager;
@@ -1110,7 +1100,7 @@ protected:
   // This may in fact hold a langGroup such as x-western rather than
   // a specific language, however (e.g, if it is inferred from the
   // charset rather than explicitly specified as a lang attribute).
-  nsIAtom*              mLanguage;      // [STRONG]
+  nsCOMPtr<nsIAtom>     mLanguage;
 
 public:
   // The following are public member variables so that we can use them
@@ -1149,7 +1139,7 @@ protected:
 
   // container for per-context fonts (downloadable, SVG, etc.)
   nsUserFontSet*        mUserFontSet;
-  
+
   nsRect                mVisibleArea;
   nsSize                mPageSize;
   float                 mPageScale;
@@ -1253,6 +1243,8 @@ protected:
     eDefaultFont_COUNT
   };
 
+  nscolor MakeColorPref(const nsString& aColor);
+
 #ifdef DEBUG
 private:
   friend struct nsAutoLayoutPhase;
@@ -1280,7 +1272,7 @@ public:
   {
     if (mNotifyDidPaintTimer) {
       mNotifyDidPaintTimer->Cancel();
-      mNotifyDidPaintTimer = nsnull;
+      mNotifyDidPaintTimer = nullptr;
     }
   }
 
@@ -1354,6 +1346,9 @@ public:
 
   /**
    * Get the current DOM generation counter.
+   *
+   * See nsFrameManagerBase::GetGlobalGenerationNumber() for a
+   * global generation number.
    */
   PRUint32 GetDOMGeneration() { return mDOMGeneration; }
 
@@ -1375,7 +1370,7 @@ protected:
   class RunWillPaintObservers : public nsRunnable {
   public:
     RunWillPaintObservers(nsRootPresContext* aPresContext) : mPresContext(aPresContext) {}
-    void Revoke() { mPresContext = nsnull; }
+    void Revoke() { mPresContext = nullptr; }
     NS_IMETHOD Run()
     {
       if (mPresContext) {
@@ -1391,7 +1386,7 @@ protected:
   {
     if (mUpdatePluginGeometryTimer) {
       mUpdatePluginGeometryTimer->Cancel();
-      mUpdatePluginGeometryTimer = nsnull;
+      mUpdatePluginGeometryTimer = nullptr;
     }
   }
 

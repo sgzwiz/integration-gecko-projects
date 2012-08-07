@@ -8,7 +8,6 @@
 #include "prlink.h"
 #include "plstr.h"
 #include "nsIPluginInstanceOwner.h"
-#include "nsIDocument.h"
 #include "nsServiceManagerUtils.h"
 #include "nsPluginsDir.h"
 #include "nsPluginHost.h"
@@ -16,7 +15,6 @@
 #include "nsIPlatformCharset.h"
 #include "nsICharsetConverterManager.h"
 #include "nsPluginLogging.h"
-#include "nsICategoryManager.h"
 #include "nsNPAPIPlugin.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Preferences.h"
@@ -26,11 +24,11 @@ using mozilla::TimeStamp;
 
 inline char* new_str(const char* str)
 {
-  if (str == nsnull)
-    return nsnull;
+  if (str == nullptr)
+    return nullptr;
   
   char* result = new char[strlen(str) + 1];
-  if (result != nsnull)
+  if (result != nullptr)
     return strcpy(result, str);
   return result;
 }
@@ -38,13 +36,13 @@ inline char* new_str(const char* str)
 /* nsPluginTag */
 
 nsPluginTag::nsPluginTag(nsPluginTag* aPluginTag)
-: mPluginHost(nsnull),
+: mPluginHost(nullptr),
 mName(aPluginTag->mName),
 mDescription(aPluginTag->mDescription),
 mMimeTypes(aPluginTag->mMimeTypes),
 mMimeDescriptions(aPluginTag->mMimeDescriptions),
 mExtensions(aPluginTag->mExtensions),
-mLibrary(nsnull),
+mLibrary(nullptr),
 mIsJavaPlugin(aPluginTag->mIsJavaPlugin),
 mIsFlashPlugin(aPluginTag->mIsFlashPlugin),
 mFileName(aPluginTag->mFileName),
@@ -56,10 +54,10 @@ mFlags(NS_PLUGIN_FLAG_ENABLED)
 }
 
 nsPluginTag::nsPluginTag(nsPluginInfo* aPluginInfo)
-: mPluginHost(nsnull),
+: mPluginHost(nullptr),
 mName(aPluginInfo->fName),
 mDescription(aPluginInfo->fDescription),
-mLibrary(nsnull),
+mLibrary(nullptr),
 mIsJavaPlugin(false),
 mIsFlashPlugin(false),
 mFileName(aPluginInfo->fFileName),
@@ -86,10 +84,10 @@ nsPluginTag::nsPluginTag(const char* aName,
                          PRInt32 aVariants,
                          PRInt64 aLastModifiedTime,
                          bool aArgsAreUTF8)
-: mPluginHost(nsnull),
+: mPluginHost(nullptr),
 mName(aName),
 mDescription(aDescription),
-mLibrary(nsnull),
+mLibrary(nullptr),
 mIsJavaPlugin(false),
 mIsFlashPlugin(false),
 mFileName(aFileName),
@@ -120,7 +118,7 @@ void nsPluginTag::InitMime(const char* const* aMimeTypes,
   }
 
   for (PRUint32 i = 0; i < aVariantCount; i++) {
-    if (!aMimeTypes[i]) {
+    if (!aMimeTypes[i] || !nsPluginHost::IsTypeWhitelisted(aMimeTypes[i])) {
       continue;
     }
 
@@ -297,8 +295,7 @@ nsPluginTag::SetDisabled(bool aDisabled)
     UnMark(NS_PLUGIN_FLAG_ENABLED);
   else
     Mark(NS_PLUGIN_FLAG_ENABLED);
-  
-  mPluginHost->UpdatePluginInfo(this);
+
   return NS_OK;
 }
 
@@ -319,89 +316,41 @@ nsPluginTag::SetBlocklisted(bool aBlocklisted)
     Mark(NS_PLUGIN_FLAG_BLOCKLISTED);
   else
     UnMark(NS_PLUGIN_FLAG_BLOCKLISTED);
-  
-  mPluginHost->UpdatePluginInfo(nsnull);
+
   return NS_OK;
 }
 
-void
-nsPluginTag::RegisterWithCategoryManager(bool aOverrideInternalTypes,
-                                         nsPluginTag::nsRegisterType aType)
+NS_IMETHODIMP
+nsPluginTag::GetClicktoplay(bool *aClicktoplay)
 {
-  PLUGIN_LOG(PLUGIN_LOG_NORMAL,
-             ("nsPluginTag::RegisterWithCategoryManager plugin=%s, removing = %s\n",
-              mFileName.get(), aType == ePluginUnregister ? "yes" : "no"));
-  
-  nsCOMPtr<nsICategoryManager> catMan = do_GetService(NS_CATEGORYMANAGER_CONTRACTID);
-  if (!catMan)
-    return;
-  
-  const char *contractId = "@mozilla.org/content/plugin/document-loader-factory;1";
-  
-  // A preference controls whether or not the full page plugin is disabled for
-  // a particular type. The string must be in the form:
-  //   type1,type2,type3,type4
-  // Note: need an actual interface to control this and subsequent disabling 
-  // (and other plugin host settings) so applications can reliably disable 
-  // plugins - without relying on implementation details such as prefs/category
-  // manager entries.
-  nsCAutoString overrideTypesFormatted;
-  if (aType != ePluginUnregister) {
-    overrideTypesFormatted.Assign(',');
-    nsAdoptingCString overrideTypes =
-      Preferences::GetCString("plugin.disable_full_page_plugin_for_types");
-    overrideTypesFormatted += overrideTypes;
-    overrideTypesFormatted.Append(',');
+  *aClicktoplay = HasFlag(NS_PLUGIN_FLAG_CLICKTOPLAY);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsPluginTag::SetClicktoplay(bool aClicktoplay)
+{
+  if (HasFlag(NS_PLUGIN_FLAG_CLICKTOPLAY) == aClicktoplay) {
+    return NS_OK;
   }
   
-  nsACString::const_iterator start, end;
-  for (PRUint32 i = 0; i < mMimeTypes.Length(); i++) {
-    if (aType == ePluginUnregister) {
-      nsXPIDLCString value;
-      if (NS_SUCCEEDED(catMan->GetCategoryEntry("Gecko-Content-Viewers",
-                                                mMimeTypes[i].get(),
-                                                getter_Copies(value)))) {
-        // Only delete the entry if a plugin registered for it
-        if (strcmp(value, contractId) == 0) {
-          catMan->DeleteCategoryEntry("Gecko-Content-Viewers",
-                                      mMimeTypes[i].get(),
-                                      true);
-        }
-      }
-    } else {
-      overrideTypesFormatted.BeginReading(start);
-      overrideTypesFormatted.EndReading(end);
-      
-      nsCAutoString commaSeparated; 
-      commaSeparated.Assign(',');
-      commaSeparated += mMimeTypes[i];
-      commaSeparated.Append(',');
-      if (!FindInReadable(commaSeparated, start, end)) {
-        catMan->AddCategoryEntry("Gecko-Content-Viewers",
-                                 mMimeTypes[i].get(),
-                                 contractId,
-                                 false, /* persist: broken by bug 193031 */
-                                 aOverrideInternalTypes, /* replace if we're told to */
-                                 nsnull);
-      }
-    }
-    
-    PLUGIN_LOG(PLUGIN_LOG_NOISY,
-               ("nsPluginTag::RegisterWithCategoryManager mime=%s, plugin=%s\n",
-                mMimeTypes[i].get(), mFileName.get()));
+  if (aClicktoplay) {
+    Mark(NS_PLUGIN_FLAG_CLICKTOPLAY);
+  } else {
+    UnMark(NS_PLUGIN_FLAG_CLICKTOPLAY);
   }
+  
+  mPluginHost->UpdatePluginInfo(nullptr);
+  return NS_OK;
 }
 
 void nsPluginTag::Mark(PRUint32 mask)
 {
   bool wasEnabled = IsEnabled();
   mFlags |= mask;
-  // Update entries in the category manager if necessary.
+
   if (mPluginHost && wasEnabled != IsEnabled()) {
-    if (wasEnabled)
-      RegisterWithCategoryManager(false, nsPluginTag::ePluginUnregister);
-    else
-      RegisterWithCategoryManager(false, nsPluginTag::ePluginRegister);
+    mPluginHost->UpdatePluginInfo(this);
   }
 }
 
@@ -409,12 +358,9 @@ void nsPluginTag::UnMark(PRUint32 mask)
 {
   bool wasEnabled = IsEnabled();
   mFlags &= ~mask;
-  // Update entries in the category manager if necessary.
+
   if (mPluginHost && wasEnabled != IsEnabled()) {
-    if (wasEnabled)
-      RegisterWithCategoryManager(false, nsPluginTag::ePluginUnregister);
-    else
-      RegisterWithCategoryManager(false, nsPluginTag::ePluginRegister);
+    mPluginHost->UpdatePluginInfo(this);
   }
 }
 
@@ -433,12 +379,12 @@ bool nsPluginTag::IsEnabled()
   return HasFlag(NS_PLUGIN_FLAG_ENABLED) && !HasFlag(NS_PLUGIN_FLAG_BLOCKLISTED);
 }
 
-bool nsPluginTag::Equals(nsPluginTag *aPluginTag)
+bool
+nsPluginTag::HasSameNameAndMimes(const nsPluginTag *aPluginTag) const
 {
   NS_ENSURE_TRUE(aPluginTag, false);
-  
+
   if ((!mName.Equals(aPluginTag->mName)) ||
-      (!mDescription.Equals(aPluginTag->mDescription)) ||
       (mMimeTypes.Length() != aPluginTag->mMimeTypes.Length())) {
     return false;
   }
@@ -462,6 +408,6 @@ void nsPluginTag::TryUnloadPlugin(bool inShutdown)
 
   if (mPlugin) {
     mPlugin->Shutdown();
-    mPlugin = nsnull;
+    mPlugin = nullptr;
   }
 }

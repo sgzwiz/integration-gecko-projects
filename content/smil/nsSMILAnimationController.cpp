@@ -7,9 +7,7 @@
 #include "nsSMILCompositor.h"
 #include "nsSMILCSSProperty.h"
 #include "nsCSSProps.h"
-#include "nsComponentManagerUtils.h"
 #include "nsITimer.h"
-#include "nsIContent.h"
 #include "mozilla/dom/Element.h"
 #include "nsIDocument.h"
 #include "nsISMILAnimationElement.h"
@@ -65,7 +63,7 @@ nsSMILAnimationController::Disconnect()
 
   StopSampling(GetRefreshDriver());
 
-  mDocument = nsnull; // (raw pointer)
+  mDocument = nullptr; // (raw pointer)
 }
 
 //----------------------------------------------------------------------
@@ -229,7 +227,7 @@ nsSMILAnimationController::CompositorTableEntryTraverse(
 void
 nsSMILAnimationController::Unlink()
 {
-  mLastCompositorTable = nsnull;
+  mLastCompositorTable = nullptr;
 }
 
 //----------------------------------------------------------------------
@@ -436,7 +434,7 @@ nsSMILAnimationController::DoSample(bool aSkipUnchangedContainers)
 
     // * For each entry that remains in prev sample's hash table (i.e. for
     // every target that's no longer animated), clear animation effects.
-    mLastCompositorTable->EnumerateEntries(DoClearAnimationEffects, nsnull);
+    mLastCompositorTable->EnumerateEntries(DoClearAnimationEffects, nullptr);
   }
 
   // STEP 5: Compose currently-animated attributes.
@@ -444,7 +442,7 @@ nsSMILAnimationController::DoSample(bool aSkipUnchangedContainers)
   // random order. For animation from/to 'inherit' values to work correctly
   // when the inherited value is *also* being animated, we really should be
   // traversing our animated nodes in an ancestors-first order (bug 501183)
-  currentCompositorTable->EnumerateEntries(DoComposeAttribute, nsnull);
+  currentCompositorTable->EnumerateEntries(DoComposeAttribute, nullptr);
   mRunningSample = false;
 
   // Update last compositor table
@@ -461,8 +459,8 @@ nsSMILAnimationController::RewindElements()
   if (!rewindNeeded)
     return;
 
-  mAnimationElementTable.EnumerateEntries(RewindAnimation, nsnull);
-  mChildContainerTable.EnumerateEntries(ClearRewindNeeded, nsnull);
+  mAnimationElementTable.EnumerateEntries(RewindAnimation, nullptr);
+  mChildContainerTable.EnumerateEntries(ClearRewindNeeded, nullptr);
 }
 
 /*static*/ PR_CALLBACK PLDHashOperator
@@ -559,7 +557,7 @@ nsSMILAnimationController::DoMilestoneSamples()
       NS_ABORT_IF_FALSE(elem, "NULL animation element in list");
       nsSMILTimeContainer* container = elem->GetTimeContainer();
       if (!container)
-        // The container may be nsnull if the element has been detached from its
+        // The container may be nullptr if the element has been detached from its
         // parent since registering a milestone.
         continue;
 
@@ -765,9 +763,17 @@ nsSMILAnimationController::GetTargetIdentifierForAnimation(
   bool isCSS = false;
   if (attributeType == eSMILTargetAttrType_auto) {
     if (attributeNamespaceID == kNameSpaceID_None) {
-      nsCSSProperty prop =
-        nsCSSProps::LookupProperty(nsDependentAtomString(attributeName));
-      isCSS = nsSMILCSSProperty::IsPropertyAnimatable(prop);
+      // width/height are special as they may be attributes or for
+      // outer-<svg> elements, mapped into style.
+      if (attributeName == nsGkAtoms::width ||
+          attributeName == nsGkAtoms::height) {
+        isCSS = targetElem->GetNameSpaceID() != kNameSpaceID_SVG;
+      } else {
+        nsCSSProperty prop =
+          nsCSSProps::LookupProperty(nsDependentAtomString(attributeName),
+                                     nsCSSProps::eEnabled);
+        isCSS = nsSMILCSSProperty::IsPropertyAnimatable(prop);
+      }
     }
   } else {
     isCSS = (attributeType == eSMILTargetAttrType_CSS);
@@ -815,16 +821,16 @@ nsSMILAnimationController::GetRefreshDriver()
 {
   if (!mDocument) {
     NS_ERROR("Requesting refresh driver after document has disconnected!");
-    return nsnull;
+    return nullptr;
   }
 
   nsIPresShell* shell = mDocument->GetShell();
   if (!shell) {
-    return nsnull;
+    return nullptr;
   }
 
   nsPresContext* context = shell->GetPresContext();
-  return context ? context->RefreshDriver() : nsnull;
+  return context ? context->RefreshDriver() : nullptr;
 }
 
 void

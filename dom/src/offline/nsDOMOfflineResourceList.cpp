@@ -20,7 +20,6 @@
 #include "nsContentUtils.h"
 #include "nsIJSContextStack.h"
 #include "nsEventDispatcher.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsIObserverService.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIWebNavigation.h"
@@ -111,7 +110,7 @@ nsDOMOfflineResourceList::nsDOMOfflineResourceList(nsIURI *aManifestURI,
   , mDocumentURI(aDocumentURI)
   , mExposeCacheUpdateStatus(true)
   , mStatus(nsIDOMOfflineResourceList::IDLE)
-  , mCachedKeys(nsnull)
+  , mCachedKeys(nullptr)
   , mCachedKeysCount(0)
 {
   BindToOwner(aWindow);
@@ -189,20 +188,20 @@ nsDOMOfflineResourceList::Init()
 void
 nsDOMOfflineResourceList::Disconnect()
 {
-  mOnCheckingListener = nsnull;
-  mOnErrorListener = nsnull;
-  mOnNoUpdateListener = nsnull;
-  mOnDownloadingListener = nsnull;
-  mOnProgressListener = nsnull;
-  mOnCachedListener = nsnull;
-  mOnUpdateReadyListener = nsnull;
-  mOnObsoleteListener = nsnull;
+  mOnCheckingListener = nullptr;
+  mOnErrorListener = nullptr;
+  mOnNoUpdateListener = nullptr;
+  mOnDownloadingListener = nullptr;
+  mOnProgressListener = nullptr;
+  mOnCachedListener = nullptr;
+  mOnUpdateReadyListener = nullptr;
+  mOnObsoleteListener = nullptr;
 
   mPendingEvents.Clear();
 
   if (mListenerManager) {
     mListenerManager->Disconnect();
-    mListenerManager = nsnull;
+    mListenerManager = nullptr;
   }
 }
 
@@ -216,7 +215,7 @@ nsDOMOfflineResourceList::GetMozItems(nsIDOMDOMStringList **aItems)
   if (IS_CHILD_PROCESS()) 
     return NS_ERROR_NOT_IMPLEMENTED;
 
-  *aItems = nsnull;
+  *aItems = nullptr;
 
   nsRefPtr<nsDOMStringList> items = new nsDOMStringList();
   NS_ENSURE_TRUE(items, NS_ERROR_OUT_OF_MEMORY);
@@ -525,7 +524,7 @@ nsDOMOfflineResourceList::SwapCache()
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  mAvailableApplicationCache = nsnull;
+  mAvailableApplicationCache = nullptr;
   mStatus = nsIDOMOfflineResourceList::IDLE;
 
   return NS_OK;
@@ -689,20 +688,14 @@ nsDOMOfflineResourceList::SendEvent(const nsAString &aEventName)
   }
 
   nsCOMPtr<nsIDOMEvent> event;
-  nsresult rv = nsEventDispatcher::CreateEvent(nsnull, nsnull,
+  nsresult rv = nsEventDispatcher::CreateEvent(nullptr, nullptr,
                                                NS_LITERAL_STRING("Events"),
                                                getter_AddRefs(event));
   NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsIPrivateDOMEvent> privevent = do_QueryInterface(event);
-  if (!privevent) {
-    return NS_ERROR_FAILURE;
-  }
-
   event->InitEvent(aEventName, false, true);
 
   // We assume anyone that managed to call SendEvent is trusted
-  privevent->SetTrusted(true);
+  event->SetTrusted(true);
 
   // If the window is frozen or we're still catching up on events that were
   // queued while frozen, save the event for later.
@@ -768,7 +761,7 @@ nsDOMOfflineResourceList::UpdateStateChanged(nsIOfflineCacheUpdate *aUpdate,
       break;
     case STATE_OBSOLETE:
       mStatus = nsIDOMOfflineResourceList::OBSOLETE;
-      mAvailableApplicationCache = nsnull;
+      mAvailableApplicationCache = nullptr;
       SendEvent(NS_LITERAL_STRING(OBSOLETE_STR));
       break;
     case STATE_DOWNLOADING:
@@ -845,7 +838,7 @@ nsDOMOfflineResourceList::GetDocumentAppCacheContainer()
 {
   nsCOMPtr<nsIWebNavigation> webnav = do_GetInterface(GetOwner());
   if (!webnav) {
-    return nsnull;
+    return nullptr;
   }
 
   nsCOMPtr<nsIApplicationCacheContainer> appCacheContainer =
@@ -866,7 +859,7 @@ nsDOMOfflineResourceList::GetDocumentAppCache()
     return applicationCache.forget();
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 nsresult
@@ -886,7 +879,7 @@ nsDOMOfflineResourceList::UpdateCompleted(nsIOfflineCacheUpdate *aUpdate)
   nsresult rv = mCacheUpdate->GetSucceeded(&succeeded);
 
   mCacheUpdate->RemoveObserver(this);
-  mCacheUpdate = nsnull;
+  mCacheUpdate = nullptr;
 
   if (NS_SUCCEEDED(rv) && succeeded && !partial) {
     if (isUpgrade) {
@@ -945,7 +938,7 @@ nsDOMOfflineResourceList::ClearCachedKeys()
 {
   if (mCachedKeys) {
     NS_FREE_XPCOM_ALLOCATED_POINTER_ARRAY(mCachedKeysCount, mCachedKeys);
-    mCachedKeys = nsnull;
+    mCachedKeys = nullptr;
     mCachedKeysCount = 0;
   }
 }

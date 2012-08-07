@@ -46,12 +46,12 @@ extern nsIWidget         * gRollupWidget;
 
 static io_connect_t gRootPort = MACH_PORT_NULL;
 
-nsToolkit* nsToolkit::gToolkit = nsnull;
+nsToolkit* nsToolkit::gToolkit = nullptr;
 
 nsToolkit::nsToolkit()
-: mSleepWakeNotificationRLS(nsnull)
-, mEventTapPort(nsnull)
-, mEventTapRLS(nsnull)
+: mSleepWakeNotificationRLS(nullptr)
+, mEventTapPort(nullptr)
+, mEventTapRLS(nullptr)
 {
   MOZ_COUNT_CTOR(nsToolkit);
   RegisterForSleepWakeNotifcations();
@@ -70,7 +70,7 @@ nsToolkit::PostSleepWakeNotification(const char* aNotification)
 {
   nsCOMPtr<nsIObserverService> observerService = do_GetService("@mozilla.org/observer-service;1");
   if (observerService)
-    observerService->NotifyObservers(nsnull, aNotification, nsnull);
+    observerService->NotifyObservers(nullptr, aNotification, nullptr);
 }
 
 // http://developer.apple.com/documentation/DeviceDrivers/Conceptual/IOKitFundamentals/PowerMgmt/chapter_10_section_3.html
@@ -142,7 +142,7 @@ nsToolkit::RemoveSleepWakeNotifcations()
                             mSleepWakeNotificationRLS,
                             kCFRunLoopDefaultMode);
 
-    mSleepWakeNotificationRLS = nsnull;
+    mSleepWakeNotificationRLS = nullptr;
   }
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
@@ -230,13 +230,13 @@ nsToolkit::RegisterForAllProcessMouseEvents()
                                        | CGEventMaskBit(kCGEventRightMouseDown)
                                        | CGEventMaskBit(kCGEventOtherMouseDown),
                                      EventTapCallback,
-                                     nsnull);
+                                     nullptr);
     if (!mEventTapPort)
       return;
-    mEventTapRLS = CFMachPortCreateRunLoopSource(nsnull, mEventTapPort, 0);
+    mEventTapRLS = CFMachPortCreateRunLoopSource(nullptr, mEventTapPort, 0);
     if (!mEventTapRLS) {
       CFRelease(mEventTapPort);
-      mEventTapPort = nsnull;
+      mEventTapPort = nullptr;
       return;
     }
     CFRunLoopAddSource(CFRunLoopGetCurrent(), mEventTapRLS, kCFRunLoopDefaultMode);
@@ -254,7 +254,7 @@ nsToolkit::UnregisterAllProcessMouseEventHandlers()
     CFRunLoopRemoveSource(CFRunLoopGetCurrent(), mEventTapRLS,
                           kCFRunLoopDefaultMode);
     CFRelease(mEventTapRLS);
-    mEventTapRLS = nsnull;
+    mEventTapRLS = nullptr;
   }
   if (mEventTapPort) {
     // mEventTapPort must be invalidated as well as released.  Otherwise the
@@ -262,7 +262,7 @@ nsToolkit::UnregisterAllProcessMouseEventHandlers()
     // keeps showing up in the list returned by CGGetEventTapList()).
     CFMachPortInvalidate(mEventTapPort);
     CFRelease(mEventTapPort);
-    mEventTapPort = nsnull;
+    mEventTapPort = nullptr;
   }
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
@@ -281,7 +281,7 @@ nsToolkit* nsToolkit::GetToolkit()
 
   return gToolkit;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(nsnull);
+  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(nullptr);
 }
 
 // An alternative to [NSObject poseAsClass:] that isn't deprecated on OS X

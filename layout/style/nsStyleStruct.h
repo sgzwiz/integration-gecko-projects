@@ -127,11 +127,14 @@ public:
   PRUint8 mSize;   // NS_STYLE_GRADIENT_SIZE_*;
                    // not used (must be FARTHEST_CORNER) for linear shape
   bool mRepeating;
-  bool mToCorner;
+  bool mLegacySyntax;
 
   nsStyleCoord mBgPosX; // percent, coord, calc, none
   nsStyleCoord mBgPosY; // percent, coord, calc, none
   nsStyleCoord mAngle;  // none, angle
+
+  nsStyleCoord mRadiusX; // percent, coord, calc, none
+  nsStyleCoord mRadiusY; // percent, coord, calc, none
 
   // stops are in the order specified in the stylesheet
   nsTArray<nsStyleGradientStop> mStops;
@@ -139,7 +142,7 @@ public:
   bool operator==(const nsStyleGradient& aOther) const;
   bool operator!=(const nsStyleGradient& aOther) const {
     return !(*this == aOther);
-  };
+  }
 
   bool IsOpaque();
 
@@ -220,7 +223,7 @@ struct nsStyleImage {
    * @return true iff |aActualCropRect| holds a meaningful value.
    */
   bool ComputeActualCropRect(nsIntRect& aActualCropRect,
-                               bool* aIsEntireImage = nsnull) const;
+                               bool* aIsEntireImage = nullptr) const;
 
   /**
    * Requests a decode on the image.
@@ -313,7 +316,7 @@ struct nsStyleBackground {
 #ifdef DEBUG
   static nsChangeHint MaxDifference();
 #endif
-  static bool ForceCompare() { return false; }
+  static bool ForceCompare() { return true; }
 
   struct Position;
   friend struct Position;
@@ -592,8 +595,8 @@ struct nsBorderColors {
   nsBorderColors* mNext;
   nscolor mColor;
 
-  nsBorderColors() : mNext(nsnull), mColor(NS_RGB(0,0,0)) {}
-  nsBorderColors(const nscolor& aColor) : mNext(nsnull), mColor(aColor) {}
+  nsBorderColors() : mNext(nullptr), mColor(NS_RGB(0,0,0)) {}
+  nsBorderColors(const nscolor& aColor) : mNext(nullptr), mColor(aColor) {}
   ~nsBorderColors();
 
   nsBorderColors* Clone() const { return Clone(true); }
@@ -744,14 +747,14 @@ struct nsStyleBorder {
       mBorderColors = new nsBorderColors*[4];
       if (mBorderColors)
         for (PRInt32 i = 0; i < 4; i++)
-          mBorderColors[i] = nsnull;
+          mBorderColors[i] = nullptr;
     }
   }
 
   void ClearBorderColors(mozilla::css::Side aSide) {
     if (mBorderColors && mBorderColors[aSide]) {
       delete mBorderColors[aSide];
-      mBorderColors[aSide] = nsnull;
+      mBorderColors[aSide] = nullptr;
     }
   }
 
@@ -855,7 +858,7 @@ struct nsStyleBorder {
   void GetCompositeColors(PRInt32 aIndex, nsBorderColors** aColors) const
   {
     if (!mBorderColors)
-      *aColors = nsnull;
+      *aColors = nullptr;
     else
       *aColors = mBorderColors[aIndex];
   }
@@ -1092,7 +1095,19 @@ struct nsStylePosition {
   nsStyleCoord  mHeight;                // [reset] coord, percent, calc, auto
   nsStyleCoord  mMinHeight;             // [reset] coord, percent, calc
   nsStyleCoord  mMaxHeight;             // [reset] coord, percent, calc, none
+#ifdef MOZ_FLEXBOX
+  nsStyleCoord  mFlexBasis;             // [reset] coord, percent, enum, calc, auto
+#endif // MOZ_FLEXBOX
   PRUint8       mBoxSizing;             // [reset] see nsStyleConsts.h
+#ifdef MOZ_FLEXBOX
+  PRUint8       mAlignItems;            // [reset] see nsStyleConsts.h
+  PRUint8       mAlignSelf;             // [reset] see nsStyleConsts.h
+  PRUint8       mFlexDirection;         // [reset] see nsStyleConsts.h
+  PRUint8       mJustifyContent;        // [reset] see nsStyleConsts.h
+  PRInt32       mOrder;                 // [reset] integer
+  float         mFlexGrow;              // [reset] float
+  float         mFlexShrink;            // [reset] float
+#endif // MOZ_FLEXBOX
   nsStyleCoord  mZIndex;                // [reset] integer, auto
 
   bool WidthDependsOnContainer() const
@@ -1177,7 +1192,7 @@ struct nsStyleTextOverflow {
 
   // Returns the second value, or null if there was only one value specified.
   const nsStyleTextOverflowSide* GetSecondValue() const {
-    return mLogicalDirections ? nsnull : &mRight;
+    return mLogicalDirections ? nullptr : &mRight;
   }
 
   nsStyleTextOverflowSide mLeft;  // start side when mLogicalDirections is true
@@ -1585,7 +1600,7 @@ struct nsStyleDisplay {
            mAnimationPlayStateCount,
            mAnimationIterationCountCount;
 
-  bool IsBlockInside() const {
+  bool IsBlockInsideStyle() const {
     return NS_STYLE_DISPLAY_BLOCK == mDisplay ||
            NS_STYLE_DISPLAY_LIST_ITEM == mDisplay ||
            NS_STYLE_DISPLAY_INLINE_BLOCK == mDisplay;
@@ -1594,8 +1609,11 @@ struct nsStyleDisplay {
     // (But please audit all callers before changing.)
   }
 
-  bool IsBlockOutside() const {
+  bool IsBlockOutsideStyle() const {
     return NS_STYLE_DISPLAY_BLOCK == mDisplay ||
+#ifdef MOZ_FLEXBOX
+           NS_STYLE_DISPLAY_FLEX == mDisplay ||
+#endif // MOZ_FLEXBOX
            NS_STYLE_DISPLAY_LIST_ITEM == mDisplay ||
            NS_STYLE_DISPLAY_TABLE == mDisplay;
   }
@@ -1605,29 +1623,39 @@ struct nsStyleDisplay {
            NS_STYLE_DISPLAY_INLINE_BLOCK == aDisplay ||
            NS_STYLE_DISPLAY_INLINE_TABLE == aDisplay ||
            NS_STYLE_DISPLAY_INLINE_BOX == aDisplay ||
+#ifdef MOZ_FLEXBOX
+           NS_STYLE_DISPLAY_INLINE_FLEX == aDisplay ||
+#endif // MOZ_FLEXBOX
            NS_STYLE_DISPLAY_INLINE_GRID == aDisplay ||
            NS_STYLE_DISPLAY_INLINE_STACK == aDisplay;
   }
 
-  bool IsInlineOutside() const {
+  bool IsInlineOutsideStyle() const {
     return IsDisplayTypeInlineOutside(mDisplay);
   }
 
-  bool IsOriginalDisplayInlineOutside() const {
+  bool IsOriginalDisplayInlineOutsideStyle() const {
     return IsDisplayTypeInlineOutside(mOriginalDisplay);
   }
 
-  bool IsFloating() const {
+  bool IsFloatingStyle() const {
     return NS_STYLE_FLOAT_NONE != mFloats;
   }
 
-  bool IsAbsolutelyPositioned() const {return (NS_STYLE_POSITION_ABSOLUTE == mPosition) ||
-                                                (NS_STYLE_POSITION_FIXED == mPosition);}
+  bool IsAbsolutelyPositionedStyle() const {
+    return NS_STYLE_POSITION_ABSOLUTE == mPosition ||
+           NS_STYLE_POSITION_FIXED == mPosition;
+  }
 
   /* Returns true if we're positioned or there's a transform in effect. */
-  bool IsPositioned() const {
-    return IsAbsolutelyPositioned() ||
-      NS_STYLE_POSITION_RELATIVE == mPosition || HasTransform();
+  bool IsPositionedStyle() const {
+    return IsAbsolutelyPositionedStyle() ||
+           IsRelativelyPositionedStyle() ||
+           HasTransform();
+  }
+
+  bool IsRelativelyPositionedStyle() const {
+    return mPosition == NS_STYLE_POSITION_RELATIVE;
   }
 
   bool IsScrollableOverflow() const {
@@ -1639,10 +1667,21 @@ struct nsStyleDisplay {
 
   /* Returns whether the element has the -moz-transform property. */
   bool HasTransform() const {
-    return mSpecifiedTransform != nsnull || 
+    return mSpecifiedTransform != nullptr || 
            mTransformStyle == NS_STYLE_TRANSFORM_STYLE_PRESERVE_3D ||
            mBackfaceVisibility == NS_STYLE_BACKFACE_VISIBILITY_HIDDEN;
   }
+
+  // These are defined in nsStyleStructInlines.h.
+  inline bool IsBlockInside(const nsIFrame* aFrame) const;
+  inline bool IsBlockOutside(const nsIFrame* aFrame) const;
+  inline bool IsInlineOutside(const nsIFrame* aFrame) const;
+  inline bool IsOriginalDisplayInlineOutside(const nsIFrame* aFrame) const;
+  inline PRUint8 GetDisplay(const nsIFrame* aFrame) const;
+  inline bool IsFloating(const nsIFrame* aFrame) const;
+  inline bool IsPositioned(const nsIFrame* aFrame) const;
+  inline bool IsRelativelyPositioned(const nsIFrame* aFrame) const;
+  inline bool IsAbsolutelyPositioned(const nsIFrame* aFrame) const;
 };
 
 struct nsStyleTable {
@@ -1726,7 +1765,7 @@ struct nsStyleContentData {
 #ifdef DEBUG
     , mImageTracked(false)
 #endif
-  { mContent.mString = nsnull; }
+  { mContent.mString = nullptr; }
 
   ~nsStyleContentData();
   nsStyleContentData& operator=(const nsStyleContentData& aOther);
@@ -1756,7 +1795,7 @@ struct nsStyleCounterData {
 };
 
 
-#define DELETE_ARRAY_IF(array)  if (array) { delete[] array; array = nsnull; }
+#define DELETE_ARRAY_IF(array)  if (array) { delete[] array; array = nullptr; }
 
 struct nsStyleQuotes {
   nsStyleQuotes();
@@ -2111,7 +2150,7 @@ struct nsStyleSVGPaint
   nsStyleSVGPaintType mType;
   nscolor mFallbackColor;
 
-  nsStyleSVGPaint() : mType(nsStyleSVGPaintType(0)) { mPaint.mPaintServer = nsnull; }
+  nsStyleSVGPaint() : mType(nsStyleSVGPaintType(0)) { mPaint.mPaintServer = nullptr; }
   ~nsStyleSVGPaint();
   void SetType(nsStyleSVGPaintType aType);
   nsStyleSVGPaint& operator=(const nsStyleSVGPaint& aOther);
@@ -2139,7 +2178,7 @@ struct nsStyleSVG {
 #ifdef DEBUG
   static nsChangeHint MaxDifference();
 #endif
-  static bool ForceCompare() { return false; }
+  static bool ForceCompare() { return true; }
 
   nsStyleSVGPaint  mFill;             // [inherited]
   nsStyleSVGPaint  mStroke;           // [inherited]
@@ -2185,7 +2224,7 @@ struct nsStyleSVGReset {
 #ifdef DEBUG
   static nsChangeHint MaxDifference();
 #endif
-  static bool ForceCompare() { return false; }
+  static bool ForceCompare() { return true; }
 
   nsCOMPtr<nsIURI> mClipPath;         // [reset]
   nsCOMPtr<nsIURI> mFilter;           // [reset]

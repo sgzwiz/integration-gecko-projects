@@ -95,12 +95,12 @@ NS_IMETHODIMP nsIconChannel::OnStopRequest(nsIRequest* aRequest, nsISupports* aC
 {
   if (mListener) {
     mListener->OnStopRequest(this, aContext, aStatus);
-    mListener = nsnull;
+    mListener = nullptr;
   }
 
   // Remove from load group
   if (mLoadGroup)
-    mLoadGroup->RemoveRequest(this, nsnull, aStatus);
+    mLoadGroup->RemoveRequest(this, nullptr, aStatus);
 
   return NS_OK;
 }
@@ -193,7 +193,7 @@ NS_IMETHODIMP nsIconChannel::AsyncOpen(nsIStreamListener *aListener, nsISupports
     mListener = aListener;
     // Add ourself to the load group, if available
     if (mLoadGroup)
-      mLoadGroup->AddRequest(this, nsnull);
+      mLoadGroup->AddRequest(this, nullptr);
   }
 
   return rv;
@@ -210,14 +210,12 @@ nsresult nsIconChannel::MakeInputStream(nsIInputStream** _retval, bool nonBlocki
   nsresult rv = ExtractIconInfoFromUrl(getter_AddRefs(fileloc), &desiredImageSize, contentType, fileExt);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // ensure that we DO NOT resolve aliases, very important for file views
-  nsCOMPtr<nsILocalFile> localFile = do_QueryInterface(fileloc);
-  if (localFile)
-    localFile->SetFollowLinks(false);
-
   bool fileExists = false;
-  if (fileloc)
-    localFile->Exists(&fileExists);
+  if (fileloc) {
+    // ensure that we DO NOT resolve aliases, very important for file views
+    fileloc->SetFollowLinks(false);
+    fileloc->Exists(&fileExists);
+  }
 
   NSImage* iconImage = nil;
   
@@ -318,7 +316,7 @@ nsresult nsIconChannel::MakeInputStream(nsIInputStream** _retval, bool nonBlocki
   }
 
   // Drop notification callbacks to prevent cycles.
-  mCallbacks = nsnull;
+  mCallbacks = nullptr;
 
   return NS_OK;
 
@@ -434,7 +432,7 @@ NS_IMETHODIMP nsIconChannel::SetNotificationCallbacks(nsIInterfaceRequestor* aNo
 
 NS_IMETHODIMP nsIconChannel::GetSecurityInfo(nsISupports * *aSecurityInfo)
 {
-  *aSecurityInfo = nsnull;
+  *aSecurityInfo = nullptr;
   return NS_OK;
 }
 

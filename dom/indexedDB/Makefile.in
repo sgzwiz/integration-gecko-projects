@@ -2,10 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH = ../..
+DEPTH = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir = @srcdir@
 VPATH = @srcdir@
+FAIL_ON_WARNINGS := 1
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -24,10 +25,12 @@ CPPSRCS = \
   DatabaseInfo.cpp \
   FileInfo.cpp \
   FileManager.cpp \
+  FileStream.cpp \
   IDBCursor.cpp \
   IDBDatabase.cpp \
   IDBEvents.cpp \
   IDBFactory.cpp \
+  IDBFileHandle.cpp \
   IDBIndex.cpp \
   IDBKeyRange.cpp \
   IDBObjectStore.cpp \
@@ -36,6 +39,7 @@ CPPSRCS = \
   IDBWrapperCache.cpp \
   IndexedDatabaseManager.cpp \
   Key.cpp \
+  KeyPath.cpp \
   OpenDatabaseHelper.cpp \
   TransactionThreadPool.cpp \
   $(NULL)
@@ -45,6 +49,8 @@ EXPORTS_mozilla/dom/indexedDB = \
   IDBCursor.h \
   IDBDatabase.h \
   IDBEvents.h \
+  IDBFactory.h \
+  IDBFileHandle.h \
   IDBIndex.h \
   IDBKeyRange.h \
   IDBObjectStore.h \
@@ -53,8 +59,8 @@ EXPORTS_mozilla/dom/indexedDB = \
   IDBWrapperCache.h \
   IndexedDatabase.h \
   IndexedDatabaseManager.h \
-  IDBFactory.h \
   Key.h \
+  KeyPath.h \
   FileManager.h \
   FileInfo.h \
   $(NULL)
@@ -77,6 +83,7 @@ XPIDLSRCS = \
   nsIIDBCursorWithValue.idl \
   nsIIDBDatabase.idl \
   nsIIDBFactory.idl \
+  nsIIDBFileHandle.idl \
   nsIIDBIndex.idl \
   nsIIDBKeyRange.idl \
   nsIIDBObjectStore.idl \
@@ -85,6 +92,7 @@ XPIDLSRCS = \
   nsIIDBVersionChangeEvent.idl \
   nsIIDBOpenDBRequest.idl \
   nsIIndexedDatabaseManager.idl \
+  nsIStandardFileStream.idl \
   $(NULL)
 
 DIRS += ipc

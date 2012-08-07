@@ -11,7 +11,6 @@
 #include "xpcpublic.h"
 #include "nsIDOMEventListener.h"
 
-class nsIScriptObjectOwner;
 class nsIAtom;
 
 #define NS_IJSEVENTLISTENER_IID \
@@ -50,7 +49,7 @@ public:
 
   void Disconnect()
   {
-    mTarget = nsnull;
+    mTarget = nullptr;
   }
 
   JSObject* GetEventScope() const

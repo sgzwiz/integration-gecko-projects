@@ -38,7 +38,6 @@
 #include "nsString.h"
 #include "nsINameSpaceManager.h"
 #include "nsIContent.h"
-#include "nsIDocument.h"
 #include "nsTraceRefcnt.h"
 #include "jArray.h"
 #include "nsHtml5DocumentMode.h"
@@ -139,7 +138,7 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState
     void append(nsHtml5StackNode* node);
     inline void insertMarker()
     {
-      append(nsnull);
+      append(nullptr);
     }
 
     void clearTheListOfActiveFormattingElementsUpToTheLastMarker();

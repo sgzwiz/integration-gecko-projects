@@ -76,7 +76,7 @@ private:
       return NS_ERROR_FAILURE;
 
     snprintf(aResult, MAXPATHLEN, "%s/%s", greHome, "dummy");
-    aResult[MAXPATHLEN] = '\0';
+    aResult[MAXPATHLEN-1] = '\0';
     return NS_OK;
   }
 
@@ -135,9 +135,9 @@ private:
 #endif
 
 public:
-  static nsresult GetFile(const char *argv0, nsILocalFile* *aResult)
+  static nsresult GetFile(const char *argv0, nsIFile* *aResult)
   {
-    nsCOMPtr<nsILocalFile> lf;
+    nsCOMPtr<nsIFile> lf;
 #ifdef XP_WIN
     PRUnichar exePath[MAXPATHLEN];
     nsresult rv = GetW(argv0, exePath);

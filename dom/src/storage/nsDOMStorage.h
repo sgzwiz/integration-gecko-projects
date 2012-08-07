@@ -26,6 +26,7 @@
 #include "nsITimer.h"
 #include "nsWeakReference.h"
 #include "nsIInterfaceRequestor.h"
+#include "mozilla/Attributes.h"
 
 #include "nsDOMStorageDBWrapper.h"
 
@@ -68,9 +69,9 @@ public:
   nsRefPtr<nsDOMStorageItem> mItem;
 };
 
-class nsDOMStorageManager : public nsIDOMStorageManager
-                          , public nsIObserver
-                          , public nsSupportsWeakReference
+class nsDOMStorageManager MOZ_FINAL : public nsIDOMStorageManager
+                                    , public nsIObserver
+                                    , public nsSupportsWeakReference
 {
 public:
   // nsISupports
@@ -209,8 +210,8 @@ protected:
   bool mInPrivateBrowsing;
 };
 
-class DOMStorageImpl : public DOMStorageBase
-                     , public nsSupportsWeakReference
+class DOMStorageImpl MOZ_FINAL : public DOMStorageBase
+                               , public nsSupportsWeakReference
 {
 public:
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(DOMStorageImpl, nsIPrivacyTransitionObserver)
@@ -355,7 +356,7 @@ public:
   // Check whether storage may be used by the caller, and whether it
   // is session only.  Returns true if storage may be used.
   static bool
-  CanUseStorage(DOMStorageBase* aStorage = nsnull);
+  CanUseStorage(DOMStorageBase* aStorage = nullptr);
 
   // Check whether this URI can use chrome persist storage.  This kind of
   // storage can bypass cookies limits, private browsing and uses the offline
@@ -399,9 +400,9 @@ public:
   nsDOMStorage2* mEventBroadcaster;
 };
 
-class nsDOMStorage2 : public nsIDOMStorage,
-                      public nsPIDOMStorage,
-                      public nsIInterfaceRequestor
+class nsDOMStorage2 MOZ_FINAL : public nsIDOMStorage,
+                                public nsPIDOMStorage,
+                                public nsIInterfaceRequestor
 {
 public:
   // nsISupports
@@ -508,37 +509,6 @@ protected:
   // If this item came from the db, mStorage points to the storage
   // object where this item came from.
   nsRefPtr<DOMStorageBase> mStorage;
-};
-
-class nsDOMStorageEvent : public nsDOMEvent,
-                          public nsIDOMStorageEvent
-{
-public:
-  nsDOMStorageEvent()
-    : nsDOMEvent(nsnull, nsnull)
-  {
-  }
-
-  virtual ~nsDOMStorageEvent()
-  {
-  }
-
-  nsresult Init();
-
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsDOMStorageEvent, nsDOMEvent)
-
-  NS_DECL_NSIDOMSTORAGEEVENT
-  NS_FORWARD_NSIDOMEVENT(nsDOMEvent::)
-
-  virtual nsresult InitFromCtor(const nsAString& aType,
-                                JSContext* aCx, jsval* aVal);
-protected:
-  nsString mKey;
-  nsString mOldValue;
-  nsString mNewValue;
-  nsString mUrl;
-  nsCOMPtr<nsIDOMStorage> mStorageArea;
 };
 
 nsresult

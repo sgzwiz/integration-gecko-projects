@@ -10,6 +10,8 @@
 %{C++
 struct JSContext;
 struct JSPrincipals;
+#include "nsCOMPtr.h"
+#include "nsTArray.h"
 %}
 
 interface nsIURI;
@@ -17,8 +19,9 @@ interface nsIContentSecurityPolicy;
 
 [ptr] native JSContext(JSContext);
 [ptr] native JSPrincipals(JSPrincipals);
+[ptr] native PrincipalArray(nsTArray<nsCOMPtr<nsIPrincipal> >);
 
-[scriptable, uuid(42ba6a38-d619-49ab-8248-3d247e959d5e)]
+[scriptable, uuid(8a74b011-667d-4cfa-b2a2-b27582ba5f38)]
 interface nsIPrincipal : nsISerializable
 {
     /**
@@ -209,4 +212,65 @@ interface nsIPrincipal : nsISerializable
      * A Content Security Policy associated with this principal.
      */
     [noscript] attribute nsIContentSecurityPolicy csp;
+
+    /**
+     * Returns the extended origin of the principal.
+     * The extended origin is a string that has more information than the origin
+     * and can be used to isolate data or permissions between different
+     * principals while taking into account parameters like the app id or the
+     * fact that the principal is embedded in a mozbrowser.
+     * Some principals will return the origin for extendedOrigin.
+     * Some principals will assert if you try to access the extendedOrigin.
+     *
+     * The extendedOrigin is intended to be an opaque identifier. It is
+     * currently "human-readable" but no callers should assume it will stay
+     * as is and it might be crypto-hashed at some point.
+     */
+    readonly attribute AUTF8String extendedOrigin;
+
+    const short APP_STATUS_NOT_INSTALLED = 0;
+    const short APP_STATUS_INSTALLED     = 1;
+    const short APP_STATUS_TRUSTED       = 2;
+    const short APP_STATUS_CERTIFIED     = 3;
+
+    /**
+     * Shows the status of the app.
+     * Can be: APP_STATUS_NOT_INSTALLED, APP_STATUS_INSTALLED,
+     *         APP_STATUS_TRUSTED or APP_STATUS_CERTIFIED.
+     */
+    readonly attribute unsigned short appStatus;
+
+    /**
+     * Returns the app id the principal is in, or returns
+     * nsIScriptSecurityManager::NO_APP_ID if this principal isn't part of an
+     * app.
+     */
+    readonly attribute unsigned long appId;
+
+    /**
+     * Returns true iif the principal is inside a browser element.
+     */
+    readonly attribute boolean isInBrowserElement;
+};
+
+/**
+ * If nsSystemPrincipal is too risky to use, but we want a principal to access 
+ * more than one origin, nsExpandedPrincipals letting us define an array of 
+ * principals it subsumes. So script with an nsExpandedPrincipals will gain
+ * same origin access when at least one of its principals it contains gained 
+ * sameorigin acccess. An nsExpandedPrincipal will be subsumed by the system
+ * principal, and by another nsExpandedPrincipal that has all its principals.
+ * It is added for jetpack content-scripts to let them interact with the
+ * content and a well defined set of other domains, without the risk of 
+ * leaking out a system principal to the content. See: Bug 734891
+ */
+[uuid(f3e177Df-6a5e-489f-80a7-2dd1481471d8)]
+interface nsIExpandedPrincipal : nsISupports
+{
+  /**
+   * An array of principals that the expanded principal subsumes.
+   * Note: this list is not reference counted, it is shared, so 
+   * should not be changed and should only be used ephemerally.
+   */
+  [notxpcom] readonly attribute PrincipalArray whiteList;
 };

@@ -231,7 +231,7 @@ Recompiler::expandInlineFrames(JSCompartment *compartment,
      */
     compartment->types.frameExpansions++;
 
-    jsbytecode *pc = next ? next->prevpc(NULL) : f->regs.pc;
+    jsbytecode *pc = next ? next->prevpc() : f->regs.pc;
     JITChunk *chunk = fp->jit()->chunk(pc);
 
     /*
@@ -385,7 +385,7 @@ ClearAllFrames(JSCompartment *compartment)
 void
 Recompiler::clearStackReferences(FreeOp *fop, JSScript *script)
 {
-    JS_ASSERT(script->hasJITInfo());
+    JS_ASSERT(script->hasMJITInfo());
 
     JaegerSpew(JSpew_Recompile, "recompiling script (file \"%s\") (line \"%d\") (length \"%d\")\n",
                script->filename, script->lineno, script->length);

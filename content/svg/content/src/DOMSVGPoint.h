@@ -14,6 +14,7 @@
 #include "nsIDOMSVGPoint.h"
 #include "nsTArray.h"
 #include "SVGPoint.h"
+#include "mozilla/Attributes.h"
 
 class nsSVGElement;
 
@@ -44,7 +45,7 @@ namespace mozilla {
  * See the architecture comment in DOMSVGLength.h (yes, LENGTH) for an overview
  * of the important points regarding how this specific class works.
  */
-class DOMSVGPoint : public nsIDOMSVGPoint
+class DOMSVGPoint MOZ_FINAL : public nsIDOMSVGPoint
 {
 public:
   NS_DECLARE_STATIC_IID_ACCESSOR(MOZILLA_DOMSVGPOINT_IID)
@@ -70,8 +71,8 @@ public:
     NS_ABORT_IF_FALSE(IndexIsValid(), "Bad index for DOMSVGPoint!");
   }
 
-  DOMSVGPoint(const DOMSVGPoint *aPt = nsnull)
-    : mList(nsnull)
+  DOMSVGPoint(const DOMSVGPoint *aPt = nullptr)
+    : mList(nullptr)
     , mListIndex(0)
     , mIsReadonly(false)
     , mIsAnimValItem(false)
@@ -82,7 +83,7 @@ public:
   }
 
   DOMSVGPoint(float aX, float aY)
-    : mList(nsnull)
+    : mList(nullptr)
     , mListIndex(0)
     , mIsReadonly(false)
     , mIsAnimValItem(false)
@@ -92,7 +93,7 @@ public:
   }
 
   DOMSVGPoint(const gfxPoint &aPt)
-    : mList(nsnull)
+    : mList(nullptr)
     , mListIndex(0)
     , mIsReadonly(false)
     , mIsAnimValItem(false)
@@ -109,7 +110,7 @@ public:
     // unlinked us using the cycle collector code, then that has already
     // happened, and mList is null.
     if (mList) {
-      mList->mItems[mListIndex] = nsnull;
+      mList->mItems[mListIndex] = nullptr;
     }
   }
 

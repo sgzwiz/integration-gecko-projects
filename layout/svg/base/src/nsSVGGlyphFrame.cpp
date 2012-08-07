@@ -13,10 +13,12 @@
 #include "gfxPlatform.h"
 #include "mozilla/LookAndFeel.h"
 #include "nsBidiPresUtils.h"
+#include "nsDisplayList.h"
 #include "nsDOMError.h"
 #include "nsIDOMSVGRect.h"
 #include "nsRenderingContext.h"
 #include "nsSVGEffects.h"
+#include "nsSVGIntegrationUtils.h"
 #include "nsSVGPaintServerFrame.h"
 #include "nsSVGRect.h"
 #include "nsSVGTextPathFrame.h"
@@ -76,11 +78,12 @@ public:
    * This matrix will be applied to aContext in the SetupFor methods below,
    * before any glyph translation/rotation.
    */
-  void SetInitialMatrix(gfxContext *aContext) {
+  bool SetInitialMatrix(gfxContext *aContext) {
     mInitialMatrix = aContext->CurrentMatrix();
     if (mInitialMatrix.IsSingular()) {
       mInError = true;
     }
+    return !mInError;
   }
   /**
    * Try to set up aContext so we can draw the whole textrun at once.
@@ -197,6 +200,59 @@ private:
   bool mInError;
 };
 
+
+class nsDisplaySVGGlyphs : public nsDisplayItem {
+public:
+  nsDisplaySVGGlyphs(nsDisplayListBuilder* aBuilder,
+                     nsSVGGlyphFrame* aFrame)
+    : nsDisplayItem(aBuilder, aFrame)
+  {
+    MOZ_COUNT_CTOR(nsDisplaySVGGlyphs);
+    NS_ABORT_IF_FALSE(aFrame, "Must have a frame!");
+  }
+#ifdef NS_BUILD_REFCNT_LOGGING
+  virtual ~nsDisplaySVGGlyphs() {
+    MOZ_COUNT_DTOR(nsDisplaySVGGlyphs);
+  }
+#endif
+
+  NS_DISPLAY_DECL_NAME("nsDisplaySVGGlyphs", TYPE_SVG_GLYPHS)
+
+  virtual void HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
+                       HitTestState* aState, nsTArray<nsIFrame*> *aOutFrames);
+  virtual void Paint(nsDisplayListBuilder* aBuilder,
+                     nsRenderingContext* aCtx);
+};
+
+void
+nsDisplaySVGGlyphs::HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
+                            HitTestState* aState, nsTArray<nsIFrame*> *aOutFrames)
+{
+  nsSVGGlyphFrame *frame = static_cast<nsSVGGlyphFrame*>(mFrame);
+  nsPoint pointRelativeToReferenceFrame = aRect.Center();
+  // ToReferenceFrame() includes frame->GetPosition(), our user space position.
+  nsPoint userSpacePt = pointRelativeToReferenceFrame -
+                          (ToReferenceFrame() - frame->GetPosition());
+  if (frame->GetFrameForPoint(userSpacePt)) {
+    aOutFrames->AppendElement(frame);
+  }
+}
+
+void
+nsDisplaySVGGlyphs::Paint(nsDisplayListBuilder* aBuilder,
+                          nsRenderingContext* aCtx)
+{
+  // ToReferenceFrame includes our mRect offset, but painting takes
+  // account of that too. To avoid double counting, we subtract that
+  // here.
+  nsPoint offset = ToReferenceFrame() - mFrame->GetPosition();
+
+  aCtx->PushState();
+  aCtx->Translate(offset);
+  static_cast<nsSVGGlyphFrame*>(mFrame)->PaintSVG(aCtx, nullptr);
+  aCtx->PopState();
+}
+
 //----------------------------------------------------------------------
 // Implementation
 
@@ -294,6 +350,18 @@ nsSVGGlyphFrame::GetType() const
   return nsGkAtoms::svgGlyphFrame;
 }
 
+NS_IMETHODIMP
+nsSVGGlyphFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                  const nsRect&           aDirtyRect,
+                                  const nsDisplayListSet& aLists)
+{
+  if (GetStyleFont()->mFont.size <= 0) {
+    return NS_OK;
+  }
+  return aLists.Content()->AppendNewToTop(
+           new (aBuilder) nsDisplaySVGGlyphs(aBuilder, this));
+}
+
 //----------------------------------------------------------------------
 // nsISVGChildFrame methods
 
@@ -303,6 +371,13 @@ nsSVGGlyphFrame::PaintSVG(nsRenderingContext *aContext,
 {
   if (!GetStyleVisibility()->IsVisible())
     return NS_OK;
+
+  if (GetStyleFont()->mFont.size <= 0) {
+    // Don't even try to paint, or cairo will go into an error state.
+    return NS_OK;
+  }
+
+  AutoCanvasTMForMarker autoCanvasTMFor(this, FOR_PAINTING);
 
   gfxContext *gfx = aContext->ThebesContext();
   PRUint16 renderMode = SVGAutoRenderState::GetRenderMode(aContext);
@@ -317,12 +392,16 @@ nsSVGGlyphFrame::PaintSVG(nsRenderingContext *aContext,
   }
 
   if (renderMode != SVGAutoRenderState::NORMAL) {
-
-    gfxMatrix matrix = gfx->CurrentMatrix();
-    SetupGlobalTransform(gfx);
+    NS_ABORT_IF_FALSE(renderMode == SVGAutoRenderState::CLIP ||
+                      renderMode == SVGAutoRenderState::CLIP_MASK,
+                      "Unknown render mode");
+    gfxContextMatrixAutoSaveRestore matrixAutoSaveRestore(gfx);
+    SetupGlobalTransform(gfx, FOR_PAINTING);
 
     CharacterIterator iter(this, true);
-    iter.SetInitialMatrix(gfx);
+    if (!iter.SetInitialMatrix(gfx)) {
+      return NS_OK;
+    }
 
     if (GetClipRule() == NS_STYLE_FILL_RULE_EVENODD)
       gfx->SetFillRule(gfxContext::FILL_RULE_EVEN_ODD);
@@ -336,17 +415,19 @@ nsSVGGlyphFrame::PaintSVG(nsRenderingContext *aContext,
       DrawCharacters(&iter, gfx, gfxFont::GLYPH_PATH);
     }
 
-    gfx->SetMatrix(matrix);
     return NS_OK;
   }
 
   // We are adding patterns or gradients to the context. Save
   // it so we don't leak them into the next object we draw
   gfx->Save();
-  SetupGlobalTransform(gfx);
+  SetupGlobalTransform(gfx, FOR_PAINTING);
 
   CharacterIterator iter(this, true);
-  iter.SetInitialMatrix(gfx);
+  if (!iter.SetInitialMatrix(gfx)) {
+    gfx->Restore();
+    return NS_OK;
+  }
 
   nsRefPtr<gfxPattern> strokePattern;
   DrawMode drawMode = SetupCairoState(gfx, getter_AddRefs(strokePattern));
@@ -365,13 +446,17 @@ nsSVGGlyphFrame::GetFrameForPoint(const nsPoint &aPoint)
 {
   PRUint16 hitTestFlags = GetHitTestFlags();
   if (!hitTestFlags) {
-    return nsnull;
+    return nullptr;
   }
 
-  nsRefPtr<gfxContext> context = MakeTmpCtx();
-  SetupGlobalTransform(context);
+  AutoCanvasTMForMarker autoCanvasTMFor(this, FOR_HIT_TESTING);
+
+  nsRefPtr<gfxContext> tmpCtx = MakeTmpCtx();
+  SetupGlobalTransform(tmpCtx, FOR_HIT_TESTING);
   CharacterIterator iter(this, true);
-  iter.SetInitialMatrix(context);
+  if (!iter.SetInitialMatrix(tmpCtx)) {
+    return nullptr;
+  }
 
   // The SVG 1.1 spec says that text is hit tested against the character cells
   // of the text, not the fill and stroke. See the section starting "For text
@@ -386,18 +471,18 @@ nsSVGGlyphFrame::GetFrameForPoint(const nsPoint &aPoint)
   while ((i = iter.NextCluster()) != iter.InvalidCluster()) {
     gfxTextRun::Metrics metrics =
     mTextRun->MeasureText(i, iter.ClusterLength(),
-                          gfxFont::LOOSE_INK_EXTENTS, nsnull, nsnull);
-    iter.SetupForMetrics(context);
-    context->Rectangle(metrics.mBoundingBox);
+                          gfxFont::LOOSE_INK_EXTENTS, nullptr, nullptr);
+    iter.SetupForMetrics(tmpCtx);
+    tmpCtx->Rectangle(metrics.mBoundingBox);
   }
 
   gfxPoint userSpacePoint =
-    context->DeviceToUser(gfxPoint(PresContext()->AppUnitsToGfxUnits(aPoint.x),
-                                   PresContext()->AppUnitsToGfxUnits(aPoint.y)));
+    tmpCtx->DeviceToUser(gfxPoint(PresContext()->AppUnitsToGfxUnits(aPoint.x),
+                                  PresContext()->AppUnitsToGfxUnits(aPoint.y)));
 
   bool isHit = false;
   if (hitTestFlags & SVG_HIT_TEST_FILL || hitTestFlags & SVG_HIT_TEST_STROKE) {
-    isHit = context->PointInFill(userSpacePoint);
+    isHit = tmpCtx->PointInFill(userSpacePoint);
   }
 
   // If isHit is false, we may also want to fill and stroke the text to check
@@ -409,75 +494,57 @@ nsSVGGlyphFrame::GetFrameForPoint(const nsPoint &aPoint)
   if (isHit && nsSVGUtils::HitTestClip(this, aPoint))
     return this;
 
-  return nsnull;
+  return nullptr;
 }
 
 NS_IMETHODIMP_(nsRect)
 nsSVGGlyphFrame::GetCoveredRegion()
 {
-  // See bug 614732 comment 32:
-  //return nsSVGUtils::TransformFrameRectToOuterSVG(mRect, GetCanvasTM(), PresContext());
-  return mCoveredRegion;
+  return nsSVGUtils::TransformFrameRectToOuterSVG(
+                       mRect, GetCanvasTM(FOR_OUTERSVG_TM), PresContext());
 }
 
 void
-nsSVGGlyphFrame::UpdateBounds()
+nsSVGGlyphFrame::ReflowSVG()
 {
-  NS_ASSERTION(nsSVGUtils::OuterSVGIsCallingUpdateBounds(this),
-               "This call is probaby a wasteful mistake");
+  NS_ASSERTION(nsSVGUtils::OuterSVGIsCallingReflowSVG(this),
+               "This call is probably a wasteful mistake");
 
   NS_ABORT_IF_FALSE(!(GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD),
-                    "UpdateBounds mechanism not designed for this");
+                    "ReflowSVG mechanism not designed for this");
 
   mRect.SetEmpty();
 
-  // XXX here we have tmpCtx use its default identity matrix, but does this
-  // function call anything that will call GetCanvasTM and break things?
-  nsRefPtr<gfxContext> tmpCtx = MakeTmpCtx();
-
-  bool hasStroke = HasStroke();
-  if (hasStroke) {
-    SetupCairoStrokeGeometry(tmpCtx);
-  } else if (GetStyleSVG()->mFill.mType == eStyleSVGPaintType_None) {
-    return;
+  PRUint32 flags = nsSVGUtils::eBBoxIncludeFill |
+                   nsSVGUtils::eBBoxIncludeStroke |
+                   nsSVGUtils::eBBoxIncludeMarkers;
+  // Our "visual" overflow rect needs to be valid for building display lists
+  // for hit testing, which means that for certain values of 'pointer-events'
+  // it needs to include the geometry of the fill or stroke even when the fill/
+  // stroke don't actually render (e.g. when stroke="none" or
+  // stroke-opacity="0"). GetHitTestFlags() accounts for 'pointer-events'.
+  PRUint16 hitTestFlags = GetHitTestFlags();
+  if ((hitTestFlags & SVG_HIT_TEST_FILL)) {
+   flags |= nsSVGUtils::eBBoxIncludeFillGeometry;
   }
-
-  CharacterIterator iter(this, true);
-  iter.SetInitialMatrix(tmpCtx);
-  AddBoundingBoxesToPath(&iter, tmpCtx);
-  tmpCtx->IdentityMatrix();
-
-  // Be careful when replacing the following logic to get the fill and stroke
-  // extents independently (instead of computing the stroke extents from the
-  // path extents). You may think that you can just use the stroke extents if
-  // there is both a fill and a stroke. In reality it's necessary to calculate
-  // both the fill and stroke extents, and take the union of the two. There are
-  // two reasons for this:
-  //
-  // # Due to stroke dashing, in certain cases the fill extents could actually
-  //   extend outside the stroke extents.
-  // # If the stroke is very thin, cairo won't paint any stroke, and so the
-  //   stroke bounds that it will return will be empty.
-  //
-  // Another thing to be aware of is that under AddBoundingBoxesToPath the
-  // gfxContext has SetLineWidth() called on it, so if we want to ask the
-  // gfxContext for *stroke* extents, we'll neet to wrap the
-  // AddBoundingBoxesToPath() call with CurrentLineWidth()/SetLineWidth()
-  // calls to record and then reset the stroke width.
-  gfxRect extent = tmpCtx->GetUserPathExtent();
-  if (hasStroke) {
-    extent =
-      nsSVGUtils::PathExtentsToMaxStrokeExtents(extent, this, gfxMatrix());
+  if ((hitTestFlags & SVG_HIT_TEST_STROKE)) {
+   flags |= nsSVGUtils::eBBoxIncludeStrokeGeometry;
   }
+  gfxRect extent = GetBBoxContribution(gfxMatrix(), flags);
 
   if (!extent.IsEmpty()) {
     mRect = nsLayoutUtils::RoundGfxRectToAppRect(extent, 
               PresContext()->AppUnitsPerCSSPixel());
   }
 
-  // See bug 614732 comment 32.
-  mCoveredRegion = nsSVGUtils::TransformFrameRectToOuterSVG(
-    mRect, GetCanvasTM(), PresContext());
+  // We only invalidate if we are dirty, if our outer-<svg> has already had its
+  // initial reflow (since if it hasn't, its entire area will be invalidated
+  // when it gets that initial reflow), and if our parent is not dirty (since
+  // if it is, then it will invalidate its entire new area, which will include
+  // our new area).
+  bool invalidate = (mState & NS_FRAME_IS_DIRTY) &&
+    !(GetParent()->GetStateBits() &
+       (NS_FRAME_FIRST_REFLOW | NS_FRAME_IS_DIRTY));
 
   nsRect overflow = nsRect(nsPoint(0,0), mRect.Size());
   nsOverflowAreas overflowAreas(overflow, overflow);
@@ -486,10 +553,7 @@ nsSVGGlyphFrame::UpdateBounds()
   mState &= ~(NS_FRAME_FIRST_REFLOW | NS_FRAME_IS_DIRTY |
               NS_FRAME_HAS_DIRTY_CHILDREN);
 
-  if (!(GetParent()->GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
-    // We only invalidate if our outer-<svg> has already had its
-    // initial reflow (since if it hasn't, its entire area will be
-    // invalidated when it gets that initial reflow):
+  if (invalidate) {
     // XXXSDL Let FinishAndStoreOverflow do this.
     nsSVGUtils::InvalidateBounds(this, true);
   }
@@ -498,18 +562,17 @@ nsSVGGlyphFrame::UpdateBounds()
 void
 nsSVGGlyphFrame::NotifySVGChanged(PRUint32 aFlags)
 {
-  NS_ABORT_IF_FALSE(!(aFlags & DO_NOT_NOTIFY_RENDERING_OBSERVERS) ||
-                    (GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD),
-                    "Must be NS_STATE_SVG_NONDISPLAY_CHILD!");
-
   NS_ABORT_IF_FALSE(aFlags & (TRANSFORM_CHANGED | COORD_CONTEXT_CHANGED),
                     "Invalidation logic may need adjusting");
 
-  // XXXjwatt: seems to me that this could change the glyph metrics,
-  // in which case we should call NotifyGlyphMetricsChange instead.
-  if (!(aFlags & DO_NOT_NOTIFY_RENDERING_OBSERVERS)) {
-    nsSVGUtils::InvalidateAndScheduleBoundsUpdate(this);
-  }
+  // Ancestor changes can't affect how we render from the perspective of
+  // any rendering observers that we may have, so we don't need to
+  // invalidate them. We also don't need to invalidate ourself, since our
+  // changed ancestor will have invalidated its entire area, which includes
+  // our area.
+  // XXXjwatt: seems to me that our ancestor's change could change our glyph
+  // metrics, in which case we should call NotifyGlyphMetricsChange instead.
+  nsSVGUtils::ScheduleReflowSVG(this);
 
   if (aFlags & TRANSFORM_CHANGED) {
     ClearTextRun();
@@ -523,7 +586,7 @@ nsSVGGlyphFrame::AddBoundingBoxesToPath(CharacterIterator *aIter,
   if (aIter->SetupForDirectTextRunMetrics(aContext)) {
     gfxTextRun::Metrics metrics =
       mTextRun->MeasureText(0, mTextRun->GetLength(),
-                            gfxFont::LOOSE_INK_EXTENTS, nsnull, nsnull);
+                            gfxFont::LOOSE_INK_EXTENTS, nullptr, nullptr);
     aContext->Rectangle(metrics.mBoundingBox);
     return;
   }
@@ -533,7 +596,7 @@ nsSVGGlyphFrame::AddBoundingBoxesToPath(CharacterIterator *aIter,
     aIter->SetupForMetrics(aContext);
     gfxTextRun::Metrics metrics =
       mTextRun->MeasureText(i, aIter->ClusterLength(),
-                            gfxFont::LOOSE_INK_EXTENTS, nsnull, nsnull);
+                            gfxFont::LOOSE_INK_EXTENTS, nullptr, nullptr);
     aContext->Rectangle(metrics.mBoundingBox);
   }
 }
@@ -550,7 +613,7 @@ nsSVGGlyphFrame::DrawCharacters(CharacterIterator *aIter,
 
   if (aIter->SetupForDirectTextRunDrawing(aContext)) {
     mTextRun->Draw(aContext, gfxPoint(0, 0), aDrawMode, 0,
-                   mTextRun->GetLength(), nsnull, nsnull, aStrokePattern);
+                   mTextRun->GetLength(), nullptr, nullptr, aStrokePattern);
     return;
   }
 
@@ -558,7 +621,7 @@ nsSVGGlyphFrame::DrawCharacters(CharacterIterator *aIter,
   while ((i = aIter->NextCluster()) != aIter->InvalidCluster()) {
     aIter->SetupForDrawing(aContext);
     mTextRun->Draw(aContext, gfxPoint(0, 0), aDrawMode, i,
-                   aIter->ClusterLength(), nsnull, nsnull, aStrokePattern);
+                   aIter->ClusterLength(), nullptr, nullptr, aStrokePattern);
   }
 }
 
@@ -566,6 +629,8 @@ SVGBBox
 nsSVGGlyphFrame::GetBBoxContribution(const gfxMatrix &aToBBoxUserspace,
                                      PRUint32 aFlags)
 {
+  SVGBBox bbox;
+
   if (mOverrideCanvasTM) {
     *mOverrideCanvasTM = aToBBoxUserspace;
   } else {
@@ -573,32 +638,49 @@ nsSVGGlyphFrame::GetBBoxContribution(const gfxMatrix &aToBBoxUserspace,
   }
 
   nsRefPtr<gfxContext> tmpCtx = MakeTmpCtx();
-  SetupGlobalTransform(tmpCtx);
+  SetupGlobalTransform(tmpCtx, FOR_OUTERSVG_TM);
   CharacterIterator iter(this, true);
-  iter.SetInitialMatrix(tmpCtx);
+  if (!iter.SetInitialMatrix(tmpCtx)) {
+    return bbox;
+  }
   AddBoundingBoxesToPath(&iter, tmpCtx);
   tmpCtx->IdentityMatrix();
 
-  mOverrideCanvasTM = nsnull;
+  mOverrideCanvasTM = nullptr;
 
-  gfxRect bbox;
+  // Be careful when replacing the following logic to get the fill and stroke
+  // extents independently (instead of computing the stroke extents from the
+  // path extents). You may think that you can just use the stroke extents if
+  // there is both a fill and a stroke. In reality it's necessary to calculate
+  // both the fill and stroke extents, and take the union of the two. There are
+  // two reasons for this:
+  //
+  // # Due to stroke dashing, in certain cases the fill extents could actually
+  //   extend outside the stroke extents.
+  // # If the stroke is very thin, cairo won't paint any stroke, and so the
+  //   stroke bounds that it will return will be empty.
+  //
+  // Another thing to be aware of is that under AddBoundingBoxesToPath the
+  // gfxContext has SetLineWidth() called on it, so if we want to ask the
+  // gfxContext for *stroke* extents, we'll need to wrap the
+  // AddBoundingBoxesToPath() call with CurrentLineWidth()/SetLineWidth()
+  // calls to record and then reset the stroke width.
 
   gfxRect pathExtents = tmpCtx->GetUserPathExtent();
 
   // Account for fill:
-  if ((aFlags & nsSVGUtils::eBBoxIncludeFill) != 0 &&
-      ((aFlags & nsSVGUtils::eBBoxIgnoreFillIfNone) == 0 ||
+  if ((aFlags & nsSVGUtils::eBBoxIncludeFillGeometry) ||
+      ((aFlags & nsSVGUtils::eBBoxIncludeFill) &&
        GetStyleSVG()->mFill.mType != eStyleSVGPaintType_None)) {
     bbox = pathExtents;
   }
 
   // Account for stroke:
-  if ((aFlags & nsSVGUtils::eBBoxIncludeStroke) != 0 &&
-      ((aFlags & nsSVGUtils::eBBoxIgnoreStrokeIfNone) == 0 || HasStroke())) {
-    bbox =
-      bbox.Union(nsSVGUtils::PathExtentsToMaxStrokeExtents(pathExtents,
-                                                           this,
-                                                           aToBBoxUserspace));
+  if ((aFlags & nsSVGUtils::eBBoxIncludeStrokeGeometry) ||
+      ((aFlags & nsSVGUtils::eBBoxIncludeStroke) && HasStroke())) {
+    bbox.UnionEdges(nsSVGUtils::PathExtentsToMaxStrokeExtents(pathExtents,
+                                                              this,
+                                                              aToBBoxUserspace));
   }
 
   return bbox;
@@ -608,13 +690,19 @@ nsSVGGlyphFrame::GetBBoxContribution(const gfxMatrix &aToBBoxUserspace,
 // nsSVGGeometryFrame methods:
 
 gfxMatrix
-nsSVGGlyphFrame::GetCanvasTM()
+nsSVGGlyphFrame::GetCanvasTM(PRUint32 aFor)
 {
   if (mOverrideCanvasTM) {
     return *mOverrideCanvasTM;
   }
+  if (!(GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD)) {
+    if ((aFor == FOR_PAINTING && NS_SVGDisplayListPaintingEnabled()) ||
+        (aFor == FOR_HIT_TESTING && NS_SVGDisplayListHitTestingEnabled())) {
+      return nsSVGIntegrationUtils::GetCSSPxToDevPxMatrix(this);
+    }
+  }
   NS_ASSERTION(mParent, "null parent");
-  return static_cast<nsSVGContainerFrame*>(mParent)->GetCanvasTM();
+  return static_cast<nsSVGContainerFrame*>(mParent)->GetCanvasTM(aFor);
 }
 
 //----------------------------------------------------------------------
@@ -683,7 +771,7 @@ nsSVGGlyphFrame::GetCharacterPositions(nsTArray<CharacterPosition>* aCharacterPo
 
     for (PRUint32 i = 0; i < strLength; i++) {
       gfxFloat halfAdvance =
-        mTextRun->GetAdvanceWidth(i, 1, nsnull)*aMetricsScale / 2.0;
+        mTextRun->GetAdvanceWidth(i, 1, nullptr)*aMetricsScale / 2.0;
 
       // use only x position for horizontal writing
       if (i > 0 && i < xList.Length()) {
@@ -734,7 +822,7 @@ nsSVGGlyphFrame::GetCharacterPositions(nsTArray<CharacterPosition>* aCharacterPo
   for (PRUint32 i = 0; i < strLength; i++) {
     cp[i].draw = true;
 
-    gfxFloat advance = mTextRun->GetAdvanceWidth(i, 1, nsnull)*aMetricsScale;
+    gfxFloat advance = mTextRun->GetAdvanceWidth(i, 1, nullptr)*aMetricsScale;
     if (xList.Length() > 1 && i < xList.Length()) {
       pos.x = xList[i];
 
@@ -792,7 +880,7 @@ nsSVGGlyphFrame::GetSubStringAdvance(PRUint32 aCharnum,
     return 0.0f;
  
   gfxFloat advance =
-    mTextRun->GetAdvanceWidth(aCharnum, aFragmentChars, nsnull) * aMetricsScale;
+    mTextRun->GetAdvanceWidth(aCharnum, aFragmentChars, nullptr) * aMetricsScale;
 
   nsTArray<float> dxlist, notUsed;
   GetEffectiveDxDy(mTextRun->GetLength(), dxlist, notUsed);
@@ -817,7 +905,7 @@ nsSVGGlyphFrame::GetBaselineOffset(float aMetricsScale)
 {
   gfxTextRun::Metrics metrics =
     mTextRun->MeasureText(0, mTextRun->GetLength(),
-                          gfxFont::LOOSE_INK_EXTENTS, nsnull, nsnull);
+                          gfxFont::LOOSE_INK_EXTENTS, nullptr, nullptr);
 
   PRUint16 dominantBaseline;
 
@@ -869,21 +957,22 @@ nsSVGGlyphFrame::SetupCairoState(gfxContext *aContext, gfxPattern **aStrokePatte
 
     SetupCairoStrokeHitGeometry(aContext);
     float opacity = style->mStrokeOpacity;
-    nsSVGPaintServerFrame *ps = GetPaintServer(&style->mStroke,
-                                               nsSVGEffects::StrokeProperty());
+    nsSVGPaintServerFrame *ps =
+      nsSVGEffects::GetPaintServer(this, &style->mStroke,
+                                   nsSVGEffects::StrokeProperty());
 
     nsRefPtr<gfxPattern> strokePattern;
 
     if (ps) {
       // Gradient or Pattern: can get pattern directly from frame
-      strokePattern = ps->GetPaintServerPattern(this, &nsStyleSVG::mStroke, opacity);
+      strokePattern =
+        ps->GetPaintServerPattern(this, aContext->CurrentMatrix(),
+                                  &nsStyleSVG::mStroke, opacity);
     }
 
     if (!strokePattern) {
-      nscolor color;
-      nsSVGUtils::GetFallbackOrPaintColor(aContext, GetStyleContext(),
-                                          &nsStyleSVG::mStroke, &opacity,
-                                          &color);
+      nscolor color = nsSVGUtils::GetFallbackOrPaintColor(
+                        aContext, GetStyleContext(), &nsStyleSVG::mStroke);
       strokePattern = new gfxPattern(gfxRGBA(NS_GET_R(color) / 255.0,
                                              NS_GET_G(color) / 255.0,
                                              NS_GET_B(color) / 255.0,
@@ -967,7 +1056,7 @@ nsSVGGlyphFrame::GetHighlight(PRUint32 *charnum, PRUint32 *nchars,
   NS_ASSERTION(fragment, "no text");
   
   // get the selection details 
-  SelectionDetails *details = nsnull;
+  SelectionDetails *details = nullptr;
   {
     nsRefPtr<nsFrameSelection> frameSelection = presContext->PresShell()->FrameSelection();
     if (!frameSelection) {
@@ -997,7 +1086,7 @@ nsSVGGlyphFrame::GetHighlight(PRUint32 *charnum, PRUint32 *nchars,
 #endif
   
   if (details) {
-    NS_ASSERTION(details->mNext==nsnull, "can't do multiple selection ranges");
+    NS_ASSERTION(details->mNext==nullptr, "can't do multiple selection ranges");
 
     *charnum=CompressIndex(details->mStart, fragment);
     *nchars=CompressIndex(details->mEnd, fragment)-*charnum;  
@@ -1008,7 +1097,7 @@ nsSVGGlyphFrame::GetHighlight(PRUint32 *charnum, PRUint32 *nchars,
                           foreground);
 
     SelectionDetails *dp = details;
-    while ((dp=details->mNext) != nsnull) {
+    while ((dp=details->mNext) != nullptr) {
       delete details;
       details = dp;
     }
@@ -1051,16 +1140,16 @@ nsSVGGlyphFrame::SetGlyphPosition(gfxPoint *aPosition, bool aForceGlobalTransfor
   if (xCount > 1) {
     x = xList[xCount - 1];
     x +=
-      mTextRun->GetAdvanceWidth(xCount - 1, 1, nsnull) * metricsScale;
+      mTextRun->GetAdvanceWidth(xCount - 1, 1, nullptr) * metricsScale;
 
       // advance to the last glyph
       if (strLength > xCount) {
         x +=
-          mTextRun->GetAdvanceWidth(xCount, strLength - xCount, nsnull) *
+          mTextRun->GetAdvanceWidth(xCount, strLength - xCount, nullptr) *
             metricsScale;
       }
   } else {
-    x += mTextRun->GetAdvanceWidth(0, strLength, nsnull) * metricsScale;
+    x += mTextRun->GetAdvanceWidth(0, strLength, nullptr) * metricsScale;
   }
 
   gfxFloat y = (textPath || yCount <= 1) ? aPosition->y : yList[yCount - 1];
@@ -1093,7 +1182,7 @@ nsresult
 nsSVGGlyphFrame::GetStartPositionOfChar(PRUint32 charnum,
                                         nsIDOMSVGPoint **_retval)
 {
-  *_retval = nsnull;
+  *_retval = nullptr;
 
   CharacterIterator iter(this, false);
   if (!iter.AdvanceToCharacter(charnum))
@@ -1107,7 +1196,7 @@ nsresult
 nsSVGGlyphFrame::GetEndPositionOfChar(PRUint32 charnum,
                                       nsIDOMSVGPoint **_retval)
 {
-  *_retval = nsnull;
+  *_retval = nullptr;
 
   CharacterIterator iter(this, false);
   if (!iter.AdvanceToCharacter(charnum))
@@ -1115,7 +1204,7 @@ nsSVGGlyphFrame::GetEndPositionOfChar(PRUint32 charnum,
 
   nsRefPtr<gfxContext> tmpCtx = MakeTmpCtx();
   iter.SetupForMetrics(tmpCtx);
-  tmpCtx->MoveTo(gfxPoint(mTextRun->GetAdvanceWidth(charnum, 1, nsnull), 0));
+  tmpCtx->MoveTo(gfxPoint(mTextRun->GetAdvanceWidth(charnum, 1, nullptr), 0));
   tmpCtx->IdentityMatrix();
   NS_ADDREF(*_retval = new DOMSVGPoint(tmpCtx->CurrentPoint()));
   return NS_OK;
@@ -1124,7 +1213,7 @@ nsSVGGlyphFrame::GetEndPositionOfChar(PRUint32 charnum,
 nsresult
 nsSVGGlyphFrame::GetExtentOfChar(PRUint32 charnum, nsIDOMSVGRect **_retval)
 {
-  *_retval = nsnull;
+  *_retval = nullptr;
 
   CharacterIterator iter(this, false);
   if (!iter.AdvanceToCharacter(0))
@@ -1143,7 +1232,7 @@ nsSVGGlyphFrame::GetExtentOfChar(PRUint32 charnum, nsIDOMSVGRect **_retval)
 
   gfxTextRun::Metrics metrics =
     mTextRun->MeasureText(start, limit - start, gfxFont::LOOSE_INK_EXTENTS,
-                          nsnull, nsnull);
+                          nullptr, nullptr);
 
   nsRefPtr<gfxContext> tmpCtx = MakeTmpCtx();
   iter.SetupForMetrics(tmpCtx);
@@ -1185,15 +1274,15 @@ nsSVGGlyphFrame::FindTextPathParent()
 {
   /* check if we're the child of a textPath */
   for (nsIFrame *frame = GetParent();
-       frame != nsnull;
+       frame != nullptr;
        frame = frame->GetParent()) {
     nsIAtom* type = frame->GetType();
     if (type == nsGkAtoms::svgTextPathFrame) {
       return static_cast<nsSVGTextPathFrame*>(frame);
     } else if (type == nsGkAtoms::svgTextFrame)
-      return nsnull;
+      return nullptr;
   }
-  return nsnull;
+  return nullptr;
 }
 
 bool
@@ -1261,7 +1350,7 @@ nsSVGGlyphFrame::GetRotate()
   containerFrame = static_cast<nsSVGTextContainerFrame *>(mParent);
   if (containerFrame)
     return containerFrame->GetRotate();
-  return nsnull;
+  return nullptr;
 }
 
 void
@@ -1291,7 +1380,7 @@ nsSVGGlyphFrame::IsAbsolutelyPositioned()
 {
   bool hasTextPathAncestor = false;
   for (nsIFrame *frame = GetParent();
-       frame != nsnull;
+       frame != nullptr;
        frame = frame->GetParent()) {
 
     // at the start of a 'text' element
@@ -1366,7 +1455,7 @@ nsSVGGlyphFrame::GetCharNumAtPosition(nsIDOMSVGPoint *point)
     PRUint32 limit = i + iter.ClusterLength();
     gfxTextRun::Metrics metrics =
       mTextRun->MeasureText(i, limit - i, gfxFont::LOOSE_INK_EXTENTS,
-                            nsnull, nsnull);
+                            nullptr, nullptr);
 
     // the SVG spec tells us to divide the width of the cluster equally among
     // its chars, so we'll step through the chars, allocating a share of the
@@ -1428,7 +1517,7 @@ nsSVGGlyphFrame::GetNextGlyphFrame()
   
   NS_ASSERTION(GetParent(), "null parent");
   nsISVGGlyphFragmentNode *node = do_QueryFrame(GetParent());
-  return node ? node->GetNextGlyphFrame() : nsnull;
+  return node ? node->GetNextGlyphFrame() : nullptr;
 }
 
 bool
@@ -1469,9 +1558,9 @@ nsSVGGlyphFrame::NotifyGlyphMetricsChange()
 }
 
 void
-nsSVGGlyphFrame::SetupGlobalTransform(gfxContext *aContext)
+nsSVGGlyphFrame::SetupGlobalTransform(gfxContext *aContext, PRUint32 aFor)
 {
-  gfxMatrix matrix = GetCanvasTM();
+  gfxMatrix matrix = GetCanvasTM(aFor);
   if (!matrix.IsSingular()) {
     aContext->Multiply(matrix);
   }
@@ -1481,7 +1570,7 @@ void
 nsSVGGlyphFrame::ClearTextRun()
 {
   delete mTextRun;
-  mTextRun = nsnull;
+  mTextRun = nullptr;
 }
 
 bool
@@ -1550,7 +1639,7 @@ nsSVGGlyphFrame::EnsureTextRun(float *aDrawScale, float *aMetricsScale,
     gfxMatrix m;
     if (aForceGlobalTransform ||
         !(GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD)) {
-      m = GetCanvasTM();
+      m = GetCanvasTM(mGetCanvasTMForFlag);
       if (m.IsSingular())
         return false;
     }
@@ -1586,7 +1675,7 @@ nsSVGGlyphFrame::EnsureTextRun(float *aDrawScale, float *aMetricsScale,
 
     PRUint32 flags = gfxTextRunFactory::TEXT_NEED_BOUNDING_BOX |
       GetTextRunFlags(text.Length()) |
-      nsLayoutUtils::GetTextRunFlagsForStyle(GetStyleContext(), GetStyleText(), GetStyleFont());
+      nsLayoutUtils::GetTextRunFlagsForStyle(GetStyleContext(), GetStyleFont(), 0);
 
     // XXX We should use a better surface here! But then we'd have to
     // change things so we can ensure we always have the "right" sort of
@@ -1600,7 +1689,7 @@ nsSVGGlyphFrame::EnsureTextRun(float *aDrawScale, float *aMetricsScale,
     // might render at very many different sizes (e.g. during zoom
     // animation) and caching a textrun for each such size would be bad.
     gfxTextRunFactory::Parameters params = {
-        tmpCtx, nsnull, nsnull, nsnull, 0, GetTextRunUnitsFactor()
+        tmpCtx, nullptr, nullptr, nullptr, 0, GetTextRunUnitsFactor()
     };
     mTextRun =
       fontGroup->MakeTextRun(text.get(), text.Length(), &params, flags);
@@ -1658,7 +1747,7 @@ CharacterIterator::NextCluster()
     if (mCurrentChar != InvalidCluster() &&
         (mPositions.IsEmpty() || mPositions[mCurrentChar].draw)) {
       mCurrentAdvance +=
-        mSource->mTextRun->GetAdvanceWidth(mCurrentChar, 1, nsnull);
+        mSource->mTextRun->GetAdvanceWidth(mCurrentChar, 1, nullptr);
     }
     ++mCurrentChar;
 

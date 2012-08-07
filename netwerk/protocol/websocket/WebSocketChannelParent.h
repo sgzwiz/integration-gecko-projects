@@ -10,6 +10,7 @@
 #include "mozilla/net/PWebSocketParent.h"
 #include "nsIWebSocketListener.h"
 #include "nsIWebSocketChannel.h"
+#include "nsILoadContext.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 
@@ -33,7 +34,8 @@ class WebSocketChannelParent : public PWebSocketParent,
   bool RecvAsyncOpen(const IPC::URI& aURI,
                      const nsCString& aOrigin,
                      const nsCString& aProtocol,
-                     const bool& aSecure);
+                     const bool& aSecure,
+                     const IPC::SerializedLoadContext& loadContext);
   bool RecvClose(const PRUint16 & code, const nsCString & reason);
   bool RecvSendMsg(const nsCString& aMsg);
   bool RecvSendBinaryMsg(const nsCString& aMsg);
@@ -45,7 +47,9 @@ class WebSocketChannelParent : public PWebSocketParent,
 
   nsCOMPtr<nsIAuthPromptProvider> mAuthProvider;
   nsCOMPtr<nsIWebSocketChannel> mChannel;
+  nsCOMPtr<nsILoadContext> mLoadContext;
   bool mIPCOpen;
+
 };
 
 } // namespace net

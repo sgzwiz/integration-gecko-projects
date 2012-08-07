@@ -30,7 +30,7 @@ TelephonyCall::Create(Telephony* aTelephony, const nsAString& aNumber,
   call->mTelephony = aTelephony;
   call->mNumber = aNumber;
   call->mCallIndex = aCallIndex;
-  call->mError = nsnull;
+  call->mError = nullptr;
 
   call->ChangeStateInternal(aCallState, false);
 
@@ -229,12 +229,6 @@ TelephonyCall::HangUp()
   if (mCallState == nsIRadioInterfaceLayer::CALL_STATE_DISCONNECTING ||
       mCallState == nsIRadioInterfaceLayer::CALL_STATE_DISCONNECTED) {
     NS_WARNING("HangUp on previously disconnected call ignored!");
-    return NS_OK;
-  }
-
-  if (mCallState == nsIRadioInterfaceLayer::CALL_STATE_HOLDING ||
-      mCallState == nsIRadioInterfaceLayer::CALL_STATE_HELD) {
-    NS_WARNING("HangUp on non-active call ignored!");
     return NS_OK;
   }
 

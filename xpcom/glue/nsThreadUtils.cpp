@@ -8,6 +8,7 @@
 #include "jsfriendapi.h"
 
 #include "mozilla/Mutex.h"
+#include "mozilla/Attributes.h"
 
 #ifdef MOZILLA_INTERNAL_API
 # include "nsThreadManager.h"
@@ -19,7 +20,13 @@
 
 #ifdef XP_WIN
 #include <windows.h>
+#include "nsWindowsHelpers.h"
+#elif defined(XP_MACOSX)
+#include <sys/resource.h>
 #endif
+
+#include <pratom.h>
+#include <prthread.h>
 
 #ifndef XPCOM_GLUE_AVOID_NSPR
 
@@ -58,7 +65,7 @@ NS_NewThread(nsIThread **result, nsIRunnable *event, PRUint32 stackSize)
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  *result = nsnull;
+  *result = nullptr;
   thread.swap(*result);
   return NS_OK;
 }
@@ -223,6 +230,53 @@ NS_ProcessNextEvent(nsIThread *thread, bool mayWait)
   bool val;
   return NS_SUCCEEDED(thread->ProcessNextEventUnlocked(mayWait, &val)) && val;
 }
+
+#ifndef XPCOM_GLUE_AVOID_NSPR
+
+namespace {
+
+class nsNameThreadRunnable MOZ_FINAL : public nsIRunnable
+{
+public:
+  nsNameThreadRunnable(const nsACString &name) : mName(name) { }
+
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIRUNNABLE
+
+protected:
+  const nsCString mName;
+};
+
+NS_IMPL_THREADSAFE_ISUPPORTS1(nsNameThreadRunnable, nsIRunnable)
+
+NS_IMETHODIMP
+nsNameThreadRunnable::Run()
+{
+  PR_SetCurrentThreadName(mName.BeginReading());
+  return NS_OK;
+}
+
+} // anonymous namespace
+
+void
+NS_SetThreadName(nsIThread *thread, const nsACString &name)
+{
+  if (!thread)
+    return;
+
+  thread->Dispatch(new nsNameThreadRunnable(name),
+                   nsIEventTarget::DISPATCH_NORMAL);
+}
+
+#else // !XPCOM_GLUE_AVOID_NSPR
+
+void
+NS_SetThreadName(nsIThread *thread, const nsACString &name)
+{
+  // No NSPR, no love.
+}
+
+#endif
 
 #ifdef MOZILLA_INTERNAL_API
 nsIThread *
@@ -859,3 +913,54 @@ NS_DumpBacktrace(const char *str, bool flush)
 }
 
 #endif // XP_MACOSX
+
+// nsThreadPoolNaming
+void
+nsThreadPoolNaming::SetThreadPoolName(const nsACString & aPoolName,
+                                      nsIThread * aThread)
+{
+  nsCString name(aPoolName);
+  name.Append(NS_LITERAL_CSTRING(" #"));
+  name.AppendInt(++mCounter, 10); // The counter is declared as volatile
+
+  if (aThread) {
+    // Set on the target thread
+    NS_SetThreadName(aThread, name);
+  }
+  else {
+    // Set on the current thread
+    PR_SetCurrentThreadName(name.BeginReading());
+  }
+}
+
+// nsAutoLowPriorityIO
+nsAutoLowPriorityIO::nsAutoLowPriorityIO()
+{
+#if defined(XP_WIN)
+  lowIOPrioritySet = IsVistaOrLater() &&
+                     SetThreadPriority(GetCurrentThread(),
+                                       THREAD_MODE_BACKGROUND_BEGIN);
+#elif defined(XP_MACOSX)
+  oldPriority = getiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD);
+  lowIOPrioritySet = oldPriority != -1 &&
+                     setiopolicy_np(IOPOL_TYPE_DISK,
+                                    IOPOL_SCOPE_THREAD,
+                                    IOPOL_THROTTLE) != -1;
+#else
+  lowIOPrioritySet = false;
+#endif
+}
+
+nsAutoLowPriorityIO::~nsAutoLowPriorityIO()
+{
+#if defined(XP_WIN)
+  if (NS_LIKELY(lowIOPrioritySet)) {
+    // On Windows the old thread priority is automatically restored
+    SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_END);
+  }
+#elif defined(XP_MACOSX)
+  if (NS_LIKELY(lowIOPrioritySet)) {
+    setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, oldPriority);
+  }
+#endif
+}

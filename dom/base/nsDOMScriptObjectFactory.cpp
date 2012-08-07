@@ -37,7 +37,7 @@
 
 static NS_DEFINE_CID(kDOMScriptObjectFactoryCID, NS_DOM_SCRIPT_OBJECT_FACTORY_CID);
 
-nsIExceptionProvider* gExceptionProvider = nsnull;
+nsIExceptionProvider* gExceptionProvider = nullptr;
 
 nsDOMScriptObjectFactory::nsDOMScriptObjectFactory()
 {
@@ -56,7 +56,7 @@ nsDOMScriptObjectFactory::nsDOMScriptObjectFactory()
     xs->RegisterExceptionProvider(provider, NS_ERROR_MODULE_SVG);
     xs->RegisterExceptionProvider(provider, NS_ERROR_MODULE_DOM_XPATH);
     xs->RegisterExceptionProvider(provider, NS_ERROR_MODULE_DOM_INDEXEDDB);
-    xs->RegisterExceptionProvider(provider, NS_ERROR_MODULE_XPCONNECT);
+    xs->RegisterExceptionProvider(provider, NS_ERROR_MODULE_DOM_FILEHANDLE);
   }
 
   NS_ASSERTION(!gExceptionProvider, "Registered twice?!");
@@ -86,20 +86,20 @@ NS_IMETHODIMP_(nsISupports *)
 nsDOMScriptObjectFactory::GetExternalClassInfoInstance(const nsAString& aName)
 {
   nsScriptNameSpaceManager *nameSpaceManager = nsJSRuntime::GetNameSpaceManager();
-  NS_ENSURE_TRUE(nameSpaceManager, nsnull);
+  NS_ENSURE_TRUE(nameSpaceManager, nullptr);
 
   const nsGlobalNameStruct *globalStruct = nameSpaceManager->LookupName(aName);
   if (globalStruct) {
     if (globalStruct->mType == nsGlobalNameStruct::eTypeExternalClassInfoCreator) {
       nsresult rv;
       nsCOMPtr<nsIDOMCIExtension> creator(do_CreateInstance(globalStruct->mCID, &rv));
-      NS_ENSURE_SUCCESS(rv, nsnull);
+      NS_ENSURE_SUCCESS(rv, nullptr);
 
       rv = creator->RegisterDOMCI(NS_ConvertUTF16toUTF8(aName).get(), this);
-      NS_ENSURE_SUCCESS(rv, nsnull);
+      NS_ENSURE_SUCCESS(rv, nullptr);
 
       globalStruct = nameSpaceManager->LookupName(aName);
-      NS_ENSURE_TRUE(globalStruct, nsnull);
+      NS_ENSURE_TRUE(globalStruct, nullptr);
 
       NS_ASSERTION(globalStruct->mType == nsGlobalNameStruct::eTypeExternalClassInfo,
                    "The classinfo data for this class didn't get registered.");
@@ -108,7 +108,7 @@ nsDOMScriptObjectFactory::GetExternalClassInfoInstance(const nsAString& aName)
       return nsDOMClassInfo::GetClassInfoInstance(globalStruct->mData);
     }
   }
-  return nsnull;
+  return nullptr;
 }
 
 NS_IMETHODIMP
@@ -141,34 +141,15 @@ nsDOMScriptObjectFactory::Observe(nsISupports *aSubject,
         xs->UnregisterExceptionProvider(gExceptionProvider,
                                         NS_ERROR_MODULE_DOM_XPATH);
         xs->UnregisterExceptionProvider(gExceptionProvider,
-                                        NS_ERROR_MODULE_XPCONNECT);
+                                        NS_ERROR_MODULE_DOM_INDEXEDDB);
+        xs->UnregisterExceptionProvider(gExceptionProvider,
+                                        NS_ERROR_MODULE_DOM_FILEHANDLE);
       }
 
       NS_RELEASE(gExceptionProvider);
     }
   }
 
-  return NS_OK;
-}
-
-static nsresult
-CreateXPConnectException(nsresult aResult, nsIException *aDefaultException,
-                         nsIException **_retval)
-{
-  // See whether we already have a useful XPConnect exception.  If we
-  // do, let's not create one with _less_ information!
-  nsCOMPtr<nsIXPCException> exception(do_QueryInterface(aDefaultException));
-  if (!exception) {
-    nsresult rv = NS_OK;
-    exception = do_CreateInstance("@mozilla.org/js/xpc/Exception;1", &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = exception->Initialize(nsnull, aResult, nsnull, nsnull, nsnull,
-                               nsnull);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  exception.forget(_retval);
   return NS_OK;
 }
 
@@ -242,18 +223,16 @@ nsDOMExceptionProvider::GetException(nsresult result,
 
   switch (NS_ERROR_GET_MODULE(result))
   {
+    case NS_ERROR_MODULE_DOM:
     case NS_ERROR_MODULE_SVG:
-      return NS_NewSVGException(result, aDefaultException, _retval);
     case NS_ERROR_MODULE_DOM_XPATH:
-      return NS_NewXPathException(result, aDefaultException, _retval);
-    case NS_ERROR_MODULE_XPCONNECT:
-      return CreateXPConnectException(result, aDefaultException, _retval);
-    default:
-      MOZ_ASSERT(NS_ERROR_GET_MODULE(result) == NS_ERROR_MODULE_DOM ||
-          NS_ERROR_GET_MODULE(result) == NS_ERROR_MODULE_DOM_FILE ||
-          NS_ERROR_GET_MODULE(result) == NS_ERROR_MODULE_DOM_INDEXEDDB,
-          "Trying to create an exception for the wrong error module.");
+    case NS_ERROR_MODULE_DOM_FILE:
+    case NS_ERROR_MODULE_DOM_INDEXEDDB:
+    case NS_ERROR_MODULE_DOM_FILEHANDLE:
       return NS_NewDOMException(result, aDefaultException, _retval);
+    default:
+      NS_WARNING("Trying to create an exception for the wrong error module.");
+      return NS_ERROR_FAILURE;
   }
   NS_NOTREACHED("Not reached");
   return NS_ERROR_UNEXPECTED;

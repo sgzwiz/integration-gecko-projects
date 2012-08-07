@@ -33,11 +33,26 @@ if (!DebuggerServer.initialized) {
 
 waitForExplicitFinish();
 
-function addTab(aURL, aOnload)
+function addWindow()
 {
-  gBrowser.selectedTab = gBrowser.addTab(aURL);
+  let windowReference = window.open();
+  let chromeWindow = windowReference
+    .QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIWebNavigation)
+    .QueryInterface(Ci.nsIDocShellTreeItem).rootTreeItem
+    .QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindow);
 
-  let tab = gBrowser.selectedTab;
+  return chromeWindow;
+}
+
+function addTab(aURL, aOnload, aWindow)
+{
+  let targetWindow = aWindow || window;
+  let targetBrowser = targetWindow.gBrowser;
+
+  targetWindow.focus();
+  targetBrowser.selectedTab = targetBrowser.addTab(aURL);
+
+  let tab = targetBrowser.selectedTab;
   if (aOnload) {
     let handler = function() {
       if (tab.linkedBrowser.currentURI.spec == aURL) {
@@ -51,19 +66,41 @@ function addTab(aURL, aOnload)
   return tab;
 }
 
-function removeTab(aTab) {
-  gBrowser.removeTab(aTab);
+function removeTab(aTab, aWindow) {
+  let targetWindow = aWindow || window;
+  let targetBrowser = targetWindow.gBrowser;
+
+  targetBrowser.removeTab(aTab);
 }
 
-function closeDebuggerAndFinish(aRemoteFlag) {
-  DebuggerUI.chromeWindow.addEventListener("Debugger:Shutdown", function cleanup() {
-    DebuggerUI.chromeWindow.removeEventListener("Debugger:Shutdown", cleanup, false);
-    finish();
+function closeDebuggerAndFinish(aRemoteFlag, aCallback, aWindow) {
+  let targetWindow = aWindow || window;
+  let debuggerUI = targetWindow.DebuggerUI;
+
+  let debuggerClosed = false;
+  let debuggerDisconnected = false;
+
+  function _maybeFinish() {
+    if (debuggerClosed && debuggerDisconnected) {
+      if (!aCallback)
+        aCallback = finish;
+      aCallback();
+    }
+  }
+
+  debuggerUI.chromeWindow.addEventListener("Debugger:Shutdown", function cleanup() {
+    debuggerUI.chromeWindow.removeEventListener("Debugger:Shutdown", cleanup, false);
+    debuggerDisconnected = true;
+    _maybeFinish();
   }, false);
   if (!aRemoteFlag) {
-    DebuggerUI.getDebugger().close();
+    debuggerUI.getDebugger().close(function() {
+      debuggerClosed = true;
+      _maybeFinish();
+    });
   } else {
-    DebuggerUI.getRemoteDebugger().close();
+    debuggerClosed = true;
+    debuggerUI.getRemoteDebugger().close();
   }
 }
 
@@ -114,6 +151,21 @@ function debug_tab_pane(aURL, aOnDebugging)
       });
     }, true);
   });
+}
+
+function wait_for_connect_and_resume(aOnDebugging, aWindow)
+{
+  let targetWindow = aWindow || window;
+  let targetDocument = targetWindow.document;
+
+  targetDocument.addEventListener("Debugger:Connecting", function dbgConnected(aEvent) {
+    targetDocument.removeEventListener("Debugger:Connecting", dbgConnected, true);
+
+    // Wait for the initial resume...
+    aEvent.target.ownerDocument.defaultView.gClient.addOneTimeListener("resumed", function() {
+      aOnDebugging();
+    });
+  }, true);
 }
 
 function debug_remote(aURL, aOnDebugging, aBeforeTabAdded)

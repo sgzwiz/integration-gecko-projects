@@ -9,13 +9,14 @@
 #include "nsDOMError.h"
 #include "nsIDOMSVGAnimatedString.h"
 #include "nsSVGElement.h"
+#include "mozilla/Attributes.h"
 
 class nsSVGString
 {
 
 public:
   void Init(PRUint8 aAttrEnum) {
-    mAnimVal = nsnull;
+    mAnimVal = nullptr;
     mAttrEnum = aAttrEnum;
     mIsBaseSet = false;
   }
@@ -49,7 +50,7 @@ private:
   bool mIsBaseSet;
 
 public:
-  struct DOMAnimatedString : public nsIDOMSVGAnimatedString
+  struct DOMAnimatedString MOZ_FINAL : public nsIDOMSVGAnimatedString
   {
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
     NS_DECL_CYCLE_COLLECTION_CLASS(DOMAnimatedString)

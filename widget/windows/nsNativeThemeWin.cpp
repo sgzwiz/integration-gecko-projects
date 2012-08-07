@@ -13,7 +13,6 @@
 #include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsIContent.h"
-#include "nsIDocument.h"
 #include "nsIFrame.h"
 #include "nsEventStates.h"
 #include "nsINameSpaceManager.h"
@@ -1441,7 +1440,7 @@ RENDER_AGAIN:
 
       if (contentState.HasState(NS_EVENT_STATE_FOCUS)) {
         POINT vpOrg;
-        HPEN hPen = nsnull;
+        HPEN hPen = nullptr;
 
         PRUint8 id = SaveDC(hdc);
 

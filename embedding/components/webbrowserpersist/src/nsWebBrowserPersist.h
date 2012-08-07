@@ -20,7 +20,7 @@
 #include "nsIDocumentEncoder.h"
 #include "nsITransport.h"
 #include "nsIProgressEventSink.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIWebProgressListener2.h"
 
 #include "nsHashtable.h"
@@ -84,14 +84,14 @@ private:
     void Cleanup();
     void CleanupLocalFiles();
     nsresult GetValidURIFromObject(nsISupports *aObject, nsIURI **aURI) const;
-    nsresult GetLocalFileFromURI(nsIURI *aURI, nsILocalFile **aLocalFile) const;
+    nsresult GetLocalFileFromURI(nsIURI *aURI, nsIFile **aLocalFile) const;
     nsresult AppendPathToURI(nsIURI *aURI, const nsAString & aPath) const;
     nsresult MakeAndStoreLocalFilenameInURIMap(
         nsIURI *aURI, bool aNeedsPersisting, URIData **aData);
     nsresult MakeOutputStream(
         nsIURI *aFile, nsIOutputStream **aOutputStream);
     nsresult MakeOutputStreamFromFile(
-        nsILocalFile *aFile, nsIOutputStream **aOutputStream);
+        nsIFile *aFile, nsIOutputStream **aOutputStream);
     nsresult MakeOutputStreamFromURI(nsIURI *aURI, nsIOutputStream  **aOutStream);
     nsresult CreateChannelFromURI(nsIURI *aURI, nsIChannel **aChannel);
     nsresult StartUpload(nsIStorageStream *aOutStream, nsIURI *aDestinationURI,
@@ -106,19 +106,19 @@ private:
     nsresult StoreURI(
         const char *aURI,
         bool aNeedsPersisting = true,
-        URIData **aData = nsnull);
+        URIData **aData = nullptr);
     nsresult StoreURI(
         nsIURI *aURI,
         bool aNeedsPersisting = true,
-        URIData **aData = nsnull);
+        URIData **aData = nullptr);
     nsresult StoreURIAttributeNS(
         nsIDOMNode *aNode, const char *aNamespaceURI, const char *aAttribute,
         bool aNeedsPersisting = true,
-        URIData **aData = nsnull);
+        URIData **aData = nullptr);
     nsresult StoreURIAttribute(
         nsIDOMNode *aNode, const char *aAttribute,
         bool aNeedsPersisting = true,
-        URIData **aData = nsnull)
+        URIData **aData = nullptr)
     {
         return StoreURIAttributeNS(aNode, "", aAttribute, aNeedsPersisting, aData);
     }

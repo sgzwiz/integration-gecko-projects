@@ -11,6 +11,7 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsIDOMSVGAnimatedLengthList.h"
 #include "nsSVGElement.h"
+#include "mozilla/Attributes.h"
 
 namespace mozilla {
 
@@ -103,7 +104,7 @@ class DOMSVGLengthList;
  * One drawback of this design is that objects must look up their parent
  * chain to find their element, but that overhead is relatively small.
  */
-class DOMSVGAnimatedLengthList : public nsIDOMSVGAnimatedLengthList
+class DOMSVGAnimatedLengthList MOZ_FINAL : public nsIDOMSVGAnimatedLengthList
 {
   friend class DOMSVGLengthList;
 
@@ -132,7 +133,7 @@ public:
   /**
    * This method returns the DOMSVGAnimatedLengthList wrapper for an internal
    * SVGAnimatedLengthList object if it currently has a wrapper. If it does
-   * not, then nsnull is returned.
+   * not, then nullptr is returned.
    */
   static DOMSVGAnimatedLengthList*
     GetDOMWrapperIfExists(SVGAnimatedLengthList *aList);
@@ -165,8 +166,8 @@ private:
    * type.
    */
   DOMSVGAnimatedLengthList(nsSVGElement *aElement, PRUint8 aAttrEnum, PRUint8 aAxis)
-    : mBaseVal(nsnull)
-    , mAnimVal(nsnull)
+    : mBaseVal(nullptr)
+    , mAnimVal(nullptr)
     , mElement(aElement)
     , mAttrEnum(aAttrEnum)
     , mAxis(aAxis)

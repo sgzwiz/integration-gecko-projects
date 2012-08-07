@@ -22,7 +22,6 @@
 #include "nsIBrowserDOMWindow.h"
 #include "nsIDOMXULElement.h"
 #include "nsIEmbeddingSiteWindow.h"
-#include "nsIEmbeddingSiteWindow2.h"
 #include "nsIPrompt.h"
 #include "nsIAuthPrompt.h"
 #include "nsIWindowMediator.h"
@@ -32,6 +31,7 @@
 #include "nsCDefaultURIFixup.h"
 #include "nsIWebNavigation.h"
 #include "nsIJSContextStack.h"
+#include "mozilla/BrowserElementParent.h"
 
 #include "nsIDOMDocument.h"
 #include "nsIScriptObjectPrincipal.h"
@@ -50,18 +50,17 @@ static NS_DEFINE_CID(kWindowMediatorCID, NS_WINDOWMEDIATOR_CID);
 static const char *sJSStackContractID="@mozilla.org/js/xpc/ContextStack;1";
 
 //*****************************************************************************
-//*** nsSiteWindow2 declaration
+//*** nsSiteWindow declaration
 //*****************************************************************************
 
-class nsSiteWindow2 : public nsIEmbeddingSiteWindow2
+class nsSiteWindow : public nsIEmbeddingSiteWindow
 {
 public:
-  nsSiteWindow2(nsContentTreeOwner *aAggregator);
-  virtual ~nsSiteWindow2();
+  nsSiteWindow(nsContentTreeOwner *aAggregator);
+  virtual ~nsSiteWindow();
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIEMBEDDINGSITEWINDOW
-  NS_DECL_NSIEMBEDDINGSITEWINDOW2
 
 private:
   nsContentTreeOwner *mAggregator;
@@ -71,16 +70,16 @@ private:
 //***    nsContentTreeOwner: Object Management
 //*****************************************************************************
 
-nsContentTreeOwner::nsContentTreeOwner(bool fPrimary) : mXULWindow(nsnull), 
+nsContentTreeOwner::nsContentTreeOwner(bool fPrimary) : mXULWindow(nullptr), 
    mPrimary(fPrimary), mContentTitleSetting(false)
 {
   // note if this fails, QI on nsIEmbeddingSiteWindow(2) will simply fail
-  mSiteWindow2 = new nsSiteWindow2(this);
+  mSiteWindow = new nsSiteWindow(this);
 }
 
 nsContentTreeOwner::~nsContentTreeOwner()
 {
-  delete mSiteWindow2;
+  delete mSiteWindow;
 }
 
 //*****************************************************************************
@@ -107,8 +106,7 @@ NS_INTERFACE_MAP_BEGIN(nsContentTreeOwner)
    // (SetFocus() is a good example here).  If it were not for that, we could
    // ditch the aggregation and just deal with not being able to use NS_DECL_*
    // macros for this stuff....
-   NS_INTERFACE_MAP_ENTRY_AGGREGATED(nsIEmbeddingSiteWindow, mSiteWindow2)
-   NS_INTERFACE_MAP_ENTRY_AGGREGATED(nsIEmbeddingSiteWindow2, mSiteWindow2)
+   NS_INTERFACE_MAP_ENTRY_AGGREGATED(nsIEmbeddingSiteWindow, mSiteWindow)
 NS_INTERFACE_MAP_END
 
 //*****************************************************************************
@@ -167,7 +165,7 @@ NS_IMETHODIMP nsContentTreeOwner::FindItemWithName(const PRUnichar* aName,
 {
    NS_ENSURE_ARG_POINTER(aFoundItem);
 
-   *aFoundItem = nsnull;
+   *aFoundItem = nullptr;
 
    bool fIs_Content = false;
 
@@ -219,14 +217,14 @@ NS_IMETHODIMP nsContentTreeOwner::FindItemWithName(const PRUnichar* aName,
    NS_ENSURE_TRUE(windowMediator, NS_ERROR_FAILURE);
 
    nsCOMPtr<nsISimpleEnumerator> windowEnumerator;
-   NS_ENSURE_SUCCESS(windowMediator->GetXULWindowEnumerator(nsnull, 
+   NS_ENSURE_SUCCESS(windowMediator->GetXULWindowEnumerator(nullptr, 
       getter_AddRefs(windowEnumerator)), NS_ERROR_FAILURE);
    
    bool more;
    
    windowEnumerator->HasMoreElements(&more);
    while(more) {
-     nsCOMPtr<nsISupports> nextWindow = nsnull;
+     nsCOMPtr<nsISupports> nextWindow = nullptr;
      windowEnumerator->GetNext(getter_AddRefs(nextWindow));
      nsCOMPtr<nsIXULWindow> xulWindow(do_QueryInterface(nextWindow));
      NS_ENSURE_TRUE(xulWindow, NS_ERROR_FAILURE);
@@ -483,7 +481,7 @@ NS_IMETHODIMP nsContentTreeOwner::SetStatus(PRUint32 aStatusType,
   return SetStatusWithContext(aStatusType,
       aStatus ? static_cast<const nsString &>(nsDependentString(aStatus))
               : EmptyString(),
-      nsnull);
+      nullptr);
 }
 
 NS_IMETHODIMP nsContentTreeOwner::SetWebBrowser(nsIWebBrowser* aWebBrowser)
@@ -637,6 +635,12 @@ NS_IMETHODIMP nsContentTreeOwner::SetParentNativeWindow(nativeWindow aParentNati
    return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+NS_IMETHODIMP nsContentTreeOwner::GetNativeHandle(nsAString& aNativeHandle)
+{
+   NS_ENSURE_STATE(mXULWindow);
+   return mXULWindow->GetNativeHandle(aNativeHandle);
+}
+
 NS_IMETHODIMP nsContentTreeOwner::GetVisibility(bool* aVisibility)
 {
    NS_ENSURE_STATE(mXULWindow);
@@ -788,7 +792,7 @@ public:
 #ifdef DEBUG
       nsresult rv =
 #endif
-        mService->Push(nsnull);
+        mService->Push(nullptr);
       NS_ASSERTION(NS_SUCCEEDED(rv), "Mismatched push/pop");
     }
   }
@@ -825,7 +829,7 @@ nsContentTreeOwner::ProvideWindow(nsIDOMWindow* aParent,
 {
   NS_ENSURE_ARG_POINTER(aParent);
   
-  *aReturn = nsnull;
+  *aReturn = nullptr;
 
   if (!mXULWindow) {
     // Nothing to do here
@@ -839,6 +843,29 @@ nsContentTreeOwner::ProvideWindow(nsIDOMWindow* aParent,
                                static_cast<nsIDocShellTreeOwner*>(this)),
                "Parent from wrong docshell tree?");
 #endif
+
+  // If aParent is inside an <iframe mozbrowser> and this isn't a request to
+  // open a modal-type window, we're going to create a new <iframe mozbrowser>
+  // and return its window here.
+  nsCOMPtr<nsIDocShell> docshell = do_GetInterface(aParent);
+  bool isInContentBoundary = false;
+  if (docshell) {
+    docshell->GetIsBelowContentBoundary(&isInContentBoundary);
+  }
+
+  if (isInContentBoundary &&
+      !(aChromeFlags & (nsIWebBrowserChrome::CHROME_MODAL |
+                        nsIWebBrowserChrome::CHROME_OPENAS_DIALOG |
+                        nsIWebBrowserChrome::CHROME_OPENAS_CHROME))) {
+    *aWindowIsNew =
+      BrowserElementParent::OpenWindowInProcess(aParent, aURI, aName,
+                                                aFeatures, aReturn);
+
+    // If OpenWindowInProcess failed (perhaps because the embedder blocked the
+    // popup), tell our caller not to proceed trying to create a new window
+    // through other means.
+    return *aWindowIsNew ? NS_OK : NS_ERROR_ABORT;
+  }
 
   // Where should we open this?
   PRInt32 containerPref;
@@ -901,7 +928,7 @@ nsContentTreeOwner::ProvideWindow(nsIDOMWindow* aParent,
 
     // Get a new rendering area from the browserDOMWin.  We don't want
     // to be starting any loads here, so get it with a null URI.
-    return browserDOMWin->OpenURI(nsnull, aParent, containerPref,
+    return browserDOMWin->OpenURI(nullptr, aParent, containerPref,
                                   nsIBrowserDOMWindow::OPEN_NEW, aReturn);
   }
 }
@@ -980,29 +1007,28 @@ nsXULWindow* nsContentTreeOwner::XULWindow()
 }
 
 //*****************************************************************************
-//*** nsSiteWindow2 implementation
+//*** nsSiteWindow implementation
 //*****************************************************************************
 
-nsSiteWindow2::nsSiteWindow2(nsContentTreeOwner *aAggregator)
+nsSiteWindow::nsSiteWindow(nsContentTreeOwner *aAggregator)
 {
   mAggregator = aAggregator;
 }
 
-nsSiteWindow2::~nsSiteWindow2()
+nsSiteWindow::~nsSiteWindow()
 {
 }
 
-NS_IMPL_ADDREF_USING_AGGREGATOR(nsSiteWindow2, mAggregator)
-NS_IMPL_RELEASE_USING_AGGREGATOR(nsSiteWindow2, mAggregator)
+NS_IMPL_ADDREF_USING_AGGREGATOR(nsSiteWindow, mAggregator)
+NS_IMPL_RELEASE_USING_AGGREGATOR(nsSiteWindow, mAggregator)
 
-NS_INTERFACE_MAP_BEGIN(nsSiteWindow2)
+NS_INTERFACE_MAP_BEGIN(nsSiteWindow)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
   NS_INTERFACE_MAP_ENTRY(nsIEmbeddingSiteWindow)
-  NS_INTERFACE_MAP_ENTRY(nsIEmbeddingSiteWindow2)
 NS_INTERFACE_MAP_END_AGGREGATED(mAggregator)
 
 NS_IMETHODIMP
-nsSiteWindow2::SetDimensions(PRUint32 aFlags,
+nsSiteWindow::SetDimensions(PRUint32 aFlags,
                     PRInt32 aX, PRInt32 aY, PRInt32 aCX, PRInt32 aCY)
 {
   // XXX we're ignoring aFlags
@@ -1010,7 +1036,7 @@ nsSiteWindow2::SetDimensions(PRUint32 aFlags,
 }
 
 NS_IMETHODIMP
-nsSiteWindow2::GetDimensions(PRUint32 aFlags,
+nsSiteWindow::GetDimensions(PRUint32 aFlags,
                     PRInt32 *aX, PRInt32 *aY, PRInt32 *aCX, PRInt32 *aCY)
 {
   // XXX we're ignoring aFlags
@@ -1018,7 +1044,7 @@ nsSiteWindow2::GetDimensions(PRUint32 aFlags,
 }
 
 NS_IMETHODIMP
-nsSiteWindow2::SetFocus(void)
+nsSiteWindow::SetFocus(void)
 {
 #if 0
   /* This implementation focuses the main document and could make sense.
@@ -1042,7 +1068,7 @@ nsSiteWindow2::SetFocus(void)
 /* this implementation focuses another window. if there isn't another
    window to focus, we do nothing. */
 NS_IMETHODIMP
-nsSiteWindow2::Blur(void)
+nsSiteWindow::Blur(void)
 {
   nsCOMPtr<nsISimpleEnumerator> windowEnumerator;
   nsCOMPtr<nsIXULWindow>        xulWindow;
@@ -1099,31 +1125,31 @@ nsSiteWindow2::Blur(void)
 }
 
 NS_IMETHODIMP
-nsSiteWindow2::GetVisibility(bool *aVisibility)
+nsSiteWindow::GetVisibility(bool *aVisibility)
 {
   return mAggregator->GetVisibility(aVisibility);
 }
 
 NS_IMETHODIMP
-nsSiteWindow2::SetVisibility(bool aVisibility)
+nsSiteWindow::SetVisibility(bool aVisibility)
 {
   return mAggregator->SetVisibility(aVisibility);
 }
 
 NS_IMETHODIMP
-nsSiteWindow2::GetTitle(PRUnichar * *aTitle)
+nsSiteWindow::GetTitle(PRUnichar * *aTitle)
 {
   return mAggregator->GetTitle(aTitle);
 }
 
 NS_IMETHODIMP
-nsSiteWindow2::SetTitle(const PRUnichar * aTitle)
+nsSiteWindow::SetTitle(const PRUnichar * aTitle)
 {
   return mAggregator->SetTitle(aTitle);
 }
 
 NS_IMETHODIMP
-nsSiteWindow2::GetSiteWindow(void **aSiteWindow)
+nsSiteWindow::GetSiteWindow(void **aSiteWindow)
 {
   return mAggregator->GetParentNativeWindow(aSiteWindow);
 }

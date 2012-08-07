@@ -68,6 +68,7 @@
 #include "nsIInlineEventHandlers.h"
 #include "nsDataHashtable.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/Attributes.h"
 
 #define XML_DECLARATION_BITS_DECLARATION_EXISTS   (1 << 0)
 #define XML_DECLARATION_BITS_ENCODING_EXISTS      (1 << 1)
@@ -112,11 +113,11 @@ public:
   typedef mozilla::dom::Element Element;
   
   nsIdentifierMapEntry(const nsAString& aKey) :
-    nsStringHashKey(&aKey), mNameContentList(nsnull)
+    nsStringHashKey(&aKey), mNameContentList(nullptr)
   {
   }
   nsIdentifierMapEntry(const nsAString *aKey) :
-    nsStringHashKey(aKey), mNameContentList(nsnull)
+    nsStringHashKey(aKey), mNameContentList(nullptr)
   {
   }
   nsIdentifierMapEntry(const nsIdentifierMapEntry& aOther) :
@@ -171,7 +172,7 @@ public:
    */
   void SetImageElement(Element* aElement);
 
-  bool HasContentChangeCallback() { return mChangeCallbacks != nsnull; }
+  bool HasContentChangeCallback() { return mChangeCallbacks != nullptr; }
   void AddContentChangeCallback(nsIDocument::IDTargetObserver aCallback,
                                 void* aData, bool aForImage);
   void RemoveContentChangeCallback(nsIDocument::IDTargetObserver aCallback,
@@ -214,6 +215,10 @@ public:
     ChangeCallback mKey;
   };
 
+  static size_t SizeOfExcludingThis(nsIdentifierMapEntry* aEntry,
+                                    nsMallocSizeOfFun aMallocSizeOf,
+                                    void* aArg);
+
 private:
   void FireChangeCallbacks(Element* aOldElement, Element* aNewElement,
                            bool aImageOnly = false);
@@ -231,7 +236,7 @@ class nsDocHeaderData
 {
 public:
   nsDocHeaderData(nsIAtom* aField, const nsAString& aData)
-    : mField(aField), mData(aData), mNext(nsnull)
+    : mField(aField), mData(aData), mNext(nullptr)
   {
   }
 
@@ -288,7 +293,7 @@ protected:
   nsIDocument*  mDocument;
 };
 
-class nsOnloadBlocker : public nsIRequest
+class nsOnloadBlocker MOZ_FINAL : public nsIRequest
 {
 public:
   nsOnloadBlocker() {}
@@ -393,7 +398,7 @@ protected:
   };
   friend class PendingLoad;
 
-  class LoadgroupCallbacks : public nsIInterfaceRequestor
+  class LoadgroupCallbacks MOZ_FINAL : public nsIInterfaceRequestor
   {
   public:
     LoadgroupCallbacks(nsIInterfaceRequestor* aOtherCallbacks)
@@ -414,8 +419,8 @@ protected:
     
     // XXXbz I wish we could just derive the _allcaps thing from _i
 #define DECL_SHIM(_i, _allcaps)                                              \
-    class _i##Shim : public nsIInterfaceRequestor,                           \
-                     public _i                                               \
+    class _i##Shim MOZ_FINAL : public nsIInterfaceRequestor,                 \
+                               public _i                                     \
     {                                                                        \
     public:                                                                  \
       _i##Shim(nsIInterfaceRequestor* aIfreq, _i* aRealPtr)                  \
@@ -426,8 +431,8 @@ protected:
       }                                                                      \
       NS_DECL_ISUPPORTS                                                      \
       NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }          \
-      NS_FORWARD_NSIINTERFACEREQUESTOR(mIfReq->);                            \
-      NS_FORWARD_##_allcaps(mRealPtr->);                                     \
+      NS_FORWARD_NSIINTERFACEREQUESTOR(mIfReq->)                             \
+      NS_FORWARD_##_allcaps(mRealPtr->)                                      \
     private:                                                                 \
       nsCOMPtr<nsIInterfaceRequestor> mIfReq;                                \
       nsCOMPtr<_i> mRealPtr;                                                 \
@@ -497,7 +502,7 @@ public:
                                      nsISupports* aContainer,
                                      nsIStreamListener **aDocListener,
                                      bool aReset = true,
-                                     nsIContentSink* aContentSink = nsnull) = 0;
+                                     nsIContentSink* aContentSink = nullptr) = 0;
 
   virtual void StopDocumentLoad();
 
@@ -688,8 +693,6 @@ public:
 
   // nsINode
   virtual bool IsNodeOfType(PRUint32 aFlags) const;
-  virtual PRUint16 NodeType();
-  virtual void NodeName(nsAString& aNodeName);
   virtual nsIContent *GetChildAt(PRUint32 aIndex) const;
   virtual nsIContent * const * GetChildArray(PRUint32* aChildCount) const;
   virtual PRInt32 IndexOf(nsINode* aPossibleChild) const;
@@ -707,18 +710,17 @@ public:
   NS_IMETHOD WalkRadioGroup(const nsAString& aName,
                             nsIRadioVisitor* aVisitor,
                             bool aFlushContent);
-  NS_IMETHOD SetCurrentRadioButton(const nsAString& aName,
-                                   nsIDOMHTMLInputElement* aRadio);
-  NS_IMETHOD GetCurrentRadioButton(const nsAString& aName,
-                                   nsIDOMHTMLInputElement** aRadio);
+  virtual void SetCurrentRadioButton(const nsAString& aName,
+                                     nsIDOMHTMLInputElement* aRadio);
+  virtual nsIDOMHTMLInputElement* GetCurrentRadioButton(const nsAString& aName);
   NS_IMETHOD GetNextRadioButton(const nsAString& aName,
                                 const bool aPrevious,
                                 nsIDOMHTMLInputElement*  aFocusedRadio,
                                 nsIDOMHTMLInputElement** aRadioOut);
-  NS_IMETHOD AddToRadioGroup(const nsAString& aName,
-                             nsIFormControl* aRadio);
-  NS_IMETHOD RemoveFromRadioGroup(const nsAString& aName,
-                                  nsIFormControl* aRadio);
+  virtual void AddToRadioGroup(const nsAString& aName,
+                               nsIFormControl* aRadio);
+  virtual void RemoveFromRadioGroup(const nsAString& aName,
+                                    nsIFormControl* aRadio);
   virtual PRUint32 GetRequiredRadioCount(const nsAString& aName) const;
   virtual void RadioRequiredChanged(const nsAString& aName,
                                     nsIFormControl* aRadio);
@@ -726,10 +728,15 @@ public:
   virtual void SetValueMissingState(const nsAString& aName, bool aValue);
 
   // for radio group
-  nsRadioGroupStruct* GetRadioGroup(const nsAString& aName);
+  nsRadioGroupStruct* GetRadioGroup(const nsAString& aName) const;
+  nsRadioGroupStruct* GetOrCreateRadioGroup(const nsAString& aName);
 
   NS_IMETHODIMP_(JSZoneId) GetZone() { return mZone; }
 
+private:
+  nsRadioGroupStruct* GetRadioGroupInternal(const nsAString& aName) const;
+
+public:
   // nsIDOMNode
   NS_DECL_NSIDOMNODE
 
@@ -943,14 +950,26 @@ public:
   virtual void RestorePreviousFullScreenState();
   virtual bool IsFullScreenDoc();
   virtual void SetApprovedForFullscreen(bool aIsApproved);
+  virtual nsresult RemoteFrameFullscreenChanged(nsIDOMElement* aFrameElement,
+                                                const nsAString& aNewOrigin);
+
+  virtual nsresult RemoteFrameFullscreenReverted();
 
   static void ExitFullScreen();
 
   // This is called asynchronously by nsIDocument::AsyncRequestFullScreen()
-  // to move document into full-screen mode if allowed. aWasCallerChrome
+  // to move this document into full-screen mode if allowed. aWasCallerChrome
   // should be true when nsIDocument::AsyncRequestFullScreen() was called
-  // by chrome code.
-  void RequestFullScreen(Element* aElement, bool aWasCallerChrome);
+  // by chrome code. aNotifyOnOriginChange denotes whether we should send a
+  // fullscreen-origin-change notification if requesting fullscreen in this
+  // document causes the origin which is fullscreen to change. We may want to
+  // *not* send this notification if we're calling RequestFullscreen() as part
+  // of a continuation of a request in a subdocument, whereupon the caller will
+  // need to send the notification with the origin of the document which
+  // originally requested fullscreen, not *this* document's origin.
+  void RequestFullScreen(Element* aElement,
+                         bool aWasCallerChrome,
+                         bool aNotifyOnOriginChange);
 
   // Removes all elements from the full-screen stack, removing full-scren
   // styles from the top element in the stack.
@@ -1183,11 +1202,6 @@ protected:
 
   bool mInXBLUpdate:1;
 
-  // This flag is only set in nsXMLDocument, for e.g. documents used in XBL. We
-  // don't want animations to play in such documents, so we need to store the
-  // flag here so that we can check it in nsDocument::GetAnimationController.
-  bool mLoadedAsInteractiveData:1;
-
   // Whether we're currently holding a lock on all of our images.
   bool mLockingImages:1;
 
@@ -1271,11 +1285,14 @@ private:
   static void ClearPendingPointerLockRequest(bool aDispatchErrorEvents);
 
   /**
-   * See if aDocument is a child of this.  If so, return the frame element in
-   * this document that holds currentDoc (or an ancestor).
+   * Find the (non-anonymous) content in this document for aFrame. It will
+   * be aFrame's content node if that content is in this document and not
+   * anonymous. Otherwise, when aFrame is in a subdocument, we use the frame
+   * element containing the subdocument containing aFrame, and/or find the
+   * nearest non-anonymous ancestor in this document.
+   * Returns null if there is no such element.
    */
-  already_AddRefed<nsIDOMElement>
-    CheckAncestryAndGetFrame(nsIDocument* aDocument) const;
+  nsIContent* GetContentInThisDocument(nsIFrame* aFrame) const;
 
   // Just like EnableStyleSheetsForSet, but doesn't check whether
   // aSheetSet is null and allows the caller to control whether to set

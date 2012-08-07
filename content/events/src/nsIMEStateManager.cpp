@@ -17,7 +17,6 @@
 #include "nsPresContext.h"
 #include "nsIDOMWindow.h"
 #include "nsIDOMMouseEvent.h"
-#include "nsIDOMNSEvent.h"
 #include "nsContentUtils.h"
 #include "nsINode.h"
 #include "nsIFrame.h"
@@ -34,6 +33,7 @@
 #include "nsIFormControl.h"
 #include "nsIForm.h"
 #include "nsHTMLFormElement.h"
+#include "mozilla/Attributes.h"
 
 using namespace mozilla::widget;
 
@@ -41,12 +41,12 @@ using namespace mozilla::widget;
 /* nsIMEStateManager                                              */
 /******************************************************************/
 
-nsIContent*    nsIMEStateManager::sContent      = nsnull;
-nsPresContext* nsIMEStateManager::sPresContext  = nsnull;
+nsIContent*    nsIMEStateManager::sContent      = nullptr;
+nsPresContext* nsIMEStateManager::sPresContext  = nullptr;
 bool           nsIMEStateManager::sInstalledMenuKeyboardListener = false;
 bool           nsIMEStateManager::sInSecureInputMode = false;
 
-nsTextStateManager* nsIMEStateManager::sTextStateObserver = nsnull;
+nsTextStateManager* nsIMEStateManager::sTextStateObserver = nullptr;
 
 nsresult
 nsIMEStateManager::OnDestroyPresContext(nsPresContext* aPresContext)
@@ -56,14 +56,14 @@ nsIMEStateManager::OnDestroyPresContext(nsPresContext* aPresContext)
     return NS_OK;
   nsCOMPtr<nsIWidget> widget = GetWidget(sPresContext);
   if (widget) {
-    IMEState newState = GetNewIMEState(sPresContext, nsnull);
+    IMEState newState = GetNewIMEState(sPresContext, nullptr);
     InputContextAction action(InputContextAction::CAUSE_UNKNOWN,
                               InputContextAction::LOST_FOCUS);
-    SetIMEState(newState, nsnull, widget, action);
+    SetIMEState(newState, nullptr, widget, action);
   }
-  sContent = nsnull;
-  sPresContext = nsnull;
-  OnTextStateBlur(nsnull, nsnull);
+  sContent = nullptr;
+  sPresContext = nullptr;
+  OnTextStateBlur(nullptr, nullptr);
   return NS_OK;
 }
 
@@ -83,14 +83,14 @@ nsIMEStateManager::OnRemoveContent(nsPresContext* aPresContext,
     nsresult rv = widget->CancelIMEComposition();
     if (NS_FAILED(rv))
       widget->ResetInputState();
-    IMEState newState = GetNewIMEState(sPresContext, nsnull);
+    IMEState newState = GetNewIMEState(sPresContext, nullptr);
     InputContextAction action(InputContextAction::CAUSE_UNKNOWN,
                               InputContextAction::LOST_FOCUS);
-    SetIMEState(newState, nsnull, widget, action);
+    SetIMEState(newState, nullptr, widget, action);
   }
 
-  sContent = nsnull;
-  sPresContext = nsnull;
+  sContent = nullptr;
+  sPresContext = nullptr;
 
   return NS_OK;
 }
@@ -204,8 +204,7 @@ nsIMEStateManager::OnClickInEditor(nsPresContext* aPresContext,
   NS_ENSURE_TRUE(widget, );
 
   bool isTrusted;
-  nsCOMPtr<nsIDOMNSEvent> NSEvent = do_QueryInterface(aMouseEvent);
-  nsresult rv = NSEvent->GetIsTrusted(&isTrusted);
+  nsresult rv = aMouseEvent->GetIsTrusted(&isTrusted);
   NS_ENSURE_SUCCESS(rv, );
   if (!isTrusted) {
     return; // ignore untrusted event.
@@ -299,7 +298,7 @@ public:
     if (observerService) {
       nsAutoString state;
       state.AppendInt(mState);
-      observerService->NotifyObservers(nsnull, "ime-enabled-state-changed", state.get());
+      observerService->NotifyObservers(nullptr, "ime-enabled-state-changed", state.get());
     }
     return NS_OK;
   }
@@ -372,14 +371,14 @@ nsIWidget*
 nsIMEStateManager::GetWidget(nsPresContext* aPresContext)
 {
   nsIPresShell* shell = aPresContext->GetPresShell();
-  NS_ENSURE_TRUE(shell, nsnull);
+  NS_ENSURE_TRUE(shell, nullptr);
 
   nsIViewManager* vm = shell->GetViewManager();
   if (!vm)
-    return nsnull;
-  nsCOMPtr<nsIWidget> widget = nsnull;
+    return nullptr;
+  nsCOMPtr<nsIWidget> widget = nullptr;
   nsresult rv = vm->GetRootWidget(getter_AddRefs(widget));
-  NS_ENSURE_SUCCESS(rv, nsnull);
+  NS_ENSURE_SUCCESS(rv, nullptr);
   return widget;
 }
 
@@ -389,8 +388,8 @@ nsIMEStateManager::GetWidget(nsPresContext* aPresContext)
 // sTextStateObserver points to the currently active nsTextStateManager
 // sTextStateObserver is null if there is no focused editor
 
-class nsTextStateManager : public nsISelectionListener,
-                           public nsStubMutationObserver
+class nsTextStateManager MOZ_FINAL : public nsISelectionListener,
+                                     public nsStubMutationObserver
 {
 public:
   nsTextStateManager();
@@ -501,14 +500,14 @@ nsTextStateManager::Destroy(void)
     nsCOMPtr<nsISelectionPrivate> selPrivate(do_QueryInterface(mSel));
     if (selPrivate)
       selPrivate->RemoveSelectionListener(this);
-    mSel = nsnull;
+    mSel = nullptr;
   }
   if (mRootContent) {
     mRootContent->RemoveMutationObserver(this);
-    mRootContent = nsnull;
+    mRootContent = nullptr;
   }
-  mEditableNode = nsnull;
-  mWidget = nsnull;
+  mEditableNode = nullptr;
+  mWidget = nullptr;
 }
 
 NS_IMPL_ISUPPORTS2(nsTextStateManager,
@@ -681,7 +680,7 @@ static nsINode* GetRootEditableNode(nsPresContext* aPresContext,
                                     nsIContent* aContent)
 {
   if (aContent) {
-    nsINode* root = nsnull;
+    nsINode* root = nullptr;
     nsINode* node = aContent;
     while (node && IsEditable(node)) {
       root = node;
@@ -694,7 +693,7 @@ static nsINode* GetRootEditableNode(nsPresContext* aPresContext,
     if (document && document->IsEditable())
       return document;
   }
-  return nsnull;
+  return nullptr;
 }
 
 nsresult

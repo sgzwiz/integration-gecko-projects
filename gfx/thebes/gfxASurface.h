@@ -6,6 +6,10 @@
 #ifndef GFX_ASURFACE_H
 #define GFX_ASURFACE_H
 
+#ifdef MOZ_DUMP_PAINTING
+ #define MOZ_DUMP_IMAGES
+#endif
+
 #include "gfxTypes.h"
 #include "gfxRect.h"
 #include "nsAutoPtr.h"
@@ -32,17 +36,17 @@ public:
     nsrefcnt Release(void);
 
     // These functions exist so that browsercomps can refcount a gfxASurface
-    virtual nsresult AddRefExternal(void)
+    virtual nsrefcnt AddRefExternal(void)
     {
       return AddRef();
     }
-    virtual nsresult ReleaseExternal(void)
+    virtual nsrefcnt ReleaseExternal(void)
     {
       return Release();
     }
 #else
-    virtual nsresult AddRef(void);
-    virtual nsresult Release(void);
+    virtual nsrefcnt AddRef(void);
+    virtual nsrefcnt Release(void);
 #endif
 
 public:
@@ -91,7 +95,8 @@ public:
     typedef enum {
         CONTENT_COLOR       = 0x1000,
         CONTENT_ALPHA       = 0x2000,
-        CONTENT_COLOR_ALPHA = 0x3000
+        CONTENT_COLOR_ALPHA = 0x3000,
+        CONTENT_SENTINEL    = 0xffff
     } gfxContentType;
 
     /** Wrap the given cairo surface and return a gfxASurface for it.
@@ -101,7 +106,7 @@ public:
 
     /*** this DOES NOT addref the surface */
     cairo_surface_t *CairoSurface() {
-        NS_ASSERTION(mSurface != nsnull, "gfxASurface::CairoSurface called with mSurface == nsnull!");
+        NS_ASSERTION(mSurface != nullptr, "gfxASurface::CairoSurface called with mSurface == nullptr!");
         return mSurface;
     }
 
@@ -141,13 +146,13 @@ public:
                                                                const gfxIntSize& aSize);
 
     /**
-     * Returns an image surface for this surface, or nsnull if not supported.
+     * Returns an image surface for this surface, or nullptr if not supported.
      * This will not copy image data, just wraps an image surface around
      * pixel data already available in memory.
      */
     virtual already_AddRefed<gfxImageSurface> GetAsImageSurface()
     {
-      return nsnull;
+      return nullptr;
     }
 
     int CairoStatus();
@@ -213,7 +218,7 @@ public:
 
     virtual const gfxIntSize GetSize() const { return gfxIntSize(-1, -1); }
 
-#ifdef MOZ_DUMP_PAINTING
+#ifdef MOZ_DUMP_IMAGES
     /**
      * Debug functions to encode the current image as a PNG and export it.
      */
@@ -243,7 +248,7 @@ public:
 
     void SetOpaqueRect(const gfxRect& aRect) {
         if (aRect.IsEmpty()) {
-            mOpaqueRect = nsnull;
+            mOpaqueRect = nullptr;
         } else if (mOpaqueRect) {
             *mOpaqueRect = aRect;
         } else {
@@ -277,7 +282,7 @@ public:
     bool GetAllowUseAsSource() { return mAllowUseAsSource; }
 
 protected:
-    gfxASurface() : mSurface(nsnull), mFloatingRefs(0), mBytesRecorded(0),
+    gfxASurface() : mSurface(nullptr), mFloatingRefs(0), mBytesRecorded(0),
                     mSurfaceValid(false), mAllowUseAsSource(true)
     {
         MOZ_COUNT_CTOR(gfxASurface);
@@ -365,7 +370,7 @@ public:
     RawRef mRef;
   };
 
-  static RawRef Void() { return nsnull; }
+  static RawRef Void() { return nullptr; }
   static void Release(RawRef aRawRef)
   {
     if (NS_IsChromeOwningThread()) {

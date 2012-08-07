@@ -6,7 +6,6 @@
 #include "FileIOObject.h"
 #include "nsDOMFile.h"
 #include "nsDOMError.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsIDOMEvent.h"
 #include "nsIDOMProgressEvent.h"
 #include "nsComponentManagerUtils.h"
@@ -38,6 +37,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(FileIOObject,
   NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(abort)
   NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(error)
   NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(progress)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mError)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(FileIOObject,
@@ -46,6 +46,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(FileIOObject,
   NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(abort)
   NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(error)
   NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(progress)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mError)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 FileIOObject::FileIOObject()
@@ -105,15 +106,12 @@ nsresult
 FileIOObject::DispatchProgressEvent(const nsAString& aType)
 {
   nsCOMPtr<nsIDOMEvent> event;
-  nsresult rv = nsEventDispatcher::CreateEvent(nsnull, nsnull,
+  nsresult rv = nsEventDispatcher::CreateEvent(nullptr, nullptr,
                                                NS_LITERAL_STRING("ProgressEvent"),
                                                getter_AddRefs(event));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsIPrivateDOMEvent> privevent(do_QueryInterface(event));
-  NS_ENSURE_TRUE(privevent, NS_ERROR_UNEXPECTED);
-
-  privevent->SetTrusted(true);
+  event->SetTrusted(true);
   nsCOMPtr<nsIDOMProgressEvent> progress = do_QueryInterface(event);
   NS_ENSURE_TRUE(progress, NS_ERROR_UNEXPECTED);
 
@@ -130,7 +128,7 @@ FileIOObject::DispatchProgressEvent(const nsAString& aType)
                                    mTransferred, size);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return DispatchDOMEvent(nsnull, event, nsnull, nsnull);
+  return DispatchDOMEvent(nullptr, event, nullptr, nullptr);
 }
 
 // nsITimerCallback

@@ -2,6 +2,7 @@
 <html dir="ltr">
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
     <title>PDF.js viewer</title>
 <!-- This snippet is used in firefox extension, see Makefile -->
 <base href="resource://pdf.js/web/" />
@@ -22,7 +23,7 @@ var PDFJS = {};
   // Use strict in our context only - users might not want it
   'use strict';
 
-  PDFJS.build = '5ac7513';
+  PDFJS.build = 'c757eed';
 
   // Files are inserted below - see Makefile
 /* -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
@@ -34,7 +35,7 @@ var globalScope = (typeof window === 'undefined') ? this : window;
 
 var isWorker = (typeof window == 'undefined');
 
-var ERRORS = 0, WARNINGS = 1, TODOS = 5;
+var ERRORS = 0, WARNINGS = 1, INFOS = 5;
 var verbosity = WARNINGS;
 
 // The global PDFJS object exposes the API
@@ -178,6 +179,7 @@ var Page = (function PageClosure() {
         // fetching items
         var streams = [];
         var i, n = content.length;
+        var streams = [];
         for (i = 0; i < n; ++i)
           streams.push(xref.fetchIfRef(content[i]));
         content = new StreamsSequenceStream(streams);
@@ -193,7 +195,48 @@ var Page = (function PageClosure() {
 
       return pe.getOperatorList(content, resources, dependency);
     },
+    extractTextContent: function Page_extractTextContent() {
+      var handler = {
+        on: function nullHandlerOn() {},
+        send: function nullHandlerSend() {}
+      };
 
+      var xref = this.xref;
+      var content = xref.fetchIfRef(this.content);
+      var resources = xref.fetchIfRef(this.resources);
+      if (isArray(content)) {
+        // fetching items
+        var i, n = content.length;
+        var streams = [];
+        for (i = 0; i < n; ++i)
+          streams.push(xref.fetchIfRef(content[i]));
+        content = new StreamsSequenceStream(streams);
+      } else if (isStream(content)) {
+        content.reset();
+      }
+
+      var pe = new PartialEvaluator(
+                     xref, handler, 'p' + this.pageNumber + '_');
+      return pe.getTextContent(content, resources);
+    },
+
+    ensureFonts: function Page_ensureFonts(fonts, callback) {
+      this.stats.time('Font Loading');
+      // Convert the font names to the corresponding font obj.
+      for (var i = 0, ii = fonts.length; i < ii; i++) {
+        fonts[i] = this.objs.objs[fonts[i]].data;
+      }
+
+      // Load all the fonts
+      FontLoader.bind(
+        fonts,
+        function pageEnsureFontsFontObjs(fontObjs) {
+          this.stats.timeEnd('Font Loading');
+
+          callback.call(this);
+        }.bind(this)
+      );
+    },
     getLinks: function Page_getLinks() {
       var links = [];
       var annotations = pageGetAnnotations();
@@ -508,11 +551,14 @@ var PDFDocument = (function PDFDocumentClosure() {
   return PDFDocument;
 })();
 
+
 /* -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab: */
 
 'use strict';
 
+// Use only for debugging purposes. This should not be used in any code that is
+// in mozilla master.
 function log(msg) {
   if (console && console.log)
     console.log(msg);
@@ -520,9 +566,36 @@ function log(msg) {
     print(msg);
 }
 
+// A notice for devs that will not trigger the fallback UI.  These are good
+// for things that are helpful to devs, such as warning that Workers were
+// disabled, which is important to devs but not end users.
+function info(msg) {
+  if (verbosity >= INFOS) {
+    log('Info: ' + msg);
+    PDFJS.LogManager.notify('info', msg);
+  }
+}
+
+// Non-fatal warnings that should trigger the fallback UI.
 function warn(msg) {
-  if (verbosity >= WARNINGS)
+  if (verbosity >= WARNINGS) {
     log('Warning: ' + msg);
+    PDFJS.LogManager.notify('warn', msg);
+  }
+}
+
+// Fatal errors that should trigger the fallback UI and halt execution by
+// throwing an exception.
+function error(msg) {
+  log('Error: ' + msg);
+  log(backtrace());
+  PDFJS.LogManager.notify('error', msg);
+  throw new Error(msg);
+}
+
+// Missing features that should trigger the fallback UI.
+function TODO(what) {
+  warn('TODO: ' + what);
 }
 
 function backtrace() {
@@ -531,21 +604,6 @@ function backtrace() {
   } catch (e) {
     return e.stack ? e.stack.split('\n').slice(2).join('\n') : '';
   }
-}
-
-function error(msg) {
-  log('Error: ' + msg);
-  log(backtrace());
-  throw new Error(msg);
-}
-
-function TODO(what) {
-  if (verbosity >= TODOS)
-    log('TODO: ' + what);
-}
-
-function malformed(msg) {
-  error('Malformed PDF: ' + msg);
 }
 
 function assert(cond, msg) {
@@ -557,8 +615,24 @@ function assert(cond, msg) {
 // behavior is undefined.
 function assertWellFormed(cond, msg) {
   if (!cond)
-    malformed(msg);
+    error(msg);
 }
+
+var LogManager = PDFJS.LogManager = (function LogManagerClosure() {
+  var loggers = [];
+  return {
+    addLogger: function logManager_addLogger(logger) {
+      loggers.push(logger);
+    },
+    notify: function(type, message) {
+      for (var i = 0, ii = loggers.length; i < ii; i++) {
+        var logger = loggers[i];
+        if (logger[type])
+          logger[type](message);
+      }
+    }
+  };
+})();
 
 function shadow(obj, prop, value) {
   Object.defineProperty(obj, prop, { value: value,
@@ -810,6 +884,10 @@ function stringToPDFString(str) {
     }
   }
   return str2;
+}
+
+function stringToUTF8String(str) {
+  return decodeURIComponent(escape(str));
 }
 
 function isBool(v) {
@@ -1110,7 +1188,9 @@ var StatTimer = (function StatTimerClosure() {
  * @return {Promise} A promise that is resolved with {PDFDocumentProxy} object.
  */
 PDFJS.getDocument = function getDocument(source) {
-  var url, data, headers, password, parameters = {};
+  var url, data, headers, password, parameters = {}, workerInitializedPromise,
+    workerReadyPromise, transport;
+
   if (typeof source === 'string') {
     url = source;
   } else if (isArrayBuffer(source)) {
@@ -1129,8 +1209,9 @@ PDFJS.getDocument = function getDocument(source) {
           'string or a parameter object');
   }
 
-  var promise = new PDFJS.Promise();
-  var transport = new WorkerTransport(promise);
+  workerInitializedPromise = new PDFJS.Promise();
+  workerReadyPromise = new PDFJS.Promise();
+  transport = new WorkerTransport(workerInitializedPromise, workerReadyPromise);
   if (data) {
     // assuming the data is array, instantiating directly from it
     transport.sendData(data, parameters);
@@ -1140,24 +1221,31 @@ PDFJS.getDocument = function getDocument(source) {
       {
         url: url,
         progress: function getPDFProgress(evt) {
-          if (evt.lengthComputable)
-            promise.progress({
+          if (evt.lengthComputable) {
+            workerReadyPromise.progress({
               loaded: evt.loaded,
               total: evt.total
             });
+          }
         },
         error: function getPDFError(e) {
-          promise.reject('Unexpected server response of ' +
+          workerReadyPromise.reject('Unexpected server response of ' +
             e.target.status + '.');
         },
         headers: headers
       },
       function getPDFLoad(data) {
-        transport.sendData(data, parameters);
+        // sometimes the pdf has finished downloading before the web worker-test
+        // has finished. In that case the rendering of the final pdf would cause
+        // errors. We have to wait for the WorkerTransport to finalize worker-
+        // support detection
+        workerInitializedPromise.then(function workerInitialized() {
+          transport.sendData(data, parameters);
+        });
       });
   }
 
-  return promise;
+  return workerReadyPromise;
 };
 
 /**
@@ -1243,6 +1331,15 @@ var PDFDocumentProxy = (function PDFDocumentProxyClosure() {
       promise.resolve(this.pdfInfo.encrypted);
       return promise;
     },
+    /**
+     * @return {Promise} A promise that is resolved with a TypedArray that has
+     * the raw data from the PDF.
+     */
+    getData: function PDFDocumentProxy_getData() {
+      var promise = new PDFJS.Promise();
+      this.transport.getData(promise);
+      return promise;
+    },
     destroy: function PDFDocumentProxy_destroy() {
       this.transport.destroy();
     }
@@ -1317,7 +1414,11 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
      * {
      *   canvasContext(required): A 2D context of a DOM Canvas object.,
      *   textLayer(optional): An object that has beginLayout, endLayout, and
-     *                        appendText functions.
+     *                        appendText functions.,
+     *   continueCallback(optional): A function that will be called each time
+     *                               the rendering is paused.  To continue
+     *                               rendering call the function that is the
+     *                               first argument to the callback.
      * }.
      * @return {Promise} A promise that is resolved when the page finishes
      * rendering.
@@ -1353,6 +1454,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
         else
           promise.resolve();
       };
+      var continueCallback = params.continueCallback;
 
       // Once the operatorList and fonts are loaded, do the actual rendering.
       this.displayReadyPromise.then(
@@ -1365,7 +1467,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
           var gfx = new CanvasGraphics(params.canvasContext,
             this.objs, params.textLayer);
           try {
-            this.display(gfx, params.viewport, complete);
+            this.display(gfx, params.viewport, complete, continueCallback);
           } catch (e) {
             complete(e);
           }
@@ -1423,7 +1525,8 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
     /**
      * For internal use only.
      */
-    display: function PDFPageProxy_display(gfx, viewport, callback) {
+    display: function PDFPageProxy_display(gfx, viewport, callback,
+                                           continueCallback) {
       var stats = this.stats;
       stats.time('Rendering');
 
@@ -1439,10 +1542,16 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
         stepper.nextBreakPoint = stepper.getNextBreakPoint();
       }
 
+      var continueWrapper;
+      if (continueCallback)
+        continueWrapper = function() { continueCallback(next); }
+      else
+        continueWrapper = next;
+
       var self = this;
       function next() {
-        startIdx =
-          gfx.executeOperatorList(operatorList, startIdx, next, stepper);
+        startIdx = gfx.executeOperatorList(operatorList, startIdx,
+                                           continueWrapper, stepper);
         if (startIdx == length) {
           gfx.endDrawing();
           stats.timeEnd('Rendering');
@@ -1450,15 +1559,21 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
           if (callback) callback();
         }
       }
-      next();
+      continueWrapper();
     },
     /**
-     * Stub for future feature.
+     * @return {Promise} That is resolved with the a {string} that is the text
+     * content from the page.
      */
     getTextContent: function PDFPageProxy_getTextContent() {
       var promise = new PDFJS.Promise();
-      var textContent = 'page text'; // not implemented
-      promise.resolve(textContent);
+      this.transport.messageHandler.send('GetTextContent', {
+          pageIndex: this.pageNumber - 1
+        },
+        function textContentCallback(textContent) {
+          promise.resolve(textContent);
+        }
+      );
       return promise;
     },
     /**
@@ -1491,8 +1606,8 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
  * For internal use only.
  */
 var WorkerTransport = (function WorkerTransportClosure() {
-  function WorkerTransport(promise) {
-    this.workerReadyPromise = promise;
+  function WorkerTransport(workerInitializedPromise, workerReadyPromise) {
+    this.workerReadyPromise = workerReadyPromise;
     this.objs = new PDFObjects();
 
     this.pageCache = [];
@@ -1536,6 +1651,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
             globalScope.PDFJS.disableWorker = true;
             this.setupFakeWorker();
           }
+          workerInitializedPromise.resolve();
         }.bind(this));
 
         var testObj = new Uint8Array(1);
@@ -1544,13 +1660,14 @@ var WorkerTransport = (function WorkerTransportClosure() {
         messageHandler.send('test', testObj);
         return;
       } catch (e) {
-        warn('The worker has been disabled.');
+        info('The worker has been disabled.');
       }
     }
     // Either workers are disabled, not supported or have thrown an exception.
     // Thus, we fallback to a faked worker.
     globalScope.PDFJS.disableWorker = true;
     this.setupFakeWorker();
+    workerInitializedPromise.resolve();
   }
   WorkerTransport.prototype = {
     destroy: function WorkerTransport_destroy() {
@@ -1700,6 +1817,12 @@ var WorkerTransport = (function WorkerTransportClosure() {
 
     sendData: function WorkerTransport_sendData(data, params) {
       this.messageHandler.send('GetDocRequest', {data: data, params: params});
+    },
+
+    getData: function WorkerTransport_sendData(promise) {
+      this.messageHandler.send('GetData', null, function(data) {
+        promise.resolve(data);
+      });
     },
 
     getPage: function WorkerTransport_getPage(pageNumber, promise) {
@@ -2066,10 +2189,13 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       this.ctx.webkitLineDashOffset = dashPhase;
     },
     setRenderingIntent: function CanvasGraphics_setRenderingIntent(intent) {
-      TODO('set rendering intent: ' + intent);
+      // Maybe if we one day fully support color spaces this will be important
+      // for now we can ignore.
+      // TODO set rendering intent?
     },
     setFlatness: function CanvasGraphics_setFlatness(flatness) {
-      TODO('set flatness: ' + flatness);
+      // There's no way to control this with canvas, but we can safely ignore.
+      // TODO set flatness?
     },
     setGState: function CanvasGraphics_setGState(states) {
       for (var i = 0, ii = states.length; i < ii; i++) {
@@ -2564,7 +2690,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
             text.length += shownText.length;
           }
         } else {
-          malformed('TJ array element ' + e + ' is not string or num');
+          error('TJ array element ' + e + ' is not string or num');
         }
       }
 
@@ -2817,6 +2943,40 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
           }
         }
       }
+      function rescaleImage(pixels, widthScale, heightScale) {
+        var scaledWidth = Math.ceil(width / widthScale);
+        var scaledHeight = Math.ceil(height / heightScale);
+
+        var itemsSum = new Uint32Array(scaledWidth * scaledHeight * 4);
+        var itemsCount = new Uint32Array(scaledWidth * scaledHeight);
+        for (var i = 0, position = 0; i < height; i++) {
+          var lineOffset = (0 | (i / heightScale)) * scaledWidth;
+          for (var j = 0; j < width; j++) {
+            var countOffset = lineOffset + (0 | (j / widthScale));
+            var sumOffset = countOffset << 2;
+            itemsSum[sumOffset] += pixels[position];
+            itemsSum[sumOffset + 1] += pixels[position + 1];
+            itemsSum[sumOffset + 2] += pixels[position + 2];
+            itemsSum[sumOffset + 3] += pixels[position + 3];
+            itemsCount[countOffset]++;
+            position += 4;
+          }
+        }
+        var tmpCanvas = createScratchCanvas(scaledWidth, scaledHeight);
+        var tmpCtx = tmpCanvas.getContext('2d');
+        var imgData = tmpCtx.getImageData(0, 0, scaledWidth, scaledHeight);
+        pixels = imgData.data;
+        for (var i = 0, j = 0, ii = scaledWidth * scaledHeight; i < ii; i++) {
+          var count = itemsCount[i];
+          pixels[j] = itemsSum[j] / count;
+          pixels[j + 1] = itemsSum[j + 1] / count;
+          pixels[j + 2] = itemsSum[j + 2] / count;
+          pixels[j + 3] = itemsSum[j + 3] / count;
+          j += 4;
+        }
+        tmpCtx.putImageData(imgData, 0, 0);
+        return tmpCanvas;
+      }
 
       this.save();
 
@@ -2839,8 +2999,19 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
 
       applyStencilMask(pixels, inverseDecode);
 
-      tmpCtx.putImageData(imgData, 0, 0);
-      ctx.drawImage(tmpCanvas, 0, -h);
+      var currentTransform = ctx.mozCurrentTransformInverse;
+      var widthScale = Math.max(Math.abs(currentTransform[0]), 1);
+      var heightScale = Math.max(Math.abs(currentTransform[3]), 1);
+      if (widthScale >= 2 || heightScale >= 2) {
+        // canvas does not resize well large images to small -- using simple
+        // algorithm to perform pre-scaling
+        tmpCanvas = rescaleImage(imgData.data, widthScale, heightScale);
+        ctx.scale(widthScale, heightScale);
+        ctx.drawImage(tmpCanvas, 0, -h / heightScale);
+      } else {
+        tmpCtx.putImageData(imgData, 0, 0);
+        ctx.drawImage(tmpCanvas, 0, -h);
+      }
       this.restore();
     },
 
@@ -3102,7 +3273,14 @@ var Catalog = (function CatalogClosure() {
 
   Catalog.prototype = {
     get metadata() {
-      var stream = this.catDict.get('Metadata');
+      var streamRef = this.catDict.getRaw('Metadata');
+      if (!isRef(streamRef))
+        return shadow(this, 'metadata', null);
+
+      var encryptMetadata = !this.xref.encrypt ? false :
+        this.xref.encrypt.encryptMetadata;
+
+      var stream = this.xref.fetch(streamRef, !encryptMetadata);
       var metadata;
       if (stream && isDict(stream.dict)) {
         var type = stream.dict.get('Type');
@@ -3110,7 +3288,16 @@ var Catalog = (function CatalogClosure() {
 
         if (isName(type) && isName(subtype) &&
             type.name === 'Metadata' && subtype.name === 'XML') {
-          metadata = stringToPDFString(bytesToString(stream.getBytes()));
+          // XXX: This should examine the charset the XML document defines,
+          // however since there are currently no real means to decode
+          // arbitrary charsets, let's just hope that the author of the PDF
+          // was reasonable enough to stick with the XML default charset,
+          // which is UTF-8.
+          try {
+            metadata = stringToUTF8String(bytesToString(stream.getBytes()));
+          } catch (e) {
+            info('Skipping invalid metadata.');
+          }
         }
       }
 
@@ -12155,12 +12342,12 @@ var LabCS = (function LabCSClosure() {
       error('Invalid WhitePoint components, no fallback available');
 
     if (this.XB < 0 || this.YB < 0 || this.ZB < 0) {
-      warn('Invalid BlackPoint, falling back to default');
+      info('Invalid BlackPoint, falling back to default');
       this.XB = this.YB = this.ZB = 0;
     }
 
     if (this.amin > this.amax || this.bmin > this.bmax) {
-      warn('Invalid Range, falling back to defaults');
+      info('Invalid Range, falling back to defaults');
       this.amin = -100;
       this.amax = 100;
       this.bmin = -100;
@@ -12783,8 +12970,10 @@ var CipherTransformFactory = (function CipherTransformFactoryClosure() {
     var userPassword = stringToBytes(dict.get('U'));
     var flags = dict.get('P');
     var revision = dict.get('R');
-    var encryptMetadata =
+    var encryptMetadata = algorithm == 4 &&  // meaningful when V is 4
       dict.get('EncryptMetadata') !== false; // makes true as default value
+    this.encryptMetadata = encryptMetadata;
+
     var fileIdBytes = stringToBytes(fileId);
     var passwordBytes;
     if (password)
@@ -13040,8 +13229,9 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
 
         font = xref.fetchIfRef(font) || fontRes.get(fontName);
         assertWellFormed(isDict(font));
+
         ++self.objIdCounter;
-        if (!font.translated) {
+        if (!font.loadedName) {
           font.translated = self.translateFont(font, xref, resources,
                                                dependency);
           if (font.translated) {
@@ -13111,8 +13301,10 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         insertDependency([objId]);
         args = [objId, w, h];
 
-        var softMask = dict.get('SMask', 'IM') || false;
-        if (!softMask && image instanceof JpegStream &&
+        var softMask = dict.get('SMask', 'SM') || false;
+        var mask = dict.get('Mask') || false;
+
+        if (!softMask && !mask && image instanceof JpegStream &&
             image.isNativelySupported(xref, resources)) {
           // These JPEGs don't need any more processing so we can just send it.
           fn = 'paintJpegXObject';
@@ -13304,6 +13496,18 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
                         value[1]
                       ]);
                       break;
+                    case 'BM':
+                      // We support the default so don't trigger the TODO.
+                      if (!isName(value) || value.name != 'Normal')
+                        TODO('graphic state operator ' + key);
+                      break;
+                    case 'SMask':
+                      // We support the default so don't trigger the TODO.
+                      if (!isName(value) || value.name != 'None')
+                        TODO('graphic state operator ' + key);
+                      break;
+                    // Only generate info log messages for the following since
+                    // they are unlikey to have a big impact on the rendering.
                     case 'OP':
                     case 'op':
                     case 'OPM':
@@ -13316,14 +13520,13 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
                     case 'HT':
                     case 'SM':
                     case 'SA':
-                    case 'BM':
-                    case 'SMask':
                     case 'AIS':
                     case 'TK':
-                      TODO('graphic state operator ' + key);
+                      // TODO implement these operators.
+                      info('graphic state operator ' + key);
                       break;
                     default:
-                      warn('Unknown graphic state operator ' + key);
+                      info('Unknown graphic state operator ' + key);
                       break;
                   }
                 }
@@ -13342,6 +13545,81 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       }
 
       return queue;
+    },
+
+    getTextContent: function partialEvaluatorGetIRQueue(stream, resources) {
+
+      var self = this;
+      var xref = this.xref;
+
+      function handleSetFont(fontName, fontRef) {
+        var fontRes = resources.get('Font');
+
+        // TODO: TOASK: Is it possible to get here? If so, what does
+        // args[0].name should be like???
+        assert(fontRes, 'fontRes not available');
+
+        fontRes = xref.fetchIfRef(fontRes);
+        fontRef = fontRef || fontRes.get(fontName);
+        var font = xref.fetchIfRef(fontRef), tra;
+        assertWellFormed(isDict(font));
+        if (!font.translated) {
+          font.translated = self.translateFont(font, xref, resources);
+        }
+        return font;
+      }
+
+      resources = xref.fetchIfRef(resources) || new Dict();
+
+      var parser = new Parser(new Lexer(stream), false);
+      var res = resources;
+      var args = [], obj;
+
+      var text = '';
+      var chunk = '';
+      var font = null;
+      while (!isEOF(obj = parser.getObj())) {
+        if (isCmd(obj)) {
+          var cmd = obj.cmd;
+          switch (cmd) {
+            case 'Tf':
+              font = handleSetFont(args[0].name);
+              break;
+            case 'TJ':
+              var items = args[0];
+              for (var j = 0, jj = items.length; j < jj; j++) {
+                if (typeof items[j] === 'string') {
+                  chunk += items[j];
+                } else if (items[j] < 0) {
+                  // making all negative offsets a space - better to have
+                  // a space in incorrect place than not have them at all
+                  chunk += ' ';
+                }
+              }
+              break;
+            case 'Tj':
+              chunk += args[0];
+              break;
+            case "'":
+              chunk += args[0] + ' ';
+              break;
+            case '"':
+              chunk += args[2] + ' ';
+              break;
+          } // switch
+          if (chunk !== '') {
+            text += fontCharsToUnicode(chunk, font.translated.properties);
+            chunk = '';
+          }
+
+          args = [];
+        } else if (obj != null) {
+          assertWellFormed(args.length <= 33, 'Too many arguments');
+          args.push(obj);
+        }
+      }
+
+      return text;
     },
 
     extractDataStructures: function
@@ -13497,8 +13775,9 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
             }
           } else if (octet == 0x3E) {
             if (token.length) {
-              // XXX guessing chars size by checking number size in the CMap
-              if (token.length <= 2 && properties.composite)
+              // Heuristic: guessing chars size by checking numbers sizes
+              // in the CMap entries.
+              if (token.length == 2 && properties.composite)
                 properties.wideChars = false;
 
               if (token.length <= 4) {
@@ -14317,7 +14596,7 @@ var FontLoader = {
 
       // XXX we should have a time-out here too, and maybe fire
       // pdfjsFontLoadFailed?
-      var src = '<!DOCTYPE HTML><html><head>';
+      var src = '<!DOCTYPE HTML><html><head><meta charset="utf-8">';
       src += '<style type="text/css">';
       for (var i = 0, ii = rules.length; i < ii; ++i) {
         src += rules[i];
@@ -14536,6 +14815,736 @@ function isSpecialUnicode(unicode) {
   return (unicode <= 0x1F || (unicode >= 127 && unicode < kSizeOfGlyphArea)) ||
     (unicode >= kCmapGlyphOffset &&
     unicode < kCmapGlyphOffset + kSizeOfGlyphArea);
+}
+
+// The normalization table is obtained by filtering the Unicode characters
+// database with <compat> entries.
+var NormalizedUnicodes = {
+  '\u00A8': '\u0020\u0308',
+  '\u00AF': '\u0020\u0304',
+  '\u00B4': '\u0020\u0301',
+  '\u00B5': '\u03BC',
+  '\u00B8': '\u0020\u0327',
+  '\u0132': '\u0049\u004A',
+  '\u0133': '\u0069\u006A',
+  '\u013F': '\u004C\u00B7',
+  '\u0140': '\u006C\u00B7',
+  '\u0149': '\u02BC\u006E',
+  '\u017F': '\u0073',
+  '\u01C4': '\u0044\u017D',
+  '\u01C5': '\u0044\u017E',
+  '\u01C6': '\u0064\u017E',
+  '\u01C7': '\u004C\u004A',
+  '\u01C8': '\u004C\u006A',
+  '\u01C9': '\u006C\u006A',
+  '\u01CA': '\u004E\u004A',
+  '\u01CB': '\u004E\u006A',
+  '\u01CC': '\u006E\u006A',
+  '\u01F1': '\u0044\u005A',
+  '\u01F2': '\u0044\u007A',
+  '\u01F3': '\u0064\u007A',
+  '\u02D8': '\u0020\u0306',
+  '\u02D9': '\u0020\u0307',
+  '\u02DA': '\u0020\u030A',
+  '\u02DB': '\u0020\u0328',
+  '\u02DC': '\u0020\u0303',
+  '\u02DD': '\u0020\u030B',
+  '\u037A': '\u0020\u0345',
+  '\u0384': '\u0020\u0301',
+  '\u03D0': '\u03B2',
+  '\u03D1': '\u03B8',
+  '\u03D2': '\u03A5',
+  '\u03D5': '\u03C6',
+  '\u03D6': '\u03C0',
+  '\u03F0': '\u03BA',
+  '\u03F1': '\u03C1',
+  '\u03F2': '\u03C2',
+  '\u03F4': '\u0398',
+  '\u03F5': '\u03B5',
+  '\u03F9': '\u03A3',
+  '\u0587': '\u0565\u0582',
+  '\u0675': '\u0627\u0674',
+  '\u0676': '\u0648\u0674',
+  '\u0677': '\u06C7\u0674',
+  '\u0678': '\u064A\u0674',
+  '\u0E33': '\u0E4D\u0E32',
+  '\u0EB3': '\u0ECD\u0EB2',
+  '\u0EDC': '\u0EAB\u0E99',
+  '\u0EDD': '\u0EAB\u0EA1',
+  '\u0F77': '\u0FB2\u0F81',
+  '\u0F79': '\u0FB3\u0F81',
+  '\u1E9A': '\u0061\u02BE',
+  '\u1FBD': '\u0020\u0313',
+  '\u1FBF': '\u0020\u0313',
+  '\u1FC0': '\u0020\u0342',
+  '\u1FFE': '\u0020\u0314',
+  '\u2002': '\u0020',
+  '\u2003': '\u0020',
+  '\u2004': '\u0020',
+  '\u2005': '\u0020',
+  '\u2006': '\u0020',
+  '\u2008': '\u0020',
+  '\u2009': '\u0020',
+  '\u200A': '\u0020',
+  '\u2017': '\u0020\u0333',
+  '\u2024': '\u002E',
+  '\u2025': '\u002E\u002E',
+  '\u2026': '\u002E\u002E\u002E',
+  '\u2033': '\u2032\u2032',
+  '\u2034': '\u2032\u2032\u2032',
+  '\u2036': '\u2035\u2035',
+  '\u2037': '\u2035\u2035\u2035',
+  '\u203C': '\u0021\u0021',
+  '\u203E': '\u0020\u0305',
+  '\u2047': '\u003F\u003F',
+  '\u2048': '\u003F\u0021',
+  '\u2049': '\u0021\u003F',
+  '\u2057': '\u2032\u2032\u2032\u2032',
+  '\u205F': '\u0020',
+  '\u20A8': '\u0052\u0073',
+  '\u2100': '\u0061\u002F\u0063',
+  '\u2101': '\u0061\u002F\u0073',
+  '\u2103': '\u00B0\u0043',
+  '\u2105': '\u0063\u002F\u006F',
+  '\u2106': '\u0063\u002F\u0075',
+  '\u2107': '\u0190',
+  '\u2109': '\u00B0\u0046',
+  '\u2116': '\u004E\u006F',
+  '\u2121': '\u0054\u0045\u004C',
+  '\u2135': '\u05D0',
+  '\u2136': '\u05D1',
+  '\u2137': '\u05D2',
+  '\u2138': '\u05D3',
+  '\u213B': '\u0046\u0041\u0058',
+  '\u2160': '\u0049',
+  '\u2161': '\u0049\u0049',
+  '\u2162': '\u0049\u0049\u0049',
+  '\u2163': '\u0049\u0056',
+  '\u2164': '\u0056',
+  '\u2165': '\u0056\u0049',
+  '\u2166': '\u0056\u0049\u0049',
+  '\u2167': '\u0056\u0049\u0049\u0049',
+  '\u2168': '\u0049\u0058',
+  '\u2169': '\u0058',
+  '\u216A': '\u0058\u0049',
+  '\u216B': '\u0058\u0049\u0049',
+  '\u216C': '\u004C',
+  '\u216D': '\u0043',
+  '\u216E': '\u0044',
+  '\u216F': '\u004D',
+  '\u2170': '\u0069',
+  '\u2171': '\u0069\u0069',
+  '\u2172': '\u0069\u0069\u0069',
+  '\u2173': '\u0069\u0076',
+  '\u2174': '\u0076',
+  '\u2175': '\u0076\u0069',
+  '\u2176': '\u0076\u0069\u0069',
+  '\u2177': '\u0076\u0069\u0069\u0069',
+  '\u2178': '\u0069\u0078',
+  '\u2179': '\u0078',
+  '\u217A': '\u0078\u0069',
+  '\u217B': '\u0078\u0069\u0069',
+  '\u217C': '\u006C',
+  '\u217D': '\u0063',
+  '\u217E': '\u0064',
+  '\u217F': '\u006D',
+  '\u222C': '\u222B\u222B',
+  '\u222D': '\u222B\u222B\u222B',
+  '\u222F': '\u222E\u222E',
+  '\u2230': '\u222E\u222E\u222E',
+  '\u2474': '\u0028\u0031\u0029',
+  '\u2475': '\u0028\u0032\u0029',
+  '\u2476': '\u0028\u0033\u0029',
+  '\u2477': '\u0028\u0034\u0029',
+  '\u2478': '\u0028\u0035\u0029',
+  '\u2479': '\u0028\u0036\u0029',
+  '\u247A': '\u0028\u0037\u0029',
+  '\u247B': '\u0028\u0038\u0029',
+  '\u247C': '\u0028\u0039\u0029',
+  '\u247D': '\u0028\u0031\u0030\u0029',
+  '\u247E': '\u0028\u0031\u0031\u0029',
+  '\u247F': '\u0028\u0031\u0032\u0029',
+  '\u2480': '\u0028\u0031\u0033\u0029',
+  '\u2481': '\u0028\u0031\u0034\u0029',
+  '\u2482': '\u0028\u0031\u0035\u0029',
+  '\u2483': '\u0028\u0031\u0036\u0029',
+  '\u2484': '\u0028\u0031\u0037\u0029',
+  '\u2485': '\u0028\u0031\u0038\u0029',
+  '\u2486': '\u0028\u0031\u0039\u0029',
+  '\u2487': '\u0028\u0032\u0030\u0029',
+  '\u2488': '\u0031\u002E',
+  '\u2489': '\u0032\u002E',
+  '\u248A': '\u0033\u002E',
+  '\u248B': '\u0034\u002E',
+  '\u248C': '\u0035\u002E',
+  '\u248D': '\u0036\u002E',
+  '\u248E': '\u0037\u002E',
+  '\u248F': '\u0038\u002E',
+  '\u2490': '\u0039\u002E',
+  '\u2491': '\u0031\u0030\u002E',
+  '\u2492': '\u0031\u0031\u002E',
+  '\u2493': '\u0031\u0032\u002E',
+  '\u2494': '\u0031\u0033\u002E',
+  '\u2495': '\u0031\u0034\u002E',
+  '\u2496': '\u0031\u0035\u002E',
+  '\u2497': '\u0031\u0036\u002E',
+  '\u2498': '\u0031\u0037\u002E',
+  '\u2499': '\u0031\u0038\u002E',
+  '\u249A': '\u0031\u0039\u002E',
+  '\u249B': '\u0032\u0030\u002E',
+  '\u249C': '\u0028\u0061\u0029',
+  '\u249D': '\u0028\u0062\u0029',
+  '\u249E': '\u0028\u0063\u0029',
+  '\u249F': '\u0028\u0064\u0029',
+  '\u24A0': '\u0028\u0065\u0029',
+  '\u24A1': '\u0028\u0066\u0029',
+  '\u24A2': '\u0028\u0067\u0029',
+  '\u24A3': '\u0028\u0068\u0029',
+  '\u24A4': '\u0028\u0069\u0029',
+  '\u24A5': '\u0028\u006A\u0029',
+  '\u24A6': '\u0028\u006B\u0029',
+  '\u24A7': '\u0028\u006C\u0029',
+  '\u24A8': '\u0028\u006D\u0029',
+  '\u24A9': '\u0028\u006E\u0029',
+  '\u24AA': '\u0028\u006F\u0029',
+  '\u24AB': '\u0028\u0070\u0029',
+  '\u24AC': '\u0028\u0071\u0029',
+  '\u24AD': '\u0028\u0072\u0029',
+  '\u24AE': '\u0028\u0073\u0029',
+  '\u24AF': '\u0028\u0074\u0029',
+  '\u24B0': '\u0028\u0075\u0029',
+  '\u24B1': '\u0028\u0076\u0029',
+  '\u24B2': '\u0028\u0077\u0029',
+  '\u24B3': '\u0028\u0078\u0029',
+  '\u24B4': '\u0028\u0079\u0029',
+  '\u24B5': '\u0028\u007A\u0029',
+  '\u2A0C': '\u222B\u222B\u222B\u222B',
+  '\u2A74': '\u003A\u003A\u003D',
+  '\u2A75': '\u003D\u003D',
+  '\u2A76': '\u003D\u003D\u003D',
+  '\u2E9F': '\u6BCD',
+  '\u2EF3': '\u9F9F',
+  '\u2F00': '\u4E00',
+  '\u2F01': '\u4E28',
+  '\u2F02': '\u4E36',
+  '\u2F03': '\u4E3F',
+  '\u2F04': '\u4E59',
+  '\u2F05': '\u4E85',
+  '\u2F06': '\u4E8C',
+  '\u2F07': '\u4EA0',
+  '\u2F08': '\u4EBA',
+  '\u2F09': '\u513F',
+  '\u2F0A': '\u5165',
+  '\u2F0B': '\u516B',
+  '\u2F0C': '\u5182',
+  '\u2F0D': '\u5196',
+  '\u2F0E': '\u51AB',
+  '\u2F0F': '\u51E0',
+  '\u2F10': '\u51F5',
+  '\u2F11': '\u5200',
+  '\u2F12': '\u529B',
+  '\u2F13': '\u52F9',
+  '\u2F14': '\u5315',
+  '\u2F15': '\u531A',
+  '\u2F16': '\u5338',
+  '\u2F17': '\u5341',
+  '\u2F18': '\u535C',
+  '\u2F19': '\u5369',
+  '\u2F1A': '\u5382',
+  '\u2F1B': '\u53B6',
+  '\u2F1C': '\u53C8',
+  '\u2F1D': '\u53E3',
+  '\u2F1E': '\u56D7',
+  '\u2F1F': '\u571F',
+  '\u2F20': '\u58EB',
+  '\u2F21': '\u5902',
+  '\u2F22': '\u590A',
+  '\u2F23': '\u5915',
+  '\u2F24': '\u5927',
+  '\u2F25': '\u5973',
+  '\u2F26': '\u5B50',
+  '\u2F27': '\u5B80',
+  '\u2F28': '\u5BF8',
+  '\u2F29': '\u5C0F',
+  '\u2F2A': '\u5C22',
+  '\u2F2B': '\u5C38',
+  '\u2F2C': '\u5C6E',
+  '\u2F2D': '\u5C71',
+  '\u2F2E': '\u5DDB',
+  '\u2F2F': '\u5DE5',
+  '\u2F30': '\u5DF1',
+  '\u2F31': '\u5DFE',
+  '\u2F32': '\u5E72',
+  '\u2F33': '\u5E7A',
+  '\u2F34': '\u5E7F',
+  '\u2F35': '\u5EF4',
+  '\u2F36': '\u5EFE',
+  '\u2F37': '\u5F0B',
+  '\u2F38': '\u5F13',
+  '\u2F39': '\u5F50',
+  '\u2F3A': '\u5F61',
+  '\u2F3B': '\u5F73',
+  '\u2F3C': '\u5FC3',
+  '\u2F3D': '\u6208',
+  '\u2F3E': '\u6236',
+  '\u2F3F': '\u624B',
+  '\u2F40': '\u652F',
+  '\u2F41': '\u6534',
+  '\u2F42': '\u6587',
+  '\u2F43': '\u6597',
+  '\u2F44': '\u65A4',
+  '\u2F45': '\u65B9',
+  '\u2F46': '\u65E0',
+  '\u2F47': '\u65E5',
+  '\u2F48': '\u66F0',
+  '\u2F49': '\u6708',
+  '\u2F4A': '\u6728',
+  '\u2F4B': '\u6B20',
+  '\u2F4C': '\u6B62',
+  '\u2F4D': '\u6B79',
+  '\u2F4E': '\u6BB3',
+  '\u2F4F': '\u6BCB',
+  '\u2F50': '\u6BD4',
+  '\u2F51': '\u6BDB',
+  '\u2F52': '\u6C0F',
+  '\u2F53': '\u6C14',
+  '\u2F54': '\u6C34',
+  '\u2F55': '\u706B',
+  '\u2F56': '\u722A',
+  '\u2F57': '\u7236',
+  '\u2F58': '\u723B',
+  '\u2F59': '\u723F',
+  '\u2F5A': '\u7247',
+  '\u2F5B': '\u7259',
+  '\u2F5C': '\u725B',
+  '\u2F5D': '\u72AC',
+  '\u2F5E': '\u7384',
+  '\u2F5F': '\u7389',
+  '\u2F60': '\u74DC',
+  '\u2F61': '\u74E6',
+  '\u2F62': '\u7518',
+  '\u2F63': '\u751F',
+  '\u2F64': '\u7528',
+  '\u2F65': '\u7530',
+  '\u2F66': '\u758B',
+  '\u2F67': '\u7592',
+  '\u2F68': '\u7676',
+  '\u2F69': '\u767D',
+  '\u2F6A': '\u76AE',
+  '\u2F6B': '\u76BF',
+  '\u2F6C': '\u76EE',
+  '\u2F6D': '\u77DB',
+  '\u2F6E': '\u77E2',
+  '\u2F6F': '\u77F3',
+  '\u2F70': '\u793A',
+  '\u2F71': '\u79B8',
+  '\u2F72': '\u79BE',
+  '\u2F73': '\u7A74',
+  '\u2F74': '\u7ACB',
+  '\u2F75': '\u7AF9',
+  '\u2F76': '\u7C73',
+  '\u2F77': '\u7CF8',
+  '\u2F78': '\u7F36',
+  '\u2F79': '\u7F51',
+  '\u2F7A': '\u7F8A',
+  '\u2F7B': '\u7FBD',
+  '\u2F7C': '\u8001',
+  '\u2F7D': '\u800C',
+  '\u2F7E': '\u8012',
+  '\u2F7F': '\u8033',
+  '\u2F80': '\u807F',
+  '\u2F81': '\u8089',
+  '\u2F82': '\u81E3',
+  '\u2F83': '\u81EA',
+  '\u2F84': '\u81F3',
+  '\u2F85': '\u81FC',
+  '\u2F86': '\u820C',
+  '\u2F87': '\u821B',
+  '\u2F88': '\u821F',
+  '\u2F89': '\u826E',
+  '\u2F8A': '\u8272',
+  '\u2F8B': '\u8278',
+  '\u2F8C': '\u864D',
+  '\u2F8D': '\u866B',
+  '\u2F8E': '\u8840',
+  '\u2F8F': '\u884C',
+  '\u2F90': '\u8863',
+  '\u2F91': '\u897E',
+  '\u2F92': '\u898B',
+  '\u2F93': '\u89D2',
+  '\u2F94': '\u8A00',
+  '\u2F95': '\u8C37',
+  '\u2F96': '\u8C46',
+  '\u2F97': '\u8C55',
+  '\u2F98': '\u8C78',
+  '\u2F99': '\u8C9D',
+  '\u2F9A': '\u8D64',
+  '\u2F9B': '\u8D70',
+  '\u2F9C': '\u8DB3',
+  '\u2F9D': '\u8EAB',
+  '\u2F9E': '\u8ECA',
+  '\u2F9F': '\u8F9B',
+  '\u2FA0': '\u8FB0',
+  '\u2FA1': '\u8FB5',
+  '\u2FA2': '\u9091',
+  '\u2FA3': '\u9149',
+  '\u2FA4': '\u91C6',
+  '\u2FA5': '\u91CC',
+  '\u2FA6': '\u91D1',
+  '\u2FA7': '\u9577',
+  '\u2FA8': '\u9580',
+  '\u2FA9': '\u961C',
+  '\u2FAA': '\u96B6',
+  '\u2FAB': '\u96B9',
+  '\u2FAC': '\u96E8',
+  '\u2FAD': '\u9751',
+  '\u2FAE': '\u975E',
+  '\u2FAF': '\u9762',
+  '\u2FB0': '\u9769',
+  '\u2FB1': '\u97CB',
+  '\u2FB2': '\u97ED',
+  '\u2FB3': '\u97F3',
+  '\u2FB4': '\u9801',
+  '\u2FB5': '\u98A8',
+  '\u2FB6': '\u98DB',
+  '\u2FB7': '\u98DF',
+  '\u2FB8': '\u9996',
+  '\u2FB9': '\u9999',
+  '\u2FBA': '\u99AC',
+  '\u2FBB': '\u9AA8',
+  '\u2FBC': '\u9AD8',
+  '\u2FBD': '\u9ADF',
+  '\u2FBE': '\u9B25',
+  '\u2FBF': '\u9B2F',
+  '\u2FC0': '\u9B32',
+  '\u2FC1': '\u9B3C',
+  '\u2FC2': '\u9B5A',
+  '\u2FC3': '\u9CE5',
+  '\u2FC4': '\u9E75',
+  '\u2FC5': '\u9E7F',
+  '\u2FC6': '\u9EA5',
+  '\u2FC7': '\u9EBB',
+  '\u2FC8': '\u9EC3',
+  '\u2FC9': '\u9ECD',
+  '\u2FCA': '\u9ED1',
+  '\u2FCB': '\u9EF9',
+  '\u2FCC': '\u9EFD',
+  '\u2FCD': '\u9F0E',
+  '\u2FCE': '\u9F13',
+  '\u2FCF': '\u9F20',
+  '\u2FD0': '\u9F3B',
+  '\u2FD1': '\u9F4A',
+  '\u2FD2': '\u9F52',
+  '\u2FD3': '\u9F8D',
+  '\u2FD4': '\u9F9C',
+  '\u2FD5': '\u9FA0',
+  '\u3036': '\u3012',
+  '\u3038': '\u5341',
+  '\u3039': '\u5344',
+  '\u303A': '\u5345',
+  '\u309B': '\u0020\u3099',
+  '\u309C': '\u0020\u309A',
+  '\u3131': '\u1100',
+  '\u3132': '\u1101',
+  '\u3133': '\u11AA',
+  '\u3134': '\u1102',
+  '\u3135': '\u11AC',
+  '\u3136': '\u11AD',
+  '\u3137': '\u1103',
+  '\u3138': '\u1104',
+  '\u3139': '\u1105',
+  '\u313A': '\u11B0',
+  '\u313B': '\u11B1',
+  '\u313C': '\u11B2',
+  '\u313D': '\u11B3',
+  '\u313E': '\u11B4',
+  '\u313F': '\u11B5',
+  '\u3140': '\u111A',
+  '\u3141': '\u1106',
+  '\u3142': '\u1107',
+  '\u3143': '\u1108',
+  '\u3144': '\u1121',
+  '\u3145': '\u1109',
+  '\u3146': '\u110A',
+  '\u3147': '\u110B',
+  '\u3148': '\u110C',
+  '\u3149': '\u110D',
+  '\u314A': '\u110E',
+  '\u314B': '\u110F',
+  '\u314C': '\u1110',
+  '\u314D': '\u1111',
+  '\u314E': '\u1112',
+  '\u314F': '\u1161',
+  '\u3150': '\u1162',
+  '\u3151': '\u1163',
+  '\u3152': '\u1164',
+  '\u3153': '\u1165',
+  '\u3154': '\u1166',
+  '\u3155': '\u1167',
+  '\u3156': '\u1168',
+  '\u3157': '\u1169',
+  '\u3158': '\u116A',
+  '\u3159': '\u116B',
+  '\u315A': '\u116C',
+  '\u315B': '\u116D',
+  '\u315C': '\u116E',
+  '\u315D': '\u116F',
+  '\u315E': '\u1170',
+  '\u315F': '\u1171',
+  '\u3160': '\u1172',
+  '\u3161': '\u1173',
+  '\u3162': '\u1174',
+  '\u3163': '\u1175',
+  '\u3164': '\u1160',
+  '\u3165': '\u1114',
+  '\u3166': '\u1115',
+  '\u3167': '\u11C7',
+  '\u3168': '\u11C8',
+  '\u3169': '\u11CC',
+  '\u316A': '\u11CE',
+  '\u316B': '\u11D3',
+  '\u316C': '\u11D7',
+  '\u316D': '\u11D9',
+  '\u316E': '\u111C',
+  '\u316F': '\u11DD',
+  '\u3170': '\u11DF',
+  '\u3171': '\u111D',
+  '\u3172': '\u111E',
+  '\u3173': '\u1120',
+  '\u3174': '\u1122',
+  '\u3175': '\u1123',
+  '\u3176': '\u1127',
+  '\u3177': '\u1129',
+  '\u3178': '\u112B',
+  '\u3179': '\u112C',
+  '\u317A': '\u112D',
+  '\u317B': '\u112E',
+  '\u317C': '\u112F',
+  '\u317D': '\u1132',
+  '\u317E': '\u1136',
+  '\u317F': '\u1140',
+  '\u3180': '\u1147',
+  '\u3181': '\u114C',
+  '\u3182': '\u11F1',
+  '\u3183': '\u11F2',
+  '\u3184': '\u1157',
+  '\u3185': '\u1158',
+  '\u3186': '\u1159',
+  '\u3187': '\u1184',
+  '\u3188': '\u1185',
+  '\u3189': '\u1188',
+  '\u318A': '\u1191',
+  '\u318B': '\u1192',
+  '\u318C': '\u1194',
+  '\u318D': '\u119E',
+  '\u318E': '\u11A1',
+  '\u3200': '\u0028\u1100\u0029',
+  '\u3201': '\u0028\u1102\u0029',
+  '\u3202': '\u0028\u1103\u0029',
+  '\u3203': '\u0028\u1105\u0029',
+  '\u3204': '\u0028\u1106\u0029',
+  '\u3205': '\u0028\u1107\u0029',
+  '\u3206': '\u0028\u1109\u0029',
+  '\u3207': '\u0028\u110B\u0029',
+  '\u3208': '\u0028\u110C\u0029',
+  '\u3209': '\u0028\u110E\u0029',
+  '\u320A': '\u0028\u110F\u0029',
+  '\u320B': '\u0028\u1110\u0029',
+  '\u320C': '\u0028\u1111\u0029',
+  '\u320D': '\u0028\u1112\u0029',
+  '\u320E': '\u0028\u1100\u1161\u0029',
+  '\u320F': '\u0028\u1102\u1161\u0029',
+  '\u3210': '\u0028\u1103\u1161\u0029',
+  '\u3211': '\u0028\u1105\u1161\u0029',
+  '\u3212': '\u0028\u1106\u1161\u0029',
+  '\u3213': '\u0028\u1107\u1161\u0029',
+  '\u3214': '\u0028\u1109\u1161\u0029',
+  '\u3215': '\u0028\u110B\u1161\u0029',
+  '\u3216': '\u0028\u110C\u1161\u0029',
+  '\u3217': '\u0028\u110E\u1161\u0029',
+  '\u3218': '\u0028\u110F\u1161\u0029',
+  '\u3219': '\u0028\u1110\u1161\u0029',
+  '\u321A': '\u0028\u1111\u1161\u0029',
+  '\u321B': '\u0028\u1112\u1161\u0029',
+  '\u321C': '\u0028\u110C\u116E\u0029',
+  '\u321D': '\u0028\u110B\u1169\u110C\u1165\u11AB\u0029',
+  '\u321E': '\u0028\u110B\u1169\u1112\u116E\u0029',
+  '\u3220': '\u0028\u4E00\u0029',
+  '\u3221': '\u0028\u4E8C\u0029',
+  '\u3222': '\u0028\u4E09\u0029',
+  '\u3223': '\u0028\u56DB\u0029',
+  '\u3224': '\u0028\u4E94\u0029',
+  '\u3225': '\u0028\u516D\u0029',
+  '\u3226': '\u0028\u4E03\u0029',
+  '\u3227': '\u0028\u516B\u0029',
+  '\u3228': '\u0028\u4E5D\u0029',
+  '\u3229': '\u0028\u5341\u0029',
+  '\u322A': '\u0028\u6708\u0029',
+  '\u322B': '\u0028\u706B\u0029',
+  '\u322C': '\u0028\u6C34\u0029',
+  '\u322D': '\u0028\u6728\u0029',
+  '\u322E': '\u0028\u91D1\u0029',
+  '\u322F': '\u0028\u571F\u0029',
+  '\u3230': '\u0028\u65E5\u0029',
+  '\u3231': '\u0028\u682A\u0029',
+  '\u3232': '\u0028\u6709\u0029',
+  '\u3233': '\u0028\u793E\u0029',
+  '\u3234': '\u0028\u540D\u0029',
+  '\u3235': '\u0028\u7279\u0029',
+  '\u3236': '\u0028\u8CA1\u0029',
+  '\u3237': '\u0028\u795D\u0029',
+  '\u3238': '\u0028\u52B4\u0029',
+  '\u3239': '\u0028\u4EE3\u0029',
+  '\u323A': '\u0028\u547C\u0029',
+  '\u323B': '\u0028\u5B66\u0029',
+  '\u323C': '\u0028\u76E3\u0029',
+  '\u323D': '\u0028\u4F01\u0029',
+  '\u323E': '\u0028\u8CC7\u0029',
+  '\u323F': '\u0028\u5354\u0029',
+  '\u3240': '\u0028\u796D\u0029',
+  '\u3241': '\u0028\u4F11\u0029',
+  '\u3242': '\u0028\u81EA\u0029',
+  '\u3243': '\u0028\u81F3\u0029',
+  '\u32C0': '\u0031\u6708',
+  '\u32C1': '\u0032\u6708',
+  '\u32C2': '\u0033\u6708',
+  '\u32C3': '\u0034\u6708',
+  '\u32C4': '\u0035\u6708',
+  '\u32C5': '\u0036\u6708',
+  '\u32C6': '\u0037\u6708',
+  '\u32C7': '\u0038\u6708',
+  '\u32C8': '\u0039\u6708',
+  '\u32C9': '\u0031\u0030\u6708',
+  '\u32CA': '\u0031\u0031\u6708',
+  '\u32CB': '\u0031\u0032\u6708',
+  '\u3358': '\u0030\u70B9',
+  '\u3359': '\u0031\u70B9',
+  '\u335A': '\u0032\u70B9',
+  '\u335B': '\u0033\u70B9',
+  '\u335C': '\u0034\u70B9',
+  '\u335D': '\u0035\u70B9',
+  '\u335E': '\u0036\u70B9',
+  '\u335F': '\u0037\u70B9',
+  '\u3360': '\u0038\u70B9',
+  '\u3361': '\u0039\u70B9',
+  '\u3362': '\u0031\u0030\u70B9',
+  '\u3363': '\u0031\u0031\u70B9',
+  '\u3364': '\u0031\u0032\u70B9',
+  '\u3365': '\u0031\u0033\u70B9',
+  '\u3366': '\u0031\u0034\u70B9',
+  '\u3367': '\u0031\u0035\u70B9',
+  '\u3368': '\u0031\u0036\u70B9',
+  '\u3369': '\u0031\u0037\u70B9',
+  '\u336A': '\u0031\u0038\u70B9',
+  '\u336B': '\u0031\u0039\u70B9',
+  '\u336C': '\u0032\u0030\u70B9',
+  '\u336D': '\u0032\u0031\u70B9',
+  '\u336E': '\u0032\u0032\u70B9',
+  '\u336F': '\u0032\u0033\u70B9',
+  '\u3370': '\u0032\u0034\u70B9',
+  '\u33E0': '\u0031\u65E5',
+  '\u33E1': '\u0032\u65E5',
+  '\u33E2': '\u0033\u65E5',
+  '\u33E3': '\u0034\u65E5',
+  '\u33E4': '\u0035\u65E5',
+  '\u33E5': '\u0036\u65E5',
+  '\u33E6': '\u0037\u65E5',
+  '\u33E7': '\u0038\u65E5',
+  '\u33E8': '\u0039\u65E5',
+  '\u33E9': '\u0031\u0030\u65E5',
+  '\u33EA': '\u0031\u0031\u65E5',
+  '\u33EB': '\u0031\u0032\u65E5',
+  '\u33EC': '\u0031\u0033\u65E5',
+  '\u33ED': '\u0031\u0034\u65E5',
+  '\u33EE': '\u0031\u0035\u65E5',
+  '\u33EF': '\u0031\u0036\u65E5',
+  '\u33F0': '\u0031\u0037\u65E5',
+  '\u33F1': '\u0031\u0038\u65E5',
+  '\u33F2': '\u0031\u0039\u65E5',
+  '\u33F3': '\u0032\u0030\u65E5',
+  '\u33F4': '\u0032\u0031\u65E5',
+  '\u33F5': '\u0032\u0032\u65E5',
+  '\u33F6': '\u0032\u0033\u65E5',
+  '\u33F7': '\u0032\u0034\u65E5',
+  '\u33F8': '\u0032\u0035\u65E5',
+  '\u33F9': '\u0032\u0036\u65E5',
+  '\u33FA': '\u0032\u0037\u65E5',
+  '\u33FB': '\u0032\u0038\u65E5',
+  '\u33FC': '\u0032\u0039\u65E5',
+  '\u33FD': '\u0033\u0030\u65E5',
+  '\u33FE': '\u0033\u0031\u65E5',
+  '\uFB00': '\u0066\u0066',
+  '\uFB01': '\u0066\u0069',
+  '\uFB02': '\u0066\u006C',
+  '\uFB03': '\u0066\u0066\u0069',
+  '\uFB04': '\u0066\u0066\u006C',
+  '\uFB05': '\u017F\u0074',
+  '\uFB06': '\u0073\u0074',
+  '\uFB13': '\u0574\u0576',
+  '\uFB14': '\u0574\u0565',
+  '\uFB15': '\u0574\u056B',
+  '\uFB16': '\u057E\u0576',
+  '\uFB17': '\u0574\u056D',
+  '\uFB4F': '\u05D0\u05DC',
+  '\uFE49': '\u203E',
+  '\uFE4A': '\u203E',
+  '\uFE4B': '\u203E',
+  '\uFE4C': '\u203E',
+  '\uFE4D': '\u005F',
+  '\uFE4E': '\u005F',
+  '\uFE4F': '\u005F'
+};
+
+function fontCharsToUnicode(charCodes, fontProperties) {
+  var toUnicode = fontProperties.toUnicode;
+  var composite = fontProperties.composite;
+  var encoding, differences, cidToUnicode;
+  var result = '';
+  if (composite) {
+    cidToUnicode = fontProperties.cidToUnicode;
+    for (var i = 0, ii = charCodes.length; i < ii; i += 2) {
+      var charCode = (charCodes.charCodeAt(i) << 8) |
+        charCodes.charCodeAt(i + 1);
+      if (toUnicode && charCode in toUnicode) {
+        var unicode = toUnicode[charCode];
+        result += typeof unicode !== 'number' ? unicode :
+          String.fromCharCode(unicode);
+        continue;
+      }
+      result += String.fromCharCode(!cidToUnicode ? charCode :
+        cidToUnicode[charCode] || charCode);
+    }
+  } else {
+    differences = fontProperties.differences;
+    encoding = fontProperties.baseEncoding;
+    for (var i = 0, ii = charCodes.length; i < ii; i++) {
+      var charCode = charCodes.charCodeAt(i);
+      var unicode;
+      if (toUnicode && charCode in toUnicode) {
+        var unicode = toUnicode[charCode];
+        result += typeof unicode !== 'number' ? unicode :
+          String.fromCharCode(unicode);
+        continue;
+      }
+
+      var glyphName = charCode in differences ? differences[charCode] :
+        encoding[charCode];
+      if (glyphName in GlyphsUnicode) {
+        result += String.fromCharCode(GlyphsUnicode[glyphName]);
+        continue;
+      }
+      result += String.fromCharCode(charCode);
+    }
+  }
+  // normalizing the unicode characters
+  for (var i = 0, ii = result.length; i < ii; i++) {
+    if (!(result[i] in NormalizedUnicodes))
+      continue;
+    result = result.substring(0, i) + NormalizedUnicodes[result[i]] +
+      result.substring(i + 1);
+    ii = result.length;
+  }
+  return result;
 }
 
 /**
@@ -15761,9 +16770,9 @@ var Font = (function FontClosure() {
             this.isSymbolicFont = false;
         }
 
-        // heuristics: if removed more than 2 glyphs encoding WinAnsiEncoding
-        // does not set properly
-        if (glyphsRemoved > 2) {
+        // heuristics: if removed more than 10 glyphs encoding WinAnsiEncoding
+        // does not set properly (broken PDFs have about 100 removed glyphs)
+        if (glyphsRemoved > 10) {
           warn('Switching TrueType encoding to MacRomanEncoding for ' +
                this.name + ' font');
           encoding = Encodings.MacRomanEncoding;
@@ -15828,14 +16837,16 @@ var Font = (function FontClosure() {
             }
           }
           for (var index in newGlyphUnicodes) {
-            var unicode = newGlyphUnicodes[index];
-            if (reverseMap[unicode]) {
-              // avoiding assigning to the same unicode
-              glyphs[index].unicode = unusedUnicode++;
-              continue;
+            if (newGlyphUnicodes.hasOwnProperty(index)) {
+              var unicode = newGlyphUnicodes[index];
+              if (reverseMap[unicode]) {
+                // avoiding assigning to the same unicode
+                glyphs[index].unicode = unusedUnicode++;
+                continue;
+              }
+              glyphs[index].unicode = unicode;
+              reverseMap[unicode] = index;
             }
-            glyphs[index].unicode = unicode;
-            reverseMap[unicode] = index;
           }
           this.useToFontChar = true;
         }
@@ -16159,9 +17170,13 @@ var Font = (function FontClosure() {
                  window.btoa(data) + ');');
       var rule = "@font-face { font-family:'" + fontName + "';src:" + url + '}';
 
-      var styleElement = document.createElement('style');
-      document.documentElement.getElementsByTagName('head')[0].appendChild(
-        styleElement);
+      var styleElement = document.getElementById('PDFJS_FONT_STYLE_TAG');
+      if (!styleElement) {
+          styleElement = document.createElement('style');
+          styleElement.id = 'PDFJS_FONT_STYLE_TAG';
+          document.documentElement.getElementsByTagName('head')[0].appendChild(
+            styleElement);
+      }
 
       var styleSheet = styleElement.sheet;
       styleSheet.insertRule(rule, styleSheet.cssRules.length);
@@ -16263,6 +17278,7 @@ var Font = (function FontClosure() {
           }
 
           // MacRoman encoding address by re-encoding the cmap table
+
           fontCharCode = glyphName in this.glyphNameMap ?
             this.glyphNameMap[glyphName] : GlyphsUnicode[glyphName];
           break;
@@ -17413,8 +18429,10 @@ var CFFParser = (function CFFParserClosure() {
 
       // DirectWrite does not like CID fonts data. Trying to convert/flatten
       // the font data and remove CID properties.
-      if (cff.fdArray.length !== 1)
-        error('Unable to normalize CID font in CFF data');
+      if (cff.fdArray.length !== 1) {
+        warn('Unable to normalize CID font in CFF data -- using font as is');
+        return cff;
+      }
 
       var fontDict = cff.fdArray[0];
       fontDict.setByKey(17, topDict.getByName('CharStrings'));
@@ -17433,7 +18451,7 @@ var CFFParser = (function CFFParserClosure() {
         ++offset;
 
       if (offset != 0) {
-        warn('cff data is shifted');
+        info('cff data is shifted');
         bytes = bytes.subarray(offset);
         this.bytes = bytes;
       }
@@ -22730,7 +23748,7 @@ var PDFImage = (function PDFImageClosure() {
     // Clamp the value to the range
     return value < 0 ? 0 : value > max ? max : value;
   }
-  function PDFImage(xref, res, image, inline, smask) {
+  function PDFImage(xref, res, image, inline, smask, mask) {
     this.image = image;
     if (image.getParams) {
       // JPX/JPEG2000 streams directly contain bits per component
@@ -22791,12 +23809,10 @@ var PDFImage = (function PDFImageClosure() {
       }
     }
 
-    var mask = dict.get('Mask');
-
-    if (mask) {
-      TODO('masked images');
-    } else if (smask) {
+    if (smask) {
       this.smask = new PDFImage(xref, res, smask, false);
+    } else if (mask) {
+      this.mask = new PDFImage(xref, res, mask, false);
     }
   }
   /**
@@ -22807,21 +23823,36 @@ var PDFImage = (function PDFImageClosure() {
                                                      res, image, inline) {
     var imageDataPromise = new Promise();
     var smaskPromise = new Promise();
+    var maskPromise = new Promise();
     // The image data and smask data may not be ready yet, wait till both are
     // resolved.
-    Promise.all([imageDataPromise, smaskPromise]).then(function(results) {
-      var imageData = results[0], smaskData = results[1];
-      var image = new PDFImage(xref, res, imageData, inline, smaskData);
+    Promise.all([imageDataPromise, smaskPromise, maskPromise]).then(
+        function(results) {
+      var imageData = results[0], smaskData = results[1], maskData = results[2];
+      var image = new PDFImage(xref, res, imageData, inline, smaskData,
+                               maskData);
       callback(image);
     });
 
     handleImageData(handler, xref, res, image, imageDataPromise);
 
     var smask = image.dict.get('SMask');
-    if (smask)
+    var mask = image.dict.get('Mask');
+
+    if (smask) {
       handleImageData(handler, xref, res, smask, smaskPromise);
-    else
+      maskPromise.resolve(null);
+    } else {
       smaskPromise.resolve(null);
+      if (mask && isStream(mask)) {
+        handleImageData(handler, xref, res, mask, maskPromise);
+      } else if (mask) {
+        TODO('handle color key masking');
+        maskPromise.resolve(null);
+      } else {
+        maskPromise.resolve(null);
+      }
+    }
   };
 
   /**
@@ -22965,6 +23996,7 @@ var PDFImage = (function PDFImageClosure() {
     },
     getOpacity: function PDFImage_getOpacity(width, height) {
       var smask = this.smask;
+      var mask = this.mask;
       var originalWidth = this.width;
       var originalHeight = this.height;
       var buf;
@@ -22975,7 +24007,20 @@ var PDFImage = (function PDFImageClosure() {
         buf = new Uint8Array(sw * sh);
         smask.fillGrayBuffer(buf);
         if (sw != width || sh != height)
-          buf = PDFImage.resize(buf, smask.bps, 1, sw, sh, width, height);
+          buf = PDFImage.resize(buf, smask.bpc, 1, sw, sh, width, height);
+      } else if (mask) {
+        var sw = mask.width;
+        var sh = mask.height;
+        buf = new Uint8Array(sw * sh);
+        mask.numComps = 1;
+        mask.fillGrayBuffer(buf);
+
+        // Need to invert values in buffer
+        for (var i = 0, ii = sw * sh; i < ii; ++i)
+          buf[i] = 255 - buf[i];
+
+        if (sw != width || sh != height)
+          buf = PDFImage.resize(buf, mask.bpc, 1, sw, sh, width, height);
       } else {
         buf = new Uint8Array(width * height);
         for (var i = 0, ii = width * height; i < ii; ++i)
@@ -26274,7 +27319,8 @@ var Parser = (function ParserClosure() {
         return new RunLengthStream(stream);
       }
       if (name == 'JBIG2Decode') {
-        error('JBIG2 image format is not currently supprted.');
+        var bytes = stream.getBytes(length);
+        return new Jbig2Stream(bytes, stream.dict);
       }
       warn('filter "' + name + '" not supported yet');
       return stream;
@@ -27961,6 +29007,50 @@ var JpxStream = (function JpxStreamClosure() {
   return JpxStream;
 })();
 
+/**
+ * For JBIG2's we use a library to decode these images and
+ * the stream behaves like all the other DecodeStreams.
+ */
+var Jbig2Stream = (function Jbig2StreamClosure() {
+  function Jbig2Stream(bytes, dict) {
+    this.dict = dict;
+    this.bytes = bytes;
+
+    DecodeStream.call(this);
+  }
+
+  Jbig2Stream.prototype = Object.create(DecodeStream.prototype);
+
+  Jbig2Stream.prototype.ensureBuffer = function Jbig2Stream_ensureBuffer(req) {
+    if (this.bufferLength)
+      return;
+
+    var jbig2Image = new Jbig2Image();
+
+    var chunks = [], decodeParams = this.dict.get('DecodeParms');
+    if (decodeParams && decodeParams.has('JBIG2Globals')) {
+      var globalsStream = decodeParams.get('JBIG2Globals');
+      var globals = globalsStream.getBytes();
+      chunks.push({data: globals, start: 0, end: globals.length});
+    }
+    chunks.push({data: this.bytes, start: 0, end: this.bytes.length});
+    var data = jbig2Image.parseChunks(chunks);
+    var dataLength = data.length;
+
+    // JBIG2 had black as 1 and white as 0, inverting the colors
+    for (var i = 0; i < dataLength; i++)
+      data[i] ^= 0xFF;
+
+    this.buffer = data;
+    this.bufferLength = dataLength;
+  };
+  Jbig2Stream.prototype.getChar = function Jbig2Stream_getChar() {
+    error('internal error: getChar is not valid on Jbig2Stream');
+  };
+
+  return Jbig2Stream;
+})();
+
 var DecryptStream = (function DecryptStreamClosure() {
   function DecryptStream(str, decrypt) {
     this.str = str;
@@ -28669,7 +29759,7 @@ var CCITTFaxStream = (function CCITTFaxStreamClosure() {
 
     if (a1 > codingLine[codingPos]) {
       if (a1 > this.columns) {
-        warn('row is wrong length');
+        info('row is wrong length');
         this.err = true;
         a1 = this.columns;
       }
@@ -28689,7 +29779,7 @@ var CCITTFaxStream = (function CCITTFaxStreamClosure() {
 
     if (a1 > codingLine[codingPos]) {
       if (a1 > this.columns) {
-        warn('row is wrong length');
+        info('row is wrong length');
         this.err = true;
         a1 = this.columns;
       }
@@ -28699,7 +29789,7 @@ var CCITTFaxStream = (function CCITTFaxStreamClosure() {
       codingLine[codingPos] = a1;
     } else if (a1 < codingLine[codingPos]) {
       if (a1 < 0) {
-        warn('invalid code');
+        info('invalid code');
         this.err = true;
         a1 = 0;
       }
@@ -28861,7 +29951,7 @@ var CCITTFaxStream = (function CCITTFaxStreamClosure() {
               this.eof = true;
               break;
             default:
-              warn('bad 2d code');
+              info('bad 2d code');
               this.addPixels(columns, 0);
               this.err = true;
           }
@@ -28924,7 +30014,7 @@ var CCITTFaxStream = (function CCITTFaxStreamClosure() {
             for (var i = 0; i < 4; ++i) {
               code1 = this.lookBits(12);
               if (code1 != 1)
-                warn('bad rtc code: ' + code1);
+                info('bad rtc code: ' + code1);
               this.eatBits(12);
               if (this.encoding > 0) {
                 this.lookBits(1);
@@ -29047,7 +30137,7 @@ var CCITTFaxStream = (function CCITTFaxStreamClosure() {
       if (result[0] && result[2])
         return result[1];
     }
-    warn('Bad two dim code');
+    info('Bad two dim code');
     return EOF;
   };
 
@@ -29080,7 +30170,7 @@ var CCITTFaxStream = (function CCITTFaxStreamClosure() {
       if (result[0])
         return result[1];
     }
-    warn('bad white code');
+    info('bad white code');
     this.eatBits(1);
     return 1;
   };
@@ -29117,7 +30207,7 @@ var CCITTFaxStream = (function CCITTFaxStreamClosure() {
       if (result[0])
         return result[1];
     }
-    warn('bad black code');
+    info('bad black code');
     this.eatBits(1);
     return 1;
   };
@@ -29288,10 +30378,13 @@ function MessageHandler(name, comObj) {
   var ah = this.actionHandler = {};
 
   ah['console_log'] = [function ahConsoleLog(data) {
-      console.log.apply(console, data);
+    console.log.apply(console, data);
   }];
   ah['console_error'] = [function ahConsoleError(data) {
-      console.error.apply(console, data);
+    console.error.apply(console, data);
+  }];
+  ah['_warn'] = [function ah_Warn(data) {
+    warn(data);
   }];
 
   comObj.onmessage = function messageHandlerComObjOnMessage(event) {
@@ -29410,6 +30503,10 @@ var WorkerMessageHandler = {
       handler.send('GetPage', {pageInfo: page});
     });
 
+    handler.on('GetData', function wphSetupGetData(data, promise) {
+      promise.resolve(pdfModel.stream.bytes);
+    });
+
     handler.on('GetAnnotationsRequest', function wphSetupGetAnnotations(data) {
       var pdfPage = pdfModel.getPage(data.pageIndex + 1);
       handler.send('GetAnnotations', {
@@ -29420,7 +30517,6 @@ var WorkerMessageHandler = {
 
     handler.on('RenderPageRequest', function wphSetupRenderPage(data) {
       var pageNum = data.pageIndex + 1;
-
 
       // The following code does quite the same as
       // Page.prototype.startRendering, but stops at one point and sends the
@@ -29481,6 +30577,24 @@ var WorkerMessageHandler = {
         depFonts: Object.keys(fonts)
       });
     }, this);
+
+    handler.on('GetTextContent', function wphExtractText(data, promise) {
+      var pageNum = data.pageIndex + 1;
+      var start = Date.now();
+
+      var textContent = '';
+      try {
+        var page = pdfModel.getPage(pageNum);
+        textContent = page.extractTextContent();
+        promise.resolve(textContent);
+      } catch (e) {
+        // Skip errored pages
+        promise.reject(e);
+      }
+
+      console.log('text indexing: page=%d - time=%dms',
+                      pageNum, Date.now() - start);
+    });
   }
 };
 
@@ -29520,6 +30634,17 @@ var workerConsole = {
 // Worker thread?
 if (typeof window === 'undefined') {
   globalScope.console = workerConsole;
+
+  // Add a logger so we can pass warnings on to the main thread, errors will
+  // throw an exception which will be forwarded on automatically.
+  PDFJS.LogManager.addLogger({
+    warn: function(msg) {
+      postMessage({
+        action: '_warn',
+        data: msg
+      });
+    }
+  });
 
   var handler = new MessageHandler('worker_processor', this);
   WorkerMessageHandler.setup(handler);
@@ -30697,8 +31822,7 @@ var JpxImage = (function JpxImageClosure() {
                   cod.selectiveArithmeticCodingBypass ||
                   cod.resetContextProbabilities ||
                   cod.terminationOnEachCodingPass ||
-                  cod.verticalyStripe || cod.predictableTermination ||
-                  cod.segmentationSymbolUsed)
+                  cod.verticalyStripe || cod.predictableTermination)
                 throw 'Unsupported COD options: ' + uneval(cod);
 
               if (context.mainHeader)
@@ -31275,7 +32399,8 @@ var JpxImage = (function JpxImageClosure() {
     return position;
   }
   function copyCoefficients(coefficients, x0, y0, width, height,
-                            delta, mb, codeblocks, transformation) {
+                            delta, mb, codeblocks, transformation,
+                            segmentationSymbolUsed) {
     var r = 0.5; // formula (E-6)
     for (var i = 0, ii = codeblocks.length; i < ii; ++i) {
       var codeblock = codeblocks[i];
@@ -31319,6 +32444,8 @@ var JpxImage = (function JpxImageClosure() {
             break;
           case 2:
             bitModel.runCleanupPass();
+            if (segmentationSymbolUsed)
+              bitModel.checkSegmentationSymbol();
             break;
         }
         currentCodingpassType = (currentCodingpassType + 1) % 3;
@@ -31355,6 +32482,7 @@ var JpxImage = (function JpxImageClosure() {
     var scalarExpounded = quantizationParameters.scalarExpounded;
     var guardBits = quantizationParameters.guardBits;
     var transformation = codingStyleParameters.transformation;
+    var segmentationSymbolUsed = codingStyleParameters.segmentationSymbolUsed;
     var precision = context.components[c].precision;
 
     var subbandCoefficients = [];
@@ -31385,7 +32513,8 @@ var JpxImage = (function JpxImageClosure() {
 
         var coefficients = new Float32Array(width * height);
         copyCoefficients(coefficients, subband.tbx0, subband.tby0,
-          width, height, delta, mb, subband.codeblocks, transformation);
+          width, height, delta, mb, subband.codeblocks, transformation,
+          segmentationSymbolUsed);
 
         subbandCoefficients.push({
           width: width,
@@ -32088,6 +33217,14 @@ var JpxImage = (function JpxImageClosure() {
             }
           }
         }
+      },
+      checkSegmentationSymbol: function BitModel_checkSegmentationSymbol() {
+        var decoder = this.decoder;
+        var cx = this.uniformContext;
+        var symbol = (decoder.readBit(cx) << 3) | (decoder.readBit(cx) << 2) |
+                     (decoder.readBit(cx) << 1) | decoder.readBit(cx);
+        if (symbol != 0xA)
+          throw 'Invalid segmentation symbol';
       }
     };
 
@@ -32303,6 +33440,1068 @@ var JpxImage = (function JpxImageClosure() {
   return JpxImage;
 })();
 
+
+/* -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab: */
+
+'use strict';
+
+var Jbig2Image = (function Jbig2ImageClosure() {
+
+  // Annex E. Arithmetic Coding
+  var ArithmeticDecoder = (function ArithmeticDecoderClosure() {
+    var QeTable = [
+      {qe: 0x5601, nmps: 1, nlps: 1, switchFlag: 1},
+      {qe: 0x3401, nmps: 2, nlps: 6, switchFlag: 0},
+      {qe: 0x1801, nmps: 3, nlps: 9, switchFlag: 0},
+      {qe: 0x0AC1, nmps: 4, nlps: 12, switchFlag: 0},
+      {qe: 0x0521, nmps: 5, nlps: 29, switchFlag: 0},
+      {qe: 0x0221, nmps: 38, nlps: 33, switchFlag: 0},
+      {qe: 0x5601, nmps: 7, nlps: 6, switchFlag: 1},
+      {qe: 0x5401, nmps: 8, nlps: 14, switchFlag: 0},
+      {qe: 0x4801, nmps: 9, nlps: 14, switchFlag: 0},
+      {qe: 0x3801, nmps: 10, nlps: 14, switchFlag: 0},
+      {qe: 0x3001, nmps: 11, nlps: 17, switchFlag: 0},
+      {qe: 0x2401, nmps: 12, nlps: 18, switchFlag: 0},
+      {qe: 0x1C01, nmps: 13, nlps: 20, switchFlag: 0},
+      {qe: 0x1601, nmps: 29, nlps: 21, switchFlag: 0},
+      {qe: 0x5601, nmps: 15, nlps: 14, switchFlag: 1},
+      {qe: 0x5401, nmps: 16, nlps: 14, switchFlag: 0},
+      {qe: 0x5101, nmps: 17, nlps: 15, switchFlag: 0},
+      {qe: 0x4801, nmps: 18, nlps: 16, switchFlag: 0},
+      {qe: 0x3801, nmps: 19, nlps: 17, switchFlag: 0},
+      {qe: 0x3401, nmps: 20, nlps: 18, switchFlag: 0},
+      {qe: 0x3001, nmps: 21, nlps: 19, switchFlag: 0},
+      {qe: 0x2801, nmps: 22, nlps: 19, switchFlag: 0},
+      {qe: 0x2401, nmps: 23, nlps: 20, switchFlag: 0},
+      {qe: 0x2201, nmps: 24, nlps: 21, switchFlag: 0},
+      {qe: 0x1C01, nmps: 25, nlps: 22, switchFlag: 0},
+      {qe: 0x1801, nmps: 26, nlps: 23, switchFlag: 0},
+      {qe: 0x1601, nmps: 27, nlps: 24, switchFlag: 0},
+      {qe: 0x1401, nmps: 28, nlps: 25, switchFlag: 0},
+      {qe: 0x1201, nmps: 29, nlps: 26, switchFlag: 0},
+      {qe: 0x1101, nmps: 30, nlps: 27, switchFlag: 0},
+      {qe: 0x0AC1, nmps: 31, nlps: 28, switchFlag: 0},
+      {qe: 0x09C1, nmps: 32, nlps: 29, switchFlag: 0},
+      {qe: 0x08A1, nmps: 33, nlps: 30, switchFlag: 0},
+      {qe: 0x0521, nmps: 34, nlps: 31, switchFlag: 0},
+      {qe: 0x0441, nmps: 35, nlps: 32, switchFlag: 0},
+      {qe: 0x02A1, nmps: 36, nlps: 33, switchFlag: 0},
+      {qe: 0x0221, nmps: 37, nlps: 34, switchFlag: 0},
+      {qe: 0x0141, nmps: 38, nlps: 35, switchFlag: 0},
+      {qe: 0x0111, nmps: 39, nlps: 36, switchFlag: 0},
+      {qe: 0x0085, nmps: 40, nlps: 37, switchFlag: 0},
+      {qe: 0x0049, nmps: 41, nlps: 38, switchFlag: 0},
+      {qe: 0x0025, nmps: 42, nlps: 39, switchFlag: 0},
+      {qe: 0x0015, nmps: 43, nlps: 40, switchFlag: 0},
+      {qe: 0x0009, nmps: 44, nlps: 41, switchFlag: 0},
+      {qe: 0x0005, nmps: 45, nlps: 42, switchFlag: 0},
+      {qe: 0x0001, nmps: 45, nlps: 43, switchFlag: 0},
+      {qe: 0x5601, nmps: 46, nlps: 46, switchFlag: 0}
+    ];
+
+    function ArithmeticDecoder(data, start, end) {
+      this.data = data;
+      this.bp = start;
+      this.dataEnd = end;
+
+      this.chigh = data[start];
+      this.clow = 0;
+
+      this.byteIn();
+
+      this.chigh = ((this.chigh << 7) & 0xFFFF) | ((this.clow >> 9) & 0x7F);
+      this.clow = (this.clow << 7) & 0xFFFF;
+      this.ct -= 7;
+      this.a = 0x8000;
+    }
+
+    ArithmeticDecoder.prototype = {
+      byteIn: function ArithmeticDecoder_byteIn() {
+        var data = this.data;
+        var bp = this.bp;
+        if (data[bp] == 0xFF) {
+          var b1 = data[bp + 1];
+          if (b1 > 0x8F) {
+            this.clow += 0xFF00;
+            this.ct = 8;
+          } else {
+            bp++;
+            this.clow += (data[bp] << 9);
+            this.ct = 7;
+            this.bp = bp;
+          }
+        } else {
+          bp++;
+          this.clow += bp < this.dataEnd ? (data[bp] << 8) : 0xFF00;
+          this.ct = 8;
+          this.bp = bp;
+        }
+        if (this.clow > 0xFFFF) {
+          this.chigh += (this.clow >> 16);
+          this.clow &= 0xFFFF;
+        }
+      },
+      readBit: function ArithmeticDecoder_readBit(cx) {
+        var qeIcx = QeTable[cx.index].qe;
+        this.a -= qeIcx;
+
+        if (this.chigh < qeIcx) {
+          var d = this.exchangeLps(cx);
+          this.renormD();
+          return d;
+        } else {
+          this.chigh -= qeIcx;
+          if ((this.a & 0x8000) == 0) {
+            var d = this.exchangeMps(cx);
+            this.renormD();
+            return d;
+          } else {
+            return cx.mps;
+          }
+        }
+      },
+      renormD: function ArithmeticDecoder_renormD() {
+        do {
+          if (this.ct == 0)
+            this.byteIn();
+
+          this.a <<= 1;
+          this.chigh = ((this.chigh << 1) & 0xFFFF) | ((this.clow >> 15) & 1);
+          this.clow = (this.clow << 1) & 0xFFFF;
+          this.ct--;
+        } while ((this.a & 0x8000) == 0);
+      },
+      exchangeMps: function ArithmeticDecoder_exchangeMps(cx) {
+        var d;
+        var qeTableIcx = QeTable[cx.index];
+        if (this.a < qeTableIcx.qe) {
+          d = 1 - cx.mps;
+
+          if (qeTableIcx.switchFlag == 1) {
+            cx.mps = 1 - cx.mps;
+          }
+          cx.index = qeTableIcx.nlps;
+        } else {
+          d = cx.mps;
+          cx.index = qeTableIcx.nmps;
+        }
+        return d;
+      },
+      exchangeLps: function ArithmeticDecoder_exchangeLps(cx) {
+        var d;
+        var qeTableIcx = QeTable[cx.index];
+        if (this.a < qeTableIcx.qe) {
+          this.a = qeTableIcx.qe;
+          d = cx.mps;
+          cx.index = qeTableIcx.nmps;
+        } else {
+          this.a = qeTableIcx.qe;
+          d = 1 - cx.mps;
+
+          if (qeTableIcx.switchFlag == 1) {
+            cx.mps = 1 - cx.mps;
+          }
+          cx.index = qeTableIcx.nlps;
+        }
+        return d;
+      }
+    };
+
+    return ArithmeticDecoder;
+  })();
+
+  // Utility data structures
+  function ContextCache() {}
+
+  ContextCache.prototype = {
+    getContexts: function(id) {
+      if (id in this)
+        return this[id];
+      return (this[id] = []);
+    }
+  };
+
+  function DecodingContext(data, start, end) {
+    this.data = data;
+    this.start = start;
+    this.end = end;
+  }
+
+  DecodingContext.prototype = {
+    get decoder() {
+      var decoder = new ArithmeticDecoder(this.data, this.start, this.end);
+      return shadow(this, 'decoder', decoder);
+    },
+    get contextCache() {
+      var cache = new ContextCache();
+      return shadow(this, 'contextCache', cache);
+    }
+  };
+
+  // Annex A. Arithmetic Integer Decoding Procedure
+  // A.2 Procedure for decoding values
+  function decodeInteger(contextCache, procedure, decoder) {
+    var contexts = contextCache.getContexts(procedure);
+
+    var prev = 1;
+    var state = 1, v = 0, s;
+    var toRead = 32, offset = 4436; // defaults for state 7
+    while (state) {
+      var cx = contexts[prev];
+      if (!cx)
+        contexts[prev] = cx = {index: 0, mps: 0};
+      var bit = decoder.readBit(cx);
+      prev = prev < 256 ? (prev << 1) | bit :
+        (((prev << 1) | bit) & 511) | 256;
+      switch (state) {
+        case 1:
+          s = !!bit;
+          break;
+        case 2:
+          if (bit) break;
+          state = 7;
+          toRead = 2;
+          offset = 0;
+          break;
+        case 3:
+          if (bit) break;
+          state = 7;
+          toRead = 4;
+          offset = 4;
+          break;
+        case 4:
+          if (bit) break;
+          state = 7;
+          toRead = 6;
+          offset = 20;
+          break;
+        case 5:
+          if (bit) break;
+          state = 7;
+          toRead = 8;
+          offset = 84;
+          break;
+        case 6:
+          if (bit) break;
+          state = 7;
+          toRead = 12;
+          offset = 340;
+          break;
+        default:
+          v = v * 2 + bit;
+          if (--toRead == 0)
+            state = 0;
+          continue;
+      }
+      state++;
+    }
+    v += offset;
+    return !s ? v : v > 0 ? -v : null;
+  }
+
+  // A.3 The IAID decoding procedure
+  function decodeIAID(contextCache, decoder, codeLength) {
+    var contexts = contextCache.getContexts('IAID');
+
+    var prev = 1;
+    for (var i = 0; i < codeLength; i++) {
+      var cx = contexts[prev];
+      if (!cx)
+        contexts[prev] = cx = {index: 0, mps: 0};
+      var bit = decoder.readBit(cx);
+      prev = (prev * 2) + bit;
+    }
+    if (codeLength < 31)
+      return prev & ((1 << codeLength) - 1);
+    else
+      return prev - Math.pow(2, codeLength);
+  }
+
+  // 7.3 Segment types
+  var SegmentTypes = [
+    'SymbolDictionary', null, null, null, 'IntermediateTextRegion', null,
+    'ImmediateTextRegion', 'ImmediateLosslessTextRegion', null, null, null,
+    null, null, null, null, null, 'patternDictionary', null, null, null,
+    'IntermediateHalftoneRegion', null, 'ImmediateHalftoneRegion',
+    'ImmediateLosslessHalftoneRegion', null, null, null, null, null, null, null,
+    null, null, null, null, null, 'IntermediateGenericRegion', null,
+    'ImmediateGenericRegion', 'ImmediateLosslessGenericRegion',
+    'IntermediateGenericRefinementRegion', null,
+    'ImmediateGenericRefinementRegion',
+    'ImmediateLosslessGenericRefinementRegion', null, null, null, null,
+    'PageInformation', 'EndOfPage', 'EndOfStripe', 'EndOfFile', 'Profiles',
+    'Tables', null, null, null, null, null, null, null, null,
+    'Extension'
+  ];
+
+  var CodingTemplates = [
+    [{x: -1, y: -2}, {x: 0, y: -2}, {x: 1, y: -2}, {x: -2, y: -1},
+     {x: -1, y: -1}, {x: 0, y: -1}, {x: 1, y: -1}, {x: 2, y: -1},
+     {x: -4, y: 0}, {x: -3, y: 0}, {x: -2, y: 0}, {x: -1, y: 0}],
+    [{x: -1, y: -2}, {x: 0, y: -2}, {x: 1, y: -2}, {x: -2, y: -1},
+     {x: -1, y: -1}, {x: 0, y: -1}, {x: 1, y: -1}, {x: 2, y: -1},
+     {x: -3, y: 0}, {x: -2, y: 0}, {x: -1, y: 0}],
+    [{x: -1, y: -2}, {x: 0, y: -2}, {x: 1, y: -2}, {x: -2, y: -1},
+     {x: -1, y: -1}, {x: 0, y: -1}, {x: 1, y: -1}, {x: -2, y: 0},
+     {x: -1, y: 0}],
+    [{x: -3, y: -1}, {x: -2, y: -1}, {x: -1, y: -1}, {x: 0, y: -1},
+     {x: 1, y: -1}, {x: -4, y: 0}, {x: -3, y: 0}, {x: -2, y: 0}, {x: -1, y: 0}]
+  ];
+
+  var RefinementTemplates = [
+    {
+      coding: [{x: 0, y: -1}, {x: 1, y: -1}, {x: -1, y: 0}],
+      reference: [{x: 0, y: -1}, {x: 1, y: -1}, {x: -1, y: 0}, {x: 0, y: 0},
+                  {x: 1, y: 0}, {x: -1, y: 1}, {x: 0, y: 1}, {x: 1, y: 1}]
+    },
+    {
+      coding: [{x: -1, y: -1}, {x: 0, y: -1}, {x: 1, y: -1}, {x: -1, y: 0}],
+      reference: [{x: 0, y: -1}, {x: -1, y: 0}, {x: 0, y: 0}, {x: 1, y: 0},
+                  {x: 0, y: 1}, {x: 1, y: 1}]
+    }
+  ];
+
+  var ReusedContexts = [
+    0x1CD3, // '00111001101' (template) + '0011' (at),
+    0x079A, // '001111001101' + '0',
+    0x00E3, // '001110001' + '1',
+    0x018B  // '011000101' + '1'
+  ];
+
+  var RefinementReusedContexts = [
+    0x0020, // '000' + '0' (coding) + '00010000' + '0' (reference)
+    0x0008  // '0000' + '001000'
+  ];
+
+  function log2(x) {
+    var n = 1, i = 0;
+    while (x > n) {
+      n <<= 1;
+      i++;
+    }
+    return i;
+  }
+
+  function readInt32(data, start) {
+    return (data[start] << 24) | (data[start + 1] << 16) |
+           (data[start + 2] << 8) | data[start + 3];
+  }
+
+  function readUint32(data, start) {
+    var value = readInt32(data, start);
+    return value & 0x80000000 ? (value + 4294967296) : value;
+  }
+
+  function readUint16(data, start) {
+    return (data[start] << 8) | data[start + 1];
+  }
+
+  function readInt8(data, start) {
+    return (data[start] << 24) >> 24;
+  }
+
+  // 6.2 Generic Region Decoding Procedure
+  function decodeBitmap(mmr, width, height, templateIndex, prediction, skip, at,
+                        decodingContext) {
+    if (mmr)
+      error('JBIG2 error: MMR encoding is not supported');
+
+    var useskip = !!skip;
+    var template = CodingTemplates[templateIndex].concat(at);
+    var templateLength = template.length;
+    var templateX = new Int32Array(templateLength);
+    var templateY = new Int32Array(templateLength);
+    for (var k = 0; k < templateLength; k++) {
+      templateX[k] = template[k].x;
+      templateY[k] = template[k].y;
+    }
+
+    var pseudoPixelContext = ReusedContexts[templateIndex];
+    var bitmap = [];
+
+    var decoder = decodingContext.decoder;
+    var contexts = decodingContext.contextCache.getContexts('GB');
+
+    var ltp = 0;
+    for (var i = 0; i < height; i++) {
+      if (prediction) {
+        var cx = contexts[pseudoPixelContext];
+        if (!cx)
+          contexts[pseudoPixelContext] = cx = {index: 0, mps: 0};
+        var sltp = decoder.readBit(cx);
+        ltp ^= sltp;
+      }
+      if (ltp) {
+        bitmap.push(bitmap[bitmap.length - 1]); // duplicate previous row
+        continue;
+      }
+      var row = new Uint8Array(width);
+      bitmap.push(row);
+      for (var j = 0; j < width; j++) {
+        if (useskip && skip[i][j]) {
+          row[j] = 0;
+          continue;
+        }
+        var contextLabel = 0;
+        for (var k = 0; k < templateLength; k++) {
+          var i0 = i + templateY[k], j0 = j + templateX[k];
+          if (i0 < 0 || j0 < 0 || j0 >= width)
+            contextLabel <<= 1; // out of bound pixel
+          else
+            contextLabel = (contextLabel << 1) | bitmap[i0][j0];
+        }
+        var cx = contexts[contextLabel];
+        if (!cx)
+          contexts[contextLabel] = cx = {index: 0, mps: 0};
+        var pixel = decoder.readBit(cx);
+        row[j] = pixel;
+      }
+    }
+    return bitmap;
+  }
+
+  // 6.3.2 Generic Refinement Region Decoding Procedure
+  function decodeRefinement(width, height, templateIndex, referenceBitmap,
+                            offsetX, offsetY, prediction, at,
+                            decodingContext) {
+    var codingTemplate = RefinementTemplates[templateIndex].coding;
+    if (templateIndex == 0)
+      codingTemplate = codingTemplate.concat([at[0]]);
+    var codingTemplateLength = codingTemplate.length;
+    var codingTemplateX = new Int32Array(codingTemplateLength);
+    var codingTemplateY = new Int32Array(codingTemplateLength);
+    for (var k = 0; k < codingTemplateLength; k++) {
+      codingTemplateX[k] = codingTemplate[k].x;
+      codingTemplateY[k] = codingTemplate[k].y;
+    }
+    var referenceTemplate = RefinementTemplates[templateIndex].reference;
+    if (templateIndex == 0)
+      referenceTemplate = referenceTemplate.concat([at[1]]);
+    var referenceTemplateLength = referenceTemplate.length;
+    var referenceTemplateX = new Int32Array(referenceTemplateLength);
+    var referenceTemplateY = new Int32Array(referenceTemplateLength);
+    for (var k = 0; k < referenceTemplateLength; k++) {
+      referenceTemplateX[k] = referenceTemplate[k].x;
+      referenceTemplateY[k] = referenceTemplate[k].y;
+    }
+    var referenceWidth = referenceBitmap[0].length;
+    var referenceHeight = referenceBitmap.length;
+
+    var pseudoPixelContext = RefinementReusedContexts[templateIndex];
+    var bitmap = [];
+
+    var decoder = decodingContext.decoder;
+    var contexts = decodingContext.contextCache.getContexts('GR');
+
+    var ltp = 0;
+    for (var i = 0; i < height; i++) {
+      if (prediction) {
+        var cx = contexts[pseudoPixelContext];
+        if (!cx)
+          contexts[pseudoPixelContext] = cx = {index: 0, mps: 0};
+        var sltp = decoder.readBit(cx);
+        ltp ^= sltp;
+      }
+      var row = new Uint8Array(width);
+      bitmap.push(row);
+      for (var j = 0; j < width; j++) {
+        if (ltp)
+          error('JBIG2 error: prediction is not supported');
+
+        var contextLabel = 0;
+        for (var k = 0; k < codingTemplateLength; k++) {
+          var i0 = i + codingTemplateY[k], j0 = j + codingTemplateX[k];
+          if (i0 < 0 || j0 < 0 || j0 >= width)
+            contextLabel <<= 1; // out of bound pixel
+          else
+            contextLabel = (contextLabel << 1) | bitmap[i0][j0];
+        }
+        for (var k = 0; k < referenceTemplateLength; k++) {
+          var i0 = i + referenceTemplateY[k] + offsetY;
+          var j0 = j + referenceTemplateX[k] + offsetX;
+          if (i0 < 0 || i0 >= referenceHeight || j0 < 0 || j0 >= referenceWidth)
+            contextLabel <<= 1; // out of bound pixel
+          else
+            contextLabel = (contextLabel << 1) | referenceBitmap[i0][j0];
+        }
+        var cx = contexts[contextLabel];
+        if (!cx)
+          contexts[contextLabel] = cx = {index: 0, mps: 0};
+        var pixel = decoder.readBit(cx);
+        row[j] = pixel;
+      }
+    }
+
+    return bitmap;
+  }
+
+  // 6.5.5 Decoding the symbol dictionary
+  function decodeSymbolDictionary(huffman, refinement, symbols,
+                                  numberOfNewSymbols, numberOfExportedSymbols,
+                                  huffmanTables, templateIndex, at,
+                                  refinementTemplateIndex, refinementAt,
+                                  decodingContext) {
+    if (huffman)
+      error('JBIG2 error: huffman is not supported');
+
+    var newSymbols = [];
+    var currentHeight = 0;
+    var symbolCodeLength = log2(symbols.length + numberOfNewSymbols);
+
+    var decoder = decodingContext.decoder;
+    var contextCache = decodingContext.contextCache;
+
+    while (newSymbols.length < numberOfNewSymbols) {
+      var deltaHeight = decodeInteger(contextCache, 'IADH', decoder); // 6.5.6
+      currentHeight += deltaHeight;
+      var currentWidth = 0;
+      var totalWidth = 0;
+      while (true) {
+        var deltaWidth = decodeInteger(contextCache, 'IADW', decoder); // 6.5.7
+        if (deltaWidth == null)
+          break; // OOB
+        currentWidth += deltaWidth;
+        totalWidth += currentWidth;
+        var bitmap;
+        if (refinement) {
+          // 6.5.8.2 Refinement/aggregate-coded symbol bitmap
+          var numberOfInstances = decodeInteger(contextCache, 'IAAI', decoder);
+          if (numberOfInstances > 1)
+            error('JBIG2 error: number of instances > 1 is not supported');
+          var symbolId = decodeIAID(contextCache, decoder, symbolCodeLength);
+          var rdx = decodeInteger(contextCache, 'IARDX', decoder); // 6.4.11.3
+          var rdy = decodeInteger(contextCache, 'IARDY', decoder); // 6.4.11.4
+          var symbol = symbolId < symbols.length ? symbols[symbolId] :
+            newSymbols[symbolId - symbols.length];
+          bitmap = decodeRefinement(currentWidth, currentHeight,
+            refinementTemplateIndex, symbol, rdx, rdy, false, refinementAt,
+            decodingContext);
+        } else {
+          // 6.5.8.1 Direct-coded symbol bitmap
+          bitmap = decodeBitmap(false, currentWidth, currentHeight,
+            templateIndex, false, null, at, decodingContext);
+        }
+        newSymbols.push(bitmap);
+      }
+    }
+    // 6.5.10 Exported symbols
+    var exportedSymbols = [];
+    var flags = [], currentFlag = false;
+    var totalSymbolsLength = symbols.length + numberOfNewSymbols;
+    while (flags.length < totalSymbolsLength) {
+      var runLength = decodeInteger(contextCache, 'IAEX', decoder);
+      while (runLength--)
+        flags.push(currentFlag);
+      currentFlag = !currentFlag;
+    }
+    for (var i = 0, ii = symbols.length; i < ii; i++)
+      if (flags[i]) exportedSymbols.push(symbols[i]);
+    for (var j = 0; j < numberOfNewSymbols; i++, j++)
+      if (flags[i]) exportedSymbols.push(newSymbols[j]);
+    return exportedSymbols;
+  }
+
+  function decodeTextRegion(huffman, refinement, width, height,
+                            defaultPixelValue, numberOfSymbolInstances,
+                            stripSize, inputSymbols, symbolCodeLength,
+                            transposed, dsOffset, referenceCorner,
+                            combinationOperator, huffmanTables,
+                            refinementTemplateIndex, refinementAt,
+                            decodingContext) {
+    if (huffman)
+      error('JBIG2 error: huffman is not supported');
+
+    // Prepare bitmap
+    var bitmap = [];
+    for (var i = 0; i < height; i++) {
+      var row = new Uint8Array(width);
+      if (defaultPixelValue) {
+        for (var j = 0; j < width; j++)
+          row[j] = defaultPixelValue;
+      }
+      bitmap.push(row);
+    }
+
+    var decoder = decodingContext.decoder;
+    var contextCache = decodingContext.contextCache;
+
+    if (transposed)
+      error('JBIG2 error: transposed is not supported');
+
+    var stripT = -decodeInteger(contextCache, 'IADT', decoder); // 6.4.6
+    var firstS = 0;
+    var i = 0;
+    while (i < numberOfSymbolInstances) {
+      var deltaT = decodeInteger(contextCache, 'IADT', decoder); // 6.4.6
+      stripT += deltaT;
+
+      var deltaFirstS = decodeInteger(contextCache, 'IAFS', decoder); // 6.4.7
+      firstS += deltaFirstS;
+      var currentS = firstS;
+      do {
+        var currentT = stripSize == 1 ? 0 :
+          decodeInteger(contextCache, 'IAIT', decoder); // 6.4.9
+        var t = stripSize * stripT + currentT;
+        var symbolId = decodeIAID(contextCache, decoder, symbolCodeLength);
+        var applyRefinement = refinement &&
+          decodeInteger(contextCache, 'IARI', decoder);
+        var symbolBitmap = inputSymbols[symbolId];
+        var symbolWidth = symbolBitmap[0].length;
+        var symbolHeight = symbolBitmap.length;
+        if (applyRefinement) {
+          var rdw = decodeInteger(contextCache, 'IARDW', decoder); // 6.4.11.1
+          var rdh = decodeInteger(contextCache, 'IARDH', decoder); // 6.4.11.2
+          var rdx = decodeInteger(contextCache, 'IARDX', decoder); // 6.4.11.3
+          var rdy = decodeInteger(contextCache, 'IARDY', decoder); // 6.4.11.4
+          symbolWidth += rdw;
+          symbolHeight += rdh;
+          symbolBitmap = decodeRefinement(symbolWidth, symbolHeight,
+            refinementTemplateIndex, symbolBitmap, (rdw >> 1) + rdx,
+            (rdh >> 1) + rdy, false, refinementAt,
+            decodingContext);
+        }
+        var offsetT = t - ((referenceCorner & 1) ? 0 : symbolHeight);
+        var offsetS = currentS - ((referenceCorner & 2) ? symbolWidth : 0);
+        for (var t2 = 0; t2 < symbolHeight; t2++) {
+          var row = bitmap[offsetT + t2];
+          if (!row) continue;
+          var symbolRow = symbolBitmap[t2];
+          switch (combinationOperator) {
+            case 0: // OR
+              for (var s2 = 0; s2 < symbolWidth; s2++)
+                row[offsetS + s2] |= symbolRow[s2];
+              break;
+            case 2: // XOR
+              for (var s2 = 0; s2 < symbolWidth; s2++)
+                row[offsetS + s2] ^= symbolRow[s2];
+              break;
+            default:
+              error('JBIG2 error: operator ' + combinationOperator +
+                    ' is not supported');
+          }
+        }
+
+        currentS += symbolWidth - 1;
+        i++;
+
+        var deltaS = decodeInteger(contextCache, 'IADS', decoder); // 6.4.8
+        if (deltaS == null)
+          break; // OOB
+        currentS += deltaS + dsOffset;
+      } while (true);
+    }
+    return bitmap;
+  }
+
+  function readSegmentHeader(data, start) {
+    var segmentHeader = {};
+    segmentHeader.number = readUint32(data, start);
+    var flags = data[start + 4];
+    var segmentType = flags & 0x3F;
+    if (!SegmentTypes[segmentType])
+      error('JBIG2 error: invalid segment type: ' + segmentType);
+    segmentHeader.type = segmentType;
+    segmentHeader.typeName = SegmentTypes[segmentType];
+    segmentHeader.deferredNonRetain = !!(flags & 0x80);
+    var pageAssociationFieldSize = !!(flags & 0x40);
+    var referredFlags = data[start + 5];
+    var referredToCount = (referredFlags >> 5) & 7;
+    var retainBits = [referredFlags & 31];
+    var position = start + 6;
+    if (referredFlags == 7) {
+      referredToCount = readInt32(data, position - 1) & 0x1FFFFFFF;
+      position += 3;
+      var bytes = (referredToCount + 7) >> 3;
+      retainBits[0] = data[position++];
+      while (--bytes > 0) {
+        retainBits.push(data[position++]);
+      }
+    } else if (referredFlags == 5 || referredFlags == 6)
+      error('JBIG2 error: invalid referred-to flags');
+    segmentHeader.retainBits = retainBits;
+    var referredToSegmentNumberSize = segmentHeader.number <= 256 ? 1 :
+      segmentHeader.number <= 65536 ? 2 : 4;
+    var referredTo = [];
+    for (var i = 0; i < referredToCount; i++) {
+      var number = referredToSegmentNumberSize == 1 ? data[position] :
+        referredToSegmentNumberSize == 2 ? readUint16(data, position) :
+        readUint32(data, position);
+      referredTo.push(number);
+      position += referredToSegmentNumberSize;
+    }
+    segmentHeader.referredTo = referredTo;
+    if (!pageAssociationFieldSize)
+      segmentHeader.pageAssociation = data[position++];
+    else {
+      segmentHeader.pageAssociation = readUint32(data, position);
+      position += 4;
+    }
+    segmentHeader.length = readUint32(data, position);
+    if (segmentHeader.length == 0xFFFFFFFF)
+      error('JBIG2 error: unknown segment length is not supported');
+    position += 4;
+    segmentHeader.headerEnd = position;
+    return segmentHeader;
+  }
+
+  function readSegments(header, data, start, end) {
+    var segments = [];
+    var position = start;
+    while (position < end) {
+      var segmentHeader = readSegmentHeader(data, position);
+      position = segmentHeader.headerEnd;
+      var segment = {
+        header: segmentHeader,
+        data: data
+      };
+      if (!header.randomAccess) {
+        segment.start = position;
+        position += segmentHeader.length;
+        segment.end = position;
+      }
+      segments.push(segment);
+      if (segmentHeader.type == 51)
+        break; // end of file is found
+    }
+    if (header.randomAccess) {
+      for (var i = 0, ii = segments.length; i < ii; i++) {
+        segments[i].start = position;
+        position += segments[i].header.length;
+        segments[i].end = position;
+      }
+    }
+    return segments;
+  }
+
+  // 7.4.1 Region segment information field
+  function readRegionSegmentInformation(data, start) {
+    return {
+      width: readUint32(data, start),
+      height: readUint32(data, start + 4),
+      x: readUint32(data, start + 8),
+      y: readUint32(data, start + 12),
+      combinationOperator: data[start + 16] & 7
+    };
+  }
+  var RegionSegmentInformationFieldLength = 17;
+
+  function processSegment(segment, visitor) {
+    var header = segment.header;
+
+    var data = segment.data, position = segment.start, end = segment.end;
+    var args;
+    switch (header.type) {
+      case 0: // SymbolDictionary
+        // 7.4.2 Symbol dictionary segment syntax
+        var dictionary = {};
+        var dictionaryFlags = readUint16(data, position); // 7.4.2.1.1
+        dictionary.huffman = !!(dictionaryFlags & 1);
+        dictionary.refinement = !!(dictionaryFlags & 2);
+        dictionary.huffmanDHSelector = (dictionaryFlags >> 2) & 3;
+        dictionary.huffmanDWSelector = (dictionaryFlags >> 4) & 3;
+        dictionary.bitmapSizeSelector = (dictionaryFlags >> 6) & 1;
+        dictionary.aggregationInstancesSelector = (dictionaryFlags >> 7) & 1;
+        dictionary.bitmapCodingContextUsed = !!(dictionaryFlags & 256);
+        dictionary.bitmapCodingContextRetained = !!(dictionaryFlags & 512);
+        dictionary.template = (dictionaryFlags >> 10) & 3;
+        dictionary.refinementTemplate = (dictionaryFlags >> 12) & 1;
+        position += 2;
+        if (!dictionary.huffman) {
+          var atLength = dictionary.template == 0 ? 4 : 1;
+          var at = [];
+          for (var i = 0; i < atLength; i++) {
+            at.push({
+              x: readInt8(data, position),
+              y: readInt8(data, position + 1)
+            });
+            position += 2;
+          }
+          dictionary.at = at;
+        }
+        if (dictionary.refinement && !dictionary.refinementTemplate) {
+          var at = [];
+          for (var i = 0; i < 2; i++) {
+            at.push({
+              x: readInt8(data, position),
+              y: readInt8(data, position + 1)
+            });
+            position += 2;
+          }
+          dictionary.refinementAt = at;
+        }
+        dictionary.numberOfExportedSymbols = readUint32(data, position);
+        position += 4;
+        dictionary.numberOfNewSymbols = readUint32(data, position);
+        position += 4;
+        args = [dictionary, header.number, header.referredTo,
+                data, position, end];
+        break;
+      case 6: // ImmediateTextRegion
+      case 7: // ImmediateLosslessTextRegion
+        var textRegion = {};
+        textRegion.info = readRegionSegmentInformation(data, position);
+        position += RegionSegmentInformationFieldLength;
+        var textRegionSegmentFlags = readUint16(data, position);
+        position += 2;
+        textRegion.huffman = !!(textRegionSegmentFlags & 1);
+        textRegion.refinement = !!(textRegionSegmentFlags & 2);
+        textRegion.stripSize = 1 << ((textRegionSegmentFlags >> 2) & 3);
+        textRegion.referenceCorner = (textRegionSegmentFlags >> 4) & 3;
+        textRegion.transposed = !!(textRegionSegmentFlags & 64);
+        textRegion.combinationOperator = (textRegionSegmentFlags >> 7) & 3;
+        textRegion.defaultPixelValue = (textRegionSegmentFlags >> 9) & 1;
+        textRegion.dsOffset = (textRegionSegmentFlags >> 10) & 31;
+        textRegion.refinementTemplate = (textRegionSegmentFlags >> 15) & 1;
+        if (textRegion.huffman) {
+          var textRegionHuffmanFlags = readUint16(data, position);
+          position += 2;
+          textRegion.huffmanFS = (textRegionHuffmanFlags) & 3;
+          textRegion.huffmanDS = (textRegionHuffmanFlags >> 2) & 3;
+          textRegion.huffmanDT = (textRegionHuffmanFlags >> 4) & 3;
+          textRegion.huffmanRefinementDW = (textRegionHuffmanFlags >> 6) & 3;
+          textRegion.huffmanRefinementDH = (textRegionHuffmanFlags >> 8) & 3;
+          textRegion.huffmanRefinementDX = (textRegionHuffmanFlags >> 10) & 3;
+          textRegion.huffmanRefinementDY = (textRegionHuffmanFlags >> 12) & 3;
+          textRegion.huffmanRefinementSizeSelector =
+            !!(textRegionHuffmanFlags & 14);
+        }
+        if (textRegion.refinement && !textRegion.refinementTemplate) {
+          var at = [];
+          for (var i = 0; i < 2; i++) {
+            at.push({
+              x: readInt8(data, position),
+              y: readInt8(data, position + 1)
+            });
+            position += 2;
+          }
+          textRegion.refinementAt = at;
+        }
+        textRegion.numberOfSymbolInstances = readUint32(data, position);
+        position += 4;
+        // TODO 7.4.3.1.7 Symbol ID Huffman table decoding
+        if (textRegion.huffman)
+          error('JBIG2 error: huffman is not supported');
+        args = [textRegion, header.referredTo, data, position, end];
+        break;
+      case 38: // ImmediateGenericRegion
+      case 39: // ImmediateLosslessGenericRegion
+        var genericRegion = {};
+        genericRegion.info = readRegionSegmentInformation(data, position);
+        position += RegionSegmentInformationFieldLength;
+        var genericRegionSegmentFlags = data[position++];
+        genericRegion.mmr = !!(genericRegionSegmentFlags & 1);
+        genericRegion.template = (genericRegionSegmentFlags >> 1) & 3;
+        genericRegion.prediction = !!(genericRegionSegmentFlags & 8);
+        if (!genericRegion.mmr) {
+          var atLength = genericRegion.template == 0 ? 4 : 1;
+          var at = [];
+          for (var i = 0; i < atLength; i++) {
+            at.push({
+              x: readInt8(data, position),
+              y: readInt8(data, position + 1)
+            });
+            position += 2;
+          }
+          genericRegion.at = at;
+        }
+        args = [genericRegion, data, position, end];
+        break;
+      case 48: // PageInformation
+        var pageInfo = {
+          width: readUint32(data, position),
+          height: readUint32(data, position + 4),
+          resolutionX: readUint32(data, position + 8),
+          resolutionY: readUint32(data, position + 12)
+        };
+        if (pageInfo.height == 0xFFFFFFFF)
+          delete pageInfo.height;
+        var pageSegmentFlags = data[position + 16];
+        var pageStripingInformatiom = readUint16(data, position + 17);
+        pageInfo.lossless = !!(pageSegmentFlags & 1);
+        pageInfo.refinement = !!(pageSegmentFlags & 2);
+        pageInfo.defaultPixelValue = (pageSegmentFlags >> 2) & 1;
+        pageInfo.combinationOperator = (pageSegmentFlags >> 3) & 3;
+        pageInfo.requiresBuffer = !!(pageSegmentFlags & 32);
+        pageInfo.combinationOperatorOverride = !!(pageSegmentFlags & 64);
+        args = [pageInfo];
+        break;
+      case 50: // EndOfStripe
+        break;
+      case 51: // EndOfFile
+        break;
+      default:
+        error('JBIG2 error: segment type ' + header.typeName + '(' +
+              header.type + ') is not implemented');
+    }
+    var callbackName = 'on' + header.typeName;
+    if (callbackName in visitor)
+      visitor[callbackName].apply(visitor, args);
+  }
+
+  function processSegments(segments, visitor) {
+    for (var i = 0, ii = segments.length; i < ii; i++)
+      processSegment(segments[i], visitor);
+  }
+
+  function parseJbig2(data, start, end) {
+    var position = start;
+    if (data[position] != 0x97 || data[position + 1] != 0x4A ||
+        data[position + 2] != 0x42 || data[position + 3] != 0x32 ||
+        data[position + 4] != 0x0D || data[position + 5] != 0x0A ||
+        data[position + 6] != 0x1A || data[position + 7] != 0x0A)
+      error('JBIG2 error: invalid header');
+    var header = {};
+    position += 8;
+    var flags = data[position++];
+    header.randomAccess = !(flags & 1);
+    if (!(flags & 2)) {
+      header.numberOfPages = readUint32(data, position);
+      position += 4;
+    }
+    var segments = readSegments(header, data, position, end);
+    error('Not implemented');
+    // processSegments(segments, new SimpleSegmentVisitor());
+  }
+
+  function parseJbig2Chunks(chunks) {
+    var visitor = new SimpleSegmentVisitor();
+    for (var i = 0, ii = chunks.length; i < ii; i++) {
+      var chunk = chunks[i];
+      var segments = readSegments({}, chunk.data, chunk.start, chunk.end);
+      processSegments(segments, visitor);
+    }
+    return visitor.buffer;
+  }
+
+  function SimpleSegmentVisitor() {}
+
+  SimpleSegmentVisitor.prototype = {
+    onPageInformation: function SimpleSegmentVisitor_onPageInformation(info) {
+      this.currentPageInfo = info;
+      var rowSize = (info.width + 7) >> 3;
+      var buffer = new Uint8Array(rowSize * info.height);
+      var fill = info.defaultPixelValue ? 0xFF : 0;
+      for (var i = 0, ii = buffer.length; i < ii; i++)
+        buffer[i] = fill;
+      this.buffer = buffer;
+    },
+    drawBitmap: function SimpleSegmentVisitor_drawBitmap(regionInfo, bitmap) {
+      var pageInfo = this.currentPageInfo;
+      var width = regionInfo.width, height = regionInfo.height;
+      var rowSize = (pageInfo.width + 7) >> 3;
+      var combinationOperator = pageInfo.combinationOperatorOverride ?
+        regionInfo.combinationOperator : pageInfo.combinationOperator;
+      var buffer = this.buffer;
+      for (var i = 0; i < height; i++) {
+        var mask = 128 >> (regionInfo.x & 7);
+        var offset = (i + regionInfo.y) * rowSize + (regionInfo.x >> 3);
+        switch (combinationOperator) {
+          case 0: // OR
+            for (var j = 0; j < width; j++) {
+              buffer[offset] |= bitmap[i][j] ? mask : 0;
+              mask >>= 1;
+              if (!mask) {
+                mask = 128;
+                offset++;
+              }
+            }
+            break;
+          case 2: // XOR
+            for (var j = 0; j < width; j++) {
+              buffer[offset] ^= bitmap[i][j] ? mask : 0;
+              mask >>= 1;
+              if (!mask) {
+                mask = 128;
+                offset++;
+              }
+            }
+            break;
+          default:
+            error('JBIG2 error: operator ' + combinationOperator +
+                  ' is not supported');
+        }
+      }
+    },
+    onImmediateGenericRegion:
+      function SimpleSegmentVisitor_onImmediateGenericRegion(region, data,
+                                                             start, end) {
+      var regionInfo = region.info;
+      var decodingContext = new DecodingContext(data, start, end);
+      var bitmap = decodeBitmap(region.mmr, regionInfo.width, regionInfo.height,
+                                region.template, region.prediction, null,
+                                region.at, decodingContext);
+      this.drawBitmap(regionInfo, bitmap);
+    },
+    onImmediateLosslessGenericRegion:
+      function SimpleSegmentVisitor_onImmediateLosslessGenericRegion() {
+      this.onImmediateGenericRegion.apply(this, arguments);
+    },
+    onSymbolDictionary:
+      function SimpleSegmentVisitor_onSymbolDictionary(dictionary,
+                                                       currentSegment,
+                                                       referredSegments,
+                                                       data, start, end) {
+      var huffmanTables;
+      if (dictionary.huffman)
+        error('JBIG2 error: huffman is not supported');
+
+      // Combines exported symbols from all referred segments
+      var symbols = this.symbols;
+      if (!symbols)
+        this.symbols = symbols = {};
+
+      var inputSymbols = [];
+      for (var i = 0, ii = referredSegments.length; i < ii; i++)
+        inputSymbols = inputSymbols.concat(symbols[referredSegments[i]]);
+
+      var decodingContext = new DecodingContext(data, start, end);
+      symbols[currentSegment] = decodeSymbolDictionary(dictionary.huffman,
+        dictionary.refinement, inputSymbols, dictionary.numberOfNewSymbols,
+        dictionary.numberOfExportedSymbols, huffmanTables,
+        dictionary.template, dictionary.at,
+        dictionary.refinementTemplate, dictionary.refinementAt,
+        decodingContext);
+    },
+    onImmediateTextRegion:
+      function SimpleSegmentVisitor_onImmediateTextRegion(region,
+                                                          referredSegments,
+                                                          data, start, end) {
+      var regionInfo = region.info;
+      var huffmanTables;
+
+      // Combines exported symbols from all referred segments
+      var symbols = this.symbols;
+      var inputSymbols = [];
+      for (var i = 0, ii = referredSegments.length; i < ii; i++)
+        inputSymbols = inputSymbols.concat(symbols[referredSegments[i]]);
+      var symbolCodeLength = log2(inputSymbols.length);
+
+      var decodingContext = new DecodingContext(data, start, end);
+      var bitmap = decodeTextRegion(region.huffman, region.refinement,
+        regionInfo.width, regionInfo.height, region.defaultPixelValue,
+        region.numberOfSymbolInstances, region.stripSize, inputSymbols,
+        symbolCodeLength, region.transposed, region.dsOffset,
+        region.referenceCorner, region.combinationOperator, huffmanTables,
+        region.refinementTemplate, region.refinementAt, decodingContext);
+      this.drawBitmap(regionInfo, bitmap);
+    },
+    onImmediateLosslessTextRegion:
+      function SimpleSegmentVisitor_onImmediateLosslessTextRegion() {
+        this.onImmediateTextRegion.apply(this, arguments);
+    }
+  };
+
+  function Jbig2Image() {}
+
+  Jbig2Image.prototype = {
+    parseChunks: function Jbig2Image_parseChunks(chunks) {
+      return parseJbig2Chunks(chunks);
+    }
+  };
+
+  return Jbig2Image;
+})();
 
 /* -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab: */
@@ -32845,20 +35044,28 @@ var Metadata = PDFJS.Metadata = (function MetadataClosure() {
     <div id="outerContainer">
 
       <div id="sidebarContainer">
-        <div id="toolbarSidebar">
-          <div class="splitToolbarButton toggled">
-            <button id="viewThumbnail" class="toolbarButton toggled" title="Show Thumbnails" onclick="PDFView.switchSidebarView('thumbs')" tabindex="1" data-l10n-id="thumbs">
-               <span data-l10n-id="thumbs_label">Thumbnails</span>
-            </button>
-            <button id="viewOutline" class="toolbarButton" title="Show Document Outline" onclick="PDFView.switchSidebarView('outline')" tabindex="2" data-l10n-id="outline">
-               <span data-l10n-id="outline_label">Document Outline</span>
-            </button>
-          </div>
+        <div id="toolbarSidebar" class="splitToolbarButton toggled">
+          <button id="viewThumbnail" class="toolbarButton group toggled" title="Show Thumbnails" onclick="PDFView.switchSidebarView('thumbs')" tabindex="1" data-l10n-id="thumbs">
+             <span data-l10n-id="thumbs_label">Thumbnails</span>
+          </button>
+          <button id="viewOutline" class="toolbarButton group" title="Show Document Outline" onclick="PDFView.switchSidebarView('outline')" tabindex="2" data-l10n-id="outline">
+             <span data-l10n-id="outline_label">Document Outline</span>
+          </button>
+          <button id="viewSearch" class="toolbarButton group hidden" title="Search Document" onclick="PDFView.switchSidebarView('search')" tabindex="3" data-l10n-id="search_panel">
+             <span data-l10n-id="search_panel_label">Search Document</span>
+          </button>
         </div>
         <div id="sidebarContent">
           <div id="thumbnailView">
           </div>
           <div id="outlineView" class="hidden">
+          </div>
+          <div id="searchView" class="hidden">
+            <div id="searchToolbar">
+              <input id="searchTermsInput" class="toolbarField" onkeydown='if (event.keyCode == 13) PDFView.search()'>
+              <button id="searchButton" class="textButton toolbarButton" onclick='PDFView.search()' data-l10n-id="search">Find</button>
+            </div>
+            <div id="searchResults"></div>
           </div>
         </div>
       </div>  <!-- sidebarContainer -->
@@ -32869,35 +35076,33 @@ var Metadata = PDFJS.Metadata = (function MetadataClosure() {
 
             <div id="toolbarViewer">
               <div id="toolbarViewerLeft">
-                <button id="sidebarToggle" class="toolbarButton" title="Toggle Sidebar" tabindex="3" data-l10n-id="toggle_slider">
+                <button id="sidebarToggle" class="toolbarButton" title="Toggle Sidebar" tabindex="4" data-l10n-id="toggle_slider">
                   <span data-l10n-id="toggle_slider_label">Toggle Sidebar</span>
                 </button>
                 <div class="toolbarButtonSpacer"></div>
                 <div class="splitToolbarButton">
-                  <button class="toolbarButton pageUp" title="Previous Page" onclick="PDFView.page--" id="previous" tabindex="4" data-l10n-id="previous">
+                  <button class="toolbarButton pageUp" title="Previous Page" onclick="PDFView.page--" id="previous" tabindex="5" data-l10n-id="previous">
                     <span data-l10n-id="previous_label">Previous</span>
                   </button>
                   <div class="splitToolbarButtonSeparator"></div>
-                  <button class="toolbarButton pageDown" title="Next Page" onclick="PDFView.page++" id="next" tabindex="5" data-l10n-id="next">
+                  <button class="toolbarButton pageDown" title="Next Page" onclick="PDFView.page++" id="next" tabindex="6" data-l10n-id="next">
                     <span data-l10n-id="next_label">Next</span>
                   </button>
                 </div>
                 <label id="pageNumberLabel" class="toolbarLabel" for="pageNumber" data-l10n-id="page_label">Page: </label>
-                <input type="number" id="pageNumber" class="toolbarField pageNumber" onchange="PDFView.page = this.value;" value="1" size="4" min="1" tabindex="6">
+                <input type="number" id="pageNumber" class="toolbarField pageNumber" onchange="PDFView.page = this.value;" value="1" size="4" min="1" tabindex="7">
                 </input>
                 <span id="numPages" class="toolbarLabel"></span>
               </div>
               <div id="toolbarViewerRight">
                 <input id="fileInput" class="fileInput" type="file" oncontextmenu="return false;" style="visibility: hidden; position: fixed; right: 0; top: 0" />
-                <button id="openFile" class="toolbarButton openFile" title="Open File" tabindex="10" data-l10n-id="open_file" onclick="document.getElementById('fileInput').click()">
+                <button id="openFile" class="toolbarButton openFile" title="Open File" tabindex="11" data-l10n-id="open_file" onclick="document.getElementById('fileInput').click()">
                    <span data-l10n-id="open_file_label">Open</span>
                 </button>
 
-                <!--
                 <button id="print" class="toolbarButton print" title="Print" tabindex="11" data-l10n-id="print" onclick="window.print()">
                   <span data-l10n-id="print_label">Print</span>
                 </button>
-                -->
 
                 <button id="download" class="toolbarButton download" title="Download" onclick="PDFView.download();" tabindex="12" data-l10n-id="download">
                   <span data-l10n-id="download_label">Download</span>
@@ -32908,16 +35113,16 @@ var Metadata = PDFJS.Metadata = (function MetadataClosure() {
               <div class="outerCenter">
                 <div class="innerCenter" id="toolbarViewerMiddle">
                   <div class="splitToolbarButton">
-                    <button class="toolbarButton zoomOut" title="Zoom Out" onclick="PDFView.zoomOut();" tabindex="7" data-l10n-id="zoom_out">
+                    <button class="toolbarButton zoomOut" title="Zoom Out" onclick="PDFView.zoomOut();" tabindex="8" data-l10n-id="zoom_out">
                       <span data-l10n-id="zoom_out_label">Zoom Out</span>
                     </button>
                     <div class="splitToolbarButtonSeparator"></div>
-                    <button class="toolbarButton zoomIn" title="Zoom In" onclick="PDFView.zoomIn();" tabindex="8" data-l10n-id="zoom_in">
+                    <button class="toolbarButton zoomIn" title="Zoom In" onclick="PDFView.zoomIn();" tabindex="9" data-l10n-id="zoom_in">
                       <span data-l10n-id="zoom_in_label">Zoom In</span>
                      </button>
                   </div>
                   <span id="scaleSelectContainer" class="dropdownToolbarButton">
-                     <select id="scaleSelect" onchange="PDFView.parseScale(this.value);" title="Zoom" oncontextmenu="return false;" tabindex="9" data-l10n-id="zoom">
+                     <select id="scaleSelect" onchange="PDFView.parseScale(this.value);" title="Zoom" oncontextmenu="return false;" tabindex="10" data-l10n-id="zoom">
                       <option id="pageAutoOption" value="auto" selected="selected" data-l10n-id="page_scale_auto">Automatic Zoom</option>
                       <option id="pageActualOption" value="page-actual" data-l10n-id="page_scale_actual">Actual Size</option>
                       <option id="pageFitOption" value="page-fit" data-l10n-id="page_scale_fit">Fit Page</option>
@@ -32942,8 +35147,8 @@ var Metadata = PDFJS.Metadata = (function MetadataClosure() {
         </div>
 
         <div id="loadingBox">
-            <div id="loading" data-l10n-id="loading" data-l10n-args='{"percent": 0}'>Loading... 0%</div>
-            <div id="loadingBar"><div class="progress"></div></div>
+          <div id="loading"></div>
+          <div id="loadingBar"><div class="progress"></div></div>
         </div>
 
         <div id="errorWrapper" hidden='true'>
@@ -32967,5 +35172,6 @@ var Metadata = PDFJS.Metadata = (function MetadataClosure() {
       </div> <!-- mainContainer -->
 
     </div> <!-- outerContainer -->
+    <div id="printContainer"></div>
   </body>
 </html>

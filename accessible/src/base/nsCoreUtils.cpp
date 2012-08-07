@@ -34,6 +34,10 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "mozilla/dom/Element.h"
 
+#include "nsITreeBoxObject.h"
+#include "nsIDocShellTreeItem.h"
+#include "nsITreeColumns.h"
+
 ////////////////////////////////////////////////////////////////////////////////
 // nsCoreUtils
 ////////////////////////////////////////////////////////////////////////////////
@@ -66,7 +70,7 @@ nsCoreUtils::DispatchClickEvent(nsITreeBoxObject *aTreeBoxObj,
   if (!document)
     return;
 
-  nsIPresShell *presShell = nsnull;
+  nsIPresShell *presShell = nullptr;
   presShell = document->GetShell();
   if (!presShell)
     return;
@@ -195,7 +199,7 @@ nsCoreUtils::GetDOMElementFor(nsIContent *aContent)
   if (aContent->IsNodeOfType(nsINode::eTEXT))
     return aContent->GetParent();
 
-  return nsnull;
+  return nullptr;
 }
 
 nsINode *
@@ -203,8 +207,7 @@ nsCoreUtils::GetDOMNodeFromDOMPoint(nsINode *aNode, PRUint32 aOffset)
 {
   if (aNode && aNode->IsElement()) {
     PRUint32 childCount = aNode->GetChildCount();
-    NS_ASSERTION(aOffset >= 0 && aOffset <= childCount,
-                 "Wrong offset of the DOM point!");
+    NS_ASSERTION(aOffset <= childCount, "Wrong offset of the DOM point!");
 
     // The offset can be after last child of container node that means DOM point
     // is placed immediately after the last child. In this case use the DOM node
@@ -258,37 +261,28 @@ nsCoreUtils::IsAncestorOf(nsINode *aPossibleAncestorNode,
 }
 
 nsresult
-nsCoreUtils::ScrollSubstringTo(nsIFrame *aFrame,
-                               nsIDOMNode *aStartNode, PRInt32 aStartIndex,
-                               nsIDOMNode *aEndNode, PRInt32 aEndIndex,
+nsCoreUtils::ScrollSubstringTo(nsIFrame* aFrame, nsRange* aRange,
                                PRUint32 aScrollType)
 {
   nsIPresShell::ScrollAxis vertical, horizontal;
   ConvertScrollTypeToPercents(aScrollType, &vertical, &horizontal);
 
-  return ScrollSubstringTo(aFrame, aStartNode, aStartIndex, aEndNode, aEndIndex,
-                           vertical, horizontal);
+  return ScrollSubstringTo(aFrame, aRange, vertical, horizontal);
 }
 
 nsresult
-nsCoreUtils::ScrollSubstringTo(nsIFrame *aFrame,
-                               nsIDOMNode *aStartNode, PRInt32 aStartIndex,
-                               nsIDOMNode *aEndNode, PRInt32 aEndIndex,
+nsCoreUtils::ScrollSubstringTo(nsIFrame* aFrame, nsRange* aRange,
                                nsIPresShell::ScrollAxis aVertical,
                                nsIPresShell::ScrollAxis aHorizontal)
 {
-  if (!aFrame || !aStartNode || !aEndNode)
+  if (!aFrame)
     return NS_ERROR_FAILURE;
 
   nsPresContext *presContext = aFrame->PresContext();
 
-  nsRefPtr<nsIDOMRange> scrollToRange = new nsRange();
   nsCOMPtr<nsISelectionController> selCon;
   aFrame->GetSelectionController(presContext, getter_AddRefs(selCon));
   NS_ENSURE_TRUE(selCon, NS_ERROR_FAILURE);
-
-  scrollToRange->SetStart(aStartNode, aStartIndex);
-  scrollToRange->SetEnd(aEndNode, aEndIndex);
 
   nsCOMPtr<nsISelection> selection;
   selCon->GetSelection(nsISelectionController::SELECTION_ACCESSIBILITY,
@@ -296,7 +290,7 @@ nsCoreUtils::ScrollSubstringTo(nsIFrame *aFrame,
 
   nsCOMPtr<nsISelectionPrivate> privSel(do_QueryInterface(selection));
   selection->RemoveAllRanges();
-  selection->AddRange(scrollToRange);
+  selection->AddRange(aRange);
 
   privSel->ScrollIntoViewInternal(
     nsISelectionController::SELECTION_ANCHOR_REGION,
@@ -415,10 +409,10 @@ already_AddRefed<nsIDocShellTreeItem>
 nsCoreUtils::GetDocShellTreeItemFor(nsINode *aNode)
 {
   if (!aNode)
-    return nsnull;
+    return nullptr;
 
   nsCOMPtr<nsISupports> container = aNode->OwnerDoc()->GetContainer();
-  nsIDocShellTreeItem *docShellTreeItem = nsnull;
+  nsIDocShellTreeItem *docShellTreeItem = nullptr;
   if (container)
     CallQueryInterface(container, &docShellTreeItem);
 
@@ -499,13 +493,13 @@ nsCoreUtils::GetDOMNodeForContainer(nsIDocShellTreeItem *aContainer)
   shell->GetContentViewer(getter_AddRefs(cv));
 
   if (!cv)
-    return nsnull;
+    return nullptr;
 
   nsIDocument* doc = cv->GetDocument();
   if (!doc)
-    return nsnull;
+    return nullptr;
 
-  nsIDOMNode* node = nsnull;
+  nsIDOMNode* node = nullptr;
   CallQueryInterface(doc, &node);
   return node;
 }
@@ -523,7 +517,7 @@ nsCoreUtils::GetUIntAttr(nsIContent *aContent, nsIAtom *aAttr, PRInt32 *aUInt)
   nsAutoString value;
   aContent->GetAttr(kNameSpaceID_None, aAttr, value);
   if (!value.IsEmpty()) {
-    PRInt32 error = NS_OK;
+    nsresult error = NS_OK;
     PRInt32 integer = value.ToInteger(&error);
     if (NS_SUCCEEDED(error) && integer > 0) {
       *aUInt = integer;
@@ -564,9 +558,9 @@ nsCoreUtils::GetTreeBodyBoxObject(nsITreeBoxObject *aTreeBoxObj)
   aTreeBoxObj->GetTreeBody(getter_AddRefs(tcElm));
   nsCOMPtr<nsIDOMXULElement> tcXULElm(do_QueryInterface(tcElm));
   if (!tcXULElm)
-    return nsnull;
+    return nullptr;
 
-  nsIBoxObject *boxObj = nsnull;
+  nsIBoxObject *boxObj = nullptr;
   tcXULElm->GetBoxObject(&boxObj);
   return boxObj;
 }
@@ -592,7 +586,7 @@ nsCoreUtils::GetTreeBoxObject(nsIContent *aContent)
     currentContent = currentContent->GetParent();
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 already_AddRefed<nsITreeColumn>
@@ -601,7 +595,7 @@ nsCoreUtils::GetFirstSensibleColumn(nsITreeBoxObject *aTree)
   nsCOMPtr<nsITreeColumns> cols;
   aTree->GetColumns(getter_AddRefs(cols));
   if (!cols)
-    return nsnull;
+    return nullptr;
 
   nsCOMPtr<nsITreeColumn> column;
   cols->GetFirstColumn(getter_AddRefs(column));
@@ -650,7 +644,7 @@ nsCoreUtils::GetSensibleColumnAt(nsITreeBoxObject *aTree, PRUint32 aIndex)
     column = GetNextSensibleColumn(column);
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 already_AddRefed<nsITreeColumn>

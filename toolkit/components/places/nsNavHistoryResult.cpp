@@ -20,9 +20,6 @@
 #include "prprf.h"
 
 #include "nsCycleCollectionParticipant.h"
-#include "nsIClassInfo.h"
-#include "nsIProgrammingLanguage.h"
-#include "nsIXPCScriptable.h"
 
 #define TO_ICONTAINER(_node)                                                  \
     static_cast<nsINavHistoryContainerResultNode*>(_node)                      
@@ -72,111 +69,6 @@ inline PRInt32 CompareIntegers(PRUint32 a, PRUint32 b)
   return a - b;
 }
 
-namespace mozilla {
-  namespace places {
-    // Class-info and the scriptable helper are implemented in order to
-    // allow the JS frontend code to set expando properties on result nodes.
-    class ResultNodeClassInfo : public nsIClassInfo
-                              , public nsIXPCScriptable
-    {
-      NS_DECL_ISUPPORTS
-      NS_DECL_NSIXPCSCRIPTABLE
-
-      // TODO: Bug 517718.
-      NS_IMETHODIMP
-      GetInterfaces(PRUint32 *_count, nsIID ***_array)
-      {
-        *_count = 0;
-        *_array = nsnull;
-
-        return NS_OK;
-      }
-
-      NS_IMETHODIMP
-      GetHelperForLanguage(PRUint32 aLanguage, nsISupports **_helper)
-      {
-        if (aLanguage == nsIProgrammingLanguage::JAVASCRIPT) {
-          *_helper = static_cast<nsIXPCScriptable *>(this);
-          NS_ADDREF(*_helper);
-        }
-        else
-          *_helper = nsnull;
-
-        return NS_OK;
-      }
-
-      NS_IMETHODIMP
-      GetContractID(char **_contractID)
-      {
-        *_contractID = nsnull;
-        return NS_OK;
-      }
-
-      NS_IMETHODIMP
-      GetClassDescription(char **_desc)
-      {
-        *_desc = nsnull;
-        return NS_OK;
-      }
-
-      NS_IMETHODIMP
-      GetClassID(nsCID **_id)
-      {
-        *_id = nsnull;
-        return NS_OK;
-      }
-
-      NS_IMETHODIMP
-      GetImplementationLanguage(PRUint32 *_language)
-      {
-        *_language = nsIProgrammingLanguage::CPLUSPLUS;
-        return NS_OK;
-      }
-
-      NS_IMETHODIMP
-      GetFlags(PRUint32 *_flags)
-      {
-        *_flags = 0;
-        return NS_OK;
-      }
-
-      NS_IMETHODIMP
-      GetClassIDNoAlloc(nsCID *_cid)
-      {
-        return NS_ERROR_NOT_AVAILABLE;
-      }
-    };
-
-    /**
-     * As a static implementation of classinfo, we violate XPCOM rules andjust
-     * pretend to use the refcount mechanism.  See classinfo documentation at
-     * https://developer.mozilla.org/en/Using_nsIClassInfo
-     */
-    NS_IMETHODIMP_(nsrefcnt) ResultNodeClassInfo::AddRef()
-    {
-      return 2;
-    }
-    NS_IMETHODIMP_(nsrefcnt) ResultNodeClassInfo::Release()
-    {
-      return 1;
-    }
-
-    NS_IMPL_QUERY_INTERFACE2(ResultNodeClassInfo, nsIClassInfo, nsIXPCScriptable)
-
-#define XPC_MAP_CLASSNAME ResultNodeClassInfo
-#define XPC_MAP_QUOTED_CLASSNAME "ResultNodeClassInfo"
-#define XPC_MAP_FLAGS nsIXPCScriptable::USE_JSSTUB_FOR_ADDPROPERTY | \
-                      nsIXPCScriptable::USE_JSSTUB_FOR_DELPROPERTY | \
-                      nsIXPCScriptable::USE_JSSTUB_FOR_SETPROPERTY
-
-// xpc_map_end contains implementation for nsIXPCScriptable, that used the
-// constant define above
-#include "xpc_map_end.h"    
-
-    static ResultNodeClassInfo sResultNodeClassInfo;
-  } // namespace places
-} // namespace mozilla
-
 using namespace mozilla::places;
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsNavHistoryResultNode)
@@ -191,9 +83,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsNavHistoryResultNode)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsINavHistoryResultNode)
-  if (aIID.Equals(NS_GET_IID(nsIClassInfo)))
-    foundInterface = static_cast<nsIClassInfo *>(&mozilla::places::sResultNodeClassInfo);
-  else
   NS_INTERFACE_MAP_ENTRY(nsINavHistoryResultNode)
 NS_INTERFACE_MAP_END
 
@@ -203,7 +92,7 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(nsNavHistoryResultNode)
 nsNavHistoryResultNode::nsNavHistoryResultNode(
     const nsACString& aURI, const nsACString& aTitle, PRUint32 aAccessCount,
     PRTime aTime, const nsACString& aIconURI) :
-  mParent(nsnull),
+  mParent(nullptr),
   mURI(aURI),
   mTitle(aTitle),
   mAreTagsSorted(false),
@@ -248,7 +137,7 @@ nsNavHistoryResultNode::GetParent(nsINavHistoryContainerResultNode** aParent)
 NS_IMETHODIMP
 nsNavHistoryResultNode::GetParentResult(nsINavHistoryResult** aResult)
 {
-  *aResult = nsnull;
+  *aResult = nullptr;
   if (IsContainer())
     NS_IF_ADDREF(*aResult = GetAsContainer()->mResult);
   else if (mParent)
@@ -341,7 +230,7 @@ nsNavHistoryResultNode::GetTags(nsAString& aTags) {
 void
 nsNavHistoryResultNode::OnRemoving()
 {
-  mParent = nsnull;
+  mParent = nullptr;
 }
 
 
@@ -363,7 +252,7 @@ nsNavHistoryResultNode::GetResult()
     node = node->mParent;
   } while (node);
   NS_NOTREACHED("No container node found in hierarchy!");
-  return nsnull;
+  return nullptr;
 }
 
 
@@ -388,7 +277,7 @@ nsNavHistoryResultNode::GetGeneratingOptions()
       return GetAsContainer()->mOptions;
 
     NS_NOTREACHED("Can't find a generating node for this container, perhaps FillStats has not been called on this tree yet?");
-    return nsnull;
+    return nullptr;
   }
 
   // Look up the tree.  We want the options that were used to create this node,
@@ -403,7 +292,7 @@ nsNavHistoryResultNode::GetGeneratingOptions()
 
   // We should always find a container node as an ancestor.
   NS_NOTREACHED("Can't find a generating node for this container, the tree seemes corrupted.");
-  return nsnull;
+  return nullptr;
 }
 
 
@@ -462,7 +351,7 @@ nsNavHistoryContainerResultNode::nsNavHistoryContainerResultNode(
     const nsACString& aIconURI, PRUint32 aContainerType, bool aReadOnly,
     nsNavHistoryQueryOptions* aOptions) :
   nsNavHistoryResultNode(aURI, aTitle, 0, 0, aIconURI),
-  mResult(nsnull),
+  mResult(nullptr),
   mContainerType(aContainerType),
   mExpanded(false),
   mChildrenReadOnly(aReadOnly),
@@ -477,7 +366,7 @@ nsNavHistoryContainerResultNode::nsNavHistoryContainerResultNode(
     const nsACString& aIconURI, PRUint32 aContainerType, bool aReadOnly,
     nsNavHistoryQueryOptions* aOptions) :
   nsNavHistoryResultNode(aURI, aTitle, 0, aTime, aIconURI),
-  mResult(nsnull),
+  mResult(nullptr),
   mContainerType(aContainerType),
   mExpanded(false),
   mChildrenReadOnly(aReadOnly),
@@ -652,7 +541,7 @@ nsNavHistoryContainerResultNode::CloseContainer(bool aSuppressNotifications)
 
   // Be sure to set this to null before notifying observers.  It signifies that
   // the container is no longer loading (if it was in the first place).
-  mAsyncPendingStmt = nsnull;
+  mAsyncPendingStmt = nullptr;
 
   if (!aSuppressNotifications) {
     rv = NotifyOnStateChange(oldState);
@@ -803,7 +692,9 @@ nsNavHistoryContainerResultNode::ReverseUpdateStats(PRInt32 aAccessCountChange)
     if ((sortingByVisitCount && aAccessCountChange != 0) ||
         (sortingByTime && timeChanged)) {
       PRUint32 ourIndex = mParent->FindChild(this);
-      EnsureItemPosition(ourIndex);
+      NS_ASSERTION(ourIndex >= 0, "Could not find self in parent");
+      if (ourIndex >= 0)
+        EnsureItemPosition(ourIndex);
     }
 
     nsresult rv = mParent->ReverseUpdateStats(aAccessCountChange);
@@ -900,7 +791,7 @@ nsNavHistoryContainerResultNode::GetSortingComparator(PRUint16 aSortType)
       return &SortComparison_FrecencyGreater;
     default:
       NS_NOTREACHED("Bad sorting type");
-      return nsnull;
+      return nullptr;
   }
 }
 
@@ -1331,7 +1222,7 @@ PRInt32 nsNavHistoryContainerResultNode::SortComparison_AnnotationLess(
   // have the annotation set or if both had it set but in a different storage
   // type
   if (value == 0)
-    return SortComparison_TitleLess(a, b, nsnull);
+    return SortComparison_TitleLess(a, b, nullptr);
 
   return value;
 }
@@ -1432,7 +1323,7 @@ nsNavHistoryContainerResultNode::FindChildURI(const nsACString& aSpec,
       }
     }
   }
-  return nsnull;
+  return nullptr;
 }
 
 
@@ -1457,7 +1348,7 @@ nsNavHistoryContainerResultNode::FindChildContainerByName(
       }
     }
   }
-  return nsnull;
+  return nullptr;
 }
 
 
@@ -1568,8 +1459,8 @@ nsNavHistoryContainerResultNode::InsertSortedChild(
  */
 bool
 nsNavHistoryContainerResultNode::EnsureItemPosition(PRUint32 aIndex) {
-  NS_ASSERTION(aIndex >= 0 && aIndex < (PRUint32)mChildren.Count(), "Invalid index");
-  if (aIndex < 0 || aIndex >= (PRUint32)mChildren.Count())
+  NS_ASSERTION(aIndex < (PRUint32)mChildren.Count(), "Invalid index");
+  if (aIndex >= (PRUint32)mChildren.Count())
     return false;
 
   SortComparator comparator = GetSortingComparator(GetSortType());
@@ -1585,7 +1476,7 @@ nsNavHistoryContainerResultNode::EnsureItemPosition(PRUint32 aIndex) {
   mChildren.RemoveObjectAt(aIndex);
 
   PRUint32 newIndex = FindInsertionPoint(
-                          node, comparator,sortAnno.get(), nsnull);
+                          node, comparator,sortAnno.get(), nullptr);
   mChildren.InsertObjectAt(node.get(), newIndex);
 
   if (AreChildrenVisible()) {
@@ -1979,7 +1870,7 @@ nsNavHistoryContainerResultNode::FindNodeByDetails(const nsACString& aURIString,
   if (!mExpanded)
     return NS_ERROR_NOT_AVAILABLE;
 
-  *_retval = nsnull;
+  *_retval = nullptr;
   for (PRInt32 i = 0; i < mChildren.Count(); ++i) {
     if (mChildren[i]->mURI.Equals(aURIString) &&
         mChildren[i]->mTime == aTime &&
@@ -2043,7 +1934,7 @@ nsNavHistoryQueryResultNode::nsNavHistoryQueryResultNode(
     const nsACString& aQueryURI) :
   nsNavHistoryContainerResultNode(aQueryURI, aTitle, aIconURI,
                                   nsNavHistoryResultNode::RESULT_TYPE_QUERY,
-                                  true, nsnull),
+                                  true, nullptr),
   mLiveUpdate(QUERYUPDATE_COMPLEX_WITH_BOOKMARKS),
   mHasSearchTerms(false),
   mContentsValid(false),
@@ -2316,7 +2207,7 @@ nsNavHistoryQueryResultNode::Options()
 {
   nsresult rv = VerifyQueriesParsed();
   if (NS_FAILED(rv))
-    return nsnull;
+    return nullptr;
   NS_ASSERTION(mOptions, "Options invalid, cannot generate from URI");
   return mOptions;
 }
@@ -3588,7 +3479,7 @@ nsNavHistoryFolderResultNode::HandleCompletion(PRUint16 aReason)
     NS_ENSURE_SUCCESS(rv, rv);
 
     mExpanded = true;
-    mAsyncPendingStmt = nsnull;
+    mAsyncPendingStmt = nullptr;
 
     // Notify observers only after mExpanded and mAsyncPendingStmt are set.
     rv = NotifyOnStateChange(STATE_LOADING);
@@ -3732,7 +3623,7 @@ nsNavHistoryFolderResultNode::FindChildById(PRInt64 aItemId,
       return mChildren[i];
     }
   }
-  return nsnull;
+  return nullptr;
 }
 
 
@@ -3998,7 +3889,9 @@ nsNavHistoryResultNode::OnItemChanged(PRInt64 aItemId,
   // The sorting methods fall back to each other so we need to re-sort the
   // result even if it's not set to sort by the given property.
   PRInt32 ourIndex = mParent->FindChild(this);
-  mParent->EnsureItemPosition(ourIndex);
+  NS_ASSERTION(ourIndex >= 0, "Could not find self in parent");
+  if (ourIndex >= 0)
+    mParent->EnsureItemPosition(ourIndex);
 
   return NS_OK;
 }
@@ -4136,7 +4029,8 @@ nsNavHistoryFolderResultNode::OnItemMoved(PRInt64 aItemId,
     node->mBookmarkIndex = aNewIndex;
 
     // adjust position
-    EnsureItemPosition(index);
+    if (index >= 0)
+      EnsureItemPosition(index);
     return NS_OK;
   } else {
     // moving between two different folders, just do a remove and an add
@@ -4189,7 +4083,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsNavHistoryResult)
   tmp->StopObserving();
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mRootNode)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSTARRAY(mObservers)
-  tmp->mBookmarkFolderObservers.Enumerate(&RemoveBookmarkFolderObserversCallback, nsnull);
+  tmp->mBookmarkFolderObservers.Enumerate(&RemoveBookmarkFolderObserversCallback, nullptr);
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSTARRAY(mAllBookmarksObservers)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSTARRAY(mHistoryObservers)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -4258,7 +4152,7 @@ nsNavHistoryResult::nsNavHistoryResult(nsNavHistoryContainerResultNode* aRoot)
 nsNavHistoryResult::~nsNavHistoryResult()
 {
   // delete all bookmark folder observer arrays which are allocated on the heap
-  mBookmarkFolderObservers.Enumerate(&RemoveBookmarkFolderObserversCallback, nsnull);
+  mBookmarkFolderObservers.Enumerate(&RemoveBookmarkFolderObserversCallback, nullptr);
 }
 
 void
@@ -4340,7 +4234,7 @@ nsNavHistoryResult::NewHistoryResult(nsINavHistoryQuery** aQueries,
   nsresult rv = (*result)->Init(aQueries, aQueryCount, aOptions);
   if (NS_FAILED(rv)) {
     NS_RELEASE(*result);
-    *result = nsnull;
+    *result = nullptr;
     return rv;
   }
 
@@ -4442,7 +4336,7 @@ nsNavHistoryResult::BookmarkFolderObserversForId(PRInt64 aFolderId, bool aCreate
   if (mBookmarkFolderObservers.Get(aFolderId, &list))
     return list;
   if (!aCreate)
-    return nsnull;
+    return nullptr;
 
   // need to create a new list
   list = new FolderObserverList;
@@ -4557,7 +4451,7 @@ nsNavHistoryResult::GetRoot(nsINavHistoryContainerResultNode** aRoot)
 {
   if (!mRootNode) {
     NS_NOTREACHED("Root is null");
-    *aRoot = nsnull;
+    *aRoot = nullptr;
     return NS_ERROR_FAILURE;
   }
   return mRootNode->QueryInterface(NS_GET_IID(nsINavHistoryContainerResultNode),
@@ -4856,7 +4750,7 @@ nsNavHistoryResult::OnVisit(nsIURI* aURI, PRInt64 aVisitId, PRTime aTime,
       rv = firstChild->GetTitle(title);
       NS_ENSURE_SUCCESS(rv, rv);
       nsNavHistory* history = nsNavHistory::GetHistoryService();
-      NS_ENSURE_TRUE(history, 0);
+      NS_ENSURE_TRUE(history, NS_OK);
       nsCAutoString todayLabel;
       history->GetStringFromName(
         NS_LITERAL_STRING("finduri-AgeInDays-is-0").get(), todayLabel);

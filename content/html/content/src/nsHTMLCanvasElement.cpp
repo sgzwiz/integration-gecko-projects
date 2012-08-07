@@ -11,9 +11,12 @@
 #include "prmem.h"
 #include "nsDOMFile.h"
 
+#include "nsICanvasRenderingContextInternal.h"
+#include "nsIDOMCanvasRenderingContext2D.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIXPConnect.h"
 #include "jsapi.h"
+#include "jsfriendapi.h"
 #include "nsContentUtils.h"
 #include "nsJSUtils.h"
 #include "nsMathUtils.h"
@@ -121,7 +124,7 @@ nsHTMLCanvasElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
 }
 
 nsresult
-nsHTMLCanvasElement::CopyInnerTo(nsGenericElement* aDest) const
+nsHTMLCanvasElement::CopyInnerTo(nsGenericElement* aDest)
 {
   nsresult rv = nsGenericHTMLElement::CopyInnerTo(aDest);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -399,7 +402,7 @@ nsHTMLCanvasElement::MozGetAsFileImpl(const nsAString& aName,
   rv = stream->Available(&imgSize);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  void* imgData = nsnull;
+  void* imgData = nullptr;
   rv = NS_ReadInputStreamToBuffer(stream, &imgData, imgSize);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -444,24 +447,18 @@ nsHTMLCanvasElement::GetContextHelper(const nsAString& aContextId,
   nsCOMPtr<nsICanvasRenderingContextInternal> ctx =
     do_CreateInstance(ctxString.get(), &rv);
   if (rv == NS_ERROR_OUT_OF_MEMORY) {
-    *aContext = nsnull;
+    *aContext = nullptr;
     return NS_ERROR_OUT_OF_MEMORY;
   }
   if (NS_FAILED(rv)) {
-    *aContext = nsnull;
+    *aContext = nullptr;
     // XXX ERRMSG we need to report an error to developers here! (bug 329026)
     return NS_OK;
   }
 
-  rv = ctx->SetCanvasElement(this);
-  if (NS_FAILED(rv)) {
-    *aContext = nsnull;
-    return rv;
-  }
-
+  ctx->SetCanvasElement(this);
   ctx.forget(aContext);
-
-  return rv;
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -484,10 +481,10 @@ nsHTMLCanvasElement::GetContext(const nsAString& aContextId,
 
     // Ensure that the context participates in CC.  Note that returning a
     // CC participant from QI doesn't addref.
-    nsXPCOMCycleCollectionParticipant *cp = nsnull;
+    nsXPCOMCycleCollectionParticipant *cp = nullptr;
     CallQueryInterface(mCurrentContext, &cp);
     if (!cp) {
-      mCurrentContext = nsnull;
+      mCurrentContext = nullptr;
       return NS_ERROR_FAILURE;
     }
 
@@ -514,7 +511,7 @@ nsHTMLCanvasElement::GetContext(const nsAString& aContextId,
         JSString *propnameString = JS_ValueToString(cx, propname);
         nsDependentJSString pstr;
         if (!propnameString || !pstr.init(cx, propnameString)) {
-          mCurrentContext = nsnull;
+          mCurrentContext = nullptr;
           return NS_ERROR_FAILURE;
         }
 
@@ -528,7 +525,7 @@ nsHTMLCanvasElement::GetContext(const nsAString& aContextId,
           JSString *propvalString = JS_ValueToString(cx, propval);
           nsDependentJSString vstr;
           if (!propvalString || !vstr.init(cx, propvalString)) {
-            mCurrentContext = nsnull;
+            mCurrentContext = nullptr;
             return NS_ERROR_FAILURE;
           }
 
@@ -605,21 +602,21 @@ nsHTMLCanvasElement::UpdateContext(nsIPropertyBag *aNewContextOptions)
 
   nsresult rv = mCurrentContext->SetIsOpaque(GetIsOpaque());
   if (NS_FAILED(rv)) {
-    mCurrentContext = nsnull;
+    mCurrentContext = nullptr;
     mCurrentContextId.Truncate();
     return rv;
   }
 
   rv = mCurrentContext->SetContextOptions(aNewContextOptions);
   if (NS_FAILED(rv)) {
-    mCurrentContext = nsnull;
+    mCurrentContext = nullptr;
     mCurrentContextId.Truncate();
     return rv;
   }
 
   rv = mCurrentContext->SetDimensions(sz.width, sz.height);
   if (NS_FAILED(rv)) {
-    mCurrentContext = nsnull;
+    mCurrentContext = nullptr;
     mCurrentContextId.Truncate();
     return rv;
   }
@@ -685,6 +682,19 @@ nsHTMLCanvasElement::InvalidateCanvasContent(const gfxRect* damageRect)
   if (layer) {
     static_cast<CanvasLayer*>(layer)->Updated();
   }
+
+  /*
+   * Treat canvas invalidations as animation activity for JS. Frequently
+   * invalidating a canvas will feed into heuristics and cause JIT code to be
+   * kept around longer, for smoother animations.
+   */
+  nsIScriptGlobalObject *scope = OwnerDoc()->GetScriptGlobalObject();
+  if (scope) {
+    JSObject *obj = scope->GetGlobalJSObject();
+    if (obj) {
+      js::NotifyAnimationActivity(obj);
+    }
+  }
 }
 
 void
@@ -731,7 +741,7 @@ nsHTMLCanvasElement::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
                                     LayerManager *aManager)
 {
   if (!mCurrentContext)
-    return nsnull;
+    return nullptr;
 
   return mCurrentContext->GetCanvasLayer(aBuilder, aOldLayer, aManager);
 }
@@ -773,12 +783,8 @@ nsresult
 NS_NewCanvasRenderingContext2D(nsIDOMCanvasRenderingContext2D** aResult)
 {
   Telemetry::Accumulate(Telemetry::CANVAS_2D_USED, 1);
-  if (Preferences::GetBool("gfx.canvas.azure.enabled", false)) {
-    nsresult rv = NS_NewCanvasRenderingContext2DAzure(aResult);
-    // If Azure fails, fall back to a classic canvas.
-    if (NS_SUCCEEDED(rv)) {
-      return rv;
-    }
+  if (AzureCanvasEnabled()) {
+    return NS_NewCanvasRenderingContext2DAzure(aResult);
   }
 
   return NS_NewCanvasRenderingContext2DThebes(aResult);

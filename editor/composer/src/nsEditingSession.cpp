@@ -4,49 +4,53 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsPIDOMWindow.h"
-#include "nsIDOMWindowUtils.h"
-#include "nsIDOMHTMLDocument.h"
-#include "nsIDocument.h"
-#include "nsIHTMLDocument.h"
-#include "nsIDOMDocument.h"
-#include "nsIURI.h"
-#include "nsISelectionPrivate.h"
-#include "nsITransactionManager.h"
+#include <string.h>                     // for NULL, strcmp
 
-#include "nsIEditorDocShell.h"
-#include "nsIDocShell.h"
-
-#include "nsIChannel.h"
-#include "nsIWebProgress.h"
-#include "nsIWebNavigation.h"
-#include "nsIRefreshURI.h"
-
-#include "nsIControllers.h"
-#include "nsIController.h"
-#include "nsIControllerContext.h"
-#include "nsICommandManager.h"
-#include "nsPICommandUpdater.h"
-
-#include "nsIPresShell.h"
-
-#include "nsComposerCommandsUpdater.h"
+#include "imgIContainer.h"              // for imgIContainer, etc
+#include "mozFlushType.h"               // for mozFlushType::Flush_Frames
+#include "mozilla/mozalloc.h"           // for operator new
+#include "nsAString.h"
+#include "nsComponentManagerUtils.h"    // for do_CreateInstance
+#include "nsComposerCommandsUpdater.h"  // for nsComposerCommandsUpdater
+#include "nsDebug.h"                    // for NS_ENSURE_SUCCESS, etc
 #include "nsEditingSession.h"
+#include "nsError.h"                    // for NS_ERROR_FAILURE, NS_OK, etc
+#include "nsIChannel.h"                 // for nsIChannel
+#include "nsICommandManager.h"          // for nsICommandManager
+#include "nsIContentViewer.h"           // for nsIContentViewer
+#include "nsIController.h"              // for nsIController
+#include "nsIControllerContext.h"       // for nsIControllerContext
+#include "nsIControllers.h"             // for nsIControllers
+#include "nsID.h"                       // for NS_GET_IID, etc
+#include "nsIDOMDocument.h"             // for nsIDOMDocument
+#include "nsIDOMHTMLDocument.h"         // for nsIDOMHTMLDocument
+#include "nsIDOMWindow.h"               // for nsIDOMWindow
+#include "nsIDOMWindowUtils.h"          // for nsIDOMWindowUtils
+#include "nsIDocShell.h"                // for nsIDocShell
+#include "nsIDocument.h"                // for nsIDocument
+#include "nsIDocumentStateListener.h"
+#include "nsIEditor.h"                  // for nsIEditor
+#include "nsIEditorDocShell.h"          // for nsIEditorDocShell
+#include "nsIHTMLDocument.h"            // for nsIHTMLDocument, etc
+#include "nsIInterfaceRequestorUtils.h"  // for do_GetInterface
+#include "nsIPlaintextEditor.h"         // for nsIPlaintextEditor, etc
+#include "nsIRefreshURI.h"              // for nsIRefreshURI
+#include "nsIRequest.h"                 // for nsIRequest
+#include "nsISelection.h"               // for nsISelection
+#include "nsISelectionPrivate.h"        // for nsISelectionPrivate
+#include "nsITimer.h"                   // for nsITimer, etc
+#include "nsITransactionManager.h"      // for nsITransactionManager
+#include "nsIWeakReference.h"           // for nsISupportsWeakReference, etc
+#include "nsIWebNavigation.h"           // for nsIWebNavigation
+#include "nsIWebProgress.h"             // for nsIWebProgress, etc
+#include "nsLiteralString.h"            // for NS_LITERAL_STRING
+#include "nsPICommandUpdater.h"         // for nsPICommandUpdater
+#include "nsPIDOMWindow.h"              // for nsPIDOMWindow
+#include "nsReadableUtils.h"            // for AppendUTF16toUTF8
+#include "nsStringFwd.h"                // for nsAFlatString
 
-#include "nsComponentManagerUtils.h"
-#include "nsIInterfaceRequestorUtils.h"
-
-#include "nsIContentViewer.h"
-#include "nsISelectionController.h"
-#include "nsIPlaintextEditor.h"
-#include "nsIEditor.h"
-
-#include "nsIScriptContext.h"
-#include "imgIContainer.h"
-
-#if DEBUG
-//#define NOISY_DOC_LOADING  1
-#endif
+class nsISupports;
+class nsIURI;
 
 /*---------------------------------------------------------------------------
 
@@ -457,8 +461,8 @@ nsEditingSession::SetupEditorOnWindow(nsIDOMWindow *aWindow)
   rv = editor->AddDocumentStateListener(mStateMaintainer);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = editor->Init(domDoc, nsnull /* root content */,
-                    nsnull, mEditorFlags);
+  rv = editor->Init(domDoc, nullptr /* root content */,
+                    nullptr, mEditorFlags);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsISelection> selection;
@@ -534,7 +538,7 @@ nsEditingSession::TearDownEditorOnWindow(nsIDOMWindow *aWindow)
   if (mLoadBlankDocTimer)
   {
     mLoadBlankDocTimer->Cancel();
-    mLoadBlankDocTimer = nsnull;
+    mLoadBlankDocTimer = nullptr;
   }
 
   mDoneSetup = false;
@@ -562,12 +566,12 @@ nsEditingSession::TearDownEditorOnWindow(nsIDOMWindow *aWindow)
   {
     // Null out the editor on the controllers first to prevent their weak 
     // references from pointing to a destroyed editor.
-    SetEditorOnControllers(aWindow, nsnull);
+    SetEditorOnControllers(aWindow, nullptr);
   }
 
   // Null out the editor on the docShell to trigger PreDestroy which
   // needs to happen before document state listeners are removed below.
-  editorDocShell->SetEditor(nsnull);
+  editorDocShell->SetEditor(nullptr);
 
   RemoveListenersAndControllers(aWindow, editor);
 
@@ -1038,7 +1042,7 @@ nsEditingSession::TimerCallback(nsITimer* aTimer, void* aClosure)
     nsCOMPtr<nsIWebNavigation> webNav(do_QueryInterface(docShell));
     if (webNav)
       webNav->LoadURI(NS_LITERAL_STRING("about:blank").get(),
-                      0, nsnull, nsnull, nsnull);
+                      0, nullptr, nullptr, nullptr);
   }
 }
 
@@ -1114,13 +1118,13 @@ nsEditingSession::EndPageLoad(nsIWebProgress *aWebProgress,
 
   GetDocShellFromWindow
 
-  Utility method. This will always return nsnull if no docShell is found.
+  Utility method. This will always return nullptr if no docShell is found.
 ----------------------------------------------------------------------------*/
 nsIDocShell *
 nsEditingSession::GetDocShellFromWindow(nsIDOMWindow *aWindow)
 {
   nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aWindow);
-  NS_ENSURE_TRUE(window, nsnull);
+  NS_ENSURE_TRUE(window, nullptr);
 
   return window->GetDocShell();
 }
@@ -1353,7 +1357,7 @@ nsEditingSession::DetachFromWindow(nsIDOMWindow* aWindow)
   if (mLoadBlankDocTimer)
   {
     mLoadBlankDocTimer->Cancel();
-    mLoadBlankDocTimer = nsnull;
+    mLoadBlankDocTimer = nullptr;
   }
 
   // Remove controllers, webprogress listener, and otherwise
@@ -1365,7 +1369,7 @@ nsEditingSession::DetachFromWindow(nsIDOMWindow* aWindow)
 
   // Kill our weak reference to our original window, in case
   // it changes on restore, or otherwise dies.
-  mDocShell = nsnull;
+  mDocShell = nullptr;
 
   return NS_OK;
 }

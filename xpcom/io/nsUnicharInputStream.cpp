@@ -12,6 +12,7 @@
 #include "nsAutoPtr.h"
 #include "nsCRT.h"
 #include "nsUTF8Utils.h"
+#include "mozilla/Attributes.h"
 #include <fcntl.h>
 #if defined(XP_WIN)
 #include <io.h>
@@ -21,7 +22,7 @@
 
 #define STRING_BUFFER_SIZE 8192
 
-class StringUnicharInputStream : public nsIUnicharInputStream {
+class StringUnicharInputStream MOZ_FINAL : public nsIUnicharInputStream {
 public:
   StringUnicharInputStream(const nsAString& aString) :
     mString(aString), mPos(0), mLen(aString.Length()) { }
@@ -120,7 +121,7 @@ NS_IMPL_ISUPPORTS1(StringUnicharInputStream, nsIUnicharInputStream)
 
 //----------------------------------------------------------------------
 
-class UTF8InputStream : public nsIUnicharInputStream {
+class UTF8InputStream MOZ_FINAL : public nsIUnicharInputStream {
 public:
   UTF8InputStream();
   nsresult Init(nsIInputStream* aStream);
@@ -155,10 +156,10 @@ UTF8InputStream::UTF8InputStream() :
 nsresult 
 UTF8InputStream::Init(nsIInputStream* aStream)
 {
-  nsresult rv = NS_NewByteBuffer(getter_AddRefs(mByteData), nsnull,
+  nsresult rv = NS_NewByteBuffer(getter_AddRefs(mByteData), nullptr,
                                  STRING_BUFFER_SIZE);
   if (NS_FAILED(rv)) return rv;
-  rv = NS_NewUnicharBuffer(getter_AddRefs(mUnicharData), nsnull,
+  rv = NS_NewUnicharBuffer(getter_AddRefs(mUnicharData), nullptr,
                            STRING_BUFFER_SIZE);
   if (NS_FAILED(rv)) return rv;
 
@@ -176,9 +177,9 @@ UTF8InputStream::~UTF8InputStream()
 
 nsresult UTF8InputStream::Close()
 {
-  mInput = nsnull;
-  mByteData = nsnull;
-  mUnicharData = nsnull;
+  mInput = nullptr;
+  mByteData = nullptr;
+  mUnicharData = nullptr;
 
   return NS_OK;
 }
@@ -284,7 +285,7 @@ UTF8InputStream::ReadString(PRUint32 aCount, nsAString& aString,
 
 PRInt32 UTF8InputStream::Fill(nsresult * aErrorCode)
 {
-  if (nsnull == mInput) {
+  if (nullptr == mInput) {
     // We already closed the stream!
     *aErrorCode = NS_BASE_STREAM_CLOSED;
     return -1;
@@ -410,7 +411,7 @@ NS_IMETHODIMP
 nsSimpleUnicharStreamFactory::CreateInstanceFromUTF8Stream(nsIInputStream* aStreamToWrap,
                                                            nsIUnicharInputStream* *aResult)
 {
-  *aResult = nsnull;
+  *aResult = nullptr;
 
   // Create converter input stream
   nsRefPtr<UTF8InputStream> it = new UTF8InputStream();

@@ -18,6 +18,7 @@
 #include "nsContentCreatorFunctions.h"
 #include "nsContentUtils.h"
 #include "nsFormControlFrame.h"
+#include "nsContentList.h"
 #include "nsFontMetrics.h"
 #include "mozilla/dom/Element.h"
 
@@ -32,7 +33,7 @@ NS_IMPL_FRAMEARENA_HELPERS(nsProgressFrame)
 
 nsProgressFrame::nsProgressFrame(nsStyleContext* aContext)
   : nsContainerFrame(aContext)
-  , mBarDiv(nsnull)
+  , mBarDiv(nullptr)
 {
 }
 
@@ -58,7 +59,7 @@ nsProgressFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
   nsCOMPtr<nsIDocument> doc = mContent->GetDocument();
 
   nsCOMPtr<nsINodeInfo> nodeInfo;
-  nodeInfo = doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::div, nsnull,
+  nodeInfo = doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::div, nullptr,
                                                  kNameSpaceID_XHTML,
                                                  nsIDOMNode::ELEMENT_NODE);
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);

@@ -19,13 +19,15 @@ class XPCWrappedNative;
 namespace xpc {
 
 JSBool
-holder_get(JSContext *cx, JSHandleObject holder, JSHandleId id, jsval *vp);
+holder_get(JSContext *cx, JSHandleObject holder, JSHandleId id, JSMutableHandleValue vp);
 JSBool
-holder_set(JSContext *cx, JSHandleObject holder, JSHandleId id, JSBool strict, jsval *vp);
+holder_set(JSContext *cx, JSHandleObject holder, JSHandleId id, JSBool strict, JSMutableHandleValue vp);
 
 namespace XrayUtils {
 
 extern JSClass HolderClass;
+
+bool CloneExpandoChain(JSContext *cx, JSObject *src, JSObject *dst);
 
 JSObject *createHolder(JSContext *cx, JSObject *wrappedNative, JSObject *parent);
 
@@ -84,9 +86,9 @@ class XrayWrapper : public Base {
 typedef XrayWrapper<js::CrossCompartmentWrapper, ProxyXrayTraits > XrayProxy;
 typedef XrayWrapper<js::CrossCompartmentWrapper, DOMXrayTraits > XrayDOM;
 
-class SandboxProxyHandler : public js::AbstractWrapper {
+class SandboxProxyHandler : public js::IndirectWrapper {
 public:
-    SandboxProxyHandler() : js::AbstractWrapper(0)
+    SandboxProxyHandler() : js::IndirectWrapper(0)
     {
     }
 

@@ -33,17 +33,17 @@ DOM4_MSG_DEF(DataCloneError, "The object could not be cloned.", NS_ERROR_DOM_DAT
 
 /* XXX Should be JavaScript native TypeError */
 DOM4_MSG_DEF(TypeError, "The method parameter is missing or invalid.", NS_ERROR_TYPE_ERR)
+DOM4_MSG_DEF(RangeError, "The method parameter is out of valid range.", NS_ERROR_RANGE_ERR)
 
-/* SVG DOM error codes from http://www.w3.org/TR/SVG11/svgdom.html */
+/* SVG DOM errors from http://www.w3.org/TR/SVG11/svgdom.html */
 
-DOM_MSG_DEF(NS_ERROR_DOM_SVG_WRONG_TYPE_ERR, "Unknown or invalid type")
-DOM_MSG_DEF(NS_ERROR_DOM_SVG_INVALID_VALUE_ERR, "One of the parameters has an invalid value")
-DOM_MSG_DEF(NS_ERROR_DOM_SVG_MATRIX_NOT_INVERTABLE, "The matrix could not be computed")
+DOM4_MSG_DEF(TypeError, "Unknown or invalid type", NS_ERROR_DOM_SVG_WRONG_TYPE_ERR)
+DOM4_MSG_DEF(InvalidStateError, "The matrix could not be computed", NS_ERROR_DOM_SVG_MATRIX_NOT_INVERTABLE)
 
-/* DOM error codes from http://www.w3.org/TR/DOM-Level-3-XPath/ */
+/* XPath errors from http://www.w3.org/TR/DOM-Level-3-XPath/ */
 
-DOM_MSG_DEF(NS_ERROR_DOM_INVALID_EXPRESSION_ERR, "The expression is not a legal expression.")
-DOM_MSG_DEF(NS_ERROR_DOM_TYPE_ERR, "The expression cannot be converted to return the specified type.")
+DOM4_MSG_DEF(SyntaxError, "The expression is not a legal expression.", NS_ERROR_DOM_INVALID_EXPRESSION_ERR)
+DOM4_MSG_DEF(TypeError, "The expression cannot be converted to return the specified type.", NS_ERROR_DOM_TYPE_ERR)
 
 /* IndexedDB errors http://dvcs.w3.org/hg/IndexedDB/raw-file/tip/Overview.html#exceptions */
 
@@ -107,3 +107,10 @@ DOM_MSG_DEF(NS_ERROR_FACTORY_NOT_REGISTERED        , "Factory not registered")
 DOM_MSG_DEF(NS_ERROR_FACTORY_NOT_LOADED            , "Factory not loaded")
 DOM_MSG_DEF(NS_ERROR_FACTORY_NO_SIGNATURE_SUPPORT  , "Factory does not support signatures")
 DOM_MSG_DEF(NS_ERROR_FACTORY_EXISTS                , "Factory already exists")
+
+DOM4_MSG_DEF(UnknownError, "The operation failed for reasons unrelated to the file storage itself and not covered by any other error code.", NS_ERROR_DOM_FILEHANDLE_UNKNOWN_ERR)
+DOM4_MSG_DEF(LockedFileInactiveError, "A request was placed against a locked file which is currently not active, or which is finished.", NS_ERROR_DOM_FILEHANDLE_LOCKEDFILE_INACTIVE_ERR)
+DOM4_MSG_DEF(ReadOnlyError, "A mutation operation was attempted in a READ_ONLY locked file.", NS_ERROR_DOM_FILEHANDLE_READ_ONLY_ERR)
+
+DOM4_MSG_DEF(InvalidStateError, "A mutation operation was attempted on a file storage that did not allow mutations.", NS_ERROR_DOM_FILEHANDLE_NOT_ALLOWED_ERR)
+DOM4_MSG_DEF(AbortError, "A request was aborted, for example through a call to LockedFile.abort.", NS_ERROR_DOM_FILEHANDLE_ABORT_ERR)

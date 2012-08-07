@@ -30,7 +30,7 @@
 #include <unistd.h>
 
 #include <gtk/gtk.h>
-static PRLibrary *libcanberra = nsnull;
+static PRLibrary *libcanberra = nullptr;
 
 /* used to play sounds with libcanberra. */
 typedef struct _ca_context ca_context;
@@ -69,7 +69,7 @@ static ca_proplist_sets_fn ca_proplist_sets;
 static ca_context_play_full_fn ca_context_play_full;
 
 struct ScopedCanberraFile {
-    ScopedCanberraFile(nsILocalFile *file): mFile(file) {};
+    ScopedCanberraFile(nsIFile *file): mFile(file) {};
 
     ~ScopedCanberraFile() {
         if (mFile) {
@@ -80,10 +80,10 @@ struct ScopedCanberraFile {
     void forget() {
         mFile.forget();
     }
-    nsILocalFile* operator->() { return mFile; }
-    operator nsILocalFile*() { return mFile; }
+    nsIFile* operator->() { return mFile; }
+    operator nsIFile*() { return mFile; }
 
-    nsCOMPtr<nsILocalFile> mFile;
+    nsCOMPtr<nsIFile> mFile;
 };
 
 static ca_context*
@@ -101,7 +101,7 @@ ca_context_get_default()
 
     ca_context_create(&ctx);
     if (!ctx) {
-        return nsnull;
+        return nullptr;
     }
 
     g_static_private_set(&ctx_static_private, ctx, (GDestroyNotify) ca_context_destroy);
@@ -109,7 +109,7 @@ ca_context_get_default()
     GtkSettings* settings = gtk_settings_get_default();
     if (g_object_class_find_property(G_OBJECT_GET_CLASS(settings),
                                      "gtk-sound-theme-name")) {
-        gchar* sound_theme_name = nsnull;
+        gchar* sound_theme_name = nullptr;
         g_object_get(settings, "gtk-sound-theme-name", &sound_theme_name, NULL);
 
         if (sound_theme_name) {
@@ -153,7 +153,7 @@ ca_finish_cb(ca_context *c,
              int error_code,
              void *userdata)
 {
-    nsILocalFile *file = reinterpret_cast<nsILocalFile *>(userdata);
+    nsIFile *file = reinterpret_cast<nsIFile *>(userdata);
     if (file) {
         file->Remove(false);
         NS_RELEASE(file);
@@ -188,7 +188,7 @@ nsSound::Init()
             ca_context_create = (ca_context_create_fn) PR_FindFunctionSymbol(libcanberra, "ca_context_create");
             if (!ca_context_create) {
                 PR_UnloadLibrary(libcanberra);
-                libcanberra = nsnull;
+                libcanberra = nullptr;
             } else {
                 // at this point we know we have a good libcanberra library
                 ca_context_destroy = (ca_context_destroy_fn) PR_FindFunctionSymbol(libcanberra, "ca_context_destroy");
@@ -210,7 +210,7 @@ nsSound::Shutdown()
 {
     if (libcanberra) {
         PR_UnloadLibrary(libcanberra);
-        libcanberra = nsnull;
+        libcanberra = nullptr;
     }
 }
 
@@ -243,8 +243,8 @@ NS_IMETHODIMP nsSound::OnStreamComplete(nsIStreamLoader *aLoader,
         return aStatus;
     }
 
-    nsCOMPtr<nsILocalFile> tmpFile;
-    nsDirectoryService::gService->Get(NS_OS_TEMP_DIR, NS_GET_IID(nsILocalFile),
+    nsCOMPtr<nsIFile> tmpFile;
+    nsDirectoryService::gService->Get(NS_OS_TEMP_DIR, NS_GET_IID(nsIFile),
                                       getter_AddRefs(tmpFile));
 
     nsresult rv = tmpFile->AppendNative(nsDependentCString("mozilla_audio_sample"));
@@ -415,8 +415,8 @@ NS_IMETHODIMP nsSound::PlaySystemSound(const nsAString &aSoundAlias)
     nsresult rv;
     nsCOMPtr <nsIURI> fileURI;
 
-    // create a nsILocalFile and then a nsIFileURL from that
-    nsCOMPtr <nsILocalFile> soundFile;
+    // create a nsIFile and then a nsIFileURL from that
+    nsCOMPtr <nsIFile> soundFile;
     rv = NS_NewLocalFile(aSoundAlias, true, 
                          getter_AddRefs(soundFile));
     NS_ENSURE_SUCCESS(rv,rv);

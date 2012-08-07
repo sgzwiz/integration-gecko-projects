@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// IWYU pragma: private, include "nsSubstringTuple.h"
 
   /**
    * nsTSubstringTuple_CharT
@@ -29,13 +30,13 @@ class nsTSubstringTuple_CharT
     public:
 
       nsTSubstringTuple_CharT(const base_string_type* a, const base_string_type* b)
-        : mHead(nsnull)
+        : mHead(nullptr)
         , mFragA(a)
         , mFragB(b) {}
 
       nsTSubstringTuple_CharT(const self_type& head, const base_string_type* b)
         : mHead(&head)
-        , mFragA(nsnull) // this fragment is ignored when head != nsnull
+        , mFragA(nullptr) // this fragment is ignored when head != nullptr
         , mFragB(b) {}
 
         /**

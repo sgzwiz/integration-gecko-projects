@@ -23,14 +23,15 @@
 #include "prtime.h"
 #include "prmem.h"
 #include "prio.h"
+#include "mozilla/Attributes.h"
 
 typedef nsDataHashtable<nsCStringHashKey, PRUint32> nsFailedProxyTable;
 
 class nsProxyInfo;
 struct nsProtocolInfo;
 
-class nsProtocolProxyService : public nsIProtocolProxyService2
-                             , public nsIObserver
+class nsProtocolProxyService MOZ_FINAL : public nsIProtocolProxyService2
+                                       , public nsIObserver
 {
 public:
     NS_DECL_ISUPPORTS
@@ -236,7 +237,7 @@ protected:
     inline void ApplyFilters(nsIURI *uri, const nsProtocolInfo &info,
                              nsCOMPtr<nsIProxyInfo> &proxyInfo)
     {
-      nsIProxyInfo *pi = nsnull;
+      nsIProxyInfo *pi = nullptr;
       proxyInfo.swap(pi);
       ApplyFilters(uri, info, &pi);
       proxyInfo.swap(pi);
@@ -317,7 +318,7 @@ protected:
       nsCOMPtr<nsIProtocolProxyFilter>  filter;
 
       FilterLink(PRUint32 p, nsIProtocolProxyFilter *f)
-        : next(nsnull), position(p), filter(f) {}
+        : next(nullptr), position(p), filter(f) {}
 
       // Chain deletion to simplify cleaning up the filter links
       ~FilterLink() { if (next) delete next; }

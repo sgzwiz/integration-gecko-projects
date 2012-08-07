@@ -67,7 +67,7 @@ protected:
                              const bool&                chooseApplicationCache,
                              const nsCString&           appCacheClientID,
                              const bool&                allowSpdy,
-                             const bool&                usingPrivateBrowsing);
+                             const IPC::SerializedLoadContext& loadContext) MOZ_OVERRIDE;
 
   virtual bool RecvConnectChannel(const PRUint32& channelId);
   virtual bool RecvSetPriority(const PRUint16& priority);
@@ -107,9 +107,11 @@ private:
   PRUint64 mStoredProgress;
   PRUint64 mStoredProgressMax;
 
-  bool mSentRedirect1Begin : 1;
-  bool mSentRedirect1BeginFailed : 1;
-  bool mReceivedRedirect2Verify : 1;
+  bool mSentRedirect1Begin          : 1;
+  bool mSentRedirect1BeginFailed    : 1;
+  bool mReceivedRedirect2Verify     : 1;
+
+  nsCOMPtr<nsILoadContext> mLoadContext;
 };
 
 } // namespace net

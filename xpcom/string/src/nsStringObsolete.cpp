@@ -331,7 +331,7 @@ Compare2To1(const PRUnichar* aStr1,const char* aStr2,PRUint32 aCount,bool aIgnor
         PRUnichar c2 = PRUnichar((unsigned char)*s2++);
         
         if (c1 != c2) {
-#ifdef NS_DEBUG
+#ifdef DEBUG
           // we won't warn on c1>=128 (the 2-byte value) because often
           // it is just fine to compare an constant, ascii value (i.e. "body")
           // against some non-ascii value (i.e. a unicode string that
@@ -984,7 +984,7 @@ nsString::EqualsIgnoreCase( const char* aString, PRInt32 aCount ) const
    */
 
 double
-nsCString::ToDouble(PRInt32* aErrorCode) const
+nsCString::ToDouble(nsresult* aErrorCode) const
   {
     double res = 0.0;
     if (mLength > 0)
@@ -994,20 +994,20 @@ nsCString::ToDouble(PRInt32* aErrorCode) const
         // Use PR_strtod, not strtod, since we don't want locale involved.
         res = PR_strtod(str, &conv_stopped);
         if (conv_stopped == str+mLength)
-          *aErrorCode = (PRInt32) NS_OK;
+          *aErrorCode = NS_OK;
         else // Not all the string was scanned
-          *aErrorCode = (PRInt32) NS_ERROR_ILLEGAL_VALUE;
+          *aErrorCode = NS_ERROR_ILLEGAL_VALUE;
       }
     else
       {
         // The string was too short (0 characters)
-        *aErrorCode = (PRInt32) NS_ERROR_ILLEGAL_VALUE;
+        *aErrorCode = NS_ERROR_ILLEGAL_VALUE;
       }
     return res;
   }
 
 double
-nsString::ToDouble(PRInt32* aErrorCode) const
+nsString::ToDouble(nsresult* aErrorCode) const
   {
     return NS_LossyConvertUTF16toASCII(*this).ToDouble(aErrorCode);
   }
@@ -1027,23 +1027,6 @@ void
 nsString::AssignWithConversion( const nsACString& aData )
   {
     CopyASCIItoUTF16(aData, *this);
-  }
-
-
-  /**
-   * nsTString::AppendWithConversion
-   */
-
-void
-nsCString::AppendWithConversion( const nsAString& aData )
-  {
-    LossyAppendUTF16toASCII(aData, *this);
-  }
-
-void
-nsString::AppendWithConversion( const nsACString& aData )
-  {
-    AppendASCIItoUTF16(aData, *this);
   }
 
 #endif // !MOZ_STRING_WITH_OBSOLETE_API

@@ -715,33 +715,22 @@ pref("gecko.handlerService.schemes.ircs.3.uriTemplate", "chrome://browser-region
 pref("gecko.handlerService.allowRegisterFromDifferentHost", false);
 
 #ifdef MOZ_SAFE_BROWSING
-// Safe browsing does nothing unless this pref is set
 pref("browser.safebrowsing.enabled", true);
-
-// Prevent loading of pages identified as malware
 pref("browser.safebrowsing.malware.enabled", true);
+pref("browser.safebrowsing.debug", false);
 
-// Non-enhanced mode (local url lists) URL list to check for updates
-pref("browser.safebrowsing.provider.0.updateURL", "http://safebrowsing.clients.google.com/safebrowsing/downloads?client={moz:client}&appver={moz:version}&pver=2.2");
+pref("browser.safebrowsing.updateURL", "http://safebrowsing.clients.google.com/safebrowsing/downloads?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2");
+pref("browser.safebrowsing.keyURL", "https://sb-ssl.google.com/safebrowsing/newkey?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2");
+pref("browser.safebrowsing.gethashURL", "http://safebrowsing.clients.google.com/safebrowsing/gethash?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2");
+pref("browser.safebrowsing.reportURL", "http://safebrowsing.clients.google.com/safebrowsing/report?");
+pref("browser.safebrowsing.reportGenericURL", "http://%LOCALE%.phish-generic.mozilla.com/?hl=%LOCALE%");
+pref("browser.safebrowsing.reportErrorURL", "http://%LOCALE%.phish-error.mozilla.com/?hl=%LOCALE%");
+pref("browser.safebrowsing.reportPhishURL", "http://%LOCALE%.phish-report.mozilla.com/?hl=%LOCALE%");
+pref("browser.safebrowsing.reportMalwareURL", "http://%LOCALE%.malware-report.mozilla.com/?hl=%LOCALE%");
+pref("browser.safebrowsing.reportMalwareErrorURL", "http://%LOCALE%.malware-error.mozilla.com/?hl=%LOCALE%");
 
-pref("browser.safebrowsing.dataProvider", 0);
-
-// Does the provider name need to be localizable?
-pref("browser.safebrowsing.provider.0.name", "Google");
-pref("browser.safebrowsing.provider.0.keyURL", "https://sb-ssl.google.com/safebrowsing/newkey?client={moz:client}&appver={moz:version}&pver=2.2");
-pref("browser.safebrowsing.provider.0.reportURL", "http://safebrowsing.clients.google.com/safebrowsing/report?");
-pref("browser.safebrowsing.provider.0.gethashURL", "http://safebrowsing.clients.google.com/safebrowsing/gethash?client={moz:client}&appver={moz:version}&pver=2.2");
-
-// HTML report pages
-pref("browser.safebrowsing.provider.0.reportGenericURL", "http://{moz:locale}.phish-generic.mozilla.com/?hl={moz:locale}");
-pref("browser.safebrowsing.provider.0.reportErrorURL", "http://{moz:locale}.phish-error.mozilla.com/?hl={moz:locale}");
-pref("browser.safebrowsing.provider.0.reportPhishURL", "http://{moz:locale}.phish-report.mozilla.com/?hl={moz:locale}");
-pref("browser.safebrowsing.provider.0.reportMalwareURL", "http://{moz:locale}.malware-report.mozilla.com/?hl={moz:locale}");
-pref("browser.safebrowsing.provider.0.reportMalwareErrorURL", "http://{moz:locale}.malware-error.mozilla.com/?hl={moz:locale}");
-
-// FAQ URLs
 pref("browser.safebrowsing.warning.infoURL", "http://www.mozilla.com/%LOCALE%/firefox/phishing-protection/");
-pref("browser.geolocation.warning.infoURL", "http://www.mozilla.com/%LOCALE%/firefox/geolocation/");
+pref("browser.safebrowsing.malware.reportURL", "http://safebrowsing.clients.google.com/safebrowsing/diagnostic?client=%NAME%&hl=%LOCALE%&site=");
 
 // Name of the about: page contributed by safebrowsing to handle display of error
 // pages on phishing/malware hits.  (bug 399233)
@@ -763,11 +752,9 @@ pref("urlclassifier.updatecachemax", 41943040);
 
 // Maximum size of the sqlite3 cache for lookups, in bytes
 pref("urlclassifier.lookupcachemax", 1048576);
-
-// URL for checking the reason for a malware warning.
-pref("browser.safebrowsing.malware.reportURL", "http://safebrowsing.clients.google.com/safebrowsing/diagnostic?client=%NAME%&hl=%LOCALE%&site=");
-
 #endif
+
+pref("browser.geolocation.warning.infoURL", "http://www.mozilla.com/%LOCALE%/firefox/geolocation/");
 
 pref("browser.EULA.version", 3);
 pref("browser.rights.version", 3);
@@ -1023,8 +1010,10 @@ pref("services.sync.prefs.sync.xpinstall.whitelist.required", true);
 pref("devtools.errorconsole.enabled", false);
 
 // Developer toolbar and GCLI preferences
-pref("devtools.toolbar.enabled", false);
+pref("devtools.toolbar.enabled", true);
+pref("devtools.toolbar.visible", false);
 pref("devtools.gcli.allowSet", false);
+pref("devtools.commands.dir", "");
 
 // Enable the Inspector
 pref("devtools.inspector.enabled", true);
@@ -1044,9 +1033,8 @@ pref("devtools.responsiveUI.enabled", true);
 
 // Enable the Debugger
 pref("devtools.debugger.enabled", true);
-pref("devtools.debugger.remote-enabled", false);
+pref("devtools.debugger.chrome-enabled", false);
 pref("devtools.debugger.remote-host", "localhost");
-pref("devtools.debugger.remote-port", 6000);
 pref("devtools.debugger.remote-autoconnect", false);
 pref("devtools.debugger.remote-connection-retries", 3);
 pref("devtools.debugger.remote-timeout", 3000);
@@ -1071,6 +1059,11 @@ pref("devtools.ruleview.enabled", true);
 
 // Enable the Scratchpad tool.
 pref("devtools.scratchpad.enabled", true);
+
+// The maximum number of recently-opened files stored.
+// Setting this preference to 0 will not clear any recent files, but rather hide
+// the 'Open Recent'-menu.
+pref("devtools.scratchpad.recentFilesMax", 10);
 
 // Enable the Style Editor.
 pref("devtools.styleeditor.enabled", true);
@@ -1097,7 +1090,7 @@ pref("devtools.hud.height", 0);
 //   above - above the web page,
 //   below - below the web page,
 //   window - in a separate window/popup panel.
-pref("devtools.webconsole.position", "above");
+pref("devtools.webconsole.position", "below");
 
 // Remember the Web Console filters
 pref("devtools.webconsole.filter.network", true);
@@ -1160,7 +1153,27 @@ pref("full-screen-api.approval-required", true);
 // (this pref has no effect if more than 6 hours have passed since the last crash)
 pref("toolkit.startup.max_resumed_crashes", 3);
 
+// Completely disable pdf.js as an option to preview pdfs within firefox.
+// Note: if this is not disabled it does not necessarily mean pdf.js is the pdf
+// handler just that it is an option.
+pref("pdfjs.disabled", false);
+// Used by pdf.js to know the first time firefox is run with it installed so it
+// can become the default pdf viewer.
+pref("pdfjs.firstRun", true);
+// The values of preferredAction and alwaysAskBeforeHandling before pdf.js
+// became the default.
+pref("pdfjs.previousHandler.preferredAction", 0);
+pref("pdfjs.previousHandler.alwaysAskBeforeHandling", false);
+
 // The maximum amount of decoded image data we'll willingly keep around (we
 // might keep around more than this, but we'll try to get down to this value).
 // (This is intentionally on the high side; see bug 746055.)
 pref("image.mem.max_decoded_image_kb", 256000);
+
+// Example social provider
+pref("social.manifest.motown", "{\"origin\":\"https://motown-dev.mozillalabs.com\",\"name\":\"MoTown\",\"workerURL\":\"https://motown-dev.mozillalabs.com/social/worker.js\",\"iconURL\":\"https://motown-dev.mozillalabs.com/images/motown-icon.png\",\"sidebarURL\":\"https://motown-dev.mozillalabs.com/social/sidebar\"}");
+// Comma-separated list of nsIURI::prePaths that are allowed to activate
+// built-in social functionality.
+pref("social.activation.whitelist", "https://motown-dev.mozillalabs.com");
+pref("social.sidebar.open", true);
+pref("social.active", false);

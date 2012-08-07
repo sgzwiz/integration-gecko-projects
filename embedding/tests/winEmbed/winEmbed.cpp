@@ -202,7 +202,7 @@ int main(int argc, char *argv[])
     {
         strcpy(lastslash, "\\xulrunner");
 
-        nsCOMPtr<nsILocalFile> xuldir;
+        nsCOMPtr<nsIFile> xuldir;
         rv = NS_NewNativeLocalFile(nsCString(path), false,
                                    getter_AddRefs(xuldir));
         if (NS_FAILED(rv))
@@ -210,13 +210,13 @@ int main(int argc, char *argv[])
 
         *lastslash = '\0';
 
-        nsCOMPtr<nsILocalFile> appdir;
+        nsCOMPtr<nsIFile> appdir;
         rv = NS_NewNativeLocalFile(nsCString(path), false,
                                    getter_AddRefs(appdir));
         if (NS_FAILED(rv))
             return 8;
 
-        rv = XRE_InitEmbedding2(xuldir, appdir, nsnull);
+        rv = XRE_InitEmbedding2(xuldir, appdir, nullptr);
         if (NS_FAILED(rv))
             return 9;
 
@@ -279,7 +279,7 @@ nsresult OpenWebPage(const char *url)
 
     nsCOMPtr<nsIWebBrowserChrome> chrome;
     rv = AppCallbacks::CreateBrowserWindow(nsIWebBrowserChrome::CHROME_ALL,
-           nsnull, getter_AddRefs(chrome));
+           nullptr, getter_AddRefs(chrome));
     if (NS_SUCCEEDED(rv))
     {
         // Start loading a page
@@ -289,9 +289,9 @@ nsresult OpenWebPage(const char *url)
 
         return webNav->LoadURI(NS_ConvertASCIItoUTF16(url).get(),
                                nsIWebNavigation::LOAD_FLAGS_NONE,
-                               nsnull,
-                               nsnull,
-                               nsnull);
+                               nullptr,
+                               nullptr,
+                               nullptr);
     }
 
     return rv;
@@ -473,7 +473,7 @@ INT_PTR CALLBACK BrowserDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM l
 {
     // Get the browser and other pointers since they are used a lot below
     HWND hwndBrowser = GetDlgItem(hwndDlg, IDC_BROWSER);
-    nsIWebBrowserChrome *chrome = nsnull ;
+    nsIWebBrowserChrome *chrome = nullptr ;
     if (hwndBrowser)
     {
         chrome = (nsIWebBrowserChrome *) GetWindowLongPtr(hwndBrowser, GWLP_USERDATA);
@@ -533,9 +533,9 @@ INT_PTR CALLBACK BrowserDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM l
                 webNavigation->LoadURI(
                     NS_ConvertASCIItoUTF16(szURL).get(),
                     nsIWebNavigation::LOAD_FLAGS_NONE,
-                    nsnull,
-                    nsnull,
-                    nsnull);
+                    nullptr,
+                    nullptr,
+                    nullptr);
             }
             break;
 
@@ -746,7 +746,6 @@ nsresult StartupProfile()
       return rv;
 
 	appDataDir->AppendNative(nsCString("winembed"));
-	nsCOMPtr<nsILocalFile> localAppDataDir(do_QueryInterface(appDataDir));
 
 	nsCOMPtr<nsProfileDirServiceProvider> locProvider;
     NS_NewProfileDirServiceProvider(true, getter_AddRefs(locProvider));
@@ -757,7 +756,7 @@ nsresult StartupProfile()
     if (NS_FAILED(rv))
       return rv;
     
-	return locProvider->SetProfileDir(localAppDataDir);
+	return locProvider->SetProfileDir(appDataDir);
 
 }
 
@@ -850,14 +849,14 @@ void WebBrowserChromeUI::Destroy(nsIWebBrowserChrome* chrome)
   // Explicitly destroy the embedded browser and then the chrome
 
   // First the browser
-  nsCOMPtr<nsIWebBrowser> browser = nsnull;
+  nsCOMPtr<nsIWebBrowser> browser = nullptr;
   chrome->GetWebBrowser(getter_AddRefs(browser));
   nsCOMPtr<nsIBaseWindow> browserAsWin = do_QueryInterface(browser);
   if (browserAsWin)
     browserAsWin->Destroy();
 
       // Now the chrome
-  chrome->SetWebBrowser(nsnull);
+  chrome->SetWebBrowser(nullptr);
   NS_RELEASE(chrome);
 }
 
@@ -875,7 +874,7 @@ void WebBrowserChromeUI::Destroyed(nsIWebBrowserChrome* chrome)
 
     // Clear the window user data
     HWND hwndBrowser = GetDlgItem(hwndDlg, IDC_BROWSER);
-    SetWindowLongPtr(hwndBrowser, GWLP_USERDATA, nsnull);
+    SetWindowLongPtr(hwndBrowser, GWLP_USERDATA, 0);
     DestroyWindow(hwndBrowser);
     DestroyWindow(hwndDlg);
 

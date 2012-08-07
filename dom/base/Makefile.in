@@ -3,10 +3,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
+FAIL_ON_WARNINGS := 1
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -22,8 +23,6 @@ DIRS = \
 EXTRA_PP_COMPONENTS = \
   ConsoleAPI.js \
   ConsoleAPI.manifest \
-  BrowserElementParent.js \
-  BrowserElementParent.manifest \
   $(NULL)
 
 EXTRA_JS_MODULES = ConsoleAPIStorage.jsm \
@@ -49,7 +48,6 @@ EXPORTS = \
   nsDOMJSUtils.h \
   nsDOMScriptObjectHolder.h \
   nsDOMString.h \
-  nsIBaseDOMException.h \
   nsIDOMClassInfo.h \
   nsIDOMScriptObjectFactory.h \
   nsIJSEventListener.h \
@@ -59,7 +57,6 @@ EXPORTS = \
   nsIScriptGlobalObject.h \
   nsIScriptGlobalObjectOwner.h \
   nsIScriptNameSpaceManager.h \
-  nsIScriptObjectOwner.h \
   nsIScriptObjectPrincipal.h \
   nsIScriptRuntime.h \
   nsIScriptTimeoutHandler.h \
@@ -67,6 +64,7 @@ EXPORTS = \
   nsPIWindowRoot.h \
   nsFocusManager.h \
   nsWrapperCache.h \
+  nsWrapperCacheInlines.h \
   nsContentPermissionHelper.h \
   nsStructuredCloneContainer.h \
   nsWindowMemoryReporter.h \

@@ -9,7 +9,6 @@
 #include "nsISupportsArray.h"
 #include "nsIFile.h"
 #include "nsNetUtil.h"
-#include "nsILocalFile.h"
 #include "nsIDirectoryService.h"
 #include "nsThreadUtils.h"
 
@@ -51,10 +50,10 @@ static NS_DEFINE_CID(kNSSComponentCID, NS_NSSCOMPONENT_CID);
 
 // constructor
 nsPKCS12Blob::nsPKCS12Blob():mCertArray(0),
-                             mTmpFile(nsnull),
-                             mTmpFilePath(nsnull),
-                             mDigest(nsnull),
-                             mDigestIterator(nsnull),
+                             mTmpFile(nullptr),
+                             mTmpFilePath(nullptr),
+                             mDigest(nullptr),
+                             mDigestIterator(nullptr),
                              mTokenSet(false)
 {
   mUIContext = new PipUIContext();
@@ -96,7 +95,7 @@ nsPKCS12Blob::SetToken(nsIPK11Token *token)
 // Given a file handle, read a PKCS#12 blob from that file, decode it,
 // and import the results into the token.
 nsresult
-nsPKCS12Blob::ImportFromFile(nsILocalFile *file)
+nsPKCS12Blob::ImportFromFile(nsIFile *file)
 {
   nsNSSShutDownPreventionLock locker;
   nsresult rv = NS_OK;
@@ -136,7 +135,7 @@ nsPKCS12Blob::ImportFromFile(nsILocalFile *file)
 }
 
 nsresult
-nsPKCS12Blob::ImportFromFileHelper(nsILocalFile *file, 
+nsPKCS12Blob::ImportFromFileHelper(nsIFile *file, 
                                    nsPKCS12Blob::ImportMode aImportMode,
                                    nsPKCS12Blob::RetryReason &aWantRetry)
 {
@@ -146,7 +145,7 @@ nsPKCS12Blob::ImportFromFileHelper(nsILocalFile *file,
   SEC_PKCS12DecoderContext *dcx = NULL;
   SECItem unicodePw;
 
-  PK11SlotInfo *slot=nsnull;
+  PK11SlotInfo *slot=nullptr;
   nsXPIDLString tokenName;
   unicodePw.data = NULL;
   
@@ -309,7 +308,7 @@ isExtractable(SECKEYPrivateKey *privKey)
 //       open output file as nsIFileStream object?
 //       set appropriate error codes
 nsresult
-nsPKCS12Blob::ExportToFile(nsILocalFile *file, 
+nsPKCS12Blob::ExportToFile(nsIFile *file, 
                            nsIX509Cert **certs, int numCerts)
 {
   nsNSSShutDownPreventionLock locker;
@@ -320,7 +319,7 @@ nsPKCS12Blob::ExportToFile(nsILocalFile *file,
   SECItem unicodePw;
   nsAutoString filePath;
   int i;
-  nsCOMPtr<nsILocalFile> localFileRef;
+  nsCOMPtr<nsIFile> localFileRef;
   NS_ASSERTION(mToken, "Need to set the token before exporting");
   // init slot
 
@@ -423,11 +422,11 @@ nsPKCS12Blob::ExportToFile(nsILocalFile *file,
   this->mTmpFile = NULL;
   file->GetPath(filePath);
   // Use the nsCOMPtr var localFileRef so that
-  // the reference to the nsILocalFile we create gets released as soon as
+  // the reference to the nsIFile we create gets released as soon as
   // we're out of scope, ie when this function exits.
   if (filePath.RFind(".p12", true, -1, 4) < 0) {
     // We're going to add the .p12 extension to the file name just like
-    // Communicator used to.  We create a new nsILocalFile and initialize
+    // Communicator used to.  We create a new nsIFile and initialize
     // it with the new patch.
     filePath.AppendLiteral(".p12");
     localFileRef = do_CreateInstance(NS_LOCAL_FILE_CONTRACTID, &rv);
@@ -546,7 +545,7 @@ nsPKCS12Blob::getPKCS12FilePassword(SECItem *unicodePw)
 //
 // Given a decoder, read bytes from file and input them to the decoder.
 nsresult
-nsPKCS12Blob::inputToDecoder(SEC_PKCS12DecoderContext *dcx, nsILocalFile *file)
+nsPKCS12Blob::inputToDecoder(SEC_PKCS12DecoderContext *dcx, nsIFile *file)
 {
   nsNSSShutDownPreventionLock locker;
   nsresult rv;
@@ -653,11 +652,11 @@ nsPKCS12Blob::digest_close(void *arg, PRBool remove_it)
   NS_ENSURE_TRUE(cx, SECFailure);
 
   delete cx->mDigestIterator;
-  cx->mDigestIterator = nsnull;
+  cx->mDigestIterator = nullptr;
 
   if (remove_it) {  
     delete cx->mDigest;
-    cx->mDigest = nsnull;
+    cx->mDigest = nullptr;
   }
   
   return SECSuccess;
@@ -714,7 +713,7 @@ nsPKCS12Blob::nickname_collision(SECItem *oldNick, PRBool *cancel, void *wincx)
   *cancel = false;
   nsresult rv;
   nsCOMPtr<nsINSSComponent> nssComponent(do_GetService(kNSSComponentCID, &rv));
-  if (NS_FAILED(rv)) return nsnull;
+  if (NS_FAILED(rv)) return nullptr;
   int count = 1;
   nsCString nickname;
   nsAutoString nickFromProp;
@@ -759,7 +758,7 @@ nsPKCS12Blob::nickname_collision(SECItem *oldNick, PRBool *cancel, void *wincx)
   }
   SECItem *newNick = new SECItem;
   if (!newNick)
-    return nsnull;
+    return nullptr;
 
   newNick->type = siAsciiString;
   newNick->data = (unsigned char*) nsCRT::strdup(nickname.get());
@@ -806,7 +805,7 @@ nsPKCS12Blob::handleError(int myerr)
   PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("PKCS12: NSS/NSPR error(%d)", prerr));
   PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("PKCS12: I called(%d)", myerr));
 
-  const char * msgID = nsnull;
+  const char * msgID = nullptr;
 
   switch (myerr) {
   case PIP_PKCS12_RESTORE_OK:       msgID = "SuccessfulP12Restore"; break;

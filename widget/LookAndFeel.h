@@ -186,6 +186,8 @@ public:
     eIntID_SubmenuDelay,
     // can popups overlap menu/task bar?
     eIntID_MenusCanOverlapOSBar,
+    // show/hide scrollbars based on activity
+    eIntID_ShowHideScrollbars,
     // skip navigating to disabled menu item?
     eIntID_SkipNavigatingDisabledMenuItem,
     // begin a drag if the mouse is moved further than the threshold while the
@@ -504,6 +506,12 @@ public:
    * Otherwise, FALSE.
    */
   static bool GetEchoPassword();
+
+  /**
+   * The millisecond to mask password value.
+   * This value is only valid when GetEchoPassword() returns true.
+   */
+  static PRUint32 GetPasswordMaskDelay();
 
   /**
    * When system look and feel is changed, Refresh() must be called.  Then,

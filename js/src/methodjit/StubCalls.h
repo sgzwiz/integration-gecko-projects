@@ -134,7 +134,7 @@ void JS_FASTCALL StrictEq(VMFrame &f);
 void JS_FASTCALL StrictNe(VMFrame &f);
 
 void JS_FASTCALL Iter(VMFrame &f, uint32_t flags);
-void JS_FASTCALL IterNext(VMFrame &f, int32_t offset);
+void JS_FASTCALL IterNext(VMFrame &f);
 JSBool JS_FASTCALL IterMore(VMFrame &f);
 void JS_FASTCALL EndIter(VMFrame &f);
 
@@ -168,10 +168,11 @@ void JS_FASTCALL ConvertToTypedFloat(JSContext *cx, Value *vp);
 
 void JS_FASTCALL Exception(VMFrame &f);
 
-void JS_FASTCALL FunctionFramePrologue(VMFrame &f);
-void JS_FASTCALL FunctionFrameEpilogue(VMFrame &f);
+void JS_FASTCALL StrictEvalPrologue(VMFrame &f);
+void JS_FASTCALL HeavyweightFunctionPrologue(VMFrame &f);
 
 void JS_FASTCALL AnyFrameEpilogue(VMFrame &f);
+void JS_FASTCALL Epilogue(VMFrame &f);
 
 JSObject * JS_FASTCALL
 NewDenseUnallocatedArray(VMFrame &f, uint32_t length);

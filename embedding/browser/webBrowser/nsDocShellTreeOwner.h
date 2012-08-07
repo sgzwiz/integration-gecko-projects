@@ -18,7 +18,6 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIWebBrowserChrome.h"
 #include "nsIDOMEventListener.h"
-#include "nsIDOMDocument.h"
 #include "nsIEmbeddingSiteWindow.h"
 #include "nsIWebProgressListener.h"
 #include "nsWeakReference.h"
@@ -105,7 +104,7 @@ protected:
     // interfaces.  If the object passed to SetWebBrowserChrome() implements
     // nsISupportsWeakReference, then these functions call QueryReferent on
     // that object.  Otherwise, they return an addrefed pointer.  If the
-    // WebBrowserChrome object doesn't exist, they return nsnull.
+    // WebBrowserChrome object doesn't exist, they return nullptr.
     already_AddRefed<nsIWebBrowserChrome>     GetWebBrowserChrome();
     already_AddRefed<nsIEmbeddingSiteWindow>  GetOwnerWin();
     already_AddRefed<nsIInterfaceRequestor>   GetOwnerRequestor();

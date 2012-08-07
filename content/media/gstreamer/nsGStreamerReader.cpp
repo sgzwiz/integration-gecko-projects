@@ -130,8 +130,21 @@ nsresult nsGStreamerReader::Init(nsBuiltinDecoderReader* aCloneDonor)
   gst_object_unref(sinkpad);
 
   mAudioSink = gst_parse_bin_from_description("capsfilter name=filter ! "
+#ifdef MOZ_SAMPLE_TYPE_FLOAT32
         "appsink name=audiosink sync=true caps=audio/x-raw-float,"
+#ifdef IS_LITTLE_ENDIAN
         "channels={1,2},rate=44100,width=32,endianness=1234", TRUE, NULL);
+#else
+        "channels={1,2},rate=44100,width=32,endianness=4321", TRUE, NULL);
+#endif
+#else
+        "appsink name=audiosink sync=true caps=audio/x-raw-int,"
+#ifdef IS_LITTLE_ENDIAN
+        "channels={1,2},rate=48000,width=16,endianness=1234", TRUE, NULL);
+#else
+        "channels={1,2},rate=48000,width=16,endianness=4321", TRUE, NULL);
+#endif
+#endif
   mAudioAppSink = GST_APP_SINK(gst_bin_get_by_name(GST_BIN(mAudioSink),
         "audiosink"));
   gst_app_sink_set_callbacks(mAudioAppSink, &mSinkCallbacks,
@@ -181,7 +194,8 @@ void nsGStreamerReader::PlayBinSourceSetup(GstAppSrc *aSource)
   }
 }
 
-nsresult nsGStreamerReader::ReadMetadata(nsVideoInfo* aInfo)
+nsresult nsGStreamerReader::ReadMetadata(nsVideoInfo* aInfo,
+                                         nsHTMLMediaElement::MetadataTags** aTags)
 {
   NS_ASSERTION(mDecoder->OnDecodeThread(), "Should be on decode thread.");
   nsresult ret = NS_OK;
@@ -191,7 +205,7 @@ nsresult nsGStreamerReader::ReadMetadata(nsVideoInfo* aInfo)
    * stream but that are otherwise decodeable.
    */
   guint flags[3] = {GST_PLAY_FLAG_VIDEO|GST_PLAY_FLAG_AUDIO,
-    ~GST_PLAY_FLAG_AUDIO, ~GST_PLAY_FLAG_VIDEO};
+    static_cast<guint>(~GST_PLAY_FLAG_AUDIO), static_cast<guint>(~GST_PLAY_FLAG_VIDEO)};
   guint default_flags, current_flags;
   g_object_get(mPlayBin, "flags", &default_flags, NULL);
 
@@ -278,7 +292,7 @@ nsresult nsGStreamerReader::ReadMetadata(nsVideoInfo* aInfo)
   if (gst_element_query_duration(GST_ELEMENT(mPlayBin),
       &format, &duration) && format == GST_FORMAT_TIME) {
     ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
-    LOG(PR_LOG_DEBUG, ("returning duration %"GST_TIME_FORMAT,
+    LOG(PR_LOG_DEBUG, ("returning duration %" GST_TIME_FORMAT,
           GST_TIME_ARGS (duration)));
     duration = GST_TIME_AS_USECONDS (duration);
     mDecoder->GetStateMachine()->SetDuration(duration);
@@ -290,6 +304,8 @@ nsresult nsGStreamerReader::ReadMetadata(nsVideoInfo* aInfo)
   mInfo.mHasAudio = n_audio != 0;
 
   *aInfo = mInfo;
+
+  *aTags = nullptr;
 
   /* set the pipeline to PLAYING so that it starts decoding and queueing data in
    * the appsinks */
@@ -422,8 +438,8 @@ bool nsGStreamerReader::DecodeVideoFrame(bool &aKeyFrameSkip,
       nextTimestamp += gst_util_uint64_scale(GST_USECOND, fpsNum, fpsDen);
 
     if (timestamp < aTimeThreshold) {
-      LOG(PR_LOG_DEBUG, ("skipping frame %"GST_TIME_FORMAT
-            " threshold %"GST_TIME_FORMAT,
+      LOG(PR_LOG_DEBUG, ("skipping frame %" GST_TIME_FORMAT
+            " threshold %" GST_TIME_FORMAT,
             GST_TIME_ARGS(timestamp), GST_TIME_ARGS(aTimeThreshold)));
       gst_buffer_unref(buffer);
       buffer = NULL;
@@ -452,6 +468,8 @@ bool nsGStreamerReader::DecodeVideoFrame(bool &aKeyFrameSkip,
         i, height);
     b.mPlanes[i].mWidth = gst_video_format_get_component_width(format,
         i, width);
+    b.mPlanes[i].mOffset = 0;
+    b.mPlanes[i].mSkip = 0;
   }
 
   bool isKeyframe = !GST_BUFFER_FLAG_IS_SET(buffer,
@@ -487,7 +505,7 @@ nsresult nsGStreamerReader::Seek(PRInt64 aTarget,
   NS_ASSERTION(mDecoder->OnDecodeThread(), "Should be on decode thread.");
 
   gint64 seekPos = aTarget * GST_USECOND;
-  LOG(PR_LOG_DEBUG, ("%p About to seek to %"GST_TIME_FORMAT,
+  LOG(PR_LOG_DEBUG, ("%p About to seek to %" GST_TIME_FORMAT,
         mDecoder, GST_TIME_ARGS(seekPos)));
 
   if (!gst_element_seek_simple(mPlayBin, GST_FORMAT_TIME,
@@ -503,6 +521,10 @@ nsresult nsGStreamerReader::Seek(PRInt64 aTarget,
 nsresult nsGStreamerReader::GetBuffered(nsTimeRanges* aBuffered,
                                         PRInt64 aStartTime)
 {
+  if (!mInfo.mHasVideo && !mInfo.mHasAudio) {
+    return NS_OK;
+  }
+
   GstFormat format = GST_FORMAT_TIME;
   MediaResource* resource = mDecoder->GetResource();
   gint64 resourceLength = resource->GetLength();
@@ -590,7 +612,7 @@ PRInt64 nsGStreamerReader::QueryDuration()
   if (gst_element_query_duration(GST_ELEMENT(mPlayBin),
       &format, &duration)) {
     if (format == GST_FORMAT_TIME) {
-      LOG(PR_LOG_DEBUG, ("pipeline duration %"GST_TIME_FORMAT,
+      LOG(PR_LOG_DEBUG, ("pipeline duration %" GST_TIME_FORMAT,
             GST_TIME_ARGS (duration)));
       duration = GST_TIME_AS_USECONDS (duration);
     }

@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsDOMError.h"
 #include "nsSVGNumber2.h"
 #include "nsSVGUtils.h"
 #include "nsTextFormatter.h"
@@ -12,8 +13,9 @@
 #include "nsSMILValue.h"
 #include "nsSMILFloatType.h"
 #include "nsIDOMSVGNumber.h"
+#include "mozilla/Attributes.h"
 
-class DOMSVGNumber : public nsIDOMSVGNumber
+class DOMSVGNumber MOZ_FINAL : public nsIDOMSVGNumber
 {
 public:
   NS_DECL_ISUPPORTS

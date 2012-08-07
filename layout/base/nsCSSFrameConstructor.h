@@ -107,7 +107,7 @@ private:
   // Checks if the children of aContainer in the range [aStartChild, aEndChild)
   // can be inserted/appended to one insertion point together. If so, returns
   // that insertion point. If not, returns null and issues single
-  // ContentInserted calls for each child.  aEndChild = nsnull indicates that we
+  // ContentInserted calls for each child.  aEndChild = nullptr indicates that we
   // are dealing with an append.
   nsIFrame* GetRangeInsertionPoint(nsIContent* aContainer,
                                    nsIFrame* aParentFrame,
@@ -344,7 +344,7 @@ public:
   nsresult GetInsertionPoint(nsIFrame*     aParentFrame,
                              nsIContent*   aChildContent,
                              nsIFrame**    aInsertionPoint,
-                             bool*       aMultiple = nsnull);
+                             bool*       aMultiple = nullptr);
 
   nsresult CreateListBoxContent(nsPresContext* aPresContext,
                                 nsIFrame*       aParentFrame,
@@ -695,6 +695,9 @@ private:
      using the FrameConstructionData's mPseudoAtom for its anonymous
      box type. */
 #define FCDATA_CREATE_BLOCK_WRAPPER_FOR_ALL_KIDS 0x40000
+  /* If FCDATA_IS_SVG_TEXT is set, then this text frame is a descendant of
+     an SVG text frame. */
+#define FCDATA_IS_SVG_TEXT 0x80000
 
   /* Structure representing information about how a frame should be
      constructed.  */
@@ -916,6 +919,20 @@ private:
       // iterator must not be done when this is called.
       inline bool SkipItemsWantingParentType(ParentType aParentType);
 
+#ifdef MOZ_FLEXBOX
+      // Skip over non-replaced inline frames and positioned frames.
+      // Return whether the iterator is done after doing that.
+      // The iterator must not be done when this is called.
+      inline bool SkipItemsThatNeedAnonFlexItem(
+        const nsFrameConstructorState& aState);
+
+      // Skip to the first frame that is a non-replaced inline or is
+      // positioned.  Return whether the iterator is done after doing that.
+      // The iterator must not be done when this is called.
+      inline bool SkipItemsThatDontNeedAnonFlexItem(
+        const nsFrameConstructorState& aState);
+#endif // MOZ_FLEXBOX
+
       // Skip over whitespace.  Return whether the iterator is done after doing
       // that.  The iterator must not be done, and must be pointing to a
       // whitespace item when this is called.
@@ -1030,6 +1047,12 @@ private:
       return FCDATA_DESIRED_PARENT_TYPE(mFCData->mBits);
     }
 
+    // Indicates whether (when in a flexbox container) this item needs to be
+    // wrapped in an anonymous block.
+#ifdef MOZ_FLEXBOX
+    bool NeedsAnonFlexItem(const nsFrameConstructorState& aState);
+#endif // MOZ_FLEXBOX
+
     // Don't call this unless the frametree really depends on the answer!
     // Especially so for generated content, where we don't want to reframe
     // things.
@@ -1096,6 +1119,19 @@ private:
   private:
     FrameConstructionItem(const FrameConstructionItem& aOther) MOZ_DELETE; /* not implemented */
   };
+
+  /**
+   * Function to create the anonymous flex items that we need.
+   * aParentFrame _must_ be a nsFlexContainerFrame -- the caller is responsible
+   * for checking this.
+   * @param aItems the child frame construction items before pseudo creation
+   * @param aParentFrame the flex container frame
+   */
+#ifdef MOZ_FLEXBOX
+  void CreateNeededAnonFlexItems(nsFrameConstructorState& aState,
+                                    FrameConstructionItemList& aItems,
+                                    nsIFrame* aParentFrame);
+#endif // MOZ_FLEXBOX
 
   /**
    * Function to create the table pseudo items we need.
@@ -1318,6 +1354,18 @@ private:
                        nsStyleContext* aStyleContext);
 
 // SVG - rods
+  /**
+   * Construct an nsSVGOuterSVGFrame, the anonymous child that wraps its real
+   * children, and its descendant frames.  This is the FrameConstructionData
+   * callback used for the job.
+   */
+  nsresult ConstructOuterSVG(nsFrameConstructorState& aState,
+                             FrameConstructionItem&   aItem,
+                             nsIFrame*                aParentFrame,
+                             const nsStyleDisplay*    aDisplay,
+                             nsFrameItems&            aFrameItems,
+                             nsIFrame**               aNewFrame);
+
   static const FrameConstructionData* FindSVGData(Element* aElement,
                                                   nsIAtom* aTag,
                                                   PRInt32 aNameSpaceID,
@@ -1328,7 +1376,7 @@ private:
      changes, make this static */
   const FrameConstructionData*
     FindDisplayData(const nsStyleDisplay* aDisplay, Element* aElement,
-                    nsStyleContext* aStyleContext);
+                    nsIFrame* aParentFrame, nsStyleContext* aStyleContext);
 
   /**
    * Construct a scrollable block frame
@@ -1389,7 +1437,7 @@ private:
                            nsFrameItems&            aFrameItems,
                            const bool               aAllowBlockStyles,
                            PendingBinding*          aPendingBinding,
-                           nsIFrame*                aPossiblyLeafFrame = nsnull);
+                           nsIFrame*                aPossiblyLeafFrame = nullptr);
 
   nsIFrame* GetFrameFor(nsIContent* aContent);
 
@@ -1594,6 +1642,11 @@ private:
 
   nsresult StyleChangeReflow(nsIFrame* aFrame, nsChangeHint aHint);
 
+  // Returns true if this function managed to successfully move a frame, and
+  // false if it could not process the position change, and a reflow should
+  // be performed instead.
+  bool RecomputePosition(nsIFrame* aFrame);
+
   //----------------------------------------
 
   // Methods support :first-letter style
@@ -1749,8 +1802,8 @@ private:
                                     nsIContent* aChild,
                                     bool* aIsAppend,
                                     bool* aIsRangeInsertSafe,
-                                    nsIContent* aStartSkipChild = nsnull,
-                                    nsIContent *aEndSkipChild = nsnull);
+                                    nsIContent* aStartSkipChild = nullptr,
+                                    nsIContent *aEndSkipChild = nullptr);
 
   // see if aContent and aSibling are legitimate siblings due to restrictions
   // imposed by table columns

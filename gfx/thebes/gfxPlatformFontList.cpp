@@ -17,6 +17,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/Attributes.h"
 
 using namespace mozilla;
 
@@ -35,23 +36,23 @@ static const PRUint32 kNumFontsPerSlice = 10; // read in info 10 fonts at a time
 
 #endif // PR_LOGGING
 
-gfxPlatformFontList *gfxPlatformFontList::sPlatformFontList = nsnull;
+gfxPlatformFontList *gfxPlatformFontList::sPlatformFontList = nullptr;
 
 
 static const char* kObservedPrefs[] = {
     "font.",
     "font.name-list.",
     "intl.accept_languages",  // hmmmm...
-    nsnull
+    nullptr
 };
 
-class gfxFontListPrefObserver : public nsIObserver {
+class gfxFontListPrefObserver MOZ_FINAL : public nsIObserver {
 public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSIOBSERVER
 };
 
-static gfxFontListPrefObserver* gFontListPrefObserver = nsnull;
+static gfxFontListPrefObserver* gFontListPrefObserver = nullptr;
 
 NS_IMPL_ISUPPORTS1(gfxFontListPrefObserver, nsIObserver)
 
@@ -381,11 +382,11 @@ gfxPlatformFontList::SystemFindFontForChar(const PRUint32 aCh,
                                            PRInt32 aRunScript,
                                            const gfxFontStyle* aStyle)
  {
-    gfxFontEntry* fontEntry = nsnull;
+    gfxFontEntry* fontEntry = nullptr;
 
     // is codepoint with no matching font? return null immediately
     if (mCodepointsWithNoFonts.test(aCh)) {
-        return nsnull;
+        return nullptr;
     }
 
     // try to short-circuit font fallback for U+FFFD, used to represent
@@ -505,7 +506,7 @@ gfxPlatformFontList::CommonFontFallback(const PRUint32 aCh,
         }
     }
 
-    return nsnull;
+    return nullptr;
 }
 
 gfxFontEntry*
@@ -558,7 +559,7 @@ gfxPlatformFontList::FindFamily(const nsAString& aFamily)
     }
 
     // lookup in other family names list (mostly localized names)
-    if ((familyEntry = mOtherFamilyNames.GetWeak(key)) != nsnull) {
+    if ((familyEntry = mOtherFamilyNames.GetWeak(key)) != nullptr) {
         return familyEntry;
     }
 
@@ -569,12 +570,12 @@ gfxPlatformFontList::FindFamily(const nsAString& aFamily)
     // in practice so avoid pulling in names at startup
     if (!mOtherFamilyNamesInitialized && !IsASCII(aFamily)) {
         InitOtherFamilyNames();
-        if ((familyEntry = mOtherFamilyNames.GetWeak(key)) != nsnull) {
+        if ((familyEntry = mOtherFamilyNames.GetWeak(key)) != nullptr) {
             return familyEntry;
         }
     }
 
-    return nsnull;
+    return nullptr;
 }
 
 gfxFontEntry*
@@ -587,7 +588,7 @@ gfxPlatformFontList::FindFontForFamily(const nsAString& aFamily, const gfxFontSt
     if (familyEntry)
         return familyEntry->FindFontForStyle(*aStyle, aNeedsBold);
 
-    return nsnull;
+    return nullptr;
 }
 
 bool

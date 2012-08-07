@@ -128,7 +128,7 @@ JSValToDashArray(JSContext* cx, const jsval& patternArray,
         }
 
         bool haveNonzeroElement = false;
-        for (uint32 i = 0; i < length; ++i) {
+        for (uint32_t i = 0; i < length; ++i) {
             jsval elt;
             double d;
             if (!JS_GetElement(cx, obj, i, &elt)) {
@@ -168,7 +168,7 @@ DashArrayToJSVal(FallibleTArray<T>& dashes,
     if (dashes.IsEmpty()) {
         *val = JSVAL_NULL;
     } else {
-        JSObject* obj = JS_NewArrayObject(cx, dashes.Length(), nsnull);
+        JSObject* obj = JS_NewArrayObject(cx, dashes.Length(), nullptr);
         if (!obj) {
             return NS_ERROR_OUT_OF_MEMORY;
         }

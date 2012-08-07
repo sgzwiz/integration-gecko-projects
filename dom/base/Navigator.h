@@ -12,11 +12,12 @@
 #include "nsIDOMNavigatorDeviceStorage.h"
 #include "nsIDOMNavigatorDesktopNotification.h"
 #include "nsIDOMClientInformation.h"
-#include "nsIDOMNavigatorBattery.h"
+#include "nsINavigatorBattery.h"
 #include "nsIDOMNavigatorSms.h"
 #include "nsIDOMNavigatorNetwork.h"
 #include "nsAutoPtr.h"
 #include "nsWeakReference.h"
+#include "DeviceStorage.h"
 
 class nsPluginArray;
 class nsMimeTypeArray;
@@ -25,14 +26,24 @@ class nsDesktopNotificationCenter;
 class nsPIDOMWindow;
 class nsIDOMMozConnection;
 
+#ifdef MOZ_MEDIA_NAVIGATOR
+#include "nsIDOMNavigatorUserMedia.h"
+#endif
+
 #ifdef MOZ_B2G_RIL
 #include "nsIDOMNavigatorTelephony.h"
 class nsIDOMTelephony;
+class nsIDOMMozVoicemail;
 #endif
 
 #ifdef MOZ_B2G_BT
 #include "nsIDOMNavigatorBluetooth.h"
 #endif
+
+#include "nsIDOMNavigatorSystemMessages.h"
+
+#include "nsIDOMNavigatorCamera.h"
+#include "DOMCameraManager.h"
 
 //*****************************************************************************
 // Navigator: Script "navigator" object
@@ -63,8 +74,11 @@ class Navigator : public nsIDOMNavigator
                 , public nsIDOMNavigatorDeviceStorage
                 , public nsIDOMNavigatorGeolocation
                 , public nsIDOMNavigatorDesktopNotification
-                , public nsIDOMMozNavigatorBattery
+                , public nsINavigatorBattery
                 , public nsIDOMMozNavigatorSms
+#ifdef MOZ_MEDIA_NAVIGATOR
+                , public nsIDOMNavigatorUserMedia
+#endif
 #ifdef MOZ_B2G_RIL
                 , public nsIDOMNavigatorTelephony
 #endif
@@ -72,6 +86,8 @@ class Navigator : public nsIDOMNavigator
 #ifdef MOZ_B2G_BT
                 , public nsIDOMNavigatorBluetooth
 #endif
+                , public nsIDOMNavigatorCamera
+                , public nsIDOMNavigatorSystemMessages
 {
 public:
   Navigator(nsPIDOMWindow *aInnerWindow);
@@ -86,8 +102,11 @@ public:
   NS_DECL_NSIDOMNAVIGATORDEVICESTORAGE
   NS_DECL_NSIDOMNAVIGATORGEOLOCATION
   NS_DECL_NSIDOMNAVIGATORDESKTOPNOTIFICATION
-  NS_DECL_NSIDOMMOZNAVIGATORBATTERY
+  NS_DECL_NSINAVIGATORBATTERY
   NS_DECL_NSIDOMMOZNAVIGATORSMS
+#ifdef MOZ_MEDIA_NAVIGATOR
+  NS_DECL_NSIDOMNAVIGATORUSERMEDIA
+#endif
 #ifdef MOZ_B2G_RIL
   NS_DECL_NSIDOMNAVIGATORTELEPHONY
 #endif
@@ -96,6 +115,7 @@ public:
 #ifdef MOZ_B2G_BT
   NS_DECL_NSIDOMNAVIGATORBLUETOOTH
 #endif
+  NS_DECL_NSIDOMNAVIGATORSYSTEMMESSAGES
 
   static void Init();
 
@@ -113,6 +133,17 @@ public:
    */
   void SetWindow(nsPIDOMWindow *aInnerWindow);
 
+  /**
+   * Called when the inner window navigates to a new page.
+   */
+  void OnNavigation();
+
+#ifdef MOZ_SYS_MSG
+  // Helper to initialize mMessagesManager.
+  nsresult EnsureMessagesManager();
+#endif
+  NS_DECL_NSIDOMNAVIGATORCAMERA
+
 private:
   bool IsSmsAllowed() const;
   bool IsSmsSupported() const;
@@ -126,12 +157,16 @@ private:
   nsRefPtr<sms::SmsManager> mSmsManager;
 #ifdef MOZ_B2G_RIL
   nsCOMPtr<nsIDOMTelephony> mTelephony;
+  nsCOMPtr<nsIDOMMozVoicemail> mVoicemail;
 #endif
   nsRefPtr<network::Connection> mConnection;
   nsRefPtr<network::MobileConnection> mMobileConnection;
 #ifdef MOZ_B2G_BT
   nsCOMPtr<nsIDOMBluetoothManager> mBluetooth;
 #endif
+  nsRefPtr<nsDOMCameraManager> mCameraManager;
+  nsCOMPtr<nsIDOMNavigatorSystemMessages> mMessagesManager;
+  nsTArray<nsRefPtr<nsDOMDeviceStorage> > mDeviceStorageStores;
   nsWeakPtr mWindow;
   JSZoneId mZone;
 };

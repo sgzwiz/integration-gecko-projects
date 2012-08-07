@@ -7,6 +7,7 @@
 #include "WebSocketLog.h"
 #include "WebSocketChannelParent.h"
 #include "nsIAuthPromptProvider.h"
+#include "mozilla/LoadContext.h"
 
 namespace mozilla {
 namespace net {
@@ -25,12 +26,16 @@ WebSocketChannelParent::WebSocketChannelParent(nsIAuthPromptProvider* aAuthProvi
 #endif
 }
 
+//-----------------------------------------------------------------------------
+// WebSocketChannelParent::PWebSocketChannelParent
+//-----------------------------------------------------------------------------
+
 bool
 WebSocketChannelParent::RecvDeleteSelf()
 {
   LOG(("WebSocketChannelParent::RecvDeleteSelf() %p\n", this));
-  mChannel = nsnull;
-  mAuthProvider = nsnull;
+  mChannel = nullptr;
+  mAuthProvider = nullptr;
   return mIPCOpen ? Send__delete__(this) : true;
 }
 
@@ -38,7 +43,8 @@ bool
 WebSocketChannelParent::RecvAsyncOpen(const IPC::URI& aURI,
                                       const nsCString& aOrigin,
                                       const nsCString& aProtocol,
-                                      const bool& aSecure)
+                                      const bool& aSecure,
+                                      const IPC::SerializedLoadContext& loadContext)
 {
   LOG(("WebSocketChannelParent::RecvAsyncOpen() %p\n", this));
   nsresult rv;
@@ -52,6 +58,9 @@ WebSocketChannelParent::RecvAsyncOpen(const IPC::URI& aURI,
   if (NS_FAILED(rv))
     goto fail;
 
+  if (loadContext.IsNotNull())
+    mLoadContext = new LoadContext(loadContext);
+
   rv = mChannel->SetNotificationCallbacks(this);
   if (NS_FAILED(rv))
     goto fail;
@@ -60,14 +69,14 @@ WebSocketChannelParent::RecvAsyncOpen(const IPC::URI& aURI,
   if (NS_FAILED(rv))
     goto fail;
 
-  rv = mChannel->AsyncOpen(aURI, aOrigin, this, nsnull);
+  rv = mChannel->AsyncOpen(aURI, aOrigin, this, nullptr);
   if (NS_FAILED(rv))
     goto fail;
 
   return true;
 
 fail:
-  mChannel = nsnull;
+  mChannel = nullptr;
   return SendOnStop(rv);
 }
 
@@ -116,16 +125,9 @@ WebSocketChannelParent::RecvSendBinaryStream(const InputStream& aStream,
   return true;
 }
 
-NS_IMETHODIMP
-WebSocketChannelParent::GetInterface(const nsIID & iid, void **result NS_OUTPARAM)
-{
-  LOG(("WebSocketChannelParent::GetInterface() %p\n", this));
-  if (mAuthProvider && iid.Equals(NS_GET_IID(nsIAuthPromptProvider)))
-    return mAuthProvider->GetAuthPrompt(nsIAuthPromptProvider::PROMPT_NORMAL,
-                                        iid, result);
-
-  return NS_ERROR_FAILURE;
-}
+//-----------------------------------------------------------------------------
+// WebSocketChannelParent::nsIRequestObserver
+//-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
 WebSocketChannelParent::OnStart(nsISupports *aContext)
@@ -199,6 +201,29 @@ WebSocketChannelParent::ActorDestroy(ActorDestroyReason why)
   LOG(("WebSocketChannelParent::ActorDestroy() %p\n", this));
   mIPCOpen = false;
 }
+
+//-----------------------------------------------------------------------------
+// WebSocketChannelParent::nsIInterfaceRequestor
+//-----------------------------------------------------------------------------
+
+NS_IMETHODIMP
+WebSocketChannelParent::GetInterface(const nsIID & iid, void **result)
+{
+  LOG(("WebSocketChannelParent::GetInterface() %p\n", this));
+  if (mAuthProvider && iid.Equals(NS_GET_IID(nsIAuthPromptProvider)))
+    return mAuthProvider->GetAuthPrompt(nsIAuthPromptProvider::PROMPT_NORMAL,
+                                        iid, result);
+
+  // Only support nsILoadContext if child channel's callbacks did too
+  if (iid.Equals(NS_GET_IID(nsILoadContext)) && mLoadContext) {
+    NS_ADDREF(mLoadContext);
+    *result = static_cast<nsILoadContext*>(mLoadContext);
+    return NS_OK;
+  }
+
+  return QueryInterface(iid, result);
+}
+
 
 } // namespace net
 } // namespace mozilla

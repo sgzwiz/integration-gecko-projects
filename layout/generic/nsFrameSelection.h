@@ -77,7 +77,7 @@ struct NS_STACK_CLASS nsPeekOffsetStruct
     , mIsKeyboardSelect(aIsKeyboardSelect)
     , mVisual(aVisual)
     , mResultContent()
-    , mResultFrame(nsnull)
+    , mResultFrame(nullptr)
     , mContentOffset(0)
     , mAttachForward(false)
   {
@@ -173,7 +173,9 @@ struct nsPrevNextBidiLevels
   PRUint8 mLevelAfter;
 };
 
-class nsTypedSelection;
+namespace mozilla {
+class Selection;
+}
 class nsIScrollableFrame;
 
 /**
@@ -353,7 +355,7 @@ public:
    * no query interface for selection. must use this method now.
    * @param aSelectionType enum value defined in nsISelection for the seleciton you want.
    */
-  nsTypedSelection* GetSelection(SelectionType aType) const;
+  mozilla::Selection* GetSelection(SelectionType aType) const;
 
   /**
    * ScrollSelectionIntoView scrolls a region of the selection,
@@ -548,7 +550,7 @@ public:
    *  At the beginning and end of each line there is assumed to be a frame with
    *   Bidi level equal to the paragraph embedding level.
    *  In these cases the before frame and after frame respectively will be 
-   *   nsnull.
+   *   nullptr.
    *
    *  This method is virtual since it gets called from outside of layout. 
    */
@@ -620,7 +622,7 @@ private:
     return retval;
   }
 
-  friend class nsTypedSelection; 
+  friend class mozilla::Selection;
 #ifdef DEBUG
   void printSelection();       // for debugging
 #endif /* DEBUG */
@@ -647,7 +649,7 @@ private:
   // so remember to use nsCOMPtr when needed.
   nsresult     NotifySelectionListeners(SelectionType aType);     // add parameters to say collapsed etc?
 
-  nsRefPtr<nsTypedSelection> mDomSelections[nsISelectionController::NUM_SELECTIONTYPES];
+  nsRefPtr<mozilla::Selection> mDomSelections[nsISelectionController::NUM_SELECTIONTYPES];
 
   // Table selection support.
   // Interfaces that let us get info based on cellmap locations
@@ -694,9 +696,11 @@ private:
   //batching
   PRInt32 mBatching;
     
-  nsIContent *mLimiter;     //limit selection navigation to a child of this node.
-  nsIContent *mAncestorLimiter; // Limit selection navigation to a descendant of
-                                // this node.
+  // Limit selection navigation to a child of this node.
+  nsCOMPtr<nsIContent> mLimiter;
+  // Limit selection navigation to a descendant of this node.
+  nsCOMPtr<nsIContent> mAncestorLimiter;
+
   nsIPresShell *mShell;
   JSZoneId mZone;
 

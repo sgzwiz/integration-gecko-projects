@@ -4,14 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "nsIDOMHTMLAreaElement.h"
-#include "nsIDOMEventTarget.h"
 #include "nsGenericHTMLElement.h"
 #include "nsILink.h"
 #include "nsGkAtoms.h"
-#include "nsStyleConsts.h"
 #include "nsIURL.h"
-#include "nsNetUtil.h"
-#include "nsReadableUtils.h"
 #include "nsIDocument.h"
 
 #include "Link.h"
@@ -42,21 +38,21 @@ public:
 
   // nsIDOMHTMLElement
   NS_FORWARD_NSIDOMHTMLELEMENT_BASIC(nsGenericHTMLElement::)
-  NS_SCRIPTABLE NS_IMETHOD Click() {
+  NS_IMETHOD Click() {
     return nsGenericHTMLElement::Click();
   }
-  NS_SCRIPTABLE NS_IMETHOD GetTabIndex(PRInt32* aTabIndex);
-  NS_SCRIPTABLE NS_IMETHOD SetTabIndex(PRInt32 aTabIndex);
-  NS_SCRIPTABLE NS_IMETHOD Focus() {
+  NS_IMETHOD GetTabIndex(PRInt32* aTabIndex);
+  NS_IMETHOD SetTabIndex(PRInt32 aTabIndex);
+  NS_IMETHOD Focus() {
     return nsGenericHTMLElement::Focus();
   }
-  NS_SCRIPTABLE NS_IMETHOD GetDraggable(bool* aDraggable) {
+  NS_IMETHOD GetDraggable(bool* aDraggable) {
     return nsGenericHTMLElement::GetDraggable(aDraggable);
   }
-  NS_SCRIPTABLE NS_IMETHOD GetInnerHTML(nsAString& aInnerHTML) {
+  NS_IMETHOD GetInnerHTML(nsAString& aInnerHTML) {
     return nsGenericHTMLElement::GetInnerHTML(aInnerHTML);
   }
-  NS_SCRIPTABLE NS_IMETHOD SetInnerHTML(const nsAString& aInnerHTML) {
+  NS_IMETHOD SetInnerHTML(const nsAString& aInnerHTML) {
     return nsGenericHTMLElement::SetInnerHTML(aInnerHTML);
   }
 
@@ -82,7 +78,7 @@ public:
   nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
                    const nsAString& aValue, bool aNotify)
   {
-    return SetAttr(aNameSpaceID, aName, nsnull, aValue, aNotify);
+    return SetAttr(aNameSpaceID, aName, nullptr, aValue, aNotify);
   }
   virtual nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
                            nsIAtom* aPrefix, const nsAString& aValue,
@@ -97,6 +93,10 @@ public:
   virtual nsXPCClassInfo* GetClassInfo();
 
   virtual nsIDOMNode* AsDOMNode() { return this; }
+
+protected:
+  virtual void GetItemValueText(nsAString& text);
+  virtual void SetItemValueText(const nsAString& text);
 };
 
 
@@ -138,6 +138,18 @@ NS_IMPL_URI_ATTR(nsHTMLAreaElement, Href, href)
 NS_IMPL_BOOL_ATTR(nsHTMLAreaElement, NoHref, nohref)
 NS_IMPL_STRING_ATTR(nsHTMLAreaElement, Shape, shape)
 NS_IMPL_INT_ATTR(nsHTMLAreaElement, TabIndex, tabindex)
+
+void
+nsHTMLAreaElement::GetItemValueText(nsAString& aValue)
+{
+  GetHref(aValue);
+}
+
+void
+nsHTMLAreaElement::SetItemValueText(const nsAString& aValue)
+{
+  SetHref(aValue);
+}
 
 NS_IMETHODIMP
 nsHTMLAreaElement::GetTarget(nsAString& aValue)

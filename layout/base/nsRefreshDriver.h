@@ -20,6 +20,7 @@
 #include "nsAutoPtr.h"
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"
+#include "mozilla/Attributes.h"
 
 class nsPresContext;
 class nsIPresShell;
@@ -45,7 +46,7 @@ public:
   virtual void WillRefresh(mozilla::TimeStamp aTime) = 0;
 };
 
-class nsRefreshDriver : public nsITimerCallback {
+class nsRefreshDriver MOZ_FINAL : public nsITimerCallback {
 public:
   nsRefreshDriver(nsPresContext *aPresContext);
   ~nsRefreshDriver();
@@ -125,7 +126,7 @@ public:
   bool AddStyleFlushObserver(nsIPresShell* aShell) {
     NS_ASSERTION(!mStyleFlushObservers.Contains(aShell),
 		 "Double-adding style flush observer");
-    bool appended = mStyleFlushObservers.AppendElement(aShell) != nsnull;
+    bool appended = mStyleFlushObservers.AppendElement(aShell) != nullptr;
     EnsureTimerStarted(false);
     return appended;
   }
@@ -135,7 +136,7 @@ public:
   bool AddLayoutFlushObserver(nsIPresShell* aShell) {
     NS_ASSERTION(!IsLayoutFlushObserver(aShell),
 		 "Double-adding layout flush observer");
-    bool appended = mLayoutFlushObservers.AppendElement(aShell) != nsnull;
+    bool appended = mLayoutFlushObservers.AppendElement(aShell) != nullptr;
     EnsureTimerStarted(false);
     return appended;
   }
@@ -174,7 +175,7 @@ public:
    */
   void Disconnect() {
     StopTimer();
-    mPresContext = nsnull;
+    mPresContext = nullptr;
   }
 
   /**

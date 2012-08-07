@@ -24,9 +24,11 @@ NS_IMETHODIMP XPC_MAP_CLASSNAME::GetClassName(char * *aClassName)
 
 /**************************************************************/
 
-NS_IMETHODIMP XPC_MAP_CLASSNAME::GetScriptableFlags(PRUint32 *aFlags)
+// virtual
+PRUint32
+XPC_MAP_CLASSNAME::GetScriptableFlags()
 {
-    *aFlags =
+    return
 #ifdef XPC_MAP_WANT_PRECREATE
     nsIXPCScriptable::WANT_PRECREATE |
 #endif
@@ -85,7 +87,6 @@ NS_IMETHODIMP XPC_MAP_CLASSNAME::GetScriptableFlags(PRUint32 *aFlags)
     XPC_MAP_FLAGS |
 #endif
     0;
-    return NS_OK;
 }
 
 /**************************************************************/
@@ -103,6 +104,9 @@ NS_IMETHODIMP XPC_MAP_CLASSNAME::Create(nsIXPConnectWrappedNative *wrapper, JSCo
 
 #ifndef XPC_MAP_WANT_POSTCREATE
 NS_IMETHODIMP XPC_MAP_CLASSNAME::PostCreate(nsIXPConnectWrappedNative *wrapper, JSContext * cx, JSObject * obj)
+    {NS_ERROR("never called"); return NS_ERROR_NOT_IMPLEMENTED;}
+
+NS_IMETHODIMP XPC_MAP_CLASSNAME::PostTransplant(nsIXPConnectWrappedNative *wrapper, JSContext * cx, JSObject * obj)
     {NS_ERROR("never called"); return NS_ERROR_NOT_IMPLEMENTED;}
 #endif
 

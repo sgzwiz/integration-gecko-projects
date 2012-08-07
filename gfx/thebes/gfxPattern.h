@@ -47,7 +47,7 @@ public:
      * to the current transform.
      */
     mozilla::gfx::Pattern *GetPattern(mozilla::gfx::DrawTarget *aTarget,
-                                      mozilla::gfx::Matrix *aPatternTransform = nsnull);
+                                      mozilla::gfx::Matrix *aPatternTransform = nullptr);
     bool IsOpaque();
 
     enum GraphicsExtend {
@@ -88,7 +88,8 @@ public:
         FILTER_BEST,
         FILTER_NEAREST,
         FILTER_BILINEAR,
-        FILTER_GAUSSIAN
+        FILTER_GAUSSIAN,
+        FILTER_SENTINEL
     };
 
     void SetFilter(GraphicsFilter filter);

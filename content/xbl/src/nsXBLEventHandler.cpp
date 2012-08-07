@@ -5,17 +5,13 @@
 
 #include "nsCOMPtr.h"
 #include "nsIAtom.h"
-#include "nsIContent.h"
 #include "nsIDOMEventListener.h"
 #include "nsIDOMEventTarget.h"
 #include "nsIDOMKeyEvent.h"
 #include "nsIDOMMouseEvent.h"
-#include "nsGkAtoms.h"
 #include "nsXBLPrototypeHandler.h"
-#include "nsIDOMNSEvent.h"
 #include "nsGUIEvent.h"
 #include "nsContentUtils.h"
-#include "nsUnicharUtils.h"
 
 nsXBLEventHandler::nsXBLEventHandler(nsXBLPrototypeHandler* aHandler)
   : mProtoHandler(aHandler)
@@ -89,10 +85,8 @@ nsXBLKeyEventHandler::ExecuteMatchedHandlers(nsIDOMKeyEvent* aKeyEvent,
                                              PRUint32 aCharCode,
                                              bool aIgnoreShiftKey)
 {
-  nsCOMPtr<nsIDOMNSEvent> domNSEvent = do_QueryInterface(aKeyEvent);
   bool trustedEvent = false;
-  if (domNSEvent)
-    domNSEvent->GetIsTrusted(&trustedEvent);
+  aKeyEvent->GetIsTrusted(&trustedEvent);
 
   nsCOMPtr<nsIDOMEventTarget> target;
   aKeyEvent->GetCurrentTarget(getter_AddRefs(target));

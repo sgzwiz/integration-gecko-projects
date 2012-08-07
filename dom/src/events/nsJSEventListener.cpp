@@ -5,14 +5,12 @@
 #include "nsJSEventListener.h"
 #include "nsJSUtils.h"
 #include "nsString.h"
-#include "nsReadableUtils.h"
 #include "nsIServiceManager.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIScriptContext.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIScriptRuntime.h"
 #include "nsIXPConnect.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsGUIEvent.h"
 #include "nsContentUtils.h"
 #include "nsDOMScriptObjectHolder.h"
@@ -25,7 +23,7 @@
 #include "xpcpublic.h"
 #include "nsJSEnvironment.h"
 #include "nsDOMJSUtils.h"
-#ifdef NS_DEBUG
+#ifdef DEBUG
 
 #include "nspr.h" // PR_fprintf
 
@@ -68,7 +66,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(nsJSEventListener)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsJSEventListener)
   if (tmp->mContext) {
     NS_DROP_JS_OBJECTS(tmp, nsJSEventListener);
-    tmp->mScopeObject = nsnull;
+    tmp->mScopeObject = nullptr;
     NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mContext)
   }
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -128,10 +126,9 @@ nsJSEventListener::HandleEvent(nsIDOMEvent* aEvent)
 
   bool handledScriptError = false;
   if (mEventName == nsGkAtoms::onerror) {
-    nsCOMPtr<nsIPrivateDOMEvent> priv(do_QueryInterface(aEvent));
-    NS_ENSURE_TRUE(priv, NS_ERROR_UNEXPECTED);
+    NS_ENSURE_TRUE(aEvent, NS_ERROR_UNEXPECTED);
 
-    nsEvent *event = priv->GetInternalNSEvent();
+    nsEvent* event = aEvent->GetInternalNSEvent();
     if (event->message == NS_LOAD_ERROR &&
         event->eventStructType == NS_SCRIPT_ERROR_EVENT) {
       nsScriptErrorEvent *scriptEvent =
@@ -169,15 +166,15 @@ nsJSEventListener::HandleEvent(nsIDOMEvent* aEvent)
   if (!handledScriptError) {
     iargv = do_CreateInstance(NS_ARRAY_CONTRACTID, &rv);
     if (NS_FAILED(rv)) return rv;
-    NS_ENSURE_TRUE(iargv != nsnull, NS_ERROR_OUT_OF_MEMORY);
+    NS_ENSURE_TRUE(iargv != nullptr, NS_ERROR_OUT_OF_MEMORY);
     rv = iargv->AppendElement(aEvent, false);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
   // mContext is the same context which event listener manager pushes
   // to JS context stack.
-#ifdef NS_DEBUG
-  JSContext* cx = nsnull;
+#ifdef DEBUG
+  JSContext* cx = nullptr;
   nsCOMPtr<nsIJSContextStack> stack =
     do_GetService("@mozilla.org/js/xpc/ContextStack;1");
   NS_ASSERTION(stack && NS_SUCCEEDED(stack->Peek(&cx)) && cx &&

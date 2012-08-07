@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// IWYU pragma: private, include "nsAString.h"
+
 #ifndef MOZILLA_INTERNAL_API
 #error Cannot use internal string classes without MOZILLA_INTERNAL_API defined. Use the frozen header nsStringAPI.h instead.
 #endif
@@ -534,7 +536,7 @@ class nsTSubstring_CharT
         {
           if (!EnsureMutable(newLen))
             {
-              *data = nsnull;
+              *data = nullptr;
               return 0;
             }
 
@@ -591,7 +593,7 @@ class nsTSubstring_CharT
          * base type, which helps avoid converting to nsTAString.
          */
       nsTSubstring_CharT(const substring_tuple_type& tuple)
-        : mData(nsnull),
+        : mData(nullptr),
           mLength(0),
           mFlags(F_NONE)
         {

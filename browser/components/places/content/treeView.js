@@ -2,6 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+Components.utils.import('resource://gre/modules/XPCOMUtils.jsm');
+
+const PTV_interfaces = [Ci.nsITreeView,
+                        Ci.nsINavHistoryResultObserver,
+                        Ci.nsINavHistoryResultTreeViewer,
+                        Ci.nsISupportsWeakReference];
+
 function PlacesTreeView(aFlatList, aOnOpenFlatContainer, aController) {
   this._tree = null;
   this._result = null;
@@ -14,6 +21,8 @@ function PlacesTreeView(aFlatList, aOnOpenFlatContainer, aController) {
 }
 
 PlacesTreeView.prototype = {
+  get wrappedJSObject() this,
+
   _makeAtom: function PTV__makeAtom(aString) {
     return Cc["@mozilla.org/atom-service;1"].
            getService(Ci.nsIAtomService).
@@ -37,15 +46,17 @@ PlacesTreeView.prototype = {
     return this.__dateService;
   },
 
-  QueryInterface: function PTV_QueryInterface(aIID) {
-    if (aIID.equals(Ci.nsITreeView) ||
-        aIID.equals(Ci.nsINavHistoryResultObserver) ||
-        aIID.equals(Ci.nsINavHistoryResultTreeViewer) ||
-        aIID.equals(Ci.nsISupportsWeakReference) ||
-        aIID.equals(Ci.nsISupports))
-      return this;
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: XPCOMUtils.generateQI(PTV_interfaces),
+
+  // Bug 761494:
+  // ----------
+  // Some addons use methods from nsINavHistoryResultObserver and
+  // nsINavHistoryResultTreeViewer, without QIing to these interfaces first.
+  // That's not a problem when the view is retrieved through the
+  // <tree>.view getter (which returns the wrappedJSObject of this object),
+  // it raises an issue when the view retrieved through the treeBoxObject.view
+  // getter.  Thus, to avoid breaking addons, the interfaces are prefetched.
+  classInfo: XPCOMUtils.generateCI({ interfaces: PTV_interfaces }),
 
   /**
    * This is called once both the result and the tree are set.
@@ -142,12 +153,21 @@ PlacesTreeView.prototype = {
   _getRowForNode:
   function PTV__getRowForNode(aNode, aForceBuild, aParentRow, aNodeIndex) {
     if (aNode == this._rootNode)
-      throw "The root node is never visible";
+      throw new Error("The root node is never visible");
 
-    let ancestors = PlacesUtils.nodeAncestors(aNode);
-    for (let ancestor in ancestors) {
+    // A node is removed form the view either if it has no parent or if its
+    // root-ancestor is not the root node (in which case that's the node
+    // for which nodeRemoved was called).
+    let ancestors = [x for each (x in PlacesUtils.nodeAncestors(aNode))];
+    if (ancestors.length == 0 ||
+        ancestors[ancestors.length - 1] != this._rootNode) {
+      throw new Error("Removed node passed to _getRowForNode");
+    }
+
+    // Ensure that the entire chain is open, otherwise that node is invisible.
+    for (let ancestor of ancestors) {
       if (!ancestor.containerOpen)
-        throw "Invisible node passed to _getRowForNode";
+        throw new Error("Invisible node passed to _getRowForNode");
     }
 
     // Non-plain containers are initially built with their contents.
@@ -1086,12 +1106,14 @@ PlacesTreeView.prototype = {
     if (val) {
       this._result = val;
       this._rootNode = this._result.root;
-      this._cellProperties = new WeakMap();
+      this._cellProperties = new Map();
+      this._cuttingNodes = new Set();
     }
     else if (this._result) {
       delete this._result;
       delete this._rootNode;
       delete this._cellProperties;
+      delete this._cuttingNodes;
     }
 
     // If the tree is not set yet, setTree will call finishInit.
@@ -1150,7 +1172,7 @@ PlacesTreeView.prototype = {
 
     let node = this._getNodeForRow(aRow);
 
-    if (node._cutting) {
+    if (this._cuttingNodes.has(node)) {
       aProperties.AppendElement(this._getAtomFor("cutting"));
     }
 
@@ -1678,6 +1700,18 @@ PlacesTreeView.prototype = {
     if (node.title != aText) {
       let txn = new PlacesEditItemTitleTransaction(node.itemId, aText);
       PlacesUtils.transactionManager.doTransaction(txn);
+    }
+  },
+
+  toggleCutNode: function PTV_toggleCutNode(aNode, aValue) {
+    let currentVal = this._cuttingNodes.has(aNode);
+    if (currentVal != aValue) {
+      if (aValue)
+        this._cuttingNodes.add(aNode);
+      else
+        this._cuttingNodes.delete(aNode);
+
+      this._invalidateCellValue(aNode, this.COLUMN_TYPE_TITLE);
     }
   },
 

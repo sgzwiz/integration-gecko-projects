@@ -30,6 +30,7 @@
 #include "js/HashTable.h"
 #include "js/Vector.h"
 #include "vm/Stack.h"
+#include "vm/SPSProfiler.h"
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -154,38 +155,45 @@ struct ConservativeGCData
     }
 };
 
-class ToSourceCache
+class SourceDataCache
 {
-    typedef HashMap<JSFunction *,
-                    JSString *,
-                    DefaultHasher<JSFunction *>,
+    typedef HashMap<ScriptSource *,
+                    JSFixedString *,
+                    DefaultHasher<ScriptSource *>,
                     SystemAllocPolicy> Map;
-    Map *map_;
-  public:
-    ToSourceCache() : map_(NULL) {}
-    JSString *lookup(JSFunction *fun);
-    void put(JSFunction *fun, JSString *);
-    void purge();
+     Map *map_;
+   public:
+    SourceDataCache() : map_(NULL) {}
+    JSFixedString *lookup(ScriptSource *ss);
+    void put(ScriptSource *ss, JSFixedString *);
+     void purge();
 };
 
-class EvalCache
+struct EvalCacheLookup
 {
-    static const unsigned SHIFT = 6;
-    static const unsigned LENGTH = 1 << SHIFT;
-    JSScript *table_[LENGTH];
-
-  public:
-    EvalCache() { PodArrayZero(table_); }
-    JSScript **bucket(JSLinearString *str);
-    void purge();
+    JSLinearString *str;
+    JSFunction *caller;
+    unsigned staticLevel;
+    JSVersion version;
+    JSCompartment *compartment;
 };
+
+struct EvalCacheHashPolicy
+{
+    typedef EvalCacheLookup Lookup;
+
+    static HashNumber hash(const Lookup &l);
+    static bool match(JSScript *script, const EvalCacheLookup &l);
+};
+
+typedef HashSet<JSScript *, EvalCacheHashPolicy, SystemAllocPolicy> EvalCache;
 
 class NativeIterCache
 {
     static const size_t SIZE = size_t(1) << 8;
 
     /* Cached native iterators. */
-    JSObject            *data[SIZE];
+    PropertyIteratorObject *data[SIZE];
 
     static size_t getIndex(uint32_t key) {
         return size_t(key) % SIZE;
@@ -193,7 +201,7 @@ class NativeIterCache
 
   public:
     /* Native iterator most recently started. */
-    JSObject            *last;
+    PropertyIteratorObject *last;
 
     NativeIterCache()
       : last(NULL) {
@@ -205,11 +213,11 @@ class NativeIterCache
         PodArrayZero(data);
     }
 
-    JSObject *get(uint32_t key) const {
+    PropertyIteratorObject *get(uint32_t key) const {
         return data[getIndex(key)];
     }
 
-    void set(uint32_t key, JSObject *iterobj) {
+    void set(uint32_t key, PropertyIteratorObject *iterobj) {
         data[getIndex(key)] = iterobj;
     }
 };
@@ -275,7 +283,11 @@ class NewObjectCache
     inline bool lookupGlobal(Class *clasp, js::GlobalObject *global, gc::AllocKind kind, EntryIndex *pentry);
     inline bool lookupType(Class *clasp, js::types::TypeObject *type, gc::AllocKind kind, EntryIndex *pentry);
 
-    /* Return a new object from a cache hit produced by a lookup method. */
+    /*
+     * Return a new object from a cache hit produced by a lookup method, or
+     * NULL if returning the object could possibly trigger GC (does not
+     * indicate failure).
+     */
     inline JSObject *newObjectFromHit(JSContext *cx, EntryIndex entry);
 
     /* Fill an entry after a cache miss. */
@@ -359,7 +371,7 @@ struct Thread : ThreadFriendFields
     js::StackSpace stackSpace;
 
     /* Temporary arena pool used while compiling and decompiling. */
-    static const size_t TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE = 1 << 12;
+    static const size_t TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE = 4 * 1024;
     js::LifoAlloc tempLifoAlloc;
 
     /*
@@ -438,6 +450,9 @@ struct JSRuntime : js::RuntimeFriendFields
     /* Compartment destroy callback. */
     JSDestroyCompartmentCallback destroyCompartmentCallback;
 
+    /* Call this to get the name of a compartment. */
+    JSCompartmentNameCallback compartmentNameCallback;
+
     ThreadLockCheckOp  lockCheck, zoneCheck;
     ThreadLockDepthOp  lockDepth;
     ThreadLockChangeOp lockOp, unlockOp;
@@ -486,11 +501,22 @@ struct JSRuntime : js::RuntimeFriendFields
      */
     volatile uint32_t   gcNumArenasFreeCommitted;
     js::GCMarker        gcMarker;
-    void                *gcVerifyData;
+    void                *gcVerifyPreData;
+    void                *gcVerifyPostData;
     bool                gcChunkAllocationSinceLastGC;
     int64_t             gcNextFullGCTime;
+    int64_t             gcLastGCTime;
     int64_t             gcJitReleaseTime;
     JSGCMode            gcMode;
+    bool                gcHighFrequencyGC;
+    uint64_t            gcHighFrequencyTimeThreshold;
+    uint64_t            gcHighFrequencyLowLimitBytes;
+    uint64_t            gcHighFrequencyHighLimitBytes;
+    double              gcHighFrequencyHeapGrowthMax;
+    double              gcHighFrequencyHeapGrowthMin;
+    double              gcLowFrequencyHeapGrowth;
+    bool                gcDynamicHeapGrowth;
+    bool                gcDynamicMarkSlice;
 
     /* During shutdown, the GC needs to clean up every possible object. */
     bool                gcShouldCleanUpEverything;
@@ -511,6 +537,9 @@ struct JSRuntime : js::RuntimeFriendFields
     /* The gcNumber at the time of the most recent GC's first slice. */
     uint64_t            gcStartNumber;
 
+    /* Whether the currently running GC can finish in multiple slices. */
+    int                 gcIsIncremental;
+
     /* Whether all compartments are being collected in first GC slice. */
     bool                gcIsFull;
 
@@ -524,6 +553,14 @@ struct JSRuntime : js::RuntimeFriendFields
     bool                gcStrictCompartmentChecking;
 
     /*
+     * If this is 0, all cross-compartment proxies must be registered in the
+     * wrapper map. This checking must be disabled temporarily while creating
+     * new wrappers. When non-zero, this records the recursion depth of wrapper
+     * creation.
+     */
+    uintptr_t           gcDisableStrictProxyCheckingCount;
+
+    /*
      * The current incremental GC phase. During non-incremental GC, this is
      * always NO_INCREMENTAL.
      */
@@ -531,6 +568,21 @@ struct JSRuntime : js::RuntimeFriendFields
 
     /* Indicates that the last incremental slice exhausted the mark stack. */
     bool                gcLastMarkSlice;
+
+    /* Whether any sweeping will take place in the separate GC helper thread. */
+    bool                gcSweepOnBackgroundThread;
+
+    /*
+     * Incremental sweep state.
+     */
+    int                gcSweepPhase;
+    ptrdiff_t          gcSweepCompartmentIndex;
+    int                gcSweepKindIndex;
+
+    /*
+     * List head of arenas allocated during the sweep phase.
+     */
+    js::gc::ArenaHeader *gcArenasAllocatedDuringSweep;
 
     /*
      * Indicates that a GC slice has taken place in the middle of an animation
@@ -572,7 +624,26 @@ struct JSRuntime : js::RuntimeFriendFields
 #endif
 
     bool                gcPoke;
-    bool                gcRunning;
+
+#ifdef DEBUG
+    bool                relaxRootChecks;
+#endif
+
+    enum HeapState {
+        Idle,       // doing nothing with the GC heap
+        Tracing,    // tracing the GC heap without collecting, e.g. IterateCompartments()
+        Collecting  // doing a GC of the heap
+    };
+
+    HeapState           heapState;
+
+    bool isHeapBusy() { return heapState != Idle; }
+
+    /*
+     * Free LIFO blocks are transferred to this allocator before being freed on
+     * the background GC thread.
+     */
+    js::LifoAlloc freeLifoAlloc;
 
     /*
      * These options control the zealousness of the GC. The fundamental values
@@ -580,8 +651,9 @@ struct JSRuntime : js::RuntimeFriendFields
      * gcNextScheduled is decremented. When it reaches zero, we do either a
      * full or a compartmental GC, based on gcDebugCompartmentGC.
      *
-     * At this point, if gcZeal_ == 2 then gcNextScheduled is reset to the
-     * value of gcZealFrequency. Otherwise, no additional GCs take place.
+     * At this point, if gcZeal_ is one of the types that trigger periodic
+     * collection, then gcNextScheduled is reset to the value of
+     * gcZealFrequency. Otherwise, no additional GCs take place.
      *
      * You can control these values in several ways:
      *   - Pass the -Z flag to the shell (see the usage info for details)
@@ -593,12 +665,16 @@ struct JSRuntime : js::RuntimeFriendFields
      *
      * We use gcZeal_ == 4 to enable write barrier verification. See the comment
      * in jsgc.cpp for more information about this.
+     *
+     * gcZeal_ values from 8 to 10 periodically run different types of
+     * incremental GC.
      */
 #ifdef JS_GC_ZEAL
     int                 gcZeal_;
     int                 gcZealFrequency;
     int                 gcNextScheduled;
     bool                gcDeterministicOnly;
+    int                 gcIncrementalLimit;
 
     js::Vector<JSObject *, 0, js::SystemAllocPolicy> gcSelectedForMarking;
 
@@ -606,8 +682,12 @@ struct JSRuntime : js::RuntimeFriendFields
 
     bool needZealousGC() {
         if (gcNextScheduled > 0 && --gcNextScheduled == 0) {
-            if (gcZeal() == js::gc::ZealAllocValue)
+            if (gcZeal() == js::gc::ZealAllocValue ||
+                (gcZeal() >= js::gc::ZealIncrementalRootsThenFinish &&
+                 gcZeal() <= js::gc::ZealIncrementalMultipleSlices))
+            {
                 gcNextScheduled = gcZealFrequency;
+            }
             return true;
         }
         return false;
@@ -657,11 +737,16 @@ struct JSRuntime : js::RuntimeFriendFields
         return !JS_CLIST_IS_EMPTY(&contextList);
     }
 
+    JS_SourceHook       sourceHook;
+
     /* Per runtime debug hooks -- see jsprvtd.h and jsdbgapi.h. */
     JSDebugHooks        debugHooks;
 
     /* If true, new compartments are initially in debug mode. */
     bool                debugMode;
+
+    /* SPS profiling metadata */
+    js::SPSProfiler     spsProfiler;
 
     /* If true, new scripts must be created with PC counter information. */
     bool                profilingScripts;
@@ -684,7 +769,11 @@ struct JSRuntime : js::RuntimeFriendFields
     /* Client opaque pointers */
     void                *data;
 
+<<<<<<< local
 #ifdef JS_THREADSAFE
+=======
+    /* These combine to interlock the GC and new requests. */
+>>>>>>> other
     PRLock              *gcLock;
 
 #ifdef DEBUG
@@ -693,7 +782,10 @@ struct JSRuntime : js::RuntimeFriendFields
 #endif
 
     js::GCHelperThread  gcHelperThread;
-#endif /* JS_THREADSAFE */
+
+#ifdef JS_THREADSAFE
+    js::SourceCompressorThread sourceCompressorThread;
+#endif
 
     /*
      * Mapping from NSPR thread identifiers to JSThreads.
@@ -741,6 +833,32 @@ struct JSRuntime : js::RuntimeFriendFields
     bool                waiveGCQuota;
 
   private:
+<<<<<<< local
+=======
+    js::MathCache *mathCache_;
+    js::MathCache *createMathCache(JSContext *cx);
+  public:
+    js::MathCache *getMathCache(JSContext *cx) {
+        return mathCache_ ? mathCache_ : createMathCache(cx);
+    }
+
+    js::GSNCache        gsnCache;
+    js::PropertyCache   propertyCache;
+    js::NewObjectCache  newObjectCache;
+    js::NativeIterCache nativeIterCache;
+    js::SourceDataCache sourceDataCache;
+    js::EvalCache       evalCache;
+
+    /* State used by jsdtoa.cpp. */
+    DtoaState           *dtoaState;
+
+    /* List of currently pending operations on proxies. */
+    js::PendingProxyOperation *pendingProxyOperation;
+
+    js::ConservativeGCData conservativeGC;
+
+  private:
+>>>>>>> other
     JSPrincipals        *trustedPrincipals_;
   public:
     void setTrustedPrincipals(JSPrincipals *p) { trustedPrincipals_ = p; }
@@ -1003,12 +1121,10 @@ typedef HashSet<JSObject *,
 
 inline void
 FreeOp::free_(void* p) {
-#ifdef JS_THREADSAFE
     if (shouldFreeLater()) {
         runtime()->gcHelperThread.freeLater(p);
         return;
     }
-#endif
     runtime()->free_(p);
 }
 
@@ -1047,8 +1163,17 @@ struct JSContext : js::ContextFriendFields
     /* True if generating an error, to prevent runaway recursion. */
     bool                generatingError;
 
+<<<<<<< local
     inline void setCompartment(JSCompartment *compartment);
     inline void setCompartment(JSCompartment *compartment, JSZoneId zone, bool inferenceEnabled);
+=======
+#ifdef DEBUG
+    bool                rootingUnnecessary;
+#endif
+
+    /* GC heap compartment. */
+    JSCompartment       *compartment;
+>>>>>>> other
 
     inline void assertConsistency();
 
@@ -1065,6 +1190,9 @@ struct JSContext : js::ContextFriendFields
     /* Current execution stack. */
     js::ContextStack    stack;
 
+    /* Current global. */
+    inline js::Handle<js::GlobalObject*> global() const;
+
     /* ContextStack convenience functions */
     inline bool hasfp() const               { return stack.hasfp(); }
     inline js::StackFrame* fp() const       { return stack.fp(); }
@@ -1080,7 +1208,7 @@ struct JSContext : js::ContextFriendFields
 
   private:
     /* Lazily initialized pool of maps used during parse/emit. */
-    js::ParseMapPool    *parseMapPool_;
+    js::frontend::ParseMapPool *parseMapPool_;
 
   public:
     /* Top-level object and pointer to top stack frame's scope chain. */
@@ -1109,7 +1237,7 @@ struct JSContext : js::ContextFriendFields
     inline js::RegExpStatics *regExpStatics();
 
   public:
-    js::ParseMapPool &parseMapPool() {
+    js::frontend::ParseMapPool &parseMapPool() {
         JS_ASSERT(parseMapPool_);
         return *parseMapPool_;
     }
@@ -1236,32 +1364,15 @@ struct JSContext : js::ContextFriendFields
     DSTOffsetCache dstOffsetCache;
 
     /* List of currently active non-escaping enumerators (for-in). */
-    JSObject *enumerators;
+    js::PropertyIteratorObject *enumerators;
 
   private:
-    /*
-     * To go from a live generator frame (on the stack) to its generator object
-     * (see comment js_FloatingFrameIfGenerator), we maintain a stack of active
-     * generators, pushing and popping when entering and leaving generator
-     * frames, respectively.
-     */
-    js::Vector<JSGenerator *, 2, js::SystemAllocPolicy> genStack;
-
+    /* Innermost-executing generator or null if no generator are executing. */
+    JSGenerator *innermostGenerator_;
   public:
-    /* Return the generator object for the given generator frame. */
-    JSGenerator *generatorFor(js::StackFrame *fp) const;
-
-    /* Early OOM-check. */
-    inline bool ensureGeneratorStackSpace();
-
-    bool enterGenerator(JSGenerator *gen) {
-        return genStack.append(gen);
-    }
-
-    void leaveGenerator(JSGenerator *gen) {
-        JS_ASSERT(genStack.back() == gen);
-        genStack.popBack();
-    }
+    JSGenerator *innermostGenerator() const { return innermostGenerator_; }
+    void enterGenerator(JSGenerator *gen);
+    void leaveGenerator(JSGenerator *gen);
 
     inline void* malloc_(size_t bytes) {
         return runtime->malloc_(bytes, this);
@@ -1293,9 +1404,6 @@ struct JSContext : js::ContextFriendFields
 
     void purge();
 
-    /* For DEBUG. */
-    inline void assertValidStackDepth(unsigned depth);
-
     bool isExceptionPending() {
         return throwing;
     }
@@ -1318,12 +1426,6 @@ struct JSContext : js::ContextFriendFields
      * stack iteration; defaults to true.
      */
     bool stackIterAssertionEnabled;
-
-    /*
-     * When greather than zero, it is ok to accessed non-aliased fields of
-     * ScopeObjects because the accesses are coming from the DebugScopeProxy.
-     */
-    unsigned okToAccessUnaliasedBindings;
 #endif
 
     /*
@@ -1360,23 +1462,6 @@ struct JSContext : js::ContextFriendFields
 
 namespace js {
 
-class AutoAllowUnaliasedVarAccess
-{
-    JSContext *cx;
-  public:
-    AutoAllowUnaliasedVarAccess(JSContext *cx) : cx(cx) {
-#ifdef DEBUG
-        cx->okToAccessUnaliasedBindings++;
-#endif
-    }
-    ~AutoAllowUnaliasedVarAccess() {
-#ifdef DEBUG
-        JS_ASSERT(cx->okToAccessUnaliasedBindings);
-        cx->okToAccessUnaliasedBindings--;
-#endif
-    }
-};
-
 struct AutoResolving {
   public:
     enum Kind {
@@ -1384,7 +1469,7 @@ struct AutoResolving {
         WATCH
     };
 
-    AutoResolving(JSContext *cx, JSObject *obj, jsid id, Kind kind = LOOKUP
+    AutoResolving(JSContext *cx, HandleObject obj, HandleId id, Kind kind = LOOKUP
                   JS_GUARD_OBJECT_NOTIFIER_PARAM)
       : context(cx), object(obj), id(id), kind(kind), link(cx->resolvingList)
     {
@@ -1406,8 +1491,8 @@ struct AutoResolving {
     bool alreadyStartedSlow() const;
 
     JSContext           *const context;
-    JSObject            *const object;
-    jsid                const id;
+    HandleObject        object;
+    HandleId            id;
     Kind                const kind;
     AutoResolving       *const link;
     JS_DECL_USE_GUARD_OBJECT_NOTIFIER
@@ -1445,6 +1530,7 @@ inline void
 LockGC(JSRuntime *rt)
 {
 #ifdef JS_THREADSAFE
+<<<<<<< local
     JS_ASSERT(!rt->IsGCLocked());
     PR_Lock(rt->gcLock);
 #ifdef DEBUG
@@ -1478,6 +1564,13 @@ WaitGCCondVar(JSRuntime *rt, PRCondVar *cvar)
     SetGCLockOwner(rt, 0, CurrentThreadId());
 #endif
 }
+=======
+# define JS_LOCK_GC(rt)    PR_Lock((rt)->gcLock)
+# define JS_UNLOCK_GC(rt)  PR_Unlock((rt)->gcLock)
+#else
+# define JS_LOCK_GC(rt)    do { } while (0)
+# define JS_UNLOCK_GC(rt)  do { } while (0)
+>>>>>>> other
 #endif
 
 class AutoLockGC
@@ -1489,18 +1582,24 @@ class AutoLockGC
     {
         MOZ_GUARD_OBJECT_NOTIFIER_INIT;
         // Avoid MSVC warning C4390 for non-threadsafe builds.
-#ifdef JS_THREADSAFE
         if (rt)
+<<<<<<< local
             LockGC(rt);
 #endif
+=======
+            JS_LOCK_GC(rt);
+>>>>>>> other
     }
 
     ~AutoLockGC()
     {
-#ifdef JS_THREADSAFE
         if (runtime)
+<<<<<<< local
             UnlockGC(runtime);
 #endif
+=======
+            JS_UNLOCK_GC(runtime);
+>>>>>>> other
     }
 
     bool locked() const {
@@ -1521,13 +1620,17 @@ class AutoLockGC
 
 class AutoUnlockGC {
   private:
+#ifdef JS_THREADSAFE
     JSRuntime *rt;
+#endif
     JS_DECL_USE_GUARD_OBJECT_NOTIFIER
 
   public:
     explicit AutoUnlockGC(JSRuntime *rt
                           JS_GUARD_OBJECT_NOTIFIER_PARAM)
+#ifdef JS_THREADSAFE
       : rt(rt)
+#endif
     {
         JS_GUARD_OBJECT_NOTIFIER_INIT;
         UnlockGC(rt);
@@ -1695,7 +1798,7 @@ namespace js {
 
 /* |callee| requires a usage string provided by JS_DefineFunctionsWithHelp. */
 extern void
-ReportUsageError(JSContext *cx, JSObject *callee, const char *msg);
+ReportUsageError(JSContext *cx, HandleObject callee, const char *msg);
 
 } /* namespace js */
 
@@ -1829,13 +1932,13 @@ MakeRangeGCSafe(jsid *vec, size_t len)
 }
 
 static JS_ALWAYS_INLINE void
-MakeRangeGCSafe(const Shape **beg, const Shape **end)
+MakeRangeGCSafe(Shape **beg, Shape **end)
 {
     PodZero(beg, end - beg);
 }
 
 static JS_ALWAYS_INLINE void
-MakeRangeGCSafe(const Shape **vec, size_t len)
+MakeRangeGCSafe(Shape **vec, size_t len)
 {
     PodZero(vec, len);
 }
@@ -1879,12 +1982,12 @@ class AutoObjectVector : public AutoVectorRooter<JSObject *>
     JS_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
-class AutoShapeVector : public AutoVectorRooter<const Shape *>
+class AutoShapeVector : public AutoVectorRooter<Shape *>
 {
   public:
     explicit AutoShapeVector(JSContext *cx
                              JS_GUARD_OBJECT_NOTIFIER_PARAM)
-        : AutoVectorRooter<const Shape *>(cx, SHAPEVECTOR)
+        : AutoVectorRooter<Shape *>(cx, SHAPEVECTOR)
     {
         JS_GUARD_OBJECT_NOTIFIER_INIT;
     }

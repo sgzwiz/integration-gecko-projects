@@ -16,7 +16,7 @@
 
 #include "nsIBaseWindow.h"
 #include "nsIDocShell.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIServiceManager.h"
 #include "nsIWeakReference.h"
 #include "nsIWidget.h"
@@ -278,7 +278,7 @@ nsXRemoteService::HandleCommand(char* aCommand, nsIDOMWindow* aWindow,
                                     &desktopStartupID);
 
     char* argv[3] = {"dummyappname", "-remote", aCommand};
-    rv = cmdline->Init(3, argv, nsnull, nsICommandLine::STATE_REMOTE_EXPLICIT);
+    rv = cmdline->Init(3, argv, nullptr, nsICommandLine::STATE_REMOTE_EXPLICIT);
     if (NS_FAILED(rv))
       return "509 internal error";
 
@@ -318,7 +318,7 @@ nsXRemoteService::HandleCommandLine(char* aBuffer, nsIDOMWindow* aWindow,
   PRInt32 argc = TO_LITTLE_ENDIAN32(*reinterpret_cast<PRInt32*>(aBuffer));
   char *wd   = aBuffer + ((argc + 1) * sizeof(PRInt32));
 
-  nsCOMPtr<nsILocalFile> lf;
+  nsCOMPtr<nsIFile> lf;
   rv = NS_NewNativeLocalFile(nsDependentCString(wd), true,
                              getter_AddRefs(lf));
   if (NS_FAILED(rv))

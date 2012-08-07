@@ -34,6 +34,7 @@
 #include "nsIURI.h"
 #include "nsIProtocolHandler.h"
 #include "nsNetUtil.h"
+#include "nsIHTMLDocument.h"
 
 namespace dom = mozilla::dom;
 
@@ -50,7 +51,7 @@ class NS_STACK_CLASS nsHtml5OtherDocUpdate {
       NS_PRECONDITION(aCurrentDoc, "Node has no doc?");
       NS_PRECONDITION(aExecutorDoc, "Executor has no doc?");
       if (NS_LIKELY(aCurrentDoc == aExecutorDoc)) {
-        mDocument = nsnull;
+        mDocument = nullptr;
       } else {
         mDocument = aCurrentDoc;
         aCurrentDoc->BeginUpdate(UPDATE_CONTENT_MODEL);        
@@ -330,7 +331,7 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       
       nsCOMPtr<nsIContent> newContent;
       nsCOMPtr<nsINodeInfo> nodeInfo = aBuilder->GetNodeInfoManager()->
-        GetNodeInfo(name, nsnull, ns, nsIDOMNode::ELEMENT_NODE);
+        GetNodeInfo(name, nullptr, ns, nsIDOMNode::ELEMENT_NODE);
       NS_ASSERTION(nodeInfo, "Got null nodeinfo.");
       NS_NewElement(getter_AddRefs(newContent),
                     nodeInfo.forget(),
@@ -364,13 +365,13 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
 
         newContent->SetAttr(kNameSpaceID_None, 
                             nsGkAtoms::moztype, 
-                            nsnull, 
+                            nullptr, 
                             theAttribute,
                             false);
 
         nsCOMPtr<nsINodeInfo> optionNodeInfo = 
           aBuilder->GetNodeInfoManager()->GetNodeInfo(nsHtml5Atoms::option, 
-                                                      nsnull, 
+                                                      nullptr, 
                                                       kNameSpaceID_XHTML,
                                                       nsIDOMNode::ELEMENT_NODE);
                                                       
@@ -391,14 +392,6 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
           optionElt->AppendChildTo(optionText, false);
           newContent->AppendChildTo(optionElt, false);
           newContent->DoneAddingChildren(false);
-        }
-      } else if (name == nsHtml5Atoms::frameset && ns == kNameSpaceID_XHTML) {
-        nsIDocument* doc = aBuilder->GetDocument();
-        nsCOMPtr<nsIHTMLDocument> htmlDocument = do_QueryInterface(doc);
-        if (htmlDocument) {
-          // It seems harmless to call this multiple times, since this 
-          // is a simple field setter
-          htmlDocument->SetIsFrameset(true);
         }
       }
 
@@ -567,6 +560,13 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
     case eTreeOpRunScriptAsyncDefer: {
       nsIContent* node = *(mOne.node);
       aBuilder->RunScript(node);
+      return rv;
+    }
+    case eTreeOpPreventScriptExecution: {
+      nsIContent* node = *(mOne.node);
+      nsCOMPtr<nsIScriptElement> sele = do_QueryInterface(node);
+      MOZ_ASSERT(sele);
+      sele->PreventExecution();
       return rv;
     }
     case eTreeOpDoneAddingChildren: {

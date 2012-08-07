@@ -41,6 +41,7 @@ struct nsGlobalNameStruct
 
   enum nametype {
     eTypeNotInitialized,
+    eTypeNewDOMBinding,
     eTypeInterface,
     eTypeProperty,
     eTypeNavigatorProperty,
@@ -62,7 +63,7 @@ struct nsGlobalNameStruct
     nsIID mIID; // eTypeInterface, eTypeClassProto
     nsExternalDOMClassInfoData* mData; // eTypeExternalClassInfo
     ConstructorAlias* mAlias; // eTypeExternalConstructorAlias
-    nsCID mCID; // All other types...
+    nsCID mCID; // All other types except eTypeNewDOMBinding
   };
 
   // For new style DOM bindings.
@@ -101,7 +102,7 @@ public:
   // It also returns a pointer to the string buffer of the classname
   // in the nsGlobalNameStruct.
   const nsGlobalNameStruct* LookupName(const nsAString& aName,
-                                       const PRUnichar **aClassName = nsnull)
+                                       const PRUnichar **aClassName = nullptr)
   {
     return LookupNameInternal(aName, aClassName);
   }
@@ -140,7 +141,7 @@ public:
 
   nsGlobalNameStruct* GetConstructorProto(const nsGlobalNameStruct* aStruct);
 
-  void RegisterDefineDOMInterface(const nsAString& aName,
+  void RegisterDefineDOMInterface(const nsAFlatString& aName,
     mozilla::dom::binding::DefineInterface aDefineDOMInterface);
 
 private:
@@ -148,8 +149,14 @@ private:
   // that aKey will be mapped to. If mType in the returned
   // nsGlobalNameStruct is != eTypeNotInitialized, an entry for aKey
   // already existed.
+  nsGlobalNameStruct *AddToHash(PLDHashTable *aTable, const nsAString *aKey,
+                                const PRUnichar **aClassName = nullptr);
   nsGlobalNameStruct *AddToHash(PLDHashTable *aTable, const char *aKey,
-                                const PRUnichar **aClassName = nsnull);
+                                const PRUnichar **aClassName = nullptr)
+  {
+    NS_ConvertASCIItoUTF16 key(aKey);
+    return AddToHash(aTable, &key, aClassName);
+  }
 
   nsresult FillHash(nsICategoryManager *aCategoryManager,
                     const char *aCategory);
@@ -172,7 +179,7 @@ private:
                                   nsISupports* aEntry);
 
   nsGlobalNameStruct* LookupNameInternal(const nsAString& aName,
-                                         const PRUnichar **aClassName = nsnull);
+                                         const PRUnichar **aClassName = nullptr);
 
   PLDHashTable mGlobalNames;
   PLDHashTable mNavigatorNames;

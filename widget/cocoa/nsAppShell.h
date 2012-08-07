@@ -18,7 +18,7 @@ class nsCocoaWindow;
 
 typedef struct _nsCocoaAppModalWindowListItem {
   _nsCocoaAppModalWindowListItem(NSWindow *aWindow, NSModalSession aSession) :
-    mWindow(aWindow), mSession(aSession), mWidget(nsnull) {}
+    mWindow(aWindow), mSession(aSession), mWidget(nullptr) {}
   _nsCocoaAppModalWindowListItem(NSWindow *aWindow, nsCocoaWindow *aWidget) :
     mWindow(aWindow), mSession(nil), mWidget(aWidget) {}
   NSWindow *mWindow;       // Weak
@@ -45,6 +45,14 @@ public:
 private:
   nsTArray<nsCocoaAppModalWindowListItem> mList;
 };
+
+// GeckoNSApplication
+//
+// Subclass of NSApplication for filtering out certain events.
+@interface GeckoNSApplication : NSApplication
+{
+}
+@end
 
 @class AppShellDelegate;
 

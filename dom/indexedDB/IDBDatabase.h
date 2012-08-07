@@ -10,6 +10,7 @@
 #include "mozilla/dom/indexedDB/IndexedDatabase.h"
 
 #include "nsIDocument.h"
+#include "nsIFileStorage.h"
 #include "nsIIDBDatabase.h"
 #include "nsDOMEventTargetHelper.h"
 #include "mozilla/dom/indexedDB/IDBWrapperCache.h"
@@ -17,6 +18,12 @@
 
 class nsIScriptContext;
 class nsPIDOMWindow;
+
+namespace mozilla {
+namespace dom {
+class ContentParent;
+}
+}
 
 BEGIN_INDEXEDDB_NAMESPACE
 
@@ -31,14 +38,17 @@ class IndexedDBDatabaseParent;
 struct ObjectStoreInfoGuts;
 
 class IDBDatabase : public IDBWrapperCache,
-                    public nsIIDBDatabase
+                    public nsIIDBDatabase,
+                    public nsIFileStorage
 {
   friend class AsyncConnectionHelper;
   friend class IndexedDatabaseManager;
+  friend class IndexedDBDatabaseChild;
 
 public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIIDBDATABASE
+  NS_DECL_NSIFILESTORAGE
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(IDBDatabase, IDBWrapperCache)
 
@@ -46,7 +56,8 @@ public:
   Create(IDBWrapperCache* aOwnerCache,
          already_AddRefed<DatabaseInfo> aDatabaseInfo,
          const nsACString& aASCIIOrigin,
-         FileManager* aFileManager);
+         FileManager* aFileManager,
+         mozilla::dom::ContentParent* aContentParent);
 
   // nsIDOMEventTarget
   virtual nsresult PostHandleEvent(nsEventChainPostVisitor& aVisitor);
@@ -74,7 +85,7 @@ public:
   already_AddRefed<nsIDocument> GetOwnerDocument()
   {
     if (!GetOwner()) {
-      return nsnull;
+      return nullptr;
     }
 
     nsCOMPtr<nsIDocument> doc =
@@ -100,6 +111,10 @@ public:
 
   void EnterSetVersionTransaction();
   void ExitSetVersionTransaction();
+
+  // Called when a versionchange transaction is aborted to reset the
+  // DatabaseInfo.
+  void RevertToPreviousState();
 
   FileManager* Manager() const
   {
@@ -127,6 +142,12 @@ public:
     return mActorChild;
   }
 
+  mozilla::dom::ContentParent*
+  GetContentParent() const
+  {
+    return mContentParent;
+  }
+
   nsresult
   CreateObjectStoreInternal(IDBTransaction* aTransaction,
                             const ObjectStoreInfoGuts& aInfo,
@@ -139,6 +160,9 @@ private:
   void OnUnlink();
 
   nsRefPtr<DatabaseInfo> mDatabaseInfo;
+  // Set to a copy of the existing DatabaseInfo when starting a versionchange
+  // transaction.
+  nsRefPtr<DatabaseInfo> mPreviousDatabaseInfo;
   nsCOMPtr<nsIAtom> mDatabaseId;
   nsString mName;
   nsString mFilePath;
@@ -153,6 +177,8 @@ private:
 
   IndexedDBDatabaseChild* mActorChild;
   IndexedDBDatabaseParent* mActorParent;
+
+  mozilla::dom::ContentParent* mContentParent;
 
   PRInt32 mInvalidated;
   bool mRegistered;

@@ -31,7 +31,7 @@
 #include "nsThreadUtils.h"
 #include "nsTraceRefcntImpl.h"
 
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 
 #ifdef XP_WIN
 #include <windows.h>
@@ -105,7 +105,7 @@ nsNativeModuleLoader::LoadModule(FileLocation &aFile)
         NS_ERROR("Binary components cannot be loaded from JARs");
         return NULL;
     }
-    nsCOMPtr<nsILocalFile> file = aFile.GetBaseFile();
+    nsCOMPtr<nsIFile> file = aFile.GetBaseFile();
     nsresult rv;
 
     if (!NS_IsMainThread()) {
@@ -196,7 +196,7 @@ PLDHashOperator
 nsNativeModuleLoader::ReleaserFunc(nsIHashable* aHashedFile,
                                    NativeLoadData& aLoadData, void*)
 {
-    aLoadData.module = nsnull;
+    aLoadData.module = nullptr;
     return PL_DHASH_NEXT;
 }
 
@@ -237,6 +237,6 @@ nsNativeModuleLoader::UnloadLibraries()
 {
     NS_ASSERTION(NS_IsMainThread(), "Shutdown not on main thread?");
 
-    mLibraries.Enumerate(ReleaserFunc, nsnull);
-    mLibraries.Enumerate(UnloaderFunc, nsnull);
+    mLibraries.Enumerate(ReleaserFunc, nullptr);
+    mLibraries.Enumerate(UnloaderFunc, nullptr);
 }

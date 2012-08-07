@@ -152,7 +152,7 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_END
 NS_IMETHODIMP
 nsAnonymousContentList::GetLength(PRUint32* aLength)
 {
-  NS_ASSERTION(aLength != nsnull, "null ptr");
+  NS_ASSERTION(aLength != nullptr, "null ptr");
   if (! aLength)
       return NS_ERROR_NULL_POINTER;
 
@@ -192,7 +192,7 @@ nsAnonymousContentList::GetNodeAt(PRUint32 aIndex)
     }
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 PRInt32
@@ -306,7 +306,7 @@ LookupObject(PLDHashTable& table, nsIContent* aKey)
       return entry->GetValue();
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 inline void
@@ -321,9 +321,9 @@ SetOrRemoveObject(PLDHashTable& table, nsIContent* aKey, nsISupports* aValue)
   if (aValue) {
     // lazily create the table, but only when adding elements
     if (!table.ops &&
-        !PL_DHashTableInit(&table, &ObjectTableOps, nsnull,
+        !PL_DHashTableInit(&table, &ObjectTableOps, nullptr,
                            sizeof(ObjectEntry), 16)) {
-      table.ops = nsnull;
+      table.ops = nullptr;
       return NS_ERROR_OUT_OF_MEMORY;
     }
     aKey->SetFlags(NODE_MAY_BE_IN_BINDING_MNGR);
@@ -365,19 +365,19 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsBindingManager)
 
   if (tmp->mContentListTable.ops)
     PL_DHashTableFinish(&(tmp->mContentListTable));
-  tmp->mContentListTable.ops = nsnull;
+  tmp->mContentListTable.ops = nullptr;
 
   if (tmp->mAnonymousNodesTable.ops)
     PL_DHashTableFinish(&(tmp->mAnonymousNodesTable));
-  tmp->mAnonymousNodesTable.ops = nsnull;
+  tmp->mAnonymousNodesTable.ops = nullptr;
 
   if (tmp->mInsertionParentTable.ops)
     PL_DHashTableFinish(&(tmp->mInsertionParentTable));
-  tmp->mInsertionParentTable.ops = nsnull;
+  tmp->mInsertionParentTable.ops = nullptr;
 
   if (tmp->mWrapperTable.ops)
     PL_DHashTableFinish(&(tmp->mWrapperTable));
-  tmp->mWrapperTable.ops = nsnull;
+  tmp->mWrapperTable.ops = nullptr;
 
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSTARRAY(mAttachedStack)
 
@@ -441,10 +441,10 @@ nsBindingManager::nsBindingManager(nsIDocument* aDocument)
     mDocument(aDocument),
     mZone(aDocument->GetZone())
 {
-  mContentListTable.ops = nsnull;
-  mAnonymousNodesTable.ops = nsnull;
-  mInsertionParentTable.ops = nsnull;
-  mWrapperTable.ops = nsnull;
+  mContentListTable.ops = nullptr;
+  mAnonymousNodesTable.ops = nullptr;
+  mInsertionParentTable.ops = nullptr;
+  mWrapperTable.ops = nullptr;
 }
 
 nsBindingManager::~nsBindingManager(void)
@@ -480,7 +480,7 @@ RemoveInsertionParentCB(PLDHashTable* aTable, PLDHashEntryHdr* aEntry,
 static void
 RemoveInsertionParentForNodeList(nsIDOMNodeList* aList, nsIContent* aParent)
 {
-  nsAnonymousContentList* list = nsnull;
+  nsAnonymousContentList* list = nullptr;
   if (aList) {
     CallQueryInterface(aList, &list);
   }
@@ -520,7 +520,7 @@ nsBindingManager::GetBinding(nsIContent* aContent)
     return mBindingTable.GetWeak(aContent);
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 nsresult
@@ -552,7 +552,7 @@ nsBindingManager::SetBinding(nsIContent* aContent, nsXBLBinding* aBinding)
     // ProcessAttachedQueue
     PRUint32 index = mAttachedStack.IndexOf(oldBinding);
     if (index != mAttachedStack.NoIndex) {
-      mAttachedStack[index] = nsnull;
+      mAttachedStack[index] = nullptr;
     }
   }
   
@@ -565,11 +565,11 @@ nsBindingManager::SetBinding(nsIContent* aContent, nsXBLBinding* aBinding)
     // The death of the bindings means the death of the JS wrapper,
     // and the flushing of our explicit and anonymous insertion point
     // lists.
-    SetWrappedJS(aContent, nsnull);
-    SetContentListFor(aContent, nsnull);
-    SetAnonymousNodesFor(aContent, nsnull);
+    SetWrappedJS(aContent, nullptr);
+    SetContentListFor(aContent, nullptr);
+    SetAnonymousNodesFor(aContent, nullptr);
     if (oldBinding) {
-      oldBinding->SetBoundElement(nsnull);
+      oldBinding->SetBoundElement(nullptr);
     }
   }
 
@@ -584,7 +584,7 @@ nsBindingManager::GetInsertionParent(nsIContent* aContent)
                       (LookupObject(mInsertionParentTable, aContent));
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 nsresult
@@ -607,7 +607,7 @@ nsBindingManager::GetWrappedJS(nsIContent* aContent)
     return static_cast<nsIXPConnectWrappedJS*>(LookupObject(mWrapperTable, aContent));
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 nsresult
@@ -622,9 +622,10 @@ nsBindingManager::SetWrappedJS(nsIContent* aContent, nsIXPConnectWrappedJS* aWra
 
 void
 nsBindingManager::RemovedFromDocumentInternal(nsIContent* aContent,
-                                              nsIDocument* aOldDocument)
+                                              nsIDocument* aOldDocument,
+                                              nsIContent* aContentBindingParent)
 {
-  NS_PRECONDITION(aOldDocument != nsnull, "no old document");
+  NS_PRECONDITION(aOldDocument != nullptr, "no old document");
 
   if (mDestroyed)
     return;
@@ -633,7 +634,7 @@ nsBindingManager::RemovedFromDocumentInternal(nsIContent* aContent,
   // table.
   nsRefPtr<nsXBLBinding> binding = GetBinding(aContent);
   if (aContent->HasFlag(NODE_IS_INSERTION_PARENT)) {
-    nsRefPtr<nsXBLBinding> parentBinding = GetBinding(aContent->GetBindingParent());
+    nsRefPtr<nsXBLBinding> parentBinding = GetBinding(aContentBindingParent);
     if (parentBinding) {
       parentBinding->RemoveInsertionParent(aContent);
       // Clear insertion parent only if we don't have a binding which
@@ -647,14 +648,14 @@ nsBindingManager::RemovedFromDocumentInternal(nsIContent* aContent,
 
   if (binding) {
     binding->PrototypeBinding()->BindingDetached(binding->GetBoundElement());
-    binding->ChangeDocument(aOldDocument, nsnull);
-    SetBinding(aContent, nsnull);
+    binding->ChangeDocument(aOldDocument, nullptr);
+    SetBinding(aContent, nullptr);
   }
 
   // Clear out insertion parents and content lists.
-  SetInsertionParent(aContent, nsnull);
-  SetContentListFor(aContent, nsnull);
-  SetAnonymousNodesFor(aContent, nsnull);
+  SetInsertionParent(aContent, nullptr);
+  SetContentListFor(aContent, nullptr);
+  SetAnonymousNodesFor(aContent, nullptr);
 }
 
 nsIAtom*
@@ -684,7 +685,7 @@ nsBindingManager::GetContentListFor(nsIContent* aContent, nsIDOMNodeList** aResu
 nsINodeList*
 nsBindingManager::GetContentListFor(nsIContent* aContent)
 { 
-  nsINodeList* result = nsnull;
+  nsINodeList* result = nullptr;
 
   if (mContentListTable.ops) {
     result = static_cast<nsAnonymousContentList*>
@@ -706,7 +707,7 @@ nsBindingManager::SetContentListFor(nsIContent* aContent,
     return NS_OK;
   }
 
-  nsAnonymousContentList* contentList = nsnull;
+  nsAnonymousContentList* contentList = nullptr;
   if (aList) {
     contentList = new nsAnonymousContentList(aContent, aList);
     if (!contentList) {
@@ -728,7 +729,7 @@ nsINodeList*
 nsBindingManager::GetAnonymousNodesInternal(nsIContent* aContent,
                                             bool* aIsAnonymousContentList)
 { 
-  nsINodeList* result = nsnull;
+  nsINodeList* result = nullptr;
   if (mAnonymousNodesTable.ops) {
     result = static_cast<nsAnonymousContentList*>
                         (LookupObject(mAnonymousNodesTable, aContent));
@@ -770,7 +771,7 @@ nsBindingManager::SetAnonymousNodesFor(nsIContent* aContent,
     return NS_OK;
   }
 
-  nsAnonymousContentList* contentList = nsnull;
+  nsAnonymousContentList* contentList = nullptr;
   if (aList) {
     contentList = new nsAnonymousContentList(aContent, aList);
     if (!contentList) {
@@ -794,7 +795,7 @@ nsBindingManager::GetXBLChildNodesInternal(nsIContent* aContent,
   if (result) {
     result->GetLength(&length);
     if (length == 0)
-      result = nsnull;
+      result = nullptr;
   }
     
   // We may have an altered list of children from XBL insertion points.
@@ -831,7 +832,7 @@ nsBindingManager::GetInsertionPoint(nsIContent* aParent,
                                     PRUint32* aIndex)
 {
   nsXBLBinding *binding = GetBinding(aParent);
-  return binding ? binding->GetInsertionPoint(aChild, aIndex) : nsnull;
+  return binding ? binding->GetInsertionPoint(aChild, aIndex) : nullptr;
 }
 
 nsIContent*
@@ -844,7 +845,7 @@ nsBindingManager::GetSingleInsertionPoint(nsIContent* aParent,
     return binding->GetSingleInsertionPoint(aIndex, aMultipleInsertionPoints);
 
   *aMultipleInsertionPoints = false;
-  return nsnull;
+  return nullptr;
 }
 
 nsresult
@@ -903,8 +904,8 @@ nsBindingManager::RemoveLayeredBinding(nsIContent* aContent, nsIURI* aURL)
   // XXXbz this doesn't remove the implementation!  Should fix!  Until
   // then we need the explicit UnhookEventHandlers here.
   binding->UnhookEventHandlers();
-  binding->ChangeDocument(doc, nsnull);
-  SetBinding(aContent, nsnull);
+  binding->ChangeDocument(doc, nullptr);
+  SetBinding(aContent, nullptr);
   binding->MarkForDeath();
   
   // ...and recreate its frames. We need to do this since the frames may have
@@ -931,7 +932,7 @@ nsBindingManager::LoadBindingDocument(nsIDocument* aBoundDoc,
 
   // Load the binding doc.
   nsRefPtr<nsXBLDocumentInfo> info;
-  xblService->LoadBindingDocumentInfo(nsnull, aBoundDoc, aURL,
+  xblService->LoadBindingDocumentInfo(nullptr, aBoundDoc, aURL,
                                       aOriginPrincipal, true,
                                       getter_AddRefs(info));
   if (!info)
@@ -980,7 +981,7 @@ nsBindingManager::DoProcessAttachedQueue()
     NS_ASSERTION(mAttachedStack.Length() == 0,
                "Shouldn't have pending bindings!");
   
-    mProcessAttachedQueueEvent = nsnull;
+    mProcessAttachedQueueEvent = nullptr;
   } else {
     // Someone's doing event processing from inside a constructor.
     // They're evil, but we'll fight back!  Just poll on them being
@@ -1090,7 +1091,7 @@ nsXBLDocumentInfo*
 nsBindingManager::GetXBLDocumentInfo(nsIURI* aURL)
 {
   if (!mDocumentTable.IsInitialized())
-    return nsnull;
+    return nullptr;
 
   return mDocumentTable.GetWeak(aURL);
 }
@@ -1112,7 +1113,7 @@ nsIStreamListener*
 nsBindingManager::GetLoadingDocListener(nsIURI* aURL)
 {
   if (!mLoadingDocTable.IsInitialized())
-    return nsnull;
+    return nullptr;
 
   return mLoadingDocTable.GetWeak(aURL);
 }
@@ -1144,7 +1145,7 @@ void
 nsBindingManager::FlushSkinBindings()
 {
   if (mBindingTable.IsInitialized())
-    mBindingTable.EnumerateRead(MarkForDeath, nsnull);
+    mBindingTable.EnumerateRead(MarkForDeath, nullptr);
 }
 
 // Used below to protect from recurring in QI calls through XPConnect.
@@ -1163,7 +1164,7 @@ nsresult
 nsBindingManager::GetBindingImplementation(nsIContent* aContent, REFNSIID aIID,
                                            void** aResult)
 {
-  *aResult = nsnull;
+  *aResult = nullptr;
   nsXBLBinding *binding = GetBinding(aContent);
   if (binding) {
     // The binding should not be asked for nsISupports
@@ -1190,11 +1191,11 @@ nsBindingManager::GetBindingImplementation(nsIContent* aContent, REFNSIID aIID,
         // NOTE: We *assume* this is single threaded, so we can use a
         // static linked list to do the check.
 
-        static AntiRecursionData* list = nsnull;
+        static AntiRecursionData* list = nullptr;
 
         for (AntiRecursionData* p = list; p; p = p->next) {
           if (p->element == aContent && p->iid.Equals(aIID)) {
-            *aResult = nsnull;
+            *aResult = nullptr;
             return NS_NOINTERFACE;
           }
         }
@@ -1240,7 +1241,7 @@ nsBindingManager::GetBindingImplementation(nsIContent* aContent, REFNSIID aIID,
                                                 getter_AddRefs(wrapper));
       NS_ENSURE_TRUE(wrapper, NS_NOINTERFACE);
 
-      JSObject* jsobj = nsnull;
+      JSObject* jsobj = nullptr;
 
       wrapper->GetJSObject(&jsobj);
       NS_ENSURE_TRUE(jsobj, NS_NOINTERFACE);
@@ -1263,7 +1264,7 @@ nsBindingManager::GetBindingImplementation(nsIContent* aContent, REFNSIID aIID,
     }
   }
   
-  *aResult = nsnull;
+  *aResult = nullptr;
   return NS_NOINTERFACE;
 }
 
@@ -1304,10 +1305,10 @@ nsBindingManager::WalkRules(nsIStyleRuleProcessor::EnumFunc aFunc,
 
   // If "content" is non-null that means we cut off inheritance at some point
   // in the loop.
-  *aCutOffInheritance = (content != nsnull);
+  *aCutOffInheritance = (content != nullptr);
 
   // Null out the scoped root that we set repeatedly
-  aData->mTreeMatchContext.mScopedRoot = nsnull;
+  aData->mTreeMatchContext.mScopedRoot = nullptr;
 
   return NS_OK;
 }
@@ -1435,7 +1436,7 @@ nsBindingManager::GetNestedInsertionPoint(nsIContent* aParent,
 {
   // Check to see if the content is anonymous.
   if (aChild->GetBindingParent() == aParent)
-    return nsnull; // It is anonymous. Don't use the insertion point, since that's only
+    return nullptr; // It is anonymous. Don't use the insertion point, since that's only
                    // for the explicit kids.
 
   PRUint32 index;
@@ -1460,7 +1461,7 @@ nsBindingManager::GetNestedSingleInsertionPoint(nsIContent* aParent,
   nsIContent *insertionElement =
     GetSingleInsertionPoint(aParent, &index, aMultipleInsertionPoints);
   if (*aMultipleInsertionPoints) {
-    return nsnull;
+    return nullptr;
   }
   if (insertionElement && insertionElement != aParent) {
     // See if we nest even further in.
@@ -1485,7 +1486,7 @@ nsBindingManager::FindInsertionPointAndIndex(nsIContent* aContainer,
   nsINodeList* nodeList =
     GetXBLChildNodesInternal(aInsertionParent, &isAnonymousContentList);
   if (!nodeList || !isAnonymousContentList) {
-    return nsnull;
+    return nullptr;
   }
 
   // Find a non-pseudo-insertion point and just jam ourselves in.  This is
@@ -1537,7 +1538,7 @@ nsBindingManager::FindInsertionPointAndIndex(nsIContent* aContainer,
     }
   }
 
-  return nsnull;  
+  return nullptr;  
 }
 
 void
@@ -1643,7 +1644,7 @@ nsBindingManager::ContentRemoved(nsIDocument* aDocument,
                                                     (nodeList)),
                                       aChild,
                                       false);
-        SetInsertionParent(aChild, nsnull);
+        SetInsertionParent(aChild, nullptr);
       }
 
       // Also remove from the list in mContentListTable, if any.
@@ -1689,20 +1690,20 @@ nsBindingManager::DropDocumentReference()
 
   if (mContentListTable.ops)
     PL_DHashTableFinish(&(mContentListTable));
-  mContentListTable.ops = nsnull;
+  mContentListTable.ops = nullptr;
 
   if (mAnonymousNodesTable.ops)
     PL_DHashTableFinish(&(mAnonymousNodesTable));
-  mAnonymousNodesTable.ops = nsnull;
+  mAnonymousNodesTable.ops = nullptr;
 
   if (mInsertionParentTable.ops)
     PL_DHashTableFinish(&(mInsertionParentTable));
-  mInsertionParentTable.ops = nsnull;
+  mInsertionParentTable.ops = nullptr;
 
   if (mBindingTable.IsInitialized())
     mBindingTable.Clear();
 
-  mDocument = nsnull;
+  mDocument = nullptr;
 }
 
 void

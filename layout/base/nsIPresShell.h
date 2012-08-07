@@ -76,8 +76,10 @@ class nsRefreshDriver;
 class nsARefreshObserver;
 #ifdef ACCESSIBILITY
 class nsAccessibilityService;
+class DocAccessible;
 #endif
 class nsIWidget;
+struct nsArenaMemoryStats;
 
 typedef short SelectionType;
 typedef PRUint64 nsFrameState;
@@ -190,7 +192,7 @@ public:
    * are also recycled using free lists.  Separate free lists are
    * maintained for each frame type (aID), which must always correspond
    * to the same aSize value.  AllocateFrame returns zero-filled memory.
-   * AllocateFrame is fallible, it returns nsnull on out-of-memory.
+   * AllocateFrame is fallible, it returns nullptr on out-of-memory.
    */
   void* AllocateFrame(nsQueryFrame::FrameIID aID, size_t aSize)
   {
@@ -218,7 +220,7 @@ public:
    * This is for allocating other types of objects (not frames).  Separate free
    * lists are maintained for each type (aID), which must always correspond to
    * the same aSize value.  AllocateByObjectID returns zero-filled memory.
-   * AllocateByObjectID is fallible, it returns nsnull on out-of-memory.
+   * AllocateByObjectID is fallible, it returns nullptr on out-of-memory.
    */
   void* AllocateByObjectID(nsPresArena::ObjectID aID, size_t aSize)
   {
@@ -247,7 +249,7 @@ public:
    * from a separate set of per-size free lists.  Note that different types
    * of objects that has the same size are allocated from the same list.
    * AllocateMisc does *not* clear the memory that it returns.
-   * AllocateMisc is fallible, it returns nsnull on out-of-memory.
+   * AllocateMisc is fallible, it returns nullptr on out-of-memory.
    *
    * @deprecated use AllocateByObjectID/FreeByObjectID instead
    */
@@ -273,6 +275,13 @@ public:
   nsPresContext* GetPresContext() const { return mPresContext; }
 
   nsIViewManager* GetViewManager() const { return mViewManager; }
+
+#ifdef ACCESSIBILITY
+  void SetAccDocument(DocAccessible* aAccDocument)
+  {
+    mAccDocument = aAccDocument;
+  }
+#endif
 
 #ifdef _IMPL_NS_LAYOUT
   nsStyleSet* StyleSet() const { return mStyleSet; }
@@ -832,7 +841,7 @@ public:
   /**
    * Given aFrame, the root frame of a stacking context, find its descendant
    * frame under the point aPt that receives a mouse event at that location,
-   * or nsnull if there is no such frame.
+   * or nullptr if there is no such frame.
    * @param aPt the point, relative to the frame origin
    */
   virtual nsIFrame* GetFrameForPoint(nsIFrame* aFrame, nsPoint aPt) = 0;
@@ -1014,7 +1023,7 @@ public:
 #endif
   }
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
   nsIFrame* GetDrawEventTargetFrame() { return mDrawEventTargetFrame; }
 #endif
 
@@ -1187,6 +1196,7 @@ public:
    * The resolution defaults to 1.0.
    */
   virtual nsresult SetResolution(float aXResolution, float aYResolution) = 0;
+  gfxSize GetResolution() { return gfxSize(mXResolution, mYResolution); }
   float GetXResolution() { return mXResolution; }
   float GetYResolution() { return mYResolution; }
 
@@ -1231,10 +1241,26 @@ public:
   virtual void DispatchSynthMouseMove(nsGUIEvent *aEvent, bool aFlushOnHoverChange) = 0;
 
   virtual void SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf,
-                                   size_t *aArenasSize,
+                                   nsArenaMemoryStats *aArenaObjectsSize,
+                                   size_t *aPresShellSize,
                                    size_t *aStyleSetsSize,
                                    size_t *aTextRunsSize,
-                                   size_t *aPresContextSize) const = 0;
+                                   size_t *aPresContextSize) = 0;
+
+  /**
+   * Methods that retrieve the cached font inflation preferences.
+   */
+  PRUint32 FontSizeInflationEmPerLine() const {
+    return mFontSizeInflationEmPerLine;
+  }
+
+  PRUint32 FontSizeInflationMinTwips() const {
+    return mFontSizeInflationMinTwips;
+  }
+
+  PRUint32 FontSizeInflationLineThreshold() const {
+    return mFontSizeInflationLineThreshold;
+  }
 
   /**
    * Refresh observer management.
@@ -1306,8 +1332,11 @@ protected:
   // GetRootFrame() can be inlined:
   nsFrameManagerBase*       mFrameManager;
   nsWeakPtr                 mForwardingContainer;
+#ifdef ACCESSIBILITY
+  DocAccessible* mAccDocument;
+#endif
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
   nsIFrame*                 mDrawEventTargetFrame;
   // Ensure that every allocation from the PresArena is eventually freed.
   PRUint32                  mPresArenaAllocCount;
@@ -1362,6 +1391,12 @@ protected:
   bool                      mScrollPositionClampingScrollPortSizeSet : 1;
 
   static nsIContent*        gKeyDownTarget;
+
+  // Cached font inflation values. This is done to prevent changing of font
+  // inflation until a page is reloaded.
+  PRUint32 mFontSizeInflationEmPerLine;
+  PRUint32 mFontSizeInflationMinTwips;
+  PRUint32 mFontSizeInflationLineThreshold;
 };
 
 /**

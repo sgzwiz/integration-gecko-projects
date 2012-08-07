@@ -155,6 +155,9 @@ public:
   }
 
 protected:
+  void
+  FireCompleteEvent(nsresult aRv);
+
   virtual void
   ActorDestroy(ActorDestroyReason aWhy) MOZ_OVERRIDE;
 
@@ -311,7 +314,7 @@ class IndexedDBObjectStoreRequestChild : public IndexedDBRequestChildBase
 
   typedef ipc::ObjectStoreRequestParams ParamsUnionType;
   typedef ParamsUnionType::Type RequestType;
-  RequestType mRequestType;
+  DebugOnly<RequestType> mRequestType;
 
 public:
   IndexedDBObjectStoreRequestChild(AsyncConnectionHelper* aHelper,
@@ -334,7 +337,7 @@ class IndexedDBIndexRequestChild : public IndexedDBRequestChildBase
 
   typedef ipc::IndexRequestParams ParamsUnionType;
   typedef ParamsUnionType::Type RequestType;
-  RequestType mRequestType;
+  DebugOnly<RequestType> mRequestType;
 
 public:
   IndexedDBIndexRequestChild(AsyncConnectionHelper* aHelper, IDBIndex* aIndex,
@@ -356,7 +359,7 @@ class IndexedDBCursorRequestChild : public IndexedDBRequestChildBase
 
   typedef ipc::CursorRequestParams ParamsUnionType;
   typedef ParamsUnionType::Type RequestType;
-  RequestType mRequestType;
+  DebugOnly<RequestType> mRequestType;
 
 public:
   IndexedDBCursorRequestChild(AsyncConnectionHelper* aHelper,

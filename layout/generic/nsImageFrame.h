@@ -17,6 +17,7 @@
 
 #include "nsDisplayList.h"
 #include "imgIContainer.h"
+#include "mozilla/Attributes.h"
 
 class nsIFrame;
 class nsImageMap;
@@ -160,7 +161,7 @@ public:
     if (mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::usemap, usemap)) {
       return mContent->OwnerDoc()->FindImageMap(usemap);
     }
-    return nsnull;
+    return nullptr;
   }
 
   /**
@@ -309,8 +310,8 @@ private:
   nsresult LoadIcon(const nsAString& aSpec, nsPresContext *aPresContext,
                     imgIRequest **aRequest);
 
-  class IconLoad : public nsIObserver,
-                   public imgIDecoderObserver {
+  class IconLoad MOZ_FINAL : public nsIObserver,
+                             public imgIDecoderObserver {
     // private class that wraps the data and logic needed for
     // broken image and loading image icons
   public:

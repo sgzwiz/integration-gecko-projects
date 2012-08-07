@@ -11,6 +11,7 @@
 #include "nsISupportsPriority.h"
 #include "nsIRedirectChannelRegistrar.h"
 #include "nsFtpProtocolHandler.h"
+#include "mozilla/LoadContext.h"
 
 #undef LOG
 #define LOG(args) PR_LOG(gFTPLog, PR_LOG_DEBUG, args)
@@ -19,7 +20,7 @@ namespace mozilla {
 namespace net {
 
 FTPChannelParent::FTPChannelParent()
-: mIPCClosed(false)
+  : mIPCClosed(false)
 {
   nsIProtocolHandler* handler;
   CallGetService(NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "ftp", &handler);
@@ -58,7 +59,7 @@ FTPChannelParent::RecvAsyncOpen(const IPC::URI& aURI,
                                 const PRUint64& aStartPos,
                                 const nsCString& aEntityID,
                                 const IPC::InputStream& aUploadStream,
-                                const bool& aUsePrivateBrowsing)
+                                const IPC::SerializedLoadContext& loadContext)
 {
   nsCOMPtr<nsIURI> uri(aURI);
 
@@ -93,9 +94,10 @@ FTPChannelParent::RecvAsyncOpen(const IPC::URI& aURI,
   if (NS_FAILED(rv))
     return SendFailedAsyncOpen(rv);
 
-  mChannel->OverridePrivateBrowsing(aUsePrivateBrowsing);
+  if (loadContext.IsNotNull())
+    mLoadContext = new LoadContext(loadContext);
 
-  rv = mChannel->AsyncOpen(this, nsnull);
+  rv = mChannel->AsyncOpen(this, nullptr);
   if (NS_FAILED(rv))
     return SendFailedAsyncOpen(rv);
   
@@ -229,9 +231,17 @@ FTPChannelParent::Delete()
 NS_IMETHODIMP
 FTPChannelParent::GetInterface(const nsIID& uuid, void** result)
 {
+  // Only support nsILoadContext if child channel's callbacks did too
+  if (uuid.Equals(NS_GET_IID(nsILoadContext)) && mLoadContext) {
+    NS_ADDREF(mLoadContext);
+    *result = static_cast<nsILoadContext*>(mLoadContext);
+    return NS_OK;
+  }
+
   return QueryInterface(uuid, result);
 }
 
+//---------------------
 } // namespace net
 } // namespace mozilla
 

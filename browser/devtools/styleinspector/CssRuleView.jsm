@@ -81,7 +81,9 @@ function ElementStyle(aElement, aStore)
   if (this.store.disabled) {
     this.store.disabled = aStore.disabled;
   } else {
-    this.store.disabled = WeakMap();
+    // FIXME: This should be a WeakMap once bug 753517 is fixed.
+    // See Bug 777373 for details.
+    this.store.disabled = new Map();
   }
 
   let doc = aElement.ownerDocument;
@@ -373,17 +375,24 @@ Rule.prototype = {
       this._title += ":" + this.ruleLine;
     }
 
+    return this._title + (this.mediaText ? " @media " + this.mediaText : "");
+  },
+
+  get inheritedSource()
+  {
+    if (this._inheritedSource) {
+      return this._inheritedSource;
+    }
+    this._inheritedSource = "";
     if (this.inherited) {
       let eltText = this.inherited.tagName.toLowerCase();
       if (this.inherited.id) {
         eltText += "#" + this.inherited.id;
       }
-      let args = [eltText, this._title];
-      this._title = CssLogic._strings.formatStringFromName("rule.inheritedSource",
-                                                           args, args.length);
+      this._inheritedSource =
+        CssLogic._strings.formatStringFromName("rule.inheritedFrom", [eltText], 1);
     }
-
-    return this._title + (this.mediaText ? " @media " + this.mediaText : "");
+    return this._inheritedSource;
   },
 
   /**
@@ -480,7 +489,11 @@ Rule.prototype = {
 
     // Store disabled properties in the disabled store.
     let disabled = this.elementStyle.store.disabled;
-    disabled.set(this.style, disabledProps);
+    if (disabledProps.length > 0) {
+      disabled.set(this.style, disabledProps);
+    } else {
+      disabled.delete(this.style);
+    }
 
     this.elementStyle.markOverridden();
   },
@@ -880,6 +893,13 @@ CssRuleView.prototype = {
   // The element that we're inspecting.
   _viewedElement: null,
 
+  /**
+   * Returns true if the rule view currently has an input editor visible.
+   */
+  get isEditing() {
+    return this.element.querySelectorAll(".styleinspector-propertyeditor").length > 0;
+  },
+
   destroy: function CssRuleView_destroy()
   {
     this.clear();
@@ -946,11 +966,23 @@ CssRuleView.prototype = {
    */
   nodeChanged: function CssRuleView_nodeChanged()
   {
+    // Ignore refreshes during editing.
+    if (this.isEditing) {
+      return;
+    }
+
+    this._clearRules();
+
     // Repopulate the element style.
     this._elementStyle.populate();
 
     // Refresh the rule editors.
     this._createEditors();
+
+    // Notify anyone that cares that we refreshed.
+    var evt = this.doc.createEvent("Events");
+    evt.initEvent("CssRuleViewRefreshed", true, false);
+    this.element.dispatchEvent(evt);
   },
 
   /**
@@ -1006,23 +1038,23 @@ CssRuleView.prototype = {
   {
     // Run through the current list of rules, attaching
     // their editors in order.  Create editors if needed.
-    let last = null;
+    let lastInheritedSource = "";
     for each (let rule in this._elementStyle.rules) {
+
+      let inheritedSource = rule.inheritedSource;
+      if (inheritedSource != lastInheritedSource) {
+        let h2 = this.doc.createElementNS(HTML_NS, "div");
+        h2.className = "ruleview-rule-inheritance";
+        h2.textContent = inheritedSource;
+        lastInheritedSource = inheritedSource;
+        this.element.appendChild(h2);
+      }
+
       if (!rule.editor) {
         new RuleEditor(this, rule);
       }
 
-      let target = last ? last.nextSibling : this.element.firstChild;
-      this.element.insertBefore(rule.editor.element, target);
-      last = rule.editor.element;
-    }
-
-    // ... and now editors for rules that don't exist anymore
-    // have been pushed to the end of the list, go ahead and
-    // delete their nodes.  The rules they edit have already been
-    // forgotten.
-    while (last && last.nextSibling) {
-      this.element.removeChild(last.nextSibling);
+      this.element.appendChild(rule.editor.element);
     }
   },
 
@@ -1137,17 +1169,7 @@ CssRuleView.prototype = {
     let rx = new RegExp("^" + inline + "\\r?\\n?", "g");
     text = text.replace(rx, "");
 
-    // Remove file:line
-    text = text.replace(/[\w\.]+:\d+(\r?\n)/g, "$1");
-
-    // Remove inherited from: line
-    let inheritedFrom = _strings.
-      GetStringFromName("rule.inheritedSource");
-    inheritedFrom = inheritedFrom.replace(/\s%S\s\(%S\)/g, "");
-    rx = new RegExp("(\r?\n)" + inheritedFrom + ".*", "g");
-    text = text.replace(rx, "$1");
-
-    clipboardHelper.copyString(text);
+    clipboardHelper.copyString(text, this.doc);
 
     if (aEvent) {
       aEvent.preventDefault();
@@ -1167,9 +1189,9 @@ CssRuleView.prototype = {
       return;
     }
 
-    if (node.className != "rule-view-row") {
+    if (node.className != "ruleview-rule") {
       while (node = node.parentElement) {
-        if (node.className == "rule-view-row") {
+        if (node.className == "ruleview-rule") {
           break;
         }
       }
@@ -1204,7 +1226,7 @@ CssRuleView.prototype = {
     }
     out += "}" + terminator;
 
-    clipboardHelper.copyString(out);
+    clipboardHelper.copyString(out, this.doc);
   },
 
   /**
@@ -1243,7 +1265,7 @@ CssRuleView.prototype = {
     let propertyValue = node.querySelector(".ruleview-propertyvalue").textContent;
     let out = propertyName + ": " + propertyValue + ";";
 
-    clipboardHelper.copyString(out);
+    clipboardHelper.copyString(out, this.doc);
   },
 
   /**
@@ -1263,7 +1285,7 @@ CssRuleView.prototype = {
     }
 
     if (node) {
-      clipboardHelper.copyString(node.textContent);
+      clipboardHelper.copyString(node.textContent, this.doc);
     }
   },
 
@@ -1284,7 +1306,7 @@ CssRuleView.prototype = {
     }
 
     if (node) {
-      clipboardHelper.copyString(node.textContent);
+      clipboardHelper.copyString(node.textContent, this.doc);
     }
   }
 };
@@ -1315,7 +1337,7 @@ RuleEditor.prototype = {
   _create: function RuleEditor_create()
   {
     this.element = this.doc.createElementNS(HTML_NS, "div");
-    this.element.className = "rule-view-row";
+    this.element.className = "ruleview-rule";
     this.element._ruleEditor = this;
 
     // Give a relative position for the inplace editor's measurement
@@ -1534,8 +1556,11 @@ TextPropertyEditor.prototype = {
       class: "ruleview-namecontainer"
     });
     this.nameContainer.addEventListener("click", function(aEvent) {
-      this.nameSpan.click();
+      // Clicks within the name shouldn't propagate any further.
       aEvent.stopPropagation();
+      if (aEvent.target === propertyContainer) {
+        this.nameSpan.click();
+      }
     }.bind(this), false);
 
     // Property name, editable when focused.  Property name
@@ -1561,8 +1586,11 @@ TextPropertyEditor.prototype = {
       class: "ruleview-propertycontainer"
     });
     propertyContainer.addEventListener("click", function(aEvent) {
-      this.valueSpan.click();
+      // Clicks within the value shouldn't propagate any further.
       aEvent.stopPropagation();
+      if (aEvent.target === propertyContainer) {
+        this.valueSpan.click();
+      }
     }.bind(this), false);
 
     // Property value, editable when focused.  Changes to the
@@ -1682,6 +1710,7 @@ TextPropertyEditor.prototype = {
         textContent: computed.name
       });
       appendText(li, ": ");
+
       createChild(li, "span", {
         class: "ruleview-propertyvalue",
         textContent: computed.value
@@ -1729,6 +1758,10 @@ TextPropertyEditor.prototype = {
   _onNameDone: function TextPropertyEditor_onNameDone(aValue, aCommit)
   {
     if (!aCommit) {
+      if (this.prop.overridden) {
+        this.element.classList.add("ruleview-overridden");
+      }
+
       return;
     }
     if (!aValue) {
@@ -2130,7 +2163,9 @@ function _getInplaceEditorForSpan(aSpan) { return aSpan.inplaceEditor; };
  */
 function UserProperties()
 {
-  this.weakMap = new WeakMap();
+  // FIXME: This should be a WeakMap once bug 753517 is fixed.
+  // See Bug 777373 for details.
+  this.map = new Map();
 }
 
 UserProperties.prototype = {
@@ -2150,7 +2185,7 @@ UserProperties.prototype = {
    *          otherwise.
    */
   getProperty: function UP_getProperty(aStyle, aName, aComputedValue) {
-    let entry = this.weakMap.get(aStyle, null);
+    let entry = this.map.get(aStyle, null);
 
     if (entry && aName in entry) {
       let item = entry[aName];
@@ -2179,13 +2214,13 @@ UserProperties.prototype = {
    *        The value of the property to set.
    */
   setProperty: function UP_setProperty(aStyle, aName, aComputedValue, aUserValue) {
-    let entry = this.weakMap.get(aStyle, null);
+    let entry = this.map.get(aStyle, null);
     if (entry) {
       entry[aName] = { computed: aComputedValue, user: aUserValue };
     } else {
       let props = {};
       props[aName] = { computed: aComputedValue, user: aUserValue };
-      this.weakMap.set(aStyle, props);
+      this.map.set(aStyle, props);
     }
   },
 
@@ -2198,7 +2233,7 @@ UserProperties.prototype = {
    *        The name of the property to check.
    */
   contains: function UP_contains(aStyle, aName) {
-    let entry = this.weakMap.get(aStyle, null);
+    let entry = this.map.get(aStyle, null);
     return !!entry && aName in entry;
   },
 };
@@ -2288,4 +2323,3 @@ XPCOMUtils.defineLazyGetter(this, "_strings", function() {
 XPCOMUtils.defineLazyGetter(this, "osString", function() {
   return Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime).OS;
 });
-

@@ -31,7 +31,8 @@ static const uint32_t MAX_GETELEM_IC_STUBS = 17;
 enum LookupStatus {
     Lookup_Error = 0,
     Lookup_Uncacheable,
-    Lookup_Cacheable
+    Lookup_Cacheable,
+    Lookup_NoProperty
 };
 
 struct BaseIC : public MacroAssemblerTypedefs {
@@ -66,14 +67,10 @@ struct BaseIC : public MacroAssemblerTypedefs {
     // Number of stubs generated.
     uint32_t stubsGenerated : 5;
 
-    // Opcode this was compiled for.
-    JSOp op : 9;
-
-    bool shouldUpdate(JSContext *cx);
-    void spew(JSContext *cx, const char *event, const char *reason);
+    bool shouldUpdate(VMFrame &f);
+    void spew(VMFrame &f, const char *event, const char *reason);
     LookupStatus disable(VMFrame &f, const char *reason, void *stub);
     void updatePCCounters(VMFrame &f, Assembler &masm);
-    bool isCallOp();
 
   protected:
     void reset() {
@@ -243,13 +240,14 @@ struct GetElementIC : public BasePolyIC {
     }
 
     void purge(Repatcher &repatcher);
-    LookupStatus update(VMFrame &f, JSObject *obj, const Value &v, jsid id, Value *vp);
-    LookupStatus attachGetProp(VMFrame &f, JSObject *obj, const Value &v, PropertyName *name,
-                               Value *vp);
-    LookupStatus attachTypedArray(VMFrame &f, JSObject *obj, const Value &v, jsid id, Value *vp);
+    LookupStatus update(VMFrame &f, HandleObject obj, HandleValue v, HandleId id, MutableHandleValue vp);
+    LookupStatus attachGetProp(VMFrame &f, HandleObject obj, HandleValue v, HandlePropertyName name,
+                               MutableHandleValue vp);
+    LookupStatus attachTypedArray(VMFrame &f, HandleObject obj, HandleValue v, HandleId id,
+                                  MutableHandleValue vp);
     LookupStatus disable(VMFrame &f, const char *reason);
     LookupStatus error(JSContext *cx);
-    bool shouldUpdate(JSContext *cx);
+    bool shouldUpdate(VMFrame &f);
 
   protected:
     void reset() {
@@ -311,7 +309,7 @@ struct SetElementIC : public BaseIC {
     LookupStatus update(VMFrame &f, const Value &objval, const Value &idval);
     LookupStatus disable(VMFrame &f, const char *reason);
     LookupStatus error(JSContext *cx);
-    bool shouldUpdate(JSContext *cx);
+    bool shouldUpdate(VMFrame &f);
 
   protected:
     void reset() {

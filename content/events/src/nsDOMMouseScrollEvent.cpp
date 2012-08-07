@@ -4,14 +4,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsDOMMouseScrollEvent.h"
-#include "nsGUIEvent.h"
-#include "nsIContent.h"
-#include "nsContentUtils.h"
+#include "nsDOMClassInfoID.h"
 
 nsDOMMouseScrollEvent::nsDOMMouseScrollEvent(nsPresContext* aPresContext,
                                              nsInputEvent* aEvent)
   : nsDOMMouseEvent(aPresContext, aEvent ? aEvent :
-                                  new nsMouseScrollEvent(false, 0, nsnull))
+                                  new nsMouseScrollEvent(false, 0, nullptr))
 {
   if (aEvent) {
     mEventIsInternal = false;
@@ -40,7 +38,7 @@ nsDOMMouseScrollEvent::~nsDOMMouseScrollEvent()
         delete mEvent;
         break;
     }
-    mEvent = nsnull;
+    mEvent = nullptr;
   }
 }
 

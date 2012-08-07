@@ -8,9 +8,7 @@
 #endif
 #include <math.h>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include "mozilla/Constants.h"
 
 #include "cairo.h"
 
@@ -41,15 +39,15 @@ public:
     gfxContext::AzureState &state = mContext->CurrentState();
 
     if (state.pattern) {
-      return *state.pattern->GetPattern(mContext->mDT, state.patternTransformChanged ? &state.patternTransform : nsnull);
+      return *state.pattern->GetPattern(mContext->mDT, state.patternTransformChanged ? &state.patternTransform : nullptr);
     } else if (state.sourceSurface) {
       Matrix transform = state.surfTransform;
 
       if (state.patternTransformChanged) {
-        Matrix mat = state.patternTransform;
+        Matrix mat = mContext->mDT->GetTransform();
         mat.Invert();
 
-        transform = mat * mContext->mDT->GetTransform() * transform;
+        transform = mat * state.patternTransform * transform;
       }
 
       mPattern = new (mSurfacePattern.addr())
@@ -906,7 +904,7 @@ gfxContext::SetDash(gfxLineType ltype)
           break;
       case gfxLineSolid:
       default:
-          SetDash(nsnull, 0, 0.0);
+          SetDash(nullptr, 0, 0.0);
           break;
   }
 }
@@ -1376,7 +1374,7 @@ gfxContext::GetPattern()
     cairo_pattern_t *pat = cairo_get_source(mCairo);
     NS_ASSERTION(pat, "I was told this couldn't be null");
 
-    gfxPattern *wrapper = nsnull;
+    gfxPattern *wrapper = nullptr;
     if (pat)
         wrapper = new gfxPattern(pat);
     else
@@ -1427,7 +1425,7 @@ gfxContext::Mask(gfxASurface *surface, const gfxPoint& offset)
     mDT->Mask(GeneralPattern(this), 
               SurfacePattern(sourceSurf, EXTEND_CLAMP,
                              Matrix(1.0f, 0, 0, 1.0f, Float(offset.x - pt.x), Float(offset.y - pt.y))),
-                             DrawOptions(1.0f, CurrentState().op, CurrentState().aaMode));
+              DrawOptions(1.0f, CurrentState().op, CurrentState().aaMode));
   }
 }
 

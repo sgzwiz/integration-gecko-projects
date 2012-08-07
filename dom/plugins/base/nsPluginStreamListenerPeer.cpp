@@ -27,6 +27,7 @@
 #include "nsNetUtil.h"
 #include "nsPluginNativeWindow.h"
 #include "sampler.h"
+#include "nsObjectLoadingContent.h"
 
 #define MAGIC_REQUEST_CONTEXT 0x01020304
 
@@ -107,7 +108,7 @@ nsPluginByteRangeStreamListener::OnStartRequest(nsIRequest *request, nsISupports
     rv = serv->AsyncConvertData(MULTIPART_BYTERANGES,
                                 "*/*",
                                 finalStreamListener,
-                                nsnull,
+                                nullptr,
                                 getter_AddRefs(mStreamConverter));
     if (NS_SUCCEEDED(rv)) {
       rv = mStreamConverter->OnStartRequest(request, ctxt);
@@ -267,13 +268,11 @@ public:
 
 // nsPluginStreamListenerPeer
 
-NS_IMPL_ISUPPORTS8(nsPluginStreamListenerPeer,
+NS_IMPL_ISUPPORTS6(nsPluginStreamListenerPeer,
                    nsIStreamListener,
                    nsIRequestObserver,
                    nsIHttpHeaderVisitor,
                    nsISupportsWeakReference,
-                   nsIPluginStreamInfo,
-                   nsINPAPIPluginStreamInfo,
                    nsIInterfaceRequestor,
                    nsIChannelEventSink)
 
@@ -286,7 +285,7 @@ nsPluginStreamListenerPeer::nsPluginStreamListenerPeer()
   
   mPendingRequests = 0;
   mHaveFiredOnStartRequest = false;
-  mDataForwardToRequest = nsnull;
+  mDataForwardToRequest = nullptr;
   
   mSeekable = false;
   mModified = 0;
@@ -302,13 +301,13 @@ nsPluginStreamListenerPeer::~nsPluginStreamListenerPeer()
 #endif
 
   if (mPStreamListener) {
-    mPStreamListener->SetStreamListenerPeer(nsnull);
+    mPStreamListener->SetStreamListenerPeer(nullptr);
   }
 
   // close FD of mFileCacheOutputStream if it's still open
   // or we won't be able to remove the cache file
   if (mFileCacheOutputStream)
-    mFileCacheOutputStream = nsnull;
+    mFileCacheOutputStream = nullptr;
   
   delete mDataForwardToRequest;
 
@@ -323,7 +322,7 @@ nsresult nsPluginStreamListenerPeer::Initialize(nsIURI *aURL,
 {
 #ifdef PLUGIN_LOGGING
   nsCAutoString urlSpec;
-  if (aURL != nsnull) aURL->GetAsciiSpec(urlSpec);
+  if (aURL != nullptr) aURL->GetAsciiSpec(urlSpec);
   
   PR_LOG(nsPluginLogging::gPluginLog, PLUGIN_LOG_NORMAL,
          ("nsPluginStreamListenerPeer::Initialize instance=%p, url=%s\n", aInstance, urlSpec.get()));
@@ -369,7 +368,7 @@ nsresult nsPluginStreamListenerPeer::InitializeEmbedded(nsIURI *aURL,
   mURL = aURL;
   
   if (aInstance) {
-    NS_ASSERTION(mPluginInstance == nsnull, "nsPluginStreamListenerPeer::InitializeEmbedded mPluginInstance != nsnull");
+    NS_ASSERTION(mPluginInstance == nullptr, "nsPluginStreamListenerPeer::InitializeEmbedded mPluginInstance != nullptr");
     mPluginInstance = aInstance;
   } else {
     mContent = aContent;
@@ -390,7 +389,7 @@ nsresult nsPluginStreamListenerPeer::InitializeFullPage(nsIURI* aURL, nsNPAPIPlu
   PLUGIN_LOG(PLUGIN_LOG_NORMAL,
              ("nsPluginStreamListenerPeer::InitializeFullPage instance=%p\n",aInstance));
   
-  NS_ASSERTION(mPluginInstance == nsnull, "nsPluginStreamListenerPeer::InitializeFullPage mPluginInstance != nsnull");
+  NS_ASSERTION(mPluginInstance == nullptr, "nsPluginStreamListenerPeer::InitializeFullPage mPluginInstance != nullptr");
   mPluginInstance = aInstance;
   
   mURL = aURL;
@@ -605,7 +604,7 @@ nsPluginStreamListenerPeer::OnStartRequest(nsIRequest *request,
   // if we have a mime type now.
   if (!mPluginInstance && mContent && !aContentType.IsEmpty()) {
     nsObjectLoadingContent *olc = static_cast<nsObjectLoadingContent*>(mContent.get());
-    rv = olc->InstantiatePluginInstance(aContentType.get(), aURL.get());
+    rv = olc->InstantiatePluginInstance();
     if (NS_SUCCEEDED(rv)) {
       rv = olc->GetPluginInstance(getter_AddRefs(mPluginInstance));
       if (NS_FAILED(rv)) {
@@ -638,7 +637,7 @@ NS_IMETHODIMP nsPluginStreamListenerPeer::OnStatus(nsIRequest *request,
   return NS_OK;
 }
 
-NS_IMETHODIMP
+nsresult
 nsPluginStreamListenerPeer::GetContentType(char** result)
 {
   *result = const_cast<char*>(mContentType.get());
@@ -646,28 +645,28 @@ nsPluginStreamListenerPeer::GetContentType(char** result)
 }
 
 
-NS_IMETHODIMP
+nsresult
 nsPluginStreamListenerPeer::IsSeekable(bool* result)
 {
   *result = mSeekable;
   return NS_OK;
 }
 
-NS_IMETHODIMP
+nsresult
 nsPluginStreamListenerPeer::GetLength(PRUint32* result)
 {
   *result = mLength;
   return NS_OK;
 }
 
-NS_IMETHODIMP
+nsresult
 nsPluginStreamListenerPeer::GetLastModified(PRUint32* result)
 {
   *result = mModified;
   return NS_OK;
 }
 
-NS_IMETHODIMP
+nsresult
 nsPluginStreamListenerPeer::GetURL(const char** result)
 {
   *result = mURLSpec.get();
@@ -687,7 +686,7 @@ nsPluginStreamListenerPeer::MakeByteRangeString(NPByteRange* aRangeList, nsACStr
   PRInt32 requestCnt = 0;
   nsCAutoString string("bytes=");
   
-  for (NPByteRange * range = aRangeList; range != nsnull; range = range->next) {
+  for (NPByteRange * range = aRangeList; range != nullptr; range = range->next) {
     // XXX zero length?
     if (!range->length)
       continue;
@@ -710,7 +709,7 @@ nsPluginStreamListenerPeer::MakeByteRangeString(NPByteRange* aRangeList, nsACStr
   return;
 }
 
-NS_IMETHODIMP
+nsresult
 nsPluginStreamListenerPeer::RequestRead(NPByteRange* rangeList)
 {
   nsCAutoString rangeString;
@@ -726,7 +725,7 @@ nsPluginStreamListenerPeer::RequestRead(NPByteRange* rangeList)
   nsCOMPtr<nsIInterfaceRequestor> callbacks = do_QueryReferent(mWeakPtrChannelCallbacks);
   nsCOMPtr<nsILoadGroup> loadGroup = do_QueryReferent(mWeakPtrChannelLoadGroup);
   nsCOMPtr<nsIChannel> channel;
-  rv = NS_NewChannel(getter_AddRefs(channel), mURL, nsnull, loadGroup, callbacks);
+  rv = NS_NewChannel(getter_AddRefs(channel), mURL, nullptr, loadGroup, callbacks);
   if (NS_FAILED(rv))
     return rv;
   
@@ -773,14 +772,14 @@ nsPluginStreamListenerPeer::RequestRead(NPByteRange* rangeList)
   return rv;
 }
 
-NS_IMETHODIMP
+nsresult
 nsPluginStreamListenerPeer::GetStreamOffset(PRInt32* result)
 {
   *result = mStreamOffset;
   return NS_OK;
 }
 
-NS_IMETHODIMP
+nsresult
 nsPluginStreamListenerPeer::SetStreamOffset(PRInt32 value)
 {
   mStreamOffset = value;
@@ -799,7 +798,7 @@ nsresult nsPluginStreamListenerPeer::ServeStreamAsFile(nsIRequest *request,
   nsCOMPtr<nsIPluginInstanceOwner> owner;
   mPluginInstance->GetOwner(getter_AddRefs(owner));
   if (owner) {
-    NPWindow* window = nsnull;
+    NPWindow* window = nullptr;
     owner->GetWindow(window);
 #if defined(MOZ_WIDGET_GTK2) || defined(MOZ_WIDGET_QT)
     // Should call GetPluginPort() here.
@@ -880,7 +879,7 @@ NS_IMETHODIMP nsPluginStreamListenerPeer::OnDataAvailable(nsIRequest *request,
   if (!mPStreamListener)
     return NS_ERROR_FAILURE;
   
-  const char * url = nsnull;
+  const char * url = nullptr;
   GetURL(&url);
   
   PLUGIN_LOG(PLUGIN_LOG_NOISY,
@@ -995,7 +994,7 @@ NS_IMETHODIMP nsPluginStreamListenerPeer::OnStopRequest(nsIRequest *request,
     // if this is not byte range request and
     // if we are writting the stream to disk ourselves,
     // close & tear it down here
-    mFileCacheOutputStream = nsnull;
+    mFileCacheOutputStream = nullptr;
   }
   
   // if we still have pending stuff to do, lets not close the plugin socket.
@@ -1094,7 +1093,7 @@ nsresult nsPluginStreamListenerPeer::SetUpStreamListener(nsIRequest *request,
     }
 
     nsRefPtr<nsNPAPIPluginStreamListener> streamListener;
-    rv = mPluginInstance->NewStreamListener(nsnull, nsnull,
+    rv = mPluginInstance->NewStreamListener(nullptr, nullptr,
                                             getter_AddRefs(streamListener));
     if (NS_FAILED(rv) || !streamListener) {
       return NS_ERROR_FAILURE;
@@ -1292,11 +1291,11 @@ nsPluginStreamListenerPeer::GetInterface(const nsIID& aIID, void** result)
 class ChannelRedirectProxyCallback : public nsIAsyncVerifyRedirectCallback
 {
 public:
-  ChannelRedirectProxyCallback(nsINPAPIPluginStreamInfo* listener,
+  ChannelRedirectProxyCallback(nsPluginStreamListenerPeer* listener,
                                nsIAsyncVerifyRedirectCallback* parent,
                                nsIChannel* oldChannel,
                                nsIChannel* newChannel)
-    : mWeakListener(do_GetWeakReference(listener))
+    : mWeakListener(do_GetWeakReference(static_cast<nsIStreamListener*>(listener)))
     , mParent(parent)
     , mOldChannel(oldChannel)
     , mNewChannel(newChannel)
@@ -1311,9 +1310,9 @@ public:
   NS_IMETHODIMP OnRedirectVerifyCallback(nsresult result)
   {
     if (NS_SUCCEEDED(result)) {
-      nsCOMPtr<nsINPAPIPluginStreamInfo> listener = do_QueryReferent(mWeakListener);
+      nsCOMPtr<nsIStreamListener> listener = do_QueryReferent(mWeakListener);
       if (listener)
-        listener->ReplaceRequest(mOldChannel, mNewChannel);
+        static_cast<nsPluginStreamListenerPeer*>(listener.get())->ReplaceRequest(mOldChannel, mNewChannel);
     }
     return mParent->OnRedirectVerifyCallback(result);
   }

@@ -35,7 +35,8 @@ CountConsecutiveSlashes(const char *str, PRInt32 len)
 // The URL parser service does not have any internal state; however, it can
 // be called from multiple threads, so we must use a threadsafe AddRef and
 // Release implementation.
-NS_IMPL_THREADSAFE_ISUPPORTS1(nsBaseURLParser, nsIURLParser)
+NS_IMPL_THREADSAFE_ISUPPORTS1(nsAuthURLParser, nsIURLParser)
+NS_IMPL_THREADSAFE_ISUPPORTS1(nsNoAuthURLParser, nsIURLParser)
 
 #define SET_RESULT(component, pos, len) \
     PR_BEGIN_MACRO \
@@ -62,9 +63,9 @@ nsBaseURLParser::ParseURL(const char *spec, PRInt32 specLen,
     if (specLen < 0)
         specLen = strlen(spec);
 
-    const char *stop = nsnull;
-    const char *colon = nsnull;
-    const char *slash = nsnull;
+    const char *stop = nullptr;
+    const char *colon = nullptr;
+    const char *slash = nullptr;
     const char *p;
     PRUint32 offset = 0;
     PRInt32 len = specLen;
@@ -96,7 +97,7 @@ nsBaseURLParser::ParseURL(const char *spec, PRInt32 specLen,
     }
     // disregard the first colon if it follows an '@' or a '['
     if (colon && stop && colon > stop)
-        colon = nsnull;
+        colon = nullptr;
 
     // if the spec only contained whitespace ...
     if (specLen == 0) {
@@ -369,7 +370,7 @@ nsNoAuthURLParser::ParseAfterScheme(const char *spec, PRInt32 specLen,
         break;
     case 2:
         {
-            const char *p = nsnull;
+            const char *p = nullptr;
             if (specLen > 2) {
                 // looks like there is an authority section
 #if defined(XP_WIN) || defined(XP_OS2)
@@ -549,14 +550,14 @@ nsAuthURLParser::ParseServerInfo(const char *serverinfo, PRInt32 serverinfoLen,
     // search backwards for a ':' but stop on ']' (IPv6 address literal
     // delimiter).  check for illegal characters in the hostname.
     const char *p = serverinfo + serverinfoLen - 1;
-    const char *colon = nsnull, *bracket = nsnull;
+    const char *colon = nullptr, *bracket = nullptr;
     for (; p > serverinfo; --p) {
         switch (*p) {
             case ']':
                 bracket = p;
                 break;
             case ':':
-                if (bracket == nsnull)
+                if (bracket == nullptr)
                     colon = p;
                 break;
             case ' ':
@@ -580,7 +581,7 @@ nsAuthURLParser::ParseServerInfo(const char *serverinfo, PRInt32 serverinfoLen,
                 if (nondigit && *nondigit)
                     return NS_ERROR_MALFORMED_URI;
 
-                PRInt32 err;
+                nsresult err;
                 *port = buf.ToInteger(&err);
                 if (NS_FAILED(err) || *port <= 0)
                     return NS_ERROR_MALFORMED_URI;

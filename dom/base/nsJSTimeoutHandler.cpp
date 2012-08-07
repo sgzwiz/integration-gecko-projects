@@ -19,12 +19,13 @@
 #include "nsGlobalWindow.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsAlgorithm.h"
+#include "mozilla/Attributes.h"
 
 static const char kSetIntervalStr[] = "setInterval";
 static const char kSetTimeoutStr[] = "setTimeout";
 
 // Our JS nsIScriptTimeoutHandler implementation.
-class nsJSScriptTimeoutHandler: public nsIScriptTimeoutHandler
+class nsJSScriptTimeoutHandler MOZ_FINAL : public nsIScriptTimeoutHandler
 {
 public:
   // nsISupports
@@ -60,7 +61,6 @@ private:
   // caller of setTimeout()
   nsCString mFileName;
   PRUint32 mLineNo;
-  PRUint32 mVersion;
   nsCOMPtr<nsIJSArgArray> mArgv;
 
   // The JS expression to evaluate or function to call, if !mExpr
@@ -128,9 +128,8 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(nsJSScriptTimeoutHandler)
 
 nsJSScriptTimeoutHandler::nsJSScriptTimeoutHandler() :
   mLineNo(0),
-  mVersion(nsnull),
-  mExpr(nsnull),
-  mFunObj(nsnull)
+  mExpr(nullptr),
+  mFunObj(nullptr)
 {
 }
 
@@ -145,10 +144,10 @@ nsJSScriptTimeoutHandler::ReleaseJSObjects()
   if (mExpr || mFunObj) {
     if (mExpr) {
       NS_DROP_JS_OBJECTS(this, nsJSScriptTimeoutHandler);
-      mExpr = nsnull;
+      mExpr = nullptr;
     } else if (mFunObj) {
       NS_DROP_JS_OBJECTS(this, nsJSScriptTimeoutHandler);
-      mFunObj = nsnull;
+      mFunObj = nullptr;
     } else {
       NS_WARNING("No func and no expr - roots may not have been removed");
     }
@@ -167,7 +166,7 @@ nsJSScriptTimeoutHandler::Init(nsGlobalWindow *aWindow, bool *aIsInterval,
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  nsAXPCNativeCallContext *ncc = nsnull;
+  nsAXPCNativeCallContext *ncc = nullptr;
   nsresult rv = nsContentUtils::XPConnect()->
     GetCurrentNativeCallContext(&ncc);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -175,19 +174,19 @@ nsJSScriptTimeoutHandler::Init(nsGlobalWindow *aWindow, bool *aIsInterval,
   if (!ncc)
     return NS_ERROR_NOT_AVAILABLE;
 
-  JSContext *cx = nsnull;
+  JSContext *cx = nullptr;
 
   rv = ncc->GetJSContext(&cx);
   NS_ENSURE_SUCCESS(rv, rv);
 
   PRUint32 argc;
-  jsval *argv = nsnull;
+  jsval *argv = nullptr;
 
   ncc->GetArgc(&argc);
   ncc->GetArgvPtr(&argv);
 
-  JSFlatString *expr = nsnull;
-  JSObject *funobj = nsnull;
+  JSFlatString *expr = nullptr;
+  JSObject *funobj = nullptr;
 
   JSAutoRequest ar(cx);
 
@@ -288,14 +287,14 @@ nsJSScriptTimeoutHandler::Init(nsGlobalWindow *aWindow, bool *aIsInterval,
     // array.
     nsCOMPtr<nsIJSArgArray> array;
     // NS_MAX(argc - 2, 0) wouldn't work right because argc is unsigned.
-    rv = NS_CreateJSArgv(cx, NS_MAX(argc, 2u) - 2, nsnull,
+    rv = NS_CreateJSArgv(cx, NS_MAX(argc, 2u) - 2, nullptr,
                          getter_AddRefs(array));
     if (NS_FAILED(rv)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
     PRUint32 dummy;
-    jsval *jsargv = nsnull;
+    jsval *jsargv = nullptr;
     array->GetArgs(&dummy, reinterpret_cast<void **>(&jsargv));
 
     // jsargv might be null if we have argc <= 2
@@ -326,7 +325,7 @@ nsresult NS_CreateJSTimeoutHandler(nsGlobalWindow *aWindow,
                                    PRInt32 *aInterval,
                                    nsIScriptTimeoutHandler **aRet)
 {
-  *aRet = nsnull;
+  *aRet = nullptr;
   nsJSScriptTimeoutHandler *handler = new nsJSScriptTimeoutHandler();
   if (!handler)
     return NS_ERROR_OUT_OF_MEMORY;

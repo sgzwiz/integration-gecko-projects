@@ -18,7 +18,7 @@
 #include "gfxPlatform.h"
 
 #ifdef XP_MACOSX
-#include "nsIOSurface.h"
+#include "mozilla/gfx/MacIOSurface.h"
 #endif
 #ifdef XP_WIN
 struct ID3D10Texture2D;
@@ -26,6 +26,9 @@ struct ID3D10Device;
 struct ID3D10ShaderResourceView;
 
 typedef void* HANDLE;
+#endif
+#ifdef MOZ_WIDGET_GONK
+# include <ui/GraphicBuffer.h>
 #endif
 
 namespace mozilla {
@@ -36,6 +39,9 @@ class Shmem;
 }
 
 namespace layers {
+
+class ImageContainerChild;
+class ImageBridgeChild;
 
 enum StereoMode {
   STEREO_MODE_MONO,
@@ -104,9 +110,21 @@ public:
     MAC_IO_SURFACE,
 
     /**
+     * The GONK_IO_SURFACE format creates a GonkIOSurfaceImage.
+     *
+     * It wraps an GraphicBuffer object and binds it directly to a GL texture.
+     */
+    GONK_IO_SURFACE,
+
+    /**
      * An bitmap image that can be shared with a remote process.
      */
     REMOTE_IMAGE_BITMAP,
+
+    /**
+     * A OpenGL texture that can be shared across threads or processes
+     */
+    SHARED_TEXTURE,
 
     /**
      * An DXGI shared surface handle that can be shared with a remote process.
@@ -120,9 +138,9 @@ public:
   virtual already_AddRefed<gfxASurface> GetAsSurface() = 0;
   virtual gfxIntSize GetSize() = 0;
 
-  ImageBackendData* GetBackendData(LayerManager::LayersBackend aBackend)
+  ImageBackendData* GetBackendData(LayersBackend aBackend)
   { return mBackendData[aBackend]; }
-  void SetBackendData(LayerManager::LayersBackend aBackend, ImageBackendData* aData)
+  void SetBackendData(LayersBackend aBackend, ImageBackendData* aData)
   { mBackendData[aBackend] = aData; }
 
 protected:
@@ -131,7 +149,7 @@ protected:
     mFormat(aFormat)
   {}
 
-  nsAutoPtr<ImageBackendData> mBackendData[LayerManager::LAYERS_LAST];
+  nsAutoPtr<ImageBackendData> mBackendData[mozilla::layers::LAYERS_LAST];
 
   void* mImplData;
   Format mFormat;
@@ -189,6 +207,7 @@ class CompositionNotifySink
 {
 public:
   virtual void DidComposite() = 0;
+  virtual ~CompositionNotifySink() {}
 };
 
 /**
@@ -203,7 +222,7 @@ public:
  * image container. This is usually done by the layer system internally and
  * not explicitly by users. For PlanarYCbCr or Cairo images the default
  * implementation will creates images whose data lives in system memory, for
- * MacIOSurfaces the default implementation will be a simple nsIOSurface
+ * MacIOSurfaces the default implementation will be a simple MacIOSurface
  * wrapper.
  */
 
@@ -282,21 +301,31 @@ struct RemoteImageData {
  * (because layers can only be used on the main thread) and we want to
  * be able to set the current Image from any thread, to facilitate
  * video playback without involving the main thread, for example.
+ *
+ * An ImageContainer can operate in one of three modes:
+ * 1) Normal. Triggered by constructing the ImageContainer with
+ * DISABLE_ASYNC or when compositing is happening on the main thread.
+ * SetCurrentImage changes ImageContainer state but nothing is sent to the
+ * compositor until the next layer transaction.
+ * 2) Asynchronous. Initiated by constructing the ImageContainer with
+ * ENABLE_ASYNC when compositing is happening on the main thread.
+ * SetCurrentImage sends a message through the ImageBridge to the compositor
+ * thread to update the image, without going through the main thread or
+ * a layer transaction.
+ * 3) Remote. Initiated by calling SetRemoteImageData on the ImageContainer
+ * before any other activity.
+ * The ImageContainer uses a shared memory block containing a cross-process mutex
+ * to communicate with the compositor thread. SetCurrentImage synchronously
+ * updates the shared state to point to the new image and the old image
+ * is immediately released (not true in Normal or Asynchronous modes).
  */
 class THEBES_API ImageContainer {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ImageContainer)
-
 public:
-  ImageContainer() :
-    mReentrantMonitor("ImageContainer.mReentrantMonitor"),
-    mPaintCount(0),
-    mPreviousImagePainted(false),
-    mImageFactory(new ImageFactory()),
-    mRecycleBin(new BufferRecycleBin()),
-    mRemoteData(nsnull),
-    mRemoteDataMutex(nsnull),
-    mCompositionNotifySink(nsnull)
-  {}
+
+  enum { DISABLE_ASYNC = 0x0, ENABLE_ASYNC = 0x01 };
+
+  ImageContainer(int flag = 0);
 
   ~ImageContainer();
 
@@ -319,11 +348,50 @@ public:
    * aImage can be null. While it's null, nothing will be painted.
    * 
    * The Image data must not be modified after this method is called!
+   * Note that this must not be called if ENABLE_ASYNC has not been set.
+   *
+   * Implementations must call CurrentImageChanged() while holding
+   * mReentrantMonitor.
+   *
+   * If this ImageContainer has an ImageContainerChild for async video: 
+   * Schelude a task to send the image to the compositor using the 
+   * PImageBridge protcol without using the main thread.
+   */
+  void SetCurrentImage(Image* aImage);
+
+  /**
+   * Set an Image as the current image to display. The Image must have
+   * been created by this ImageContainer.
+   * Must be called on the main thread, within a layers transaction. 
+   * 
+   * This method takes mReentrantMonitor
+   * when accessing thread-shared state.
+   * aImage can be null. While it's null, nothing will be painted.
+   * 
+   * The Image data must not be modified after this method is called!
+   * Note that this must not be called if ENABLE_ASYNC been set.
    *
    * Implementations must call CurrentImageChanged() while holding
    * mReentrantMonitor.
    */
-  void SetCurrentImage(Image* aImage);
+  void SetCurrentImageInTransaction(Image* aImage);
+
+  /**
+   * Returns true if this ImageContainer uses the ImageBridge IPDL protocol.
+   *
+   * Can be called from any thread.
+   */
+  bool IsAsync() const;
+
+  /**
+   * If this ImageContainer uses ImageBridge, returns the ID associated to
+   * this container, for use in the ImageBridge protocol.
+   * Returns 0 if this ImageContainer does not use ImageBridge. Note that
+   * 0 is always an invalid ID for asynchronous image containers. 
+   *
+   * Can be called from ay thread.
+   */
+  PRUint64 GetAsyncContainerID() const;
 
   /**
    * Returns if the container currently has an image.
@@ -382,7 +450,7 @@ public:
    * image.
    */
   already_AddRefed<gfxASurface> LockCurrentAsSurface(gfxIntSize* aSizeResult,
-                                                     Image** aCurrentImage = nsnull);
+                                                     Image** aCurrentImage = nullptr);
 
   /**
    * Returns the size of the image in pixels.
@@ -476,6 +544,8 @@ public:
 protected:
   typedef mozilla::ReentrantMonitor ReentrantMonitor;
 
+  void SetCurrentImageInternal(Image* aImage);
+
   // This is called to ensure we have an active image, this may not be true
   // when we're storing image information in a RemoteImageData structure.
   // NOTE: If we have remote data mRemoteDataMutex should be locked when
@@ -529,6 +599,15 @@ protected:
   CrossProcessMutex *mRemoteDataMutex;
 
   CompositionNotifySink *mCompositionNotifySink;
+
+  // This member points to an ImageContainerChild if this ImageContainer was 
+  // sucessfully created with ENABLE_ASYNC, or points to null otherwise.
+  // 'unsuccessful' in this case only means that the ImageContainerChild could not
+  // be created, most likely because off-main-thread compositing is not enabled.
+  // In this case the ImageContainer is perfectly usable, but it will forward 
+  // frames to the compositor through transactions in the main thread rather than 
+  // asynchronusly using the ImageBridge IPDL protocol.
+  nsRefPtr<ImageContainerChild> mImageContainerChild;
 };
  
 class AutoLockImage
@@ -545,9 +624,9 @@ public:
 
   void Unlock() { 
     if (mContainer) {
-      mImage = nsnull;
+      mImage = nullptr;
       mContainer->UnlockCurrentImage();
-      mContainer = nsnull;
+      mContainer = nullptr;
     }
   }
 
@@ -624,8 +703,8 @@ public:
     // was drawn into a ThebesLayer (gfxContext would snap using the local
     // transform, then we'd snap again when compositing the ThebesLayer).
     mEffectiveTransform =
-        SnapTransform(GetLocalTransform(), snap, nsnull)*
-        SnapTransform(aTransformToSurface, gfxRect(0, 0, 0, 0), nsnull);
+        SnapTransform(GetLocalTransform(), snap, nullptr)*
+        SnapTransform(aTransformToSurface, gfxRect(0, 0, 0, 0), nullptr);
     ComputeEffectiveTransformForMaskLayer(aTransformToSurface);
   }
 
@@ -811,7 +890,7 @@ public:
 class THEBES_API MacIOSurfaceImage : public Image {
 public:
   struct Data {
-    nsIOSurface* mIOSurface;
+    MacIOSurface* mIOSurface;
   };
 
   MacIOSurfaceImage()
@@ -859,7 +938,7 @@ public:
     return mSize;
   }
 
-  nsIOSurface* GetIOSurface()
+  MacIOSurface* GetIOSurface()
   {
     return mIOSurface;
   }
@@ -870,10 +949,86 @@ public:
 
 private:
   gfxIntSize mSize;
-  nsRefPtr<nsIOSurface> mIOSurface;
+  RefPtr<MacIOSurface> mIOSurface;
   void* mPluginInstanceOwner;
   UpdateSurfaceCallback mUpdateCallback;
   DestroyCallback mDestroyCallback;
+};
+#endif
+
+#ifdef MOZ_WIDGET_GONK
+/**
+ * The gralloc buffer maintained by android GraphicBuffer can be
+ * shared between the compositor thread and the producer thread. The
+ * mGraphicBuffer is owned by the producer thread, but when it is
+ * wrapped by GraphicBufferLocked and passed to the compositor, the
+ * buffer content is guaranteed to not change until Unlock() is
+ * called. Each producer must maintain their own buffer queue and
+ * implement the GraphicBufferLocked::Unlock() interface.
+ */
+class GraphicBufferLocked {
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GraphicBufferLocked)
+
+public:
+  GraphicBufferLocked(android::GraphicBuffer* aGraphicBuffer)
+    : mGraphicBuffer(aGraphicBuffer)
+  {}
+
+  virtual ~GraphicBufferLocked() {}
+
+  virtual void Unlock() {}
+
+  virtual void* GetNativeBuffer()
+  {
+    return mGraphicBuffer->getNativeBuffer();
+  }   
+
+protected:
+  android::GraphicBuffer* mGraphicBuffer;
+};
+
+class THEBES_API GonkIOSurfaceImage : public Image {
+public:
+  struct Data {
+    nsRefPtr<GraphicBufferLocked> mGraphicBuffer;
+    gfxIntSize mPicSize;
+  };
+
+  GonkIOSurfaceImage()
+    : Image(NULL, GONK_IO_SURFACE)
+    , mSize(0, 0)
+    {}
+
+  virtual ~GonkIOSurfaceImage()
+  {
+    mGraphicBuffer->Unlock();
+  }
+
+  virtual void SetData(const Data& aData)
+  {
+    mGraphicBuffer = aData.mGraphicBuffer;
+    mSize = aData.mPicSize;
+  }
+
+  virtual gfxIntSize GetSize()
+  {
+    return mSize;
+  }
+
+  virtual already_AddRefed<gfxASurface> GetAsSurface()
+  {
+    // We need to fix this and return a ASurface at some point.
+    return nullptr;
+  }
+
+  void* GetNativeBuffer()
+  {
+    return mGraphicBuffer->GetNativeBuffer();
+  }
+
+private:
+  nsRefPtr<GraphicBufferLocked> mGraphicBuffer;
+  gfxIntSize mSize;
 };
 #endif
 

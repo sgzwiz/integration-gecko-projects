@@ -327,7 +327,7 @@ class nsClearingPtrHashKey : public nsPtrHashKey<T>
   nsClearingPtrHashKey(const T *key) : nsPtrHashKey<T>(key) {}
   nsClearingPtrHashKey(const nsClearingPtrHashKey<T> &toCopy) :
     nsPtrHashKey<T>(toCopy) {}
-  ~nsClearingPtrHashKey() { nsPtrHashKey<T>::mKey = nsnull; }
+  ~nsClearingPtrHashKey() { nsPtrHashKey<T>::mKey = nullptr; }
 };
 
 typedef nsPtrHashKey<const void> nsVoidPtrHashKey; 
@@ -487,7 +487,7 @@ public:
     static const nsIHashable* KeyToPointer(nsIHashable* aKey) { return aKey; }
     static PLDHashNumber HashKey(const nsIHashable* aKey) {
         PRUint32 code = 8888; // magic number if GetHashCode fails :-(
-#ifdef NS_DEBUG
+#ifdef DEBUG
         nsresult rv =
 #endif
         const_cast<nsIHashable*>(aKey)->GetHashCode(&code);

@@ -23,7 +23,6 @@ using namespace mozilla::dom;
 extern "C" {
 #include "sydneyaudio/sydney_audio.h"
 }
-#include "mozilla/TimeStamp.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Preferences.h"
 
@@ -44,10 +43,8 @@ using namespace mozilla;
 #define REMOTE_AUDIO 1
 #endif
 
-using mozilla::TimeStamp;
-
 #ifdef PR_LOGGING
-PRLogModuleInfo* gAudioStreamLog = nsnull;
+PRLogModuleInfo* gAudioStreamLog = nullptr;
 #endif
 
 static const PRUint32 FAKE_BUFFER_SIZE = 176400;
@@ -284,13 +281,10 @@ class AudioShutdownEvent : public nsRunnable
 #define PREF_USE_CUBEB "media.use_cubeb"
 #define PREF_CUBEB_LATENCY "media.cubeb_latency_ms"
 
-static mozilla::Mutex* gAudioPrefsLock = nsnull;
-static double gVolumeScale = 1.0;
-static bool gUseCubeb = false;
-
-// Arbitrary default stream latency.  The higher this value, the longer stream
-// volume changes will take to become audible.
-static PRUint32 gCubebLatency = 100;
+static mozilla::Mutex* gAudioPrefsLock = nullptr;
+static double gVolumeScale;
+static bool gUseCubeb;
+static PRUint32 gCubebLatency;
 
 static int PrefChanged(const char* aPref, void* aClosure)
 {
@@ -301,14 +295,17 @@ static int PrefChanged(const char* aPref, void* aClosure)
       gVolumeScale = 1.0;
     } else {
       NS_ConvertUTF16toUTF8 utf8(value);
-      gVolumeScale = NS_MAX<double>(0, PR_strtod(utf8.get(), nsnull));
+      gVolumeScale = NS_MAX<double>(0, PR_strtod(utf8.get(), nullptr));
     }
   } else if (strcmp(aPref, PREF_USE_CUBEB) == 0) {
     bool value = Preferences::GetBool(aPref, true);
     mozilla::MutexAutoLock lock(*gAudioPrefsLock);
     gUseCubeb = value;
   } else if (strcmp(aPref, PREF_CUBEB_LATENCY) == 0) {
-    PRUint32 value = Preferences::GetUint(aPref);
+    // Arbitrary default stream latency of 100ms.  The higher this
+    // value, the longer stream volume changes will take to become
+    // audible.
+    PRUint32 value = Preferences::GetUint(aPref, 100);
     mozilla::MutexAutoLock lock(*gAudioPrefsLock);
     gCubebLatency = NS_MIN<PRUint32>(NS_MAX<PRUint32>(value, 20), 1000);
   }
@@ -338,7 +335,7 @@ static cubeb* GetCubebContext()
     return gCubebContext;
   }
   NS_WARNING("cubeb_init failed");
-  return nsnull;
+  return nullptr;
 }
 
 static PRUint32 GetCubebLatency()
@@ -354,11 +351,13 @@ void nsAudioStream::InitLibrary()
   gAudioStreamLog = PR_NewLogModule("nsAudioStream");
 #endif
   gAudioPrefsLock = new mozilla::Mutex("nsAudioStream::gAudioPrefsLock");
-  PrefChanged(PREF_VOLUME_SCALE, nsnull);
+  PrefChanged(PREF_VOLUME_SCALE, nullptr);
   Preferences::RegisterCallback(PrefChanged, PREF_VOLUME_SCALE);
 #if defined(MOZ_CUBEB)
-  PrefChanged(PREF_USE_CUBEB, nsnull);
+  PrefChanged(PREF_USE_CUBEB, nullptr);
   Preferences::RegisterCallback(PrefChanged, PREF_USE_CUBEB);
+  PrefChanged(PREF_CUBEB_LATENCY, nullptr);
+  Preferences::RegisterCallback(PrefChanged, PREF_CUBEB_LATENCY);
 #endif
 }
 
@@ -369,12 +368,12 @@ void nsAudioStream::ShutdownLibrary()
   Preferences::UnregisterCallback(PrefChanged, PREF_USE_CUBEB);
 #endif
   delete gAudioPrefsLock;
-  gAudioPrefsLock = nsnull;
+  gAudioPrefsLock = nullptr;
 
 #if defined(MOZ_CUBEB)
   if (gCubebContext) {
     cubeb_destroy(gCubebContext);
-    gCubebContext = nsnull;
+    gCubebContext = nullptr;
   }
 #endif
 }
@@ -383,9 +382,10 @@ nsIThread *
 nsAudioStream::GetThread()
 {
   if (!mAudioPlaybackThread) {
-    NS_NewThread(getter_AddRefs(mAudioPlaybackThread),
-                 nsnull,
-                 MEDIA_THREAD_STACK_SIZE);
+    NS_NewNamedThread("Audio Stream",
+                      getter_AddRefs(mAudioPlaybackThread),
+                      nullptr,
+                      MEDIA_THREAD_STACK_SIZE);
   }
   return mAudioPlaybackThread;
 }
@@ -434,7 +434,7 @@ nsresult nsNativeAudioStream::Init(PRInt32 aNumChannels, PRInt32 aRate, SampleFo
                            SA_PCM_FORMAT_S16_NE,
                            aRate,
                            aNumChannels) != SA_SUCCESS) {
-    mAudioHandle = nsnull;
+    mAudioHandle = nullptr;
     mInError = true;
     PR_LOG(gAudioStreamLog, PR_LOG_ERROR, ("nsNativeAudioStream: sa_stream_create_pcm error"));
     return NS_ERROR_FAILURE;
@@ -442,7 +442,7 @@ nsresult nsNativeAudioStream::Init(PRInt32 aNumChannels, PRInt32 aRate, SampleFo
 
   if (sa_stream_open(static_cast<sa_stream_t*>(mAudioHandle)) != SA_SUCCESS) {
     sa_stream_destroy(static_cast<sa_stream_t*>(mAudioHandle));
-    mAudioHandle = nsnull;
+    mAudioHandle = nullptr;
     mInError = true;
     PR_LOG(gAudioStreamLog, PR_LOG_ERROR, ("nsNativeAudioStream: sa_stream_open error"));
     return NS_ERROR_FAILURE;
@@ -458,7 +458,7 @@ void nsNativeAudioStream::Shutdown()
     return;
 
   sa_stream_destroy(static_cast<sa_stream_t*>(mAudioHandle));
-  mAudioHandle = nsnull;
+  mAudioHandle = nullptr;
   mInError = true;
 }
 
@@ -630,7 +630,7 @@ PRInt32 nsNativeAudioStream::GetMinWriteSize()
 
 #if defined(REMOTE_AUDIO)
 nsRemotedAudioStream::nsRemotedAudioStream()
- : mAudioChild(nsnull),
+ : mAudioChild(nullptr),
    mBytesPerFrame(0),
    mPaused(false)
 {}
@@ -677,7 +677,7 @@ nsRemotedAudioStream::Shutdown()
     return;
   nsCOMPtr<nsIRunnable> event = new AudioShutdownEvent(mAudioChild);
   NS_DispatchToMainThread(event);
-  mAudioChild = nsnull;
+  mAudioChild = nullptr;
 }
 
 nsresult
@@ -690,6 +690,7 @@ nsRemotedAudioStream::Write(const void* aBuf, PRUint32 aFrames)
                                                     aFrames,
                                                     mBytesPerFrame);
   NS_DispatchToMainThread(event);
+  mAudioChild->WaitForWrite();
   return NS_OK;
 }
 
@@ -791,7 +792,7 @@ class nsCircularByteBuffer
 {
 public:
   nsCircularByteBuffer()
-    : mBuffer(nsnull), mCapacity(0), mStart(0), mCount(0)
+    : mBuffer(nullptr), mCapacity(0), mStart(0), mCount(0)
   {}
 
   // Set the capacity of the buffer in bytes.  Must be called before any
@@ -879,13 +880,13 @@ private:
     return static_cast<nsBufferedAudioStream*>(aThis)->DataCallback(aBuffer, aFrames);
   }
 
-  static int StateCallback_S(cubeb_stream*, void* aThis, cubeb_state aState)
+  static void StateCallback_S(cubeb_stream*, void* aThis, cubeb_state aState)
   {
-    return static_cast<nsBufferedAudioStream*>(aThis)->StateCallback(aState);
+    static_cast<nsBufferedAudioStream*>(aThis)->StateCallback(aState);
   }
 
   long DataCallback(void* aBuffer, long aFrames);
-  int StateCallback(cubeb_state aState);
+  void StateCallback(cubeb_state aState);
 
   // Shared implementation of underflow adjusted position calculation.
   // Caller must own the monitor.
@@ -983,7 +984,7 @@ nsBufferedAudioStream::Init(PRInt32 aNumChannels, PRInt32 aRate, SampleFormat aF
     mBytesPerFrame = sizeof(short) * aNumChannels;
     break;
   case FORMAT_FLOAT32:
-    params.format = CUBEB_SAMPLE_FLOAT32LE;
+    params.format = CUBEB_SAMPLE_FLOAT32NE;
     mBytesPerFrame = sizeof(float) * aNumChannels;
     break;
   default:
@@ -1146,12 +1147,19 @@ nsBufferedAudioStream::GetPosition()
   return -1;
 }
 
+// This function is miscompiled by PGO with MSVC 2010.  See bug 768333.
+#ifdef _MSC_VER
+#pragma optimize("", off)
+#endif
 PRInt64
 nsBufferedAudioStream::GetPositionInFrames()
 {
   MonitorAutoLock mon(mMonitor);
   return GetPositionInFramesUnlocked();
 }
+#ifdef _MSC_VER
+#pragma optimize("", on)
+#endif
 
 PRInt64
 nsBufferedAudioStream::GetPositionInFramesUnlocked()
@@ -1172,11 +1180,11 @@ nsBufferedAudioStream::GetPositionInFramesUnlocked()
 
   // Adjust the reported position by the number of silent frames written
   // during stream underruns.
-  PRInt64 adjustedPosition = 0;
+  PRUint64 adjustedPosition = 0;
   if (position >= mLostFrames) {
     adjustedPosition = position - mLostFrames;
   }
-  return adjustedPosition;
+  return NS_MIN<PRUint64>(adjustedPosition, PR_INT64_MAX);
 }
 
 bool
@@ -1260,7 +1268,7 @@ nsBufferedAudioStream::DataCallback(void* aBuffer, long aFrames)
   return aFrames - (bytesWanted / mBytesPerFrame);
 }
 
-int
+void
 nsBufferedAudioStream::StateCallback(cubeb_state aState)
 {
   MonitorAutoLock mon(mMonitor);
@@ -1270,7 +1278,6 @@ nsBufferedAudioStream::StateCallback(cubeb_state aState)
     mState = ERRORED;
   }
   mon.NotifyAll();
-  return CUBEB_OK;
 }
 #endif
 

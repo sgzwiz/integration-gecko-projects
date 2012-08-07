@@ -4,7 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= .
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 
@@ -115,7 +115,6 @@ CPPSRCS		= \
 		ScopeObject.cpp \
 		Debugger.cpp \
 		GlobalObject.cpp \
-		MethodGuard.cpp \
 		ObjectImpl.cpp \
 		Stack.cpp \
 		String.cpp \
@@ -126,10 +125,12 @@ CPPSRCS		= \
 		ParseNode.cpp \
 		Parser.cpp \
 		SemanticAnalysis.cpp \
+		SPSProfiler.cpp \
 		TokenStream.cpp \
 		TreeContext.cpp \
 		TestingFunctions.cpp \
 		LifoAlloc.cpp \
+		Eval.cpp \
 		MapObject.cpp \
 		MemoryMetrics.cpp \
 		RegExpObject.cpp \
@@ -138,6 +139,7 @@ CPPSRCS		= \
 		Marking.cpp \
 		Memory.cpp \
 		Statistics.cpp \
+		StoreBuffer.cpp \
 		StringBuffer.cpp \
 		Unicode.cpp \
 		Xdr.cpp \
@@ -190,6 +192,7 @@ EXPORTS_gc = \
 		Heap.h \
 		Root.h \
 		Statistics.h \
+		StoreBuffer.h \
 		$(NULL)
 
 ######################################################
@@ -487,29 +490,6 @@ distclean clean::
 endif
 endif
 
-# Because the SpiderMonkey can be distributed and built independently
-# of the Mozilla source tree, it contains its own copies of many of
-# the files used by the top-level Mozilla build process, from the
-# 'config' and 'build' subtrees.
-#
-# To make it simpler to keep the copies in sync, we follow the policy
-# that the SpiderMonkey copies must always be exact copies of those in
-# the containing Mozilla tree.  If you've made a change in one, it
-# belongs in the other as well.  If the change isn't right for both
-# places, then that's something to bring up with the other developers.
-#
-# Some files are reasonable to diverge; for  example,
-# js/config/autoconf.mk.in doesn't need most of the stuff in
-# config/autoconf.mk.in.
-check-sync-dirs-cmd = $(PYTHON) $(srcdir)/config/check-sync-dirs.py
-check-sync-dirs:
-	$(check-sync-dirs-cmd) $(srcdir)/config $(MOZ_SYNC_BUILD_FILES)/config
-	$(check-sync-dirs-cmd) $(srcdir)/build $(MOZ_SYNC_BUILD_FILES)/build
-
-ifdef MOZ_SYNC_BUILD_FILES
-check:: check-sync-dirs
-endif
-
 # The "find any vanilla new/new[] calls" script is tailored to Linux, so
 # only run it there.  That should be enough to catch any such calls that
 # creep in.
@@ -663,6 +643,15 @@ ifeq (,$(filter HP-UX WINNT OS2,$(OS_ARCH)))
 EXTRA_LIBS	+= -lm
 endif
 
+CFLAGS += $(MOZ_ZLIB_CFLAGS)
+EXTRA_LIBS += $(MOZ_ZLIB_LIBS)
+# Enable zlib usage if zlib has been located. When building the browser on
+# Windows, MOZ_ZLIB_LIBS is empty because zlib is part of libmozglue. We thus
+# also enable zlib if mozglue is present.
+ifneq (,$(MOZ_ZLIB_LIBS)$(MOZ_GLUE_LDFLAGS))
+DEFINES += -DUSE_ZLIB
+endif
+
 # Prevent floating point errors caused by VC++ optimizations
 ifdef _MSC_VER
 # XXX We should add this to CXXFLAGS, too?
@@ -672,6 +661,8 @@ ifeq ($(CPU_ARCH),x86)
 # Workaround compiler bug on PGO (Bug 721284)
 MonoIC.$(OBJ_SUFFIX): CXXFLAGS += -GL-
 Compiler.$(OBJ_SUFFIX): CXXFLAGS += -GL-
+# Ditto (Bug 772303)
+RegExp.$(OBJ_SUFFIX): CXXFLAGS += -GL-
 endif
 endif # _MSC_VER
 
@@ -827,6 +818,10 @@ $(CURDIR)/javascript-trace.h: $(srcdir)/javascript-trace.d
 # We can't automatically generate dependencies on auto-generated headers;
 # we have to list them explicitly.
 $(addsuffix .$(OBJ_SUFFIX),jsprobes jsinterp jsobj): $(CURDIR)/javascript-trace.h
+endif
+
+ifdef HAVE_LINUX_PERF_EVENT_H
+pm_linux.$(OBJ_SUFFIX): CXXFLAGS += $(LINUX_HEADERS_INCLUDES)
 endif
 
 ###############################################

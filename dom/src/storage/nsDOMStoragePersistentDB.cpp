@@ -20,6 +20,9 @@
 #include "mozIStorageValueArray.h"
 #include "mozIStorageFunction.h"
 #include "nsNetUtil.h"
+#include "mozilla/Attributes.h"
+
+#include "sampler.h"
 
 using namespace mozilla;
 
@@ -27,7 +30,7 @@ using namespace mozilla;
 // then this time in seconds since the load
 #define TEMP_TABLE_MAX_AGE (10) // seconds
 
-class nsReverseStringSQLFunction : public mozIStorageFunction
+class nsReverseStringSQLFunction MOZ_FINAL : public mozIStorageFunction
 {
   NS_DECL_ISUPPORTS
   NS_DECL_MOZISTORAGEFUNCTION
@@ -60,7 +63,7 @@ nsReverseStringSQLFunction::OnFunctionCall(
   return NS_OK;
 }
 
-class nsIsOfflineSQLFunction : public mozIStorageFunction
+class nsIsOfflineSQLFunction MOZ_FINAL : public mozIStorageFunction
 {
   NS_DECL_ISUPPORTS
   NS_DECL_MOZISTORAGEFUNCTION
@@ -424,6 +427,7 @@ nsDOMStoragePersistentDB::GetKeyValue(DOMStorageImpl* aStorage,
                                       nsAString& aValue,
                                       bool* aSecure)
 {
+  SAMPLE_LABEL("nsDOMStoragePersistentDB", "GetKeyValue");
   nsresult rv;
 
   rv = MaybeCommitInsertTransaction();

@@ -4,17 +4,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGPathSegUtils.h"
-#include "nsSVGElement.h"
-#include "nsSVGSVGElement.h"
 #include "nsSVGPathDataParser.h"
-#include "nsString.h"
-#include "nsSVGUtils.h"
 #include "nsContentUtils.h"
 #include "nsTextFormatter.h"
-#include "prdtoa.h"
-#include <limits>
-#include "nsMathUtils.h"
-#include "prtypes.h"
 
 using namespace mozilla;
 
@@ -421,7 +413,7 @@ TraverseArcRel(const float* aArgs, SVGPathTraversalState& aState)
 typedef void (*TraverseFunc)(const float*, SVGPathTraversalState&);
 
 static TraverseFunc gTraverseFuncTable[NS_SVG_PATH_SEG_TYPE_COUNT] = {
-  nsnull, //  0 == PATHSEG_UNKNOWN
+  nullptr, //  0 == PATHSEG_UNKNOWN
   TraverseClosePath,
   TraverseMovetoAbs,
   TraverseMovetoRel,

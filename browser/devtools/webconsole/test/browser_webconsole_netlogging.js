@@ -68,8 +68,11 @@ function testPageLoad()
 
 function testPageLoadBody()
 {
+  let loaded = false;
+  let requestCallbackInvoked = false;
+
   // Turn on logging of request bodies and check again.
-  hud.saveRequestAndResponseBodies = true;
+  hud.ui.saveRequestAndResponseBodies = true;
   requestCallback = function() {
     ok(lastRequest, "Page load was logged again");
     is(lastRequest.response.content.text.indexOf("<!DOCTYPE HTML>"), 0,
@@ -77,8 +80,21 @@ function testPageLoadBody()
 
     lastRequest = null;
     requestCallback = null;
-    executeSoon(testXhrGet);
+    requestCallbackInvoked = true;
+
+    if (loaded) {
+      executeSoon(testXhrGet);
+    }
   };
+
+  browser.addEventListener("load", function onLoad() {
+    browser.removeEventListener("load", onLoad, true);
+    loaded = true;
+
+    if (requestCallbackInvoked) {
+      executeSoon(testXhrGet);
+    }
+  }, true);
 
   content.location.reload();
 }
@@ -149,8 +165,8 @@ function testNetworkPanel()
 {
   // Open the NetworkPanel. The functionality of the NetworkPanel is tested
   // within separate test files.
-  let networkPanel = HUDService.openNetworkPanel(hud.filterBox, lastActivity);
-  is(networkPanel, hud.filterBox._netPanel,
+  let networkPanel = hud.ui.openNetworkPanel(hud.ui.filterBox, lastActivity);
+  is(networkPanel, hud.ui.filterBox._netPanel,
      "Network panel stored on anchor node");
 
   networkPanel.panel.addEventListener("load", function onLoad(aEvent) {

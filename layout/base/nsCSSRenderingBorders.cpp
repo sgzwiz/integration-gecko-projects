@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsStyleConsts.h"
-#include "nsIFrame.h"
 #include "nsPoint.h"
 #include "nsRect.h"
 #include "nsIViewManager.h"
@@ -15,7 +14,6 @@
 #include "nsCSSAnonBoxes.h"
 #include "nsTransform2D.h"
 #include "nsIContent.h"
-#include "nsIDocument.h"
 #include "nsIScrollableFrame.h"
 #include "imgIRequest.h"
 #include "imgIContainer.h"
@@ -24,7 +22,6 @@
 #include "nsITheme.h"
 #include "nsThemeConstants.h"
 #include "nsIServiceManager.h"
-#include "nsIHTMLDocument.h"
 #include "nsLayoutUtils.h"
 #include "nsINameSpaceManager.h"
 #include "nsBlockFrame.h"
@@ -50,11 +47,9 @@
  *   -> more than 1 pass?
  *      |- for each corner
  *         |- clip to DoCornerClipSubPath
- *         |- PushGroup
  *         |- for each side adjacent to corner
  *            |- clip to DoSideClipSubPath
  *            |- DrawBorderSides with one side
- *         |- PopGroup
  *      |- for each side
  *         |- DoSideClipWithoutCornersSubPath
  *         |- DrawDashedSide || DrawBorderSides with one side
@@ -745,11 +740,11 @@ nsCSSBorderRenderer::DrawBorderSides(PRIntn aSides)
 
   PRUint8 borderRenderStyle;
   nscolor borderRenderColor;
-  const nsBorderColors *compositeColors = nsnull;
+  const nsBorderColors *compositeColors = nullptr;
 
   PRUint32 borderColorStyleCount = 0;
   BorderColorStyle borderColorStyleTopLeft[3], borderColorStyleBottomRight[3];
-  BorderColorStyle *borderColorStyle = nsnull;
+  BorderColorStyle *borderColorStyle = nullptr;
 
   NS_FOR_CSS_SIDES (i) {
     if ((aSides & (1 << i)) == 0)
@@ -1032,7 +1027,7 @@ nsCSSBorderRenderer::AllBordersSolid(bool *aHasCompositeColors)
 {
   *aHasCompositeColors = false;
   NS_FOR_CSS_SIDES(i) {
-    if (mCompositeColors[i] != nsnull) {
+    if (mCompositeColors[i] != nullptr) {
       *aHasCompositeColors = true;
     }
     if (mBorderStyles[i] == NS_STYLE_BORDER_STYLE_SOLID ||
@@ -1534,7 +1529,7 @@ nsCSSBorderRenderer::DrawBorders()
   // If we have composite colors -and- border radius,
   // then use separate corners so we get OPERATOR_ADD for the corners.
   // Otherwise, we'll get artifacts as we draw stacked 1px-wide curves.
-  if (allBordersSame && mCompositeColors[0] != nsnull && !mNoBorderRadius)
+  if (allBordersSame && mCompositeColors[0] != nullptr && !mNoBorderRadius)
     forceSeparateCorners = true;
 
   S(" mOuterRect: "), S(mOuterRect), SN();
@@ -1636,18 +1631,16 @@ nsCSSBorderRenderer::DrawBorders()
         // but we weren't able to render just a solid block for the corner.
         DrawBorderSides(sideBits);
       } else {
-        // Sides are different.  We need to draw using OPERATOR_ADD to
-        // get correct color blending behaviour at the seam.  We need
+        // Sides are different.  We could draw using OPERATOR_ADD to
+        // get correct color blending behaviour at the seam.  We'd need
         // to do it in an offscreen surface to ensure that we're
         // always compositing on transparent black.  If the colors
         // don't have transparency and the current destination surface
         // has an alpha channel, we could just clear the region and
         // avoid the temporary, but that situation doesn't happen all
         // that often in practice (we double buffer to no-alpha
-        // surfaces).
-
-        mContext->PushGroup(gfxASurface::CONTENT_COLOR_ALPHA);
-        mContext->SetOperator(gfxContext::OPERATOR_ADD);
+        // surfaces). We choose just to seam though, as the performance
+        // advantages outway the modest easthetic improvement.
 
         for (int cornerSide = 0; cornerSide < 2; cornerSide++) {
           mozilla::css::Side side = mozilla::css::Side(sides[cornerSide]);
@@ -1665,10 +1658,6 @@ nsCSSBorderRenderer::DrawBorders()
 
           mContext->Restore();
         }
-
-        mContext->PopGroupToSource();
-        mContext->SetOperator(gfxContext::OPERATOR_OVER);
-        mContext->Paint();
       }
 
       mContext->Restore();

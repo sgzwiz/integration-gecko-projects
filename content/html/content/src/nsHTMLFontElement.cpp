@@ -14,7 +14,6 @@
 #include "nsPresContext.h"
 #include "nsMappedAttributes.h"
 #include "nsRuleData.h"
-#include "nsIDocument.h"
 #include "nsAlgorithm.h"
 #include "nsContentUtils.h"
 
@@ -174,7 +173,7 @@ nsHTMLFontElement::IsAttributeMapped(const nsIAtom* aAttribute) const
     { &nsGkAtoms::face },
     { &nsGkAtoms::size },
     { &nsGkAtoms::color },
-    { nsnull }
+    { nullptr }
   };
 
   static const MappedAttributeEntry* const map[] = {

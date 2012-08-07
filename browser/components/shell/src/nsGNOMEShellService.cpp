@@ -9,7 +9,7 @@
 #include "nsGNOMEShellService.h"
 #include "nsShellService.h"
 #include "nsIServiceManager.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIProperties.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsIPrefService.h"
@@ -98,7 +98,7 @@ nsGNOMEShellService::Init()
 
   // Check G_BROKEN_FILENAMES.  If it's set, then filenames in glib use
   // the locale encoding.  If it's not set, they use UTF-8.
-  mUseLocaleFilenames = PR_GetEnv("G_BROKEN_FILENAMES") != nsnull;
+  mUseLocaleFilenames = PR_GetEnv("G_BROKEN_FILENAMES") != nullptr;
 
   if (GetAppPathFromLauncher())
     return NS_OK;
@@ -107,8 +107,8 @@ nsGNOMEShellService::Init()
     (do_GetService("@mozilla.org/file/directory_service;1"));
   NS_ENSURE_TRUE(dirSvc, NS_ERROR_NOT_AVAILABLE);
 
-  nsCOMPtr<nsILocalFile> appPath;
-  rv = dirSvc->Get(NS_XPCOM_CURRENT_PROCESS_DIR, NS_GET_IID(nsILocalFile),
+  nsCOMPtr<nsIFile> appPath;
+  rv = dirSvc->Get(NS_XPCOM_CURRENT_PROCESS_DIR, NS_GET_IID(nsIFile),
                    getter_AddRefs(appPath));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -629,7 +629,7 @@ nsGNOMEShellService::OpenApplication(PRInt32 aApplication)
       newArgv[newArgc++] = argv[i];
   }
 
-  newArgv[newArgc] = nsnull;
+  newArgv[newArgc] = nullptr;
 
   gboolean err = g_spawn_async(NULL, newArgv, NULL, G_SPAWN_SEARCH_PATH,
                                NULL, NULL, NULL, NULL);
@@ -641,7 +641,7 @@ nsGNOMEShellService::OpenApplication(PRInt32 aApplication)
 }
 
 NS_IMETHODIMP
-nsGNOMEShellService::OpenApplicationWithURI(nsILocalFile* aApplication, const nsACString& aURI)
+nsGNOMEShellService::OpenApplicationWithURI(nsIFile* aApplication, const nsACString& aURI)
 {
   nsresult rv;
   nsCOMPtr<nsIProcess> process = 
@@ -659,7 +659,7 @@ nsGNOMEShellService::OpenApplicationWithURI(nsILocalFile* aApplication, const ns
 }
 
 NS_IMETHODIMP
-nsGNOMEShellService::GetDefaultFeedReader(nsILocalFile** _retval)
+nsGNOMEShellService::GetDefaultFeedReader(nsIFile** _retval)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }

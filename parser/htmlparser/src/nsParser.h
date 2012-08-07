@@ -155,7 +155,7 @@ class nsParser : public nsIParser,
      * @return  TRUE if all went well -- FALSE otherwise
      */
     NS_IMETHOD Parse(nsIURI* aURL,
-                     nsIRequestObserver* aListener = nsnull,
+                     nsIRequestObserver* aListener = nullptr,
                      void* aKey = 0,
                      nsDTDMode aMode = eDTDMode_autodetect);
 
@@ -417,7 +417,7 @@ protected:
     
     eParserCommands     mCommand;
     nsresult            mInternalState;
-    PRInt32             mStreamStatus;
+    nsresult            mStreamStatus;
     PRInt32             mCharsetSource;
     
     PRUint16            mFlags;

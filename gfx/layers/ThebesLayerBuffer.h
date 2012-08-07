@@ -66,7 +66,7 @@ public:
    */
   void Clear()
   {
-    mBuffer = nsnull;
+    mBuffer = nullptr;
     mBufferRect.SetEmpty();
   }
 
@@ -149,8 +149,8 @@ protected:
                           gfxASurface* aMask,
                           const gfxMatrix* aMaskTransform);
   void DrawBufferWithRotation(gfxContext* aTarget, float aOpacity,
-                              gfxASurface* aMask = nsnull,
-                              const gfxMatrix* aMaskTransform = nsnull);
+                              gfxASurface* aMask = nullptr,
+                              const gfxMatrix* aMaskTransform = nullptr);
 
   /**
    * |BufferRect()| is the rect of device pixels that this
@@ -169,6 +169,16 @@ protected:
     mBufferRect = aBufferRect;
     mBufferRotation = aBufferRotation;
     return tmp.forget();
+  }
+
+  /**
+   * Set the buffer only.  This is intended to be used with the
+   * shadow-layer Open/CloseDescriptor interface, to ensure we don't
+   * accidentally touch a buffer when it's not mapped.
+   */
+  void SetBuffer(gfxASurface* aBuffer)
+  {
+    mBuffer = aBuffer;
   }
 
   /**

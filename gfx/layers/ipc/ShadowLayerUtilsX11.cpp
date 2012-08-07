@@ -81,32 +81,28 @@ SurfaceDescriptorX11::OpenForeign() const
     unsigned int depth;
     XVisualIDToInfo(display, mFormat, &visual, &depth);
     if (!visual)
-      return nsnull;
+      return nullptr;
 
     surf = new gfxXlibSurface(display, mId, visual, mSize);
   }
-  return surf->CairoStatus() ? nsnull : surf.forget();
-}
-
-bool
-ShadowLayerForwarder::PlatformAllocDoubleBuffer(const gfxIntSize& aSize,
-                                                gfxASurface::gfxContentType aContent,
-                                                SurfaceDescriptor* aFrontBuffer,
-                                                SurfaceDescriptor* aBackBuffer)
-{
-  return (PlatformAllocBuffer(aSize, aContent, aFrontBuffer) &&
-          PlatformAllocBuffer(aSize, aContent, aBackBuffer));
+  return surf->CairoStatus() ? nullptr : surf.forget();
 }
 
 bool
 ShadowLayerForwarder::PlatformAllocBuffer(const gfxIntSize& aSize,
                                           gfxASurface::gfxContentType aContent,
+                                          uint32_t aCaps,
                                           SurfaceDescriptor* aBuffer)
 {
   if (!UsingXCompositing()) {
     // If we're not using X compositing, we're probably compositing on
     // the client side, in which case X surfaces would just slow
     // things down.  Use Shmem instead.
+    return false;
+  }
+  if (MAP_AS_IMAGE_SURFACE & aCaps) {
+    // We can't efficiently map pixmaps as gfxImageSurface, in
+    // general.  Fall back on Shmem.
     return false;
   }
 
@@ -127,12 +123,38 @@ ShadowLayerForwarder::PlatformAllocBuffer(const gfxIntSize& aSize,
 }
 
 /*static*/ already_AddRefed<gfxASurface>
-ShadowLayerForwarder::PlatformOpenDescriptor(const SurfaceDescriptor& aSurface)
+ShadowLayerForwarder::PlatformOpenDescriptor(OpenMode aMode,
+                                             const SurfaceDescriptor& aSurface)
 {
   if (SurfaceDescriptor::TSurfaceDescriptorX11 != aSurface.type()) {
-    return nsnull;
+    return nullptr;
   }
   return aSurface.get_SurfaceDescriptorX11().OpenForeign();
+}
+
+/*static*/ bool
+ShadowLayerForwarder::PlatformCloseDescriptor(const SurfaceDescriptor& aDescriptor)
+{
+  // XIDs don't need to be "closed".
+  return false;
+}
+
+/*static*/ bool
+ShadowLayerForwarder::PlatformGetDescriptorSurfaceContentType(
+  const SurfaceDescriptor& aDescriptor, OpenMode aMode,
+  gfxContentType* aContent,
+  gfxASurface** aSurface)
+{
+  return false;
+}
+
+/*static*/ bool
+ShadowLayerForwarder::PlatformGetDescriptorSurfaceSize(
+  const SurfaceDescriptor& aDescriptor, OpenMode aMode,
+  gfxIntSize* aSize,
+  gfxASurface** aSurface)
+{
+  return false;
 }
 
 bool
@@ -165,8 +187,17 @@ ShadowLayerManager::PlatformSyncBeforeReplyUpdate()
     // the child, even though they will be read operations.
     // Otherwise, the child might start scribbling on new back buffers
     // that are still participating in requests as old front buffers.
-    XSync(DefaultXDisplay(), False);
+    FinishX(DefaultXDisplay());
   }
+}
+
+/*static*/ already_AddRefed<TextureImage>
+ShadowLayerManager::OpenDescriptorForDirectTexturing(GLContext*,
+                                                     const SurfaceDescriptor&,
+                                                     GLenum)
+{
+  // FIXME/bug XXXXXX: implement this using texture-from-pixmap
+  return nullptr;
 }
 
 bool

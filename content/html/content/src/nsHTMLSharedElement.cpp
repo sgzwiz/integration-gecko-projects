@@ -76,7 +76,7 @@ public:
   nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
                    const nsAString& aValue, bool aNotify)
   {
-    return SetAttr(aNameSpaceID, aName, nsnull, aValue, aNotify);
+    return SetAttr(aNameSpaceID, aName, nullptr, aValue, aNotify);
   }
   virtual nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
                            nsIAtom* aPrefix, const nsAString& aValue,
@@ -157,7 +157,7 @@ nsHTMLSharedElement::GetClassInfoInternal()
   if (mNodeInfo->Equals(nsGkAtoms::html)) {
     return NS_GetDOMClassInfoInstance(eDOMClassInfo_HTMLHtmlElement_id);
   }
-  return nsnull;
+  return nullptr;
 }
 
 // QueryInterface implementation for nsHTMLSharedElement
@@ -282,7 +282,7 @@ nsHTMLSharedElement::IsAttributeMapped(const nsIAtom* aAttribute) const
     static const MappedAttributeEntry attributes[] = {
       { &nsGkAtoms::type },
       // { &nsGkAtoms::compact }, // XXX
-      { nsnull} 
+      { nullptr} 
     };
   
     static const MappedAttributeEntry* const map[] = {
@@ -323,13 +323,13 @@ SetBaseURIUsingFirstBaseWithHref(nsIDocument* aDocument, nsIContent* aMustMatch)
       // Try to set our base URI.  If that fails, try to set base URI to null
       nsresult rv = aDocument->SetBaseURI(newBaseURI);
       if (NS_FAILED(rv)) {
-        aDocument->SetBaseURI(nsnull);
+        aDocument->SetBaseURI(nullptr);
       }
       return;
     }
   }
 
-  aDocument->SetBaseURI(nsnull);
+  aDocument->SetBaseURI(nullptr);
 }
 
 static void
@@ -396,9 +396,9 @@ nsHTMLSharedElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
       aNameSpaceID == kNameSpaceID_None &&
       IsInDoc()) {
     if (aName == nsGkAtoms::href) {
-      SetBaseURIUsingFirstBaseWithHref(GetCurrentDoc(), nsnull);
+      SetBaseURIUsingFirstBaseWithHref(GetCurrentDoc(), nullptr);
     } else if (aName == nsGkAtoms::target) {
-      SetBaseTargetUsingFirstBaseWithTarget(GetCurrentDoc(), nsnull);
+      SetBaseTargetUsingFirstBaseWithTarget(GetCurrentDoc(), nullptr);
     }
   }
 
@@ -441,10 +441,10 @@ nsHTMLSharedElement::UnbindFromTree(bool aDeep, bool aNullParent)
   // document's base URI and base target
   if (doc && mNodeInfo->Equals(nsGkAtoms::base)) {
     if (HasAttr(kNameSpaceID_None, nsGkAtoms::href)) {
-      SetBaseURIUsingFirstBaseWithHref(doc, nsnull);
+      SetBaseURIUsingFirstBaseWithHref(doc, nullptr);
     }
     if (HasAttr(kNameSpaceID_None, nsGkAtoms::target)) {
-      SetBaseTargetUsingFirstBaseWithTarget(doc, nsnull);
+      SetBaseTargetUsingFirstBaseWithTarget(doc, nullptr);
     }
   }
 }

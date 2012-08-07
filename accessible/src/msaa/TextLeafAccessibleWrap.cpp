@@ -43,7 +43,7 @@ TextLeafAccessibleWrap::Release()
 STDMETHODIMP
 TextLeafAccessibleWrap::QueryInterface(REFIID iid, void** ppv)
 {
-  *ppv = nsnull;
+  *ppv = nullptr;
 
   if (IID_IUnknown == iid) {
     *ppv = static_cast<ISimpleDOMText*>(this);
@@ -155,10 +155,15 @@ __try {
   if (IsDefunct())
     return E_FAIL;
 
-  nsCOMPtr<nsIDOMNode> DOMNode(do_QueryInterface(mContent));
+  nsRefPtr<nsRange> range = new nsRange();
+  if (NS_FAILED(range->SetStart(mContent, aStartIndex)))
+      return E_FAIL;
+
+  if (NS_FAILED(range->SetEnd(mContent, aEndIndex)))
+  return E_FAIL;
+
   nsresult rv =
-    nsCoreUtils::ScrollSubstringTo(GetFrame(), DOMNode, aStartIndex,
-                                   DOMNode, aEndIndex,
+    nsCoreUtils::ScrollSubstringTo(GetFrame(), range,
                                    nsIAccessibleScrollType::SCROLL_TYPE_ANYWHERE);
   if (NS_FAILED(rv))
     return E_FAIL;
@@ -172,11 +177,11 @@ TextLeafAccessibleWrap::GetPointFromOffset(nsIFrame* aContainingFrame,
                                            bool aPreferNext, 
                                            nsPoint& aOutPoint)
 {
-  nsIFrame *textFrame = nsnull;
+  nsIFrame *textFrame = nullptr;
   PRInt32 outOffset;
   aContainingFrame->GetChildFrameContainingOffset(aOffset, aPreferNext, &outOffset, &textFrame);
   if (!textFrame) {
-    return nsnull;
+    return nullptr;
   }
 
   textFrame->GetPointFromOffset(aOffset, &aOutPoint);

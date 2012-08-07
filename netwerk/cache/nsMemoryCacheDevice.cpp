@@ -28,7 +28,6 @@ const char *gMemoryDeviceID      = "memory";
 
 nsMemoryCacheDevice::nsMemoryCacheDevice()
     : mInitialized(false),
-      mEvictionThreshold(PR_INT32_MAX),
       mHardLimit(4 * 1024 * 1024),       // default, if no pref
       mSoftLimit((mHardLimit * 9) / 10), // default, if no pref
       mTotalSize(0),
@@ -113,7 +112,7 @@ nsMemoryCacheDevice::FindEntry(nsCString * key, bool *collision)
 {
     mozilla::Telemetry::AutoTimer<mozilla::Telemetry::CACHE_MEMORY_SEARCH> timer;
     nsCacheEntry * entry = mMemCacheEntries.GetEntry(key);
-    if (!entry)  return nsnull;
+    if (!entry)  return nullptr;
 
     // move entry to the tail of an eviction list
     PR_REMOVE_AND_INIT_LINK(entry);

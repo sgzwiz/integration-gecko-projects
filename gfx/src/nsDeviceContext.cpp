@@ -23,7 +23,7 @@
 #include "gfxPDFSurface.h"
 #endif
 
-#ifdef MOZ_ENABLE_GTK2
+#ifdef MOZ_WIDGET_GTK
 #include "gfxPSSurface.h"
 #elif XP_WIN
 #include "gfxWindowsSurface.h"
@@ -195,7 +195,7 @@ nsFontCache::Compact()
         nsFontMetrics* oldfm = fm;
         // Destroy() isn't here because we want our device context to be
         // notified
-        NS_RELEASE(fm); // this will reset fm to nsnull
+        NS_RELEASE(fm); // this will reset fm to nullptr
         // if the font is really gone, it would have called back in
         // FontMetricsDeleted() and would have removed itself
         if (mFontMetrics.IndexOf(oldfm) != mFontMetrics.NoIndex) {
@@ -224,7 +224,7 @@ nsDeviceContext::nsDeviceContext()
       mAppUnitsPerDevPixel(-1), mAppUnitsPerDevNotScaledPixel(-1),
       mAppUnitsPerPhysicalInch(-1),
       mPixelScale(1.0f), mPrintingScale(1.0f),
-      mFontCache(nsnull)
+      mFontCache(nullptr)
 {
 }
 
@@ -468,7 +468,7 @@ nsDeviceContext::InitForPrinting(nsIDeviceContextSpec *aDevice)
     if (NS_FAILED(rv))
         return NS_ERROR_FAILURE;
 
-    Init(nsnull);
+    Init(nullptr);
 
     CalcPrintingSize();
 
@@ -640,7 +640,7 @@ nsDeviceContext::CalcPrintingSize()
         break;
 #endif
 
-#ifdef MOZ_ENABLE_GTK2
+#ifdef MOZ_WIDGET_GTK
     case gfxASurface::SurfaceTypePS:
         inPoints = true;
         size = reinterpret_cast<gfxPSSurface*>(mPrintingSurface.get())->GetSize();

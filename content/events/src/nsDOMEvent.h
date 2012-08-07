@@ -7,9 +7,7 @@
 #define nsDOMEvent_h__
 
 #include "nsIDOMEvent.h"
-#include "nsIDOMNSEvent.h"
 #include "nsISupports.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsCOMPtr.h"
 #include "nsIDOMEventTarget.h"
 #include "nsPIDOMWindow.h"
@@ -25,8 +23,6 @@ struct JSContext;
 struct JSObject;
  
 class nsDOMEvent : public nsIDOMEvent,
-                   public nsIDOMNSEvent,
-                   public nsIPrivateDOMEvent,
                    public nsIJSNativeInitializer
 {
 public:
@@ -162,6 +158,7 @@ public:
     eDOMEvents_MozRotateGesture,
     eDOMEvents_MozTapGesture,
     eDOMEvents_MozPressTapGesture,
+    eDOMEvents_MozEdgeUIGesture,
     eDOMEvents_MozTouchDown,
     eDOMEvents_MozTouchMove,
     eDOMEvents_MozTouchUp,
@@ -194,16 +191,6 @@ public:
   // nsIDOMEvent Interface
   NS_DECL_NSIDOMEVENT
 
-  // nsIDOMNSEvent Interface
-  NS_DECL_NSIDOMNSEVENT
-
-  // nsIPrivateDOMEvent interface
-  NS_IMETHOD    DuplicatePrivateData();
-  NS_IMETHOD    SetTarget(nsIDOMEventTarget* aTarget);
-  NS_IMETHOD_(bool)    IsDispatchStopped();
-  NS_IMETHOD_(nsEvent*)    GetInternalNSEvent();
-  NS_IMETHOD    SetTrusted(bool aTrusted);
-
   // nsIJSNativeInitializer
   NS_IMETHOD Initialize(nsISupports* aOwner, JSContext* aCx, JSObject* aObj,
                         PRUint32 aArgc, jsval* aArgv);
@@ -212,9 +199,6 @@ public:
                                 JSContext* aCx, jsval* aVal);
 
   void InitPresContextData(nsPresContext* aPresContext);
-
-  virtual void Serialize(IPC::Message* aMsg, bool aSerializeInterfaceType);
-  virtual bool Deserialize(const IPC::Message* aMsg, void** aIter);
 
   static PopupControlState GetEventPopupControlState(nsEvent *aEvent);
 
@@ -237,7 +221,7 @@ public:
 protected:
 
   // Internal helper functions
-  nsresult SetEventType(const nsAString& aEventTypeArg);
+  void SetEventType(const nsAString& aEventTypeArg);
   already_AddRefed<nsIContent> GetTargetFromFrame();
 
   nsEvent*                    mEvent;
@@ -250,5 +234,32 @@ protected:
 
 #define NS_FORWARD_TO_NSDOMEVENT \
   NS_FORWARD_NSIDOMEVENT(nsDOMEvent::)
+
+#define NS_FORWARD_NSIDOMEVENT_NO_SERIALIZATION_NO_DUPLICATION(_to) \
+  NS_IMETHOD GetType(nsAString& aType){ return _to GetType(aType); } \
+  NS_IMETHOD GetTarget(nsIDOMEventTarget * *aTarget) { return _to GetTarget(aTarget); } \
+  NS_IMETHOD GetCurrentTarget(nsIDOMEventTarget * *aCurrentTarget) { return _to GetCurrentTarget(aCurrentTarget); } \
+  NS_IMETHOD GetEventPhase(PRUint16 *aEventPhase) { return _to GetEventPhase(aEventPhase); } \
+  NS_IMETHOD GetBubbles(bool *aBubbles) { return _to GetBubbles(aBubbles); } \
+  NS_IMETHOD GetCancelable(bool *aCancelable) { return _to GetCancelable(aCancelable); } \
+  NS_IMETHOD GetTimeStamp(DOMTimeStamp *aTimeStamp) { return _to GetTimeStamp(aTimeStamp); } \
+  NS_IMETHOD StopPropagation(void) { return _to StopPropagation(); } \
+  NS_IMETHOD PreventDefault(void) { return _to PreventDefault(); } \
+  NS_IMETHOD InitEvent(const nsAString & eventTypeArg, bool canBubbleArg, bool cancelableArg) { return _to InitEvent(eventTypeArg, canBubbleArg, cancelableArg); } \
+  NS_IMETHOD GetDefaultPrevented(bool *aDefaultPrevented) { return _to GetDefaultPrevented(aDefaultPrevented); } \
+  NS_IMETHOD StopImmediatePropagation(void) { return _to StopImmediatePropagation(); } \
+  NS_IMETHOD GetOriginalTarget(nsIDOMEventTarget** aOriginalTarget) { return _to GetOriginalTarget(aOriginalTarget); } \
+  NS_IMETHOD GetExplicitOriginalTarget(nsIDOMEventTarget** aExplicitOriginalTarget) { return _to GetExplicitOriginalTarget(aExplicitOriginalTarget); } \
+  NS_IMETHOD PreventBubble() { return _to PreventBubble(); } \
+  NS_IMETHOD PreventCapture() { return _to PreventCapture(); } \
+  NS_IMETHOD GetPreventDefault(bool* aRetval) { return _to GetPreventDefault(aRetval); } \
+  NS_IMETHOD GetIsTrusted(bool* aIsTrusted) { return _to GetIsTrusted(aIsTrusted); } \
+  NS_IMETHOD SetTarget(nsIDOMEventTarget *aTarget) { return _to SetTarget(aTarget); } \
+  NS_IMETHOD_(bool) IsDispatchStopped(void) { return _to IsDispatchStopped(); } \
+  NS_IMETHOD_(nsEvent *) GetInternalNSEvent(void) { return _to GetInternalNSEvent(); } \
+  NS_IMETHOD SetTrusted(bool aTrusted) { return _to SetTrusted(aTrusted); }
+
+#define NS_FORWARD_TO_NSDOMEVENT_NO_SERIALIZATION_NO_DUPLICATION \
+  NS_FORWARD_NSIDOMEVENT_NO_SERIALIZATION_NO_DUPLICATION(nsDOMEvent::)
 
 #endif // nsDOMEvent_h__

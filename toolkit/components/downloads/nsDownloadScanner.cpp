@@ -175,7 +175,7 @@ nsDownloadScanner::Init()
   if (mWatchdog) {
     rv = mWatchdog->Init();
     if (FAILED(rv))
-      mWatchdog = nsnull;
+      mWatchdog = nullptr;
   } else {
     rv = NS_ERROR_OUT_OF_MEMORY;
   }
@@ -329,7 +329,7 @@ nsDownloadScanner::Scan::Start()
   nsresult rv = NS_OK;
 
   // Get the path to the file on disk
-  nsCOMPtr<nsILocalFile> file;
+  nsCOMPtr<nsIFile> file;
   rv = mDownload->GetTargetFile(getter_AddRefs(file));
   NS_ENSURE_SUCCESS(rv, rv);
   rv = file->GetPath(mPath);
@@ -417,7 +417,7 @@ nsDownloadScanner::Scan::Run()
 
   // Clean up some other variables
   // In the event of a timeout, our destructor won't be called
-  mDownload = nsnull;
+  mDownload = nullptr;
 
   NS_RELEASE_THIS();
   return NS_OK;

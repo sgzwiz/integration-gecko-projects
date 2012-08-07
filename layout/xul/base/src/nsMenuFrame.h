@@ -21,6 +21,7 @@
 #include "nsXULPopupManager.h"
 #include "nsITimer.h"
 #include "nsIContent.h"
+#include "mozilla/Attributes.h"
 
 nsIFrame* NS_NewMenuFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
 nsIFrame* NS_NewMenuItemFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
@@ -55,7 +56,7 @@ class nsMenuFrame;
  * to it. The callback is delegated to the contained nsMenuFrame as long as
  * the contained nsMenuFrame has not been destroyed.
  */
-class nsMenuTimerMediator : public nsITimerCallback
+class nsMenuTimerMediator MOZ_FINAL : public nsITimerCallback
 {
 public:
   nsMenuTimerMediator(nsMenuFrame* aFrame);
@@ -81,7 +82,6 @@ public:
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS
 
-  // nsIBox
   NS_IMETHOD DoLayout(nsBoxLayoutState& aBoxLayoutState);
   virtual nsSize GetMinSize(nsBoxLayoutState& aBoxLayoutState);
   virtual nsSize GetPrefSize(nsBoxLayoutState& aBoxLayoutState);
@@ -210,7 +210,7 @@ protected:
 
   /**
    * Get the popup frame list from the frame property.
-   * @return the property value if it exists, nsnull otherwise.
+   * @return the property value if it exists, nullptr otherwise.
    */
   nsFrameList* GetPopupList() const;
 

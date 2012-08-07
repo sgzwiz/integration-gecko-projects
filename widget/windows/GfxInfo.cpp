@@ -59,26 +59,6 @@ GfxInfo::GetDWriteEnabled(bool *aEnabled)
   return NS_OK;
 }
 
-nsresult
-GfxInfo::GetAzureEnabled(bool *aEnabled)
-{
-  *aEnabled = false;
-
-  bool d2dEnabled = 
-    gfxWindowsPlatform::GetPlatform()->GetRenderMode() == gfxWindowsPlatform::RENDER_DIRECT2D;
-
-  if (d2dEnabled) {
-    bool azure = false;
-    nsresult rv = mozilla::Preferences::GetBool("gfx.canvas.azure.enabled", &azure);
-
-    if (NS_SUCCEEDED(rv) && azure) {
-      *aEnabled = true;
-    }
-  }
-
-  return NS_OK;
-}
-
 /* readonly attribute DOMString DWriteVersion; */
 NS_IMETHODIMP
 GfxInfo::GetDWriteVersion(nsAString & aDwriteVersion)
@@ -694,9 +674,9 @@ GfxInfo::AddCrashReportAnnotations()
   if (vendorID == GfxDriverInfo::GetDeviceVendor(VendorAll)) {
     /* if we didn't find a valid vendorID lets append the mDeviceID string to try to find out why */
     note.Append(", ");
-    note.AppendWithConversion(mDeviceID);
+    LossyAppendUTF16toASCII(mDeviceID, note);
     note.Append(", ");
-    note.AppendWithConversion(mDeviceKeyDebug);
+    LossyAppendUTF16toASCII(mDeviceKeyDebug, note);
     LossyAppendUTF16toASCII(mDeviceKeyDebug, note);
   }
   note.Append("\n");
@@ -859,7 +839,7 @@ GfxInfo::GetFeatureStatusImpl(PRInt32 aFeature,
                               PRInt32 *aStatus, 
                               nsAString & aSuggestedDriverVersion, 
                               const nsTArray<GfxDriverInfo>& aDriverInfo,
-                              OperatingSystem* aOS /* = nsnull */)
+                              OperatingSystem* aOS /* = nullptr */)
 {
   NS_ENSURE_ARG_POINTER(aStatus);
   aSuggestedDriverVersion.SetIsVoid(true);

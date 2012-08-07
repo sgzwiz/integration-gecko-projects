@@ -7,12 +7,15 @@
 #ifndef mozilla_dom_Element_h__
 #define mozilla_dom_Element_h__
 
-#include "nsIContent.h"
-#include "nsEventStates.h"
+#include "mozilla/dom/FragmentOrElement.h" // for base class
+#include "nsChangeHint.h"                  // for enum
+#include "nsEventStates.h"                 // for member
 
 class nsEventStateManager;
-class nsGlobalWindow;
 class nsFocusManager;
+class nsGlobalWindow;
+class nsICSSDeclaration;
+class nsISMILAttr;
 
 // Element-specific flags
 enum {
@@ -56,15 +59,15 @@ class Link;
 
 // IID for the dom::Element interface
 #define NS_ELEMENT_IID \
-{ 0xab6554b0, 0xb675, 0x45a7, \
-  { 0xac, 0x23, 0x44, 0x1c, 0x94, 0x5f, 0x3b, 0xee } }
+{ 0xc6c049a1, 0x96e8, 0x4580, \
+  { 0xa6, 0x93, 0xb9, 0x5f, 0x53, 0xbe, 0xe8, 0x1c } }
 
-class Element : public nsIContent
+class Element : public FragmentOrElement
 {
 public:
 #ifdef MOZILLA_INTERNAL_API
   Element(already_AddRefed<nsINodeInfo> aNodeInfo) :
-    nsIContent(aNodeInfo),
+    FragmentOrElement(aNodeInfo),
     mState(NS_EVENT_STATE_MOZ_READONLY)
   {}
 #endif // MOZILLA_INTERNAL_API
@@ -116,7 +119,7 @@ public:
       return mState;
     }
     return StyleStateFromLocks();
-  };
+  }
 
   /**
    * The style state locks applied to this element.
@@ -180,10 +183,38 @@ public:
    *
    * Note: This method is analogous to the 'GetStyle' method in
    * nsGenericHTMLElement and nsStyledElement.
-   *
-   * TODO: Bug 744157 - All callers QI to nsICSSDeclaration.
    */
-  virtual nsIDOMCSSStyleDeclaration* GetSMILOverrideStyle() = 0;
+  virtual nsICSSDeclaration* GetSMILOverrideStyle() = 0;
+
+  /**
+   * Returns if the element is labelable as per HTML specification.
+   */
+  virtual bool IsLabelable() const = 0;
+
+  /**
+   * Is the attribute named stored in the mapped attributes?
+   *
+   * // XXXbz we use this method in HasAttributeDependentStyle, so svg
+   *    returns true here even though it stores nothing in the mapped
+   *    attributes.
+   */
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const = 0;
+
+  /**
+   * Get a hint that tells the style system what to do when
+   * an attribute on this node changes, if something needs to happen
+   * in response to the change *other* than the result of what is
+   * mapped into style data via any type of style rule.
+   */
+  virtual nsChangeHint GetAttributeChangeHint(const nsIAtom* aAttribute,
+                                              PRInt32 aModType) const = 0;
+
+  /**
+   * Returns an atom holding the name of the "class" attribute on this
+   * content node (if applicable).  Returns null if there is no
+   * "class" attribute for this type of content node.
+   */
+  virtual nsIAtom *GetClassAttributeName() const = 0;
 
 protected:
   /**
@@ -255,9 +286,16 @@ NS_DEFINE_STATIC_IID_ACCESSOR(Element, NS_ELEMENT_IID)
 } // namespace dom
 } // namespace mozilla
 
-inline mozilla::dom::Element* nsINode::AsElement() {
-  NS_ASSERTION(IsElement(), "Not an element?");
+inline mozilla::dom::Element* nsINode::AsElement()
+{
+  MOZ_ASSERT(IsElement());
   return static_cast<mozilla::dom::Element*>(this);
+}
+
+inline const mozilla::dom::Element* nsINode::AsElement() const
+{
+  MOZ_ASSERT(IsElement());
+  return static_cast<const mozilla::dom::Element*>(this);
 }
 
 #endif // mozilla_dom_Element_h__

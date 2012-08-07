@@ -8,6 +8,7 @@
 #include "nsIBrowserHistory.h"
 #include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
+#include "mozilla/Attributes.h"
 
 #include "mock_Link.h"
 using namespace mozilla::dom;
@@ -46,7 +47,7 @@ new_test_uri()
   return testURI.forget();
 }
 
-class VisitURIObserver : public nsIObserver
+class VisitURIObserver MOZ_FINAL : public nsIObserver
 {
 public:
   NS_DECL_ISUPPORTS
@@ -113,7 +114,7 @@ test_set_places_enabled()
 }
 
 // These variables are shared between part 1 and part 2 of the test.  Part 2
-// sets the nsCOMPtr's to nsnull, freeing the reference.
+// sets the nsCOMPtr's to nullptr, freeing the reference.
 namespace test_unvisited_does_not_notify {
   nsCOMPtr<nsIURI> testURI;
   nsRefPtr<Link> testLink;
@@ -175,8 +176,8 @@ test_unvisited_does_not_notify_part2()
   do_check_success(rv);
 
   // Clear the stored variables now.
-  testURI = nsnull;
-  testLink = nsnull;
+  testURI = nullptr;
+  testLink = nullptr;
 
   // Run the next test.
   run_next_test();
@@ -282,7 +283,7 @@ namespace test_observer_topic_dispatched_helpers {
   #define URI_VISITED "visited"
   #define URI_NOT_VISITED "not visited"
   #define URI_VISITED_RESOLUTION_TOPIC "visited-status-resolution"
-  class statusObserver : public nsIObserver
+  class statusObserver MOZ_FINAL : public nsIObserver
   {
   public:
     NS_DECL_ISUPPORTS

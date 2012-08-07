@@ -4,32 +4,53 @@
 
 #include <math.h>
 
-#include "nsHTMLEditor.h"
-
-#include "nsIContent.h"
-#include "nsIDocument.h"
-#include "nsIEditor.h"
-#include "nsIPresShell.h"
-
-#include "nsISelection.h"
-
-#include "nsTextEditUtils.h"
-#include "nsEditorUtils.h"
-#include "nsHTMLEditUtils.h"
-#include "nsTextEditRules.h"
-#include "nsHTMLEditRules.h"
-
-#include "nsIDOMHTMLElement.h"
-#include "nsIDOMNodeList.h"
-
-#include "nsIDOMEventTarget.h"
-
-#include "nsIDOMCSSValue.h"
-#include "nsIDOMCSSPrimitiveValue.h"
-#include "nsIDOMRGBColor.h"
-
 #include "mozilla/Preferences.h"
+#include "mozilla/Selection.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/mozalloc.h"
+#include "nsAString.h"
+#include "nsAlgorithm.h"
+#include "nsAutoPtr.h"
+#include "nsCOMPtr.h"
+#include "nsComputedDOMStyle.h"
+#include "nsDebug.h"
+#include "nsEditProperty.h"
+#include "nsEditRules.h"
+#include "nsEditor.h"
+#include "nsEditorUtils.h"
+#include "nsError.h"
+#include "nsGkAtoms.h"
+#include "nsHTMLCSSUtils.h"
+#include "nsHTMLEditRules.h"
+#include "nsHTMLEditUtils.h"
+#include "nsHTMLEditor.h"
+#include "nsHTMLObjectResizer.h"
+#include "nsIContent.h"
+#include "nsIDOMCSSPrimitiveValue.h"
+#include "nsIDOMCSSStyleDeclaration.h"
+#include "nsIDOMCSSValue.h"
+#include "nsIDOMElement.h"
+#include "nsIDOMEventListener.h"
+#include "nsIDOMEventTarget.h"
+#include "nsIDOMNode.h"
+#include "nsIDOMRGBColor.h"
+#include "nsIDOMWindow.h"
+#include "nsIEditor.h"
+#include "nsIHTMLEditor.h"
+#include "nsIHTMLObjectResizer.h"
+#include "nsINode.h"
+#include "nsIPresShell.h"
+#include "nsISelection.h"
+#include "nsISupportsImpl.h"
+#include "nsISupportsUtils.h"
+#include "nsLiteralString.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
+#include "nsStringFwd.h"
+#include "nsTextEditRules.h"
+#include "nsTextEditUtils.h"
+#include "nscore.h"
+#include "prtypes.h"
 
 using namespace mozilla;
 
@@ -46,7 +67,7 @@ nsHTMLEditor::AbsolutePositionSelection(bool aEnabled)
   
   // the line below does not match the code; should it be removed?
   // Find out if the selection is collapsed:
-  nsRefPtr<nsTypedSelection> selection = GetTypedSelection();
+  nsRefPtr<Selection> selection = GetSelection();
   NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
 
   nsTextRulesInfo ruleInfo(aEnabled ? kOpSetAbsolutePosition :
@@ -93,7 +114,7 @@ nsHTMLEditor::GetAbsolutelyPositionedSelectionContainer(nsIDOMElement **_retval)
 NS_IMETHODIMP
 nsHTMLEditor::GetSelectionContainerAbsolutelyPositioned(bool *aIsSelectionContainerAbsolutelyPositioned)
 {
-  *aIsSelectionContainerAbsolutelyPositioned = (mAbsolutelyPositionedObject != nsnull);
+  *aIsSelectionContainerAbsolutelyPositioned = (mAbsolutelyPositionedObject != nullptr);
   return NS_OK;
 }
 
@@ -159,7 +180,7 @@ nsHTMLEditor::RelativeChangeZIndex(PRInt32 aChange)
   
   // brade: can we get rid of this comment?
   // Find out if the selection is collapsed:
-  nsRefPtr<nsTypedSelection> selection = GetTypedSelection();
+  nsRefPtr<Selection> selection = GetSelection();
   NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
   nsTextRulesInfo ruleInfo(aChange < 0 ? kOpDecreaseZIndex :
                                          kOpIncreaseZIndex);
@@ -212,7 +233,7 @@ nsHTMLEditor::GetElementZIndex(nsIDOMElement * aElement,
   }
 
   if (!zIndexStr.EqualsLiteral("auto")) {
-    PRInt32 errorCode;
+    nsresult errorCode;
     *aZindex = zIndexStr.ToInteger(&errorCode);
   }
 
@@ -269,7 +290,7 @@ nsHTMLEditor::HideGrabber()
     mAbsolutelyPositionedObject->RemoveAttribute(NS_LITERAL_STRING("_moz_abspos"));
   NS_ENSURE_SUCCESS(res, res);
 
-  mAbsolutelyPositionedObject = nsnull;
+  mAbsolutelyPositionedObject = nullptr;
   NS_ENSURE_TRUE(mGrabber, NS_ERROR_NULL_POINTER);
 
   // get the presshell's document observer interface.
@@ -286,9 +307,9 @@ nsHTMLEditor::HideGrabber()
   NS_ENSURE_TRUE(parentContent, NS_ERROR_NULL_POINTER);
 
   DeleteRefToAnonymousNode(mGrabber, parentContent, ps);
-  mGrabber = nsnull;
+  mGrabber = nullptr;
   DeleteRefToAnonymousNode(mPositioningShadow, parentContent, ps);
-  mPositioningShadow = nsnull;
+  mPositioningShadow = nullptr;
 
   return NS_OK;
 }
@@ -402,7 +423,7 @@ nsHTMLEditor::EndMoving()
 
     DeleteRefToAnonymousNode(mPositioningShadow, parentContent, ps);
 
-    mPositioningShadow = nsnull;
+    mPositioningShadow = nullptr;
   }
   nsCOMPtr<nsIDOMEventTarget> piTarget = GetDOMEventTarget();
 
@@ -415,7 +436,7 @@ nsHTMLEditor::EndMoving()
                                   false);
     NS_ASSERTION(NS_SUCCEEDED(res), "failed to remove mouse motion listener");
   }
-  mMouseMotionListenerP = nsnull;
+  mMouseMotionListenerP = nullptr;
 
   mGrabberClicked = false;
   mIsMoving = false;
@@ -489,7 +510,6 @@ nsHTMLEditor::AbsolutelyPositionElement(nsIDOMElement * aElement,
     return NS_OK;
 
   nsAutoEditBatch batchIt(this);
-  nsresult res;
 
   if (aEnabled) {
     PRInt32 x, y;
@@ -512,11 +532,11 @@ nsHTMLEditor::AbsolutelyPositionElement(nsIDOMElement * aElement,
     nsINode* parentNode = element->GetNodeParent();
     if (parentNode->GetChildCount() == 1) {
       nsCOMPtr<nsIDOMNode> brNode;
-      res = CreateBR(parentNode->AsDOMNode(), 0, address_of(brNode));
+      nsresult res = CreateBR(parentNode->AsDOMNode(), 0, address_of(brNode));
+      NS_ENSURE_SUCCESS(res, res);
     }
   }
   else {
-    res = NS_OK;
     mHTMLCSSUtils->RemoveCSSProperty(aElement,
                                      nsEditProperty::cssPosition,
                                      EmptyString(), false);
@@ -543,12 +563,13 @@ nsHTMLEditor::AbsolutelyPositionElement(nsIDOMElement * aElement,
     if (element && element->IsHTML(nsGkAtoms::div) && !HasStyleOrIdOrClass(element)) {
       nsHTMLEditRules* htmlRules = static_cast<nsHTMLEditRules*>(mRules.get());
       NS_ENSURE_TRUE(htmlRules, NS_ERROR_FAILURE);
-      res = htmlRules->MakeSureElemStartsOrEndsOnCR(aElement);
+      nsresult res = htmlRules->MakeSureElemStartsOrEndsOnCR(aElement);
       NS_ENSURE_SUCCESS(res, res);
       res = RemoveContainer(aElement);
+      NS_ENSURE_SUCCESS(res, res);
     }
   }
-  return res;
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -636,13 +657,9 @@ nsHTMLEditor::CheckPositionedElementBGandFG(nsIDOMElement * aElement,
                                          bgColorStr);
     NS_ENSURE_SUCCESS(res, res);
     if (bgColorStr.EqualsLiteral("transparent")) {
-      nsCOMPtr<nsIDOMWindow> window;
-      res = mHTMLCSSUtils->GetDefaultViewCSS(aElement, getter_AddRefs(window));
-      NS_ENSURE_SUCCESS(res, res);
-
-      nsCOMPtr<nsIDOMCSSStyleDeclaration> cssDecl;
-      res = window->GetComputedStyle(aElement, EmptyString(), getter_AddRefs(cssDecl));
-      NS_ENSURE_SUCCESS(res, res);
+      nsRefPtr<nsComputedDOMStyle> cssDecl =
+        mHTMLCSSUtils->GetComputedStyle(aElement);
+      NS_ENSURE_STATE(cssDecl);
 
       // from these declarations, get the one we want and that one only
       nsCOMPtr<nsIDOMCSSValue> colorCssValue;

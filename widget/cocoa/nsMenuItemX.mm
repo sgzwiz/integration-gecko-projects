@@ -19,7 +19,6 @@
 #include "nsIWidget.h"
 #include "nsIDocument.h"
 #include "nsIDOMDocument.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsIDOMEventTarget.h"
 #include "nsIDOMElement.h"
 #include "nsThreadUtils.h"
@@ -28,8 +27,8 @@ nsMenuItemX::nsMenuItemX()
 {
   mType           = eRegularMenuItemType;
   mNativeMenuItem = nil;
-  mMenuParent     = nsnull;
-  mMenuGroupOwner = nsnull;
+  mMenuParent     = nullptr;
+  mMenuGroupOwner = nullptr;
   mIsChecked      = false;
 
   MOZ_COUNT_CTOR(nsMenuItemX);
@@ -345,8 +344,7 @@ nsresult nsMenuItemX::DispatchDOMEvent(const nsString &eventName, bool *preventD
   event->InitEvent(eventName, true, true);
 
   // mark DOM event as trusted
-  nsCOMPtr<nsIPrivateDOMEvent> privateEvent(do_QueryInterface(event));
-  privateEvent->SetTrusted(true);
+  event->SetTrusted(true);
 
   // send DOM event
   nsCOMPtr<nsIDOMEventTarget> eventTarget = do_QueryInterface(mContent);
@@ -508,7 +506,7 @@ void nsMenuItemX::ObserveContentRemoved(nsIDocument *aDocument, nsIContent *aChi
 {
   if (aChild == mCommandContent) {
     mMenuGroupOwner->UnregisterForContentChanges(mCommandContent);
-    mCommandContent = nsnull;
+    mCommandContent = nullptr;
   }
 
   mMenuParent->SetRebuild(true);
