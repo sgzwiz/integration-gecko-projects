@@ -420,6 +420,8 @@ nsPresContext::GetFontPrefsForLang(nsIAtom *aLanguage) const
 {
   // Get language group for aLanguage:
 
+  nsAutoLockChrome lock; // for atoms, language service
+
   nsresult rv;
   nsIAtom *langGroupAtom = nsnull;
   if (!aLanguage) {

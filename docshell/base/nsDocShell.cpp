@@ -735,11 +735,19 @@ nsDocShell::MaybeFreeWindowZone()
 
 // Optional zone for docshells that are created on the main thread while a content
 // script on another thread is blocked waiting for the load to complete.
-static JSZoneId gMainThreadWindowZone = JS_ZONE_NONE;
+static JSZoneId gDefaultZone = JS_ZONE_NONE;
 
-void SetMainThreadDocShellZone(JSZoneId aZone)
+void SetActiveDocShellZone(JSZoneId zone)
 {
-    gMainThreadWindowZone = aZone;
+    gDefaultZone = zone;
+}
+
+static JSZoneId GetActiveDocShellZone()
+{
+    JSZoneId activeZone = JS_GetExecutingContentScriptZone();
+    if (activeZone == JS_ZONE_NONE)
+        activeZone = gDefaultZone;
+    return activeZone;
 }
 
 // Note: operator new zeros our memory
@@ -793,13 +801,17 @@ nsDocShell::nsDocShell():
     // If this was opened via a call from some content script, use the same
     // zone as that script. XXX make this less of a gigantic hack.
     JSZoneId activeZone = JS_GetExecutingContentScriptZone();
-
-    if (activeZone == JS_ZONE_NONE && NS_IsMainThread())
-        activeZone = gMainThreadWindowZone;
-
+    if (activeZone == JS_ZONE_NONE)
+        activeZone = gDefaultZone;
     if (activeZone != JS_ZONE_NONE) {
-        MaybeFreeWindowZone();
-        mWindowZone = activeZone;
+        // XXX remove overassert, we don't want to associate unrelated windows
+        // if we create the docshell while spinning a nested event loop.
+        MOZ_ASSERT(NS_IsOwningThread(activeZone));
+
+        if (NS_IsOwningThread(activeZone)) {
+            MaybeFreeWindowZone();
+            mWindowZone = activeZone;
+        }
     }
 
     mHistoryID = ++gDocshellIDCounter;
@@ -2716,6 +2728,7 @@ nsDocShell::SetParentZone(PRInt32 aZone)
     MOZ_ASSERT_IF(mWindowZone == JS_ZONE_CHROME, aZone == JS_ZONE_CHROME);
 
     if (aZone >= JS_ZONE_CONTENT_START) {
+        MOZ_ASSERT(NS_IsOwningThread((JSZoneId) aZone));
         MaybeFreeWindowZone();
         mWindowZone = (JSZoneId) aZone;
     }

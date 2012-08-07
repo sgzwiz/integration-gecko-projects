@@ -1987,6 +1987,8 @@ nsFocusManager::ScrollIntoView(nsIPresShell* aPresShell,
 void
 nsFocusManager::RaiseWindow(nsPIDOMWindow* aWindow)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   // don't raise windows that are already raised or are in the process of
   // being lowered
   if (!aWindow || aWindow == mActiveWindow || aWindow == mWindowBeingLowered)
@@ -2034,8 +2036,10 @@ nsFocusManager::RaiseWindow(nsPIDOMWindow* aWindow)
   if (treeOwnerAsWin) {
     nsCOMPtr<nsIWidget> widget;
     treeOwnerAsWin->GetMainWidget(getter_AddRefs(widget));
-    if (widget)
+    if (widget) {
+      nsAutoUnlockEverything unlock;
       widget->SetFocus(true);
+    }
   }
 #endif
 }

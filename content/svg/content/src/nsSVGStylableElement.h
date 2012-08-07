@@ -22,6 +22,9 @@ protected:
 public:
   // interfaces:
   NS_DECL_ISUPPORTS_INHERITED
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return nsINode::GetZone(); }
+
   NS_DECL_NSIDOMSVGSTYLABLE
 
   // nsIContent

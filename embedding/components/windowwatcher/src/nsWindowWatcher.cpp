@@ -576,8 +576,6 @@ nsWindowWatcher::OpenWindowJSInternal(nsIDOMWindow *aParent,
     // name on it.
     windowNeedsName = true;
 
-    SetMainThreadDocShellZone(aParent ? aParent->GetZone() : JS_ZONE_CHROME);
-
     // Now check whether it's ok to ask a window provider for a window.  Don't
     // do it if we're opening a dialog or if our parent is a chrome window or
     // if we're opening something that has modal, dialog, or chrome flags set.
@@ -610,8 +608,6 @@ nsWindowWatcher::OpenWindowJSInternal(nsIDOMWindow *aParent,
         }
       }
     }
-
-    SetMainThreadDocShellZone(JS_ZONE_NONE);
   }
   
   bool newWindowShouldBeModal = false;
@@ -659,8 +655,6 @@ nsWindowWatcher::OpenWindowJSInternal(nsIDOMWindow *aParent,
     rv = NS_ERROR_FAILURE;
     if (mWindowCreator) {
       nsCOMPtr<nsIWebBrowserChrome> newChrome;
-
-      SetMainThreadDocShellZone(aParent ? aParent->GetZone() : JS_ZONE_CHROME);
 
       /* If the window creator is an nsIWindowCreator2, we can give it
          some hints. The only hint at this time is whether the opening window
@@ -712,8 +706,6 @@ nsWindowWatcher::OpenWindowJSInternal(nsIDOMWindow *aParent,
         if (!newDocShellItem)
           rv = NS_ERROR_FAILURE;
       }
-
-      SetMainThreadDocShellZone(JS_ZONE_NONE);
     }
   }
 

@@ -48,6 +48,8 @@ public:
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
     NS_DECL_CYCLE_COLLECTION_CLASS(DOMAnimatedString)
 
+    NS_IMETHOD_(JSZoneId) GetZone();
+
     DOMAnimatedString(nsSVGClass *aVal, nsSVGStylableElement *aSVGElement)
       : mVal(aVal), mSVGElement(aSVGElement) {}
 

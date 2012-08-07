@@ -9,6 +9,7 @@
 #include "nsCOMArray.h"
 #include "nsISimpleEnumerator.h"
 #include "xpcpublic.h"
+#include "nsThreadUtils.h"
 
 nsresult
 nsObserverList::AddObserver(nsIObserver* anObserver, bool ownsWeak)
@@ -68,7 +69,12 @@ nsObserverList::FillObserverArray(nsCOMArray<nsIObserver> &aArray)
 {
     aArray.SetCapacity(mObservers.Length());
 
-    nsTArray<ObserverRef> observers(mObservers);
+    // Ignore observers in zones whose lock is not held.
+    nsTArray<ObserverRef> observers;
+    for (PRInt32 i = 0; i < mObservers.Length(); i++) {
+        if (NS_IsOwningThread(mObservers[i].getZone()))
+            observers.AppendElement(mObservers[i]);
+    }
 
     for (PRInt32 i = observers.Length() - 1; i >= 0; --i) {
         if (observers[i].isWeakRef) {

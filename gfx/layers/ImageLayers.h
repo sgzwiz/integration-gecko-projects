@@ -794,7 +794,7 @@ public:
 
   virtual already_AddRefed<gfxASurface> GetAsSurface()
   {
-    NS_ASSERTION(NS_IsMainThread(), "Must be main thread");
+    NS_ASSERTION(NS_IsChromeOwningThread(), "Must be main thread");
     nsRefPtr<gfxASurface> surface = mSurface.get();
     return surface.forget();
   }

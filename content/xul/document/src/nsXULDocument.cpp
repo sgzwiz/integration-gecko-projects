@@ -90,6 +90,7 @@
 #include "nsXULPopupManager.h"
 #include "nsCCUncollectableMarker.h"
 #include "nsURILoader.h"
+#include "nsIWebShellServices.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/Preferences.h"
 
@@ -3225,6 +3226,11 @@ nsXULDocument::StyleSheetLoaded(nsCSSStyleSheet* aSheet,
                                 bool aWasAlternate,
                                 nsresult aStatus)
 {
+    // Lock the zone for any JS on the stack in case we are in a nested event loop.
+    JSZoneId executingZone = GetActiveDocShellZone();
+    if (executingZone >= JS_ZONE_CONTENT_START)
+      NS_StickContentLock(executingZone);
+
     if (!aWasAlternate) {
         // Don't care about when alternate sheets finish loading
 

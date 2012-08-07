@@ -1358,6 +1358,8 @@ nsContentSink::WillInterruptImpl()
                      ("nsContentSink::WillInterrupt: setting up timer with "
                       "delay %d", delay));
 
+          mNotificationTimer->SetCallbackZone(GetZone());
+
           result =
             mNotificationTimer->InitWithCallback(this, delay,
                                                  nsITimer::TYPE_ONE_SHOT);

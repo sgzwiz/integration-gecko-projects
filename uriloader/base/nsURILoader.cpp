@@ -30,6 +30,7 @@
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsIDocShellTreeOwner.h"
+#include "nsIWebShellServices.h"
 
 #include "nsXPIDLString.h"
 #include "nsString.h"
@@ -306,6 +307,14 @@ NS_IMETHODIMP nsDocumentOpenInfo::OnStopRequest(nsIRequest *request, nsISupports
     // OnStartRequest after this... reset state.
     m_targetStreamListener = 0;
     mContentType.Truncate();
+
+    // The call below may try to create a docshell which will be associated
+    // with the zone for any JS on the stack. The lock for that JS may not be
+    // held, if we are spinning a nested event loop.
+    JSZoneId executingZone = GetActiveDocShellZone();
+    if (executingZone >= JS_ZONE_CONTENT_START)
+      NS_StickContentLock(executingZone);
+
     listener->OnStopRequest(request, aCtxt, aStatus);
   }
 

@@ -520,6 +520,7 @@ protected:
     * Redraw is called, reset to false when Render is called.
     */
   bool mIsEntireFrameInvalid;
+
   /**
     * When this is set, the first call to Redraw(gfxRect) should set
     * mIsEntireFrameInvalid since we expect it will be followed by
@@ -1189,6 +1190,8 @@ nsCanvasRenderingContext2DAzure::Redraw(const mgfx::Rect &r)
     mThebesSurface =
       gfxPlatform::GetPlatform()->GetThebesSurfaceForDrawTarget(mTarget);
   mThebesSurface->MarkDirty();
+
+  nsAutoLockChrome lock; // observers can be in chrome
 
   nsSVGEffects::InvalidateDirectRenderingObservers(HTMLCanvasElement());
 
@@ -1923,6 +1926,9 @@ nsCanvasRenderingContext2DAzure::CreatePattern(nsIDOMHTMLElement *image,
     return NS_ERROR_DOM_SYNTAX_ERR;
   }
 
+  // needed for imgRequest, nsCanvasPatternAzure.
+  nsAutoLockChrome lock;
+
   nsHTMLCanvasElement* canvas = nsHTMLCanvasElement::FromContent(content);
   if (canvas) {
     nsIntSize size = canvas->GetSize();
@@ -1943,8 +1949,6 @@ nsCanvasRenderingContext2DAzure::CreatePattern(nsIDOMHTMLElement *image,
       return NS_OK;
     }
   }
-
-  nsAutoLockChrome lock; // needed for imgRequest in SurfaceFromElementResult
 
   // The canvas spec says that createPattern should use the first frame
   // of animated images
@@ -3230,6 +3234,8 @@ nsCanvasRenderingContext2DAzure::DrawOrMeasureText(const nsAString& aRawText,
 
   nscoord totalWidthCoord;
 
+  nsAutoLockChrome lock; // for canvas/gfx stuff under ProcessText
+
   // calls bidi algo twice since it needs the full text width and the
   // bounding boxes before rendering anything
   nsBidi bidiEngine;
@@ -3743,6 +3749,15 @@ nsCanvasRenderingContext2DAzure::DrawImage(nsIDOMElement *imgElt, float a1,
                 mgfx::Rect(sx, sy, sw, sh),
                 DrawSurfaceOptions(filter),
                 DrawOptions(CurrentState().globalAlpha, UsedOperation()));
+
+  /**
+    * XXX remove hack. Some drawImage reftests are busted because RedrawUser
+    * stops early because the entire frame is already invalid. In some cases
+    * the pres context thinks it has cleared all pending paint events and the
+    * reftest driver does not update its canvas after this call, but this does
+    * not always hold and there seem to be other races.
+    */
+  mIsEntireFrameInvalid = false;
 
   return RedrawUser(gfxRect(dx, dy, dw, dh));
 }

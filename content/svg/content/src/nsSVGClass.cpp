@@ -15,6 +15,12 @@ NS_SVG_VAL_IMPL_CYCLE_COLLECTION(nsSVGClass::DOMAnimatedString, mSVGElement)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsSVGClass::DOMAnimatedString)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsSVGClass::DOMAnimatedString)
 
+NS_IMETHODIMP_(JSZoneId)
+nsSVGClass::DOMAnimatedString::GetZone()
+{
+  return mSVGElement ? mSVGElement->GetZone() : JS_ZONE_CHROME;
+}
+
 DOMCI_DATA(SVGAnimatedClass, nsSVGClass::DOMAnimatedString)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsSVGClass::DOMAnimatedString)

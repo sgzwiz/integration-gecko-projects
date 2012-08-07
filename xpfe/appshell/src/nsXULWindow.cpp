@@ -438,6 +438,9 @@ NS_IMETHODIMP nsXULWindow::Destroy()
   if (!mWindow)
      return NS_OK;
 
+  if (!NS_IsMainThread())
+    return NS_DispatchToMainThread(NS_NewRunnableMethod(this, &nsXULWindow::Destroy), NS_DISPATCH_SYNC);
+
   nsCOMPtr<nsIAppShellService> appShell(do_GetService(NS_APPSHELLSERVICE_CONTRACTID));
   NS_ASSERTION(appShell, "Couldn't get appShell... xpcom shutdown?");
   if (appShell)
@@ -764,6 +767,8 @@ NS_IMETHODIMP nsXULWindow::SetParentWidget(nsIWidget* aParentWidget)
 
 NS_IMETHODIMP nsXULWindow::GetParentNativeWindow(nativeWindow* aParentNativeWindow)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   NS_ENSURE_ARG_POINTER(aParentNativeWindow);
 
   nsCOMPtr<nsIWidget> parentWidget;
@@ -795,8 +800,26 @@ NS_IMETHODIMP nsXULWindow::GetVisibility(bool* aVisibility)
   return NS_OK;
 }
 
+class nsXULWindowSetVisibilityRunnable : public nsRunnable
+{
+  nsRefPtr<nsXULWindow> mWindow;
+  bool mVisibility;
+
+public:
+  nsXULWindowSetVisibilityRunnable(nsXULWindow *aWindow, bool aVisibility)
+    : mWindow(aWindow), mVisibility(aVisibility)
+  {}
+
+  NS_IMETHODIMP Run() {
+    return mWindow->SetVisibility(mVisibility);
+  }
+};
+
 NS_IMETHODIMP nsXULWindow::SetVisibility(bool aVisibility)
 {
+  if (!NS_IsMainThread())
+    return NS_DispatchToMainThread(new nsXULWindowSetVisibilityRunnable(this, aVisibility), NS_DISPATCH_SYNC);
+
   if (!mChromeLoaded) {
     mShowAfterLoad = aVisibility;
     return NS_OK;
@@ -1837,6 +1860,8 @@ NS_IMETHODIMP nsXULWindow::CreateNewContentWindow(PRInt32 aChromeFlags,
 
 void nsXULWindow::EnableParent(bool aEnable)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   nsCOMPtr<nsIBaseWindow> parentWindow;
   nsCOMPtr<nsIWidget>     parentWidget;
 
@@ -1853,6 +1878,8 @@ bool nsXULWindow::ConstrainToZLevel(bool        aImmediate,
                                       nsIWidget  *aReqBelow,
                                       nsIWidget **aActualBelow)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
 #if 0
   /* Do we have a parent window? This means our z-order is already constrained,
      since we're a dependent window. Our window list isn't hierarchical,
@@ -1949,6 +1976,8 @@ void nsXULWindow::PlaceWindowLayersBehind(PRUint32 aLowLevel,
                                           PRUint32 aHighLevel,
                                           nsIXULWindow *aBehind)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   // step through windows in z-order from top to bottommost window
 
   nsCOMPtr<nsIWindowMediator> mediator(do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));

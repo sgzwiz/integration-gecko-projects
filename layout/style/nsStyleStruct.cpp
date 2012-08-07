@@ -135,6 +135,8 @@ nsStyleFont::Init(nsPresContext* aPresContext)
   aPresContext->Document()->GetContentLanguage(language);
   language.StripWhitespace();
 
+  nsAutoLockChrome lock; // for nsIAtom
+
   // Content-Language may be a comma-separated list of language codes,
   // in which case the HTML5 spec says to treat it as unknown
   if (!language.IsEmpty() &&

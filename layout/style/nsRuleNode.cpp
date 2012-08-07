@@ -2903,6 +2903,8 @@ nsRuleNode::SetFont(nsPresContext* aPresContext, nsStyleContext* aContext,
     langValue->GetStringValue(lang);
 
     nsContentUtils::ASCIIToLower(lang);
+
+    nsAutoLockChrome lock; // for nsIAtom
     aFont->mLanguage = do_GetAtom(lang);
   }
 
@@ -3439,6 +3441,8 @@ nsRuleNode::ComputeFontData(void* aStartStruct,
       }
     }
   }
+
+  nsAutoLockChrome lock; // for font atoms
 
   // Now compute our font struct
   if (generic == kGenericFont_NONE) {

@@ -815,16 +815,6 @@ static const size_t BACKTRACE_CAPACITY = 20;
 void
 NS_DumpBacktrace(const char *str, bool flush)
 {
-  static bool active = false;
-  static bool checked = false;
-  if (!checked) {
-    const char *env = getenv("DUMP_BACKTRACES");
-    active = (env && *env);
-    checked = true;
-  }
-  if (!active)
-    return;
-
   if (!backtraceFile) {
     backtraceFile = fopen("backtrace.txt", "w");
     backtraceMap = new BacktraceMap();

@@ -36,6 +36,10 @@ struct ObserverRef
     return static_cast<nsIWeakReference*>((nsISupports*) ref);
   }
 
+  JSZoneId getZone() {
+    return ref->GetZone();
+  }
+
   bool operator==(nsISupports* b) const { return ref == b; }
 };
 

@@ -3794,6 +3794,8 @@ TextInputHandlerBase::SynthesizeNativeKeyEvent(
     nil : nsCocoaUtils::MakeNewCocoaEventWithType(NSKeyUp, downEvent);
 
   if (downEvent && (sendFlagsChangedEvent || upEvent)) {
+    nsAutoUnlockEverything unlock;
+
     KeyboardLayoutOverride currentLayout = mKeyboardOverride;
     mKeyboardOverride.mKeyboardLayout = aNativeKeyboardLayout;
     mKeyboardOverride.mOverrideEnabled = true;

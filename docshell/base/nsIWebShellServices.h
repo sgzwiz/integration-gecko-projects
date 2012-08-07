@@ -32,6 +32,7 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsIWebShellServices, NS_IWEB_SHELL_SERVICES_IID)
   NS_IMETHOD ReloadDocument(const char *aCharset=nsnull, PRInt32 aSource=kCharsetUninitialized); \
   NS_IMETHOD StopDocumentLoad(void); \
 
-void SetMainThreadDocShellZone(JSZoneId aZone);
+void SetActiveDocShellZone(JSZoneId aZone);
+JSZoneId GetActiveDocShellZone();
 
 #endif /* nsIWebShellServices_h___ */

@@ -7209,6 +7209,7 @@ nsDocument::BlockOnload()
   MOZ_ASSERT(NS_IsOwningThread(GetZone()));
 
   if (mDisplayDocument) {
+    NS_StickLock(mDisplayDocument); // XXX why can this be in a different zone?
     mDisplayDocument->BlockOnload();
     return;
   }

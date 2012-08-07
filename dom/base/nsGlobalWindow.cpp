@@ -159,6 +159,7 @@
 #include "nsEventStateManager.h"
 #include "nsITimedChannel.h"
 #include "nsICookiePermission.h"
+#include "nsIWebShellServices.h"
 #include "nsServiceManagerUtils.h"
 #ifdef MOZ_XUL
 #include "nsXULPopupManager.h"
@@ -2301,6 +2302,7 @@ nsGlobalWindow::SetOpenerWindow(nsIDOMWindow* aOpener,
                "SetOpenerWindow!");
   NS_ASSERTION(aOpener || !aOriginalOpener,
                "Shouldn't set mHadOriginalOpener if aOpener is null");
+  MOZ_ASSERT_IF(aOpener, aOpener->GetZone() == mZone);
 
   MOZ_ASSERT_IF(aOpener, aOpener->GetZone() == GetZone());
 
@@ -8620,6 +8622,24 @@ nsGlobalWindow::CloseBlockScriptTerminationFunc(nsISupports *aRef)
   pwin->mBlockScriptedClosingFlag = false;
 }
 
+struct AutoSetActiveDocShellZone
+{
+  JSZoneId zone;
+
+  AutoSetActiveDocShellZone(JSZoneId zone)
+    : zone(zone)
+  {
+    if (zone >= JS_ZONE_CONTENT_START)
+      SetActiveDocShellZone(zone);
+  }
+
+  ~AutoSetActiveDocShellZone()
+  {
+    if (zone >= JS_ZONE_CONTENT_START)
+      SetActiveDocShellZone(JS_ZONE_NONE);
+  }
+};
+
 nsresult
 nsGlobalWindow::OpenInternal(const nsAString& aUrl, const nsAString& aName,
                              const nsAString& aOptions, bool aDialog,
@@ -8635,6 +8655,8 @@ nsGlobalWindow::OpenInternal(const nsAString& aUrl, const nsAString& aName,
                                   argv, aExtraArgument, aCalleePrincipal,
                                   aJSCallerContext, aReturn),
                    NS_ERROR_NOT_INITIALIZED);
+
+  AutoSetActiveDocShellZone setZone(GetZone());
 
 #ifdef NS_DEBUG
   PRUint32 argc = 0;

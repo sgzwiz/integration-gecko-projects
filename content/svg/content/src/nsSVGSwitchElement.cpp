@@ -133,6 +133,8 @@ nsSVGSwitchElement::FindActiveChild() const
                                     nsGkAtoms::allowReorder,
                                     nsGkAtoms::yes, eCaseMatters);
 
+  nsAutoLockChrome lock; // for string stuff
+
   const nsAdoptingString& acceptLangs =
     Preferences::GetLocalizedString("intl.accept_languages");
 

@@ -734,6 +734,8 @@ static BOOL gMenuItemsExecuteCommands = YES;
 // feedback.
 - (BOOL)performKeyEquivalent:(NSEvent *)theEvent
 {
+  nsAutoLockChromeUnstickContent lock;
+
   // We've noticed that Mac OS X expects this check in subclasses before
   // calling NSMenu's "performKeyEquivalent:".
   //
@@ -774,6 +776,8 @@ static BOOL gMenuItemsExecuteCommands = YES;
       }
     }
   }
+
+  nsAutoUnlockEverything unlock;
 
   gMenuItemsExecuteCommands = handleForPluginHack;
   [super performKeyEquivalent:theEvent];
