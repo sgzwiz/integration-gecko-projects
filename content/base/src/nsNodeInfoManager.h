@@ -85,7 +85,7 @@ public:
     return mDocument;
   }
 
-  JSZoneId GetZone() const
+  JSZoneId GetZone()
   {
     return mZone;
   }

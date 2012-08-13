@@ -71,12 +71,13 @@ public:
   NS_IMETHOD AddColorStop(float offset, const nsAString& colorstr);
 
 protected:
-  nsCanvasGradientAzure(Type aType) : mType(aType)
+  nsCanvasGradientAzure(JSZoneId aZone, Type aType) : mZone(aZone), mType(aType)
   {}
 
   nsTArray<mozilla::gfx::GradientStop> mRawStops;
   mozilla::RefPtr<mozilla::gfx::GradientStops> mStops;
   Type mType;
+  JSZoneId mZone;
   virtual ~nsCanvasGradientAzure() {}
 };
 
@@ -137,6 +138,8 @@ typedef mozilla::dom::HTMLImageElementOrHTMLCanvasElementOrHTMLVideoElement
 public:
   nsCanvasRenderingContext2DAzure();
   virtual ~nsCanvasRenderingContext2DAzure();
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mCanvasElement->GetZone(); }
 
   virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
                                bool *triedToWrap);

@@ -802,7 +802,7 @@ static bool
 DToStrResult(JSContext *cx, double d, JSDToStrMode mode, int precision, CallArgs args)
 {
     char buf[DTOSTR_VARIABLE_BUFFER_SIZE(MAX_PRECISION + 1)];
-    char *numStr = js_dtostr(cx->runtime->dtoaState, buf, sizeof buf, mode, precision, d);
+    char *numStr = js_dtostr(cx->thread()->dtoaState, buf, sizeof buf, mode, precision, d);
     if (!numStr) {
         JS_ReportOutOfMemory(cx);
         return false;

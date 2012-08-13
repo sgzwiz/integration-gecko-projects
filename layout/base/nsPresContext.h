@@ -141,10 +141,7 @@ public:
 
   nsPresContext(nsIDocument* aDocument, nsPresContextType aType) NS_HIDDEN;
 
-  NS_IMETHODIMP_(JSZoneId) GetZone()
-  {
-    return mDocument ? mDocument->GetZone() : JS_ZONE_CHROME;
-  }
+  NS_IMETHOD_(JSZoneId) GetZone();
 
   /**
    * Initialize the presentation context from a particular device.

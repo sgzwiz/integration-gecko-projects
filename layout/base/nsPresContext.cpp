@@ -110,6 +110,12 @@ private:
 
 } // anonymous namespace
 
+NS_IMETHODIMP_(JSZoneId)
+nsPresContext::GetZone()
+{
+  return mDocument ? mDocument->GetZone() : JS_ZONE_CHROME;
+}
+
 nscolor
 nsPresContext::MakeColorPref(const nsString& aColor)
 {

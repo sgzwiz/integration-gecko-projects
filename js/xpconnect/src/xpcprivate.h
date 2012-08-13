@@ -648,7 +648,7 @@ public:
     JSRuntime*     GetJSRuntime() const {return mJSRuntime;}
     nsXPConnect*   GetXPConnect() const {return mXPConnect;}
 
-    XPCJSContextStack* GetJSContextStack() {return mJSContextStack;}
+    XPCJSContextStack* GetJSContextStack();
     void DestroyJSContextStack();
 
     JSContext*     GetJSCycleCollectionContext();
@@ -878,7 +878,7 @@ private:
 
     nsXPConnect*             mXPConnect;
     JSRuntime*               mJSRuntime;
-    XPCJSContextStack*       mJSContextStack;
+    nsTArray<XPCJSContextStack*> mJSContextStacks;
     JSContext*               mJSCycleCollectionContext;
     XPCCallContext*          mCallContext;
     AutoMarkingPtr*          mAutoRoots;
@@ -3685,11 +3685,17 @@ class XPCJSContextStack
 {
 public:
     XPCJSContextStack()
-      : mSafeJSContext(NULL)
+      : mThread(PR_GetCurrentThread())
+      , mSafeJSContext(NULL)
       , mOwnSafeJSContext(NULL)
     { }
 
     virtual ~XPCJSContextStack();
+
+    PRThread *Thread()
+    {
+        return mThread;
+    }
 
     uint32_t Count()
     {
@@ -3714,6 +3720,7 @@ public:
 
 private:
     AutoInfallibleTArray<XPCJSContextInfo, 16> mStack;
+    PRThread*   mThread;
     JSContext*  mSafeJSContext;
     JSContext*  mOwnSafeJSContext;
 };

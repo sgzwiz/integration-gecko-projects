@@ -32,6 +32,7 @@
 #include "nsISupportsUtils.h"           // for NS_IF_ADDREF, NS_ADDREF, etc
 #include "nsITextServicesFilter.h"      // for nsITextServicesFilter
 #include "nsIWordBreaker.h"             // for nsWordRange, nsIWordBreaker
+#include "nsProxyRelease.h"             // for NS_ReleaseReference
 #include "nsRange.h"                    // for nsRange
 #include "nsStaticAtom.h"               // for NS_STATIC_ATOM, etc
 #include "nsString.h"                   // for nsString, nsAutoString

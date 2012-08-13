@@ -648,7 +648,9 @@ TabChild::RecvUpdateFrame(const nsIntRect& aDisplayPort,
                           const gfxSize& aResolution,
                           const nsIntRect& aScreenSize)
 {
-    if (!mCx || !mTabChildGlobal) {
+    JSContext *cx = GetJSContext();
+
+    if (!cx || !mTabChildGlobal) {
         return true;
     }
     nsCString data;
@@ -670,20 +672,20 @@ TabChild::RecvUpdateFrame(const nsIntRect& aDisplayPort,
         data += nsPrintfCString(" }");
     data += nsPrintfCString(" }");
 
-    JSAutoRequest ar(mCx);
+    JSAutoRequest ar(cx);
     jsval json = JSVAL_NULL;
     StructuredCloneData cloneData;
     JSAutoStructuredCloneBuffer buffer;
-    if (JS_ParseJSON(mCx,
+    if (JS_ParseJSON(cx,
                       static_cast<const jschar*>(NS_ConvertUTF8toUTF16(data).get()),
                       data.Length(),
                       &json)) {
-        WriteStructuredClone(mCx, json, buffer, cloneData.mClosure);
+        WriteStructuredClone(cx, json, buffer, cloneData.mClosure);
         cloneData.mData = buffer.data();
         cloneData.mDataLength = buffer.nbytes();
     }
 
-    nsFrameScriptCx cx(static_cast<nsIWebBrowserChrome*>(this), this);
+    nsFrameScriptCx context(static_cast<nsIWebBrowserChrome*>(this), this);
     // Let the BrowserElementScrolling helper (if it exists) for this
     // content manipulate the frame state.
     nsRefPtr<nsFrameMessageManager> mm =

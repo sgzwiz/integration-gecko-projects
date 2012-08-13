@@ -403,7 +403,7 @@ struct Thread : ThreadFriendFields
     }
 
     js::NewObjectCache  newObjectCache;
-    js::ToSourceCache   toSourceCache;
+    js::SourceDataCache sourceDataCache;
     js::EvalCache       evalCache;
 
     /*
@@ -769,11 +769,7 @@ struct JSRuntime : js::RuntimeFriendFields
     /* Client opaque pointers */
     void                *data;
 
-<<<<<<< local
-#ifdef JS_THREADSAFE
-=======
     /* These combine to interlock the GC and new requests. */
->>>>>>> other
     PRLock              *gcLock;
 
 #ifdef DEBUG
@@ -833,32 +829,6 @@ struct JSRuntime : js::RuntimeFriendFields
     bool                waiveGCQuota;
 
   private:
-<<<<<<< local
-=======
-    js::MathCache *mathCache_;
-    js::MathCache *createMathCache(JSContext *cx);
-  public:
-    js::MathCache *getMathCache(JSContext *cx) {
-        return mathCache_ ? mathCache_ : createMathCache(cx);
-    }
-
-    js::GSNCache        gsnCache;
-    js::PropertyCache   propertyCache;
-    js::NewObjectCache  newObjectCache;
-    js::NativeIterCache nativeIterCache;
-    js::SourceDataCache sourceDataCache;
-    js::EvalCache       evalCache;
-
-    /* State used by jsdtoa.cpp. */
-    DtoaState           *dtoaState;
-
-    /* List of currently pending operations on proxies. */
-    js::PendingProxyOperation *pendingProxyOperation;
-
-    js::ConservativeGCData conservativeGC;
-
-  private:
->>>>>>> other
     JSPrincipals        *trustedPrincipals_;
   public:
     void setTrustedPrincipals(JSPrincipals *p) { trustedPrincipals_ = p; }
@@ -1163,17 +1133,12 @@ struct JSContext : js::ContextFriendFields
     /* True if generating an error, to prevent runaway recursion. */
     bool                generatingError;
 
-<<<<<<< local
     inline void setCompartment(JSCompartment *compartment);
     inline void setCompartment(JSCompartment *compartment, JSZoneId zone, bool inferenceEnabled);
-=======
+
 #ifdef DEBUG
     bool                rootingUnnecessary;
 #endif
-
-    /* GC heap compartment. */
-    JSCompartment       *compartment;
->>>>>>> other
 
     inline void assertConsistency();
 
@@ -1530,7 +1495,6 @@ inline void
 LockGC(JSRuntime *rt)
 {
 #ifdef JS_THREADSAFE
-<<<<<<< local
     JS_ASSERT(!rt->IsGCLocked());
     PR_Lock(rt->gcLock);
 #ifdef DEBUG
@@ -1564,13 +1528,6 @@ WaitGCCondVar(JSRuntime *rt, PRCondVar *cvar)
     SetGCLockOwner(rt, 0, CurrentThreadId());
 #endif
 }
-=======
-# define JS_LOCK_GC(rt)    PR_Lock((rt)->gcLock)
-# define JS_UNLOCK_GC(rt)  PR_Unlock((rt)->gcLock)
-#else
-# define JS_LOCK_GC(rt)    do { } while (0)
-# define JS_UNLOCK_GC(rt)  do { } while (0)
->>>>>>> other
 #endif
 
 class AutoLockGC
@@ -1583,23 +1540,13 @@ class AutoLockGC
         MOZ_GUARD_OBJECT_NOTIFIER_INIT;
         // Avoid MSVC warning C4390 for non-threadsafe builds.
         if (rt)
-<<<<<<< local
             LockGC(rt);
-#endif
-=======
-            JS_LOCK_GC(rt);
->>>>>>> other
     }
 
     ~AutoLockGC()
     {
         if (runtime)
-<<<<<<< local
             UnlockGC(runtime);
-#endif
-=======
-            JS_UNLOCK_GC(runtime);
->>>>>>> other
     }
 
     bool locked() const {
@@ -1793,6 +1740,9 @@ js_ExpandErrorArguments(JSContext *cx, JSErrorCallback callback,
 
 JSBool
 js_InitContextThreadAndLockGC(JSContext *cx);
+
+js::Thread *
+js_CurrentThreadAndLockGC(JSRuntime *rt);
 
 namespace js {
 

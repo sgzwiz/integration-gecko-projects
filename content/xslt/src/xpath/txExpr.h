@@ -12,6 +12,7 @@
 #include "nsString.h"
 #include "txOwningArray.h"
 #include "nsIAtom.h"
+#include "nsThreadUtils.h"
 
 #ifdef DEBUG
 #define TX_TO_STRING

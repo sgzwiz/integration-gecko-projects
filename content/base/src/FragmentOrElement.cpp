@@ -1202,12 +1202,16 @@ public:
 
   static void UnbindAll()
   {
+    MOZ_ASSERT(0);
+
+    /*
     nsRefPtr<ContentUnbinder> ub = sContentUnbinder;
     sContentUnbinder = nullptr;
     while (ub) {
       ub->Run();
       ub = ub->mNext;
     }
+    */
   }
 
   static void Append(nsIContent* aSubtreeRoot)

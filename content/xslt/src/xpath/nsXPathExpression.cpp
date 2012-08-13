@@ -38,6 +38,12 @@ nsXPathExpression::nsXPathExpression(nsAutoPtr<Expr>& aExpression,
 {
 }
 
+NS_IMETHODIMP_(JSZoneId)
+nsXPathExpression::GetZone()
+{
+    return mDocument ? mDocument->GetZone() : JS_ZONE_CHROME;
+}
+
 NS_IMETHODIMP
 nsXPathExpression::Evaluate(nsIDOMNode *aContextNode,
                             PRUint16 aType,

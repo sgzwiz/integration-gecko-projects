@@ -505,6 +505,9 @@ class nsGlobalWindowObserver MOZ_FINAL : public nsIObserver,
 public:
   nsGlobalWindowObserver(nsGlobalWindow* aWindow) : mWindow(aWindow) {}
   NS_DECL_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_IMETHOD Observe(nsISupports* aSubject, const char* aTopic, const PRUnichar* aData)
   {
     if (!mWindow || !NS_TryStickLock(mWindow))
@@ -1711,8 +1714,8 @@ nsGlobalWindow::SetOuterObject(JSContext* aCx, JSObject* aOuterObject)
 static nsresult
 CreateNativeGlobalForInner(JSContext* aCx,
                            nsGlobalWindow* aNewInner,
+                           JSZoneId aZone,
                            nsIURI* aURI,
-                           bool aIsChrome,
                            nsIPrincipal* aPrincipal,
                            JSObject** aNativeGlobal,
                            nsIXPConnectJSObjectHolder** aHolder)
@@ -1724,11 +1727,12 @@ CreateNativeGlobalForInner(JSContext* aCx,
   MOZ_ASSERT(aNativeGlobal);
   MOZ_ASSERT(aHolder);
 
+  bool isChrome = aZone == JS_ZONE_CHROME;
   nsIXPConnect* xpc = nsContentUtils::XPConnect();
-  PRUint32 flags = aIsChrome ? nsIXPConnect::FLAG_SYSTEM_GLOBAL_OBJECT : 0;
+  PRUint32 flags = isChrome ? nsIXPConnect::FLAG_SYSTEM_GLOBAL_OBJECT : 0;
 
   nsCOMPtr<nsIPrincipal> systemPrincipal;
-  if (aIsChrome) {
+  if (isChrome) {
     nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
     ssm->GetSystemPrincipal(getter_AddRefs(systemPrincipal));
     MOZ_ASSERT(systemPrincipal);
@@ -1736,8 +1740,8 @@ CreateNativeGlobalForInner(JSContext* aCx,
 
   nsRefPtr<nsIXPConnectJSObjectHolder> jsholder;
   nsresult rv = xpc->InitClassesWithNewWrappedGlobal(
-    aCx, static_cast<nsIScriptGlobalObject*>(aNewInner),
-    aIsChrome ? systemPrincipal.get() : aPrincipal, flags,
+    aCx, static_cast<nsIScriptGlobalObject*>(aNewInner), aZone,
+    isChrome ? systemPrincipal.get() : aPrincipal, flags,
     getter_AddRefs(jsholder));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1937,7 +1941,7 @@ nsGlobalWindow::SetNewDocument(nsIDocument* aDocument,
       // Every script context we are initialized with must create a
       // new global.
       rv = CreateNativeGlobalForInner(cx, newInnerWindow, zone,
-                                      aDocument->GetDocumentURI(), isChrome,
+                                      aDocument->GetDocumentURI(),
                                       aDocument->NodePrincipal(),
                                       &newInnerWindow->mJSObject,
                                       getter_AddRefs(mInnerWindowHolder));

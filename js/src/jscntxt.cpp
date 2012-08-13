@@ -502,7 +502,7 @@ ReportError(JSContext *cx, const char *message, JSErrorReport *reportp,
          * the reporter triggers an over-recursion.
          */
         int stackDummy;
-        if (!JS_CHECK_STACK_SIZE(cx->runtime->nativeStackLimit, &stackDummy))
+        if (!JS_CHECK_STACK_SIZE(cx->thread()->nativeStackLimit, &stackDummy))
             return;
 
         if (cx->errorReporter)
@@ -1117,7 +1117,6 @@ JSContext::JSContext(JSRuntime *rt)
 #ifdef DEBUG
     rootingUnnecessary(false),
 #endif
-    compartment(NULL),
     stack(thisDuringConstruction()),  /* depends on cx->thread_ */
     parseMapPool_(NULL),
     globalObject(NULL),
@@ -1156,6 +1155,8 @@ JSContext::JSContext(JSRuntime *rt)
     skipGCRooters = NULL;
 #endif
 #endif
+
+    setCompartment(NULL);
 }
 
 JSContext::~JSContext()
@@ -1464,7 +1465,7 @@ namespace JS {
 AutoCheckRequestDepth::AutoCheckRequestDepth(JSContext *cx)
     : cx(cx)
 {
-    JS_ASSERT(cx->runtime->requestDepth || cx->runtime->isHeapBusy());
+    JS_ASSERT(cx->thread()->requestDepth || cx->runtime->isHeapBusy());
     JS_ASSERT_IF(!cx->runtime->isEverythingLocked || !cx->runtime->isEverythingLocked(),
                  cx->onCorrectThread());
     JS_ASSERT_IF(cx->runtime->lockCheck, cx->runtime->lockCheck(GetContextZone(cx)));

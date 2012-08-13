@@ -15,6 +15,7 @@
 #include "nsIScriptGlobalObject.h"
 #include "nsEventListenerManager.h"
 #include "nsIScriptContext.h"
+#include "nsThreadUtils.h"
 #include "nsWrapperCache.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Attributes.h"

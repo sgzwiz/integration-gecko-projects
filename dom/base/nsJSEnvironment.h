@@ -19,6 +19,8 @@
 #include "nsIArray.h"
 #include "mozilla/Attributes.h"
 
+#include "xpcpublic.h"
+
 class nsIXPConnectJSObjectHolder;
 class nsRootedJSValueArray;
 class nsScriptNameSpaceManager;

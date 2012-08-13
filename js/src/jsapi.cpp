@@ -755,6 +755,9 @@ Thread::init()
     if (!stackSpace.init())
         return false;
 
+    if (!evalCache.init())
+        return false;
+
     nativeStackBase = GetNativeStackBase();
     updateNativeStackLimit();
 
@@ -826,6 +829,7 @@ JSRuntime::JSRuntime()
     gcExactScanningEnabled(true),
     gcPoke(false),
     heapState(Idle),
+    freeLifoAlloc(4096),
 #ifdef JS_GC_ZEAL
     gcZeal_(0),
     gcZealFrequency(0),
@@ -938,9 +942,6 @@ JSRuntime::init(uint32_t maxbytes)
     if (!sourceCompressorThread.init())
         return false;
 #endif
-
-    if (!evalCache.init())
-        return false;
 
     debugScopes = this->new_<DebugScopes>(this);
     if (!debugScopes || !debugScopes->init()) {
@@ -1680,8 +1681,6 @@ JS_TransplantObject(JSContext *cx, JSObject *origobjArg, JSObject *targetArg)
     JS_ASSERT(!IsCrossCompartmentWrapper(origobj));
     JS_ASSERT(!IsCrossCompartmentWrapper(target));
 
-    AutoLockGC lock(cx->runtime);
-
     /*
      * Transplantation typically allocates new wrappers in every compartment. If
      * an incremental GC is active, this causes every compartment to be leaked
@@ -1689,6 +1688,7 @@ JS_TransplantObject(JSContext *cx, JSObject *origobjArg, JSObject *targetArg)
      * transplant to avoid leaks.
      */
     if (cx->runtime->gcIncrementalState != NO_INCREMENTAL) {
+        AutoLockGC lock(cx->runtime);
         PrepareForIncrementalGC(cx->runtime);
         FinishIncrementalGC(cx->runtime, gcreason::TRANSPLANT);
     }
@@ -1703,7 +1703,6 @@ JS_TransplantObject(JSContext *cx, JSObject *origobjArg, JSObject *targetArg)
         // destination, then we know that we won't find a wrapper in the
         // destination's cross compartment map and that the same
         // object will continue to work.
-        AutoUnlockGC unlock(cx->runtime);
         if (!origobj->swap(cx, target))
             return NULL;
         newIdentity = origobj;
@@ -1713,12 +1712,16 @@ JS_TransplantObject(JSContext *cx, JSObject *origobjArg, JSObject *targetArg)
         // in the contents of |target|.
         newIdentity = &p->value.toObject();
 
-        // When we remove origv from the wrapper map, its wrapper, newIdentity,
-        // must immediately cease to be a cross-compartment wrapper. Neuter it.
-        map.remove(p);
+        {
+            AutoLockGC lock(cx->runtime);
+
+            // When we remove origv from the wrapper map, its wrapper, newIdentity,
+            // must immediately cease to be a cross-compartment wrapper. Neuter it.
+            map.remove(p);
+        }
+
         NukeCrossCompartmentWrapper(newIdentity);
 
-        AutoUnlockGC unlock(cx->runtime);
         if (!newIdentity->swap(cx, target))
             return NULL;
     } else {
@@ -1734,14 +1737,13 @@ JS_TransplantObject(JSContext *cx, JSObject *origobjArg, JSObject *targetArg)
     // Lastly, update the original object to point to the new one.
     if (origobj->compartment() != destination) {
         RootedObject newIdentityWrapper(cx, newIdentity);
-        {
-            AutoUnlockGC unlock(cx->runtime);
-            AutoCompartment ac(cx, origobj);
-            if (!ac.enter() || !JS_WrapObject(cx, newIdentityWrapper.address()))
-                return NULL;
-            if (!origobj->swap(cx, newIdentityWrapper))
-                return NULL;
-        }
+        AutoCompartment ac(cx, origobj);
+        if (!ac.enter() || !JS_WrapObject(cx, newIdentityWrapper.address()))
+            return NULL;
+        if (!origobj->swap(cx, newIdentityWrapper))
+            return NULL;
+
+        AutoLockGC lock(cx->runtime);
         origobj->compartment()->crossCompartmentWrappers.put(ObjectValue(*newIdentity), origv);
     }
 
@@ -1851,7 +1853,6 @@ js_TransplantObjectWithWrapper(JSContext *cx,
 JS_PUBLIC_API(JSBool)
 JS_RefreshCrossCompartmentWrappers(JSContext *cx, JSObject *objArg)
 {
-    AutoLockGC lock(cx->runtime);
     RootedObject obj(cx, objArg);
     return RemapAllWrappersForObject(cx, obj, obj);
 }
@@ -7110,7 +7111,7 @@ JS_SetContextThread(JSContext *cx)
 JS_PUBLIC_API(uintptr_t)
 JS_ClearContextThread(JSContext *cx)
 {
-    AssertNoGC(cx);
+    AssertHeapIsIdle(cx);
 
 #ifdef JS_THREADSAFE
     /*

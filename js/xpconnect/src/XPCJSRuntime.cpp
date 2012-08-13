@@ -1043,10 +1043,26 @@ DetachedWrappedNativeProtoShutdownMarker(JSDHashTable *table, JSDHashEntryHdr *h
     return JS_DHASH_NEXT;
 }
 
+XPCJSContextStack*
+XPCJSRuntime::GetJSContextStack()
+{
+    nsAutoLockChrome lock;
+
+    PRThread *thread = PR_GetCurrentThread();
+    for (size_t i = 0; i < mJSContextStacks.Length(); i++) {
+        if (mJSContextStacks[i]->Thread() == thread)
+            return mJSContextStacks[i];
+    }
+    XPCJSContextStack* stack = new XPCJSContextStack();
+    mJSContextStacks.AppendElement(stack);
+    return stack;
+}
+
 void XPCJSRuntime::DestroyJSContextStack()
 {
-    delete mJSContextStack;
-    mJSContextStack = nullptr;
+    for (size_t i = 0; i < mJSContextStacks.Length(); i++)
+        delete mJSContextStacks[i];
+    mJSContextStacks.Clear();
 }
 
 void XPCJSRuntime::SystemIsBeingShutDown()
@@ -2091,7 +2107,6 @@ static JSBool CanUnlockChrome()
 XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
  : mXPConnect(aXPConnect),
    mJSRuntime(nullptr),
-   mJSContextStack(new XPCJSContextStack()),
    mJSCycleCollectionContext(nullptr),
    mCallContext(nullptr),
    mAutoRoots(nullptr),

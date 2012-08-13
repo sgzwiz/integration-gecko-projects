@@ -931,7 +931,7 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
               case JSTRAP_CONTINUE:
                 break;
               case JSTRAP_RETURN:
-                return f.cx->jaegerRuntime().forceReturnFromFastCall();
+                return f.cx->compartment->jaegerCompartment().forceReturnFromFastCall();
               case JSTRAP_ERROR:
               case JSTRAP_THROW:
                 return js_InternalThrow(f);

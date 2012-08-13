@@ -55,7 +55,7 @@ bool JSAPITest::definePrint()
 JSObject * JSAPITest::createGlobal(JSPrincipals *principals)
 {
     /* Create the global object. */
-    global = JS_NewGlobalObject(cx, getGlobalClass(), principals);
+    global = JS_NewGlobalObject(cx, getGlobalClass(), principals, JS_ZONE_CHROME);
     if (!global)
         return NULL;
     JS_AddNamedObjectRoot(cx, &global, "test-global");

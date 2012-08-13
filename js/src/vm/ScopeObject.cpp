@@ -1714,7 +1714,7 @@ DebugScopes::updateLiveScopes(JSContext *cx)
      * to date' bit for fp->prev() in fp, simply popping fp effectively clears
      * the flag for us, at exactly the time when execution resumes fp->prev().
      */
-    for (AllFramesIter i(cx->runtime->stackSpace); !i.done(); ++i) {
+    for (AllFramesIter i(cx->thread()->stackSpace); !i.done(); ++i) {
         StackFrame *fp = i.fp();
         if (fp->isDummyFrame() || fp->scopeChain()->compartment() != cx->compartment)
             continue;

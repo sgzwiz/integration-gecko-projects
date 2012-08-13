@@ -1064,6 +1064,12 @@ nsFrameSelection::MoveCaret(PRUint32          aKeycode,
 
 //BEGIN nsFrameSelection methods
 
+NS_IMETHODIMP_(JSZoneId)
+Selection::GetZone()
+{
+  return mFrameSelection ? mFrameSelection->GetZone() : JS_ZONE_CHROME;
+}
+
 NS_IMETHODIMP
 Selection::ToString(nsAString& aReturn)
 {
@@ -3146,11 +3152,6 @@ Selection::~Selection()
     delete mCachedOffsetForFrame;
     mCachedOffsetForFrame = nullptr;
   }
-}
-
-NS_IMETHODIMP_(JSZoneId) nsTypedSelection::GetZone()
-{
-  return mFrameSelection ? mFrameSelection->GetZone() : JS_ZONE_CHROME;
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(Selection)
@@ -5258,9 +5259,9 @@ Selection::ScrollSelectionIntoViewEvent::Run()
   if (!mSelection)
     return NS_OK;  // event revoked
 
-  NS_StickLock(mTypedSelection);
+  NS_StickLock(mSelection);
 
-  if (!mTypedSelection)
+  if (!mSelection)
     return NS_OK;
 
   PRInt32 flags = Selection::SCROLL_DO_FLUSH |

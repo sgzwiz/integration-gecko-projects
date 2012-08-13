@@ -747,7 +747,7 @@ void SetActiveDocShellZone(JSZoneId zone)
     gDefaultZone = zone;
 }
 
-static JSZoneId GetActiveDocShellZone()
+JSZoneId GetActiveDocShellZone()
 {
     JSZoneId activeZone = JS_GetExecutingContentScriptZone();
     if (activeZone == JS_ZONE_NONE)

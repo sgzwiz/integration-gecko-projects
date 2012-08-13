@@ -161,11 +161,17 @@ StackFrame::writeBarrierPost()
 JSGenerator *
 StackFrame::maybeSuspendedGenerator(JSRuntime *rt)
 {
+    Thread *thread = js_CurrentThreadAndLockGC(rt);
+    UnlockGC(rt);
+
+    if (!thread)
+        return NULL;
+
     /*
      * A suspended generator's frame is embedded inside the JSGenerator object
      * instead of on the contiguous stack like all active frames.
      */
-    if (!isGeneratorFrame() || rt->stackSpace.containsFast(this))
+    if (!isGeneratorFrame() || thread->stackSpace.containsFast(this))
         return NULL;
 
     /*

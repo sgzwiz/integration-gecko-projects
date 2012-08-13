@@ -4456,7 +4456,7 @@ extern JS_PUBLIC_API(JSBool)
 JS_GetObjectId(JSContext *cx, JSRawObject obj, jsid *idp);
 
 extern JS_PUBLIC_API(JSObject *)
-JS_NewGlobalObject(JSContext *cx, JSClass *clasp, JSZoneId zone);
+JS_NewGlobalObject(JSContext *cx, JSClass *clasp, JSPrincipals *principals, JSZoneId zone);
 
 extern JS_PUBLIC_API(JSZoneId)
 JS_GetZone(JSContext *cx);
@@ -6164,9 +6164,6 @@ JS_ClearContextThread(JSContext *cx);
 
 extern JS_PUBLIC_API(intptr_t)
 JS_GetCurrentThread();
-
-extern JS_PUBLIC_API(void)
-JS_AbortIfWrongThread(JSRuntime *rt, JSZoneId zone);
 
 /************************************************************************/
 

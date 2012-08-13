@@ -2339,14 +2339,7 @@ nsXPConnect::PeekNoUnmark(JSContext * *_retval)
 {
     MOZ_ASSERT(_retval);
 
-    XPCPerThreadData* data = XPCPerThreadData::GetData(nsnull);
-
-    if (!data) {
-        *_retval = nsnull;
-        return NS_ERROR_FAILURE;
-    }
-
-    *_retval = (data->GetJSContextStack()->Peek());
+    *_retval = (XPCJSRuntime::Get()->GetJSContextStack()->Peek());
     return NS_OK;
 }
 
@@ -2450,13 +2443,9 @@ nsXPConnect::Pop(JSContext * *_retval)
 NS_IMETHODIMP
 nsXPConnect::Push(JSContext * cx)
 {
-    XPCPerThreadData* data = XPCPerThreadData::GetData(cx);
-
-    if (!data)
-        return NS_ERROR_FAILURE;
-
      if (gDebugMode != gDesiredDebugMode && NS_IsChromeOwningThread()) {
-         const InfallibleTArray<XPCJSContextInfo>* stack = data->GetJSContextStack()->GetStack();
+         const InfallibleTArray<XPCJSContextInfo>* stack =
+             XPCJSRuntime::Get()->GetJSContextStack()->GetStack();
          if (!gDesiredDebugMode) {
              /* Turn off debug mode immediately, even if JS code is currently running */
              CheckForDebugMode(mRuntime->GetJSRuntime());

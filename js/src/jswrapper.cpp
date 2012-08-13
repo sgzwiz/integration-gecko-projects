@@ -1151,6 +1151,7 @@ js::RemapWrapper(JSContext *cx, JSObject *wobj, JSObject *newTarget)
 {
     JS_ASSERT(IsCrossCompartmentWrapper(wobj));
     JS_ASSERT(!IsCrossCompartmentWrapper(newTarget));
+    JS_ASSERT(cx->runtime->IsGCLocked());
     JSObject *origTarget = Wrapper::wrappedObject(wobj);
     JS_ASSERT(origTarget);
     Value origv = ObjectValue(*origTarget);
@@ -1173,10 +1174,13 @@ js::RemapWrapper(JSContext *cx, JSObject *wobj, JSObject *newTarget)
 
     // First, we wrap it in the new compartment. This will return
     // a new wrapper.
-    AutoCompartment ac(cx, wobj);
     JSObject *tobj = newTarget;
-    if (!ac.enter() || !wcompartment->wrap(cx, &tobj))
-        return false;
+    {
+        AutoUnlockGC unlock(cx->runtime);
+        AutoCompartment ac(cx, wobj);
+        if (!ac.enter() || !wcompartment->wrap(cx, &tobj))
+            return false;
+    }
 
     // Now, because we need to maintain object identity, we do a
     // brain transplant on the old object. At the same time, we
@@ -1200,6 +1204,7 @@ JS_FRIEND_API(bool)
 js::RemapAllWrappersForObject(JSContext *cx, JSObject *oldTarget,
                               JSObject *newTarget)
 {
+    AutoLockGC lock(cx->runtime);
     Value origv = ObjectValue(*oldTarget);
 
     AutoValueVector toTransplant(cx);
@@ -1228,6 +1233,7 @@ JS_FRIEND_API(bool)
 js::RecomputeWrappers(JSContext *cx, const CompartmentFilter &sourceFilter,
                       const CompartmentFilter &targetFilter)
 {
+    AutoLockGC lock(cx->runtime);
     AutoValueVector toRecompute(cx);
 
     for (CompartmentsIter c(cx->runtime); !c.done(); c.next()) {

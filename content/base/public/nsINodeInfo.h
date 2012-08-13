@@ -279,10 +279,7 @@ public:
     return mDocument;
   }
 
-  NS_IMETHODIMP_(JSZoneId) GetZone()
-  {
-    return mOwnerManager->GetZone();
-  }
+  NS_IMETHOD_(JSZoneId) GetZone();
 
 protected:
   /*

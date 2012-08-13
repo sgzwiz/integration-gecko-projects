@@ -31,6 +31,12 @@
 using namespace mozilla;
 
 NS_IMETHODIMP_(JSZoneId)
+nsINodeInfo::GetZone()
+{
+  return mOwnerManager->GetZone();
+}
+
+NS_IMETHODIMP_(JSZoneId)
 nsINode::GetZone()
 {
 #ifdef NS_DEBUG

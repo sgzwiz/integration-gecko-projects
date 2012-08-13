@@ -1564,8 +1564,6 @@ XPCWrappedNative::ReparentWrapperIfFound(XPCCallContext& ccx,
         !wrapper->GetProto()->ClassIsMainThreadOnly()) {
         return NS_ERROR_FAILURE;
     }
-    if (!XPCPerThreadData::IsExecuteThread(ccx))
-        return NS_ERROR_FAILURE;
 
     JSAutoEnterCompartment ac;
     if (!ac.enter(ccx, aNewScope->GetGlobalJSObject()))

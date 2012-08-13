@@ -64,6 +64,9 @@ public:
   nsINode* GetParentObject();
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mRoot->GetZone(); }
+
   NS_DECL_NSIDOMHTMLPROPERTIESCOLLECTION
 
   NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
@@ -122,6 +125,8 @@ public:
   NS_DECL_NSIDOMPROPERTYNODELIST
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return mDoc->GetZone(); }
 
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(PropertyNodeList,
                                                          nsINodeList)

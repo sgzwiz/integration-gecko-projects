@@ -1820,6 +1820,10 @@ WorkerRunnable::Run()
     return NS_OK;
   }
 
+  bool result = WorkerRun(cx, mWorkerPrivate);
+
+  PostRun(cx, mWorkerPrivate, result);
+
   if (contextStack) {
     JSContext* otherCx;
     if (NS_FAILED(contextStack->Pop(&otherCx))) {

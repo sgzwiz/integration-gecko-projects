@@ -16,6 +16,7 @@
 #include "nsTObserverArray.h"       // for member
 #include "nsWindowMemoryReporter.h" // for NS_DECL_SIZEOF_EXCLUDING_THIS
 #include "nsWrapperCache.h"         // for base class
+#include "nsThreadUtils.h"          // for nsAutoLockChrome
 
 // Including 'windows.h' will #define GetClassInfo to something else.
 #ifdef XP_WIN

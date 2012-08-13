@@ -396,7 +396,7 @@ NS_FreeContentZone(JSZoneId zone)
   mgr->FreeContentZone(zone);
 }
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
 void
 NS_FindThreadBitmask(PRThread **pthread, bool *pchrome, PRUint64 *pcontentMask)
 {
@@ -435,7 +435,7 @@ NS_IsOwningThread(JSZoneId zone)
   return NS_IsCycleCollectorThread();
 }
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
 bool
 NS_IsOwningThreadOrNonExecuteThread(JSZoneId zone)
 {
@@ -553,7 +553,7 @@ uintptr_t NS_FindNativeStackTopForThread(/*(PRThread*)*/ uintptr_t thread)
 
 static nsAutoLockChromeUnstickContent *gUnstickList = NULL;
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
 bool NS_CanUnstickLocks()
 {
   nsAutoLockChrome lock;

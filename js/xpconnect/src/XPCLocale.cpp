@@ -17,6 +17,7 @@
 #include "nsILocaleService.h"
 #include "nsICollation.h"
 #include "nsIServiceManager.h"
+#include "nsThreadUtils.h"
 #include "nsUnicharUtils.h"
 
 #include "xpcpublic.h"

@@ -278,8 +278,7 @@ private:
 static XPCJSContextStack *
 GetCurrentJSContextStack()
 {
-    XPCPerThreadData* data = XPCPerThreadData::GetData(NULL);
-    return data->GetJSContextStack();
+    return XPCJSRuntime::Get()->GetJSContextStack();
 }
 
 JSContext *

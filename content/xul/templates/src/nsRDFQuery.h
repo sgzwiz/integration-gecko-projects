@@ -9,6 +9,7 @@
 #include "nsAutoPtr.h"
 #include "nsISimpleEnumerator.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsThreadUtils.h"
 #include "mozilla/Attributes.h"
 
 #define NS_ITEMPLATERDFQUERY_IID \

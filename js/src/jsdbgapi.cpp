@@ -223,7 +223,14 @@ JS_SetInterrupt(JSRuntime *rt, JSInterruptHook hook, void *closure)
 {
     rt->debugHooks.interruptHook = hook;
     rt->debugHooks.interruptHookData = closure;
-    for (InterpreterFrames *f = rt->interpreterFrames; f; f = f->older)
+
+    Thread *thread = js_CurrentThreadAndLockGC(rt);
+    UnlockGC(rt);
+
+    if (!thread)
+        return false;
+
+    for (InterpreterFrames *f = thread->interpreterFrames; f; f = f->older)
         f->enableInterruptsUnconditionally();
     return true;
 }

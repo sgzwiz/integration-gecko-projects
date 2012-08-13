@@ -1203,7 +1203,7 @@ ScriptSource::substring(JSContext *cx, uint32_t start, uint32_t stop)
 #if USE_ZLIB
     Rooted<JSFixedString *> cached(cx, NULL);
     if (compressed()) {
-        cached = cx->runtime->sourceDataCache.lookup(this);
+        cached = cx->thread()->sourceDataCache.lookup(this);
         if (!cached) {
             const size_t nbytes = sizeof(jschar) * (length_ + 1);
             jschar *decompressed = static_cast<jschar *>(cx->malloc_(nbytes));
@@ -1221,7 +1221,7 @@ ScriptSource::substring(JSContext *cx, uint32_t start, uint32_t stop)
                 cx->free_(decompressed);
                 return NULL;
             }
-            cx->runtime->sourceDataCache.put(this, cached);
+            cx->thread()->sourceDataCache.put(this, cached);
         }
         chars = cached->getChars(cx);
         JS_ASSERT(chars);

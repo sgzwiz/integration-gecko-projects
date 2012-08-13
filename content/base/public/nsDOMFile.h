@@ -50,6 +50,8 @@ public:
   virtual const nsTArray<nsCOMPtr<nsIDOMBlob> >*
   GetSubBlobs() const { return nullptr; }
 
+  NS_IMETHODIMP_(JSZoneId) GetZone() { return JS_ZONE_CHROME; }
+
   NS_DECL_NSIDOMBLOB
   NS_DECL_NSIDOMFILE
   NS_DECL_NSIXHRSENDABLE

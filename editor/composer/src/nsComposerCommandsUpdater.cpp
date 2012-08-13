@@ -20,6 +20,7 @@
 #include "nsLiteralString.h"            // for NS_LITERAL_STRING
 #include "nsPICommandUpdater.h"         // for nsPICommandUpdater
 #include "nsPIDOMWindow.h"              // for nsPIDOMWindow
+#include "nsThreadUtils.h"              // for NS_TryStickLock
 
 class nsIDOMDocument;
 class nsITransaction;

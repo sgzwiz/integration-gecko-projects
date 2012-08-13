@@ -1277,7 +1277,7 @@ nsJSContext::EvaluateStringWithValue(const nsAString& aScript,
 
   nsAutoLockChrome lock;
 
-  nsresult rv = sSecurityManager->CanExecuteScripts(mContext, principal, &ok);
+  nsresult rv = sSecurityManager->CanExecuteScripts(cx, principal, &ok);
   if (NS_FAILED(rv)) {
     return NS_ERROR_FAILURE;
   }
@@ -2128,6 +2128,15 @@ nsJSContext::GetNativeGlobal()
   // Avoid calling GetNativeContext(), as doing so may require locking content.
   JSContext *cx = mContext.canonicalContext();
   return cx ? JS_GetGlobalObject(cx) : NULL;
+}
+
+static inline void
+UpdateContext(JSContext *cx, JSContext *canonical)
+{
+  if (canonical && JS_GetGlobalObject(cx) != JS_GetGlobalObject(canonical)) {
+    JSAutoRequest ar(cx);
+    JS_SetGlobalObject(cx, JS_GetGlobalObject(canonical));
+  }
 }
 
 JSContext*
@@ -3041,11 +3050,17 @@ nsJSContext::GarbageCollectNow(js::gcreason::Reason aReason,
     cx->mActive = false;
   }
   js::PrepareForFullGC(nsJSRuntime::sRuntime);
+
+  /*
   if (aIncremental == IncrementalGC) {
     js::IncrementalGC(nsJSRuntime::sRuntime, aReason, aSliceMillis);
   } else {
     js::GCForReason(nsJSRuntime::sRuntime, aReason);
   }
+  */
+
+  // XXX disabling incremental GC, need to remove NS_LockEverything...
+  js::GCForReason(nsJSRuntime::sRuntime, aReason);
 }
 
 //static

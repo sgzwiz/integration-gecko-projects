@@ -38,6 +38,13 @@ nsFilteredContentIterator::~nsFilteredContentIterator()
 }
 
 //------------------------------------------------------------
+
+NS_IMETHODIMP_(JSZoneId)
+nsFilteredContentIterator::GetZone()
+{
+  return mRange ? mRange->GetZone() : JS_ZONE_CHROME;
+}
+
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsFilteredContentIterator)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsFilteredContentIterator)
 

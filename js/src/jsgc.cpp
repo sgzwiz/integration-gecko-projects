@@ -873,8 +873,9 @@ js_InitGC(JSRuntime *rt, uint32_t maxbytes)
     rt->gcLock = PR_NewLock();
     if (!rt->gcLock)
         return false;
-#ifdef DEBUG
+# ifdef DEBUG
     rt->gcLockOwner = 0;
+# endif
 #endif
     if (!rt->gcHelperThread.init())
         return false;
@@ -3028,7 +3029,7 @@ GCHelperThread::waitBackgroundSweepEnd()
 #ifdef JS_THREADSAFE
     AutoLockGC lock(rt);
     while (state == SWEEPING)
-        PR_WaitCondVar(done, PR_INTERVAL_NO_TIMEOUT);
+        WaitGCCondVar(rt, done);
 #else
     JS_ASSERT(state == IDLE);
 #endif /* JS_THREADSAFE */
@@ -3043,7 +3044,7 @@ GCHelperThread::waitBackgroundSweepOrAllocEnd()
     if (state == ALLOCATING)
         state = CANCEL_ALLOCATION;
     while (state == SWEEPING || state == CANCEL_ALLOCATION)
-        PR_WaitCondVar(done, PR_INTERVAL_NO_TIMEOUT);
+        WaitGCCondVar(rt, done);
 #else
     JS_ASSERT(state == IDLE);
 #endif /* JS_THREADSAFE */
@@ -3195,15 +3196,10 @@ PurgeRuntime(JSRuntime *rt)
         rt->freeLifoAlloc.transferUnusedFrom(&thread->tempLifoAlloc);
 
         thread->gsnCache.purge();
-
         thread->propertyCache.purge(rt);
         thread->newObjectCache.purge();
-
-        thread->nativeIterCache.purge();
         thread->sourceDataCache.purge();
-
-        thread->toSourceCache.purge();
-        thread->evalCache.purge();
+        thread->evalCache.clear();
     }
 
     for (ContextIter acx(rt); !acx.done(); acx.next())

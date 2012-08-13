@@ -99,7 +99,7 @@ class EvalScriptGuard
             script_->isActiveEval = false;
             script_->isCachedEval = true;
             if (lookup_.str && IsEvalCacheCandidate(script_))
-                cx_->runtime->evalCache.relookupOrAdd(p_, lookup_, script_);
+                cx_->thread()->evalCache.relookupOrAdd(p_, lookup_, script_);
         }
     }
 
@@ -110,10 +110,10 @@ class EvalScriptGuard
         lookup_.staticLevel = staticLevel;
         lookup_.version = cx_->findVersion();
         lookup_.compartment = cx_->compartment;
-        p_ = cx_->runtime->evalCache.lookupForAdd(lookup_);
+        p_ = cx_->thread()->evalCache.lookupForAdd(lookup_);
         if (p_) {
             script_ = *p_;
-            cx_->runtime->evalCache.remove(p_);
+            cx_->thread()->evalCache.remove(p_);
             js_CallNewScriptHook(cx_, script_, NULL);
             script_->isCachedEval = false;
             script_->isActiveEval = true;

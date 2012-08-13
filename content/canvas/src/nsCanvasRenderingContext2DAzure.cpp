@@ -580,7 +580,6 @@ NS_NewCanvasRenderingContext2DAzure(nsIDOMCanvasRenderingContext2D** aResult)
 nsCanvasRenderingContext2DAzure::nsCanvasRenderingContext2DAzure()
   : mValid(false), mZero(false), mOpaque(false), mResetLayer(true)
   , mIPC(false)
-  , mZone(JS_ZONE_NONE)
   , mIsEntireFrameInvalid(false)
   , mPredictManyRedrawCalls(false), mPathTransformWillUpdate(false)
   , mInvalidateCount(0)
@@ -1796,7 +1795,7 @@ nsCanvasRenderingContext2DAzure::CreateLinearGradient(double x0, double y0, doub
   }
 
   nsRefPtr<nsIDOMCanvasGradient> grad =
-    new nsCanvasLinearGradientAzure(Point(x0, y0), Point(x1, y1));
+    new nsCanvasLinearGradientAzure(GetZone(), Point(x0, y0), Point(x1, y1));
 
   return grad.forget();
 }
@@ -1837,7 +1836,7 @@ nsCanvasRenderingContext2DAzure::CreateRadialGradient(float x0, float y0, float 
                                                       nsIDOMCanvasGradient **_retval)
 {
   ErrorResult rv;
-  *_retval = CreateRadialGradient(GetZone(), x0, y0, r0, x1, y1, r1, rv).get();
+  *_retval = CreateRadialGradient(x0, y0, r0, x1, y1, r1, rv).get();
   return rv.ErrorCode();
 }
 

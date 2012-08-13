@@ -29,7 +29,7 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(nsFilteredContentIterator)
 
-  NS_IMETHODIMP_(JSZoneId) GetZone() { return mRange ? mRange->GetZone() : JS_ZONE_CHROME; }
+  NS_IMETHOD_(JSZoneId) GetZone();
 
   nsFilteredContentIterator(nsITextServicesFilter* aFilter);
 
