@@ -156,7 +156,7 @@ skip-if(B2G) == 163504-2b.html 163504-2-ref.html
 == 192767-02.xul 192767-12.xul
 == 192767-03.xul 192767-13.xul
 == 192767-04.xul 192767-14.xul
-== 192767-05.xul 192767-15.xul
+skip-if(B2G) == 192767-05.xul 192767-15.xul
 == 192767-06.xul 192767-16.xul
 skip-if(B2G) == 192767-07.xul 192767-17.xul
 == 192767-21.xul 192767-31.xul
@@ -309,7 +309,7 @@ fails-if(Android) random-if(d2d) HTTP == 289480.html#top 289480-ref.html # basic
 != 294306-1.html 294306-1b-ref.html
 == 296361-1.html 296361-ref.html
 == 296904-1.html 296904-1-ref.html
-== 299136-1.html 299136-1-ref.html
+skip-if(B2G) == 299136-1.html 299136-1-ref.html
 == 299837-1.html 299837-1-ref.html
 == 299837-2.xul 299837-2-ref.xul
 random-if(d2d) == 299837-3.xul 299837-3-ref.xul # bug 587631
@@ -326,7 +326,7 @@ fails-if(Android) == 302379.html 302379-ref.html
 == 306660-1.html 306660-1-ref.html
 == 306660-2.html 306660-2-ref.html
 == 306660-3.html 306660-3-ref.html
-== 307076-1.html 307076-1-ref.html
+skip-if(B2G) == 307076-1.html 307076-1-ref.html
 == 307102-1.html 307102-1-ref.html
 == 307102-2.html 307102-2-ref.html
 == 307102-3.html 307102-3-ref.html
@@ -634,7 +634,7 @@ asserts(4) == 368155-negative-margins-1.html 368155-negative-margins-1-ref.html 
 == 370525-sib.html 370525-sib-ref.html
 == 370586-1.xhtml 370586-1-ref.xhtml
 == 370629-1.html 370629-1-ref.html
-== 370629-2.html 370629-2-ref.html
+skip-if(B2G) == 370629-2.html 370629-2-ref.html
 == 370692-1.xhtml 370692-1-ref.xhtml
 == 371041-1.html 371041-1-ref.html
 == 371043-1.html 371043-1-ref.html
@@ -675,7 +675,7 @@ skip-if(B2G) fails-if(Android) != 376532-3.html 376532-3-ref.html
 == 377918.html 377918-ref.html
 == 378535-1.html 378535-1-ref.html
 skip-if(B2G) == 378933-1.html 378933-1-ref.html
-== 378935-1.html 378935-1-ref.html
+skip-if(B2G) == 378935-1.html 378935-1-ref.html
 skip-if(B2G) == 378937-1.html 378937-1-ref.html
 == 379178-xhtml.xhtml 379178-xhtml-ref.xhtml
 == 379178-html.html 379178-html-ref.html
@@ -764,7 +764,7 @@ fails == 387344-1.html 387344-1-ref.html # scrolling rowgroups were removed in b
 == 389074-1.html 389074-1-ref.html
 == 389224-1.html 389224-1-ref.html
 == 389224-2.html about:blank
-== 389468-1.html 389468-1-ref.html
+skip-if(B2G) == 389468-1.html 389468-1-ref.html
 == 389623-1.html 389623-1-ref.html
 == 389636-1.html about:blank  # assertion test
 == 389924-1a.html 389924-1-ref.html
@@ -1290,7 +1290,7 @@ skip-if(B2G) == 447749-1.html 447749-1-ref.html
 == 478614-6.html 478614-6-ref.html
 == 478614-7.html 478614-7-ref.html
 random-if(d2d) == 478377-1.xul 478377-1-ref.xul
-== 478811-1.html 478811-1-ref.html
+skip-if(B2G) == 478811-1.html 478811-1-ref.html
 == 478811-2.html 478811-2-ref.html
 == 478811-3.html 478811-3-ref.html
 == 478811-4.html 478811-4-ref.html
