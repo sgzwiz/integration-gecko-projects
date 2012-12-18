@@ -129,7 +129,7 @@ HTTP(..) == 507960-1-bad-checksums-woff.html 507960-1-ref.html
 # try versions that should NOT load (bad offsets, signatures, hint)
 HTTP(..) != 507960-1-bad-sfnt-version-ttf.html 507960-1-ref.html
 HTTP(..) != 507960-1-bad-sfnt-version-woff.html 507960-1-ref.html
-HTTP(..) != 507960-1-bad-woff-sig.html 507960-1-ref.html
+skip-if(B2G) HTTP(..) != 507960-1-bad-woff-sig.html 507960-1-ref.html
 HTTP(..) != 507960-1-bad-offset-woff.html 507960-1-ref.html
 HTTP(..) != 507960-1-woff-bad-hint.html 507960-1-ref.html
 
