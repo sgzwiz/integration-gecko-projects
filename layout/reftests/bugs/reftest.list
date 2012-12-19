@@ -319,7 +319,7 @@ random-if(d2d) == 299837-3.xul 299837-3-ref.xul # bug 587631
 == 300691-1d.html 300691-1-ref.html
 == 300691-1e.html 300691-1-ref.html
 == 300691-1f.html 300691-1-ref.html
-== 301726-1.html 301726-1-ref.html
+skip-if(B2G) == 301726-1.html 301726-1-ref.html
 skip-if(B2G) fails-if(Android) != 301726-2.html 301726-2-ref.html
 fails-if(Android) == 302379.html 302379-ref.html
 == 306630-1.html 306630-1-ref.html
@@ -697,7 +697,7 @@ skip-if(B2G) == 379349-3b.xhtml 379349-3-ref.xhtml
 == 379361-3.html 379361-3-ref.html
 == 379461-1.xhtml 379461-1.html
 == 379461-2.xhtml 379461-2.html
-== 379461-3-container-xhtml.html 379461-3-container-html.html
+skip-if(B2G) == 379461-3-container-xhtml.html 379461-3-container-html.html
 skip-if(B2G) fails-if(Android) != 379461-3-container-xhtml.html 379461-3-container-blank.html # there is a scrollbar
 == 380004-1.html 380004-1-ref.html
 == 380227-1.html 380227-1-ref.html
@@ -1121,7 +1121,7 @@ fails == 428810-3e-rtl-insets.html 428810-empty-rtl-insets-ref.html # bug 179596
 == 428810-3f-rtl-insets.html 428810-empty-rtl-insets-ref.html
 != 428810-3-rtl-insets-ref.html about:blank
 != 428810-3-rtl-insets-ref.html 428810-3-ltr-insets-ref.html
-== 430412-1.html 430412-1-ref.html
+skip-if(B2G) == 430412-1.html 430412-1-ref.html
 == 430813-1.html 430813-1-ref.html
 == 430813-2.html 430813-2-ref.html
 == 430813-3.html 430813-3-ref.html
@@ -1250,7 +1250,7 @@ fails == 472020-2.xul 472020-2-ref.xul
 == 472769-3.html 472769-3-ref.html
 == 473847-1.xul 473847-1-ref.xul
 == 474336-1.xul 474336-1-ref.xul
-== 474417-1.html 474417-1-ref.html
+skip-if(B2G) == 474417-1.html 474417-1-ref.html
 == 474472-1.html 474472-1-ref.html
 skip-if(B2G) == 447749-1.html 447749-1-ref.html
 == 475986-1a.html 475986-1-ref.html
