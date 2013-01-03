@@ -4,7 +4,7 @@
         "path": ""
     },
     "global": {
-        "talos_url": "http://puppetagain.pub.build.mozilla.org/data/python/packages/talos-0e9224d7bc95.tar.gz"
+        "talos_url": "http://puppetagain.pub.build.mozilla.org/data/python/packages/talos-766a17c47b0d.tar.gz"
     },
     "suites": {
         "chromez": {
