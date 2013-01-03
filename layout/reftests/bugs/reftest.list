@@ -256,7 +256,7 @@ skip-if(B2G) == 240933-2.html 240933-2-ref.html
 == 243519-5c.html 243519-5-ref.html
 == 243519-5d.html 243519-5-ref.html
 == 243519-6.html 243519-6-ref.html
-== 243519-7.html 243519-7-ref.html
+skip-if(B2G) == 243519-7.html 243519-7-ref.html
 == 243519-8.svg 243519-8-ref.svg
 == 243519-9a.html 243519-9-ref.html
 == 243519-9b.html 243519-9-ref.html
@@ -550,7 +550,7 @@ skip-if(B2G) == 359903-1.html 359903-1-ref.html
 == 363728-2.html 363728-2-ref.html
 skip-if(B2G) == 363858-1.html 363858-1-ref.html
 skip-if(B2G) == 363858-2.html 363858-2-ref.html
-== 363858-3.html 363858-3-ref.html
+skip-if(B2G) == 363858-3.html 363858-3-ref.html
 skip-if(B2G) == 363858-4.html 363858-4-ref.html
 fuzzy-if(OSX==10.8,45,2) == 363858-5a.html 363858-5-ref.html
 == 363858-5b.html 363858-5-ref.html
@@ -1197,9 +1197,9 @@ skip-if(B2G) == 456219-1c.html 456219-1-ref.html
 == 456484-1.html 456484-1-ref.html
 == 457398-1.html 457398-1-ref.html
 == 457398-2.html 457398-2-ref.html
-== 458296-1a.html 458296-1a-ref.html
-== 458296-1b.html 458296-1-ref.html
-== 458296-1c.html 458296-1-ref.html
+skip-if(B2G) == 458296-1a.html 458296-1a-ref.html
+skip-if(B2G) == 458296-1b.html 458296-1-ref.html
+skip-if(B2G) == 458296-1c.html 458296-1-ref.html
 skip-if(B2G) == 458296-1d.html 458296-1-ref.html
 == 458487-1a.html 458487-1-ref.html
 == 458487-1b.html 458487-1-ref.html
@@ -1252,7 +1252,7 @@ fails == 472020-2.xul 472020-2-ref.xul
 == 474336-1.xul 474336-1-ref.xul
 == 474417-1.html 474417-1-ref.html
 == 474472-1.html 474472-1-ref.html
-== 447749-1.html 447749-1-ref.html
+skip-if(B2G) == 447749-1.html 447749-1-ref.html
 == 475986-1a.html 475986-1-ref.html
 == 475986-1b.html 475986-1-ref.html
 == 475986-1c.html 475986-1-ref.html
@@ -1404,8 +1404,8 @@ skip-if(B2G) fails-if(Android) == 506481-1.html 506481-1-ref.html
 == 507762-2.html 507762-2-ref.html
 == 507762-3.html 507762-1-ref.html
 == 507762-4.html 507762-2-ref.html
-fails-if(Android) random-if(cocoaWidget) == 508816-1.xul 508816-1-ref.xul # Bug 631982
-== 508816-2.html 508816-2-ref.html
+skip-if(B2G) fails-if(Android) random-if(cocoaWidget) == 508816-1.xul 508816-1-ref.xul # Bug 631982
+skip-if(B2G) == 508816-2.html 508816-2-ref.html
 == 508908-1.xul 508908-1-ref.xul
 == 508919-1.xhtml 508919-1-ref.xhtml
 == 509155-1.xhtml 509155-1-ref.xhtml
@@ -1466,7 +1466,7 @@ random == 536061.html 536061-ref.html # fixedpoint division in blur code makes t
 == 539323-3.html 539323-3-ref.html
 == 539880-1.html 539880-1-ref.html
 == 539880-1-dynamic.html 539880-1-ref.html
-== 539949-1.html#test2 539949-1-ref.html#test2
+skip-if(B2G) == 539949-1.html#test2 539949-1-ref.html#test2
 == 541382-1.html 541382-1-ref.html
 random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)||!haveTestPlugin) == 541406-1.html 541406-1-ref.html
 needs-focus != 542116-1.html 542116-1-ref.html
@@ -1483,7 +1483,7 @@ random-if(!haveTestPlugin) == 546071-1.html 546071-1-ref.html
 == 550325-2.html 550325-1-ref.html
 == 550325-3.html 550325-1-ref.html
 == 550716-1.html 550716-1-ref.html
-== 551463-1.html 551463-1-ref.html
+skip-if(B2G) == 551463-1.html 551463-1-ref.html
 == 551699-1.html 551699-1-ref.html
 == 552334-1.html 552334-1-ref.html
 # 553571 depends on MS Indic shaping behavior and Win7 font support;
@@ -1593,7 +1593,7 @@ fails-if(!haveTestPlugin) == 599476.html 599476-ref.html
 == 599882-1b.html 599882-1-ref.html
 == 599882-2.html 599882-2-ref.html
 == 600045-1.html 600045-1-ref.html
-== 600803-1.html 600803-1-ref.html
+skip-if(B2G) == 600803-1.html 600803-1-ref.html
 == 603423-1.html 603423-1-ref.html
 == 600974-1.html 600974-1-ref.html
 == 600974-2.html 600974-1-ref.html
@@ -1644,9 +1644,9 @@ skip-if(Android||B2G) == 632781-verybig.html 632781-ref.html
 == 633344-1.html 633344-1-ref.html
 fails-if(Android) == 634232-1.html 634232-1-ref.html
 fails-if(Android) == 635302-1.html 635302-1-ref.html
-random-if(d2d) == 635373-1.html 635373-1-ref.html
-random-if(d2d) == 635373-2.html 635373-2-ref.html
-random-if(d2d) == 635373-3.html 635373-3-ref.html
+skip-if(B2G) random-if(d2d) == 635373-1.html 635373-1-ref.html
+skip-if(B2G) random-if(d2d) == 635373-2.html 635373-2-ref.html
+skip-if(B2G) random-if(d2d) == 635373-3.html 635373-3-ref.html
 HTTP(..) == 635639-1.html 635639-1-ref.html
 HTTP(..) == 635639-2.html 635639-2-ref.html
 random == 637597-1.html 637597-1-ref.html # bug 637597 was never really fixed!
@@ -1703,10 +1703,10 @@ skip-if(B2G) fuzzy-if(true,1,21) fuzzy-if(cocoaWidget,1,170) fuzzy-if(Android&&b
 needs-focus == 731726-1.html 731726-1-ref.html
 == 735481-1.html 735481-1-ref.html
 == 745934-1.html 745934-1-ref.html
-== 748803-1.html 748803-1-ref.html
+skip-if(B2G) == 748803-1.html 748803-1-ref.html
 == 750551-1.html 750551-1-ref.html
-== 751012-1a.html 751012-1-ref.html
-== 751012-1b.html 751012-1-ref.html
+skip-if(B2G) == 751012-1a.html 751012-1-ref.html
+skip-if(B2G) == 751012-1b.html 751012-1-ref.html
 == 690643-1.html 690643-1-ref.html
 == 748692-1a.html 748692-1-ref.html
 == 748692-1b.html 748692-1-ref.html
@@ -1733,8 +1733,8 @@ fuzzy(40,800) == 797797-2.html 797797-2-ref.html # 'opacity:N' and rgba(,,,N) te
 == 811301-1.html 811301-1-ref.html
 == 812824-1.html 812824-1-ref.html
 == 814677.html 814677-ref.html
-== 815593-1.html 815593-1-ref.html
+skip-if(B2G) == 815593-1.html 815593-1-ref.html
 == 814952-1.html 814952-1-ref.html
 == 816458-1.html 816458-1-ref.html
 == 816359-1.html 816359-1-ref.html
-== 818276-1.html 818276-1-ref.html
+skip-if(B2G) == 818276-1.html 818276-1-ref.html
