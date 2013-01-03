@@ -123,7 +123,7 @@ skip-if(B2G) HTTP(..) == wordwrap-03.html wordwrap-03-ref.html
 skip-if(B2G) != wordwrap-08.html wordwrap-01-ref.html
 skip-if(B2G) == wordwrap-08.html wordwrap-08-ref.html
 skip-if(B2G) != wordwrap-09.html wordwrap-01-ref.html
-== wordwrap-09.html wordwrap-09-ref.html
+skip-if(B2G) == wordwrap-09.html wordwrap-09-ref.html
 == wordwrap-10.html wordwrap-10-ref.html # bug 752459
 == word-spacing-01.html word-spacing-01-ref.html
 # the following will fail when rendering with Core Text (see bug 389074) due to what appears to be
@@ -136,7 +136,7 @@ HTTP(..) == zwnj-02.xhtml zwnj-02-ref.xhtml # HTTP(..) for ../filters.svg
 == 449555-1.html 449555-1-ref.html
 == 467722.html 467722-ref.html
 skip-if(B2G) HTTP(..) == 475092-sub.html 475092-ref.html
-skip-if(B2G) fails-if(!winWidget) HTTP(..) == 475092-pos.html 475092-sub.html # bug 482596
+fails-if(!winWidget||!B2G) HTTP(..) == 475092-pos.html 475092-sub.html # bug 482596
 == 476378-soft-hyphen-fallback.html 476378-soft-hyphen-fallback-ref.html
 # Test for bug 484954
 == rgba-text.html rgba-text-ref.html

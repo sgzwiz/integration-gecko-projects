@@ -242,7 +242,7 @@ skip-if(B2G) == 240933-1.html 240933-1-ref.html
 skip-if(B2G) == 240933-2.html 240933-2-ref.html
 == 243266-1.html 243266-1-ref.html
 == 243302-1.html 243302-1-ref.html
-== 243519-1.html 243519-1-ref.html
+skip-if(B2G) == 243519-1.html 243519-1-ref.html
 == 243519-2.html 243519-2-ref.html
 == 243519-3.html 243519-3-ref.html
 == 243519-4a.html 243519-4-ref.html
@@ -289,7 +289,7 @@ skip-if(B2G) == 249141.xul 249141-ref.xul
 == 272646-2a.xul 272646-2-ref.xul
 == 272646-2b.xul 272646-2-ref.xul
 == 272646-2c.xul 272646-2-ref.xul
-== 273681-1.html 273681-1-ref.html
+skip-if(B2G) == 273681-1.html 273681-1-ref.html
 == 278266-1a.html 278266-1-ref.html
 == 278266-1b.html 278266-1-ref.html
 == 280708-1a.html 280708-1-ref.html
@@ -431,7 +431,7 @@ random == 328829-1.xhtml 328829-1-ref.xhtml # bug 369046 (intermittent)
 == 332360-ltr.html 332360-ltr-ref.html
 == 332360-width.html 332360-ref.html
 == 332360-width-ltr.html 332360-ltr-ref.html
-== 332557-1.html 332557-1-ref.html
+skip-if(B2G) == 332557-1.html 332557-1-ref.html
 == 332975-1.html 332975-1-ref.html
 == 333970-1.html 333970-1-ref.html
 == 334829-1a.xhtml 334829-1-ref.xhtml
@@ -573,8 +573,8 @@ fuzzy-if(OSX==10.8,45,2) == 363858-6a.html 363858-6-ref.html
 == 367247-s-hidden.html 367247-s-auto.html
 skip-if(B2G) fails-if(Android) != 367247-s-auto.html 367247-s-scroll.html
 != 367247-l-visible.html 367247-l-hidden.html
-fails-if(Android) != 367247-l-hidden.html 367247-l-scroll.html
-== 367247-l-scroll.html 367247-l-auto.html
+skip-if(B2G) fails-if(Android) != 367247-l-hidden.html 367247-l-scroll.html
+skip-if(B2G) == 367247-l-scroll.html 367247-l-auto.html
 == 367332-1a.html 367332-1-ref.html
 == 367332-1b.html 367332-1-ref.html
 == 367332-1c.html 367332-1-ref.html
@@ -674,7 +674,7 @@ skip-if(B2G) fails-if(Android) != 376532-3.html 376532-3-ref.html
 == 377603-1.html 377603-1-ref.html
 == 377918.html 377918-ref.html
 == 378535-1.html 378535-1-ref.html
-== 378933-1.html 378933-1-ref.html
+skip-if(B2G) == 378933-1.html 378933-1-ref.html
 == 378935-1.html 378935-1-ref.html
 skip-if(B2G) == 378937-1.html 378937-1-ref.html
 == 379178-xhtml.xhtml 379178-xhtml-ref.xhtml
@@ -1653,7 +1653,7 @@ random == 637597-1.html 637597-1-ref.html # bug 637597 was never really fixed!
 == 637852-1.html 637852-1-ref.html
 == 637852-2.html 637852-2-ref.html
 == 637852-3.html 637852-3-ref.html
-== 641770-1.html 641770-1-ref.html
+skip-if(B2G) == 641770-1.html 641770-1-ref.html
 == 641856-1.html 641856-1-ref.html
 == 645491-1.html 645491-1-ref.html
 needs-focus == 652301-1a.html 652301-1-ref.html

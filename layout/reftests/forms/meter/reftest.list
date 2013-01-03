@@ -2,7 +2,7 @@
 == values-rtl.html values-rtl-ref.html
 == margin-padding.html margin-padding-ref.html
 == margin-padding-rtl.html margin-padding-rtl-ref.html
-== bar-pseudo-element.html bar-pseudo-element-ref.html
+skip-if(B2G) == bar-pseudo-element.html bar-pseudo-element-ref.html
 == bar-pseudo-element-rtl.html bar-pseudo-element-rtl-ref.html
 
 # vertical tests
