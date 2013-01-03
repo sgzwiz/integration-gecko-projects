@@ -851,7 +851,7 @@ skip-if(B2G) == 402567-4.html 402567-4-ref.html
 == 402629-1.html 402629-1-ref.html
 == 402629-2.html 402629-2-ref.html
 == 402629-3.html 402629-3-ref.html
-== 402807-1.html 402807-1-ref.html
+skip-if(B2G) == 402807-1.html 402807-1-ref.html
 == 402940-1.html 402940-1-ref.html
 == 402940-1b.html 402940-1-ref.html
 != 402940-2.html 402940-2-notref.html
@@ -949,8 +949,8 @@ fails-if(!B2G) == 411585-3.html 411585-3-ref.html # bug 426909
 == 412352-2.html 412352-2-ref.html
 == 412607-1a.html 412607-1-ref.html
 == 412607-1b.html 412607-1-ref.html
-== 412679-1.html 412679-1-ref.html
-== 412679-2.html 412679-2-ref.html
+skip-if(B2G) == 412679-1.html 412679-1-ref.html
+skip-if(B2G) == 412679-2.html 412679-2-ref.html
 == 413027-1.html 413027-1-ref.html
 fails == 413027-2.html 413027-2-ref.html
 fails == 413027-3.html 413027-3-ref.html
@@ -1386,7 +1386,7 @@ asserts(1) == 496032-1.html 496032-1-ref.html # bug 399262
 == 501627-1.html 501627-1-ref.html
 == 502288-1.html 502288-1-ref.html
 == 502942-1.html 502942-1-ref.html
-== 502447-1.html 502447-1-ref.html
+skip-if(B2G) == 502447-1.html 502447-1-ref.html
 == 502795-1.html 502795-1-ref.html
 == 503364-1a.html 503364-1-ref.html
 == 503364-1b.html 503364-1-ref.html
