@@ -152,19 +152,19 @@ skip-if(B2G) == 163504-2b.html 163504-2-ref.html
 == 185388-1.html 185388-1-ref.html
 == 186317-1.html 186317-1-ref.html
 == 192902-1.html 192902-ref.html
-== 192767-01.xul 192767-11.xul
-== 192767-02.xul 192767-12.xul
-== 192767-03.xul 192767-13.xul
-== 192767-04.xul 192767-14.xul
+skip-if(B2G) == 192767-01.xul 192767-11.xul
+skip-if(B2G) == 192767-02.xul 192767-12.xul
+skip-if(B2G) == 192767-03.xul 192767-13.xul
+skip-if(B2G) == 192767-04.xul 192767-14.xul
 skip-if(B2G) == 192767-05.xul 192767-15.xul
-== 192767-06.xul 192767-16.xul
+skip-if(B2G) == 192767-06.xul 192767-16.xul
 skip-if(B2G) == 192767-07.xul 192767-17.xul
-== 192767-21.xul 192767-31.xul
-== 192767-22.xul 192767-32.xul
+skip-if(B2G) == 192767-21.xul 192767-31.xul
+skip-if(B2G) == 192767-22.xul 192767-32.xul
 skip-if(B2G) == 192767-23.xul 192767-33.xul
-== 192767-24.xul 192767-34.xul
-== 192767-25.xul 192767-35.xul
-== 192767-26.xul 192767-36.xul
+skip-if(B2G) == 192767-24.xul 192767-34.xul
+skip-if(B2G) == 192767-25.xul 192767-35.xul
+skip-if(B2G) == 192767-26.xul 192767-36.xul
 skip-if(B2G) == 192767-27.xul 192767-37.xul
 != 192767-01.xul 192767-21.xul
 != 192767-02.xul 192767-22.xul
@@ -644,7 +644,7 @@ fails-if(Android) == 371561-1.html 371561-1-ref.html
 != 371681-1.xhtml about:blank
 == 371925-1a.html 371925-1-ref.html
 == 371925-1b.html 371925-1-ref.html
-== 372037-1.html 372037-1-ref.html
+skip-if(B2G) == 372037-1.html 372037-1-ref.html
 == 372063-1.html 372063-1-ref.html
 == 372323-1.xhtml 372323-1-ref.xhtml
 == 372553-1.html 372553-1-ref.html
@@ -1535,7 +1535,7 @@ skip-if(B2G) fails-if(Android) random-if(layersGPUAccelerated) == 564991-1.html 
 == 565819-1.html 565819-ref.html
 == 565819-2.html 565819-ref.html
 needs-focus == 568441.html 568441-ref.html
-== 569006-1.html 569006-1-ref.html
+skip-if(B2G) == 569006-1.html 569006-1-ref.html
 == 571281-1a.html 571281-1-ref.html
 == 571281-1b.html 571281-1-ref.html
 == 571281-1c.html 571281-1-ref.html
