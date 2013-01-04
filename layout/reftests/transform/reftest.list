@@ -14,8 +14,8 @@ skip-if(B2G) == translatex-1a.html translatex-1-ref.html # bug 773482
 skip-if(B2G) == translatex-1b.html translatex-1-ref.html
 skip-if(B2G) == translatex-1c.html translatex-1-ref.html
 skip-if(B2G) == translatex-1d.html translatex-1-ref.html # bug 773482
-== translatex-1e.html translatex-1-ref.html
-== translatex-1a.html translatex-1-ref-2.html
+skip-if(B2G) == translatex-1e.html translatex-1-ref.html
+skip-if(B2G) == translatex-1a.html translatex-1-ref-2.html
 # translatey should act like position: relative
 == translatey-1a.html translatey-1-ref.html
 == translatey-1b.html translatey-1-ref.html
