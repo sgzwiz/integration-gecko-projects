@@ -2204,7 +2204,10 @@ ia64*-hpux*)
         # because this also forces narrowing to a single byte, which can be a
         # perf hit.  But this matters so little in practice (and often we want
         # that behavior) that it's better to turn it off.
-        CXXFLAGS="$CXXFLAGS -wd4345 -wd4351 -wd4800"
+        # MSVC warning C4819 warns some UTF-8 characters (e.g. copyright sign)
+        # on non-Western system locales even if it is in a comment.
+        CFLAGS="$CFLAGS -wd4819"
+        CXXFLAGS="$CXXFLAGS -wd4345 -wd4351 -wd4800 -wd4819"
         # make 'foo == bar;' error out
         CFLAGS="$CFLAGS -we4553"
         CXXFLAGS="$CXXFLAGS -we4553"
@@ -5229,6 +5232,14 @@ if test "$ACCESSIBILITY"; then
         fi
     esac
     AC_DEFINE(ACCESSIBILITY)
+fi
+
+dnl ========================================================
+dnl Accessibility is required for the linuxgl widget
+dnl backend
+dnl ========================================================
+if test "${MOZ_WIDGET_TOOLKIT}" = "linuxgl" -a "$ACCESSIBILITY" != "1"; then
+    AC_MSG_ERROR(["Accessibility is required for the linuxgl widget backend"])
 fi
 
 dnl ========================================================

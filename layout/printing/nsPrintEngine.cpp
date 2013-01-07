@@ -87,10 +87,9 @@ static const char kPrintingPromptService[] = "@mozilla.org/embedcomp/printingpro
 #include "nsLayoutUtils.h"
 #include "mozilla/Preferences.h"
 
-#include "nsViewsCID.h"
 #include "nsWidgetsCID.h"
 #include "nsIDeviceContextSpec.h"
-#include "nsIViewManager.h"
+#include "nsViewManager.h"
 #include "nsView.h"
 #include "nsRenderingContext.h"
 
@@ -124,6 +123,10 @@ static const char kPrintingPromptService[] = "@mozilla.org/embedcomp/printingpro
 #include "nsIURIFixup.h"
 #include "mozilla/dom/Element.h"
 #include "nsContentList.h"
+
+#ifdef MOZ_CRASHREPORTER
+#include "nsExceptionHandler.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -215,9 +218,6 @@ protected:
   nsRefPtr<nsPrintEngine> mPrintEngine;
   bool                    mSuppressed;
 };
-
-// Class IDs
-static NS_DEFINE_CID(kViewManagerCID,       NS_VIEW_MANAGER_CID);
 
 NS_IMPL_ISUPPORTS3(nsPrintEngine, nsIWebProgressListener,
                    nsISupportsWeakReference, nsIObserver)
@@ -1534,6 +1534,9 @@ nsresult nsPrintEngine::CleanupOnFailure(nsresult aResult, bool aIsPrinting)
     ShowPrintErrorDialog(aResult, aIsPrinting);
   }
 
+#ifdef MOZ_CRASHREPORTER
+  CrashReporter::AppendAppNotesToCrashReport(NS_LITERAL_CSTRING("Unsuccessful print.\n"));
+#endif
   FirePrintCompletionEvent();
 
   return aResult;
@@ -2197,8 +2200,7 @@ nsPrintEngine::ReflowPrintObject(nsPrintObject * aPO)
   nsresult rv = aPO->mPresContext->Init(mPrt->mPrintDC);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  aPO->mViewManager = do_CreateInstance(kViewManagerCID, &rv);
-  NS_ENSURE_SUCCESS(rv,rv);
+  aPO->mViewManager = new nsViewManager();
 
   rv = aPO->mViewManager->Init(mPrt->mPrintDC);
   NS_ENSURE_SUCCESS(rv,rv);
@@ -3175,6 +3177,9 @@ nsPrintEngine::DonePrintingPages(nsPrintObject* aPO, nsresult aResult)
   }
 
   if (NS_SUCCEEDED(aResult)) {
+#ifdef MOZ_CRASHREPORTER
+    CrashReporter::AppendAppNotesToCrashReport(NS_LITERAL_CSTRING("Successful print.\n"));
+#endif
     FirePrintCompletionEvent();
   }
 
@@ -3793,7 +3798,7 @@ DumpViews(nsIDocShell* aDocShell, FILE* out)
     fprintf(out, "docshell=%p \n", aDocShell);
     nsIPresShell* shell = nsPrintEngine::GetPresShellFor(aDocShell);
     if (shell) {
-      nsIViewManager* vm = shell->GetViewManager();
+      nsViewManager* vm = shell->GetViewManager();
       if (vm) {
         nsView* root = vm->GetRootView();
         if (root) {
