@@ -139,8 +139,8 @@ fails-if(Android||B2G) == filter-extref-differentOrigin-01.svg pass.svg # Bug 69
 == filter-foreignObject-01.svg pass.svg
 == filter-in-mask-01.svg pass.svg
 skip-if(B2G) == filter-invalidation-01.svg pass.svg
-== filter-scaled-01.svg pass.svg
-== filter-scaled-02.html filter-scaled-02-ref.html
+skip-if(B2G) == filter-scaled-01.svg pass.svg
+skip-if(B2G) == filter-scaled-02.html filter-scaled-02-ref.html
 == filter-translated-01.svg filter-translated-01-ref.svg
 == filters-and-group-opacity-01.svg filters-and-group-opacity-01-ref.svg
 == foreignObject-01.svg pass.svg
