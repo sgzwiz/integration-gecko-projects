@@ -737,7 +737,7 @@ fails == 385823-2b.html 385823-2-ref.html
 == 386014-1c.html 386014-1-ref.html
 == 386065-1.html 386065-1-ref.html
 == 386065-2.html about:blank
-fails == 386147-1.html 386147-1-ref.html # bug 447460
+skip-if(B2G) fails == 386147-1.html 386147-1-ref.html # bug 447460
 == 386310-1a.html 386310-1-ref.html
 == 386310-1b.html 386310-1-ref.html
 == 386310-1c.html 386310-1-ref.html
@@ -1227,7 +1227,7 @@ skip-if(B2G) == 458296-1d.html 458296-1-ref.html
 == 462844-4.html 462844-ref.html
 == 463204-1.html 463204-1-ref.html
 == 463217-1.xul 463217-1-ref.xul
-== 463952-1.html 463952-1-ref.html
+skip-if(B2G) == 463952-1.html 463952-1-ref.html
 == 464811-1.html 464811-1-ref.html
 == 466258-1.html 466258-1-ref.html
 == 466395-1.html 466395-1-ref.html
@@ -1670,8 +1670,8 @@ fails-if(layersGPUAccelerated&&cocoaWidget) == 654950-1.html 654950-1-ref.html #
 == 658952.html 658952-ref.html
 == 664127-1.xul 664127-1-ref.xul
 == 660682-1.html 660682-1-ref.html
-== 665597-1.html 665597-1-ref.html
-== 665597-2.html 665597-2-ref.html
+skip-if(B2G) == 665597-1.html 665597-1-ref.html
+skip-if(B2G) == 665597-2.html 665597-2-ref.html
 != 669015-1.xul 669015-1-notref.xul
 == 668319-1.xul about:blank
 == 670442-1.html 670442-1-ref.html
@@ -1698,7 +1698,7 @@ skip-if(B2G) fuzzy-if(true,1,21) fuzzy-if(cocoaWidget,1,170) fuzzy-if(Android&&b
 == 722923-1.html 722923-1-ref.html
 == 723484-1.html 723484-1-ref.html
 == 728983-1.html 728983-1-ref.html
-== 729143-1.html 729143-1-ref.html
+skip-if(B2G) == 729143-1.html 729143-1-ref.html
 == 731521-1.html 731521-1-ref.html
 needs-focus == 731726-1.html 731726-1-ref.html
 == 735481-1.html 735481-1-ref.html
@@ -1734,7 +1734,7 @@ fuzzy(40,800) == 797797-2.html 797797-2-ref.html # 'opacity:N' and rgba(,,,N) te
 == 812824-1.html 812824-1-ref.html
 == 814677.html 814677-ref.html
 skip-if(B2G) == 815593-1.html 815593-1-ref.html
-== 814952-1.html 814952-1-ref.html
+skip-if(B2G) == 814952-1.html 814952-1-ref.html
 == 816458-1.html 816458-1-ref.html
 == 816359-1.html 816359-1-ref.html
 skip-if(B2G) == 818276-1.html 818276-1-ref.html
