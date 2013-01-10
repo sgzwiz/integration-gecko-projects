@@ -239,7 +239,7 @@ skip-if(B2G) include printing/reftest.list
 skip-if(B2G) include pagination/reftest.list
 
 # <style scoped>
-include scoped-style/reftest.list
+skip-if(B2G) include scoped-style/reftest.list
 
 # scrolling
 include scrolling/reftest.list
