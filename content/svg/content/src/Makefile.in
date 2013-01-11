@@ -36,7 +36,6 @@ CPPSRCS		= \
 		DOMSVGTransformList.cpp \
 		nsDOMSVGZoomEvent.cpp \
 		nsDOMSVGEvent.cpp \
-		nsSVGAElement.cpp \
 		nsSVGAngle.cpp \
 		nsSVGBoolean.cpp \
 		nsSVGClass.cpp \
@@ -48,7 +47,6 @@ CPPSRCS		= \
 		nsSVGFeatures.cpp \
 		nsSVGFilterElement.cpp \
 		nsSVGFilters.cpp \
-		nsSVGGradientElement.cpp \
 		nsSVGInteger.cpp \
 		nsSVGIntegerPair.cpp \
 		nsSVGLength2.cpp \
@@ -67,6 +65,7 @@ CPPSRCS		= \
 		nsSVGUnknownElement.cpp \
 		nsSVGUseElement.cpp \
 		nsSVGViewBox.cpp \
+		SVGAElement.cpp \
 		SVGAltGlyphElement.cpp \
 		SVGAngle.cpp \
 		SVGAnimatedAngle.cpp \
@@ -90,6 +89,7 @@ CPPSRCS		= \
 		SVGForeignObjectElement.cpp \
 		SVGFragmentIdentifier.cpp \
 		SVGGElement.cpp \
+		SVGGradientElement.cpp \
 		SVGGraphicsElement.cpp \
 		SVGImageElement.cpp \
 		SVGIntegerPairSMILType.cpp \
@@ -153,6 +153,7 @@ EXPORTS =  			\
 EXPORTS_NAMESPACES = mozilla/dom
 
 EXPORTS_mozilla/dom = \
+	SVGAElement.h \
 	SVGAltGlyphElement.h \
 	SVGAngle.h \
 	SVGAnimatedAngle.h \
@@ -167,6 +168,7 @@ EXPORTS_mozilla/dom = \
 	SVGEllipseElement.h \
 	SVGForeignObjectElement.h \
 	SVGGElement.h \
+	SVGGradientElement.h \
 	SVGGraphicsElement.h \
 	SVGImageElement.h \
 	SVGLineElement.h \

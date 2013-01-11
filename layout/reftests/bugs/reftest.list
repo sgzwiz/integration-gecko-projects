@@ -562,8 +562,8 @@ fuzzy-if(OSX==10.8,45,2) == 363858-6a.html 363858-6-ref.html
 == 364318-1.xhtml 364318-1-ref.xhtml
 == 364079-1.html 364079-1-ref.html
 == 364861-1.html 364861-1-ref.html
-== 364862-1.html 364862-1-ref.html
-== 364968-1.xul 364968-1-ref.html
+skip-if(B2G) == 364862-1.html 364862-1-ref.html
+skip-if(B2G) == 364968-1.xul 364968-1-ref.html
 == 364989-1.html 364989-1-ref.html
 == 365173-1.html 365173-1-ref.html
 == 366207-1.xul 366207-1-ref.xul
