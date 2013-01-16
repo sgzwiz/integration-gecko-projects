@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#if BOOTSTRAP
+#ifdef REFTEST_ANDROID
 this.EXPORTED_SYMBOLS = ["OnRefTestLoad"];
 #endif
 
@@ -249,12 +249,8 @@ this.OnRefTestLoad = function OnRefTestLoad(win)
     // what size our window is
     gBrowser.setAttribute("style", "min-width: 800px; min-height: 1000px; max-width: 800px; max-height: 1000px");
 
-#if BOOTSTRAP
-#if REFTEST_B2G
-    var doc = gContainingWindow.document.getElementsByTagName("window")[0];
-#else
+#ifdef REFTEST_ANDROID
     var doc = gContainingWindow.document.getElementById('main-window');
-#endif
     while (doc.hasChildNodes()) {
       doc.removeChild(doc.firstChild);
     }
@@ -300,12 +296,8 @@ function InitAndStartRefTests()
                 var mfl = FileUtils.openFileOutputStream(f, FileUtils.MODE_WRONLY | FileUtils.MODE_CREATE);
                 // Set to mirror to stdout as well as the file
                 gDumpLog = function (msg) {
-#if BOOTSTRAP
-#if REFTEST_B2G
-                    dump(msg);
-#else
+#ifdef REFTEST_ANDROID
                     //NOTE: on android-xul, we have a libc crash if we do a dump with %7s in the string
-#endif
 #else
                     dump(msg);
 #endif
@@ -397,7 +389,7 @@ function StartHTTPServer()
 function StartTests()
 {
     var uri;
-#if BOOTSTRAP
+#ifdef REFTEST_MOBILE
     /* These prefs are optional, so we don't need to spit an error to the log */
     try {
         var prefs = Components.classes["@mozilla.org/preferences-service;1"].
@@ -541,7 +533,7 @@ function BuildConditionSandbox(aURL) {
         sandbox.smallScreen = true;
     }
 
-#if REFTEST_B2G
+#ifdef REFTEST_B2G
     // XXX nsIGfxInfo isn't available in B2G
     sandbox.d2d = false;
     sandbox.azureQuartz = false;

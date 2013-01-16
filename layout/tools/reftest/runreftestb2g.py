@@ -396,20 +396,16 @@ class B2GReftest(RefTest):
         fhandle = open(os.path.join(profileDir, "user.js"), 'a')
         fhandle.write("""
 user_pref("browser.firstrun.show.localepicker", false);
-user_pref("browser.homescreenURL","app://system.gaiamobile.org");\n
-user_pref("browser.manifestURL","app://system.gaiamobile.org/manifest.webapp");\n
 user_pref("browser.tabs.remote", false);\n
 user_pref("dom.ipc.browser_frames.oop_by_default", false);\n
 user_pref("dom.ipc.tabs.disabled", false);\n
 user_pref("dom.mozBrowserFramesEnabled", true);\n
-user_pref("dom.mozBrowserFramesWhitelist","app://system.gaiamobile.org");\n
-user_pref("network.dns.localDomains","app://system.gaiamobile.org");\n
 user_pref("font.size.inflation.emPerLine", 0);
 user_pref("font.size.inflation.minTwips", 0);
 user_pref("reftest.browser.iframe.enabled", false);
 user_pref("reftest.remote", true);
 user_pref("reftest.uri", "%s");
-// Set a future policy version to avoid the telemetry prompt.
+user_pref("toolkit.defaultChromeURI", "chrome://reftest/content/reftest.xul");
 user_pref("toolkit.telemetry.prompted", 999);
 user_pref("toolkit.telemetry.notifiedOptOut", 999);
 user_pref("marionette.loadearly", true);
@@ -422,6 +418,25 @@ user_pref("capability.principal.codebase.p2.granted", "UniversalXPConnect");
 user_pref("capability.principal.codebase.p2.id", "http://%s:%s");
 """ % (options.remoteWebServer, options.httpPort))
 
+        # Prefs which are defined in function handler_handle in
+        # reftest-cmdline.js.  These two locations should stay in sync.
+        # FIXME: These should be in only one place.
+        fhandle.write("""
+user_pref("app.update.enabled", false);
+user_pref("browser.dom.window.dump.enabled", true);
+user_pref("dom.max_chrome_script_run_time", 0);
+user_pref("dom.max_script_run_time", 0);
+user_pref("dom.send_after_paint_to_content", true);
+user_pref("extensions.blocklist.enabled", false);
+user_pref("extensions.getAddons.cache.enabled", false);
+user_pref("extensions.update.enabled", false);
+user_pref("gfx.color_management.force_srgb", true);
+user_pref("hangmonitor.timeout", 0);
+user_pref("image.high_quality_downscaling.enabled, false);
+user_pref("media.autoplay.enabled", true);
+user_pref("ui.caretBlinkTime", -1);
+user_pref("urlclassifier.updateinterval", 172800);
+""")
         # Close the file
         fhandle.close()
 
@@ -525,8 +540,6 @@ def main(args=sys.argv[1:]):
             return 1
 
     auto.setProduct("b2g")
-    auto.test_script = os.path.join(SCRIPT_DIRECTORY, 'b2g_start_script.js')
-    auto.test_script_args = [options.remoteWebServer, options.httpPort]
     auto.logFinish = "REFTEST TEST-START | Shutdown"
 
     reftest = B2GReftest(auto, dm, options, SCRIPT_DIRECTORY)

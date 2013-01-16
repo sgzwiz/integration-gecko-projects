@@ -21,13 +21,14 @@ NO_JS_MANIFEST = 1
 DIST_FILES = install.rdf
 
 ifeq ($(MOZ_BUILD_APP),mobile/android)
-DEFINES += -DBOOTSTRAP
+DEFINES += -DREFTEST_ANDROID
+DEFINES += -DREFTEST_MOBILE
 DIST_FILES += bootstrap.js
 endif
 
 ifeq ($(MOZ_BUILD_APP),b2g)
-DEFINES += -DBOOTSTRAP
 DEFINES += -DREFTEST_B2G
+DEFINES += -DREFTEST_MOBILE
 endif
 
 # Used in install.rdf
@@ -58,7 +59,6 @@ _HARNESS_FILES = \
   $(srcdir)/runreftest.py \
   $(srcdir)/remotereftest.py \
   $(srcdir)/runreftestb2g.py \
-  $(srcdir)/b2g_start_script.js \
   automation.py \
   $(topsrcdir)/testing/mozbase/mozdevice/mozdevice/devicemanager.py \
   $(topsrcdir)/testing/mozbase/mozdevice/mozdevice/devicemanagerADB.py \

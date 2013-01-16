@@ -1,7 +1,7 @@
 reftest.jar:
 % content reftest %content/
 *  content/reftest-content.js (reftest-content.js)
-#ifdef BOOTSTRAP
+#ifdef REFTEST_ANDROID
 *  content/reftest.jsm (reftest.js)
 #else
 *  content/reftest.js (reftest.js)
