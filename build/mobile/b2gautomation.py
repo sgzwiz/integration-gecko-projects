@@ -242,6 +242,11 @@ class B2GRemoteAutomation(Automation):
 
         time.sleep(5)
 
+        # Nothing more is needed to start the tests, they were
+        # presumably set up to run automatically by the harness
+        if not self.test_script:
+            return instance
+
         # Set up port forwarding again for Marionette, since any that
         # existed previously got wiped out by the reboot.
         if not self._is_emulator:
@@ -276,16 +281,14 @@ class B2GRemoteAutomation(Automation):
             self.marionette.set_context(self.marionette.CONTEXT_CONTENT)
 
         # run the script that starts the tests
-        if self.test_script:
-            if os.path.isfile(self.test_script):
-                script = open(self.test_script, 'r')
-                self.marionette.execute_script(script.read(), script_args=self.test_script_args)
-                script.close()
-            elif isinstance(self.test_script, basestring):
-                self.marionette.execute_script(self.test_script, script_args=self.test_script_args)
+        if os.path.isfile(self.test_script):
+            script = open(self.test_script, 'r')
+            self.marionette.execute_script(script.read(), script_args=self.test_script_args)
+            script.close()
+        elif isinstance(self.test_script, basestring):
+            self.marionette.execute_script(self.test_script, script_args=self.test_script_args)
         else:
-            # assumes the tests are started on startup automatically
-            pass
+            raise TypeError("B2GRemoteAutomation.test_script must be a file path or basestring")
 
         return instance
 
