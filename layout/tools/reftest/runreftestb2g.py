@@ -390,7 +390,8 @@ class B2GReftest(RefTest):
 
     def createReftestProfile(self, options, profileDir, reftestlist):
         print "profileDir: " + str(profileDir)
-        retVal = RefTest.createReftestProfile(self, options, profileDir, reftestlist, server=options.remoteWebServer)
+        retVal = RefTest.createReftestProfile(self, options, profileDir, reftestlist,
+                                server="%s:%s" % (options.remoteWebServer, options.httpPort))
 
         # Turn off the locale picker screen
         fhandle = open(os.path.join(profileDir, "user.js"), 'a')
