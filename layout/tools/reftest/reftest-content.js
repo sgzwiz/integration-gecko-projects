@@ -119,7 +119,9 @@ function PaintWaitFinishedListener(event)
 
 function OnInitialLoad()
 {
+#ifndef REFTEST_B2G
     removeEventListener("load", OnInitialLoad, true);
+#endif
 
     gDebug = CC[DEBUG_CONTRACTID].getService(CI.nsIDebug2);
 
@@ -810,4 +812,8 @@ function SendUpdateCanvasForEvent(event)
         sendAsyncMessage("reftest:UpdateCanvasForInvalidation", { rects: rects });
     }
 }
+#if REFTEST_B2G
+OnInitialLoad();
+#else
 addEventListener("load", OnInitialLoad, true);
+#endif
