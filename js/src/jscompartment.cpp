@@ -14,32 +14,32 @@
 #include "jsiter.h"
 #include "jsmath.h"
 #include "jsproxy.h"
-#include "jsscope.h"
 #include "jswatchpoint.h"
 #include "jswrapper.h"
 
+#if ENABLE_YARR_JIT
+#include "assembler/jit/ExecutableAllocator.h"
+#endif
 #include "assembler/wtf/Platform.h"
 #include "gc/Marking.h"
 #include "gc/Root.h"
+#ifdef JS_ION
+#include "ion/IonCompartment.h"
+#include "ion/Ion.h"
+#endif
 #include "js/MemoryMetrics.h"
 #include "methodjit/MethodJIT.h"
 #include "methodjit/PolyIC.h"
 #include "methodjit/MonoIC.h"
 #include "methodjit/Retcon.h"
 #include "vm/Debugger.h"
+#include "vm/ForkJoin.h"
 #include "yarr/BumpPointerAllocator.h"
 
 #include "jsgcinlines.h"
 #include "jsobjinlines.h"
-#include "jsscopeinlines.h"
-#ifdef JS_ION
-#include "ion/IonCompartment.h"
-#include "ion/Ion.h"
-#endif
 
-#if ENABLE_YARR_JIT
-#include "assembler/jit/ExecutableAllocator.h"
-#endif
+#include "vm/Shape-inl.h"
 
 using namespace js;
 using namespace js::gc;
@@ -51,6 +51,7 @@ JSCompartment::JSCompartment(JSRuntime *rt)
     principals(NULL),
     global_(NULL),
     enterCompartmentDepth(0),
+    allocator(this),
 #ifdef JSGC_GENERATIONAL
     gcNursery(),
     gcStoreBuffer(&gcNursery),
@@ -63,7 +64,7 @@ JSCompartment::JSCompartment(JSRuntime *rt)
     gcTriggerBytes(0),
     gcHeapGrowthFactor(3.0),
     hold(false),
-    isSystemCompartment(false),
+    isSystem(false),
     lastCodeRelease(0),
     analysisLifoAlloc(LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
     typeLifoAlloc(LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
@@ -74,8 +75,6 @@ JSCompartment::JSCompartment(JSRuntime *rt)
     lastAnimationTime(0),
     regExps(rt),
     propertyTree(thisForCtor()),
-    gcMallocAndFreeBytes(0),
-    gcTriggerMallocAndFreeBytes(0),
     gcIncomingGrayPointers(NULL),
     gcLiveArrayBuffers(NULL),
     gcWeakMapList(NULL),
@@ -93,8 +92,8 @@ JSCompartment::JSCompartment(JSRuntime *rt)
 #endif
 {
     /* Ensure that there are no vtables to mess us up here. */
-    JS_ASSERT(reinterpret_cast<JS::shadow::Compartment *>(this) ==
-              static_cast<JS::shadow::Compartment *>(this));
+    JS_ASSERT(reinterpret_cast<JS::shadow::Zone *>(this) ==
+              static_cast<JS::shadow::Zone *>(this));
 
     setGCMaxMallocBytes(rt->gcMaxMallocBytes * 0.9);
 }
@@ -368,14 +367,14 @@ JSCompartment::wrap(JSContext *cx, Value *vp, JSObject *existingArg)
         Rooted<JSStableString *> str(cx, vp->toString()->ensureStable(cx));
         if (!str)
             return false;
-        RootedString wrapped(cx, js_NewStringCopyN(cx, str->chars().get(), str->length()));
+        RootedString wrapped(cx, js_NewStringCopyN<CanGC>(cx, str->chars().get(), str->length()));
         if (!wrapped)
             return false;
         vp->setString(wrapped);
         if (!putWrapper(orig, *vp))
             return false;
 
-        if (str->compartment()->isGCMarking()) {
+        if (str->zone()->isGCMarking()) {
             /*
              * All string wrappers are dropped when collection starts, but we
              * just created a new one.  Mark the wrapped string to stop it being
@@ -467,7 +466,7 @@ JSCompartment::wrapId(JSContext *cx, jsid *idp)
     if (!wrap(cx, value.address()))
         return false;
     RootedId id(cx);
-    if (!ValueToId(cx, value.get(), &id))
+    if (!ValueToId<CanGC>(cx, value.get(), &id))
         return false;
 
     *idp = id;
@@ -523,7 +522,7 @@ JSCompartment::wrap(JSContext *cx, AutoIdVector &props)
 void
 JSCompartment::markCrossCompartmentWrappers(JSTracer *trc)
 {
-    JS_ASSERT(!isCollecting());
+    JS_ASSERT(!zone()->isCollecting());
 
     for (WrapperMap::Enum e(crossCompartmentWrappers); !e.empty(); e.popFront()) {
         Value v = e.front().value;
@@ -581,7 +580,7 @@ JSCompartment::markTypes(JSTracer *trc)
     }
 
     for (size_t thingKind = FINALIZE_OBJECT0; thingKind < FINALIZE_OBJECT_LIMIT; thingKind++) {
-        ArenaHeader *aheader = arenas.getFirstArena(static_cast<AllocKind>(thingKind));
+        ArenaHeader *aheader = allocator.arenas.getFirstArena(static_cast<AllocKind>(thingKind));
         if (aheader)
             rt->gcMarker.pushArenaList(aheader);
     }
@@ -816,9 +815,8 @@ JSCompartment::setGCMaxMallocBytes(size_t value)
 void
 JSCompartment::onTooMuchMalloc()
 {
-    TriggerCompartmentGC(this, gcreason::TOO_MUCH_MALLOC);
+    TriggerZoneGC(zone(), gcreason::TOO_MUCH_MALLOC);
 }
-
 
 bool
 JSCompartment::hasScriptsOnStack()
@@ -909,7 +907,7 @@ JSCompartment::updateForDebugMode(FreeOp *fop, AutoDebugModeGC &dmgc)
     // to run any scripts in this compartment until the dmgc is destroyed.
     // That is the caller's responsibility.
     if (!rt->isHeapBusy())
-        dmgc.scheduleGC(this);
+        dmgc.scheduleGC(zone());
 #endif
 }
 
@@ -1033,4 +1031,10 @@ JSCompartment::sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf, size_t *compa
     *crossCompartmentWrappersArg = crossCompartmentWrappers.sizeOfExcludingThis(mallocSizeOf);
     *regexpCompartment = regExps.sizeOfExcludingThis(mallocSizeOf);
     *debuggeesSet = debuggees.sizeOfExcludingThis(mallocSizeOf);
+}
+
+void
+JSCompartment::adoptWorkerAllocator(Allocator *workerAllocator)
+{
+    allocator.arenas.adoptArenas(rt, &workerAllocator->arenas);
 }

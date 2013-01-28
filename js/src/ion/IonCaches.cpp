@@ -7,8 +7,6 @@
 
 #include "mozilla/DebugOnly.h"
 
-#include "jsscope.h"
-
 #include "CodeGenerator.h"
 #include "Ion.h"
 #include "IonCaches.h"
@@ -16,9 +14,10 @@
 #include "IonSpewer.h"
 #include "VMFunctions.h"
 
+#include "vm/Shape.h"
+
 #include "jsinterpinlines.h"
 
-#include "vm/Stack.h"
 #include "IonFrames-inl.h"
 
 using namespace js;
@@ -1067,7 +1066,7 @@ IonCacheSetProperty::attachNativeExisting(JSContext *cx, IonScript *ion,
     if (obj->isFixedSlot(shape->slot())) {
         Address addr(object(), JSObject::getFixedSlotOffset(shape->slot()));
 
-        if (cx->compartment->needsBarrier())
+        if (cx->zone()->needsBarrier())
             masm.callPreBarrier(addr, MIRType_Value);
 
         masm.storeConstantOrRegister(value(), addr);
@@ -1077,7 +1076,7 @@ IonCacheSetProperty::attachNativeExisting(JSContext *cx, IonScript *ion,
 
         Address addr(slotsReg, obj->dynamicSlotIndex(shape->slot()) * sizeof(Value));
 
-        if (cx->compartment->needsBarrier())
+        if (cx->zone()->needsBarrier())
             masm.callPreBarrier(addr, MIRType_Value);
 
         masm.storeConstantOrRegister(value(), addr);
@@ -1337,7 +1336,7 @@ IonCacheSetProperty::attachNativeAdding(JSContext *cx, IonScript *ion, JSObject 
 
     /* Changing object shape.  Write the object's new shape. */
     Address shapeAddr(object(), JSObject::offsetOfShape());
-    if (cx->compartment->needsBarrier())
+    if (cx->zone()->needsBarrier())
         masm.callPreBarrier(shapeAddr, MIRType_Shape);
     masm.storePtr(ImmGCPtr(newShape), shapeAddr);
 
@@ -1712,7 +1711,7 @@ js::ion::GetElementCache(JSContext *cx, size_t cacheIndex, HandleObject obj, Han
     RootedValue lval(cx, ObjectValue(*obj));
 
     if (cache.isDisabled()) {
-        if (!GetElementOperation(cx, JSOp(*pc), lval, idval, res))
+        if (!GetElementOperation(cx, JSOp(*pc), &lval, idval, res))
             return false;
         types::TypeScript::Monitor(cx, script, pc, res);
         return true;
@@ -1747,7 +1746,7 @@ js::ion::GetElementCache(JSContext *cx, size_t cacheIndex, HandleObject obj, Han
         }
     }
 
-    if (!GetElementOperation(cx, JSOp(*pc), lval, idval, res))
+    if (!GetElementOperation(cx, JSOp(*pc), &lval, idval, res))
         return false;
 
     // If no new attach was done, and we've reached maximum number of stubs, then
