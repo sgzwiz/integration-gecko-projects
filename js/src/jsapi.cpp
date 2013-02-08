@@ -810,8 +810,8 @@ JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
     gcInterFrameGC(0),
     gcSliceBudget(SliceBudget::Unlimited),
     gcIncrementalEnabled(true),
-    gcManipulatingDeadCompartments(false),
-    gcObjectsMarkedInDeadCompartments(0),
+    gcManipulatingDeadZones(false),
+    gcObjectsMarkedInDeadZones(0),
     gcPoke(false),
     heapState(Idle),
 #ifdef JSGC_GENERATIONAL
@@ -929,8 +929,8 @@ JSRuntime::init(uint32_t maxbytes)
         return false;
     }
 
-    atomsCompartment->isSystem = true;
-    atomsCompartment->setGCLastBytes(8192, GC_NORMAL);
+    atomsCompartment->zone()->isSystem = true;
+    atomsCompartment->zone()->setGCLastBytes(8192, GC_NORMAL);
 
     if (!InitAtoms(this))
         return false;
@@ -1570,7 +1570,7 @@ JS_TransplantObject(JSContext *cx, JSObject *origobjArg, JSObject *targetArg)
     JS_ASSERT(!IsCrossCompartmentWrapper(origobj));
     JS_ASSERT(!IsCrossCompartmentWrapper(target));
 
-    AutoMaybeTouchDeadCompartments agc(cx);
+    AutoMaybeTouchDeadZones agc(cx);
 
     JSCompartment *destination = target->compartment();
     RootedValue origv(cx, ObjectValue(*origobj));
@@ -1643,7 +1643,7 @@ js_TransplantObjectWithWrapper(JSContext *cx,
     RootedObject targetobj(cx, targetobjArg);
     RootedObject targetwrapper(cx, targetwrapperArg);
 
-    AutoMaybeTouchDeadCompartments agc(cx);
+    AutoMaybeTouchDeadZones agc(cx);
 
     AssertHeapIsIdle(cx);
     JS_ASSERT(!IsCrossCompartmentWrapper(origobj));
@@ -2269,7 +2269,7 @@ JS_GetDefaultFreeOp(JSRuntime *rt)
 JS_PUBLIC_API(void)
 JS_updateMallocCounter(JSContext *cx, size_t nbytes)
 {
-    return cx->runtime->updateMallocCounter(cx->compartment, nbytes);
+    return cx->runtime->updateMallocCounter(cx->zone(), nbytes);
 }
 
 JS_PUBLIC_API(char *)
@@ -5532,14 +5532,19 @@ JS::Evaluate(JSContext *cx, HandleObject obj, CompileOptions options,
 
     options.setCompileAndGo(true);
     options.setNoScriptRval(!rval);
+    SourceCompressionToken sct(cx);
     RootedScript script(cx, frontend::CompileScript(cx, obj, NullFramePtr(), options,
-                                                    StableCharPtr(chars, length), length));
+                                                    StableCharPtr(chars, length), length,
+                                                    NULL, 0, &sct));
     if (!script)
         return false;
 
     JS_ASSERT(script->getVersion() == options.version);
 
-    return Execute(cx, script, *obj, rval);
+    bool result = Execute(cx, script, *obj, rval);
+    if (!sct.complete())
+        result = false;
+    return result;
 }
 
 extern JS_PUBLIC_API(bool)
