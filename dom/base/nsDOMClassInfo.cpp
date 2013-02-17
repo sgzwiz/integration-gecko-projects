@@ -376,7 +376,7 @@
 #include "nsIMessageManager.h"
 #include "mozilla/dom/Element.h"
 #include "nsHTMLSelectElement.h"
-#include "nsHTMLLegendElement.h"
+#include "HTMLLegendElement.h"
 
 #include "DOMSVGStringList.h"
 
@@ -466,6 +466,7 @@ using mozilla::dom::workers::ResolveWorkerClasses;
 
 #ifdef MOZ_WEBRTC
 #include "nsIDOMDataChannel.h"
+#include "nsIDOMRTCPeerConnection.h"
 #endif
 
 using namespace mozilla;
@@ -1417,6 +1418,8 @@ static nsDOMClassInfoData sClassInfoData[] = {
 #ifdef MOZ_WEBRTC
   NS_DEFINE_CLASSINFO_DATA(DataChannel, nsEventTargetSH,
                            EVENTTARGET_SCRIPTABLE_FLAGS)
+  NS_DEFINE_CLASSINFO_DATA(RTCPeerConnection, nsDOMGenericSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
 #endif
 };
 
@@ -3624,6 +3627,10 @@ nsDOMClassInfo::Init()
   DOM_CLASSINFO_MAP_BEGIN(DataChannel, nsIDOMDataChannel)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMDataChannel)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
+  DOM_CLASSINFO_MAP_END
+
+  DOM_CLASSINFO_MAP_BEGIN(RTCPeerConnection, nsIDOMRTCPeerConnection)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMRTCPeerConnection)
   DOM_CLASSINFO_MAP_END
 #endif
 
@@ -6798,8 +6805,8 @@ nsNodeSH::PreCreate(nsISupports *nativeObj, JSContext *cx, JSObject *globalObj,
       else {
         // Legend isn't an HTML form control but should have its fieldset form
         // as scope parent at least for backward compatibility.
-        nsHTMLLegendElement *legend =
-          nsHTMLLegendElement::FromContent(node->AsElement());
+        HTMLLegendElement *legend =
+          HTMLLegendElement::FromContent(node->AsElement());
         if (legend) {
           Element *form = legend->GetFormElement();
 
