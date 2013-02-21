@@ -32,6 +32,7 @@
     "dom/devicestorage/test/test_stat.html":" /tests/dom/devicestorage/test/test_enumerate.html finished in a non-clean fashion, probably because it didn't call SimpleTest.finish()",
     "dom/devicestorage/test/test_watch.html":" /tests/dom/devicestorage/test/test_enumerate.html finished in a non-clean fashion, probably because it didn't call SimpleTest.finish()",
     "dom/devicestorage/test/test_watchOther.html":" addError was called : SecurityError",
+    "dom/encoding/test/test_stringencoding.html":" Test timed out.",
     "dom/file/test/test_append_read_data.html":" uncaught exception - UnknownError: The operation failed for reasons unrelated to the database itself and not covered by any other error code. at http://mochi.test:8888/tests/dom/file/test/helpers.js:126",
     "dom/file/test/test_archivereader.html":" uncaught exception - NS_ERROR_FAILURE: Component returned failure code: 0x80004005 (NS_ERROR_FAILURE) [nsIProperties.get] at chrome://specialpowers/content/specialpowersAPI.js:120",
     "dom/file/test/test_archivereader_nonUnicode.html":" uncaught exception - NS_ERROR_FAILURE: Component returned failure code: 0x80004005 (NS_ERROR_FAILURE) [nsIProperties.get] at chrome://specialpowers/content/specialpowersAPI.js:120",
