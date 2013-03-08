@@ -54,6 +54,8 @@ namespace base {
 class Thread;
 } // end namespace base
 
+typedef void* EGLSurface;
+
 namespace mozilla {
 
 namespace hal {
@@ -87,8 +89,6 @@ typedef struct AndroidSystemColors {
     nscolor panelColorForeground;
     nscolor panelColorBackground;
 } AndroidSystemColors;
-
-typedef void* EGLSurface;
 
 class nsFilePickerCallback : nsISupports {
 public:
@@ -332,7 +332,8 @@ public:
     void SetFirstPaintViewport(const nsIntPoint& aOffset, float aZoom, const nsIntRect& aPageRect, const gfx::Rect& aCssPageRect);
     void SetPageRect(const gfx::Rect& aCssPageRect);
     void SyncViewportInfo(const nsIntRect& aDisplayPort, float aDisplayResolution, bool aLayersUpdated,
-                          nsIntPoint& aScrollOffset, float& aScaleX, float& aScaleY);
+                          nsIntPoint& aScrollOffset, float& aScaleX, float& aScaleY,
+                          gfx::Margin& aFixedLayerMargins);
 
     void AddPluginView(jobject view, const gfxRect& rect, bool isFullScreen);
     void RemovePluginView(jobject view, bool isFullScreen);

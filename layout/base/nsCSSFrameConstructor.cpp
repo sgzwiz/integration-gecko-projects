@@ -30,8 +30,6 @@
 #include "nsTableColGroupFrame.h"
 #include "nsTableColFrame.h"
 #include "nsIDOMHTMLDocument.h"
-#include "nsIDOMHTMLTableColElement.h"
-#include "nsIDOMHTMLTableCaptionElem.h"
 #include "nsHTMLParts.h"
 #include "nsIPresShell.h"
 #include "nsUnicharUtils.h"
@@ -4919,8 +4917,7 @@ nsCSSFrameConstructor::FindSVGData(Element* aElement,
   // be created will be an nsInlineFrame, so it can never be a filter.
   bool parentIsFilter = aParentFrame &&
     aParentFrame->GetType() == nsGkAtoms::svgFilterFrame;
-  nsCOMPtr<nsIDOMSVGFilterPrimitiveStandardAttributes> filterPrimitive =
-    do_QueryInterface(aElement);
+  bool filterPrimitive = aElement->IsNodeOfType(nsINode::eFILTER);
   if ((parentIsFilter && !filterPrimitive) ||
       (!parentIsFilter && filterPrimitive)) {
     return &sSuppressData;
@@ -7965,7 +7962,7 @@ ApplyRenderingChangeToTree(nsPresContext* aPresContext,
   // If the frame's background is propagated to an ancestor, walk up to
   // that ancestor.
   nsStyleContext *bgSC;
-  while (!nsCSSRendering::FindBackground(aPresContext, aFrame, &bgSC)) {
+  while (!nsCSSRendering::FindBackground(aFrame, &bgSC)) {
     aFrame = aFrame->GetParent();
     NS_ASSERTION(aFrame, "root frame must paint");
   }

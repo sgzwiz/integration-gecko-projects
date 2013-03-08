@@ -595,6 +595,26 @@ ToWidgetPoint(float aX, float aY, const nsPoint& aOffset,
                     NSToIntRound((aY*appPerCSS + aOffset.y)/appPerDev));
 }
 
+static inline int16_t
+GetButtonsFlagForButton(int32_t aButton)
+{
+  switch (aButton) {
+    case nsMouseEvent::eLeftButton:
+      return nsMouseEvent::eLeftButtonFlag;
+    case nsMouseEvent::eMiddleButton:
+      return nsMouseEvent::eMiddleButtonFlag;
+    case nsMouseEvent::eRightButton:
+      return nsMouseEvent::eRightButtonFlag;
+    case 4:
+      return nsMouseEvent::e4thButtonFlag;
+    case 5:
+      return nsMouseEvent::e5thButtonFlag;
+    default:
+      NS_ERROR("Button not known.");
+      return 0;
+  }
+}
+
 NS_IMETHODIMP
 nsDOMWindowUtils::SendMouseEventCommon(const nsAString& aType,
                                        float aX,
@@ -647,6 +667,7 @@ nsDOMWindowUtils::SendMouseEventCommon(const nsAString& aType,
                        nsMouseEvent::eContextMenuKey : nsMouseEvent::eNormal);
   event.modifiers = GetWidgetModifiers(aModifiers);
   event.button = aButton;
+  event.buttons = GetButtonsFlagForButton(aButton);
   event.widget = widget;
   event.pressure = aPressure;
   event.inputSource = aInputSourceArg;
@@ -2079,7 +2100,7 @@ nsDOMWindowUtils::GetParent(const JS::Value& aObject,
     return NS_ERROR_XPC_BAD_CONVERT_JS;
   }
 
-  js::Rooted<JSObject*> parent(aCx, JS_GetParent(JSVAL_TO_OBJECT(aObject)));
+  JS::Rooted<JSObject*> parent(aCx, JS_GetParent(JSVAL_TO_OBJECT(aObject)));
   *aParent = OBJECT_TO_JSVAL(parent);
 
   // Outerize if necessary.
@@ -2912,6 +2933,32 @@ nsDOMWindowUtils::SetScrollPositionClampingScrollPortSize(float aWidth, float aH
   presShell->SetScrollPositionClampingScrollPortSize(
     nsPresContext::CSSPixelsToAppUnits(aWidth),
     nsPresContext::CSSPixelsToAppUnits(aHeight));
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::SetContentDocumentFixedPositionMargins(float aTop, float aRight,
+                                                         float aBottom, float aLeft)
+{
+  if (!nsContentUtils::IsCallerChrome()) {
+    return NS_ERROR_DOM_SECURITY_ERR;
+  }
+
+  if (!(aTop >= 0.0f && aRight >= 0.0f && aBottom >= 0.0f && aLeft >= 0.0f)) {
+    return NS_ERROR_ILLEGAL_VALUE;
+  }
+
+  nsIPresShell* presShell = GetPresShell();
+  if (!presShell) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsMargin margins(nsPresContext::CSSPixelsToAppUnits(aTop),
+                   nsPresContext::CSSPixelsToAppUnits(aRight),
+                   nsPresContext::CSSPixelsToAppUnits(aBottom),
+                   nsPresContext::CSSPixelsToAppUnits(aLeft));
+  presShell->SetContentDocumentFixedPositionMargins(margins);
 
   return NS_OK;
 }

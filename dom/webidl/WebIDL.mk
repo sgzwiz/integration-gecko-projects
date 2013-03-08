@@ -89,6 +89,7 @@ webidl_files = \
   HTMLMetaElement.webidl \
   HTMLMeterElement.webidl \
   HTMLModElement.webidl \
+  HTMLObjectElement.webidl \
   HTMLOListElement.webidl \
   HTMLOptGroupElement.webidl \
   HTMLOptionElement.webidl \
@@ -158,10 +159,16 @@ webidl_files = \
   SVGElement.webidl \
   SVGEllipseElement.webidl \
   SVGFilterElement.webidl \
+  SVGFilterPrimitiveStandardAttributes.webidl \
+  SVGFEBlendElement.webidl \
+  SVGFEFloodElement.webidl \
   SVGFEFuncAElement.webidl \
   SVGFEFuncBElement.webidl \
   SVGFEFuncGElement.webidl \
   SVGFEFuncRElement.webidl \
+  SVGFEImageElement.webidl \
+  SVGFEMergeElement.webidl \
+  SVGFEMergeNodeElement.webidl \
   SVGFitToViewBox.webidl \
   SVGForeignObjectElement.webidl \
   SVGGElement.webidl \
@@ -216,6 +223,7 @@ webidl_files = \
   TreeWalker.webidl \
   URL.webidl \
   ValidityState.webidl \
+  WebComponents.webidl \
   WebSocket.webidl \
   UndoManager.webidl \
   URLUtils.webidl \

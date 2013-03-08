@@ -696,6 +696,15 @@ GetWrapperCache(void* p)
   return NULL;
 }
 
+// Helper template for smart pointers to resolve ambiguity between
+// GetWrappeCache(void*) and GetWrapperCache(const ParentObject&).
+template <template <typename> class SmartPtr, typename T>
+inline nsWrapperCache*
+GetWrapperCache(const SmartPtr<T>& aObject)
+{
+  return GetWrapperCache(aObject.get());
+}
+
 /**
  * A method to handle new-binding wrap failure, by possibly falling back to
  * wrapping as a non-new-binding object.
@@ -1403,7 +1412,7 @@ protected:
 #endif
 };
 
-class NonNullLazyRootedObject : public Maybe<js::RootedObject>
+class NonNullLazyRootedObject : public Maybe<JS::RootedObject>
 {
 public:
   operator JSObject&() const {
@@ -1412,7 +1421,7 @@ public:
   }
 };
 
-class LazyRootedObject : public Maybe<js::RootedObject>
+class LazyRootedObject : public Maybe<JS::RootedObject>
 {
 public:
   operator JSObject*() const {

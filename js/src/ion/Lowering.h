@@ -103,6 +103,7 @@ class LIRGenerator : public LIRGeneratorSpecific
     bool visitCall(MCall *call);
     bool visitApplyArgs(MApplyArgs *apply);
     bool visitGetDynamicName(MGetDynamicName *ins);
+    bool visitFilterArguments(MFilterArguments *ins);
     bool visitCallDirectEval(MCallDirectEval *ins);
     bool visitTest(MTest *test);
     bool visitPolyInlineDispatch(MPolyInlineDispatch *ins);
@@ -159,7 +160,6 @@ class LIRGenerator : public LIRGeneratorSpecific
     bool visitStoreSlot(MStoreSlot *ins);
     bool visitTypeBarrier(MTypeBarrier *ins);
     bool visitMonitorTypes(MMonitorTypes *ins);
-    bool visitExcludeType(MExcludeType *ins);
     bool visitArrayLength(MArrayLength *ins);
     bool visitTypedArrayLength(MTypedArrayLength *ins);
     bool visitTypedArrayElements(MTypedArrayElements *ins);
