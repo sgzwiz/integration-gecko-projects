@@ -5028,7 +5028,7 @@ nsDocument::Register(JSContext* aCx, const nsAString& aName,
 
   // Do element upgrade.
   nsRefPtr<nsContentList> list = GetElementsByTagName(lcName);
-  for (int32_t i = 0; i < list->Length(false); i++) {
+  for (uint32_t i = 0; i < list->Length(false); i++) {
     nsCOMPtr<nsINode> oldNode = list->Item(i, false);
 
     // TODO(wchen): Perform upgrade on Shadow DOM when implemented.
@@ -5573,7 +5573,7 @@ nsDocument::CreateRange(nsIDOMRange** aReturn)
 already_AddRefed<nsRange>
 nsIDocument::CreateRange(ErrorResult& rv)
 {
-  nsRefPtr<nsRange> range = new nsRange();
+  nsRefPtr<nsRange> range = new nsRange(this);
   nsresult res = range->Set(this, 0, this, 0);
   if (NS_FAILED(res)) {
     rv.Throw(res);

@@ -141,6 +141,9 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDOMEvent)
         static_cast<nsDragEvent*>(tmp->mEvent)->dataTransfer = nullptr;
         static_cast<nsMouseEvent_base*>(tmp->mEvent)->relatedTarget = nullptr;
         break;
+      case NS_CLIPBOARD_EVENT:
+        static_cast<nsClipboardEvent*>(tmp->mEvent)->clipboardData = nullptr;
+        break;
       case NS_MUTATION_EVENT:
         static_cast<nsMutationEvent*>(tmp->mEvent)->mRelatedNode = nullptr;
         break;
@@ -175,6 +178,11 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsDOMEvent)
         NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mEvent->relatedTarget");
         cb.NoteXPCOMChild(
           static_cast<nsMouseEvent_base*>(tmp->mEvent)->relatedTarget);
+        break;
+      case NS_CLIPBOARD_EVENT:
+        NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mEvent->clipboardData");
+        cb.NoteXPCOMChild(
+          static_cast<nsClipboardEvent*>(tmp->mEvent)->clipboardData);
         break;
       case NS_MUTATION_EVENT:
         NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mEvent->mRelatedNode");
@@ -616,6 +624,14 @@ nsDOMEvent::DuplicatePrivateData()
       newEvent = dragEvent;
       break;
     }
+    case NS_CLIPBOARD_EVENT:
+    {
+      nsClipboardEvent* oldClipboardEvent = static_cast<nsClipboardEvent*>(mEvent);
+      nsClipboardEvent* clipboardEvent = new nsClipboardEvent(false, msg);
+      clipboardEvent->clipboardData = oldClipboardEvent->clipboardData;
+      newEvent = clipboardEvent;
+      break;
+    }
     case NS_SCRIPT_ERROR_EVENT:
     {
       newEvent = new nsScriptErrorEvent(false, msg);
@@ -742,13 +758,6 @@ nsDOMEvent::DuplicatePrivateData()
     {
       newEvent = new nsUIEvent(false, msg,
                                static_cast<nsUIEvent*>(mEvent)->detail);
-      break;
-    }
-    case NS_SVG_EVENT:
-    {
-      newEvent = new nsEvent(false, msg);
-      NS_ENSURE_TRUE(newEvent, NS_ERROR_OUT_OF_MEMORY);
-      newEvent->eventStructType = NS_SVG_EVENT;
       break;
     }
     case NS_SVGZOOM_EVENT:
