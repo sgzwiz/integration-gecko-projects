@@ -1137,9 +1137,6 @@ var gBrowserInit = {
     gBrowser.addEventListener("PluginOutdated",        gPluginHandler, true);
 
     gBrowser.addEventListener("NewPluginInstalled", gPluginHandler.newPluginInstalled, true);
-#ifdef XP_MACOSX
-    gBrowser.addEventListener("npapi-carbon-event-model-failure", gPluginHandler, true);
-#endif
 
     Services.obs.addObserver(gPluginHandler.pluginCrashed, "plugin-crashed", false);
 
@@ -1338,6 +1335,14 @@ var gBrowserInit = {
 
     var isLoadingBlank = isBlankPageURL(uriToLoad);
 
+    // This pageshow listener needs to be registered before we may call
+    // swapBrowsersAndCloseOther() to receive pageshow events fired by that.
+    gBrowser.addEventListener("pageshow", function(event) {
+      // Filter out events that are not about the document load we are interested in
+      if (content && event.target == content.document)
+        setTimeout(pageShowEventHandlers, 0, event);
+    }, true);
+
     if (uriToLoad && uriToLoad != "about:blank") {
       if (uriToLoad instanceof Ci.nsISupportsArray) {
         let count = uriToLoad.Count();
@@ -1395,12 +1400,6 @@ var gBrowserInit = {
     SocialUI.init();
     AddonManager.addAddonListener(AddonsMgrListener);
     WebrtcIndicator.init();
-
-    gBrowser.addEventListener("pageshow", function(event) {
-      // Filter out events that are not about the document load we are interested in
-      if (content && event.target == content.document)
-        setTimeout(pageShowEventHandlers, 0, event.persisted);
-    }, true);
 
     // Ensure login manager is up and running.
     Services.logins;
@@ -7198,7 +7197,6 @@ let gPrivateBrowsingUI = {
     // temporary fix until bug 463607 is fixed
     document.getElementById("Tools:Sanitize").setAttribute("disabled", "true");
 
-    // Adjust the window's title
     if (window.location.href == getBrowserURL()) {
 #ifdef XP_MACOSX
       if (!PrivateBrowsingUtils.permanentPrivateBrowsing) {
@@ -7206,6 +7204,7 @@ let gPrivateBrowsingUI = {
       }
 #endif
 
+      // Adjust the window's title
       let docElement = document.documentElement;
       docElement.setAttribute("title",
         docElement.getAttribute("title_privatebrowsing"));
@@ -7214,6 +7213,23 @@ let gPrivateBrowsingUI = {
       docElement.setAttribute("privatebrowsingmode",
         PrivateBrowsingUtils.permanentPrivateBrowsing ? "permanent" : "temporary");
       gBrowser.updateTitlebar();
+
+      if (PrivateBrowsingUtils.permanentPrivateBrowsing) {
+        // Adjust the New Window menu entries
+        [
+          { normal: "menu_newNavigator", private: "menu_newPrivateWindow" },
+          { normal: "appmenu_newNavigator", private: "appmenu_newPrivateWindow" },
+        ].forEach(function(menu) {
+          let newWindow = document.getElementById(menu.normal);
+          let newPrivateWindow = document.getElementById(menu.private);
+          if (newWindow && newPrivateWindow) {
+            newPrivateWindow.hidden = true;
+            newWindow.label = newPrivateWindow.label;
+            newWindow.accessKey = newPrivateWindow.accessKey;
+            newWindow.command = newPrivateWindow.command;
+          }
+        });
+      }
     }
 
     if (gURLBar) {
