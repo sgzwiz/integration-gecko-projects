@@ -12,6 +12,7 @@
 #include "jsinfer.h"
 #include "jsprf.h"
 
+#include "builtin/ParallelArray.h"
 #ifdef JS_ION
 #include "ion/IonFrames.h"
 #endif
@@ -292,7 +293,7 @@ IdToTypeId(RawId id)
      */
     if (JSID_IS_STRING(id)) {
         JSFlatString *str = JSID_TO_FLAT_STRING(id);
-        TwoByteChars cp = str->range();
+        JS::TwoByteChars cp = str->range();
         if (JS7_ISDEC(cp[0]) || cp[0] == '-') {
             for (size_t i = 1; i < cp.length(); ++i) {
                 if (!JS7_ISDEC(cp[i]))
@@ -521,6 +522,9 @@ GetClassForProtoKey(JSProtoKey key)
 
       case JSProto_DataView:
         return &DataViewClass;
+
+      case JSProto_ParallelArray:
+        return &ParallelArrayObject::class_;
 
       default:
         JS_NOT_REACHED("Bad proto key");

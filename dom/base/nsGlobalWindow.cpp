@@ -2374,7 +2374,7 @@ nsGlobalWindow::SetNewDocument(nsIDocument* aDocument,
     newInnerWindow->mChromeEventHandler = mChromeEventHandler;
   }
 
-  mContext->GC(js::gcreason::SET_NEW_DOCUMENT);
+  mContext->GC(JS::gcreason::SET_NEW_DOCUMENT);
   mContext->DidInitializeContext();
 
   if (newInnerWindow && !newInnerWindow->mHasNotifiedGlobalCreated && mDoc) {
@@ -2569,7 +2569,7 @@ nsGlobalWindow::DetachFromDocShell()
   }
 
   if (mContext) {
-    mContext->GC(js::gcreason::SET_DOC_SHELL);
+    mContext->GC(JS::gcreason::SET_DOC_SHELL);
     mContext = nullptr;
   }
 
@@ -3774,11 +3774,9 @@ nsGlobalWindow::GetName(nsAString& aName)
 {
   FORWARD_TO_OUTER(GetName, (aName), NS_ERROR_NOT_INITIALIZED);
 
-  nsXPIDLString name;
   if (mDocShell)
-    mDocShell->GetName(getter_Copies(name));
+    mDocShell->GetName(aName);
 
-  aName.Assign(name);
   return NS_OK;
 }
 
@@ -3789,7 +3787,7 @@ nsGlobalWindow::SetName(const nsAString& aName)
 
   nsresult result = NS_OK;
   if (mDocShell)
-    result = mDocShell->SetName(PromiseFlatString(aName).get());
+    result = mDocShell->SetName(aName);
   return result;
 }
 

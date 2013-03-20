@@ -1065,6 +1065,27 @@ nsBlockFrame::Reflow(nsPresContext*           aPresContext,
 
   // Now reflow...
   rv = ReflowDirtyLines(state);
+
+  // If we have a next-in-flow, and that next-in-flow has pushed floats from
+  // this frame from a previous iteration of reflow, then we should not return
+  // a status of NS_FRAME_COMPLETE, since we actually have overflow, it's just
+  // already been handled.
+
+  // NOTE: This really shouldn't happen, since we _should_ pull back our floats
+  // and reflow them, but just in case it does, this is a safety precaution so
+  // we don't end up with a placeholder pointing to frames that have already
+  // been deleted as part of removing our next-in-flow.
+  if (NS_FRAME_IS_COMPLETE(state.mReflowStatus)) {
+    nsBlockFrame* nif = static_cast<nsBlockFrame*>(GetNextInFlow());
+    while (nif) {
+      if (nif->HasPushedFloatsFromPrevContinuation()) {
+        NS_MergeReflowStatusInto(&state.mReflowStatus, NS_FRAME_NOT_COMPLETE);
+      }
+
+      nif = static_cast<nsBlockFrame*>(nif->GetNextInFlow());
+    }
+  }
+
   NS_ASSERTION(NS_SUCCEEDED(rv), "reflow dirty lines failed");
   if (NS_FAILED(rv)) return rv;
 
@@ -3848,12 +3869,8 @@ nsBlockFrame::CreateContinuationFor(nsBlockReflowState& aState,
   aMadeNewFrame = false;
 
   if (!aFrame->GetNextInFlow()) {
-    nsIFrame* newFrame;
-    nsresult rv = aState.mPresContext->PresShell()->FrameConstructor()->
-      CreateContinuingFrame(aState.mPresContext, aFrame, this, &newFrame);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
+    nsIFrame* newFrame = aState.mPresContext->PresShell()->FrameConstructor()->
+      CreateContinuingFrame(aState.mPresContext, aFrame, this);
 
     mFrames.InsertFrame(nullptr, aFrame, newFrame);
 
@@ -3884,9 +3901,8 @@ nsBlockFrame::SplitFloat(nsBlockReflowState& aState,
       ReparentFrame(nextInFlow, oldParent, this);
     }
   } else {
-    nsresult rv = aState.mPresContext->PresShell()->FrameConstructor()->
-      CreateContinuingFrame(aState.mPresContext, aFloat, this, &nextInFlow);
-    NS_ENSURE_SUCCESS(rv, rv);
+    nextInFlow = aState.mPresContext->PresShell()->FrameConstructor()->
+      CreateContinuingFrame(aState.mPresContext, aFloat, this);
   }
   if (NS_FRAME_OVERFLOW_IS_INCOMPLETE(aFloatStatus))
     aFloat->GetNextInFlow()->AddStateBits(NS_FRAME_IS_OVERFLOW_CONTAINER);
@@ -6434,7 +6450,7 @@ nsBlockFrame::ChildIsDirty(nsIFrame* aChild)
   nsBlockFrameSuper::ChildIsDirty(aChild);
 }
 
-NS_IMETHODIMP
+void
 nsBlockFrame::Init(nsIContent*      aContent,
                    nsIFrame*        aParent,
                    nsIFrame*        aPrevInFlow)
@@ -6445,7 +6461,7 @@ nsBlockFrame::Init(nsIContent*      aContent,
              (NS_BLOCK_FLAGS_MASK & ~NS_BLOCK_FLAGS_NON_INHERITED_MASK));
   }
 
-  nsresult rv = nsBlockFrameSuper::Init(aContent, aParent, aPrevInFlow);
+  nsBlockFrameSuper::Init(aContent, aParent, aPrevInFlow);
 
   if (!aPrevInFlow ||
       aPrevInFlow->GetStateBits() & NS_BLOCK_NEEDS_BIDI_RESOLUTION)
@@ -6456,8 +6472,6 @@ nsBlockFrame::Init(nsIContent*      aContent,
       (NS_FRAME_FONT_INFLATION_CONTAINER | NS_BLOCK_FLOAT_MGR)) {
     AddStateBits(NS_FRAME_FONT_INFLATION_FLOW_ROOT);
   }
-
-  return rv;
 }
 
 NS_IMETHODIMP

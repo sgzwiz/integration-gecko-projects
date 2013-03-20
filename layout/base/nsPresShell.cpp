@@ -49,7 +49,6 @@
 #include "prinrval.h"
 #include "nsTArray.h"
 #include "nsCOMArray.h"
-#include "nsHashtable.h"
 #include "nsContainerFrame.h"
 #include "nsDOMEvent.h"
 #include "nsHTMLParts.h"
@@ -117,7 +116,7 @@
 #include "gfxImageSurface.h"
 #include "gfxContext.h"
 #ifdef MOZ_MEDIA
-#include "nsHTMLMediaElement.h"
+#include "mozilla/dom/HTMLMediaElement.h"
 #endif
 #include "nsSMILAnimationController.h"
 #include "SVGContentUtils.h"
@@ -1702,7 +1701,7 @@ PresShell::Initialize(nscoord aWidth, nscoord aHeight)
   if (!rootFrame) {
     nsAutoScriptBlocker scriptBlocker;
     mFrameConstructor->BeginUpdate();
-    mFrameConstructor->ConstructRootFrame(&rootFrame);
+    rootFrame = mFrameConstructor->ConstructRootFrame();
     mFrameConstructor->SetRootFrame(rootFrame);
     mFrameConstructor->EndUpdate();
   }

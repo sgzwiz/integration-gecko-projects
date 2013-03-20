@@ -671,15 +671,8 @@ JS::isGCEnabled()
 {
     return !TlsPerThreadData.get()->suppressGC;
 }
-
-JS_FRIEND_API(bool)
-JS::NeedRelaxedRootChecks()
-{
-    return TlsPerThreadData.get()->gcRelaxRootChecks;
-}
 #else
 JS_FRIEND_API(bool) JS::isGCEnabled() { return true; }
-JS_FRIEND_API(bool) JS::NeedRelaxedRootChecks() { return false; }
 #endif
 
 static const JSSecurityCallbacks NullSecurityCallbacks = { };
@@ -687,9 +680,6 @@ static const JSSecurityCallbacks NullSecurityCallbacks = { };
 PerThreadData::PerThreadData(JSRuntime *runtime)
   : PerThreadDataFriendFields(),
     runtime_(runtime),
-#ifdef DEBUG
-    gcRelaxRootChecks(false),
-#endif
     ionTop(NULL),
     ionJSContext(NULL),
     ionStackLimit(0),
@@ -785,7 +775,7 @@ JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
     gcNumber(0),
     gcStartNumber(0),
     gcIsFull(false),
-    gcTriggerReason(gcreason::NO_REASON),
+    gcTriggerReason(JS::gcreason::NO_REASON),
     gcStrictCompartmentChecking(false),
     gcDisableStrictProxyCheckingCount(0),
     gcIncrementalState(gc::NO_INCREMENTAL),
@@ -2835,8 +2825,8 @@ JS_PUBLIC_API(void)
 JS_GC(JSRuntime *rt)
 {
     AssertHeapIsIdle(rt);
-    PrepareForFullGC(rt);
-    GC(rt, GC_NORMAL, gcreason::API);
+    JS::PrepareForFullGC(rt);
+    GC(rt, GC_NORMAL, JS::gcreason::API);
 }
 
 JS_PUBLIC_API(void)
@@ -3306,7 +3296,7 @@ class AutoHoldZone
 };
 
 JS_PUBLIC_API(JSObject *)
-JS_NewGlobalObject(JSContext *cx, JSClass *clasp, JSPrincipals *principals, ZoneSpecifier zoneSpec)
+JS_NewGlobalObject(JSContext *cx, JSClass *clasp, JSPrincipals *principals, JS::ZoneSpecifier zoneSpec)
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
@@ -3315,9 +3305,9 @@ JS_NewGlobalObject(JSContext *cx, JSClass *clasp, JSPrincipals *principals, Zone
     JSRuntime *rt = cx->runtime;
 
     Zone *zone;
-    if (zoneSpec == SystemZone)
+    if (zoneSpec == JS::SystemZone)
         zone = rt->systemZone;
-    else if (zoneSpec == FreshZone)
+    else if (zoneSpec == JS::FreshZone)
         zone = NULL;
     else
         zone = ((JSObject *)zoneSpec)->zone();
@@ -3326,7 +3316,7 @@ JS_NewGlobalObject(JSContext *cx, JSClass *clasp, JSPrincipals *principals, Zone
     if (!compartment)
         return NULL;
 
-    if (zoneSpec == SystemZone) {
+    if (zoneSpec == JS::SystemZone) {
         rt->systemZone = compartment->zone();
         rt->systemZone->isSystem = true;
     }
@@ -5544,6 +5534,8 @@ JS_ExecuteScriptVersion(JSContext *cx, JSObject *objArg, JSScript *script, jsval
     return JS_ExecuteScript(cx, obj, script, rval);
 }
 
+static const unsigned LARGE_SCRIPT_LENGTH = 500*1024;
+
 extern JS_PUBLIC_API(bool)
 JS::Evaluate(JSContext *cx, HandleObject obj, CompileOptions options,
              const jschar *chars, size_t length, jsval *rval)
@@ -5576,6 +5568,18 @@ JS::Evaluate(JSContext *cx, HandleObject obj, CompileOptions options,
     bool result = Execute(cx, script, *obj, rval);
     if (!sct.complete())
         result = false;
+
+    // After evaluation, the compiled script will not be run again.
+    // script->ensureRanAnalysis allocated 1 analyze::Bytecode for every opcode
+    // which for large scripts means significant memory. Perform a GC eagerly
+    // to clear out this analysis data before anything happens to inhibit the
+    // flushing of this memory (such as setting requestAnimationFrame).
+    if (script->length > LARGE_SCRIPT_LENGTH) {
+        script = NULL;
+        PrepareZoneForGC(cx->zone());
+        GC(cx->runtime, GC_NORMAL, gcreason::FINISH_LARGE_EVALUTE);
+    }
+
     return result;
 }
 
@@ -6248,7 +6252,7 @@ JS_ParseJSON(JSContext *cx, const jschar *chars, uint32_t len, jsval *vp)
     CHECK_REQUEST(cx);
 
     RootedValue reviver(cx, NullValue()), value(cx);
-    if (!ParseJSONWithReviver(cx, StableCharPtr(chars, len), len, reviver, &value))
+    if (!ParseJSONWithReviver(cx, JS::StableCharPtr(chars, len), len, reviver, &value))
         return false;
 
     *vp = value;

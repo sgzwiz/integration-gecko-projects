@@ -168,7 +168,7 @@
 #include "nsIBidiKeyboard.h"
 #endif
 #ifdef MOZ_MEDIA
-#include "nsHTMLMediaElement.h"
+#include "mozilla/dom/HTMLMediaElement.h"
 #endif
 
 extern "C" int MOZ_XMLTranslateEntity(const char* ptr, const char* end,
@@ -3352,6 +3352,20 @@ nsContentUtils::IsChildOfSameType(nsIDocument* aDoc)
     docShellAsItem->GetSameTypeParent(getter_AddRefs(sameTypeParent));
   }
   return sameTypeParent != nullptr;
+}
+
+bool
+nsContentUtils::IsPlainTextType(const nsACString& aContentType)
+{
+  return aContentType.EqualsLiteral(TEXT_PLAIN) ||
+         aContentType.EqualsLiteral(TEXT_CSS) ||
+         aContentType.EqualsLiteral(TEXT_CACHE_MANIFEST) ||
+         aContentType.EqualsLiteral(APPLICATION_JAVASCRIPT) ||
+         aContentType.EqualsLiteral(APPLICATION_XJAVASCRIPT) ||
+         aContentType.EqualsLiteral(TEXT_ECMASCRIPT) ||
+         aContentType.EqualsLiteral(APPLICATION_ECMASCRIPT) ||
+         aContentType.EqualsLiteral(TEXT_JAVASCRIPT) ||
+         aContentType.EqualsLiteral(APPLICATION_JSON);
 }
 
 bool

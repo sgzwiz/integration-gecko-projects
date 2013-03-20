@@ -135,9 +135,9 @@ public:
   NS_DECL_QUERYFRAME
 
   // nsIFrame
-  NS_IMETHOD Init(nsIContent*      aContent,
-                  nsIFrame*        aParent,
-                  nsIFrame*        aPrevInFlow);
+  virtual void Init(nsIContent*      aContent,
+                    nsIFrame*        aParent,
+                    nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
   NS_IMETHOD SetInitialChildList(ChildListID     aListID,
                                  nsFrameList&    aChildList);
   NS_IMETHOD  AppendFrames(ChildListID     aListID,
@@ -469,6 +469,33 @@ public:
    */
   static void RecoverFloatsFor(nsIFrame*       aFrame,
                                nsFloatManager& aFloatManager);
+
+  /**
+   * Determine if we have any pushed floats from a previous continuation.
+   *
+   * @returns true, if any of the floats at the beginning of our mFloats list
+   *          have the NS_FRAME_IS_PUSHED_FLOAT bit set; false otherwise.
+   */
+  bool HasPushedFloatsFromPrevContinuation() const {
+    if (!mFloats.IsEmpty()) {
+      // If we have pushed floats, then they should be at the beginning of our
+      // float list.
+      if (mFloats.FirstChild()->GetStateBits() & NS_FRAME_IS_PUSHED_FLOAT) {
+        return true;
+      }
+    }
+
+#ifdef DEBUG
+    // Double-check the above assertion that pushed floats should be at the
+    // beginning of our floats list.
+    for (nsFrameList::Enumerator e(mFloats); !e.AtEnd(); e.Next()) {
+      nsIFrame* f = e.get();
+      NS_ASSERTION(!(f->GetStateBits() & NS_FRAME_IS_PUSHED_FLOAT),
+        "pushed floats must be at the beginning of the float list");
+    }
+#endif
+    return false;
+  }
 
 protected:
 
