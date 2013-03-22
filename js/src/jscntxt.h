@@ -58,6 +58,8 @@ js_ReportAllocationOverflow(JSContext *cx);
 
 namespace js {
 
+typedef Rooted<JSLinearString*> RootedLinearString;
+
 struct CallsiteCloneKey {
     /* The original function that we are cloning. */
     JSFunction *original;
@@ -226,8 +228,9 @@ class SourceDataCache
 
 struct EvalCacheLookup
 {
-    JSLinearString *str;
-    JSFunction *caller;
+    EvalCacheLookup(JSContext *cx) : str(cx), caller(cx) {}
+    RootedLinearString str;
+    RootedFunction caller;
     unsigned staticLevel;
     JSVersion version;
     JSCompartment *compartment;
@@ -750,6 +753,7 @@ struct JSRuntime : js::RuntimeFriendFields,
     //-------------------------------------------------------------------------
 
     bool initSelfHosting(JSContext *cx);
+    void finishSelfHosting();
     void markSelfHostingGlobal(JSTracer *trc);
     bool isSelfHostingGlobal(js::HandleObject global) {
         return global == selfHostingGlobal_;
@@ -1177,10 +1181,12 @@ struct JSRuntime : js::RuntimeFriendFields,
      */
     uint32_t            propertyRemovals;
 
-    /* Number localization, used by jsnum.c */
+#if !ENABLE_INTL_API
+    /* Number localization, used by jsnum.cpp. */
     const char          *thousandsSeparator;
     const char          *decimalSeparator;
     const char          *numGrouping;
+#endif
 
   private:
     js::MathCache *mathCache_;

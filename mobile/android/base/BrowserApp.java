@@ -222,6 +222,14 @@ abstract public class BrowserApp extends GeckoApp
             return super.onInterceptTouchEvent(view, event);
         }
 
+        // Don't let the toolbar scroll at all if the page is shorter than
+        // the screen height.
+        ImmutableViewportMetrics metrics =
+            mLayerView.getLayerClient().getViewportMetrics();
+        if (metrics.getPageHeight() < metrics.getHeight()) {
+            return super.onInterceptTouchEvent(view, event);
+        }
+
         int action = event.getActionMasked();
         int pointerCount = event.getPointerCount();
 
@@ -304,8 +312,6 @@ abstract public class BrowserApp extends GeckoApp
 
             // Don't let the toolbar scroll off the top if it's just exposing
             // overscroll area.
-            ImmutableViewportMetrics metrics =
-                mLayerView.getLayerClient().getViewportMetrics();
             float toolbarMaxY = Math.min(toolbarHeight,
                 Math.max(0, toolbarHeight - (metrics.pageRectTop -
                                              metrics.viewportRectTop)));
@@ -1626,6 +1632,13 @@ abstract public class BrowserApp extends GeckoApp
                     Tabs.getInstance().loadUrlInTab("about:feedback");
             }
         }).execute();
+    }
+
+    @Override
+    protected NotificationClient makeNotificationClient() {
+        // The service is local to Fennec, so we can use it to keep
+        // Fennec alive during downloads.
+        return new ServiceNotificationClient(getApplicationContext());
     }
 
     private void resetFeedbackLaunchCount() {
