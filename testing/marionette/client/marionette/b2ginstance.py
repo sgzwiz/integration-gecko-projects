@@ -76,7 +76,7 @@ class B2GInstance(object):
                 return option
         raise Exception('%s not found!' % binary)
 
-    def __init__(self, homedir=None, devicemanager=None):
+    def __init__(self, homedir=None, devicemanager=None, emulator=False):
         if not homedir:
             homedir = self.find_b2g_dir()
         else:
@@ -87,7 +87,7 @@ class B2GInstance(object):
 
         self.homedir = homedir
         self.adb_path = self.check_adb(self.homedir)
-        self.fastboot_path = self.check_fastboot(self.homedir)
+        self.fastboot_path = None if emulator else self.check_fastboot(self.homedir)
         self.update_tools = os.path.join(self.homedir, 'tools', 'update-tools')
         self._dm = devicemanager
 
@@ -103,7 +103,7 @@ class B2GInstance(object):
                              'directory as the homedir parameter, or set '
                              'B2G_HOME correctly?') % filePath)
 
-    def check_remote_profiles(self, remote_profiles_ini='/data/local/b2g/mozilla/profiles.ini'):
+    def check_remote_profiles(self, remote_profiles_ini='/data/b2g/mozilla/profiles.ini'):
         if not self.dm.fileExists(remote_profiles_ini):
             raise Exception("Remote file '%s' not found" % remote_profiles_ini)
 

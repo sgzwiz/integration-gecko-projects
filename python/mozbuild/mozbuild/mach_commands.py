@@ -128,8 +128,11 @@ class Build(MachCommandBase):
         else:
             print('Your build was successful!')
 
-        app_path = self.get_binary_path('app')
-        print('To take your build for a test drive, run: %s' % app_path)
+        # Fennec doesn't have useful output from just building. We should
+        # arguably make the build action useful for Fennec. Another day...
+        if self.substs['MOZ_BUILD_APP'] != 'mobile/android':
+            app_path = self.get_binary_path('app')
+            print('To take your build for a test drive, run: %s' % app_path)
 
         # Only for full builds because incremental builders likely don't
         # need to be burdened with this.
@@ -337,6 +340,26 @@ class Install(MachCommandBase):
     @Command('install', help='Install the package on the machine, or on a device.')
     def install(self):
         return self._run_make(directory=".", target='install', ensure_exit_code=False)
+
+@CommandProvider
+class RunProgram(MachCommandBase):
+    """Launch the compiled binary"""
+
+    @Command('run', help='Run the compiled program.', prefix_chars='+')
+    @CommandArgument('params', default=None, nargs='*',
+        help='Command-line arguments to pass to the program.')
+    def run(self, params):
+        try:
+            args = [self.get_binary_path('app')]
+        except Exception as e:
+            print("It looks like your program isn't built.",
+                "You can run |mach build| to build it.")
+            print(e)
+            return 1
+        if params:
+            args.extend(params)
+        return self.run_process(args=args, ensure_exit_code=False,
+            pass_thru=True)
 
 @CommandProvider
 class Buildsymbols(MachCommandBase):

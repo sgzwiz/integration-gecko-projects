@@ -33,6 +33,7 @@ using namespace std;
 #include "nsIDNSService.h"
 #include "nsWeakReference.h"
 #include "nricectx.h"
+#include "mozilla/SyncRunnable.h"
 
 #include "mtransport_test_utils.h"
 MtransportTestUtils *test_utils;
@@ -525,9 +526,8 @@ class SignalingAgent {
   SignalingAgent() : pc(nullptr) {}
 
   ~SignalingAgent() {
-    pc->GetMainThread()->Dispatch(
-      WrapRunnable(this, &SignalingAgent::Close),
-      NS_DISPATCH_SYNC);
+    mozilla::SyncRunnable::DispatchToThread(pc->GetMainThread(),
+      WrapRunnable(this, &SignalingAgent::Close));
   }
 
   void Init_m(nsCOMPtr<nsIThread> thread)
@@ -546,9 +546,8 @@ class SignalingAgent {
 
   void Init(nsCOMPtr<nsIThread> thread)
   {
-    thread->Dispatch(
-      WrapRunnable(this, &SignalingAgent::Init_m, thread),
-      NS_DISPATCH_SYNC);
+    mozilla::SyncRunnable::DispatchToThread(thread,
+      WrapRunnable(this, &SignalingAgent::Init_m, thread));
 
     ASSERT_TRUE_WAIT(sipcc_state() == sipcc::PeerConnectionImpl::kStarted,
                      kDefaultTimeout);
@@ -556,39 +555,22 @@ class SignalingAgent {
     cout << "Init Complete" << endl;
   }
 
-  bool InitAllowFail_m(nsCOMPtr<nsIThread> thread)
-  {
-    pc = sipcc::PeerConnectionImpl::CreatePeerConnection();
-    if (!pc)
-      return false;
-
-    pObserver = new TestObserver(pc);
-    if (!pObserver)
-      return false;
-
-    sipcc::IceConfiguration cfg;
-    cfg.addServer("23.21.150.121", 3478);
-    if (NS_FAILED(pc->Initialize(pObserver, nullptr, cfg, thread)))
-      return false;
-
-    return true;
-  }
-
   bool InitAllowFail(nsCOMPtr<nsIThread> thread)
   {
-    bool rv;
-
-    thread->Dispatch(
-        WrapRunnableRet(this, &SignalingAgent::InitAllowFail_m, thread, &rv),
-        NS_DISPATCH_SYNC);
-    if (!rv)
-      return false;
+    mozilla::SyncRunnable::DispatchToThread(thread,
+        WrapRunnable(this, &SignalingAgent::Init_m, thread));
 
     EXPECT_TRUE_WAIT(sipcc_state() == sipcc::PeerConnectionImpl::kStarted,
                      kDefaultTimeout);
-    EXPECT_TRUE_WAIT(ice_state() == sipcc::PeerConnectionImpl::kIceWaiting, 5000);
-    cout << "Init Complete" << endl;
+    EXPECT_TRUE_WAIT(ice_state() == sipcc::PeerConnectionImpl::kIceWaiting ||
+                     ice_state() == sipcc::PeerConnectionImpl::kIceFailed, 5000);
 
+    if (ice_state() == sipcc::PeerConnectionImpl::kIceFailed) {
+      cout << "Init Failed" << endl;
+      return false;
+    }
+
+    cout << "Init Complete" << endl;
     return true;
   }
 
@@ -649,9 +631,9 @@ class SignalingAgent {
       new Fake_AudioStreamSource();
 
     nsresult ret;
-    test_utils->sts_target()->Dispatch(
-      WrapRunnableRet(audio_stream, &Fake_MediaStream::Start, &ret),
-        NS_DISPATCH_SYNC);
+    mozilla::SyncRunnable::DispatchToThread(
+      test_utils->sts_target(),
+      WrapRunnableRet(audio_stream, &Fake_MediaStream::Start, &ret));
 
     ASSERT_TRUE(NS_SUCCEEDED(ret));
 

@@ -20,7 +20,7 @@
 #include "DOMSVGPoint.h"
 #include "nsIFrame.h"
 #include "nsISVGSVGFrame.h" //XXX
-#include "nsSVGRect.h"
+#include "mozilla/dom/SVGRect.h"
 #include "nsError.h"
 #include "nsISVGChildFrame.h"
 #include "nsGUIEvent.h"
@@ -174,7 +174,6 @@ SVGSVGElement::SVGSVGElement(already_AddRefed<nsINodeInfo> aNodeInfo,
     mHasChildrenOnlyTransform(false),
     mUseCurrentView(false)
 {
-  SetIsDOMBinding();
 }
 
 //----------------------------------------------------------------------
@@ -409,10 +408,10 @@ SVGSVGElement::CreateSVGMatrix()
   return matrix.forget();
 }
 
-already_AddRefed<nsIDOMSVGRect>
+already_AddRefed<SVGIRect>
 SVGSVGElement::CreateSVGRect()
 {
-  nsCOMPtr<nsIDOMSVGRect> rect;
+  nsRefPtr<SVGRect> rect;
   NS_NewSVGRect(getter_AddRefs(rect));
   return rect.forget();
 }
