@@ -9,6 +9,7 @@ generated_webidl_files = \
   $(NULL)
 
 webidl_files = \
+  AnalyserNode.webidl \
   AnimationEvent.webidl \
   ArchiveReader.webidl \
   ArchiveRequest.webidl \
@@ -31,6 +32,7 @@ webidl_files = \
   CharacterData.webidl \
   ClientRect.webidl \
   ClientRectList.webidl \
+  ClipboardEvent.webidl \
   CommandEvent.webidl \
   Comment.webidl \
   CompositionEvent.webidl \
@@ -95,6 +97,7 @@ webidl_files = \
   HTMLHtmlElement.webidl \
   HTMLIFrameElement.webidl \
   HTMLImageElement.webidl \
+  HTMLInputElement.webidl \
   HTMLLabelElement.webidl \
   HTMLLegendElement.webidl \
   HTMLLIElement.webidl \
@@ -133,6 +136,7 @@ webidl_files = \
   HTMLTitleElement.webidl \
   HTMLUListElement.webidl \
   HTMLVideoElement.webidl \
+  IDBFactory.webidl \
   IDBVersionChangeEvent.webidl \
   ImageData.webidl \
   InspectorUtils.webidl \
@@ -162,6 +166,8 @@ webidl_files = \
   RGBColor.webidl \
   RTCConfiguration.webidl \
   Screen.webidl \
+  ScrollAreaEvent.webidl \
+  SimpleGestureEvent.webidl \
   StyleSheet.webidl \
   SVGAElement.webidl \
   SVGAltGlyphElement.webidl \
@@ -272,6 +278,7 @@ webidl_files = \
   ValidityState.webidl \
   WebComponents.webidl \
   WebSocket.webidl \
+  WheelEvent.webidl \
   UndoManager.webidl \
   URLUtils.webidl \
   USSDReceivedEvent.webidl \
@@ -282,6 +289,7 @@ webidl_files = \
   XMLSerializer.webidl \
   XMLStylesheetProcessingInstruction.webidl \
   XPathEvaluator.webidl \
+  XULCommandEvent.webidl \
   XULDocument.webidl \
   XULElement.webidl \
   $(NULL)
@@ -313,13 +321,16 @@ endif
 
 ifdef MOZ_WEBSPEECH
 webidl_files += \
-    SpeechGrammar.webidl \
-    SpeechGrammarList.webidl \
-    SpeechRecognitionAlternative.webidl \
-    SpeechRecognitionResultList.webidl \
-    SpeechRecognitionResult.webidl \
-    SpeechRecognition.webidl \
-    $(NULL)
+  SpeechGrammar.webidl \
+  SpeechGrammarList.webidl \
+  SpeechRecognitionAlternative.webidl \
+  SpeechRecognitionResultList.webidl \
+  SpeechRecognitionResult.webidl \
+  SpeechRecognition.webidl \
+  SpeechSynthesisUtterance.webidl \
+  SpeechSynthesisVoice.webidl \
+  SpeechSynthesis.webidl \
+  $(NULL)
 endif
 
 ifdef ENABLE_TESTS
@@ -328,6 +339,7 @@ test_webidl_files := \
   TestDictionary.webidl \
   TestExampleGen.webidl \
   TestJSImplGen.webidl \
+  TestJSImplInheritanceGen.webidl \
   TestTypedef.webidl \
   $(NULL)
 else

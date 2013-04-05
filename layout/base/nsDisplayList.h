@@ -2762,8 +2762,6 @@ public:
                      nsDisplayList *aList, uint32_t aIndex = 0);
   nsDisplayTransform(nsDisplayListBuilder* aBuilder, nsIFrame *aFrame,
                      nsDisplayList *aList, ComputeTransformFunction aTransformGetter, uint32_t aIndex = 0);
-  nsDisplayTransform(nsDisplayListBuilder* aBuilder, nsIFrame *aFrame,
-                     nsDisplayItem *aItem, uint32_t aIndex = 0);
 
 #ifdef NS_BUILD_REFCNT_LOGGING
   virtual ~nsDisplayTransform()
@@ -2947,11 +2945,6 @@ public:
                                                 nsIFrame* aFrame,
                                                 bool aLogAnimations = false);
   bool CanUseAsyncAnimations(nsDisplayListBuilder* aBuilder) MOZ_OVERRIDE;
-
-  static bool IsLayerPrerendered(Layer* aLayer)
-  {
-    return aLayer->HasUserData(nsIFrame::LayerIsPrerenderedDataKey());
-  }
 
 private:
   static gfx3DMatrix GetResultingTransformMatrixInternal(const FrameTransformProperties& aProperties,

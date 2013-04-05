@@ -876,6 +876,15 @@ nsWindow::OnGlobalAndroidEvent(AndroidGeckoEvent *ae)
             }
             break;
 
+        case AndroidGeckoEvent::IME_KEY_EVENT:
+            // Keys synthesized by Java IME code are saved in the mIMEKeyEvents
+            // array until the next IME_REPLACE_TEXT event, at which point
+            // these keys are dispatched in sequence.
+            if (win->mFocus) {
+                win->mFocus->mIMEKeyEvents.AppendElement(*ae);
+            }
+            break;
+
         case AndroidGeckoEvent::COMPOSITOR_CREATE:
             win->CreateLayerManager(ae->Width(), ae->Height());
             break;
@@ -1178,6 +1187,10 @@ send_again:
 bool nsWindow::OnMultitouchEvent(AndroidGeckoEvent *ae)
 {
     nsRefPtr<nsWindow> kungFuDeathGrip(this);
+
+    // End any composition in progress in case the touch event listener
+    // modifies the input field value (see bug 856155)
+    RemoveIMEComposition();
 
     // This is set to true once we have called SetPreventPanning() exactly
     // once for a given sequence of touch events. It is reset on the start
@@ -1482,8 +1495,12 @@ nsWindow::InitKeyEvent(nsKeyEvent& event, AndroidGeckoEvent& key,
 
     if (event.message == NS_KEY_PRESS) {
         // Android gives us \n, so filter out some control characters.
-        event.isChar = (key.UnicodeChar() >= ' ');
-        event.charCode = event.isChar ? key.UnicodeChar() : 0;
+        int charCode = key.UnicodeChar();
+        if (!charCode) {
+            charCode = key.BaseUnicodeChar();
+        }
+        event.isChar = (charCode >= ' ');
+        event.charCode = event.isChar ? charCode : 0;
         event.keyCode = (event.charCode > 0) ? 0 : domKeyCode;
         event.pluginEvent = NULL;
     } else {
@@ -1505,10 +1522,17 @@ nsWindow::InitKeyEvent(nsKeyEvent& event, AndroidGeckoEvent& key,
         event.pluginEvent = pluginEvent;
     }
 
-    event.InitBasicModifiers(gMenu || key.IsCtrlPressed(),
-                             key.IsAltPressed(),
-                             key.IsShiftPressed(),
-                             key.IsMetaPressed());
+    if (event.message != NS_KEY_PRESS ||
+        !key.UnicodeChar() || !key.BaseUnicodeChar() ||
+        key.UnicodeChar() == key.BaseUnicodeChar()) {
+        // For keypress, if the unicode char already has modifiers applied, we
+        // don't specify extra modifiers. If UnicodeChar() != BaseUnicodeChar()
+        // it means UnicodeChar() already has modifiers applied.
+        event.InitBasicModifiers(gMenu || key.IsCtrlPressed(),
+                                 key.IsAltPressed(),
+                                 key.IsShiftPressed(),
+                                 key.IsMetaPressed());
+    }
     event.location = key.DomKeyLocation();
     event.time = key.Time();
 
@@ -1770,6 +1794,17 @@ nsWindow::OnIMEEvent(AndroidGeckoEvent *ae)
                 event.mExpandToClusterBoundary = false;
                 DispatchEvent(&event);
             }
+
+            if (!mIMEKeyEvents.IsEmpty()) {
+                for (uint32_t i = 0; i < mIMEKeyEvents.Length(); i++) {
+                    OnKeyEvent(&mIMEKeyEvents[i]);
+                }
+                mIMEKeyEvents.Clear();
+                FlushIMEChanges();
+                AndroidBridge::NotifyIME(AndroidBridge::NOTIFY_IME_REPLY_EVENT);
+                break;
+            }
+
             {
                 nsCompositionEvent event(true, NS_COMPOSITION_START, this);
                 InitEvent(event, nullptr);
@@ -1800,6 +1835,7 @@ nsWindow::OnIMEEvent(AndroidGeckoEvent *ae)
                   notified of the new selection
             */
             AutoIMEMask selMask(mIMEMaskSelectionUpdate);
+            RemoveIMEComposition();
             nsSelectionEvent selEvent(true, NS_SELECTION_SET, this);
             InitEvent(selEvent, nullptr);
 

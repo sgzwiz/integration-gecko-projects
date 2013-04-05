@@ -204,13 +204,6 @@ DOMCI_CLASS(MozCellBroadcast)
 // @font-face in CSS
 DOMCI_CLASS(CSSFontFaceRule)
 
-#if defined(MOZ_MEDIA)
-// WhatWG Video Element
-DOMCI_CLASS(HTMLVideoElement)
-DOMCI_CLASS(HTMLAudioElement)
-DOMCI_CLASS(TimeRanges)
-#endif
-
 // DOM Traversal NodeIterator class
 DOMCI_CLASS(NodeIterator)
 
@@ -236,7 +229,6 @@ DOMCI_CLASS(ChromeMessageSender)
 DOMCI_CLASS(DesktopNotification)
 DOMCI_CLASS(DesktopNotificationCenter)
 
-DOMCI_CLASS(IDBFactory)
 DOMCI_CLASS(IDBFileHandle)
 DOMCI_CLASS(IDBRequest)
 DOMCI_CLASS(IDBDatabase)

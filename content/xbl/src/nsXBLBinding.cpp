@@ -925,8 +925,9 @@ nsXBLBinding::ChangeDocument(nsIDocument* aOldDocument, nsIDocument* aNewDocumen
     // Only style bindings get their prototypes unhooked.  First do ourselves.
     if (mIsStyleBinding) {
       // Now the binding dies.  Unhook our prototypes.
-      if (mPrototypeBinding->HasImplementation()) { 
-        nsIScriptGlobalObject *global = aOldDocument->GetScopeObject();
+      if (mPrototypeBinding->HasImplementation()) {
+        nsCOMPtr<nsIScriptGlobalObject> global =  do_QueryInterface(
+          aOldDocument->GetScopeObject());
         if (global) {
           JSObject *scope = global->GetGlobalJSObject();
           // scope might be null if we've cycle-collected the global
@@ -1131,7 +1132,7 @@ nsXBLBinding::DoInitJSClass(JSContext *cx, JSObject *global, JSObject *obj,
   }
 
   JS::Value val;
-  JSObject* proto = NULL;
+  JSObject* proto = nullptr;
   if ((!::JS_LookupPropertyWithFlags(cx, global, className.get(), 0, &val)) ||
       JSVAL_IS_PRIMITIVE(val)) {
     // We need to initialize the class.
