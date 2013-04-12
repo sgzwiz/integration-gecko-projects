@@ -6,7 +6,6 @@ import datetime
 import socket
 import sys
 import time
-import traceback
 
 from client import MarionetteClient
 from application_cache import ApplicationCache
