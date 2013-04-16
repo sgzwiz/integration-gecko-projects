@@ -10,6 +10,8 @@
 
 #include "mozilla/FloatingPoint.h"
 
+#include "jscpucfg.h"
+
 #include <math.h>
 
 /* A NaN whose bit pattern conforms to JS::Value's bit pattern restrictions. */
@@ -21,7 +23,7 @@ namespace detail {
 
 union DoublePun {
     struct {
-#if defined(IS_LITTLE_ENDIAN) && !defined(FPU_IS_ARM_FPA)
+#if defined(IS_LITTLE_ENDIAN)
         uint32_t lo, hi;
 #else
         uint32_t hi, lo;
