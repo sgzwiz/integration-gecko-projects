@@ -419,9 +419,9 @@ class Marionette(object):
             # We are ignoring desired_capabilities, at least for now.
             self.session = self._send_message('newSession', 'value')
         except:
-            traceback.print_exc()
+            exc, val, tb = sys.exc_info()
             self.check_for_crash()
-            sys.exit()
+            raise exc, val, tb
 
         self.b2g = 'b2g' in self.session
         return self.session
