@@ -320,7 +320,7 @@ waitFor(
         now = datetime.datetime.now()
         while online - original_online == set([]):
             time.sleep(1)
-            if datetime.datetime.now() - now > datetime.timedelta(seconds=60):
+            if datetime.datetime.now() - now > datetime.timedelta(seconds=180):
                 raise Exception('timed out waiting for emulator to start')
             online, offline = self._get_adb_devices()
         self.port = int(list(online - original_online)[0])
