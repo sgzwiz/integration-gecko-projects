@@ -133,10 +133,8 @@ class B2GInstance(object):
         remote_dump_dirs = [posixpath.join(p, 'minidumps') for p in self.remote_profiles]
         crashed = False
         for remote_dump_dir in remote_dump_dirs:
-            print "Checking for crashes in %s, symbols path: %s" % (remote_dump_dir, symbols_path)
             local_dump_dir = tempfile.mkdtemp()
             self.dm.getDirectory(remote_dump_dir, local_dump_dir)
-            print "Pulled remote dump dir to %s, listdir: %s" % (local_dump_dir, os.listdir(local_dump_dir))
             try:
                 if mozcrash.check_for_crashes(local_dump_dir, symbols_path):
                     crashed = True
