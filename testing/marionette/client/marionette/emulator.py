@@ -231,7 +231,6 @@ class Emulator(object):
         offline = set()
         online = set()
         output = self._run_adb(['devices'])
-        print 'get_adb_devices: ', output
         for line in output.split('\n'):
             m = self.deviceRe.match(line)
             if m:
@@ -285,7 +284,7 @@ waitFor(
         now = datetime.datetime.now()
         while online == set([]):
             time.sleep(1)
-            if datetime.datetime.now() - now > datetime.timedelta(seconds=60):
+            if datetime.datetime.now() - now > datetime.timedelta(seconds=180):
                 raise Exception('timed out waiting for emulator to be available')
             online, offline = self._get_adb_devices()
         self.port = int(list(online)[0])
@@ -314,13 +313,14 @@ waitFor(
         original_online, original_offline = self._get_adb_devices()
 
         self.proc = subprocess.Popen(qemu_args,
-                                     stderr=subprocess.STDOUT)
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE)
 
         online, offline = self._get_adb_devices()
         now = datetime.datetime.now()
         while online - original_online == set([]):
             time.sleep(1)
-            if datetime.datetime.now() - now > datetime.timedelta(seconds=60):
+            if datetime.datetime.now() - now > datetime.timedelta(seconds=180):
                 raise Exception('timed out waiting for emulator to start')
             online, offline = self._get_adb_devices()
         self.port = int(list(online - original_online)[0])
