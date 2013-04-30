@@ -231,6 +231,7 @@
 #include "nsPISocketTransportService.h"
 #include "mozilla/dom/AudioContext.h"
 #include "mozilla/dom/FunctionBinding.h"
+#include "mozilla/dom/WindowBinding.h"
 
 #ifdef MOZ_WEBSPEECH
 #include "mozilla/dom/SpeechSynthesis.h"
@@ -428,7 +429,6 @@ nsGlobalWindow::DOMMinTimeoutValue() const {
 // CIDs
 static NS_DEFINE_CID(kXULControllersCID, NS_XULCONTROLLERS_CID);
 
-static const char sJSStackContractID[] = "@mozilla.org/js/xpc/ContextStack;1";
 static const char sPopStatePrefStr[] = "browser.history.allowPopState";
 
 #define NETWORK_UPLOAD_EVENT_NAME     NS_LITERAL_STRING("moznetworkupload")
@@ -3503,6 +3503,13 @@ nsGlobalWindow::GetContent(nsIDOMWindow** aContent)
   FORWARD_TO_OUTER(GetContent, (aContent), NS_ERROR_NOT_INITIALIZED);
   *aContent = nullptr;
 
+  // First check for a named frame named "content"
+  nsCOMPtr<nsIDOMWindow> domWindow = GetChildWindow(nsDOMClassInfo::sContent_id);
+  if (domWindow) {
+    domWindow.forget(aContent);
+    return NS_OK;
+  }
+
   // If we're contained in <iframe mozbrowser> or <iframe mozapp>, then
   // GetContent is the same as window.top.
   if (mDocShell && mDocShell->GetIsInBrowserOrApp()) {
@@ -3528,14 +3535,13 @@ nsGlobalWindow::GetContent(nsIDOMWindow** aContent)
   }
 
   if (!primaryContent) {
-    nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
-    GetTreeOwner(getter_AddRefs(treeOwner));
+    nsCOMPtr<nsIDocShellTreeOwner> treeOwner = GetTreeOwner();
     NS_ENSURE_TRUE(treeOwner, NS_ERROR_FAILURE);
 
     treeOwner->GetPrimaryContentShell(getter_AddRefs(primaryContent));
   }
 
-  nsCOMPtr<nsIDOMWindow> domWindow(do_GetInterface(primaryContent));
+  domWindow = do_GetInterface(primaryContent);
   domWindow.forget(aContent);
 
   return NS_OK;
@@ -3892,9 +3898,8 @@ nsGlobalWindow::SetStatus(const nsAString& aStatus)
     return NS_OK;
   }
 
-  nsCOMPtr<nsIWebBrowserChrome> browserChrome;
-  GetWebBrowserChrome(getter_AddRefs(browserChrome));
-  if(browserChrome) {
+  nsCOMPtr<nsIWebBrowserChrome> browserChrome = GetWebBrowserChrome();
+  if (browserChrome) {
     browserChrome->SetStatus(nsIWebBrowserChrome::STATUS_SCRIPT,
                              PromiseFlatString(aStatus).get());
   }
@@ -4023,8 +4028,7 @@ nsGlobalWindow::SetInnerWidth(int32_t aInnerWidth)
     return NS_OK;
   }
 
-  NS_ENSURE_SUCCESS(CheckSecurityWidthAndHeight(&aInnerWidth, nullptr),
-                    NS_ERROR_FAILURE);
+  CheckSecurityWidthAndHeight(&aInnerWidth, nullptr);
 
 
   nsRefPtr<nsIPresShell> presShell = mDocShell->GetPresShell();
@@ -4040,7 +4044,8 @@ nsGlobalWindow::SetInnerWidth(int32_t aInnerWidth)
     nsRect shellArea = presContext->GetVisibleArea();
     height = shellArea.height;
     width  = nsPresContext::CSSPixelsToAppUnits(aInnerWidth);
-    return SetCSSViewportWidthAndHeight(width, height);
+    SetCSSViewportWidthAndHeight(width, height);
+    return NS_OK;
   }
   else
   {
@@ -4090,8 +4095,7 @@ nsGlobalWindow::SetInnerHeight(int32_t aInnerHeight)
     return NS_OK;
   }
 
-  NS_ENSURE_SUCCESS(CheckSecurityWidthAndHeight(nullptr, &aInnerHeight),
-                    NS_ERROR_FAILURE);
+  CheckSecurityWidthAndHeight(nullptr, &aInnerHeight);
 
   nsRefPtr<nsIPresShell> presShell = mDocShell->GetPresShell();
 
@@ -4106,7 +4110,8 @@ nsGlobalWindow::SetInnerHeight(int32_t aInnerHeight)
     nsRect shellArea = presContext->GetVisibleArea();
     width = shellArea.width;
     height  = nsPresContext::CSSPixelsToAppUnits(aInnerHeight);
-    return SetCSSViewportWidthAndHeight(width, height);
+    SetCSSViewportWidthAndHeight(width, height);
+    return NS_OK;
   }
   else
   {
@@ -4123,8 +4128,7 @@ nsGlobalWindow::SetInnerHeight(int32_t aInnerHeight)
 nsresult
 nsGlobalWindow::GetOuterSize(nsIntSize* aSizeCSSPixels)
 {
-  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin;
-  GetTreeOwner(getter_AddRefs(treeOwnerAsWin));
+  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
   NS_ENSURE_TRUE(treeOwnerAsWin, NS_ERROR_FAILURE);
 
   nsGlobalWindow* rootWindow =
@@ -4180,14 +4184,11 @@ nsGlobalWindow::SetOuterSize(int32_t aLengthCSSPixels, bool aIsWidth)
     return NS_OK;
   }
 
-  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin;
-  GetTreeOwner(getter_AddRefs(treeOwnerAsWin));
+  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
   NS_ENSURE_TRUE(treeOwnerAsWin, NS_ERROR_FAILURE);
 
-  NS_ENSURE_SUCCESS(CheckSecurityWidthAndHeight(
-                        aIsWidth ? &aLengthCSSPixels : nullptr,
-                        aIsWidth ? nullptr : &aLengthCSSPixels),
-                    NS_ERROR_FAILURE);
+  CheckSecurityWidthAndHeight(aIsWidth ? &aLengthCSSPixels : nullptr,
+                              aIsWidth ? nullptr : &aLengthCSSPixels);
 
   int32_t width, height;
   NS_ENSURE_SUCCESS(treeOwnerAsWin->GetSize(&width, &height), NS_ERROR_FAILURE);
@@ -4222,8 +4223,7 @@ nsGlobalWindow::GetScreenX(int32_t* aScreenX)
 {
   FORWARD_TO_OUTER(GetScreenX, (aScreenX), NS_ERROR_NOT_INITIALIZED);
 
-  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin;
-  GetTreeOwner(getter_AddRefs(treeOwnerAsWin));
+  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
   NS_ENSURE_TRUE(treeOwnerAsWin, NS_ERROR_FAILURE);
 
   int32_t x, y;
@@ -4329,19 +4329,51 @@ nsGlobalWindow::MozRequestAnimationFrame(nsIFrameRequestCallback* aCallback,
   FORWARD_TO_INNER(MozRequestAnimationFrame, (aCallback, aHandle),
                    NS_ERROR_NOT_INITIALIZED);
 
-  if (!mDoc) {
-    return NS_OK;
+  if (!aCallback) {
+    if (mDoc) {
+      mDoc->WarnOnceAbout(nsIDocument::eMozBeforePaint);
+    }
+    return NS_ERROR_XPC_BAD_CONVERT_JS;
   }
 
-  if (!aCallback) {
-    mDoc->WarnOnceAbout(nsIDocument::eMozBeforePaint);
-    return NS_ERROR_XPC_BAD_CONVERT_JS;
+  nsIDocument::FrameRequestCallbackHolder holder(aCallback);
+  return RequestAnimationFrame(holder, aHandle);
+}
+
+nsresult
+nsGlobalWindow::RequestAnimationFrame(const nsIDocument::FrameRequestCallbackHolder& aCallback,
+                                      int32_t* aHandle)
+{
+  MOZ_ASSERT(IsInnerWindow());
+
+  if (!mDoc) {
+    *aHandle = 0;
+    return NS_OK;
   }
 
   if (mJSObject)
     js::NotifyAnimationActivity(mJSObject);
 
   return mDoc->ScheduleFrameRequestCallback(aCallback, aHandle);
+}
+
+NS_IMETHODIMP
+nsGlobalWindow::RequestAnimationFrame(const JS::Value& aCallback,
+                                      JSContext* cx,
+                                      int32_t* aHandle)
+{
+  FORWARD_TO_INNER(RequestAnimationFrame, (aCallback, cx, aHandle),
+                   NS_ERROR_NOT_INITIALIZED);
+
+  if (!aCallback.isObject() || !JS_ObjectIsCallable(cx, &aCallback.toObject())) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  nsRefPtr<FrameRequestCallback> callback =
+    new FrameRequestCallback(&aCallback.toObject());
+
+  nsIDocument::FrameRequestCallbackHolder holder(callback);
+  return RequestAnimationFrame(holder, aHandle);
 }
 
 NS_IMETHODIMP
@@ -4431,12 +4463,10 @@ nsGlobalWindow::SetScreenX(int32_t aScreenX)
     return NS_OK;
   }
 
-  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin;
-  GetTreeOwner(getter_AddRefs(treeOwnerAsWin));
+  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
   NS_ENSURE_TRUE(treeOwnerAsWin, NS_ERROR_FAILURE);
 
-  NS_ENSURE_SUCCESS(CheckSecurityLeftAndTop(&aScreenX, nullptr),
-                    NS_ERROR_FAILURE);
+  CheckSecurityLeftAndTop(&aScreenX, nullptr);
 
   int32_t x, y;
   NS_ENSURE_SUCCESS(treeOwnerAsWin->GetPosition(&x, &y),
@@ -4455,8 +4485,7 @@ nsGlobalWindow::GetScreenY(int32_t* aScreenY)
 {
   FORWARD_TO_OUTER(GetScreenY, (aScreenY), NS_ERROR_NOT_INITIALIZED);
 
-  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin;
-  GetTreeOwner(getter_AddRefs(treeOwnerAsWin));
+  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
   NS_ENSURE_TRUE(treeOwnerAsWin, NS_ERROR_FAILURE);
 
   int32_t x, y;
@@ -4482,12 +4511,10 @@ nsGlobalWindow::SetScreenY(int32_t aScreenY)
     return NS_OK;
   }
 
-  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin;
-  GetTreeOwner(getter_AddRefs(treeOwnerAsWin));
+  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
   NS_ENSURE_TRUE(treeOwnerAsWin, NS_ERROR_FAILURE);
 
-  NS_ENSURE_SUCCESS(CheckSecurityLeftAndTop(nullptr, &aScreenY),
-                    NS_ERROR_FAILURE);
+  CheckSecurityLeftAndTop(nullptr, &aScreenY);
 
   int32_t x, y;
   NS_ENSURE_SUCCESS(treeOwnerAsWin->GetPosition(&x, &y),
@@ -4503,7 +4530,7 @@ nsGlobalWindow::SetScreenY(int32_t aScreenY)
 
 // NOTE: Arguments to this function should have values scaled to
 // CSS pixels, not device pixels.
-nsresult
+void
 nsGlobalWindow::CheckSecurityWidthAndHeight(int32_t* aWidth, int32_t* aHeight)
 {
 #ifdef MOZ_XUL
@@ -4527,8 +4554,6 @@ nsGlobalWindow::CheckSecurityWidthAndHeight(int32_t* aWidth, int32_t* aHeight)
       }
     }
   }
-
-  return NS_OK;
 }
 
 // NOTE: Arguments to this function should have values in device pixels
@@ -4548,7 +4573,7 @@ nsGlobalWindow::SetDocShellWidthAndHeight(int32_t aInnerWidth, int32_t aInnerHei
 }
 
 // NOTE: Arguments to this function should have values in app units
-nsresult
+void
 nsGlobalWindow::SetCSSViewportWidthAndHeight(nscoord aInnerWidth, nscoord aInnerHeight)
 {
   nsRefPtr<nsPresContext> presContext;
@@ -4559,12 +4584,11 @@ nsGlobalWindow::SetCSSViewportWidthAndHeight(nscoord aInnerWidth, nscoord aInner
   shellArea.width = aInnerWidth;
 
   presContext->SetVisibleArea(shellArea);
-  return NS_OK;
 }
 
 // NOTE: Arguments to this function should have values scaled to
 // CSS pixels, not device pixels.
-nsresult
+void
 nsGlobalWindow::CheckSecurityLeftAndTop(int32_t* aLeft, int32_t* aTop)
 {
   // This one is harder. We have to get the screen size and window dimensions.
@@ -4583,8 +4607,7 @@ nsGlobalWindow::CheckSecurityLeftAndTop(int32_t* aLeft, int32_t* aTop)
       rootWindow->FlushPendingNotifications(Flush_Layout);
     }
 
-    nsCOMPtr<nsIBaseWindow> treeOwner;
-    GetTreeOwner(getter_AddRefs(treeOwner));
+    nsCOMPtr<nsIBaseWindow> treeOwner = GetTreeOwnerWindow();
 
     nsCOMPtr<nsIDOMScreen> screen;
     GetScreen(getter_AddRefs(screen));
@@ -4640,8 +4663,6 @@ nsGlobalWindow::CheckSecurityLeftAndTop(int32_t* aLeft, int32_t* aTop)
         *aTop = 0;
     }
   }
-
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -4806,18 +4827,16 @@ static already_AddRefed<nsIDocShellTreeItem>
 GetCallerDocShellTreeItem()
 {
   JSContext *cx = nsContentUtils::GetCurrentJSContext();
-  nsIDocShellTreeItem *callerItem = nullptr;
+  nsCOMPtr<nsIDocShellTreeItem> callerItem;
 
   if (cx) {
     nsCOMPtr<nsIWebNavigation> callerWebNav =
       do_GetInterface(nsJSUtils::GetDynamicScriptGlobal(cx));
 
-    if (callerWebNav) {
-      CallQueryInterface(callerWebNav, &callerItem);
-    }
+    callerItem = do_QueryInterface(callerWebNav);
   }
 
-  return callerItem;
+  return callerItem.forget();
 }
 
 bool
@@ -4845,16 +4864,15 @@ nsGlobalWindow::WindowExists(const nsAString& aName,
 already_AddRefed<nsIWidget>
 nsGlobalWindow::GetMainWidget()
 {
-  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin;
-  GetTreeOwner(getter_AddRefs(treeOwnerAsWin));
+  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
 
-  nsIWidget *widget = nullptr;
+  nsCOMPtr<nsIWidget> widget;
 
   if (treeOwnerAsWin) {
-    treeOwnerAsWin->GetMainWidget(&widget);
+    treeOwnerAsWin->GetMainWidget(getter_AddRefs(widget));
   }
 
-  return widget;
+  return widget.forget();
 }
 
 nsIWidget*
@@ -4921,8 +4939,7 @@ nsGlobalWindow::SetFullScreenInternal(bool aFullScreen, bool aRequireTrust)
 
   // Prevent chrome documents which are still loading from resizing
   // the window after we set fullscreen mode.
-  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin;
-  GetTreeOwner(getter_AddRefs(treeOwnerAsWin));
+  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
   nsCOMPtr<nsIXULWindow> xulWin(do_GetInterface(treeOwnerAsWin));
   if (aFullScreen && xulWin) {
     xulWin->SetIntrinsicallySized(false);
@@ -5184,8 +5201,7 @@ nsGlobalWindow::CanMoveResizeWindows()
     }
 
     // Ignore the request if we have more than one tab in the window.
-    nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
-    GetTreeOwner(getter_AddRefs(treeOwner));
+    nsCOMPtr<nsIDocShellTreeOwner> treeOwner = GetTreeOwner();
     if (treeOwner) {
       uint32_t itemCount;
       if (NS_SUCCEEDED(treeOwner->GetTargetableShellCount(&itemCount)) &&
@@ -5228,13 +5244,6 @@ nsGlobalWindow::Alert(const nsAString& aString)
   // the whole time a modal dialog is open.
   nsAutoPopupStatePusher popupStatePusher(openAbused, true);
 
-  // Special handling for alert(null) in JS for backwards
-  // compatibility.
-
-  NS_NAMED_LITERAL_STRING(null_str, "null");
-
-  const nsAString *str = DOMStringIsNull(aString) ? &null_str : &aString;
-
   // Before bringing up the window, unsuppress painting and flush
   // pending reflows.
   EnsureReflowFlushAndPaint();
@@ -5245,7 +5254,7 @@ nsGlobalWindow::Alert(const nsAString& aString)
   // Remove non-terminating null characters from the 
   // string. See bug #310037. 
   nsAutoString final;
-  nsContentUtils::StripNullChars(*str, final);
+  nsContentUtils::StripNullChars(aString, final);
 
   // Check if we're being called at a point where we can't use tab-modal
   // prompts, because something doesn't want reentrancy.
@@ -5474,8 +5483,7 @@ nsGlobalWindow::Focus()
   nsCOMPtr<nsIDOMWindow> rootWin = do_GetInterface(rootItem);
   bool isActive = (rootWin == activeWindow);
 
-  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin;
-  GetTreeOwner(getter_AddRefs(treeOwnerAsWin));
+  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
   if (treeOwnerAsWin && (canFocus || isActive)) {
     bool isEnabled = true;
     if (NS_SUCCEEDED(treeOwnerAsWin->GetEnabled(&isEnabled)) && !isEnabled) {
@@ -5558,8 +5566,7 @@ nsGlobalWindow::Blur()
   // shouldn't throw exceptions to web content.
   nsresult rv = NS_OK;
 
-  nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
-  GetTreeOwner(getter_AddRefs(treeOwner));
+  nsCOMPtr<nsIDocShellTreeOwner> treeOwner = GetTreeOwner();
   nsCOMPtr<nsIEmbeddingSiteWindow> siteWindow(do_GetInterface(treeOwner));
   if (siteWindow) {
     // This method call may cause mDocShell to become nullptr.
@@ -5753,12 +5760,10 @@ nsGlobalWindow::MoveTo(int32_t aXPos, int32_t aYPos)
     return NS_OK;
   }
 
-  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin;
-  GetTreeOwner(getter_AddRefs(treeOwnerAsWin));
+  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
   NS_ENSURE_TRUE(treeOwnerAsWin, NS_ERROR_FAILURE);
 
-  NS_ENSURE_SUCCESS(CheckSecurityLeftAndTop(&aXPos, &aYPos),
-                    NS_ERROR_FAILURE);
+  CheckSecurityLeftAndTop(&aXPos, &aYPos);
 
   // mild abuse of a "size" object so we don't need more helper functions
   nsIntSize devPos(CSSToDevIntPixels(nsIntSize(aXPos, aYPos)));
@@ -5783,8 +5788,7 @@ nsGlobalWindow::MoveBy(int32_t aXDif, int32_t aYDif)
     return NS_OK;
   }
 
-  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin;
-  GetTreeOwner(getter_AddRefs(treeOwnerAsWin));
+  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
   NS_ENSURE_TRUE(treeOwnerAsWin, NS_ERROR_FAILURE);
 
   // To do this correctly we have to convert what we get from GetPosition
@@ -5800,9 +5804,7 @@ nsGlobalWindow::MoveBy(int32_t aXDif, int32_t aYDif)
   cssPos.width += aXDif;
   cssPos.height += aYDif;
   
-  NS_ENSURE_SUCCESS(CheckSecurityLeftAndTop(&cssPos.width,
-                                            &cssPos.height),
-                    NS_ERROR_FAILURE);
+  CheckSecurityLeftAndTop(&cssPos.width, &cssPos.height);
 
   nsIntSize newDevPos(CSSToDevIntPixels(cssPos));
 
@@ -5827,12 +5829,10 @@ nsGlobalWindow::ResizeTo(int32_t aWidth, int32_t aHeight)
     return NS_OK;
   }
 
-  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin;
-  GetTreeOwner(getter_AddRefs(treeOwnerAsWin));
+  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
   NS_ENSURE_TRUE(treeOwnerAsWin, NS_ERROR_FAILURE);
   
-  NS_ENSURE_SUCCESS(CheckSecurityWidthAndHeight(&aWidth, &aHeight),
-                    NS_ERROR_FAILURE);
+  CheckSecurityWidthAndHeight(&aWidth, &aHeight);
 
   nsIntSize devSz(CSSToDevIntPixels(nsIntSize(aWidth, aHeight)));
 
@@ -5856,8 +5856,7 @@ nsGlobalWindow::ResizeBy(int32_t aWidthDif, int32_t aHeightDif)
     return NS_OK;
   }
 
-  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin;
-  GetTreeOwner(getter_AddRefs(treeOwnerAsWin));
+  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
   NS_ENSURE_TRUE(treeOwnerAsWin, NS_ERROR_FAILURE);
 
   int32_t width, height;
@@ -5872,9 +5871,7 @@ nsGlobalWindow::ResizeBy(int32_t aWidthDif, int32_t aHeightDif)
   cssSize.width += aWidthDif;
   cssSize.height += aHeightDif;
 
-  NS_ENSURE_SUCCESS(CheckSecurityWidthAndHeight(&cssSize.width,
-                                                &cssSize.height),
-                    NS_ERROR_FAILURE);
+  CheckSecurityWidthAndHeight(&cssSize.width, &cssSize.height);
 
   nsIntSize newDevSize(CSSToDevIntPixels(cssSize));
 
@@ -5917,14 +5914,11 @@ nsGlobalWindow::SizeToContent()
 
   // Make sure the new size is following the CheckSecurityWidthAndHeight
   // rules.
-  nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
-  GetTreeOwner(getter_AddRefs(treeOwner));
+  nsCOMPtr<nsIDocShellTreeOwner> treeOwner = GetTreeOwner();
   NS_ENSURE_TRUE(treeOwner, NS_ERROR_FAILURE);
 
   nsIntSize cssSize(DevToCSSIntPixels(nsIntSize(width, height)));
-  NS_ENSURE_SUCCESS(CheckSecurityWidthAndHeight(&cssSize.width,
-                                                &cssSize.height),
-                    NS_ERROR_FAILURE);
+  CheckSecurityWidthAndHeight(&cssSize.width, &cssSize.height);
 
   nsIntSize newDevSize(CSSToDevIntPixels(cssSize));
 
@@ -7075,8 +7069,7 @@ nsGlobalWindow::ReallyCloseWindow()
   // Make sure we never reenter this method.
   mHavePendingClose = true;
 
-  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin;
-  GetTreeOwner(getter_AddRefs(treeOwnerAsWin));
+  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
 
   // If there's no treeOwnerAsWin, this window must already be closed.
 
@@ -9779,8 +9772,7 @@ nsGlobalWindow::OpenInternal(const nsAString& aUrl, const nsAString& aName,
 
   *aReturn = nullptr;
 
-  nsCOMPtr<nsIWebBrowserChrome> chrome;
-  GetWebBrowserChrome(getter_AddRefs(chrome));
+  nsCOMPtr<nsIWebBrowserChrome> chrome = GetWebBrowserChrome();
   if (!chrome) {
     // No chrome means we don't want to go through with this open call
     // -- see nsIWindowWatcher.idl
@@ -10714,27 +10706,27 @@ nsGlobalWindow::TimerCallback(nsITimer *aTimer, void *aClosure)
 // nsGlobalWindow: Helper Functions
 //*****************************************************************************
 
-nsresult
-nsGlobalWindow::GetTreeOwner(nsIDocShellTreeOwner **aTreeOwner)
+already_AddRefed<nsIDocShellTreeOwner>
+nsGlobalWindow::GetTreeOwner()
 {
-  FORWARD_TO_OUTER(GetTreeOwner, (aTreeOwner), NS_ERROR_NOT_INITIALIZED);
+  FORWARD_TO_OUTER(GetTreeOwner, (), nullptr);
 
   // If there's no docShellAsItem, this window must have been closed,
   // in that case there is no tree owner.
 
   if (!mDocShell) {
-    *aTreeOwner = nullptr;
-
-    return NS_OK;
+    return nullptr;
   }
 
-  return mDocShell->GetTreeOwner(aTreeOwner);
+  nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
+  mDocShell->GetTreeOwner(getter_AddRefs(treeOwner));
+  return treeOwner.forget();
 }
 
-nsresult
-nsGlobalWindow::GetTreeOwner(nsIBaseWindow **aTreeOwner)
+already_AddRefed<nsIBaseWindow>
+nsGlobalWindow::GetTreeOwnerWindow()
 {
-  FORWARD_TO_OUTER(GetTreeOwner, (aTreeOwner), NS_ERROR_NOT_INITIALIZED);
+  FORWARD_TO_OUTER(GetTreeOwnerWindow, (), nullptr);
 
   nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
 
@@ -10745,24 +10737,17 @@ nsGlobalWindow::GetTreeOwner(nsIBaseWindow **aTreeOwner)
     mDocShell->GetTreeOwner(getter_AddRefs(treeOwner));
   }
 
-  if (!treeOwner) {
-    *aTreeOwner = nullptr;
-    return NS_OK;
-  }
-
-  return CallQueryInterface(treeOwner, aTreeOwner);
+  nsCOMPtr<nsIBaseWindow> baseWindow = do_QueryInterface(treeOwner);
+  return baseWindow.forget();
 }
 
-nsresult
-nsGlobalWindow::GetWebBrowserChrome(nsIWebBrowserChrome **aBrowserChrome)
+already_AddRefed<nsIWebBrowserChrome>
+nsGlobalWindow::GetWebBrowserChrome()
 {
-  nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
-  GetTreeOwner(getter_AddRefs(treeOwner));
+  nsCOMPtr<nsIDocShellTreeOwner> treeOwner = GetTreeOwner();
 
-  nsCOMPtr<nsIWebBrowserChrome> browserChrome(do_GetInterface(treeOwner));
-  NS_IF_ADDREF(*aBrowserChrome = browserChrome);
-
-  return NS_OK;
+  nsCOMPtr<nsIWebBrowserChrome> browserChrome = do_GetInterface(treeOwner);
+  return browserChrome.forget();
 }
 
 nsIScrollableFrame *
@@ -11388,14 +11373,9 @@ nsGlobalChromeWindow::GetWindowState(uint16_t* aWindowState)
 
   nsCOMPtr<nsIWidget> widget = GetMainWidget();
 
-  int32_t aMode = 0;
+  int32_t mode = widget ? widget->SizeMode() : 0;
 
-  if (widget) {
-    nsresult rv = widget->GetSizeMode(&aMode);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  switch (aMode) {
+  switch (mode) {
     case nsSizeMode_Minimized:
       *aWindowState = nsIDOMChromeWindow::STATE_MINIMIZED;
       break;

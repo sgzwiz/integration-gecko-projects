@@ -141,6 +141,14 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool visitLoadFixedSlotT(LLoadFixedSlotT *ins);
     bool visitStoreFixedSlotV(LStoreFixedSlotV *ins);
     bool visitStoreFixedSlotT(LStoreFixedSlotT *ins);
+    bool emitGetPropertyPolymorphic(LInstruction *lir, Register obj,
+                                    Register scratch, const TypedOrValueRegister &output);
+    bool visitGetPropertyPolymorphicV(LGetPropertyPolymorphicV *ins);
+    bool visitGetPropertyPolymorphicT(LGetPropertyPolymorphicT *ins);
+    bool emitSetPropertyPolymorphic(LInstruction *lir, Register obj,
+                                    Register scratch, const ConstantOrRegister &value);
+    bool visitSetPropertyPolymorphicV(LSetPropertyPolymorphicV *ins);
+    bool visitSetPropertyPolymorphicT(LSetPropertyPolymorphicT *ins);
     bool visitAbsI(LAbsI *lir);
     bool visitPowI(LPowI *lir);
     bool visitPowD(LPowD *lir);
@@ -153,7 +161,6 @@ class CodeGenerator : public CodeGeneratorSpecific
                       Register output, Register temp);
     bool visitCompareS(LCompareS *lir);
     bool visitCompareStrictS(LCompareStrictS *lir);
-    bool visitParCompareS(LParCompareS *lir);
     bool visitCompareVM(LCompareVM *lir);
     bool visitIsNullOrLikeUndefined(LIsNullOrLikeUndefined *lir);
     bool visitIsNullOrLikeUndefinedAndBranch(LIsNullOrLikeUndefinedAndBranch *lir);

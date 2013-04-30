@@ -182,7 +182,8 @@ const UnsolicitedNotifications = {
   "tabDetached": "tabDetached",
   "tabNavigated": "tabNavigated",
   "pageError": "pageError",
-  "webappsEvent": "webappsEvent"
+  "webappsEvent": "webappsEvent",
+  "styleSheetsAdded": "styleSheetsAdded"
 };
 
 /**
@@ -193,7 +194,8 @@ const UnsolicitedPauses = {
   "resumeLimit": "resumeLimit",
   "debuggerStatement": "debuggerStatement",
   "breakpoint": "breakpoint",
-  "watchpoint": "watchpoint"
+  "watchpoint": "watchpoint",
+  "exception": "exception"
 };
 
 const ROOT_ACTOR_NAME = "root";

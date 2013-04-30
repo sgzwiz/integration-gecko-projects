@@ -286,7 +286,7 @@ private:
           MutexAutoLock lock(mStream->Engine()->NodeMutex());
           node = static_cast<ScriptProcessorNode*>(mStream->Engine()->Node());
         }
-        if (!node) {
+        if (!node || !node->Context()) {
           return NS_OK;
         }
 
@@ -385,7 +385,7 @@ ScriptProcessorNode::~ScriptProcessorNode()
 }
 
 JSObject*
-ScriptProcessorNode::WrapObject(JSContext* aCx, JSObject* aScope)
+ScriptProcessorNode::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 {
   return ScriptProcessorNodeBinding::Wrap(aCx, aScope, this);
 }

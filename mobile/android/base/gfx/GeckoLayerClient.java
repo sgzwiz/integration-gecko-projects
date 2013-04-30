@@ -113,10 +113,11 @@ public class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
         DisplayMetrics displayMetrics = context.getResources().getDisplayMetrics();
         mViewportMetrics = new ImmutableViewportMetrics(displayMetrics)
                            .setViewportSize(view.getWidth(), view.getHeight());
+        mFrameMetrics = mViewportMetrics;
         mZoomConstraints = new ZoomConstraints(false);
 
         mPanZoomController = PanZoomController.Factory.create(this, view, eventDispatcher);
-        mMarginsAnimator = new LayerMarginsAnimator(this);
+        mMarginsAnimator = new LayerMarginsAnimator(this, view);
         mView = view;
         mView.setListener(this);
     }
@@ -656,6 +657,21 @@ public class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
         return mCurrentViewTransform;
     }
 
+    /* Invoked by JNI from the compositor thread */
+    public ViewTransform syncFrameMetrics(float offsetX, float offsetY, float zoom,
+                float cssPageLeft, float cssPageTop, float cssPageRight, float cssPageBottom,
+                boolean layersUpdated, int x, int y, int width, int height, float resolution,
+                boolean isFirstPaint)
+    {
+        if (isFirstPaint) {
+            RectF pageRect = RectUtils.scale(new RectF(cssPageLeft, cssPageTop, cssPageRight, cssPageBottom), zoom);
+            setFirstPaintViewport(offsetX, offsetY, zoom, pageRect.left, pageRect.top, pageRect.right,
+                    pageRect.bottom, cssPageLeft, cssPageTop, cssPageRight, cssPageBottom);
+        }
+
+        return syncViewportInfo(x, y, width, height, resolution, layersUpdated);
+    }
+
     /** This function is invoked by Gecko via JNI; be careful when modifying signature. */
     public LayerRenderer.Frame createFrame() {
         // Create the shaders and textures if necessary.
@@ -678,11 +694,11 @@ public class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
         mLayerRenderer.deactivateDefaultProgram();
     }
 
-    private void geometryChanged() {
+    private void geometryChanged(DisplayPortMetrics displayPort) {
         /* Let Gecko know if the screensize has changed */
         sendResizeEventIfNecessary(false);
         if (getRedrawHint()) {
-            adjustViewport(null);
+            adjustViewport(displayPort);
         }
     }
 
@@ -778,7 +794,7 @@ public class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
 
         mView.requestRender();
         if (notifyGecko && mGeckoIsReady) {
-            geometryChanged();
+            geometryChanged(null);
         }
         setShadowVisibility();
     }
@@ -840,10 +856,10 @@ public class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
 
     /** Implementation of PanZoomTarget */
     @Override
-    public void forceRedraw() {
+    public void forceRedraw(DisplayPortMetrics displayPort) {
         mForceRedraw = true;
         if (mGeckoIsReady) {
-            geometryChanged();
+            geometryChanged(displayPort);
         }
     }
 
@@ -851,6 +867,12 @@ public class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
     @Override
     public boolean post(Runnable action) {
         return mView.post(action);
+    }
+
+    /** Implementation of PanZoomTarget */
+    @Override
+    public boolean postDelayed(Runnable action, long delayMillis) {
+        return mView.postDelayed(action, delayMillis);
     }
 
     /** Implementation of PanZoomTarget */

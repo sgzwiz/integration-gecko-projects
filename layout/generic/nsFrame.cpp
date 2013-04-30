@@ -4863,7 +4863,7 @@ nsIFrame::TryUpdateTransformOnly()
   // non-translation change, bail and schedule an invalidating paint.
   // (We can often do better than this, for example for scale-down
   // changes.)
- static const gfx::Float kError = 0.0001;
+ static const gfx::Float kError = 0.0001f;
   if (!transform3d.Is2D(&transform) ||
       !layer->GetBaseTransform().Is2D(&previousTransform) ||
       !gfx::FuzzyEqual(transform.xx, previousTransform.xx, kError) ||
@@ -5485,10 +5485,9 @@ nsFrame::GetSelectionController(nsPresContext *aPresContext, nsISelectionControl
 already_AddRefed<nsFrameSelection>
 nsIFrame::GetFrameSelection()
 {
-  nsFrameSelection* fs =
+  nsRefPtr<nsFrameSelection> fs =
     const_cast<nsFrameSelection*>(GetConstFrameSelection());
-  NS_IF_ADDREF(fs);
-  return fs;
+  return fs.forget();
 }
 
 const nsFrameSelection*

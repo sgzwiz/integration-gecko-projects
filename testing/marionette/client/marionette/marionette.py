@@ -138,6 +138,22 @@ class Actions(object):
         self.action_chain.append(['cancel'])
         return self
 
+    def flick(self, element, x1, y1, x2, y2, duration=200):
+        element = element.id
+        time = 0
+        time_increment = 10
+        if time_increment >= duration:
+            time_increment = duration
+        move_x = time_increment*1.0/duration * (x2 - x1)
+        move_y = time_increment*1.0/duration * (y2 - y1)
+        self.action_chain.append(['press', element, x1, y1])
+        while (time < duration):
+            time += time_increment
+            self.action_chain.append(['moveByOffset', move_x, move_y])
+            self.action_chain.append(['wait', time_increment/1000])
+        self.action_chain.append(['release'])
+        return self
+
     def long_press(self, element, time_in_seconds):
         element = element.id
         self.action_chain.append(['press', element])
@@ -628,12 +644,6 @@ class Marionette(object):
 
     def get_logs(self):
         return self._send_message('getLogs', 'value')
-
-    def add_perf_data(self, suite, name, value):
-        return self._send_message('addPerfData', 'ok', suite=suite, name=name, value=value)
-
-    def get_perf_data(self):
-        return self._send_message('getPerfData', 'value')
 
     def import_script(self, js_file):
         js = ''

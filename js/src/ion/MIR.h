@@ -101,6 +101,9 @@ class MUse : public TempObject, public InlineListNode<MUse>
         JS_ASSERT(producer_ != NULL);
         return producer_;
     }
+    bool hasProducer() const {
+        return producer_ != NULL;
+    }
     MNode *consumer() const {
         JS_ASSERT(consumer_ != NULL);
         return consumer_;
@@ -1779,6 +1782,9 @@ class MCompare
         // Double compared to Double
         Compare_Double,
 
+        Compare_DoubleMaybeCoerceLHS,
+        Compare_DoubleMaybeCoerceRHS,
+
         // String compared to String
         Compare_String,
 
@@ -2334,8 +2340,19 @@ class MToDouble
   : public MUnaryInstruction,
     public ToDoublePolicy
 {
-    MToDouble(MDefinition *def)
-      : MUnaryInstruction(def)
+  public:
+    // Types of values which can be converted.
+    enum ConversionKind {
+        NonStringPrimitives,
+        NonNullNonStringPrimitives,
+        NumbersOnly
+    };
+
+  private:
+    ConversionKind conversion_;
+
+    MToDouble(MDefinition *def, ConversionKind conversion = NonStringPrimitives)
+      : MUnaryInstruction(def), conversion_(conversion)
     {
         setResultType(MIRType_Double);
         setMovable();
@@ -2343,11 +2360,15 @@ class MToDouble
 
   public:
     INSTRUCTION_HEADER(ToDouble)
-    static MToDouble *New(MDefinition *def) {
-        return new MToDouble(def);
+    static MToDouble *New(MDefinition *def, ConversionKind conversion = NonStringPrimitives) {
+        return new MToDouble(def, conversion);
     }
     static MToDouble *NewAsmJS(MDefinition *def) {
         return new MToDouble(def);
+    }
+
+    ConversionKind conversion() const {
+        return conversion_;
     }
 
     TypePolicy *typePolicy() {
@@ -2359,6 +2380,8 @@ class MToDouble
         return getOperand(0);
     }
     bool congruentTo(MDefinition *const &ins) const {
+        if (!ins->isToDouble() || ins->toToDouble()->conversion() != conversion())
+            return false;
         return congruentIfOperandsEqual(ins);
     }
     AliasSet getAliasSet() const {
@@ -2632,6 +2655,7 @@ class MBinaryBitwiseInstruction
     }
 
     MDefinition *foldsTo(bool useValueNumbers);
+    MDefinition *foldUnnecessaryBitop();
     virtual MDefinition *foldIfZero(size_t operand) = 0;
     virtual MDefinition *foldIfNegOne(size_t operand) = 0;
     virtual MDefinition *foldIfEqual()  = 0;
@@ -2836,6 +2860,8 @@ class MBinaryArithInstruction
     // analysis detect a precision loss in the multiplication.
     bool implicitTruncate_;
 
+    void inferFallback(BaselineInspector *inspector, jsbytecode *pc);
+
   public:
     MBinaryArithInstruction(MDefinition *left, MDefinition *right)
       : MBinaryInstruction(left, right),
@@ -2855,7 +2881,8 @@ class MBinaryArithInstruction
 
     virtual double getIdentity() = 0;
 
-    void infer(bool overflowed);
+    void infer(BaselineInspector *inspector,
+               jsbytecode *pc, bool overflowed);
 
     void setInt32() {
         specialization_ = MIRType_Int32;
@@ -3858,6 +3885,8 @@ class MLambda
       : MUnaryInstruction(scopeChain), fun_(fun)
     {
         setResultType(MIRType_Object);
+        if (!fun->hasSingletonType() && !types::UseNewTypeForClone(fun))
+            setResultTypeSet(MakeSingletonTypeSet(fun));
     }
 
   public:
@@ -3887,7 +3916,10 @@ class MParLambda
                MDefinition *scopeChain, JSFunction *fun)
       : MBinaryInstruction(parSlice, scopeChain), fun_(fun)
     {
+        JS_ASSERT(!fun->hasSingletonType());
+        JS_ASSERT(!types::UseNewTypeForClone(fun));
         setResultType(MIRType_Object);
+        setResultTypeSet(MakeSingletonTypeSet(fun));
     }
 
   public:
@@ -4816,6 +4848,50 @@ class MLoadTypedArrayElementHole
     }
 };
 
+// Load a value fallibly or infallibly from a statically known typed array.
+class MLoadTypedArrayElementStatic : public MUnaryInstruction
+{
+    MLoadTypedArrayElementStatic(JSObject *typedArray, MDefinition *ptr)
+      : MUnaryInstruction(ptr), typedArray_(typedArray), fallible_(true)
+    {
+        int type = TypedArray::type(typedArray_);
+        if (type == TypedArray::TYPE_FLOAT32 || type == TypedArray::TYPE_FLOAT64)
+            setResultType(MIRType_Double);
+        else
+            setResultType(MIRType_Int32);
+    }
+
+    CompilerRootObject typedArray_;
+    bool fallible_;
+
+  public:
+    INSTRUCTION_HEADER(LoadTypedArrayElementStatic);
+
+    static MLoadTypedArrayElementStatic *New(JSObject *typedArray, MDefinition *ptr) {
+        return new MLoadTypedArrayElementStatic(typedArray, ptr);
+    }
+
+    ArrayBufferView::ViewType viewType() const { return JS_GetArrayBufferViewType(typedArray_); }
+    void *base() const;
+    size_t length() const;
+
+    MDefinition *ptr() const { return getOperand(0); }
+    AliasSet getAliasSet() const {
+        return AliasSet::Load(AliasSet::TypedArrayElement);
+    }
+
+    bool fallible() const {
+        return fallible_;
+    }
+
+    void setInfallible() {
+        fallible_ = false;
+    }
+
+    void computeRange();
+    bool truncate();
+};
+
 class MStoreTypedArrayElement
   : public MTernaryInstruction,
     public StoreTypedArrayPolicy
@@ -4935,6 +5011,39 @@ class MStoreTypedArrayElementHole
     MDefinition *value() const {
         return getOperand(3);
     }
+    AliasSet getAliasSet() const {
+        return AliasSet::Store(AliasSet::TypedArrayElement);
+    }
+};
+
+// Store a value infallibly to a statically known typed array.
+class MStoreTypedArrayElementStatic :
+    public MBinaryInstruction
+  , public StoreTypedArrayElementStaticPolicy
+{
+    MStoreTypedArrayElementStatic(JSObject *typedArray, MDefinition *ptr, MDefinition *v)
+      : MBinaryInstruction(ptr, v), typedArray_(typedArray)
+    {}
+
+    CompilerRootObject typedArray_;
+
+  public:
+    INSTRUCTION_HEADER(StoreTypedArrayElementStatic);
+
+    static MStoreTypedArrayElementStatic *New(JSObject *typedArray, MDefinition *ptr, MDefinition *v) {
+        return new MStoreTypedArrayElementStatic(typedArray, ptr, v);
+    }
+
+    TypePolicy *typePolicy() {
+        return this;
+    }
+
+    ArrayBufferView::ViewType viewType() const { return JS_GetArrayBufferViewType(typedArray_); }
+    void *base() const;
+    size_t length() const;
+
+    MDefinition *ptr() const { return getOperand(0); }
+    MDefinition *value() const { return getOperand(1); }
     AliasSet getAliasSet() const {
         return AliasSet::Store(AliasSet::TypedArrayElement);
     }
@@ -5253,6 +5362,143 @@ class MGetPropertyCache
         return AliasSet::Store(AliasSet::Any);
     }
 
+};
+
+// Emit code to load a value from an object's slots if its shape matches
+// one of the shapes observed by the baseline IC, else bails out.
+class MGetPropertyPolymorphic
+  : public MUnaryInstruction,
+    public SingleObjectPolicy
+{
+    struct Entry {
+        // The shape to guard against.
+        RawShape objShape;
+
+        // The property to laod.
+        RawShape shape;
+    };
+
+    Vector<Entry, 4, IonAllocPolicy> shapes_;
+    CompilerRootPropertyName name_;
+
+    MGetPropertyPolymorphic(MDefinition *obj, HandlePropertyName name)
+      : MUnaryInstruction(obj),
+        name_(name)
+    {
+        setMovable();
+        setResultType(MIRType_Value);
+    }
+
+    PropertyName *name() const {
+        return name_;
+    }
+
+  public:
+    INSTRUCTION_HEADER(GetPropertyPolymorphic)
+
+    static MGetPropertyPolymorphic *New(MDefinition *obj, HandlePropertyName name) {
+        return new MGetPropertyPolymorphic(obj, name);
+    }
+
+    bool congruentTo(MDefinition *const &ins) const {
+        if (!ins->isGetPropertyPolymorphic())
+            return false;
+        if (name() != ins->toGetPropertyPolymorphic()->name())
+            return false;
+        return congruentIfOperandsEqual(ins);
+    }
+
+    TypePolicy *typePolicy() {
+        return this;
+    }
+    bool addShape(RawShape objShape, RawShape shape) {
+        Entry entry;
+        entry.objShape = objShape;
+        entry.shape = shape;
+        return shapes_.append(entry);
+    }
+    size_t numShapes() const {
+        return shapes_.length();
+    }
+    RawShape objShape(size_t i) const {
+        return shapes_[i].objShape;
+    }
+    RawShape shape(size_t i) const {
+        return shapes_[i].shape;
+    }
+    MDefinition *obj() const {
+        return getOperand(0);
+    }
+    AliasSet getAliasSet() const {
+        return AliasSet::Load(AliasSet::ObjectFields | AliasSet::FixedSlot | AliasSet::DynamicSlot);
+    }
+
+    bool mightAlias(MDefinition *store);
+};
+
+// Emit code to store a value to an object's slots if its shape matches
+// one of the shapes observed by the baseline IC, else bails out.
+class MSetPropertyPolymorphic
+  : public MBinaryInstruction,
+    public SingleObjectPolicy
+{
+    struct Entry {
+        // The shape to guard against.
+        RawShape objShape;
+
+        // The property to laod.
+        RawShape shape;
+    };
+
+    Vector<Entry, 4, IonAllocPolicy> shapes_;
+    bool needsBarrier_;
+
+    MSetPropertyPolymorphic(MDefinition *obj, MDefinition *value)
+      : MBinaryInstruction(obj, value),
+        needsBarrier_(false)
+    {
+    }
+
+  public:
+    INSTRUCTION_HEADER(SetPropertyPolymorphic)
+
+    static MSetPropertyPolymorphic *New(MDefinition *obj, MDefinition *value) {
+        return new MSetPropertyPolymorphic(obj, value);
+    }
+
+    TypePolicy *typePolicy() {
+        return this;
+    }
+    bool addShape(RawShape objShape, RawShape shape) {
+        Entry entry;
+        entry.objShape = objShape;
+        entry.shape = shape;
+        return shapes_.append(entry);
+    }
+    size_t numShapes() const {
+        return shapes_.length();
+    }
+    RawShape objShape(size_t i) const {
+        return shapes_[i].objShape;
+    }
+    RawShape shape(size_t i) const {
+        return shapes_[i].shape;
+    }
+    MDefinition *obj() const {
+        return getOperand(0);
+    }
+    MDefinition *value() const {
+        return getOperand(1);
+    }
+    bool needsBarrier() const {
+        return needsBarrier_;
+    }
+    void setNeedsBarrier() {
+        needsBarrier_ = true;
+    }
+    AliasSet getAliasSet() const {
+        return AliasSet::Store(AliasSet::ObjectFields | AliasSet::FixedSlot | AliasSet::DynamicSlot);
+    }
 };
 
 class MDispatchInstruction
@@ -6875,8 +7121,8 @@ class MTypeBarrier
 };
 
 // Like MTypeBarrier, guard that the value is in the given type set. This is
-// used after some VM calls (like GetElement) to avoid the slower calls to
-// TypeScript::Monitor inside these stubs.
+// used before property writes to ensure the value being written is represented
+// in the property types for the object.
 class MMonitorTypes : public MUnaryInstruction
 {
     const types::StackTypeSet *typeSet_;
@@ -6885,7 +7131,6 @@ class MMonitorTypes : public MUnaryInstruction
       : MUnaryInstruction(def),
         typeSet_(types)
     {
-        setResultType(MIRType_Value);
         setGuard();
         JS_ASSERT(!types->unknown());
     }
@@ -7171,7 +7416,7 @@ class MParNewDenseArray : public MBinaryInstruction
 // A resume point contains the information needed to reconstruct the interpreter
 // state from a position in the JIT. See the big comment near resumeAfter() in
 // IonBuilder.cpp.
-class MResumePoint : public MNode
+class MResumePoint : public MNode, public InlineForwardListNode<MResumePoint>
 {
   public:
     enum Mode {
@@ -7205,6 +7450,11 @@ class MResumePoint : public MNode
         JS_ASSERT(index < stackDepth_);
         operands_[index].set(operand, this, index);
         operand->addUse(&operands_[index]);
+    }
+
+    void clearOperand(size_t index) {
+        JS_ASSERT(index < stackDepth_);
+        operands_[index].set(NULL, this, index);
     }
 
     MUse *getUseFor(size_t index) {
@@ -7250,6 +7500,13 @@ class MResumePoint : public MNode
     }
     Mode mode() const {
         return mode_;
+    }
+
+    void discardUses() {
+        for (size_t i = 0; i < stackDepth_; i++) {
+            if (operands_[i].hasProducer())
+                operands_[i].producer()->removeUse(&operands_[i]);
+        }
     }
 };
 
@@ -7711,7 +7968,8 @@ bool PropertyReadNeedsTypeBarrier(JSContext *cx, MDefinition *obj, PropertyName 
                                   types::StackTypeSet *observed);
 bool PropertyReadIsIdempotent(JSContext *cx, MDefinition *obj, PropertyName *name);
 bool PropertyWriteNeedsTypeBarrier(JSContext *cx, MBasicBlock *current, MDefinition **pobj,
-                                   PropertyName *name, MDefinition **pvalue);
+                                   PropertyName *name, MDefinition **pvalue,
+                                   bool canModify = true);
 
 } // namespace ion
 } // namespace js

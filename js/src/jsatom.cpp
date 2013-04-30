@@ -7,31 +7,25 @@
 /*
  * JS atom table.
  */
+#include "jsatom.h"
+
 #include <stdlib.h>
 #include <string.h>
 
 #include "mozilla/RangedPtr.h"
 #include "mozilla/Util.h"
 
-#include "jstypes.h"
-#include "jsutil.h"
-#include "jsprf.h"
 #include "jsapi.h"
-#include "jsatom.h"
 #include "jscntxt.h"
-#include "jsgc.h"
 #include "jslock.h"
-#include "jsnum.h"
 #include "jsstr.h"
+#include "jstypes.h"
 #include "jsversion.h"
 
-#include "frontend/Parser.h"
 #include "gc/Marking.h"
 #include "vm/Xdr.h"
 
-#include "jsstrinlines.h"
 #include "jsatominlines.h"
-#include "jsobjinlines.h"
 
 #include "vm/String-inl.h"
 
@@ -256,8 +250,8 @@ AtomizeAndTakeOwnership(JSContext *cx, const jschar *tbchars, size_t length,
      * unchanged, we need to re-lookup the table position because a last-ditch
      * GC will potentially free some table entries.
      */
-    AtomHasher::Lookup lookup(tbchars, length);
-    AtomSet::AddPtr p = cx->runtime->atoms.lookupForAdd(lookup);
+    AtomSet& atoms = cx->runtime->atoms;
+    AtomSet::AddPtr p = atoms.lookupForAdd(AtomHasher::Lookup(tbchars, length));
     SkipRoot skipHash(cx, &p); /* Prevent the hash from being poisoned. */
     if (p) {
         RawAtom atom = p->asPtr();
@@ -276,7 +270,8 @@ AtomizeAndTakeOwnership(JSContext *cx, const jschar *tbchars, size_t length,
 
     RawAtom atom = flat->morphAtomizedStringIntoAtom();
 
-    if (!cx->runtime->atoms.relookupOrAdd(p, lookup, AtomStateEntry(atom, bool(ib)))) {
+    if (!atoms.relookupOrAdd(p, AtomHasher::Lookup(tbchars, length),
+                             AtomStateEntry(atom, bool(ib)))) {
         JS_ReportOutOfMemory(cx); /* SystemAllocPolicy does not report OOM. */
         return NULL;
     }
@@ -299,8 +294,9 @@ AtomizeAndCopyChars(JSContext *cx, const jschar *tbchars, size_t length, InternB
      * unchanged, we need to re-lookup the table position because a last-ditch
      * GC will potentially free some table entries.
      */
-    AtomHasher::Lookup lookup(tbchars, length);
-    AtomSet::AddPtr p = cx->runtime->atoms.lookupForAdd(lookup);
+
+    AtomSet& atoms = cx->runtime->atoms;
+    AtomSet::AddPtr p = atoms.lookupForAdd(AtomHasher::Lookup(tbchars, length));
     SkipRoot skipHash(cx, &p); /* Prevent the hash from being poisoned. */
     if (p) {
         RawAtom atom = p->asPtr();
@@ -316,7 +312,8 @@ AtomizeAndCopyChars(JSContext *cx, const jschar *tbchars, size_t length, InternB
 
     RawAtom atom = flat->morphAtomizedStringIntoAtom();
 
-    if (!cx->runtime->atoms.relookupOrAdd(p, lookup, AtomStateEntry(atom, bool(ib)))) {
+    if (!atoms.relookupOrAdd(p, AtomHasher::Lookup(tbchars, length),
+                             AtomStateEntry(atom, bool(ib)))) {
         JS_ReportOutOfMemory(cx); /* SystemAllocPolicy does not report OOM. */
         return NULL;
     }

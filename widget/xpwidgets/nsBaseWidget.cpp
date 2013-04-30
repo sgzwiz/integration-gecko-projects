@@ -558,17 +558,6 @@ NS_IMETHODIMP nsBaseWidget::SetSizeMode(int32_t aMode)
 
 //-------------------------------------------------------------------------
 //
-// Get the size mode (minimized, maximized, that sort of thing...)
-//
-//-------------------------------------------------------------------------
-NS_IMETHODIMP nsBaseWidget::GetSizeMode(int32_t* aMode)
-{
-  *aMode = mSizeMode;
-  return NS_OK;
-}
-
-//-------------------------------------------------------------------------
-//
 // Get the foreground color
 //
 //-------------------------------------------------------------------------
@@ -875,7 +864,7 @@ nsBaseWidget::ComputeShouldAccelerate(bool aDefault)
 CompositorParent* nsBaseWidget::NewCompositorParent(int aSurfaceWidth,
                                                     int aSurfaceHeight)
 {
-    return new CompositorParent(this, false, aSurfaceWidth, aSurfaceHeight);
+  return new CompositorParent(this, false, aSurfaceWidth, aSurfaceHeight);
 }
 
 void nsBaseWidget::CreateCompositor()
