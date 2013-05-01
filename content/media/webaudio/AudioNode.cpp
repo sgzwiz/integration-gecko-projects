@@ -41,8 +41,14 @@ AudioNode::Release()
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(AudioNode)
 NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
 
-AudioNode::AudioNode(AudioContext* aContext)
+AudioNode::AudioNode(AudioContext* aContext,
+                     uint32_t aChannelCount,
+                     ChannelCountMode aChannelCountMode,
+                     ChannelInterpretation aChannelInterpretation)
   : mContext(aContext)
+  , mChannelCount(aChannelCount)
+  , mChannelCountMode(aChannelCountMode)
+  , mChannelInterpretation(aChannelInterpretation)
 {
   MOZ_ASSERT(aContext);
   nsDOMEventTargetHelper::BindToOwner(aContext->GetParentObject());
@@ -175,6 +181,15 @@ AudioNode::SendThreeDPointParameterToStream(uint32_t aIndex, const ThreeDPoint& 
   AudioNodeStream* ns = static_cast<AudioNodeStream*>(mStream.get());
   MOZ_ASSERT(ns, "How come we don't have a stream here?");
   ns->SetThreeDPointParameter(aIndex, aValue);
+}
+
+void
+AudioNode::SendChannelMixingParametersToStream()
+{
+  AudioNodeStream* ns = static_cast<AudioNodeStream*>(mStream.get());
+  MOZ_ASSERT(ns, "How come we don't have a stream here?");
+  ns->SetChannelMixingParameters(mChannelCount, mChannelCountMode,
+                                 mChannelInterpretation);
 }
 
 void

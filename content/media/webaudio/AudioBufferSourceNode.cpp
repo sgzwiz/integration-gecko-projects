@@ -312,6 +312,11 @@ public:
       mPlaybackRate = mPlaybackRateTimeline.GetValueAtTime<TrackTicks>(aStream->GetCurrentPosition());
     }
 
+    // Make sure the playback rate if something our resampler can work with.
+    if (mPlaybackRate <= 0.0 || mPlaybackRate >= 1024) {
+      mPlaybackRate = 1.0;
+    }
+
     uint32_t currentOutSampleRate, currentInSampleRate;
     if (ShouldResample()) {
       SpeexResamplerState* resampler = Resampler(mChannels);
@@ -398,7 +403,10 @@ public:
 };
 
 AudioBufferSourceNode::AudioBufferSourceNode(AudioContext* aContext)
-  : AudioNode(aContext)
+  : AudioNode(aContext,
+              2,
+              ChannelCountMode::Max,
+              ChannelInterpretation::Speakers)
   , mLoopStart(0.0)
   , mLoopEnd(0.0)
   , mOffset(0.0)
