@@ -1,0 +1,47 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+interface nsICacheStorage;
+interface nsILoadContextInfo;
+interface nsIApplicationCache;
+
+/**
+ * Provides access to particual cache storages of the network URI cache.
+ */
+[scriptable, uuid(51aaa7f6-586e-41e9-8964-99e8e6fb55de)]
+interface nsICacheStorageService : nsISupports
+{
+  /**
+   * Get storage where entries will only remain in memory, never written
+   * to the disk.
+   *
+   * @param aLoadContextInfo
+   *    Information about the loading context, this focuses the storage JAR and
+   *    respects separate storage for private browsing.
+   */
+  nsICacheStorage memoryCacheStorage(in nsILoadContextInfo aLoadContextInfo);
+
+  /**
+   * Get storage where entries will be written to disk when not forbidden by
+   * response headers.
+   *
+   * @param aLookupAppCache
+   *    When set true (for top level document loading channels) app cache will
+   *    be first to check on to find entries in.
+   */
+  nsICacheStorage diskCacheStorage(in nsILoadContextInfo aLoadContextInfo,
+                                   in bool aLookupAppCache);
+
+  /**
+   * Get storage for a specified application cache obtained using some different
+   * mechanism.
+   *
+   * @param aApplicationCache
+   *    Mandatory reference to an existing application cache object.
+   */
+  nsICacheStorage appCacheStorage(in nsILoadContextInfo aLoadContextInfo,
+                                  in nsIApplicationCache aApplicationCache);
+};
