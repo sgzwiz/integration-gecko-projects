@@ -1566,9 +1566,9 @@ HTMLMediaElement::GetMozSampleRate(uint32_t* aMozSampleRate)
 }
 
 // Helper struct with arguments for our hash iterator.
-typedef struct {
+typedef struct MOZ_STACK_CLASS {
   JSContext* cx;
-  JSObject*  tags;
+  JS::HandleObject  tags;
   bool error;
 } MetadataIterCx;
 
@@ -2117,21 +2117,35 @@ HTMLMediaElement::WakeLockBoolWrapper::UpdateWakeLock()
 {
   if (!mOuter) {
     return;
-
   }
+
   bool playing = (!mValue && mCanPlay);
 
   if (playing) {
+    mOuter->WakeLockCreate();
+  } else {
+    mOuter->WakeLockRelease();
+  }
+}
+
+void
+HTMLMediaElement::WakeLockCreate()
+{
+  if (!mWakeLock) {
     nsCOMPtr<nsIPowerManagerService> pmService =
       do_GetService(POWERMANAGERSERVICE_CONTRACTID);
     NS_ENSURE_TRUE_VOID(pmService);
 
-    if (!mWakeLock) {
-      pmService->NewWakeLock(NS_LITERAL_STRING("cpu"),
-                             mOuter->OwnerDoc()->GetWindow(),
-                             getter_AddRefs(mWakeLock));
-    }
-  } else if (mWakeLock) {
+    pmService->NewWakeLock(NS_LITERAL_STRING("cpu"),
+                           OwnerDoc()->GetWindow(),
+                           getter_AddRefs(mWakeLock));
+  }
+}
+
+void
+HTMLMediaElement::WakeLockRelease()
+{
+  if (mWakeLock) {
     mWakeLock->Unlock();
     mWakeLock = nullptr;
   }

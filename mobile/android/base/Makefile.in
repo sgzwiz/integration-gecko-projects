@@ -73,10 +73,11 @@ FENNEC_JAVA_FILES = \
   CanvasDelegate.java \
   CheckableLinearLayout.java \
   ClickableWhenDisabledEditText.java \
-  SyncPreference.java \
+  CustomEditText.java \
   db/BrowserDB.java \
   db/LocalBrowserDB.java \
   db/DBUtils.java \
+  DataReportingNotification.java \
   Distribution.java \
   Divider.java \
   DoorHanger.java \
@@ -130,7 +131,7 @@ FENNEC_JAVA_FILES = \
   NotificationHandler.java \
   NotificationService.java \
   NSSBridge.java \
-  CustomEditText.java \
+  OrderedBroadcastHelper.java \
   PrefsHelper.java \
   PrivateDataPreference.java \
   PrivateTab.java \
@@ -149,10 +150,12 @@ FENNEC_JAVA_FILES = \
   SessionParser.java \
   SetupScreen.java \
   ShapedButton.java \
+  SharedPreferencesHelper.java \
   SiteIdentityPopup.java \
   SmsManager.java \
   SuggestClient.java \
   SurfaceBits.java \
+  SyncPreference.java \
   Tab.java \
   TabCounter.java \
   Tabs.java \
@@ -280,6 +283,7 @@ FENNEC_PP_JAVA_FILES = \
   $(NULL)
 
 FENNEC_PP_XML_FILES = \
+  res/xml/preferences_nonfragment.xml \
   res/xml/searchable.xml \
   $(NULL)
 
@@ -531,9 +535,11 @@ RES_VALUES_V14 = \
 
 RES_XML = \
   res/xml/preference_headers.xml \
+  res/xml/preferences_main.xml \
   res/xml/preferences_general.xml \
-  res/xml/preferences_privacy.xml \
   res/xml/preferences_content.xml \
+  res/xml/preferences_privacy.xml \
+  res/xml/preferences_datareporting.xml \
   $(SYNC_RES_XML) \
   $(NULL)
 
@@ -844,6 +850,7 @@ RES_DRAWABLE_MDPI_V11 = \
   res/drawable-mdpi-v11/alert_addon.png \
   res/drawable-mdpi-v11/alert_app.png \
   res/drawable-mdpi-v11/alert_download.png \
+  res/drawable-mdpi-v11/firefox_settings_alert.png \
   res/drawable-mdpi-v11/ic_menu_addons.png \
   res/drawable-mdpi-v11/ic_menu_apps.png \
   res/drawable-mdpi-v11/ic_menu_back.png \
@@ -869,6 +876,7 @@ RES_DRAWABLE_HDPI_V11 = \
   res/drawable-hdpi-v11/alert_addon.png \
   res/drawable-hdpi-v11/alert_app.png \
   res/drawable-hdpi-v11/alert_download.png \
+  res/drawable-hdpi-v11/firefox_settings_alert.png \
   res/drawable-hdpi-v11/ic_menu_addons.png \
   res/drawable-hdpi-v11/ic_menu_apps.png \
   res/drawable-hdpi-v11/ic_menu_back.png \
@@ -894,6 +902,7 @@ RES_DRAWABLE_XHDPI_V11 = \
   res/drawable-xhdpi-v11/alert_addon.png \
   res/drawable-xhdpi-v11/alert_app.png \
   res/drawable-xhdpi-v11/alert_download.png \
+  res/drawable-xhdpi-v11/firefox_settings_alert.png \
   res/drawable-xhdpi-v11/ic_menu_addons.png \
   res/drawable-xhdpi-v11/ic_menu_apps.png \
   res/drawable-xhdpi-v11/ic_menu_back.png \

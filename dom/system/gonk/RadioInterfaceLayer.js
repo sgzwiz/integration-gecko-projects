@@ -1362,7 +1362,7 @@ RadioInterfaceLayer.prototype = {
     let data = {
       number: call.number,
       duration: duration,
-      direction: call.direction
+      direction: call.isOutgoing ? "outgoing" : "incoming"
     };
     gSystemMessenger.broadcastMessage("telephony-call-ended", data);
     this.updateCallAudioState(call);
@@ -1506,7 +1506,7 @@ RadioInterfaceLayer.prototype = {
       receiver:       aDomMessage.receiver,
       body:           aDomMessage.body,
       messageClass:   aDomMessage.messageClass,
-      timestamp:      aDomMessage.timestamp.getTime(),
+      timestamp:      aDomMessage.timestamp,
       read:           aDomMessage.read
     });
   },
