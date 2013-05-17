@@ -48,6 +48,7 @@ webidl_files = \
   CSSStyleSheet.webidl \
   CSSValue.webidl \
   CSSValueList.webidl \
+  DataContainerEvent.webidl \
   DelayNode.webidl \
   DesktopNotification.webidl \
   DeviceMotionEvent.webidl \
@@ -161,6 +162,7 @@ webidl_files = \
   Location.webidl \
   MediaError.webidl \
   MediaStream.webidl \
+  MediaStreamEvent.webidl \
   MediaStreamTrack.webidl \
   MessageEvent.webidl \
   MouseEvent.webidl \
@@ -177,6 +179,8 @@ webidl_files = \
   Notification.webidl \
   NotifyAudioAvailableEvent.webidl \
   NotifyPaintEvent.webidl \
+  OfflineAudioCompletionEvent.webidl \
+  OfflineAudioContext.webidl \
   PaintRequest.webidl \
   PaintRequestList.webidl \
   PannerNode.webidl \
@@ -190,6 +194,11 @@ webidl_files = \
   Rect.webidl \
   RGBColor.webidl \
   RTCConfiguration.webidl \
+  RTCDataChannelEvent.webidl \
+  RTCIceCandidate.webidl \
+  RTCPeerConnection.webidl \
+  RTCPeerConnectionIceEvent.webidl \
+  RTCSessionDescription.webidl \
   Screen.webidl \
   ScriptProcessorNode.webidl \
   ScrollAreaEvent.webidl \

@@ -1825,6 +1825,8 @@ pref("hangmonitor.timeout", 0);
 pref("plugins.load_appdir_plugins", false);
 // If true, plugins will be click to play
 pref("plugins.click_to_play", false);
+// The default value for nsIPluginTag.enabledState (STATE_ENABLED = 2)
+pref("plugin.default.state", 2);
 
 #ifndef DEBUG
 // How long a plugin is allowed to process a synchronous IPC message
@@ -4079,6 +4081,8 @@ pref("dom.sms.requestStatusReport", true);
 
 // WebContacts
 pref("dom.mozContacts.enabled", false);
+pref("dom.navigator-property.disable.mozContacts", true);
+pref("dom.global-constructor.disable.mozContact", true);
 
 // WebAlarms
 pref("dom.mozAlarms.enabled", false);
@@ -4091,6 +4095,7 @@ pref("dom.mozNetworkStats.enabled", false);
 
 // WebSettings
 pref("dom.mozSettings.enabled", false);
+pref("dom.navigator-property.disable.mozSettings", true);
 pref("dom.mozPermissionSettings.enabled", false);
 
 // W3C touch events

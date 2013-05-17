@@ -38,9 +38,6 @@ DOMCI_CLASS(DeviceMotionEvent)
 DOMCI_CLASS(DeviceAcceleration)
 DOMCI_CLASS(DeviceRotationRate)
 
-// HTML classes
-DOMCI_CLASS(HTMLDocument)
-
 // HTML element classes
 DOMCI_CLASS(HTMLFormElement)
 
@@ -245,5 +242,4 @@ DOMCI_CLASS(MozTimeManager)
 
 #ifdef MOZ_WEBRTC
 DOMCI_CLASS(DataChannel)
-DOMCI_CLASS(RTCPeerConnection)
 #endif
