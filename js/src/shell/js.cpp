@@ -3880,6 +3880,10 @@ static JSFunctionSpecWithHelp shell_functions[] = {
 "  Return a new object obj for which typeof obj === \"undefined\", obj == null\n"
 "  and obj == undefined (and vice versa for !=), and ToBoolean(obj) === false.\n"),
 
+    JS_FS_HELP_END
+};
+
+static JSFunctionSpecWithHelp self_hosting_functions[] = {
     JS_FN_HELP("getSelfHostedValue", GetSelfHostedValue, 1, 0,
 "getSelfHostedValue()",
 "  Get a self-hosted value by its name. Note that these values don't get \n"
@@ -3887,6 +3891,7 @@ static JSFunctionSpecWithHelp shell_functions[] = {
 
     JS_FS_HELP_END
 };
+
 #ifdef MOZ_PROFILING
 # define PROFILING_FUNCTION_COUNT 5
 # ifdef MOZ_CALLGRIND
@@ -4819,11 +4824,18 @@ NewGlobalObject(JSContext *cx, JSObject *sameZoneAs)
         if (!JS::RegisterPerfMeasurement(cx, glob))
             return NULL;
         if (!JS_DefineFunctionsWithHelp(cx, glob, shell_functions) ||
-            !JS_DefineProfilingFunctions(cx, glob)) {
+            !JS_DefineProfilingFunctions(cx, glob))
+        {
             return NULL;
         }
         if (!js::DefineTestingFunctions(cx, glob))
             return NULL;
+
+        if (getenv("MOZ_SELFHOSTEDJS") &&
+            !JS_DefineFunctionsWithHelp(cx, glob, self_hosting_functions))
+        {
+            return NULL;
+        }
 
         RootedObject it(cx, JS_DefineObject(cx, glob, "it", &its_class, NULL, 0));
         if (!it)
@@ -4842,7 +4854,9 @@ NewGlobalObject(JSContext *cx, JSObject *sameZoneAs)
                                (JSPropertyOp)its_get_customNative,
                                (JSStrictPropertyOp)its_set_customNative,
                                JSPROP_NATIVE_ACCESSORS))
+        {
             return NULL;
+        }
 
         /* Initialize FakeDOMObject. */
         static js::DOMCallbacks DOMcallbacks = {
@@ -5248,7 +5262,6 @@ main(int argc, char **argv, char **envp)
         || !op.addBoolOption('D', "dump-bytecode", "Dump bytecode with exec count for all scripts")
         || !op.addBoolOption('b', "print-timing", "Print sub-ms runtime for each file that's run")
 #ifdef DEBUG
-        || !op.addIntOption('A', "oom-after", "COUNT", "Trigger OOM after COUNT allocations", -1)
         || !op.addBoolOption('O', "print-alloc", "Print the number of allocations at exit")
 #endif
         || !op.addOptionalStringArg("script", "A script to execute (after all options)")
@@ -5330,8 +5343,6 @@ main(int argc, char **argv, char **envp)
      * Process OOM options as early as possible so that we can observe as many
      * allocations as possible.
      */
-    if (op.getIntOption('A') >= 0)
-        OOM_maxAllocations = op.getIntOption('A');
     if (op.getBoolOption('O'))
         OOM_printAllocationCount = true;
 

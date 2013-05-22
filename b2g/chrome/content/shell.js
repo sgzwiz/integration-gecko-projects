@@ -1004,7 +1004,15 @@ let RemoteDebugger = {
     if (!DebuggerServer.initialized) {
       // Ask for remote connections.
       DebuggerServer.init(this.prompt.bind(this));
-      DebuggerServer.addBrowserActors();
+      DebuggerServer.addActors("resource://gre/modules/devtools/server/actors/webbrowser.js");
+#ifndef MOZ_WIDGET_GONK
+      DebuggerServer.addActors("resource://gre/modules/devtools/server/actors/webconsole.js");
+      DebuggerServer.addActors("resource://gre/modules/devtools/server/actors/gcli.js");
+#endif
+      if ("nsIProfiler" in Ci) {
+        DebuggerServer.addActors("resource://gre/modules/devtools/server/actors/profiler.js");
+      }
+      DebuggerServer.addActors("resource://gre/modules/devtools/server/actors/styleeditor.js");
       DebuggerServer.addActors('chrome://browser/content/dbg-browser-actors.js');
       DebuggerServer.addActors('chrome://browser/content/dbg-webapps-actors.js');
     }
@@ -1209,3 +1217,19 @@ Services.obs.addObserver(function(aSubject, aTopic, aData) {
     pageURL: data.pageURL
   });
 }, "activity-done", false);
+
+#ifdef MOZ_WIDGET_GONK
+// Devices don't have all the same partition size for /cache where we
+// store the http cache.
+(function setHTTPCacheSize() {
+  let path = Services.prefs.getCharPref("browser.cache.disk.parent_directory");
+  let volumeService = Cc["@mozilla.org/telephony/volume-service;1"]
+                        .getService(Ci.nsIVolumeService);
+
+  let stats = volumeService.createOrGetVolumeByPath(path).getStats();
+
+  // We must set the size in KB, and keep a bit of free space.
+  let size = Math.floor(stats.totalBytes / 1024) - 1024;
+  Services.prefs.setIntPref("browser.cache.disk.capacity", size);
+}) ()
+#endif

@@ -25,6 +25,8 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/CallbackObject.h"
 
+class nsPIDOMWindow;
+
 namespace mozilla {
 namespace dom {
 
@@ -1704,33 +1706,32 @@ template<typename T>
 class MOZ_STACK_CLASS SequenceRooter : private JS::CustomAutoRooter
 {
 public:
-  explicit SequenceRooter(JSContext *cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-    : JS::CustomAutoRooter(cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
-      mSequenceType(eNone)
+  SequenceRooter(JSContext *aCx, FallibleTArray<T>* aSequence
+                 MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+    : JS::CustomAutoRooter(aCx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
+      mFallibleArray(aSequence),
+      mSequenceType(eFallibleArray)
   {
   }
 
-  void SetSequence(FallibleTArray<T>* aSequence)
+  SequenceRooter(JSContext *aCx, InfallibleTArray<T>* aSequence
+                 MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+    : JS::CustomAutoRooter(aCx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
+      mInfallibleArray(aSequence),
+      mSequenceType(eInfallibleArray)
   {
-    mFallibleArray = aSequence;
-    mSequenceType = eFallibleArray;
   }
 
-  void SetSequence(InfallibleTArray<T>* aSequence)
+  SequenceRooter(JSContext *aCx, Nullable<nsTArray<T> >* aSequence
+                 MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+    : JS::CustomAutoRooter(aCx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
+      mNullableArray(aSequence),
+      mSequenceType(eNullableArray)
   {
-    mInfallibleArray = aSequence;
-    mSequenceType = eInfallibleArray;
-  }
-
-  void SetSequence(Nullable<nsTArray<T>>* aSequence)
-  {
-    mNullableArray = aSequence;
-    mSequenceType = eNullableArray;
   }
 
  private:
   enum SequenceType {
-    eNone,
     eInfallibleArray,
     eFallibleArray,
     eNullableArray
@@ -1742,7 +1743,8 @@ public:
       DoTraceSequence(trc, *mFallibleArray);
     } else if (mSequenceType == eInfallibleArray) {
       DoTraceSequence(trc, *mInfallibleArray);
-    } else if (mSequenceType == eNullableArray) {
+    } else {
+      MOZ_ASSERT(mSequenceType == eNullableArray);
       if (!mNullableArray->IsNull()) {
         DoTraceSequence(trc, mNullableArray->Value());
       }
@@ -1759,51 +1761,39 @@ public:
 };
 
 template<typename T>
-class MOZ_STACK_CLASS DictionaryRooter : JS::CustomAutoRooter
+class MOZ_STACK_CLASS RootedDictionary : public T,
+                                         private JS::CustomAutoRooter
 {
 public:
-  explicit DictionaryRooter(JSContext *cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-    : JS::CustomAutoRooter(cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
-      mDictionaryType(eNone)
+  RootedDictionary(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM) :
+    T(),
+    JS::CustomAutoRooter(cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT)
   {
   }
 
-  void SetDictionary(T* aDictionary)
+  virtual void trace(JSTracer *trc) MOZ_OVERRIDE
   {
-    mDictionary = aDictionary;
-    mDictionaryType = eDictionary;
+    this->TraceDictionary(trc);
+  }
+};
+
+template<typename T>
+class MOZ_STACK_CLASS NullableRootedDictionary : public Nullable<T>,
+                                                 private JS::CustomAutoRooter
+{
+public:
+  NullableRootedDictionary(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM) :
+    Nullable<T>(),
+    JS::CustomAutoRooter(cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT)
+  {
   }
 
-  void SetDictionary(Nullable<T>* aDictionary)
+  virtual void trace(JSTracer *trc) MOZ_OVERRIDE
   {
-    mNullableDictionary = aDictionary;
-    mDictionaryType = eNullableDictionary;
-  }
-
-private:
-  enum DictionaryType {
-    eDictionary,
-    eNullableDictionary,
-    eNone
-  };
-
-  virtual void trace(JSTracer *trc) MOZ_OVERRIDE {
-    if (mDictionaryType == eDictionary) {
-      mDictionary->TraceDictionary(trc);
-    } else {
-      MOZ_ASSERT(mDictionaryType == eNullableDictionary);
-      if (!mNullableDictionary->IsNull()) {
-        mNullableDictionary->Value().TraceDictionary(trc);
-      }
+    if (!this->IsNull()) {
+      this->Value().TraceDictionary(trc);
     }
   }
-
-  union {
-    T* mDictionary;
-    Nullable<T>* mNullableDictionary;
-  };
-
-  DictionaryType mDictionaryType;
 };
 
 inline bool
@@ -2002,6 +1992,13 @@ GetUnforgeableHolder(JSObject* aGlobal, prototypes::ID aId)
   return &js::GetReservedSlot(interfaceProto,
                               DOM_INTERFACE_PROTO_SLOTS_BASE).toObject();
 }
+
+// Given a JSObject* that represents the chrome side of a JS-implemented WebIDL
+// interface, get the nsPIDOMWindow corresponding to the content side, if any.
+// A false return means an exception was thrown.
+bool
+GetWindowForJSImplementedObject(JSContext* cx, JS::Handle<JSObject*> obj,
+                                nsPIDOMWindow** window);
 
 } // namespace dom
 } // namespace mozilla
