@@ -202,6 +202,8 @@ pref("media.peerconnection.noise", 1);
 pref("media.navigator.enabled", true);
 #endif
 #endif
+// TextTrack support
+pref("media.webvtt.enabled", false);
 
 #ifdef MOZ_WEBSPEECH
 pref("media.webspeech.recognition.enable", false);
@@ -749,6 +751,9 @@ pref("dom.experimental_forms", false);
 // Don't enable <input type=range> yet:
 pref("dom.experimental_forms_range", true);
 
+// Don't enable <input type=color> yet:
+pref("dom.forms.color", false);
+
 // Enables system messages and activities
 pref("dom.sysmsg.enabled", false);
 
@@ -780,8 +785,6 @@ pref("javascript.options.strict",           false);
 #ifdef DEBUG
 pref("javascript.options.strict.debug",     true);
 #endif
-pref("javascript.options.methodjit.content", false);
-pref("javascript.options.methodjit.chrome",  false);
 pref("javascript.options.baselinejit.content", true);
 pref("javascript.options.baselinejit.chrome",  true);
 pref("javascript.options.ion.content",      true);
@@ -789,7 +792,6 @@ pref("javascript.options.asmjs",            true);
 pref("javascript.options.ion.parallel_compilation", true);
 pref("javascript.options.pccounts.content", false);
 pref("javascript.options.pccounts.chrome",  false);
-pref("javascript.options.methodjit_always", false);
 pref("javascript.options.jit_hardening", true);
 pref("javascript.options.typeinference", true);
 // This preference limits the memory usage of javascript.
@@ -3990,9 +3992,7 @@ pref("layers.offmainthreadcomposition.enabled", false);
 // use with tests.
 pref("layers.offmainthreadcomposition.testing.enabled", false);
 // Whether to animate simple opacity and transforms on the compositor
-pref("layers.offmainthreadcomposition.animate-opacity", false);
-pref("layers.offmainthreadcomposition.animate-transform", false);
-pref("layers.offmainthreadcomposition.log-animations", false);
+pref("layers.offmainthreadcomposition.async-animations", false);
 
 #ifdef MOZ_X11
 #ifdef MOZ_WIDGET_GTK2

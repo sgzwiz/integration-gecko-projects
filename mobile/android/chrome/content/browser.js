@@ -2450,6 +2450,8 @@ function Tab(aURL, aParams) {
   this.originalURI = null;
   this.savedArticle = null;
   this.hasTouchListener = false;
+  this.browserWidth = 0;
+  this.browserHeight = 0;
 
   this.create(aURL, aParams);
 }
@@ -4386,8 +4388,7 @@ var BrowserEventHandler = {
        * - It's a select element showing multiple rows
        */
       if (checkElem) {
-        if (((elem.scrollHeight > elem.clientHeight) ||
-             (elem.scrollWidth > elem.clientWidth)) &&
+        if ((elem.scrollTopMax > 0 || elem.scrollLeftMax > 0) &&
             (this._hasScrollableOverflow(elem) ||
              elem.mozMatchesSelector("html, body, textarea")) ||
             (elem instanceof HTMLSelectElement && (elem.size > 1 || elem.multiple))) {
@@ -4418,10 +4419,10 @@ var BrowserEventHandler = {
 
   _elementCanScroll: function(elem, x, y) {
     let scrollX = (x < 0 && elem.scrollLeft > 0)
-               || (x > 0 && elem.scrollLeft < (elem.scrollWidth - elem.clientWidth));
+               || (x > 0 && elem.scrollLeft < elem.scrollLeftMax);
 
     let scrollY = (y < 0 && elem.scrollTop > 0)
-               || (y > 0 && elem.scrollTop < (elem.scrollHeight - elem.clientHeight));
+               || (y > 0 && elem.scrollTop < elem.scrollTopMax);
 
     return scrollX || scrollY;
   }
@@ -4895,7 +4896,7 @@ var FormAssistant = {
           if (hasResults)
             return;
 
-          if (!this._showValidationMessage(currentElement))
+          if (this._showValidationMessage(currentElement))
             return;
 
           // If we're not showing autocomplete suggestions, hide the form assist popup
@@ -4944,8 +4945,8 @@ var FormAssistant = {
 
         // Supply a label and value, since they can differ for datalist suggestions
         suggestions.push({ label: value, value: value });
-        aCallback(suggestions);
       }
+      aCallback(suggestions);
     };
 
     this._formAutoCompleteService.autoCompleteSearchAsync(aElement.name || aElement.id,

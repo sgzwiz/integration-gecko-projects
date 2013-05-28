@@ -38,6 +38,7 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsCSSRendering.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsThemeConstants.h"
 #include "nsPIDOMWindow.h"
 #include "nsIBaseWindow.h"
@@ -118,14 +119,12 @@ typedef FrameMetrics::ViewID ViewID;
 
 static ViewID sScrollIdCounter = FrameMetrics::START_SCROLL_ID;
 
-#ifdef MOZ_FLEXBOX
 // These are indices into kDisplayKTable.  They'll be initialized
 // the first time that FlexboxEnabledPrefChangeCallback() is invoked.
 static int32_t sIndexOfFlexInDisplayTable;
 static int32_t sIndexOfInlineFlexInDisplayTable;
 // This tracks whether those ^^ indices have been initialized
 static bool sAreFlexKeywordIndicesInitialized = false;
-#endif // MOZ_FLEXBOX
 
 typedef nsDataHashtable<nsUint64HashKey, nsIContent*> ContentMap;
 static ContentMap* sContentMap = nullptr;
@@ -140,7 +139,6 @@ static ContentMap& GetContentMap() {
 // When the pref "layout.css.flexbox.enabled" changes, this function is invoked
 // to let us update kDisplayKTable, to selectively disable or restore the
 // entries for "flex" and "inline-flex" in that table.
-#ifdef MOZ_FLEXBOX
 static int
 FlexboxEnabledPrefChangeCallback(const char* aPrefName, void* aClosure)
 {
@@ -178,7 +176,6 @@ FlexboxEnabledPrefChangeCallback(const char* aPrefName, void* aClosure)
 
   return 0;
 }
-#endif // MOZ_FLEXBOX
 
 template <class AnimationsOrTransitions>
 static AnimationsOrTransitions*
@@ -325,34 +322,18 @@ nsLayoutUtils::Are3DTransformsEnabled()
 }
 
 bool
-nsLayoutUtils::AreOpacityAnimationsEnabled()
+nsLayoutUtils::AreAsyncAnimationsEnabled()
 {
-  static bool sAreOpacityAnimationsEnabled;
-  static bool sOpacityPrefCached = false;
+  static bool sAreAsyncAnimationsEnabled;
+  static bool sAsyncPrefCached = false;
 
-  if (!sOpacityPrefCached) {
-    sOpacityPrefCached = true;
-    Preferences::AddBoolVarCache(&sAreOpacityAnimationsEnabled,
-                                 "layers.offmainthreadcomposition.animate-opacity");
+  if (!sAsyncPrefCached) {
+    sAsyncPrefCached = true;
+    Preferences::AddBoolVarCache(&sAreAsyncAnimationsEnabled,
+                                 "layers.offmainthreadcomposition.async-animations");
   }
 
-  return sAreOpacityAnimationsEnabled &&
-    gfxPlatform::OffMainThreadCompositingEnabled();
-}
-
-bool
-nsLayoutUtils::AreTransformAnimationsEnabled()
-{
-  static bool sAreTransformAnimationsEnabled;
-  static bool sTransformPrefCached = false;
-
-  if (!sTransformPrefCached) {
-    sTransformPrefCached = true;
-    Preferences::AddBoolVarCache(&sAreTransformAnimationsEnabled,
-                                 "layers.offmainthreadcomposition.animate-transform");
-  }
-
-  return sAreTransformAnimationsEnabled &&
+  return sAreAsyncAnimationsEnabled &&
     gfxPlatform::OffMainThreadCompositingEnabled();
 }
 
@@ -2086,9 +2067,6 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
   if (aFlags & PAINT_NO_COMPOSITE) {
     flags |= nsDisplayList::PAINT_NO_COMPOSITE;
   }
-  if (aFlags & PAINT_NO_CLEAR_INVALIDATIONS) {
-    flags |= nsDisplayList::PAINT_NO_CLEAR_INVALIDATIONS;
-  }
 
   list.PaintRoot(&builder, aRenderingContext, flags);
 
@@ -3066,7 +3044,6 @@ nsLayoutUtils::ComputeSizeWithIntrinsicDimensions(
   bool isFlexItem = aFrame->IsFlexItem();
   bool isHorizontalFlexItem = false;
 
-#ifdef MOZ_FLEXBOX
   if (isFlexItem) {
     // Flex items use their "flex-basis" property in place of their main-size
     // property (e.g. "width") for sizing purposes, *unless* they have
@@ -3098,8 +3075,6 @@ nsLayoutUtils::ComputeSizeWithIntrinsicDimensions(
       }
     }
   }
-#endif // MOZ_FLEXBOX
-
 
   // Handle intrinsic sizes and their interaction with
   // {min-,max-,}{width,height} according to the rules in
@@ -4958,11 +4933,9 @@ nsLayoutUtils::Initialize()
   Preferences::AddBoolVarCache(&sInvalidationDebuggingIsEnabled,
                                "nglayout.debug.invalidation");
 
-#ifdef MOZ_FLEXBOX
   Preferences::RegisterCallback(FlexboxEnabledPrefChangeCallback,
                                 FLEXBOX_ENABLED_PREF_NAME);
   FlexboxEnabledPrefChangeCallback(FLEXBOX_ENABLED_PREF_NAME, nullptr);
-#endif // MOZ_FLEXBOX
 }
 
 /* static */
@@ -4974,10 +4947,8 @@ nsLayoutUtils::Shutdown()
     sContentMap = nullptr;
   }
 
-#ifdef MOZ_FLEXBOX
   Preferences::UnregisterCallback(FlexboxEnabledPrefChangeCallback,
                                   FLEXBOX_ENABLED_PREF_NAME);
-#endif // MOZ_FLEXBOX
 }
 
 /* static */

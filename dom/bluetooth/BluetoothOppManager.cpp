@@ -439,6 +439,7 @@ BluetoothOppManager::AfterFirstPut()
   sSentFileLength = 0;
   sWaitingToSendPutFinal = false;
   mSuccessFlag = false;
+  mBodySegmentLength = 0;
 }
 
 void
@@ -710,19 +711,22 @@ BluetoothOppManager::ServerDataHandler(UnixSocketRawData* aMessage)
     ReplyToConnect();
     AfterOppConnected();
     mIsServer = true;
-  } else if (opCode == ObexRequestCode::Disconnect ||
-             opCode == ObexRequestCode::Abort) {
-    // Section 3.3.2 "Disconnect", IrOBEX 1.2
+  } else if (opCode == ObexRequestCode::Abort) {
     // Section 3.3.5 "Abort", IrOBEX 1.2
     // [opcode:1][length:2][Headers:var]
     ParseHeaders(&aMessage->mData[3],
                 receivedLength - 3,
                 &pktHeaders);
-    ReplyToDisconnect();
+    ReplyToDisconnectOrAbort();
+    DeleteReceivedFile();
+  } else if (opCode == ObexRequestCode::Disconnect) {
+    // Section 3.3.2 "Disconnect", IrOBEX 1.2
+    // [opcode:1][length:2][Headers:var]
+    ParseHeaders(&aMessage->mData[3],
+                receivedLength - 3,
+                &pktHeaders);
+    ReplyToDisconnectOrAbort();
     AfterOppDisconnected();
-    if (opCode == ObexRequestCode::Abort) {
-      DeleteReceivedFile();
-    }
     FileTransferComplete();
   } else if (opCode == ObexRequestCode::Put ||
              opCode == ObexRequestCode::PutFinal) {
@@ -768,7 +772,7 @@ BluetoothOppManager::ServerDataHandler(UnixSocketRawData* aMessage)
 
     // When we cancel the transfer, delete the file and notify complemention
     if (mAbortFlag) {
-      ReplyToPut(mPutFinalFlag, !mAbortFlag);
+      ReplyToPut(mPutFinalFlag, false);
       sSentFileLength += mBodySegmentLength;
       DeleteReceivedFile();
       FileTransferComplete();
@@ -1143,11 +1147,12 @@ BluetoothOppManager::ReplyToConnect()
 }
 
 void
-BluetoothOppManager::ReplyToDisconnect()
+BluetoothOppManager::ReplyToDisconnectOrAbort()
 {
   if (!mConnected) return;
 
-  // Section 3.3.2 "Disconnect", IrOBEX 1.2
+  // Section 3.3.2 "Disconnect" and Section 3.3.5 "Abort", IrOBEX 1.2
+  // The format of response packet of "Disconnect" and "Abort" are the same
   // [opcode:1][length:2][Headers:var]
   uint8_t req[255];
   int index = 3;

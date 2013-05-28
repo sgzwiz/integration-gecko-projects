@@ -23,6 +23,7 @@
 
 #include "nsLayoutStatics.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsCCUncollectableMarker.h"
 #include "nsCycleCollectionNoteRootCallback.h"
 #include "nsCycleCollectorUtils.h"
@@ -344,7 +345,7 @@ XPCJSRuntime::AssertNoObjectsToTrace(void* aPossibleJSHolder)
 {
     nsScriptObjectTracer* tracer = mJSHolders.Get(aPossibleJSHolder);
     if (tracer && tracer->Trace) {
-        tracer->Trace(aPossibleJSHolder, AssertNoGcThing, nullptr);
+        tracer->Trace(aPossibleJSHolder, TraceCallbackFunc(AssertNoGcThing), nullptr);
     }
 }
 #endif
@@ -410,16 +411,29 @@ void XPCJSRuntime::TraceGrayJS(JSTracer* trc, void* data)
     self->TraceXPConnectRoots(trc);
 }
 
-static void
-TraceJSObject(void *aScriptThing, const char *name, void *aClosure)
+struct JsGcTracer : public TraceCallbacks
 {
-    JS_CallGenericTracer(static_cast<JSTracer*>(aClosure), aScriptThing, name);
-}
+    virtual void Trace(JS::Value *p, const char *name, void *closure) const MOZ_OVERRIDE {
+        JS_CallValueTracer(static_cast<JSTracer*>(closure), p, name);
+    }
+    virtual void Trace(jsid *p, const char *name, void *closure) const MOZ_OVERRIDE {
+        JS_CallIdTracer(static_cast<JSTracer*>(closure), p, name);
+    }
+    virtual void Trace(JSObject **p, const char *name, void *closure) const MOZ_OVERRIDE {
+        JS_CallObjectTracer(static_cast<JSTracer*>(closure), p, name);
+    }
+    virtual void Trace(JSString **p, const char *name, void *closure) const MOZ_OVERRIDE {
+        JS_CallStringTracer(static_cast<JSTracer*>(closure), p, name);
+    }
+    virtual void Trace(JSScript **p, const char *name, void *closure) const MOZ_OVERRIDE {
+        JS_CallScriptTracer(static_cast<JSTracer*>(closure), p, name);
+    }
+};
 
 static PLDHashOperator
 TraceJSHolder(void *holder, nsScriptObjectTracer *&tracer, void *arg)
 {
-    tracer->Trace(holder, TraceJSObject, arg);
+    tracer->Trace(holder, JsGcTracer(), arg);
 
     return PL_DHASH_NEXT;
 }
@@ -429,7 +443,7 @@ void XPCJSRuntime::TraceXPConnectRoots(JSTracer *trc)
     JSContext *iter = nullptr;
     while (JSContext *acx = JS_ContextIterator(GetJSRuntime(), &iter)) {
         MOZ_ASSERT(js::HasUnrootedGlobal(acx));
-        if (JSObject *global = JS_GetGlobalObject(acx))
+        if (JSObject *global = js::GetDefaultGlobalForContext(acx))
             JS_CallObjectTracer(trc, &global, "XPC global object");
     }
 
@@ -473,8 +487,7 @@ NoteJSHolder(void *holder, nsScriptObjectTracer *&tracer, void *arg)
     Closure *closure = static_cast<Closure*>(arg);
 
     closure->cycleCollectionEnabled = false;
-    tracer->Trace(holder, CheckParticipatesInCycleCollection,
-                  closure);
+    tracer->Trace(holder, TraceCallbackFunc(CheckParticipatesInCycleCollection), closure);
     if (closure->cycleCollectionEnabled)
         closure->cb->NoteNativeRoot(holder, tracer);
 
@@ -543,7 +556,7 @@ XPCJSRuntime::AddXPConnectRoots(nsCycleCollectionNoteRootCallback &cb)
     while ((acx = JS_ContextIterator(GetJSRuntime(), &iter))) {
         // Add the context to the CC graph only if traversing it would
         // end up doing something.
-        JSObject* global = JS_GetGlobalObject(acx);
+        JSObject* global = js::GetDefaultGlobalForContext(acx);
         if (global && xpc_IsGrayGCThing(global)) {
             cb.NoteNativeRoot(acx, nsXPConnect::JSContextParticipant());
         }
@@ -1872,11 +1885,6 @@ ReportCompartmentStats(const JS::CompartmentStats &cStats,
                    cStats.scriptData,
                    "Memory allocated for various variable-length tables in JSScript.");
 
-    ZCREPORT_BYTES(cJSPathPrefix + NS_LITERAL_CSTRING("jaeger-data"),
-                   cStats.jaegerData,
-                   "Memory used by the JaegerMonkey JIT for compilation data: "
-                   "JITScripts, native maps, and inline cache structs.");
-
     ZCREPORT_BYTES(cJSPathPrefix + NS_LITERAL_CSTRING("baseline/data"),
                    cStats.baselineData,
                    "Memory used by the Baseline JIT for compilation data: "
@@ -2019,10 +2027,6 @@ ReportJSRuntimeExplicitTreeStats(const JS::RuntimeStats &rtStats,
                   nsIMemoryReporter::KIND_HEAP, rtStats.runtime.temporary,
                   "Memory held transiently in JSRuntime and used during "
                   "compilation.  It mostly holds parse nodes.");
-
-    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/code/jaeger"),
-                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.code.jaeger,
-                  "Memory used by the JaegerMonkey JIT to hold generated code.");
 
     RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/code/ion"),
                   nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.code.ion,
@@ -2828,22 +2832,21 @@ bool InternStaticDictionaryJSVals(JSContext* aCx);
 JSBool
 XPCJSRuntime::OnJSContextNew(JSContext *cx)
 {
+    // If we were the first cx ever created (like the SafeJSContext), the caller
+    // would have had no way to enter a request. Enter one now before doing the
+    // rest of the cx setup.
+    JSAutoRequest ar(cx);
+
     // if it is our first context then we need to generate our string ids
     if (JSID_IS_VOID(mStrIDs[0])) {
-        JS_SetGCParameterForThread(cx, JSGC_MAX_CODE_CACHE_BYTES, 16 * 1024 * 1024);
-        {
-            // Scope the JSAutoRequest so it goes out of scope before calling
-            // mozilla::dom::binding::DefineStaticJSVals.
-            JSAutoRequest ar(cx);
-            RootedString str(cx);
-            for (unsigned i = 0; i < IDX_TOTAL_COUNT; i++) {
-                str = JS_InternString(cx, mStrings[i]);
-                if (!str || !JS_ValueToId(cx, STRING_TO_JSVAL(str), &mStrIDs[i])) {
-                    mStrIDs[0] = JSID_VOID;
-                    return false;
-                }
-                mStrJSVals[i] = STRING_TO_JSVAL(str);
+        RootedString str(cx);
+        for (unsigned i = 0; i < IDX_TOTAL_COUNT; i++) {
+            str = JS_InternString(cx, mStrings[i]);
+            if (!str || !JS_ValueToId(cx, STRING_TO_JSVAL(str), &mStrIDs[i])) {
+                mStrIDs[0] = JSID_VOID;
+                return false;
             }
+            mStrJSVals[i] = STRING_TO_JSVAL(str);
         }
 
         if (!mozilla::dom::DefineStaticJSVals(cx) ||
@@ -3032,7 +3035,6 @@ XPCJSRuntime::GetJunkScope()
         AutoSafeJSContext cx;
         SandboxOptions options(cx);
         options.sandboxName.AssignASCII("XPConnect Junk Compartment");
-        JSAutoRequest ac(cx);
         RootedValue v(cx);
         nsresult rv = xpc_CreateSandboxObject(cx, v.address(),
                                               nsContentUtils::GetSystemPrincipal(),
@@ -3052,8 +3054,7 @@ XPCJSRuntime::DeleteJunkScope()
     if(!mJunkScope)
         return;
 
-    JSContext *cx = mJSContextStack->GetSafeJSContext();
-    JSAutoRequest ac(cx);
+    AutoSafeJSContext cx;
     JS_RemoveObjectRoot(cx, &mJunkScope);
     mJunkScope = nullptr;
 }

@@ -62,6 +62,7 @@
 #include "nsIDOMEvent.h"
 #include "nsIDOMEventListener.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsDOMWindowUtils.h"
 #include "nsIDOMGlobalPropertyInitializer.h"
 #include "mozilla/Preferences.h"
@@ -192,7 +193,6 @@
 #include "nsIDOMSVGAnimatedInteger.h"
 #include "nsIDOMSVGAnimatedNumber.h"
 #include "nsIDOMSVGAnimatedString.h"
-#include "nsIDOMTimeEvent.h"
 #include "nsIDOMSVGLength.h"
 #include "nsIDOMSVGNumber.h"
 
@@ -273,7 +273,6 @@ using mozilla::dom::workers::ResolveWorkerClasses;
 #include "nsIDOMMozVoicemail.h"
 #include "nsIDOMIccManager.h"
 #include "nsIDOMMozCellBroadcast.h"
-#include "nsIDOMMozCellBroadcastEvent.h"
 #include "nsIDOMMobileConnection.h"
 #endif // MOZ_B2G_RIL
 
@@ -616,9 +615,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
   NS_DEFINE_CLASSINFO_DATA(CSSSupportsRule, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-
-  NS_DEFINE_CLASSINFO_DATA(TimeEvent, nsEventSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
   // other SVG classes
@@ -1142,8 +1138,6 @@ nsDOMClassInfo::DefineStaticJSVals(JSContext *cx)
       _id = INTERNED_STRING_TO_JSID(_cx, str);                                \
   else                                                                        \
       return NS_ERROR_OUT_OF_MEMORY;
-
-  JSAutoRequest ar(cx);
 
   SET_JSID_TO_STRING(sParent_id,          cx, "parent");
   SET_JSID_TO_STRING(sScrollbars_id,      cx, "scrollbars");
@@ -1720,11 +1714,6 @@ nsDOMClassInfo::Init()
 
   // The SVG document
 
-  DOM_CLASSINFO_MAP_BEGIN(TimeEvent, nsIDOMTimeEvent)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMTimeEvent)
-    DOM_CLASSINFO_EVENT_MAP_ENTRIES
-  DOM_CLASSINFO_MAP_END
-
   // other SVG classes
   DOM_CLASSINFO_MAP_BEGIN(SVGAnimatedEnumeration, nsIDOMSVGAnimatedEnumeration)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMSVGAnimatedEnumeration)
@@ -1857,11 +1846,6 @@ nsDOMClassInfo::Init()
   DOM_CLASSINFO_MAP_BEGIN(MozCellBroadcast, nsIDOMMozCellBroadcast)
      DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozCellBroadcast)
      DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(MozCellBroadcastEvent, nsIDOMMozCellBroadcastEvent)
-     DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozCellBroadcastEvent)
-     DOM_CLASSINFO_EVENT_MAP_ENTRIES
   DOM_CLASSINFO_MAP_END
 #endif // MOZ_B2G_RIL
 
@@ -2109,8 +2093,6 @@ nsDOMClassInfo::GetArrayIndexFromId(JSContext *cx, JS::Handle<jsid> id, bool *aI
   if (JSID_IS_INT(id)) {
       i = JSID_TO_INT(id);
   } else {
-      JSAutoRequest ar(cx);
-
       jsval idval;
       double array_index;
       if (!::JS_IdToValue(cx, id, &idval) ||
@@ -2351,7 +2333,6 @@ nsDOMClassInfo::ResolveConstructor(JSContext *cx, JSObject *aObj,
   JS::Rooted<JSObject*> global(cx, ::JS_GetGlobalForObject(cx, obj));
 
   JS::Rooted<JS::Value> val(cx);
-  JSAutoRequest ar(cx);
   if (!::JS_LookupProperty(cx, global, mData->mName, val.address())) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -2952,8 +2933,6 @@ nsWindowSH::InvalidateGlobalScopePolluter(JSContext *cx,
   JS::Rooted<JSObject*> proto(cx);
   JS::Rooted<JSObject*> obj(cx, aObj);
 
-  JSAutoRequest ar(cx);
-
   for (;;) {
     if (!::JS_GetPrototype(cx, obj, proto.address())) {
       return JS_FALSE;
@@ -2986,8 +2965,6 @@ nsWindowSH::InvalidateGlobalScopePolluter(JSContext *cx,
 nsresult
 nsWindowSH::InstallGlobalScopePolluter(JSContext *cx, JS::Handle<JSObject*> obj)
 {
-  JSAutoRequest ar(cx);
-
   JS::Rooted<JSObject*> gsp(cx, ::JS_NewObjectWithUniqueType(cx, &sGlobalScopePolluterClass, nullptr, obj));
   if (!gsp) {
     return NS_ERROR_OUT_OF_MEMORY;
@@ -3143,7 +3120,6 @@ BaseStubConstructor(nsIWeakReference* aWeakOwner,
       nsCxPusher pusher;
       pusher.Push(cx);
 
-      JSAutoRequest ar(cx);
       JSAutoCompartment ac(cx, thisObject);
 
       JS::Rooted<JS::Value> funval(cx);
@@ -4587,7 +4563,6 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
       // window's own context (not on some other window-caller's
       // context).
       AutoPushJSContext my_cx(my_context ? my_context->GetNativeContext() : cx);
-      JSAutoRequest ar(my_cx);
       JSAutoCompartment ac(my_cx, obj);
 
       ok = JS_ResolveStandardClass(my_cx, obj, id, &did_resolve);
@@ -4750,7 +4725,6 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
       // on obj with the value undefined to override the predefined property.
       // This isn't quite what WebIDL requires for [Replaceable] properties,
       // but it'll do until we move Window over to the new DOM bindings.
-      JSAutoRequest ar(cx);
 
       if (!::JS_DefinePropertyById(cx, obj, id, JSVAL_VOID, JS_PropertyStub,
                                    JS_StrictPropertyStub, JSPROP_ENUMERATE)) {
@@ -4983,10 +4957,11 @@ nsLocationSH::PreCreate(nsISupports *nativeObj, JSContext *cx,
 
 NS_IMETHODIMP
 nsLocationSH::AddProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
-                          JSObject *obj, jsid id, jsval *vp, bool *_retval)
+                          JSObject *obj, jsid aId, jsval *vp, bool *_retval)
 {
   // Shadowing protection. This will go away when nsLocation moves to the new
   // bindings.
+  JS::Rooted<jsid> id(cx, aId);
   if (wrapper->HasNativeMember(id)) {
     JS_ReportError(cx, "Permission denied to shadow native property");
     return NS_ERROR_FAILURE;
@@ -5584,7 +5559,6 @@ nsGenericArraySH::Enumerate(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
   sCurrentlyEnumerating = true;
 
   JS::Rooted<JS::Value> len_val(cx);
-  JSAutoRequest ar(cx);
   JSBool ok = ::JS_GetProperty(cx, obj, "length", len_val.address());
 
   if (ok && JSVAL_IS_INT(len_val)) {
@@ -6305,7 +6279,6 @@ nsHTMLFormElementSH::NewResolve(nsIXPConnectWrappedNative *wrapper,
       static_cast<nsHTMLFormElement*>(form.get())->FindNamedItem(name, &cache);
 
     if (result) {
-      JSAutoRequest ar(cx);
       *_retval = ::JS_DefinePropertyById(cx, obj, id, JSVAL_VOID, nullptr,
                                          nullptr, JSPROP_ENUMERATE);
 
@@ -6409,8 +6382,6 @@ nsHTMLFormElementSH::NewEnumerate(nsIXPConnectWrappedNative *wrapper,
           // If name is not there, use index instead
           attr.AppendInt(index);
         }
-
-        JSAutoRequest ar(cx);
 
         JSString *jsname =
           JS_NewUCStringCopyN(cx, reinterpret_cast<const jschar *>
@@ -6520,8 +6491,6 @@ nsStringArraySH::GetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
 
   nsresult rv = GetStringAt(GetNative(wrapper, obj), n, val);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  JSAutoRequest ar(cx);
 
   if (DOMStringIsNull(val)) {
     *vp = JSVAL_VOID;
@@ -6740,8 +6709,6 @@ nsStorage2SH::GetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
   nsAutoString val;
   nsresult rv = storage->GetItem(keyStr, val);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  JSAutoRequest ar(cx);
 
   if (DOMStringIsNull(val)) {
     // No such key.

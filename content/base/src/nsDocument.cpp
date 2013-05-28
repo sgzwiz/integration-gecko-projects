@@ -35,6 +35,7 @@
 #include "nsIScriptRuntime.h"
 #include "nsCOMArray.h"
 #include "nsDOMClassInfo.h"
+#include "nsCxPusher.h"
 
 #include "nsGUIEvent.h"
 #include "nsAsyncDOMEvent.h"
@@ -1773,32 +1774,36 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsDocument)
   if (tmp->mCSSLoader) {
     tmp->mCSSLoader->TraverseCachedSheets(cb);
   }
+
+  for (uint32_t i = 0; i < tmp->mHostObjectURIs.Length(); ++i) {
+    nsHostObjectProtocolHandler::Traverse(tmp->mHostObjectURIs[i], cb);
+  }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 
 struct CustomPrototypeTraceArgs {
-  TraceCallback callback;
+  const TraceCallbacks& callbacks;
   void* closure;
 };
 
 
 static PLDHashOperator
-CustomPrototypeTrace(const nsAString& aName, JSObject* aObject, void *aArg)
+CustomPrototypeTrace(const nsAString& aName, JSObject*& aObject, void *aArg)
 {
   CustomPrototypeTraceArgs* traceArgs = static_cast<CustomPrototypeTraceArgs*>(aArg);
   MOZ_ASSERT(aObject, "Protocol object value must not be null");
-  traceArgs->callback(aObject, "mCustomPrototypes entry", traceArgs->closure);
+  traceArgs->callbacks.Trace(&aObject, "mCustomPrototypes entry", traceArgs->closure);
   return PL_DHASH_NEXT;
 }
 
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(nsDocument)
-  CustomPrototypeTraceArgs customPrototypeArgs = { aCallback, aClosure };
-  tmp->mCustomPrototypes.EnumerateRead(CustomPrototypeTrace, &customPrototypeArgs);
+  CustomPrototypeTraceArgs customPrototypeArgs = { aCallbacks, aClosure };
+  tmp->mCustomPrototypes.Enumerate(CustomPrototypeTrace, &customPrototypeArgs);
   if (tmp->PreservingWrapper()) {
     NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mExpandoAndGeneration.expando);
   }
-  nsINode::Trace(tmp, aCallback, aClosure);
+  nsINode::Trace(tmp, aCallbacks, aClosure);
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 
@@ -1875,6 +1880,10 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDocument)
 
   if (tmp->mCSSLoader) {
     tmp->mCSSLoader->UnlinkCachedSheets();
+  }
+
+  for (uint32_t i = 0; i < tmp->mHostObjectURIs.Length(); ++i) {
+    nsHostObjectProtocolHandler::RemoveDataEntry(tmp->mHostObjectURIs[i]);
   }
 
   tmp->mInUnlinkOrDeletion = false;
@@ -2074,9 +2083,9 @@ nsDocument::ResetToURI(nsIURI *aURI, nsILoadGroup *aLoadGroup,
       nsNodeUtils::ContentRemoved(this, content, i, previousSibling);
       content->UnbindFromTree();
     }
+    mCachedRootElement = nullptr;
   }
   mInUnlinkOrDeletion = oldVal;
-  mCachedRootElement = nullptr;
 
   mCustomPrototypes.Clear();
 
@@ -2343,6 +2352,16 @@ nsDocument::StartDocumentLoad(const char* aCommand, nsIChannel* aChannel,
     if (uri)
       uri->GetSpec(spec);
     PR_LogPrint("DOCUMENT %p StartDocumentLoad %s", this, spec.get());
+  }
+#endif
+
+#ifdef DEBUG
+  {
+    uint32_t appId;
+    nsresult rv = NodePrincipal()->GetAppId(&appId);
+    NS_ENSURE_SUCCESS(rv, rv);
+    MOZ_ASSERT(appId != nsIScriptSecurityManager::UNKNOWN_APP_ID,
+               "Document should never have UNKNOWN_APP_ID");
   }
 #endif
 
@@ -4809,7 +4828,7 @@ nsIDocument::CreateElement(const nsAString& aTagName, ErrorResult& rv)
   if (rv.Failed()) {
     return nullptr;
   }
-  return content.forget().get()->AsElement();
+  return dont_AddRef(content.forget().get()->AsElement());
 }
 
 NS_IMETHODIMP
@@ -4846,7 +4865,7 @@ nsIDocument::CreateElementNS(const nsAString& aNamespaceURI,
   if (rv.Failed()) {
     return nullptr;
   }
-  return content.forget().get()->AsElement();
+  return dont_AddRef(content.forget().get()->AsElement());
 }
 
 NS_IMETHODIMP
@@ -6956,7 +6975,7 @@ nsIDocument::CreateEvent(const nsAString& aEventType, ErrorResult& rv) const
     nsEventDispatcher::CreateEvent(const_cast<nsIDocument*>(this),
                                    presContext, nullptr, aEventType,
                                    getter_AddRefs(ev));
-  return ev ? ev.forget().get()->InternalDOMEvent() : nullptr;
+  return ev ? dont_AddRef(ev.forget().get()->InternalDOMEvent()) : nullptr;
 }
 
 void

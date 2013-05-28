@@ -48,6 +48,7 @@
 #include "MediaStreamList.h"
 #include "nsIScriptGlobalObject.h"
 #include "jsapi.h"
+#include "DOMMediaStream.h"
 #endif
 
 #ifndef USE_FAKE_MEDIA_STREAMS
@@ -135,12 +136,39 @@ public:
       mRemoteStream = mPC->media()->GetRemoteStream(streams->media_stream_id);
       MOZ_ASSERT(mRemoteStream);
     }
-    if ((mCallState == CREATEOFFER) || (mCallState == CREATEANSWER)) {
+    if ((mCallState == CREATEOFFERSUCCESS) || (mCallState == CREATEANSWERSUCCESS)) {
         mSdpStr = aInfo->getSDP();
     }
   }
 
   ~PeerConnectionObserverDispatch(){}
+
+#ifdef MOZILLA_INTERNAL_API
+  class TracksAvailableCallback : public DOMMediaStream::OnTracksAvailableCallback
+  {
+  public:
+    TracksAvailableCallback(DOMMediaStream::TrackTypeHints aTrackTypeHints,
+                            nsCOMPtr<IPeerConnectionObserver> aObserver)
+      : DOMMediaStream::OnTracksAvailableCallback(aTrackTypeHints),
+        mObserver(aObserver) {}
+
+    virtual void NotifyTracksAvailable(DOMMediaStream* aStream) MOZ_OVERRIDE
+    {
+      MOZ_ASSERT(NS_IsMainThread());
+
+      // Start currentTime from the point where this stream was successfully
+      // returned.
+      aStream->SetLogicalStreamStartTime(aStream->GetStream()->GetCurrentTime());
+
+      CSFLogInfo(logTag, "Returning success for OnAddStream()");
+      // We are running on main thread here so we shouldn't have a race
+      // on this callback
+      mObserver->OnAddStream(aStream);
+    }
+
+    nsCOMPtr<IPeerConnectionObserver> mObserver;
+  };
+#endif
 
   NS_IMETHOD Run() {
 
@@ -165,11 +193,11 @@ public:
     }
 
     switch (mCallState) {
-      case CREATEOFFER:
+      case CREATEOFFERSUCCESS:
         mObserver->OnCreateOfferSuccess(mSdpStr.c_str());
         break;
 
-      case CREATEANSWER:
+      case CREATEANSWERSUCCESS:
         mObserver->OnCreateAnswerSuccess(mSdpStr.c_str());
         break;
 
@@ -181,7 +209,7 @@ public:
         mObserver->OnCreateAnswerError(mCode, mReason.c_str());
         break;
 
-      case SETLOCALDESC:
+      case SETLOCALDESCSUCCESS:
         // TODO: The SDP Parse error list should be copied out and sent up
         // to the Javascript layer before being cleared here. Even though
         // there was not a failure, it is possible that the SDP parse generated
@@ -191,7 +219,7 @@ public:
         mObserver->OnSetLocalDescriptionSuccess();
         break;
 
-      case SETREMOTEDESC:
+      case SETREMOTEDESCSUCCESS:
         // TODO: The SDP Parse error list should be copied out and sent up
         // to the Javascript layer before being cleared here. Even though
         // there was not a failure, it is possible that the SDP parse generated
@@ -230,7 +258,14 @@ public:
           if (!stream) {
             CSFLogError(logTag, "%s: GetMediaStream returned NULL", __FUNCTION__);
           } else {
+#ifdef MOZILLA_INTERNAL_API
+            TracksAvailableCallback* tracksAvailableCallback =
+              new TracksAvailableCallback(mRemoteStream->mTrackTypeHints, mObserver);
+
+            stream->OnTracksAvailable(tracksAvailableCallback);
+#else
             mObserver->OnAddStream(stream);
+#endif
           }
           break;
         }
@@ -486,6 +521,8 @@ PeerConnectionImpl::Initialize(IPeerConnectionObserver* aObserver,
 
   mHandle = hex;
 
+  // Invariant: we receive configuration one way or the other but not both (XOR)
+  MOZ_ASSERT(!aConfiguration != !aRTCConfiguration);
 #ifdef MOZILLA_INTERNAL_API
   MOZ_ASSERT(NS_IsMainThread());
 #endif
@@ -523,6 +560,16 @@ PeerConnectionImpl::Initialize(IPeerConnectionObserver* aObserver,
     return NS_ERROR_FAILURE;
   }
 
+  IceConfiguration converted;
+  if (aRTCConfiguration) {
+    res = ConvertRTCConfiguration(*aRTCConfiguration, &converted, aCx);
+    if (NS_FAILED(res)) {
+      CSFLogError(logTag, "%s: Invalid RTCConfiguration", __FUNCTION__);
+      return res;
+    }
+    aConfiguration = &converted;
+  }
+
   mMedia = new PeerConnectionMedia(this);
 
   // Connect ICE slots.
@@ -531,15 +578,8 @@ PeerConnectionImpl::Initialize(IPeerConnectionObserver* aObserver,
   mMedia->SignalIceFailed.connect(this, &PeerConnectionImpl::IceFailed);
 
   // Initialize the media object.
-  if (aRTCConfiguration) {
-    IceConfiguration ic;
-    res = ConvertRTCConfiguration(*aRTCConfiguration, &ic, aCx);
-    NS_ENSURE_SUCCESS(res, res);
-    res = mMedia->Init(ic.getStunServers(), ic.getTurnServers());
-  } else {
-    res = mMedia->Init(aConfiguration->getStunServers(),
-                       aConfiguration->getTurnServers());
-  }
+  res = mMedia->Init(aConfiguration->getStunServers(),
+                     aConfiguration->getTurnServers());
   if (NS_FAILED(res)) {
     CSFLogError(logTag, "%s: Couldn't initialize media object", __FUNCTION__);
     return res;
@@ -1274,12 +1314,12 @@ PeerConnectionImpl::onCallEvent(ccapi_call_event_e aCallEvent,
   }
 
   switch (event) {
-    case SETLOCALDESC:
+    case SETLOCALDESCSUCCESS:
     case UPDATELOCALDESC:
       mLocalSDP = aInfo->getSDP();
       break;
 
-    case SETREMOTEDESC:
+    case SETREMOTEDESCSUCCESS:
     case ADDICECANDIDATE:
       mRemoteSDP = aInfo->getSDP();
       break;

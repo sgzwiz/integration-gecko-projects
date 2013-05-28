@@ -112,6 +112,8 @@ let snapshotFormatters = {
       data.numAcceleratedWindows + "/" + data.numTotalWindows;
     if (data.windowLayerManagerType)
       out.acceleratedWindows += " " + data.windowLayerManagerType;
+    if (data.windowLayerManagerRemote)
+      out.acceleratedWindows += " (OMTC)";
     if (data.numAcceleratedWindowsMessage)
       out.acceleratedWindows +=
         " " + localizedMsg(data.numAcceleratedWindowsMessage);
@@ -502,6 +504,12 @@ function openProfileDirectory() {
   let nsLocalFile = Components.Constructor("@mozilla.org/file/local;1",
                                            "nsILocalFile", "initWithPath");
   new nsLocalFile(profileDir).reveal();
+}
+
+function showUpdateHistory() {
+  var prompter = Cc["@mozilla.org/updates/update-prompt;1"]
+                   .createInstance(Ci.nsIUpdatePrompt);
+  prompter.showUpdateHistory(window);
 }
 
 /**

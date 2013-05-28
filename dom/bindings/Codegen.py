@@ -2024,8 +2024,9 @@ def CreateBindingJSObject(descriptor, properties, parent):
     else:
         objDecl = "  JSObject *obj;\n"
     if descriptor.proxy:
-        create = """  obj = NewProxyObject(aCx, DOMProxyHandler::getInstance(),
-                       JS::PrivateValue(aObject), proto, %s);
+        create = """  JS::Rooted<JS::Value> proxyPrivateVal(aCx, JS::PrivateValue(aObject));
+  obj = NewProxyObject(aCx, DOMProxyHandler::getInstance(),
+                       proxyPrivateVal, proto, %s);
   if (!obj) {
     return nullptr;
   }
@@ -2440,6 +2441,7 @@ class JSToNativeConversionInfo():
           ${val} replaced by an expression for the JS::Value in question
           ${valPtr} is a pointer to the JS::Value in question
           ${valHandle} is a handle to the JS::Value in question
+          ${valMutableHandle} is a mutable handle to the JS::Value in question
           ${holderName} replaced by the holder's name, if any
           ${declName} replaced by the declaration's name
           ${haveValue} replaced by an expression that evaluates to a boolean
@@ -2770,6 +2772,7 @@ for (uint32_t i = 0; i < length; ++i) {
                         "val" : "temp",
                         "valPtr": "temp.address()",
                         "valHandle": "temp",
+                        "valMutableHandle": "&temp",
                         "declName" : "slot",
                         # We only need holderName here to handle isExternal()
                         # interfaces, which use an internal holder for the
@@ -3223,7 +3226,7 @@ for (uint32_t i = 0; i < length; ++i) {
 
         def getConversionCode(varName):
             conversionCode = (
-                "if (!ConvertJSValueToString(cx, ${val}, ${valPtr}, %s, %s, %s)) {\n"
+                "if (!ConvertJSValueToString(cx, ${valHandle}, ${valMutableHandle}, %s, %s, %s)) {\n"
                 "%s\n"
                 "}" % (nullBehavior, undefinedBehavior, varName,
                        exceptionCodeIndented.define()))
@@ -3717,6 +3720,9 @@ class CGArgumentConverter(CGThing):
         self.replacementVariables["valHandle"] = (
             "JS::Handle<JS::Value>::fromMarkedLocation(%s)" %
             self.replacementVariables["valPtr"])
+        self.replacementVariables["valMutableHandle"] = (
+            "JS::MutableHandle<JS::Value>::fromMarkedLocation(%s)" %
+            self.replacementVariables["valPtr"])
         if argument.defaultValue:
             self.replacementVariables["haveValue"] = string.Template(
                 "${index} < ${argc}").substitute(replacer)
@@ -3787,6 +3793,8 @@ class CGArgumentConverter(CGThing):
                         "valPtr": "&" + val,
                         "valHandle" : ("JS::Handle<JS::Value>::fromMarkedLocation(&%s)" %
                                        val),
+                        "valMutableHandle" : ("JS::MutableHandle<JS::Value>::fromMarkedLocation(&%s)" %
+                                              val),
                         "declName" : "slot",
                         # We only need holderName here to handle isExternal()
                         # interfaces, which use an internal holder for the
@@ -4831,6 +4839,8 @@ class CGMethodCall(CGThing):
                         "val" : distinguishingArg,
                         "valHandle" : ("JS::Handle<JS::Value>::fromMarkedLocation(&%s)" %
                                        distinguishingArg),
+                        "valMutableHandle" : ("JS::MutableHandle<JS::Value>::fromMarkedLocation(&%s)" %
+                                       distinguishingArg),
                         "obj" : "obj"
                         })
                 caseBody.append(CGIndenter(testCode, indent));
@@ -5750,6 +5760,7 @@ return true;"""
             {
                 "val": "value",
                 "valHandle": "value",
+                "valMutableHandle": "JS::MutableHandle<JS::Value>::fromMarkedLocation(pvalue)",
                 "valPtr": "pvalue",
                 "declName": "SetAs" + name + "()",
                 "holderName": "m" + name + "Holder",
@@ -6587,6 +6598,7 @@ class CGProxySpecialOperation(CGPerSignatureCall):
                 "val": "desc->value",
                 "valPtr": "&desc->value",
                 "valHandle" : "JS::Handle<JS::Value>::fromMarkedLocation(&desc->value)",
+                "valMutableHandle" : "JS::MutableHandle<JS::Value>::fromMarkedLocation(&desc->value)",
                 "obj": "obj"
             }
             self.cgRoot.prepend(instantiateJSToNativeConversion(info, templateValues))
@@ -6668,7 +6680,7 @@ class CGProxyNamedOperation(CGProxySpecialOperation):
     def define(self):
         # Our first argument is the id we're getting.
         argName = self.arguments[0].identifier.name
-        return (("JS::Value nameVal = %s;\n"
+        return (("JS::Rooted<JS::Value> nameVal(cx, %s);\n"
                  "FakeDependentString %s;\n"
                  "if (!ConvertJSValueToString(cx, nameVal, &nameVal,\n"
                  "                            eStringify, eStringify, %s)) {\n"
@@ -7626,7 +7638,6 @@ class CGDictionary(CGThing):
                 Argument('const nsAString&', 'aJSON'),
             ], body=(
                 "AutoSafeJSContext cx;\n"
-                "JSAutoRequest ar(cx);\n"
                 "JS::Rooted<JS::Value> json(cx);\n"
                 "bool ok = ParseJSON(cx, aJSON, &json);\n"
                 "NS_ENSURE_TRUE(ok, false);\n"
@@ -7710,7 +7721,9 @@ class CGDictionary(CGThing):
         selfName = self.makeClassName(d)
         members = [ClassMember(self.makeMemberName(m[0].identifier.name),
                                self.getMemberType(m),
-                               visibility="public") for m in self.memberInfo]
+                               visibility="public",
+                               body=self.getMemberInitializer(m))
+                   for m in self.memberInfo]
         ctor = ClassConstructor([], bodyInHeader=True, visibility="public")
         methods = []
 
@@ -7780,6 +7793,7 @@ class CGDictionary(CGThing):
         replacements = { "val": "temp",
                          "valPtr": "temp.address()",
                          "valHandle": "temp",
+                         "valMutableHandle": "&temp",
                          "declName": self.makeMemberName(member.identifier.name),
                          # We need a holder name for external interfaces, but
                          # it's scoped down to the conversion so we can just use
@@ -7930,6 +7944,25 @@ class CGDictionary(CGThing):
             trace = CGIfWrapper(trace, "%s.WasPassed()" % memberLoc)
 
         return trace.define()
+
+    def getMemberInitializer(self, memberInfo):
+        """
+        Get the right initializer for the member.  Most members don't need one,
+        but we need to pre-initialize 'any' and 'object' that have a default
+        value, so they're safe to trace at all times.
+        """
+        (member, _) = memberInfo
+        if not member.defaultValue:
+            # No default value means no need to set it up front, since it's
+            # inside an Optional and won't get traced until it's actually set
+            # up.
+            return None
+        type = member.type
+        if type.isAny():
+            return "JS::UndefinedValue()"
+        if type.isObject():
+            return "nullptr"
+        return None
 
     @staticmethod
     def makeIdName(name):
@@ -8296,6 +8329,7 @@ class CGBindingRoot(CGThing):
                             + (['mozilla/Preferences.h'] if requiresPreferences else [])
                             + (['mozilla/dom/NonRefcountedDOMObject.h'] if hasOwnedDescriptors else [])
                             + (['nsContentUtils.h'] if requiresContentUtils else [])
+                            + (['nsCxPusher.h'] if requiresContentUtils else [])
                             + (['AccessCheck.h'] if hasChromeOnlyMembers else []),
                          curr,
                          config,
@@ -9417,6 +9451,7 @@ class CallbackMember(CGNativeMember):
             "val": "rval",
             "valPtr": "rval.address()",
             "valHandle": "rval",
+            "valMutableHandle": "&rval",
             "holderName" : "rvalHolder",
             "declName" : "rvalDecl",
             # We actually want to pass in a null scope object here, because

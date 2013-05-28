@@ -51,7 +51,8 @@ AudioContext::AudioContext(nsPIDOMWindow* aWindow,
                            uint32_t aNumberOfChannels,
                            uint32_t aLength,
                            float aSampleRate)
-  : mDestination(new AudioDestinationNode(this, aIsOffline,
+  : mSampleRate(aIsOffline ? aSampleRate : IdealAudioRate())
+  , mDestination(new AudioDestinationNode(this, aIsOffline,
                                           aNumberOfChannels,
                                           aLength, aSampleRate))
   , mIsOffline(aIsOffline)
@@ -107,8 +108,8 @@ AudioContext::Constructor(const GlobalObject& aGlobal,
     return nullptr;
   }
 
-  if (aSampleRate != IdealAudioRate()) {
-    // TODO: Add support for running OfflineAudioContext at other sampling rates
+  if (aSampleRate <= 0.0f) {
+    // The DOM binding protects us against infinity and NaN
     aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
     return nullptr;
   }
@@ -136,8 +137,8 @@ AudioContext::CreateBuffer(JSContext* aJSContext, uint32_t aNumberOfChannels,
                            uint32_t aLength, float aSampleRate,
                            ErrorResult& aRv)
 {
-  if (aSampleRate < 8000 || aSampleRate > 96000) {
-    aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
+  if (aSampleRate < 8000 || aSampleRate > 96000 || !aLength) {
+    aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
     return nullptr;
   }
 
@@ -208,7 +209,7 @@ AudioContext::CreateScriptProcessor(uint32_t aBufferSize,
                                     uint32_t aNumberOfOutputChannels,
                                     ErrorResult& aRv)
 {
-  if (aNumberOfInputChannels == 0 || aNumberOfOutputChannels == 0 ||
+  if ((aNumberOfInputChannels == 0 && aNumberOfOutputChannels == 0) ||
       aNumberOfInputChannels > MAX_SCRIPT_PROCESSOR_CHANNELS ||
       aNumberOfOutputChannels > MAX_SCRIPT_PROCESSOR_CHANNELS ||
       !IsValidBufferSize(aBufferSize)) {

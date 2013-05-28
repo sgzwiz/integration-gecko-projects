@@ -3820,7 +3820,6 @@ nsFrame::ComputeSize(nsRenderingContext *aRenderingContext,
   bool isFlexItem = IsFlexItem();
   bool isHorizontalFlexItem = false;
  
-#ifdef MOZ_FLEXBOX
   if (isFlexItem) {
     // Flex items use their "flex-basis" property in place of their main-size
     // property (e.g. "width") for sizing purposes, *unless* they have
@@ -3852,7 +3851,6 @@ nsFrame::ComputeSize(nsRenderingContext *aRenderingContext,
       }
     }
   }
-#endif // MOZ_FLEXBOX
 
   // Compute width
 
@@ -7291,13 +7289,6 @@ nsFrame::GetFirstLeaf(nsPresContext* aPresContext, nsIFrame **aFrame)
       return;//nothing to do
     *aFrame = child;
   }
-}
-
-/* virtual */ const void*
-nsFrame::StyleDataExternal(nsStyleStructID aSID) const
-{
-  NS_ASSERTION(mStyleContext, "unexpected null pointer");
-  return mStyleContext->StyleData(aSID);
 }
 
 /* virtual */ bool
