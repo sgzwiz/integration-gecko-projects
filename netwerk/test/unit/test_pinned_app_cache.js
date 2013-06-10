@@ -129,7 +129,7 @@ function init_cache_capacity() {
 }
 
 function clean_app_cache() {
-  evict_cache_entries(Ci.nsICache.STORE_OFFLINE);
+  evict_cache_entries("appcache");
 }
 
 function do_app_cache(manifestURL, pageURL, pinned) {
