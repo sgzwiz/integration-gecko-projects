@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_frames_inl_h__
+#if !defined(jsion_frames_inl_h__) && defined(JS_ION)
 #define jsion_frames_inl_h__
 
 #include "ion/IonFrames.h"
@@ -101,7 +101,7 @@ IonFrameIterator::frameSize() const
 }
 
 // Returns the JSScript associated with the topmost Ion frame.
-inline RawScript
+inline JSScript *
 GetTopIonJSScript(PerThreadData *pt, const SafepointIndex **safepointIndexOut, void **returnAddrOut)
 {
     IonFrameIterator iter(pt->ionTop);
@@ -126,7 +126,7 @@ GetTopIonJSScript(PerThreadData *pt, const SafepointIndex **safepointIndexOut, v
 }
 
 
-inline RawScript
+inline JSScript *
 GetTopIonJSScript(JSContext *cx, const SafepointIndex **safepointIndexOut, void **returnAddrOut)
 {
     return GetTopIonJSScript(&cx->mainThread(), safepointIndexOut, returnAddrOut);

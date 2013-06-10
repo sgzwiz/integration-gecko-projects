@@ -204,10 +204,10 @@ NS_IMPL_RELEASE_INHERITED(HTMLBodyElement, Element)
 
 // QueryInterface implementation for HTMLBodyElement
 NS_INTERFACE_TABLE_HEAD(HTMLBodyElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE1(HTMLBodyElement, nsIDOMHTMLBodyElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE(HTMLBodyElement,
-                                               nsGenericHTMLElement)
-NS_HTML_CONTENT_INTERFACE_MAP_END
+  NS_HTML_CONTENT_INTERFACES(nsGenericHTMLElement)
+  NS_INTERFACE_TABLE_INHERITED1(HTMLBodyElement, nsIDOMHTMLBodyElement)
+  NS_INTERFACE_TABLE_TO_MAP_SEGUE
+NS_ELEMENT_INTERFACE_MAP_END
 
 NS_IMPL_ELEMENT_CLONE(HTMLBodyElement)
 
@@ -500,7 +500,7 @@ HTMLBodyElement::IsEventAttributeName(nsIAtom *aName)
   HTMLBodyElement::GetOn##name_(JSContext *cx, JS::Value *vp)                  \
   {                                                                            \
     getter_type_ h = forwardto_::GetOn##name_();                               \
-    vp->setObjectOrNull(h ? h->Callable() : nullptr);                          \
+    vp->setObjectOrNull(h ? h->Callable().get() : nullptr);                    \
     return NS_OK;                                                              \
   }                                                                            \
   NS_IMETHODIMP                                                                \
@@ -527,7 +527,7 @@ HTMLBodyElement::IsEventAttributeName(nsIAtom *aName)
   HTMLBodyElement::GetOn##name_()                                              \
   {                                                                            \
     nsPIDOMWindow* win = OwnerDoc()->GetInnerWindow();                         \
-    if (win && win->IsInnerWindow()) {                                         \
+    if (win) {                                                                 \
       nsCOMPtr<nsISupports> supports = do_QueryInterface(win);                 \
       nsGlobalWindow* globalWin = nsGlobalWindow::FromSupports(supports);      \
       return globalWin->GetOn##name_();                                        \
@@ -538,7 +538,7 @@ HTMLBodyElement::IsEventAttributeName(nsIAtom *aName)
   HTMLBodyElement::SetOn##name_(type_* handler, ErrorResult& error)            \
   {                                                                            \
     nsPIDOMWindow* win = OwnerDoc()->GetInnerWindow();                         \
-    if (!win || !win->IsInnerWindow()) {                                       \
+    if (!win) {                                                                \
       return;                                                                  \
     }                                                                          \
                                                                                \

@@ -49,20 +49,8 @@ class HTMLElement(object):
     def click(self):
         return self.marionette._send_message('clickElement', 'ok', element=self.id)
 
-    def single_tap(self, x=None, y=None):
+    def tap(self, x=None, y=None):
         return self.marionette._send_message('singleTap', 'ok', element=self.id, x=x, y=y)
-
-    def double_tap(self, x=None, y=None):
-        return self.marionette._send_message('doubleTap', 'ok', element=self.id, x=x, y=y)
-
-    def press(self, x=None, y=None):
-        return self.marionette._send_message('press', 'value', element=self.id, x=x, y=y)
-
-    def release(self, touch_id, x=None, y=None):
-        return self.marionette._send_message('release', 'ok', element=self.id, touchId=touch_id, x=x, y=y)
-
-    def cancel_touch(self, touch_id):
-        return self.marionette._send_message('cancelTouch', 'ok', element=self.id, touchId=touch_id)
 
     @property
     def text(self):
@@ -106,6 +94,11 @@ class HTMLElement(object):
     def location(self):
         return self.marionette._send_message('getElementPosition', 'value', element=self.id)
 
+    def value_of_css_property(self, property_name):
+        return self.marionette._send_message('getElementValueOfCssProperty', 'value',
+                                             element=self.id,
+                                             propertyName=property_name)
+
 class Actions(object):
     def __init__(self, marionette):
         self.action_chain = []
@@ -136,6 +129,20 @@ class Actions(object):
 
     def cancel(self):
         self.action_chain.append(['cancel'])
+        return self
+
+    def tap(self, element, x=None, y=None):
+        element=element.id
+        self.action_chain.append(['press', element, x, y])
+        self.action_chain.append(['release'])
+        return self
+
+    def double_tap(self, element, x=None, y=None):
+        element=element.id
+        self.action_chain.append(['press', element, x, y])
+        self.action_chain.append(['release'])
+        self.action_chain.append(['press', element, x, y])
+        self.action_chain.append(['release'])
         return self
 
     def flick(self, element, x1, y1, x2, y2, duration=200):
@@ -193,7 +200,7 @@ class Marionette(object):
                  profile=None, emulator=None, sdcard=None, emulatorBinary=None,
                  emulatorImg=None, emulator_res=None, gecko_path=None,
                  connectToRunningEmulator=False, homedir=None, baseurl=None,
-                 noWindow=False, logcat_dir=None, busybox=None, symbols_path=None):
+                 noWindow=False, logcat_dir=None, busybox=None, symbols_path=None, timeout=None):
         self.host = host
         self.port = self.local_port = port
         self.app = app
@@ -210,6 +217,7 @@ class Marionette(object):
         self.logcat_dir = logcat_dir
         self._test_name = None
         self.symbols_path = symbols_path
+        self.timeout = timeout
 
         if bin:
             port = int(self.port)
@@ -471,10 +479,6 @@ class Marionette(object):
         response = self._send_message('setSearchTimeout', 'ok', value=timeout)
         return response
 
-    def send_mouse_event(self, send):
-        response = self._send_message('sendMouseEvent', 'ok', value=send)
-        return response
-
     @property
     def current_window_handle(self):
         self.window = self._send_message('getWindow', 'value')
@@ -519,6 +523,10 @@ class Marionette(object):
 
     def get_url(self):
         response = self._send_message('getUrl', 'value')
+        return response
+
+    def get_window_type(self):
+        response = self._send_message('getWindowType', 'value')
         return response
 
     def navigate(self, url):
@@ -644,12 +652,6 @@ class Marionette(object):
 
     def get_logs(self):
         return self._send_message('getLogs', 'value')
-
-    def add_perf_data(self, suite, name, value):
-        return self._send_message('addPerfData', 'ok', suite=suite, name=name, value=value)
-
-    def get_perf_data(self):
-        return self._send_message('getPerfData', 'value')
 
     def import_script(self, js_file):
         js = ''

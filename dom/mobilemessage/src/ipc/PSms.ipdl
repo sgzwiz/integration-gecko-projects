@@ -46,7 +46,7 @@ struct GetMessageRequest
 
 struct DeleteMessageRequest
 {
-  int32_t messageId;
+  int32_t[] messageIds;
 };
 
 struct CreateMessageCursorRequest
@@ -87,6 +87,8 @@ sync protocol PSms {
 
 child:
   NotifyReceivedMessage(MobileMessageData aMessageData);
+
+  NotifyRetrievingMessage(MobileMessageData aMessageData);
 
   NotifySendingMessage(MobileMessageData aMessageData);
 

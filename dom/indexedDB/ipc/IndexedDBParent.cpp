@@ -9,7 +9,6 @@
 #include "nsIDOMFile.h"
 #include "nsIDOMEvent.h"
 #include "nsIIDBVersionChangeEvent.h"
-#include "nsIJSContextStack.h"
 #include "nsIXPConnect.h"
 
 #include "mozilla/AppProcessChecker.h"
@@ -20,6 +19,7 @@
 #include "mozilla/dom/TabParent.h"
 #include "mozilla/dom/ipc/Blob.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 
 #include "AsyncConnectionHelper.h"
 #include "DatabaseInfo.h"
@@ -385,17 +385,16 @@ IndexedDBDatabaseParent::HandleRequestEvent(nsIDOMEvent* aEvent,
     return NS_OK;
   }
 
-  jsval result;
-  rv = mOpenRequest->GetResult(&result);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  MOZ_ASSERT(!JSVAL_IS_PRIMITIVE(result));
-
   nsIXPConnect* xpc = nsContentUtils::XPConnect();
   MOZ_ASSERT(xpc);
 
-  JSContext* cx =  nsContentUtils::ThreadJSContextStack()->GetSafeJSContext();
-  MOZ_ASSERT(cx);
+  AutoSafeJSContext cx;
+
+  JS::Rooted<JS::Value> result(cx);
+  rv = mOpenRequest->GetResult(result.address());
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  MOZ_ASSERT(!JSVAL_IS_PRIMITIVE(result));
 
   nsCOMPtr<nsIXPConnectWrappedNative> wrapper;
   rv = xpc->GetWrappedNativeOfJSObject(cx, JSVAL_TO_OBJECT(result),
@@ -528,7 +527,7 @@ IndexedDBDatabaseParent::HandleDatabaseEvent(nsIDOMEvent* aEvent,
   nsresult rv;
 
   if (aType.EqualsLiteral(VERSIONCHANGE_EVT_STR)) {
-    JSContext* cx = nsContentUtils::GetSafeJSContext();
+    AutoSafeJSContext cx;
     NS_ENSURE_TRUE(cx, NS_ERROR_FAILURE);
 
     nsCOMPtr<nsIIDBVersionChangeEvent> changeEvent = do_QueryInterface(aEvent);
@@ -538,8 +537,8 @@ IndexedDBDatabaseParent::HandleDatabaseEvent(nsIDOMEvent* aEvent,
     rv = changeEvent->GetOldVersion(&oldVersion);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    JS::Value newVersionVal;
-    rv = changeEvent->GetNewVersion(cx, &newVersionVal);
+    JS::Rooted<JS::Value> newVersionVal(cx);
+    rv = changeEvent->GetNewVersion(cx, newVersionVal.address());
     NS_ENSURE_SUCCESS(rv, rv);
 
     uint64_t newVersion;

@@ -10,14 +10,13 @@ const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cu = Components.utils;
 
-
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "gDevTools",
     "resource:///modules/devtools/gDevTools.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "TargetFactory",
-    "resource:///modules/devtools/Target.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "devtools",
+    "resource://gre/modules/devtools/Loader.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "Services",
     "resource://gre/modules/Services.jsm");
@@ -31,14 +30,13 @@ XPCOMUtils.defineLazyModuleGetter(this, "DebuggerClient",
 XPCOMUtils.defineLazyModuleGetter(this, "WebConsoleUtils",
     "resource://gre/modules/devtools/WebConsoleUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "webConsoleDefinition",
-    "resource:///modules/devtools/ToolDefinitions.jsm");
-
 XPCOMUtils.defineLazyModuleGetter(this, "Promise",
     "resource://gre/modules/commonjs/sdk/core/promise.js");
 
 XPCOMUtils.defineLazyModuleGetter(this, "ViewHelpers",
     "resource:///modules/devtools/ViewHelpers.jsm");
+
+let Telemetry = devtools.require("devtools/shared/telemetry");
 
 const STRINGS_URI = "chrome://browser/locale/devtools/webconsole.properties";
 let l10n = new WebConsoleUtils.l10n(STRINGS_URI);
@@ -84,7 +82,7 @@ HUD_SERVICE.prototype =
   /**
    * Open a Web Console for the given target.
    *
-   * @see devtools/framework/Target.jsm for details about targets.
+   * @see devtools/framework/target.js for details about targets.
    *
    * @param object aTarget
    *        The target that the web console will connect to.
@@ -340,6 +338,12 @@ WebConsole.prototype = {
   viewSourceInStyleEditor:
   function WC_viewSourceInStyleEditor(aSourceURL, aSourceLine)
   {
+    let toolbox = gDevTools.getToolbox(this.target);
+    if (!toolbox) {
+      this.viewSource(aSourceURL, aSourceLine);
+      return;
+    }
+
     gDevTools.showToolbox(this.target, "styleeditor").then(function(toolbox) {
       try {
         toolbox.getCurrentPanel().selectStyleSheet(aSourceURL, aSourceLine);
@@ -518,6 +522,7 @@ WebConsole.prototype = {
 function BrowserConsole()
 {
   WebConsole.apply(this, arguments);
+  this._telemetry = new Telemetry();
 }
 
 ViewHelpers.create({ constructor: BrowserConsole, proto: WebConsole.prototype },
@@ -541,18 +546,21 @@ ViewHelpers.create({ constructor: BrowserConsole, proto: WebConsole.prototype },
     }
 
     let window = this.iframeWindow;
+
+    // Make sure that the closing of the Browser Console window destroys this
+    // instance.
     let onClose = () => {
       window.removeEventListener("unload", onClose);
       this.destroy();
     };
     window.addEventListener("unload", onClose);
 
-    this._bc_init = this.$init().then((aReason) => {
-      let title = this.ui.rootElement.getAttribute("browserConsoleTitle");
-      this.ui.rootElement.setAttribute("title", title);
-      return aReason;
-    });
+    // Make sure Ctrl-W closes the Browser Console window.
+    window.document.getElementById("cmd_close").removeAttribute("disabled");
 
+    this._telemetry.toolOpened("browserconsole");
+
+    this._bc_init = this.$init();
     return this._bc_init;
   },
 
@@ -569,6 +577,8 @@ ViewHelpers.create({ constructor: BrowserConsole, proto: WebConsole.prototype },
     if (this._bc_destroyer) {
       return this._bc_destroyer.promise;
     }
+
+    this._telemetry.toolClosed("browserconsole");
 
     this._bc_destroyer = Promise.defer();
 
@@ -603,7 +613,7 @@ var HeadsUpDisplayUICommands = {
   toggleHUD: function UIC_toggleHUD()
   {
     let window = HUDService.currentContext();
-    let target = TargetFactory.forTab(window.gBrowser.selectedTab);
+    let target = devtools.TargetFactory.forTab(window.gBrowser.selectedTab);
     let toolbox = gDevTools.getToolbox(target);
 
     return toolbox && toolbox.currentToolId == "webconsole" ?
@@ -621,10 +631,10 @@ var HeadsUpDisplayUICommands = {
   getOpenHUD: function UIC_getOpenHUD()
   {
     let tab = HUDService.currentContext().gBrowser.selectedTab;
-    if (!tab || !TargetFactory.isKnownTab(tab)) {
+    if (!tab || !devtools.TargetFactory.isKnownTab(tab)) {
       return null;
     }
-    let target = TargetFactory.forTab(tab);
+    let target = devtools.TargetFactory.forTab(tab);
     let toolbox = gDevTools.getToolbox(target);
     let panel = toolbox ? toolbox.getPanel("webconsole") : null;
     return panel ? panel.hud : null;
@@ -683,7 +693,7 @@ var HeadsUpDisplayUICommands = {
         chrome: true,
       };
 
-      return TargetFactory.forRemoteTab(options);
+      return devtools.TargetFactory.forRemoteTab(options);
     }
 
     function openWindow(aTarget)
@@ -692,10 +702,15 @@ var HeadsUpDisplayUICommands = {
 
       let deferred = Promise.defer();
 
-      let win = Services.ww.openWindow(null, webConsoleDefinition.url, "_blank",
+      let win = Services.ww.openWindow(null, devtools.Tools.webConsole.url, "_blank",
                                        BROWSER_CONSOLE_WINDOW_FEATURES, null);
-      win.addEventListener("load", function onLoad() {
-        win.removeEventListener("load", onLoad);
+      win.addEventListener("DOMContentLoaded", function onLoad() {
+        win.removeEventListener("DOMContentLoaded", onLoad);
+
+        // Set the correct Browser Console title.
+        let root = win.document.documentElement;
+        root.setAttribute("title", root.getAttribute("browserConsoleTitle"));
+
         deferred.resolve(win);
       });
 
@@ -719,3 +734,4 @@ var HeadsUpDisplayUICommands = {
 };
 
 const HUDService = new HUD_SERVICE();
+

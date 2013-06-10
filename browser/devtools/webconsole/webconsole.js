@@ -37,11 +37,11 @@ XPCOMUtils.defineLazyModuleGetter(this, "Promise",
 XPCOMUtils.defineLazyModuleGetter(this, "VariablesView",
                                   "resource:///modules/devtools/VariablesView.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "ToolSidebar",
-                                  "resource:///modules/devtools/Sidebar.jsm");
-
 XPCOMUtils.defineLazyModuleGetter(this, "EventEmitter",
-                                  "resource:///modules/devtools/EventEmitter.jsm");
+                                  "resource:///modules/devtools/shared/event-emitter.js");
+
+XPCOMUtils.defineLazyModuleGetter(this, "devtools",
+                                  "resource://gre/modules/devtools/Loader.jsm");
 
 const STRINGS_URI = "chrome://browser/locale/devtools/webconsole.properties";
 let l10n = new WebConsoleUtils.l10n(STRINGS_URI);
@@ -178,6 +178,7 @@ const MIN_FONT_SIZE = 10;
 const MAX_LONG_STRING_LENGTH = 200000;
 
 const PREF_CONNECTION_TIMEOUT = "devtools.debugger.remote-timeout";
+const PREF_PERSISTLOG = "devtools.webconsole.persistlog";
 
 /**
  * A WebConsoleFrame instance is an interactive console initialized *per target*
@@ -369,6 +370,20 @@ WebConsoleFrame.prototype = {
         this._saveRequestAndResponseBodies = newValue;
       }
     }.bind(this));
+  },
+
+  _persistLog: null,
+
+  /**
+   * Getter for the persistent logging preference. This value is cached per
+   * instance to avoid reading the pref too often.
+   * @type boolean
+   */
+  get persistLog() {
+    if (this._persistLog === null) {
+      this._persistLog = Services.prefs.getBoolPref(PREF_PERSISTLOG);
+    }
+    return this._persistLog;
   },
 
   /**
@@ -857,6 +872,10 @@ WebConsoleFrame.prototype = {
       isFiltered = true;
     }
 
+    if (isFiltered && aNode.classList.contains("webconsole-msg-inspector")) {
+      aNode.classList.add("hidden-message");
+    }
+
     return isFiltered;
   },
 
@@ -957,6 +976,9 @@ WebConsoleFrame.prototype = {
                              [category, aMessage]);
           break;
         }
+        case "LogMessage":
+          this.handleLogMessage(aMessage);
+          break;
         case "ConsoleAPI":
           this.outputMessage(CATEGORY_WEBDEV, this.logConsoleAPIMessage,
                              [aMessage]);
@@ -971,7 +993,7 @@ WebConsoleFrame.prototype = {
    *
    * @param object aMessage
    *        The message received from the server.
-   * @return nsIDOMElement|undefined
+   * @return nsIDOMElement|null
    *         The message element to display in the Web Console output.
    */
   logConsoleAPIMessage: function WCF_logConsoleAPIMessage(aMessage)
@@ -1046,11 +1068,11 @@ WebConsoleFrame.prototype = {
       case "time": {
         let timer = aMessage.timer;
         if (!timer) {
-          return;
+          return null;
         }
         if (timer.error) {
           Cu.reportError(l10n.getStr(timer.error));
-          return;
+          return null;
         }
         body = l10n.getFormatStr("timerStarted", [timer.name]);
         clipboardText = body;
@@ -1060,16 +1082,17 @@ WebConsoleFrame.prototype = {
       case "timeEnd": {
         let timer = aMessage.timer;
         if (!timer) {
-          return;
+          return null;
         }
-        body = l10n.getFormatStr("timeEnd", [timer.name, timer.duration]);
+        let duration = Math.round(timer.duration * 100) / 100;
+        body = l10n.getFormatStr("timeEnd", [timer.name, duration]);
         clipboardText = body;
         break;
       }
 
       default:
         Cu.reportError("Unknown Console API log level: " + level);
-        return;
+        return null;
     }
 
     // Release object actors for arguments coming from console API methods that
@@ -1088,15 +1111,21 @@ WebConsoleFrame.prototype = {
     }
 
     if (level == "groupEnd") {
-      return; // no need to continue
+      return null; // no need to continue
     }
 
     let node = this.createMessageNode(CATEGORY_WEBDEV, LEVELS[level], body,
                                       sourceURL, sourceLine, clipboardText,
                                       level, aMessage.timeStamp);
+    if (aMessage.private) {
+      node.setAttribute("private", true);
+    }
 
     if (objectActors.size > 0) {
       node._objectActors = objectActors;
+
+      let repeatNode = node.querySelector(".webconsole-msg-repeat");
+      repeatNode._uid += [...objectActors].join("-");
     }
 
     // Make the node bring up the variables view, to allow the user to inspect
@@ -1105,7 +1134,10 @@ WebConsoleFrame.prototype = {
       node._stacktrace = aMessage.stacktrace;
 
       this.makeOutputMessageLink(node, () =>
-        this.jsterm.openVariablesView({ rawObject: node._stacktrace }));
+        this.jsterm.openVariablesView({
+          rawObject: node._stacktrace,
+          autofocus: true,
+        }));
     }
 
     return node;
@@ -1136,11 +1168,11 @@ WebConsoleFrame.prototype = {
    */
   _consoleLogClick: function WCF__consoleLogClick(aAnchor, aObjectActor)
   {
-    let options = {
+    this.jsterm.openVariablesView({
       label: aAnchor.textContent,
       objectActor: aObjectActor,
-    };
-    this.jsterm.openVariablesView(options);
+      autofocus: true,
+    });
   },
 
   /**
@@ -1160,11 +1192,34 @@ WebConsoleFrame.prototype = {
       severity = SEVERITY_WARNING;
     }
 
+    let objectActors = new Set();
+
+    // Gather the actor IDs.
+    for (let prop of ["errorMessage", "lineText"]) {
+      let grip = aScriptError[prop];
+      if (WebConsoleUtils.isActorGrip(grip)) {
+        objectActors.add(grip.actor);
+      }
+    }
+
+    let errorMessage = aScriptError.errorMessage;
+    if (errorMessage.type && errorMessage.type == "longString") {
+      errorMessage = errorMessage.initial;
+    }
+
     let node = this.createMessageNode(aCategory, severity,
-                                      aScriptError.errorMessage,
+                                      errorMessage,
                                       aScriptError.sourceName,
                                       aScriptError.lineNumber, null, null,
                                       aScriptError.timeStamp);
+    if (aScriptError.private) {
+      node.setAttribute("private", true);
+    }
+
+    if (objectActors.size > 0) {
+      node._objectActors = objectActors;
+    }
+
     return node;
   },
 
@@ -1182,18 +1237,55 @@ WebConsoleFrame.prototype = {
   },
 
   /**
+   * Handle log messages received from the server. This method outputs the given
+   * message.
+   *
+   * @param object aPacket
+   *        The message packet received from the server.
+   */
+  handleLogMessage: function WCF_handleLogMessage(aPacket)
+  {
+    if (aPacket.message) {
+      this.outputMessage(CATEGORY_JS, this._reportLogMessage, [aPacket]);
+    }
+  },
+
+  /**
+   * Display log messages received from the server.
+   *
+   * @private
+   * @param object aPacket
+   *        The message packet received from the server.
+   * @return nsIDOMElement
+   *         The message element to render for the given log message.
+   */
+  _reportLogMessage: function WCF__reportLogMessage(aPacket)
+  {
+    let msg = aPacket.message;
+    if (msg.type && msg.type == "longString") {
+      msg = msg.initial;
+    }
+    let node = this.createMessageNode(CATEGORY_JS, SEVERITY_LOG, msg, null,
+                                      null, null, null, aPacket.timeStamp);
+    if (WebConsoleUtils.isActorGrip(aPacket.message)) {
+      node._objectActors = new Set([aPacket.message.actor]);
+    }
+    return node;
+  },
+
+  /**
    * Log network event.
    *
    * @param object aActorId
    *        The network event actor ID to log.
-   * @return nsIDOMElement|undefined
+   * @return nsIDOMElement|null
    *         The message element to display in the Web Console output.
    */
   logNetEvent: function WCF_logNetEvent(aActorId)
   {
     let networkInfo = this._networkRequests[aActorId];
     if (!networkInfo) {
-      return;
+      return null;
     }
 
     let request = networkInfo.request;
@@ -1244,6 +1336,9 @@ WebConsoleFrame.prototype = {
 
     let messageNode = this.createMessageNode(CATEGORY_NETWORK, severity,
                                              msgNode, null, null, clipboardText);
+    if (networkInfo.private) {
+      messageNode.setAttribute("private", true);
+    }
 
     messageNode._connectionId = aActorId;
     messageNode.url = request.url;
@@ -1369,6 +1464,7 @@ WebConsoleFrame.prototype = {
       response: {},
       timings: {},
       updates: [], // track the list of network event updates
+      private: aActor.private,
     };
 
     this._networkRequests[aActor.actor] = networkInfo;
@@ -1938,6 +2034,22 @@ WebConsoleFrame.prototype = {
         }
       });
     }
+    else if (category == CATEGORY_JS &&
+             methodOrNode == this.reportPageError) {
+      let pageError = args[1];
+      for (let prop of ["errorMessage", "lineText"]) {
+        let grip = pageError[prop];
+        if (WebConsoleUtils.isActorGrip(grip)) {
+          this._releaseObject(grip.actor);
+        }
+      }
+    }
+    else if (category == CATEGORY_JS &&
+             methodOrNode == this._reportLogMessage) {
+      if (WebConsoleUtils.isActorGrip(args[0].message)) {
+        this._releaseObject(args[0].message.actor);
+      }
+    }
   },
 
   /**
@@ -2167,8 +2279,12 @@ WebConsoleFrame.prototype = {
         targetElement: viewContainer,
         hideFilterInput: true,
       };
-      this.jsterm.openVariablesView(options)
-        .then((aView) => node._variablesView = aView);
+      this.jsterm.openVariablesView(options).then((aView) => {
+        node._variablesView = aView;
+        if (node.classList.contains("hidden-message")) {
+          node.classList.remove("hidden-message");
+        }
+      });
 
       let bodyContainer = this.document.createElement("vbox");
       bodyContainer.flex = 1;
@@ -2229,7 +2345,7 @@ WebConsoleFrame.prototype = {
       if (aItem && typeof aItem != "object" || !inspectable) {
         aContainer.appendChild(this.document.createTextNode(text));
 
-        if (aItem.type == "longString") {
+        if (aItem.type && aItem.type == "longString") {
           let ellipsis = this.document.createElement("description");
           ellipsis.classList.add("hud-clickable");
           ellipsis.classList.add("longStringEllipsis");
@@ -2330,21 +2446,24 @@ WebConsoleFrame.prototype = {
 
     // Create the text, which consists of an abbreviated version of the URL
     // plus an optional line number. Scratchpad URLs should not be abbreviated.
-    let text;
+    let displayLocation;
+    let fullURL;
 
     if (/^Scratchpad\/\d+$/.test(aSourceURL)) {
-      text = aSourceURL;
+      displayLocation = aSourceURL;
+      fullURL = aSourceURL;
     }
     else {
-      text = WebConsoleUtils.abbreviateSourceURL(aSourceURL);
+      fullURL = aSourceURL.split(" -> ").pop();
+      displayLocation = WebConsoleUtils.abbreviateSourceURL(fullURL);
     }
 
     if (aSourceLine) {
-      text += ":" + aSourceLine;
+      displayLocation += ":" + aSourceLine;
       locationNode.sourceLine = aSourceLine;
     }
 
-    locationNode.setAttribute("value", text);
+    locationNode.setAttribute("value", displayLocation);
 
     // Style appropriately.
     locationNode.setAttribute("crop", "center");
@@ -2354,7 +2473,7 @@ WebConsoleFrame.prototype = {
     locationNode.classList.add("text-link");
 
     // Make the location clickable.
-    locationNode.addEventListener("click", function() {
+    locationNode.addEventListener("click", () => {
       if (/^Scratchpad\/\d+$/.test(aSourceURL)) {
         let wins = Services.wm.getEnumerator("devtools:scratchpad");
 
@@ -2368,16 +2487,16 @@ WebConsoleFrame.prototype = {
         }
       }
       else if (locationNode.parentNode.category == CATEGORY_CSS) {
-        this.owner.viewSourceInStyleEditor(aSourceURL, aSourceLine);
+        this.owner.viewSourceInStyleEditor(fullURL, aSourceLine);
       }
       else if (locationNode.parentNode.category == CATEGORY_JS ||
                locationNode.parentNode.category == CATEGORY_WEBDEV) {
-        this.owner.viewSourceInDebugger(aSourceURL, aSourceLine);
+        this.owner.viewSourceInDebugger(fullURL, aSourceLine);
       }
       else {
-        this.owner.viewSource(aSourceURL, aSourceLine);
+        this.owner.viewSource(fullURL, aSourceLine);
       }
-    }.bind(this), true);
+    }, true);
 
     return locationNode;
   },
@@ -2640,14 +2759,21 @@ function JSTerm(aWebConsoleFrame)
 
   this.lastCompletion = { value: null };
   this.history = [];
-  this.historyIndex = 0;
-  this.historyPlaceHolder = 0;  // this.history.length;
+
+  // Holds the number of entries in history. This value is incremented in
+  // this.execute().
+  this.historyIndex = 0; // incremented on this.execute()
+
+  // Holds the index of the history entry that the user is currently viewing.
+  // This is reset to this.history.length when this.execute() is invoked.
+  this.historyPlaceHolder = 0;
   this._objectActorsInVariablesViews = new Map();
 
   this._keyPress = this.keyPress.bind(this);
   this._inputEventHandler = this.inputEventHandler.bind(this);
   this._fetchVarProperties = this._fetchVarProperties.bind(this);
   this._fetchVarLongString = this._fetchVarLongString.bind(this);
+  this._onKeypressInVariablesView = this._onKeypressInVariablesView.bind(this);
 
   EventEmitter.decorate(this);
 }
@@ -2910,8 +3036,10 @@ JSTerm.prototype = {
     let options = { frame: this.SELECTED_FRAME };
     this.requestEvaluation(aExecuteString, options).then(onResult, onResult);
 
-    this.history.push(aExecuteString);
-    this.historyIndex++;
+    // Append a new value in the history of executed code, or overwrite the most
+    // recent entry. The most recent entry may contain the last edited input
+    // value that was not evaluated yet.
+    this.history[this.historyIndex++] = aExecuteString;
     this.historyPlaceHolder = this.history.length;
     this.setInputValue("");
     this.clearCompletion();
@@ -3006,6 +3134,8 @@ JSTerm.prototype = {
    *        - targetElement: optional nsIDOMElement to append the variables view
    *        to. An iframe element is used as a container for the view. If this
    *        option is not used, then the variables view opens in the sidebar.
+   *        - autofocus: optional boolean, |true| if you want to give focus to
+   *        the variables view window after open, |false| otherwise.
    * @return object
    *         A Promise object that is resolved when the variables view has
    *         opened. The new variables view instance is given to the callbacks.
@@ -3023,10 +3153,16 @@ JSTerm.prototype = {
         view = this._createVariablesView(viewOptions);
         if (!aOptions.targetElement) {
           this._variablesView = view;
+          aWindow.addEventListener("keypress", this._onKeypressInVariablesView);
         }
       }
       aOptions.view = view;
       this._updateVariablesView(aOptions);
+
+      if (!aOptions.targetElement && aOptions.autofocus) {
+        aWindow.focus();
+      }
+
       this.emit("variablesview-open", view, aOptions);
       return view;
     };
@@ -3048,7 +3184,9 @@ JSTerm.prototype = {
       aOptions.targetElement.appendChild(iframe);
     }
     else {
-      this._createSidebar();
+      if (!this.sidebar) {
+        this._createSidebar();
+      }
       promise = this._addVariablesViewSidebarTab();
     }
 
@@ -3058,15 +3196,14 @@ JSTerm.prototype = {
   /**
    * Create the Web Console sidebar.
    *
-   * @see Sidebar.jsm
+   * @see devtools/framework/sidebar.js
    * @private
    */
   _createSidebar: function JST__createSidebar()
   {
-    if (!this.sidebar) {
-      let tabbox = this.hud.document.querySelector("#webconsole-sidebar");
-      this.sidebar = new ToolSidebar(tabbox, this);
-    }
+    let tabbox = this.hud.document.querySelector("#webconsole-sidebar");
+    let ToolSidebar = devtools.require("devtools/framework/sidebar").ToolSidebar;
+    this.sidebar = new ToolSidebar(tabbox, this);
     this.sidebar.show();
   },
 
@@ -3102,6 +3239,27 @@ JSTerm.prototype = {
     }
 
     return deferred.promise;
+  },
+
+  /**
+   * The keypress event handler for the Variables View sidebar. Currently this
+   * is used for removing the sidebar when Escape is pressed.
+   *
+   * @private
+   * @param nsIDOMEvent aEvent
+   *        The keypress DOM event object.
+   */
+  _onKeypressInVariablesView: function JST__onKeypressInVariablesView(aEvent)
+  {
+    let tag = aEvent.target.nodeName;
+    if (aEvent.keyCode != Ci.nsIDOMKeyEvent.DOM_VK_ESCAPE || aEvent.shiftKey ||
+        aEvent.altKey || aEvent.ctrlKey || aEvent.metaKey ||
+        ["input", "textarea", "select", "textbox"].indexOf(tag) > -1) {
+        return;
+    }
+
+    this._sidebarDestroy();
+    this.inputNode.focus();
   },
 
   /**
@@ -3446,7 +3604,7 @@ JSTerm.prototype = {
         aProperty.evaluationMacro = this._variablesViewSimpleValueEvalMacro;
       }
 
-      let grips = [aProperty.value, aProperty.gettter, aProperty.settter];
+      let grips = [aProperty.value, aProperty.getter, aProperty.setter];
       grips.forEach(addActorForDescriptor);
 
       let inspectable = !VariablesView.isPrimitive({ value: aProperty.value });
@@ -3463,8 +3621,21 @@ JSTerm.prototype = {
 
     let client = new GripClient(this.hud.proxy.client, grip);
     client.getPrototypeAndProperties((aResponse) => {
-      let { ownProperties, prototype } = aResponse;
+      let { ownProperties, prototype, safeGetterValues } = aResponse;
       let sortable = VariablesView.NON_SORTABLE_CLASSES.indexOf(grip.class) == -1;
+
+      // Merge the safe getter values into one object such that we can use it
+      // in VariablesView.
+      for (let name of Object.keys(safeGetterValues)) {
+        if (name in ownProperties) {
+          ownProperties[name].getterValue = safeGetterValues[name].getterValue;
+          ownProperties[name].getterPrototypeLevel = safeGetterValues[name]
+                                                     .getterPrototypeLevel;
+        }
+        else {
+          ownProperties[name] = safeGetterValues[name];
+        }
+      }
 
       // Add all the variable properties.
       if (ownProperties) {
@@ -3610,6 +3781,18 @@ JSTerm.prototype = {
     if (aClearStorage) {
       this.webConsoleClient.clearMessagesCache();
     }
+  },
+
+  /**
+   * Remove all of the private messages from the Web Console output.
+   */
+  clearPrivateMessages: function JST_clearPrivateMessages()
+  {
+    let nodes = this.hud.outputNode.querySelectorAll("richlistitem[private]");
+    for (let node of nodes) {
+      this.hud.removeOutputMessage(node);
+    }
+    this.emit("private-messages-cleared");
   },
 
   /**
@@ -3761,6 +3944,9 @@ JSTerm.prototype = {
           this.clearCompletion();
           aEvent.preventDefault();
         }
+        else if (this.sidebar) {
+          this._sidebarDestroy();
+        }
         break;
 
       case Ci.nsIDOMKeyEvent.DOM_VK_RETURN:
@@ -3835,27 +4021,26 @@ JSTerm.prototype = {
       if (this.historyPlaceHolder <= 0) {
         return false;
       }
-
       let inputVal = this.history[--this.historyPlaceHolder];
-      if (inputVal){
-        this.setInputValue(inputVal);
+
+      // Save the current input value as the latest entry in history, only if
+      // the user is already at the last entry.
+      // Note: this code does not store changes to items that are already in
+      // history.
+      if (this.historyPlaceHolder+1 == this.historyIndex) {
+        this.history[this.historyIndex] = this.inputNode.value || "";
       }
+
+      this.setInputValue(inputVal);
     }
     // Down Arrow key
     else if (aDirection == HISTORY_FORWARD) {
-      if (this.historyPlaceHolder == this.history.length - 1) {
-        this.historyPlaceHolder ++;
-        this.setInputValue("");
-      }
-      else if (this.historyPlaceHolder >= (this.history.length)) {
+      if (this.historyPlaceHolder >= (this.history.length-1)) {
         return false;
       }
-      else {
-        let inputVal = this.history[++this.historyPlaceHolder];
-        if (inputVal){
-          this.setInputValue(inputVal);
-        }
-      }
+
+      let inputVal = this.history[++this.historyPlaceHolder];
+      this.setInputValue(inputVal);
     }
     else {
       throw new Error("Invalid argument 0");
@@ -4166,13 +4351,15 @@ JSTerm.prototype = {
     this.openVariablesView({
       label: VariablesView.getString(aResponse.result),
       objectActor: aResponse.result,
+      autofocus: true,
     });
   },
 
   /**
-   * Destroy the JSTerm object. Call this method to avoid memory leaks.
+   * Destroy the sidebar.
+   * @private
    */
-  destroy: function JST_destroy()
+  _sidebarDestroy: function JST__sidebarDestroy()
   {
     if (this._variablesView) {
       let actors = this._objectActorsInVariablesViews.get(this._variablesView);
@@ -4184,9 +4371,20 @@ JSTerm.prototype = {
     }
 
     if (this.sidebar) {
+      this.sidebar.hide();
       this.sidebar.destroy();
       this.sidebar = null;
     }
+
+    this.emit("sidebar-closed");
+  },
+
+  /**
+   * Destroy the JSTerm object. Call this method to avoid memory leaks.
+   */
+  destroy: function JST_destroy()
+  {
+    this._sidebarDestroy();
 
     this.clearCompletion();
     this.clearOutput();
@@ -4369,7 +4567,7 @@ CommandController.prototype = {
       case "consoleCmd_copyURL": {
         // Only enable URL-related actions if node is Net Activity.
         let selectedItem = this.owner.outputNode.selectedItem;
-        return selectedItem && selectedItem.url;
+        return selectedItem && "url" in selectedItem;
       }
       case "cmd_fontSizeEnlarge":
       case "cmd_fontSizeReduce":
@@ -4379,6 +4577,7 @@ CommandController.prototype = {
       case "cmd_close":
         return this.owner.owner._browserConsole;
     }
+    return false;
   },
 
   doCommand: function CommandController_doCommand(aCommand)
@@ -4432,6 +4631,7 @@ function WebConsoleConnectionProxy(aWebConsole, aTarget)
   this.target = aTarget;
 
   this._onPageError = this._onPageError.bind(this);
+  this._onLogMessage = this._onLogMessage.bind(this);
   this._onConsoleAPICall = this._onConsoleAPICall.bind(this);
   this._onNetworkEvent = this._onNetworkEvent.bind(this);
   this._onNetworkEventUpdate = this._onNetworkEventUpdate.bind(this);
@@ -4440,6 +4640,7 @@ function WebConsoleConnectionProxy(aWebConsole, aTarget)
   this._onAttachConsole = this._onAttachConsole.bind(this);
   this._onCachedMessages = this._onCachedMessages.bind(this);
   this._connectionTimeout = this._connectionTimeout.bind(this);
+  this._onLastPrivateContextExited = this._onLastPrivateContextExited.bind(this);
 }
 
 WebConsoleConnectionProxy.prototype = {
@@ -4535,11 +4736,13 @@ WebConsoleConnectionProxy.prototype = {
 
     let client = this.client = this.target.client;
 
+    client.addListener("logMessage", this._onLogMessage);
     client.addListener("pageError", this._onPageError);
     client.addListener("consoleAPICall", this._onConsoleAPICall);
     client.addListener("networkEvent", this._onNetworkEvent);
     client.addListener("networkEventUpdate", this._onNetworkEventUpdate);
     client.addListener("fileActivity", this._onFileActivity);
+    client.addListener("lastPrivateContextExited", this._onLastPrivateContextExited);
     this.target.on("will-navigate", this._onTabNavigated);
     this.target.on("navigate", this._onTabNavigated);
 
@@ -4656,6 +4859,23 @@ WebConsoleConnectionProxy.prototype = {
   },
 
   /**
+   * The "logMessage" message type handler. We redirect any message to the UI
+   * for displaying.
+   *
+   * @private
+   * @param string aType
+   *        Message type.
+   * @param object aPacket
+   *        The message received from the server.
+   */
+  _onLogMessage: function WCCP__onLogMessage(aType, aPacket)
+  {
+    if (this.owner && aPacket.from == this._consoleActor) {
+      this.owner.handleLogMessage(aPacket);
+    }
+  },
+
+  /**
    * The "consoleAPICall" message type handler. We redirect any message to
    * the UI for displaying.
    *
@@ -4725,6 +4945,24 @@ WebConsoleConnectionProxy.prototype = {
   },
 
   /**
+   * The "lastPrivateContextExited" message type handler. When this message is
+   * received the Web Console UI is cleared.
+   *
+   * @private
+   * @param string aType
+   *        Message type.
+   * @param object aPacket
+   *        The message received from the server.
+   */
+  _onLastPrivateContextExited:
+  function WCCP__onLastPrivateContextExited(aType, aPacket)
+  {
+    if (this.owner && aPacket.from == this._consoleActor) {
+      this.owner.jsterm.clearPrivateMessages();
+    }
+  },
+
+  /**
    * The "will-navigate" and "navigate" event handlers. We redirect any message
    * to the UI for displaying.
    *
@@ -4738,6 +4976,10 @@ WebConsoleConnectionProxy.prototype = {
   {
     if (!this.owner) {
       return;
+    }
+
+    if (aEvent == "will-navigate" && !this.owner.persistLog) {
+      this.owner.jsterm.clearOutput();
     }
 
     if (aPacket.url) {
@@ -4781,11 +5023,13 @@ WebConsoleConnectionProxy.prototype = {
       return this._disconnecter.promise;
     }
 
+    this.client.removeListener("logMessage", this._onLogMessage);
     this.client.removeListener("pageError", this._onPageError);
     this.client.removeListener("consoleAPICall", this._onConsoleAPICall);
     this.client.removeListener("networkEvent", this._onNetworkEvent);
     this.client.removeListener("networkEventUpdate", this._onNetworkEventUpdate);
     this.client.removeListener("fileActivity", this._onFileActivity);
+    this.client.removeListener("lastPrivateContextExited", this._onLastPrivateContextExited);
     this.target.off("will-navigate", this._onTabNavigated);
     this.target.off("navigate", this._onTabNavigated);
 

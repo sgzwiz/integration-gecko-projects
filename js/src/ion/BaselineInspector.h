@@ -39,7 +39,9 @@ class SetElemICInspector : public ICInspector
       : ICInspector(inspector, pc, icEntry)
     { }
 
+    bool sawOOBDenseWrite() const;
     bool sawOOBTypedArrayWrite() const;
+    bool sawDenseWrite() const;
 };
 
 class BaselineInspector
@@ -49,7 +51,7 @@ class BaselineInspector
     ICEntry *prevLookedUpEntry;
 
   public:
-    BaselineInspector(JSContext *cx, RawScript rawScript)
+    BaselineInspector(JSContext *cx, JSScript *rawScript)
       : script(cx, rawScript), prevLookedUpEntry(NULL)
     {
         JS_ASSERT(script);
@@ -89,11 +91,11 @@ class BaselineInspector
         return ICInspectorType(this, pc, ent);
     }
 
-    ICStub::Kind monomorphicStubKind(jsbytecode *pc);
-    bool dimorphicStubKind(jsbytecode *pc, ICStub::Kind *pfirst, ICStub::Kind *psecond);
+    ICStub *monomorphicStub(jsbytecode *pc);
+    bool dimorphicStub(jsbytecode *pc, ICStub **pfirst, ICStub **psecond);
 
   public:
-    RawShape maybeMonomorphicShapeForPropertyOp(jsbytecode *pc);
+    bool maybeShapesForPropertyOp(jsbytecode *pc, Vector<Shape *> &shapes);
 
     SetElemICInspector setElemICInspector(jsbytecode *pc) {
         return makeICInspector<SetElemICInspector>(pc, ICStub::SetElem_Fallback);
@@ -102,6 +104,9 @@ class BaselineInspector
     MIRType expectedResultType(jsbytecode *pc);
     MCompare::CompareType expectedCompareType(jsbytecode *pc);
     MIRType expectedBinaryArithSpecialization(jsbytecode *pc);
+
+    bool hasSeenNonNativeGetElement(jsbytecode *pc);
+    bool hasSeenAccessedGetter(jsbytecode *pc);
 };
 
 } // namespace ion

@@ -27,6 +27,7 @@
 #include "nsDOMCID.h"
 #include "nsNodeInfoManager.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsCCUncollectableMarker.h"
 #include "nsDOMJSUtils.h" // for GetScriptContextFromJSContext
 #include "xpcpublic.h"
@@ -761,11 +762,9 @@ nsXULPDGlobalObject::EnsureScriptEnvironment()
   // will re-fetch the global and set it up in our language globals array.
   {
     AutoPushJSContext cx(ctxNew->GetNativeContext());
-    JSAutoRequest ar(cx);
-
-    JSObject *newGlob = JS_NewGlobalObject(cx, &gSharedGlobalClass,
-                                           nsJSPrincipals::get(GetPrincipal()),
-                                           JS::SystemZone);
+    JS::Rooted<JSObject*> newGlob(cx,
+      JS_NewGlobalObject(cx, &gSharedGlobalClass,
+                         nsJSPrincipals::get(GetPrincipal()), JS::SystemZone));
     if (!newGlob)
         return NS_OK;
 

@@ -92,6 +92,7 @@
     _(AbsI)                         \
     _(AbsD)                         \
     _(SqrtD)                        \
+    _(Atan2D)                       \
     _(PowI)                         \
     _(PowD)                         \
     _(Random)                       \
@@ -139,6 +140,8 @@
     _(ParDump)                      \
     _(TypeBarrier)                  \
     _(MonitorTypes)                 \
+    _(PostWriteBarrierO)            \
+    _(PostWriteBarrierV)            \
     _(InitializedLength)            \
     _(SetInitializedLength)         \
     _(BoundsCheck)                  \
@@ -174,6 +177,8 @@
     _(ParSlice)                     \
     _(GetPropertyCacheV)            \
     _(GetPropertyCacheT)            \
+    _(GetPropertyPolymorphicV)      \
+    _(GetPropertyPolymorphicT)      \
     _(GetElementCacheV)             \
     _(GetElementCacheT)             \
     _(BindNameCache)                \
@@ -188,6 +193,10 @@
     _(CallDeleteProperty)           \
     _(SetPropertyCacheV)            \
     _(SetPropertyCacheT)            \
+    _(SetElementCacheV)             \
+    _(SetElementCacheT)             \
+    _(SetPropertyPolymorphicV)      \
+    _(SetPropertyPolymorphicT)      \
     _(CallIteratorStart)            \
     _(IteratorStart)                \
     _(IteratorNext)                 \
@@ -199,6 +208,9 @@
     _(StringLength)                 \
     _(ArgumentsLength)              \
     _(GetArgument)                  \
+    _(RunOncePrologue)              \
+    _(Rest)                         \
+    _(ParRest)                      \
     _(TypeOfV)                      \
     _(ToIdV)                        \
     _(Floor)                        \

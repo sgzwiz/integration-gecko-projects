@@ -6,6 +6,8 @@
 #ifndef mozilla_dom_HTMLAudioElement_h
 #define mozilla_dom_HTMLAudioElement_h
 
+#include "mozilla/Attributes.h"
+#include "nsITimer.h"
 #include "nsIDOMHTMLAudioElement.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/dom/TypedArray.h"
@@ -17,6 +19,7 @@ namespace mozilla {
 namespace dom {
 
 class HTMLAudioElement : public HTMLMediaElement,
+                         public nsITimerCallback,
                          public nsIDOMHTMLAudioElement
 {
 public:
@@ -39,10 +42,16 @@ public:
   using HTMLMediaElement::GetPaused;
   NS_FORWARD_NSIDOMHTMLMEDIAELEMENT(HTMLMediaElement::)
 
+  // nsIAudioChannelAgentCallback
+  NS_DECL_NSIAUDIOCHANNELAGENTCALLBACK
+
+  // NS_DECL_NSITIMERCALLBACK
+  NS_DECL_NSITIMERCALLBACK
+
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
   virtual nsresult SetAcceptHeader(nsIHttpChannel* aChannel);
 
-  virtual nsIDOMNode* AsDOMNode() { return this; }
+  virtual nsIDOMNode* AsDOMNode() MOZ_OVERRIDE { return this; }
 
   // WebIDL
 
@@ -68,6 +77,15 @@ public:
 protected:
   virtual JSObject* WrapNode(JSContext* aCx,
                              JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
+
+  // Update the audio channel playing state
+  virtual void UpdateAudioChannelPlayingState() MOZ_OVERRIDE;
+
+  // Due to that audio data API doesn't indicate the timing of pause or end,
+  // the timer is used to defer the timing of pause/stop after writing data.
+  nsCOMPtr<nsITimer> mDeferStopPlayTimer;
+  // To indicate mDeferStopPlayTimer is on fire or not.
+  bool mTimerActivated;
 };
 
 } // namespace dom

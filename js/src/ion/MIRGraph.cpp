@@ -9,7 +9,6 @@
 #include "MIR.h"
 #include "MIRGraph.h"
 #include "IonBuilder.h"
-#include "frontend/BytecodeEmitter.h"
 #include "jsscriptinlines.h"
 
 using namespace js;
@@ -76,6 +75,16 @@ MIRGraph::removeBlocksAfter(MBasicBlock *start)
 
         if (block == osrBlock_)
             osrBlock_ = NULL;
+
+        if (exitAccumulator_) {
+            size_t i = 0;
+            while (i < exitAccumulator_->length()) {
+                if ((*exitAccumulator_)[i] == block)
+                    exitAccumulator_->erase(exitAccumulator_->begin() + i);
+                else
+                    i++;
+            }
+        }
         block->discardAllInstructions();
         block->discardAllPhis();
         block->discardAllResumePoints();

@@ -54,7 +54,7 @@ ToStringGuts(XPCCallContext& ccx)
     XPCWrappedNative* wrapper = ccx.GetWrapper();
 
     if (wrapper)
-        sz = wrapper->ToString(ccx, ccx.GetTearOff());
+        sz = wrapper->ToString(ccx.GetTearOff());
     else
         sz = JS_smprintf("[xpconnect wrapped native prototype]");
 
@@ -146,8 +146,8 @@ GetDoubleWrappedJSObject(XPCCallContext& ccx, XPCWrappedNative* wrapper)
     nsCOMPtr<nsIXPConnectWrappedJS>
         underware = do_QueryInterface(wrapper->GetIdentityObject());
     if (underware) {
-        RootedObject mainObj(ccx);
-        if (NS_SUCCEEDED(underware->GetJSObject(mainObj.address())) && mainObj) {
+        RootedObject mainObj(ccx, underware->GetJSObject());
+        if (mainObj) {
             RootedId id(ccx, ccx.GetRuntime()->
                             GetStringID(XPCJSRuntime::IDX_WRAPPED_JSOBJECT));
 
@@ -192,14 +192,10 @@ XPC_WN_DoubleWrappedGetter(JSContext *cx, unsigned argc, jsval *vp)
     // It is a double wrapped object. Figure out if the caller
     // is allowed to see it.
 
-    nsIXPCSecurityManager* sm;
-    XPCContext* xpcc = ccx.GetXPCContext();
-
-    sm = xpcc->GetAppropriateSecurityManager(nsIXPCSecurityManager::HOOK_GET_PROPERTY);
+    nsIXPCSecurityManager* sm = nsXPConnect::XPConnect()->GetDefaultSecurityManager();
     if (sm) {
         AutoMarkingNativeInterfacePtr iface(ccx);
-        iface = XPCNativeInterface::
-                    GetNewOrUsed(ccx, &NS_GET_IID(nsIXPCWrappedJSObjectGetter));
+        iface = XPCNativeInterface::GetNewOrUsed(&NS_GET_IID(nsIXPCWrappedJSObjectGetter));
 
         if (iface) {
             jsid id = ccx.GetRuntime()->
@@ -324,9 +320,9 @@ DefinePropertyIfFound(XPCCallContext& ccx,
 
             if (JSID_IS_STRING(id) &&
                 name.encodeLatin1(ccx, JSID_TO_STRING(id)) &&
-                (iface2 = XPCNativeInterface::GetNewOrUsed(ccx, name.ptr()), iface2) &&
+                (iface2 = XPCNativeInterface::GetNewOrUsed(name.ptr()), iface2) &&
                 nullptr != (to = wrapperToReflectInterfaceNames->
-                           FindTearOff(ccx, iface2, true, &rv)) &&
+                           FindTearOff(iface2, true, &rv)) &&
                 nullptr != (jso = to->GetJSObject()))
 
             {
@@ -383,7 +379,7 @@ DefinePropertyIfFound(XPCCallContext& ccx,
     if (!member) {
         if (wrapperToReflectInterfaceNames) {
             XPCWrappedNativeTearOff* to =
-              wrapperToReflectInterfaceNames->FindTearOff(ccx, iface, true);
+              wrapperToReflectInterfaceNames->FindTearOff(iface, true);
 
             if (!to)
                 return false;
@@ -969,7 +965,7 @@ XPC_WN_Helper_Call(JSContext *cx, unsigned argc, jsval *vp)
 
     SLIM_LOG_WILL_MORPH(cx, obj);
     PRE_HELPER_STUB_NO_SLIM
-    Call(wrapper, cx, obj, args.length(), args.array(), args.rval().address(), &retval);
+    Call(wrapper, cx, obj, args, &retval);
     POST_HELPER_STUB
 }
 
@@ -990,7 +986,7 @@ XPC_WN_Helper_Construct(JSContext *cx, unsigned argc, jsval *vp)
 
     SLIM_LOG_WILL_MORPH(cx, obj);
     PRE_HELPER_STUB_NO_SLIM
-    Construct(wrapper, cx, obj, args.length(), args.array(), args.rval().address(), &retval);
+    Construct(wrapper, cx, obj, args, &retval);
     POST_HELPER_STUB
 }
 
@@ -1013,7 +1009,7 @@ XPC_WN_Helper_Finalize(js::FreeOp *fop, JSObject *obj)
 
 static JSBool
 XPC_WN_Helper_NewResolve(JSContext *cx, JSHandleObject obj, JSHandleId id, unsigned flags,
-                         JSMutableHandleObject objp)
+                         MutableHandleObject objp)
 {
     nsresult rv = NS_OK;
     bool retval = true;
@@ -1151,7 +1147,7 @@ XPC_WN_Helper_NewResolve(JSContext *cx, JSHandleObject obj, JSHandleId id, unsig
 
 JSBool
 XPC_WN_JSOp_Enumerate(JSContext *cx, JSHandleObject obj, JSIterateOp enum_op,
-                      JSMutableHandleValue statep, JSMutableHandleId idp)
+                      JSMutableHandleValue statep, MutableHandleId idp)
 {
     js::Class *clazz = js::GetObjectClass(obj);
     if (!IS_WRAPPER_CLASS(clazz) || clazz == &XPC_WN_NoHelper_JSClass.base) {
@@ -1274,8 +1270,7 @@ XPC_WN_JSOp_ThisObject(JSContext *cx, JSHandleObject obj)
 
 // static
 XPCNativeScriptableInfo*
-XPCNativeScriptableInfo::Construct(XPCCallContext& ccx,
-                                   const XPCNativeScriptableCreateInfo* sci)
+XPCNativeScriptableInfo::Construct(const XPCNativeScriptableCreateInfo* sci)
 {
     NS_ASSERTION(sci, "bad param");
     NS_ASSERTION(sci->GetCallback(), "bad param");
@@ -1293,7 +1288,7 @@ XPCNativeScriptableInfo::Construct(XPCCallContext& ccx,
 
     JSBool success;
 
-    XPCJSRuntime* rt = ccx.GetRuntime();
+    XPCJSRuntime* rt = XPCJSRuntime::Get();
     XPCNativeScriptableSharedMap* map = rt->GetNativeScriptableSharedMap();
     {   // scoped lock
         XPCAutoLock lock(rt->GetMapLock());
@@ -1561,7 +1556,6 @@ XPC_WN_Shared_Proto_Enumerate(JSContext *cx, JSHandleObject obj)
     XPCCallContext ccx(JS_CALLER, cx);
     if (!ccx.IsValid())
         return false;
-    ccx.SetScopeForNewJSObjects(obj);
 
     uint16_t interface_count = set->GetInterfaceCount();
     XPCNativeInterface** interfaceArray = set->GetInterfaceArray();
@@ -1614,7 +1608,6 @@ XPC_WN_ModsAllowed_Proto_Resolve(JSContext *cx, JSHandleObject obj, JSHandleId i
     XPCCallContext ccx(JS_CALLER, cx);
     if (!ccx.IsValid())
         return false;
-    ccx.SetScopeForNewJSObjects(obj);
 
     XPCNativeScriptableInfo* si = self->GetScriptableInfo();
     unsigned enumFlag = (si && si->GetFlags().DontEnumStaticProps()) ?
@@ -1695,7 +1688,6 @@ XPC_WN_OnlyIWrite_Proto_AddPropertyStub(JSContext *cx, JSHandleObject obj, JSHan
     XPCCallContext ccx(JS_CALLER, cx);
     if (!ccx.IsValid())
         return false;
-    ccx.SetScopeForNewJSObjects(obj);
 
     // Allow XPConnect to add the property only
     if (ccx.GetResolveName() == id)
@@ -1726,7 +1718,6 @@ XPC_WN_NoMods_Proto_Resolve(JSContext *cx, JSHandleObject obj, JSHandleId id)
     XPCCallContext ccx(JS_CALLER, cx);
     if (!ccx.IsValid())
         return false;
-    ccx.SetScopeForNewJSObjects(obj);
 
     XPCNativeScriptableInfo* si = self->GetScriptableInfo();
     unsigned enumFlag = (si && si->GetFlags().DontEnumStaticProps()) ?

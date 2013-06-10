@@ -33,8 +33,8 @@
 #include "nsIDOMApplicationRegistry.h"
 #include "nsIBaseWindow.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsIXPConnect.h"
-#include "nsIJSContextStack.h"
 #include "nsUnicharUtils.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIScriptSecurityManager.h"
@@ -318,6 +318,15 @@ nsFrameLoader::LoadFrame()
   src.Trim(" \t\n\r");
 
   if (src.IsEmpty()) {
+    // If the frame is a XUL element and has the attribute 'nodefaultsrc=true'
+    // then we will not use 'about:blank' as fallback but return early without
+    // starting a load if no 'src' attribute is given (or it's empty).
+    if (mOwnerContent->IsXUL() &&
+        mOwnerContent->AttrValueIs(kNameSpaceID_None, nsGkAtoms::nodefaultsrc,
+                                   nsGkAtoms::_true, eCaseMatters)) {
+      return NS_OK;
+    }
+
     src.AssignLiteral("about:blank");
   }
 
@@ -2205,7 +2214,7 @@ public:
 
       nsRefPtr<nsFrameMessageManager> mm = tabChild->GetInnerManager();
       mm->ReceiveMessage(static_cast<EventTarget*>(tabChild), mMessage,
-                         false, &data, nullptr, nullptr, nullptr);
+                         false, &data, JS::NullPtr(), nullptr, nullptr);
     }
     return NS_OK;
   }
@@ -2555,6 +2564,10 @@ nsFrameLoader::ResetPermissionManagerStatus()
 /* [infallible] */ NS_IMETHODIMP
 nsFrameLoader::SetVisible(bool aVisible)
 {
+  if (mVisible == aVisible) {
+    return NS_OK;
+  }
+
   mVisible = aVisible;
   nsCOMPtr<nsIObserverService> os = services::GetObserverService();
   if (os) {

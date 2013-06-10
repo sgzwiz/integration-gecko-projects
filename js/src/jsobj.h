@@ -26,8 +26,6 @@
 #include "vm/ObjectImpl.h"
 #include "vm/String.h"
 
-ForwardDeclareJS(Object);
-
 namespace JS {
 struct ObjectsExtraSizes;
 }
@@ -40,7 +38,7 @@ class CallObject;
 struct GCMarker;
 struct NativeIterator;
 class Nursery;
-ForwardDeclare(Shape);
+class Shape;
 struct StackShape;
 
 namespace mjit { class Compiler; }
@@ -205,10 +203,6 @@ DeleteGeneric(JSContext *cx, HandleObject obj, HandleId id, JSBool *succeeded);
 
 } /* namespace js::baseops */
 
-/* ES5 8.12.8. */
-extern JSBool
-DefaultValue(JSContext *cx, HandleObject obj, JSType hint, MutableHandleValue vp);
-
 extern Class ArrayClass;
 extern Class ArrayBufferClass;
 extern Class BlockClass;
@@ -231,6 +225,7 @@ extern Class ProxyClass;
 extern Class RegExpClass;
 extern Class RegExpStaticsClass;
 extern Class SetIteratorClass;
+extern Class ScriptSourceClass;
 extern Class StopIterationClass;
 extern Class StringClass;
 extern Class StrictArgumentsObjectClass;
@@ -266,6 +261,8 @@ class WithObject;
 
 }  /* namespace js */
 
+#define JSSLOT_FREE(clasp)  JSCLASS_RESERVED_SLOTS(clasp)
+
 /*
  * The public interface for an object.
  *
@@ -295,7 +292,7 @@ class JSObject : public js::ObjectImpl
     static bool setLastProperty(JSContext *cx, JS::HandleObject obj, js::HandleShape shape);
 
     /* As above, but does not change the slot span. */
-    inline void setLastPropertyInfallible(js::RawShape shape);
+    inline void setLastPropertyInfallible(js::Shape *shape);
 
     /*
      * Make a non-array object with the specified initial state. This method
@@ -355,6 +352,13 @@ class JSObject : public js::ObjectImpl
      */
     inline bool hasUncacheableProto() const;
     inline bool setUncacheableProto(JSContext *cx);
+
+    /*
+     * Whether SETLELEM was used to access this object. See also the comment near
+     * PropertyTree::MAX_HEIGHT.
+     */
+    inline bool hadElementsAccess() const;
+    inline bool setHadElementsAccess(JSContext *cx);
 
   public:
     inline bool nativeEmpty() const;
@@ -420,8 +424,16 @@ class JSObject : public js::ObjectImpl
     static inline void nativeSetSlotWithType(JSContext *cx, js::HandleObject, js::Shape *shape,
                                              const js::Value &value);
 
-    inline const js::Value &getReservedSlot(uint32_t index) const;
-    inline js::HeapSlot &getReservedSlotRef(uint32_t index);
+    inline const js::Value &getReservedSlot(uint32_t index) const {
+        JS_ASSERT(index < JSSLOT_FREE(getClass()));
+        return getSlot(index);
+    }
+
+    inline js::HeapSlot &getReservedSlotRef(uint32_t index) {
+        JS_ASSERT(index < JSSLOT_FREE(getClass()));
+        return getSlotRef(index);
+    }
+
     inline void initReservedSlot(uint32_t index, const js::Value &v);
     inline void setReservedSlot(uint32_t index, const js::Value &v);
 
@@ -522,6 +534,10 @@ class JSObject : public js::ObjectImpl
      */
     inline JSObject *enclosingScope();
 
+    /* Access the metadata on an object. */
+    inline JSObject *getMetadata() const;
+    static bool setMetadata(JSContext *cx, js::HandleObject obj, js::HandleObject newMetadata);
+
     inline js::GlobalObject &global() const;
     using js::ObjectImpl::compartment;
 
@@ -560,6 +576,9 @@ class JSObject : public js::ObjectImpl
     static inline bool isFrozen(JSContext *cx, js::HandleObject obj, bool *resultp) {
         return isSealedOrFrozen(cx, obj, FREEZE, resultp);
     }
+
+    /* toString support. */
+    static const char *className(JSContext *cx, js::HandleObject obj);
 
     /* Accessors for elements. */
 
@@ -728,7 +747,7 @@ class JSObject : public js::ObjectImpl
                     js::MutableHandleValue vp);
 
   private:
-    static js::RawShape getChildProperty(JSContext *cx, JS::HandleObject obj,
+    static js::Shape *getChildProperty(JSContext *cx, JS::HandleObject obj,
                                          js::HandleShape parent, js::StackShape &child);
 
   protected:
@@ -739,7 +758,7 @@ class JSObject : public js::ObjectImpl
      * 1. getter and setter must be normalized based on flags (see jsscope.cpp).
      * 2. !isExtensible() checking must be done by callers.
      */
-    static js::RawShape addPropertyInternal(JSContext *cx,
+    static js::Shape *addPropertyInternal(JSContext *cx,
                                             JS::HandleObject obj, JS::HandleId id,
                                             JSPropertyOp getter, JSStrictPropertyOp setter,
                                             uint32_t slot, unsigned attrs,
@@ -756,20 +775,20 @@ class JSObject : public js::ObjectImpl
 
   public:
     /* Add a property whose id is not yet in this scope. */
-    static js::RawShape addProperty(JSContext *cx, JS::HandleObject, JS::HandleId id,
+    static js::Shape *addProperty(JSContext *cx, JS::HandleObject, JS::HandleId id,
                                     JSPropertyOp getter, JSStrictPropertyOp setter,
                                     uint32_t slot, unsigned attrs, unsigned flags,
                                     int shortid, bool allowDictionary = true);
 
     /* Add a data property whose id is not yet in this scope. */
-    js::RawShape addDataProperty(JSContext *cx, jsid id_, uint32_t slot, unsigned attrs) {
+    js::Shape *addDataProperty(JSContext *cx, jsid id_, uint32_t slot, unsigned attrs) {
         JS_ASSERT(!(attrs & (JSPROP_GETTER | JSPROP_SETTER)));
         JS::RootedObject self(cx, this);
         JS::RootedId id(cx, id_);
         return addProperty(cx, self, id, NULL, NULL, slot, attrs, 0, 0);
     }
 
-    js::RawShape addDataProperty(JSContext *cx, js::HandlePropertyName name, uint32_t slot, unsigned attrs) {
+    js::Shape *addDataProperty(JSContext *cx, js::HandlePropertyName name, uint32_t slot, unsigned attrs) {
         JS_ASSERT(!(attrs & (JSPROP_GETTER | JSPROP_SETTER)));
         JS::RootedObject self(cx, this);
         JS::RootedId id(cx, NameToId(name));
@@ -777,11 +796,11 @@ class JSObject : public js::ObjectImpl
     }
 
     /* Add or overwrite a property for id in this scope. */
-    static js::RawShape putProperty(JSContext *cx, JS::HandleObject obj, JS::HandleId id,
+    static js::Shape *putProperty(JSContext *cx, JS::HandleObject obj, JS::HandleId id,
                                     JSPropertyOp getter, JSStrictPropertyOp setter,
                                     uint32_t slot, unsigned attrs,
                                     unsigned flags, int shortid);
-    static js::RawShape putProperty(JSContext *cx, JS::HandleObject obj,
+    static js::Shape *putProperty(JSContext *cx, JS::HandleObject obj,
                                     js::PropertyName *name,
                                     JSPropertyOp getter, JSStrictPropertyOp setter,
                                     uint32_t slot, unsigned attrs,
@@ -792,7 +811,7 @@ class JSObject : public js::ObjectImpl
     }
 
     /* Change the given property into a sibling with the same id in this scope. */
-    static js::RawShape changeProperty(JSContext *cx, js::HandleObject obj,
+    static js::Shape *changeProperty(JSContext *cx, js::HandleObject obj,
                                        js::HandleShape shape, unsigned attrs, unsigned mask,
                                        JSPropertyOp getter, JSStrictPropertyOp setter);
 
@@ -971,6 +990,7 @@ class JSObject : public js::ObjectImpl
     inline bool isRegExpStatics() const;
     inline bool isScope() const;
     inline bool isScript() const;
+    inline bool isScriptSource() const;
     inline bool isSetIterator() const;
     inline bool isStopIteration() const;
     inline bool isTypedArray() const;
@@ -1023,6 +1043,7 @@ class JSObject : public js::ObjectImpl
     inline js::ScopeObject &asScope();
     inline js::SetObject &asSet();
     inline js::SetIteratorObject &asSetIterator();
+    inline js::ScriptSourceObject &asScriptSource();
     inline js::StrictArgumentsObject &asStrictArguments();
     inline js::StaticBlockObject &asStaticBlock();
     inline js::StringObject &asString();
@@ -1071,8 +1092,6 @@ struct JSObject_Slots4 : JSObject { js::Value fslots[4]; };
 struct JSObject_Slots8 : JSObject { js::Value fslots[8]; };
 struct JSObject_Slots12 : JSObject { js::Value fslots[12]; };
 struct JSObject_Slots16 : JSObject { js::Value fslots[16]; };
-
-#define JSSLOT_FREE(clasp)  JSCLASS_RESERVED_SLOTS(clasp)
 
 class JSValueArray {
   public:
@@ -1131,7 +1150,7 @@ js_PopulateObject(JSContext *cx, js::HandleObject newborn, js::HandleObject prop
  * Fast access to immutable standard objects (constructors and prototypes).
  */
 extern bool
-js_GetClassObject(JSContext *cx, js::RawObject obj, JSProtoKey key,
+js_GetClassObject(JSContext *cx, JSObject *obj, JSProtoKey key,
                   js::MutableHandleObject objp);
 
 /*
@@ -1153,7 +1172,7 @@ js_FindClassObject(JSContext *cx, JSProtoKey protoKey, js::MutableHandleValue vp
  * Find or create a property named by id in obj's scope, with the given getter
  * and setter, slot, attributes, and other members.
  */
-extern js::RawShape
+extern js::Shape *
 js_AddNativeProperty(JSContext *cx, JS::HandleObject obj, JS::HandleId id,
                      JSPropertyOp getter, JSStrictPropertyOp setter, uint32_t slot,
                      unsigned attrs, unsigned flags, int shortid);

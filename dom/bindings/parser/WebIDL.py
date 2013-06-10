@@ -320,7 +320,8 @@ class IDLUnresolvedIdentifier(IDLObject):
                               [location])
         if name[0] == '_' and not allowDoubleUnderscore:
             name = name[1:]
-        if name in ["constructor", "iterator", "toString", "toJSON"] and not allowForbidden:
+        # TODO: Bug 872377, Restore "toJSON" to below list.
+        if name in ["constructor", "iterator", "toString"] and not allowForbidden:
             raise WebIDLError("Cannot use reserved identifier '%s'" % (name),
                               [location])
 
@@ -397,25 +398,33 @@ class IDLObjectWithIdentifier(IDLObject):
                                       [self.location])
                 self.treatNullAs = value
             elif identifier == "TreatUndefinedAs":
-                if not self.type.isString():
-                    raise WebIDLError("[TreatUndefinedAs] is only allowed on "
-                                      "arguments or attributes whose type is "
-                                      "DOMString or DOMString?",
-                                      [self.location])
                 if isDictionaryMember:
                     raise WebIDLError("[TreatUndefinedAs] is not allowed for "
                                       "dictionary members", [self.location])
-                if value == 'Null':
-                    if not self.type.nullable():
-                        raise WebIDLError("[TreatUndefinedAs=Null] is only "
-                                          "allowed on arguments whose type is "
-                                          "DOMString?", [self.location])
-                elif value == 'Missing':
+                if value == 'Missing':
                     if not isOptional:
                         raise WebIDLError("[TreatUndefinedAs=Missing] is only "
                                           "allowed on optional arguments",
                                           [self.location])
-                elif value != 'EmptyString':
+                elif value == 'Null':
+                    if not self.type.isString():
+                        raise WebIDLError("[TreatUndefinedAs=Null] is only "
+                                          "allowed on arguments or "
+                                          "attributes whose type is "
+                                          "DOMString or DOMString?",
+                                          [self.location])
+                    if not self.type.nullable():
+                        raise WebIDLError("[TreatUndefinedAs=Null] is only "
+                                          "allowed on arguments whose type "
+                                          "is DOMString?", [self.location])
+                elif value == 'EmptyString':
+                    if not self.type.isString():
+                        raise WebIDLError("[TreatUndefinedAs=EmptyString] "
+                                          "is only allowed on arguments or "
+                                          "attributes whose type is "
+                                          "DOMString or DOMString?",
+                                          [self.location])
+                else:
                     raise WebIDLError("[TreatUndefinedAs] must take the "
                                       "identifiers EmptyString or Null or "
                                       "Missing", [self.location])
@@ -481,6 +490,9 @@ class IDLExternalInterface(IDLObjectWithIdentifier):
 
     def isJSImplemented(self):
         return False
+
+    def getNavigatorProperty(self):
+        return None
 
     def _getDependentObjects(self):
         return set()
@@ -899,11 +911,13 @@ class IDLInterface(IDLObjectWithScope):
                   identifier == "Pref" or
                   identifier == "NeedNewResolve" or
                   identifier == "JSImplementation" or
-                  identifier == "HeaderFile"):
+                  identifier == "HeaderFile" or
+                  identifier == "NavigatorProperty" or
+                  identifier == "OverrideBuiltins"):
                 # Known attributes that we don't need to do anything with here
                 pass
             else:
-                raise WebIDLError("Unknown extended attribute %s" % identifier,
+                raise WebIDLError("Unknown extended attribute %s on interface" % identifier,
                                   [attr.location])
 
             attrlist = attr.listValue()
@@ -990,6 +1004,15 @@ class IDLInterface(IDLObjectWithScope):
 
     def isJSImplemented(self):
         return bool(self.getJSImplementation())
+
+    def getNavigatorProperty(self):
+        naviProp = self.getExtendedAttribute("NavigatorProperty")
+        if not naviProp:
+            return None
+        assert len(naviProp) == 1
+        assert isinstance(naviProp, list)
+        assert len(naviProp[0]) != 0
+        return naviProp[0]
 
     def hasChildInterfaces(self):
         return self._hasChildInterfaces
@@ -1198,7 +1221,9 @@ class IDLType(IDLObject):
         'dictionary',
         'enum',
         'callback',
-        'union'
+        'union',
+        'sequence',
+        'array'
         )
 
     def __init__(self, location, name):
@@ -1273,7 +1298,7 @@ class IDLType(IDLObject):
         return False
 
     def isAny(self):
-        return self.tag() == IDLType.Tags.any and not self.isSequence()
+        return self.tag() == IDLType.Tags.any
 
     def isDate(self):
         return self.tag() == IDLType.Tags.date
@@ -1506,8 +1531,7 @@ class IDLSequenceType(IDLType):
         return self.inner.includesRestrictedFloat()
 
     def tag(self):
-        # XXXkhuey this is probably wrong.
-        return self.inner.tag()
+        return IDLType.Tags.sequence
 
     def resolveType(self, parentScope):
         assert isinstance(parentScope, IDLScope)
@@ -1690,8 +1714,7 @@ class IDLArrayType(IDLType):
         return False
 
     def tag(self):
-        # XXXkhuey this is probably wrong.
-        return self.inner.tag()
+        return IDLType.Tags.array
 
     def resolveType(self, parentScope):
         assert isinstance(parentScope, IDLScope)
@@ -2520,7 +2543,7 @@ class IDLAttribute(IDLInterfaceMember):
             # Known attributes that we don't need to do anything with here
             pass
         else:
-            raise WebIDLError("Unknown extended attribute %s" % identifier,
+            raise WebIDLError("Unknown extended attribute %s on attribute" % identifier,
                               [attr.location])
         IDLInterfaceMember.handleExtendedAttribute(self, attr)
 
@@ -3064,7 +3087,7 @@ class IDLMethod(IDLInterfaceMember, IDLScope):
             # Known attributes that we don't need to do anything with here
             pass
         else:
-            raise WebIDLError("Unknown extended attribute %s" % identifier,
+            raise WebIDLError("Unknown extended attribute %s on method" % identifier,
                               [attr.location])
         IDLInterfaceMember.handleExtendedAttribute(self, attr)
 
@@ -3382,8 +3405,15 @@ class Parser(Tokenizer):
         try:
             if self.globalScope()._lookupIdentifier(identifier):
                 p[0] = self.globalScope()._lookupIdentifier(identifier)
+                if not isinstance(p[0], IDLExternalInterface):
+                    raise WebIDLError("Name collision between external "
+                                      "interface declaration for identifier "
+                                      "%s and %s" % (identifier.name, p[0]),
+                                      [location, p[0].location])
                 return
-        except:
+        except Exception, ex:
+            if isinstance(ex, WebIDLError):
+                raise ex
             pass
 
         p[0] = IDLExternalInterface(location, self.globalScope(), identifier)
@@ -4251,8 +4281,8 @@ class Parser(Tokenizer):
         """
             NonAnyType : DATE TypeSuffix
         """
-        assert False
-        pass
+        p[0] = self.handleModifiers(BuiltinTypes[IDLBuiltinType.Types.date],
+                                    p[2])
 
     def p_ConstType(self, p):
         """

@@ -11,7 +11,7 @@
 #error GL_CONTEXT_PROVIDER_NAME not defined
 #endif
 
-class THEBES_API GL_CONTEXT_PROVIDER_NAME
+class GL_CONTEXT_PROVIDER_NAME
 {
 public:
     typedef GLContext::ContextFlags ContextFlags;
@@ -78,6 +78,9 @@ public:
     static SharedTextureHandle CreateSharedHandle(GLContext::SharedTextureShareType shareType,
                                                   void* buffer,
                                                   GLContext::SharedTextureBufferType bufferType);
+
+    static already_AddRefed<gfxASurface> GetSharedHandleAsSurface(GLContext::SharedTextureShareType shareType,
+                                                                  SharedTextureHandle sharedHandle);
 
     /**
      * Free any resources held by this Context Provider.

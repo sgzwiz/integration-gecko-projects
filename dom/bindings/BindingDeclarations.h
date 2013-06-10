@@ -31,13 +31,17 @@ class nsGlobalWindow;
 namespace mozilla {
 namespace dom {
 
-struct MainThreadDictionaryBase
+// Struct that serves as a base class for all dictionaries.  Particularly useful
+// so we can use IsBaseOf to detect dictionary template arguments.
+struct DictionaryBase
+{
+};
+
+struct MainThreadDictionaryBase : public DictionaryBase
 {
 protected:
-  JSContext* ParseJSON(const nsAString& aJSON,
-                       Maybe<JSAutoRequest>& aAr,
-                       Maybe<JSAutoCompartment>& aAc,
-                       Maybe< JS::Rooted<JS::Value> >& aVal);
+  bool ParseJSON(JSContext *aCx, const nsAString& aJSON,
+                 JS::MutableHandle<JS::Value> aVal);
 };
 
 struct EnumEntry {
@@ -221,16 +225,22 @@ private:
 };
 
 // Class for representing optional arguments.
-template<typename T>
-class Optional
+template<typename T, typename InternalType>
+class Optional_base
 {
 public:
-  Optional()
+  Optional_base()
   {}
 
-  explicit Optional(const T& aValue)
+  explicit Optional_base(const T& aValue)
   {
     mImpl.construct(aValue);
+  }
+
+  template<typename T1, typename T2>
+  explicit Optional_base(const T1& aValue1, const T2& aValue2)
+  {
+    mImpl.construct(aValue1, aValue2);
   }
 
   bool WasPassed() const
@@ -255,12 +265,12 @@ public:
     mImpl.construct(t1, t2);
   }
 
-  const T& Value() const
+  const InternalType& Value() const
   {
     return mImpl.ref();
   }
 
-  T& Value()
+  InternalType& Value()
   {
     return mImpl.ref();
   }
@@ -271,10 +281,96 @@ public:
 
 private:
   // Forbid copy-construction and assignment
-  Optional(const Optional& other) MOZ_DELETE;
-  const Optional &operator=(const Optional &other) MOZ_DELETE;
+  Optional_base(const Optional_base& other) MOZ_DELETE;
+  const Optional_base &operator=(const Optional_base &other) MOZ_DELETE;
 
-  Maybe<T> mImpl;
+  Maybe<InternalType> mImpl;
+};
+
+template<typename T>
+class Optional : public Optional_base<T, T>
+{
+public:
+  Optional() :
+    Optional_base<T, T>()
+  {}
+
+  explicit Optional(const T& aValue) :
+    Optional_base<T, T>(aValue)
+  {}
+};
+
+template<typename T>
+class Optional<JS::Handle<T> > :
+  public Optional_base<JS::Handle<T>, JS::Rooted<T> >
+{
+public:
+  Optional() :
+    Optional_base<JS::Handle<T>, JS::Rooted<T> >()
+  {}
+
+  Optional(JSContext* cx, const T& aValue) :
+    Optional_base<JS::Handle<T>, JS::Rooted<T> >(cx, aValue)
+  {}
+};
+
+// A specialization of Optional for JSObject* to make sure that when someone
+// calls Construct() on it we will pre-initialized the JSObject* to nullptr so
+// it can be traced safely.
+template<>
+class Optional<JSObject*> : public Optional_base<JSObject*, JSObject*>
+{
+public:
+  Optional() :
+    Optional_base<JSObject*, JSObject*>()
+  {}
+
+  explicit Optional(JSObject* aValue) :
+    Optional_base<JSObject*, JSObject*>(aValue)
+  {}
+
+  // Don't allow us to have an uninitialized JSObject*
+  void Construct()
+  {
+    // The Android compiler sucks and thinks we're trying to construct
+    // a JSObject* from an int if we don't cast here.  :(
+    Optional_base<JSObject*, JSObject*>::Construct(
+      static_cast<JSObject*>(nullptr));
+  }
+
+  template <class T1>
+  void Construct(const T1& t1)
+  {
+    Optional_base<JSObject*, JSObject*>::Construct(t1);
+  }
+};
+
+// A specialization of Optional for JS::Value to make sure that when someone
+// calls Construct() on it we will pre-initialized the JS::Value to
+// JS::UndefinedValue() so it can be traced safely.
+template<>
+class Optional<JS::Value> : public Optional_base<JS::Value, JS::Value>
+{
+public:
+  Optional() :
+    Optional_base<JS::Value, JS::Value>()
+  {}
+
+  explicit Optional(JS::Value aValue) :
+    Optional_base<JS::Value, JS::Value>(aValue)
+  {}
+
+  // Don't allow us to have an uninitialized JS::Value
+  void Construct()
+  {
+    Optional_base<JS::Value, JS::Value>::Construct(JS::UndefinedValue());
+  }
+
+  template <class T1>
+  void Construct(const T1& t1)
+  {
+    Optional_base<JS::Value, JS::Value>::Construct(t1);
+  }
 };
 
 // Specialization for strings.
@@ -442,6 +538,34 @@ struct ParentObject {
 
   nsISupports* const mObject;
   nsWrapperCache* const mWrapperCache;
+};
+
+// Representation for dates
+class Date {
+public:
+  // Not inlining much here to avoid the extra includes we'd need
+  Date();
+  Date(double aMilliseconds) :
+    mMsecSinceEpoch(aMilliseconds)
+  {}
+
+  bool IsUndefined() const;
+  double TimeStamp() const
+  {
+    return mMsecSinceEpoch;
+  }
+  void SetTimeStamp(double aMilliseconds)
+  {
+    mMsecSinceEpoch = aMilliseconds;
+  }
+  // Can return false if CheckedUnwrap fails.  This will NOT throw;
+  // callers should do it as needed.
+  bool SetTimeStamp(JSContext* cx, JSObject* obj);
+
+  bool ToDateObject(JSContext* cx, JS::MutableHandle<JS::Value> rval) const;
+
+private:
+  double mMsecSinceEpoch;
 };
 
 } // namespace dom

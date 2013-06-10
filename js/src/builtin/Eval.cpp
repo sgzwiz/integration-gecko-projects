@@ -12,7 +12,7 @@
 #include "mozilla/HashFunctions.h"
 #include "vm/GlobalObject.h"
 
-#include "jsinterpinlines.h"
+#include "vm/Interpreter-inl.h"
 
 using namespace js;
 
@@ -34,7 +34,7 @@ AssertInnerizedScopeChain(JSContext *cx, JSObject &scopeobj)
 }
 
 static bool
-IsEvalCacheCandidate(RawScript script)
+IsEvalCacheCandidate(JSScript *script)
 {
     // Make sure there are no inner objects which might use the wrong parent
     // and/or call scope by reusing the previous eval's script. Skip the
@@ -123,7 +123,7 @@ class EvalScriptGuard
         }
     }
 
-    void setNewScript(RawScript script) {
+    void setNewScript(JSScript *script) {
         // JSScript::initFromEmitter has already called js_CallNewScriptHook.
         JS_ASSERT(!script_ && script);
         script_ = script;
@@ -177,7 +177,7 @@ TryEvalJSON(JSContext *cx, JSScript *callerScript,
             if (cp == end) {
                 bool isArray = (chars[0] == '[');
                 JSONParser parser(cx, isArray ? chars : chars + 1U, isArray ? length : length - 2,
-                                  JSONParser::StrictJSON, JSONParser::NoError);
+                                  JSONParser::NoError);
                 RootedValue tmp(cx);
                 if (!parser.parse(&tmp))
                     return EvalJSON_Failure;
@@ -189,6 +189,30 @@ TryEvalJSON(JSContext *cx, JSScript *callerScript,
         }
     }
     return EvalJSON_NotJSON;
+}
+
+static void
+MarkFunctionsWithinEvalScript(JSScript *script)
+{
+    // Mark top level functions in an eval script as being within an eval and,
+    // if applicable, inside a with statement.
+
+    if (!script->hasObjects())
+        return;
+
+    ObjectArray *objects = script->objects();
+    size_t start = script->innerObjectsStart();
+
+    for (size_t i = start; i < objects->length; i++) {
+        JSObject *obj = objects->vector[i];
+        if (obj->isFunction()) {
+            JSFunction *fun = obj->toFunction();
+            if (fun->hasScript())
+                fun->nonLazyScript()->directlyInsideEval = true;
+            else if (fun->isInterpretedLazy())
+                fun->lazyScript()->setDirectlyInsideEval();
+        }
+    }
 }
 
 // Define subset of ExecuteType so that casting performs the injection.
@@ -265,7 +289,7 @@ EvalKernel(JSContext *cx, const CallArgs &args, EvalType evalType, AbstractFrame
 
     JSPrincipals *principals = PrincipalsForCompiledCode(args, cx);
 
-    JSScript *callerScript = caller ? caller.script() : NULL;
+    RootedScript callerScript(cx, caller ? caller.script() : NULL);
     EvalJSONResult ejr = TryEvalJSON(cx, callerScript, chars, length, args.rval());
     if (ejr != EvalJSON_NotJSON)
         return ejr == EvalJSON_Success;
@@ -286,14 +310,16 @@ EvalKernel(JSContext *cx, const CallArgs &args, EvalType evalType, AbstractFrame
         CompileOptions options(cx);
         options.setFileAndLine(filename, lineno)
                .setCompileAndGo(true)
+               .setForEval(true)
                .setNoScriptRval(false)
                .setPrincipals(principals)
                .setOriginPrincipals(originPrincipals);
-        RootedScript callerScript(cx, caller ? caller.script() : NULL);
-        RawScript compiled = frontend::CompileScript(cx, scopeobj, callerScript, options,
+        JSScript *compiled = frontend::CompileScript(cx, scopeobj, callerScript, options,
                                                      chars.get(), length, stableStr, staticLevel);
         if (!compiled)
             return false;
+
+        MarkFunctionsWithinEvalScript(compiled);
 
         esg.setNewScript(compiled);
     }
@@ -348,13 +374,16 @@ js::DirectEvalFromIon(JSContext *cx,
         CompileOptions options(cx);
         options.setFileAndLine(filename, lineno)
                .setCompileAndGo(true)
+               .setForEval(true)
                .setNoScriptRval(false)
                .setPrincipals(principals)
                .setOriginPrincipals(originPrincipals);
-        RawScript compiled = frontend::CompileScript(cx, scopeobj, callerScript, options,
+        JSScript *compiled = frontend::CompileScript(cx, scopeobj, callerScript, options,
                                                      chars.get(), length, stableStr, staticLevel);
         if (!compiled)
             return false;
+
+        MarkFunctionsWithinEvalScript(compiled);
 
         esg.setNewScript(compiled);
     }

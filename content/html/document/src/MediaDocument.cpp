@@ -98,7 +98,8 @@ const char* const MediaDocument::sFormatNames[4] =
 };
 
 MediaDocument::MediaDocument()
-    : mDocumentElementInserted(false)
+    : nsHTMLDocument(),
+      mDocumentElementInserted(false)
 {
 }
 MediaDocument::~MediaDocument()
@@ -165,12 +166,8 @@ MediaDocument::StartDocumentLoad(const char*         aCommand,
   NS_ENSURE_TRUE(docShell, NS_OK); 
 
   nsAutoCString charset;
-
-  nsCOMPtr<nsIAtom> csAtom;
-  docShell->GetParentCharset(getter_AddRefs(csAtom));
-  if (csAtom) {   // opening in a new tab
-    csAtom->ToUTF8String(charset);
-  }
+  // opening in a new tab
+  docShell->GetParentCharset(charset);
 
   if (charset.IsEmpty() || charset.Equals("UTF-8")) {
     nsCOMPtr<nsIContentViewer> cv;

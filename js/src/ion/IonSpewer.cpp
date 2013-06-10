@@ -14,6 +14,8 @@
 #ifndef ION_SPEW_DIR
 # if defined(_WIN32)
 #  define ION_SPEW_DIR ""
+# elif defined(__ANDROID__)
+#  define ION_SPEW_DIR "/data/local/tmp/"
 # else
 #  define ION_SPEW_DIR "/tmp/"
 # endif
@@ -158,6 +160,8 @@ IonSpewer::spewPass(const char *pass)
 {
     if (!isSpewingFunction())
         return;
+    if (!GetIonContext()->cx)
+        return;
 
     c1Spewer.spewPass(pass);
     jsonSpewer.beginPass(pass);
@@ -170,6 +174,8 @@ void
 IonSpewer::spewPass(const char *pass, LinearScanAllocator *ra)
 {
     if (!isSpewingFunction())
+        return;
+    if (!GetIonContext()->cx)
         return;
 
     c1Spewer.spewPass(pass);

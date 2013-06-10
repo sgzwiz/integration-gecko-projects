@@ -194,7 +194,7 @@ inline JSContext *
 xpc_UnmarkGrayContext(JSContext *cx)
 {
     if (cx) {
-        JSObject *global = JS_GetGlobalObject(cx);
+        JSObject *global = js::GetDefaultGlobalForContext(cx);
         xpc_UnmarkGrayObject(global);
         if (global && JS_IsInRequest(JS_GetRuntime(cx))) {
             JSObject *scope = JS_GetGlobalForScopeChain(cx);
@@ -204,15 +204,6 @@ xpc_UnmarkGrayContext(JSContext *cx)
     }
     return cx;
 }
-
-#ifdef __cplusplus
-class XPCAutoRequest : public JSAutoRequest {
-public:
-    XPCAutoRequest(JSContext *cx) : JSAutoRequest(cx) {
-        xpc_UnmarkGrayContext(cx);
-    }
-};
-#endif
 
 // If aVariant is an XPCVariant, this marks the object to be in aGeneration.
 // This also unmarks the gray JSObject.
@@ -363,6 +354,7 @@ bool StringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
 }
 
 nsIPrincipal *GetCompartmentPrincipal(JSCompartment *compartment);
+nsIPrincipal *GetObjectPrincipal(JSObject *obj);
 
 bool IsXBLScope(JSCompartment *compartment);
 
@@ -481,7 +473,11 @@ inline bool IsDOMProxy(JSObject *obj)
 }
 
 typedef JSObject*
-(*DefineInterface)(JSContext *cx, JSObject *global, jsid id, bool *enabled);
+(*DefineInterface)(JSContext *cx, JS::Handle<JSObject*> global,
+                   JS::Handle<jsid> id, bool *enabled);
+
+typedef JSObject*
+(*ConstructNavigatorProperty)(JSContext *cx, JS::Handle<JSObject*> naviObj);
 
 typedef bool
 (*PrefEnabled)();
@@ -493,5 +489,15 @@ Register(nsScriptNameSpaceManager* aNameSpaceManager);
 
 } // namespace dom
 } // namespace mozilla
+
+// Called once before the deferred finalization starts. Should hand off the
+// buffer with things to finalize in the return value.
+typedef void* (*DeferredFinalizeStartFunction)();
+
+// Called to finalize a number of objects. Slice is the number of objects
+// to finalize, or if it's UINT32_MAX, all objects should be finalized.
+// data is the pointer returned by DeferredFinalizeStartFunction.
+// Return value indicates whether it finalized all objects in the buffer.
+typedef bool (*DeferredFinalizeFunction)(uint32_t slice, void* data);
 
 #endif

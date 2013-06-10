@@ -53,8 +53,6 @@ members = [
     # dom/interfaces/core
     'nsIDOMDOMStringList.*',
 
-    'nsIDOMKeyEvent.*',
-    'nsIDOMDragEvent.*',
     'nsIDOMProgressEvent.lengthComputable',
     'nsIDOMProgressEvent.loaded',
     'nsIDOMProgressEvent.total',
@@ -100,10 +98,6 @@ members = [
     'nsIBoxObject.width',
     'nsIBoxObject.height',
 
-    # Audio
-    'nsIDOMNotifyAudioAvailableEvent.frameBuffer',
-    'nsIDOMNotifyAudioAvailableEvent.time',
-
     # dom/indexedDB
     'nsIIDBCursor.*',
     'nsIIDBCursorWithValue.*',
@@ -115,10 +109,7 @@ members = [
     'nsIIDBRequest.*',
     'nsIIDBTransaction.*',
     'nsIIDBOpenDBRequest.*',
-    'nsIIDBVersionChangeEvent.*',
     'nsIIndexedDatabaseManager.*',
-
-    'nsIDOMDOMError.*',
 
     # dom/file
     'nsIDOMLockedFile.*',
@@ -154,13 +145,9 @@ customIncludes = [
     'mozilla/dom/NodeBinding.h',
     'mozilla/dom/ElementBinding.h',
     'mozilla/dom/HTMLElementBinding.h',
-    'mozilla/dom/DocumentBinding.h',
     'nsPerformance.h',
-    'mozilla/dom/HTMLDocumentBinding.h',
     'mozilla/dom/EventTargetBinding.h',
     'mozilla/dom/EventBinding.h',
-    'mozilla/dom/MouseEventBinding.h',
-    'mozilla/dom/UIEventBinding.h',
     ]
 
 nsIDOMStorage_Clear_customMethodCallCode = """
@@ -202,10 +189,6 @@ newBindingProperties = {
     'nsIDOMNode': 'mozilla::dom::NodeBinding::sNativePropertyHooks.mNativeProperties.regular',
     'nsIDOMElement': 'mozilla::dom::ElementBinding::sNativePropertyHooks.mNativeProperties.regular',
     'nsIDOMHTMLElement': 'mozilla::dom::HTMLElementBinding::sNativePropertyHooks.mNativeProperties.regular',
-    'nsIDOMDocument': 'mozilla::dom::DocumentBinding::sNativePropertyHooks.mNativeProperties.regular',
-    'nsIDOMHTMLDocument': 'mozilla::dom::HTMLDocumentBinding::sNativePropertyHooks.mNativeProperties.regular',
     'nsIDOMEventTarget': 'mozilla::dom::EventTargetBinding::sNativePropertyHooks.mNativeProperties.regular',
     'nsIDOMEvent': 'mozilla::dom::EventBinding::sNativePropertyHooks.mNativeProperties.regular',
-    'nsIDOMMouseEvent': 'mozilla::dom::MouseEventBinding::sNativePropertyHooks.mNativeProperties.regular',
-    'nsIDOMUIEvent': 'mozilla::dom::UIEventBinding::sNativePropertyHooks.mNativeProperties.regular',
     }

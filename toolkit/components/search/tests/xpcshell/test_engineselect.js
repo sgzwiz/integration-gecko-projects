@@ -12,14 +12,29 @@ const Ci = Components.interfaces;
 
 Components.utils.import("resource://testing-common/httpd.js");
 
+let waitForEngines = {
+  "Test search engine": 1,
+  "A second test engine": 1
+};
+
 function search_observer(aSubject, aTopic, aData) {
   let engine = aSubject.QueryInterface(Ci.nsISearchEngine);
   do_print("Observer: " + aData + " for " + engine.name);
 
-  if (aData != "engine-added")
+  if (aData != "engine-added") {
     return;
+  }
 
-  if (engine.name != "A second test engine")
+  // If the engine is defined in `waitForEngines`, remove it from the list
+  if (waitForEngines[engine.name]) {
+    delete waitForEngines[engine.name];
+  } else {
+    // This engine is not one we're waiting for, so bail out early.
+    return;
+  }
+
+  // Only continue when both engines have been loaded.
+  if (Object.keys(waitForEngines).length)
     return;
 
   let search = Services.search;
@@ -63,8 +78,6 @@ function run_test() {
   httpServer.start(4444);
   httpServer.registerDirectory("/", do_get_cwd());
 
-  let search = Services.search; // Cause service initialization
-
   do_register_cleanup(function cleanup() {
     httpServer.stop(function() {});
     Services.obs.removeObserver(search_observer, "browser-search-engine-modified");
@@ -74,10 +87,10 @@ function run_test() {
 
   Services.obs.addObserver(search_observer, "browser-search-engine-modified", false);
 
-  search.addEngine("http://localhost:4444/data/engine.xml",
-                   Ci.nsISearchEngine.DATA_XML,
-                   null, false);
-  search.addEngine("http://localhost:4444/data/engine2.xml",
-                   Ci.nsISearchEngine.DATA_XML,
-                   null, false);
+  Services.search.addEngine("http://localhost:4444/data/engine.xml",
+                            Ci.nsISearchEngine.DATA_XML,
+                            null, false);
+  Services.search.addEngine("http://localhost:4444/data/engine2.xml",
+                            Ci.nsISearchEngine.DATA_XML,
+                            null, false);
 }

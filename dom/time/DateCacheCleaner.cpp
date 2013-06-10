@@ -8,6 +8,7 @@
 #include "DateCacheCleaner.h"
 
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "mozilla/StaticPtr.h"
 
 using namespace mozilla::hal;
@@ -30,8 +31,7 @@ public:
   }
   void Notify(const SystemTimezoneChangeInformation& aSystemTimezoneChangeInfo)
   {
-    mozilla::SafeAutoJSContext cx;
-    JSAutoRequest ar(cx);
+    mozilla::AutoSafeJSContext cx;
     JS_ClearDateCaches(cx);
   }
 

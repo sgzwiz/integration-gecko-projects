@@ -12,13 +12,13 @@
 #include "IonCode.h"
 #include "CompileInfo.h"
 #include "jsinfer.h"
-#include "jsinterp.h"
+
+#include "vm/Interpreter.h"
 
 namespace js {
 namespace ion {
 
 class TempAllocator;
-class ParallelCompileContext; // in ParallelArrayAnalysis.h
 
 // Possible register allocators which may be used.
 enum IonRegisterAllocator {
@@ -272,6 +272,7 @@ bool InitializeIon();
 
 // Get and set the current Ion context.
 IonContext *GetIonContext();
+IonContext *MaybeGetIonContext();
 
 bool SetIonContext(IonContext *ctx);
 
@@ -284,6 +285,8 @@ MethodStatus CompileFunctionForBaseline(JSContext *cx, HandleScript script, Abst
                                         bool isConstructing);
 MethodStatus CanEnterUsingFastInvoke(JSContext *cx, HandleScript script, uint32_t numActualArgs);
 
+MethodStatus CanEnterInParallel(JSContext *cx, HandleScript script);
+
 enum IonExecStatus
 {
     // The method call had to be aborted due to a stack limit check. This
@@ -295,11 +298,7 @@ enum IonExecStatus
     IonExec_Error,
 
     // The method call succeeed and returned a value.
-    IonExec_Ok,
-
-    // A guard triggered in IonMonkey and we must resume execution in
-    // the interpreter.
-    IonExec_Bailout
+    IonExec_Ok
 };
 
 static inline bool
@@ -309,17 +308,16 @@ IsErrorStatus(IonExecStatus status)
 }
 
 IonExecStatus Cannon(JSContext *cx, StackFrame *fp);
-IonExecStatus SideCannon(JSContext *cx, StackFrame *fp, jsbytecode *pc);
 
 // Used to enter Ion from C++ natives like Array.map. Called from FastInvokeGuard.
-IonExecStatus FastInvoke(JSContext *cx, HandleFunction fun, CallArgsList &args);
+IonExecStatus FastInvoke(JSContext *cx, HandleFunction fun, CallArgs &args);
 
 // Walk the stack and invalidate active Ion frames for the invalid scripts.
 void Invalidate(types::TypeCompartment &types, FreeOp *fop,
                 const Vector<types::RecompileInfo> &invalid, bool resetUses = true);
 void Invalidate(JSContext *cx, const Vector<types::RecompileInfo> &invalid, bool resetUses = true);
-bool Invalidate(JSContext *cx, RawScript script, ExecutionMode mode, bool resetUses = true);
-bool Invalidate(JSContext *cx, RawScript script, bool resetUses = true);
+bool Invalidate(JSContext *cx, JSScript *script, ExecutionMode mode, bool resetUses = true);
+bool Invalidate(JSContext *cx, JSScript *script, bool resetUses = true);
 
 void MarkValueFromIon(JSRuntime *rt, Value *vp);
 void MarkShapeFromIon(JSRuntime *rt, Shape **shapep);
@@ -339,19 +337,22 @@ CodeGenerator *CompileBackEnd(MIRGenerator *mir, MacroAssembler *maybeMasm = NUL
 void AttachFinishedCompilations(JSContext *cx);
 void FinishOffThreadBuilder(IonBuilder *builder);
 
-static inline bool IsEnabled(JSContext *cx)
+static inline bool
+IsEnabled(JSContext *cx)
 {
-    return cx->hasOption(JSOPTION_ION) && cx->typeInferenceEnabled();
+    return cx->hasOption(JSOPTION_ION) &&
+        cx->hasOption(JSOPTION_BASELINE) &&
+        cx->typeInferenceEnabled();
 }
 
-void ForbidCompilation(JSContext *cx, RawScript script);
-void ForbidCompilation(JSContext *cx, RawScript script, ExecutionMode mode);
-uint32_t UsesBeforeIonRecompile(RawScript script, jsbytecode *pc);
+void ForbidCompilation(JSContext *cx, JSScript *script);
+void ForbidCompilation(JSContext *cx, JSScript *script, ExecutionMode mode);
+uint32_t UsesBeforeIonRecompile(JSScript *script, jsbytecode *pc);
 
-void PurgeCaches(RawScript script, JS::Zone *zone);
-size_t SizeOfIonData(RawScript script, JSMallocSizeOfFun mallocSizeOf);
-void DestroyIonScripts(FreeOp *fop, RawScript script);
-void TraceIonScripts(JSTracer* trc, RawScript script);
+void PurgeCaches(JSScript *script, JS::Zone *zone);
+size_t SizeOfIonData(JSScript *script, JSMallocSizeOfFun mallocSizeOf);
+void DestroyIonScripts(FreeOp *fop, JSScript *script);
+void TraceIonScripts(JSTracer* trc, JSScript *script);
 
 } // namespace ion
 } // namespace js

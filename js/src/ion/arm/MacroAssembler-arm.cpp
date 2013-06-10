@@ -94,11 +94,15 @@ MacroAssemblerARM::convertDoubleToInt32(const FloatRegister &src, const Register
     ma_vcmp(src, ScratchFloatReg);
     as_vmrs(pc);
     ma_b(fail, Assembler::VFP_NotEqualOrUnordered);
-    // If they're equal, test for 0.  It would be nicer to test for -0.0 explicitly, but that seems hard.
+
     if (negativeZeroCheck) {
         ma_cmp(dest, Imm32(0));
+        // Test and bail for -0.0, when integer result is 0
+        // Move the top word of the double into the output reg, if it is non-zero,
+        // then the original value was -0.0
+        as_vxfer(dest, InvalidReg, src, FloatToCore, Assembler::Equal, 1);
+        ma_cmp(dest, Imm32(0x80000000), Assembler::Equal);
         ma_b(fail, Assembler::Equal);
-        // guard for != 0.
     }
 }
 
@@ -2300,25 +2304,7 @@ MacroAssemblerARMCompat::testGCThing(Assembler::Condition cond, const Address &a
 }
 
 Assembler::Condition
-MacroAssemblerARMCompat::testGCThing(Assembler::Condition cond, const BaseIndex &address)
-{
-    JS_ASSERT(cond == Equal || cond == NotEqual);
-    extractTag(address, ScratchRegister);
-    ma_cmp(ScratchRegister, ImmTag(JSVAL_LOWER_INCL_TAG_OF_GCTHING_SET));
-    return cond == Equal ? AboveOrEqual : Below;
-}
-
-Assembler::Condition
 MacroAssemblerARMCompat::testMagic(Assembler::Condition cond, const Address &address)
-{
-    JS_ASSERT(cond == Equal || cond == NotEqual);
-    extractTag(address, ScratchRegister);
-    ma_cmp(ScratchRegister, ImmTag(JSVAL_TAG_MAGIC));
-    return cond;
-}
-
-Assembler::Condition
-MacroAssemblerARMCompat::testMagic(Assembler::Condition cond, const BaseIndex &address)
 {
     JS_ASSERT(cond == Equal || cond == NotEqual);
     extractTag(address, ScratchRegister);
@@ -2358,6 +2344,88 @@ MacroAssemblerARMCompat::testNumber(Condition cond, const Register &tag)
     JS_ASSERT(cond == Equal || cond == NotEqual);
     ma_cmp(tag, ImmTag(JSVAL_UPPER_INCL_TAG_OF_NUMBER_SET));
     return cond == Equal ? BelowOrEqual : Above;
+}
+
+Assembler::Condition
+MacroAssemblerARMCompat::testUndefined(Condition cond, const BaseIndex &src)
+{
+    JS_ASSERT(cond == Equal || cond == NotEqual);
+    extractTag(src, ScratchRegister);
+    ma_cmp(ScratchRegister, ImmTag(JSVAL_TAG_UNDEFINED));
+    return cond;
+}
+
+Assembler::Condition
+MacroAssemblerARMCompat::testNull(Condition cond, const BaseIndex &src)
+{
+    JS_ASSERT(cond == Equal || cond == NotEqual);
+    extractTag(src, ScratchRegister);
+    ma_cmp(ScratchRegister, ImmTag(JSVAL_TAG_NULL));
+    return cond;
+}
+
+Assembler::Condition
+MacroAssemblerARMCompat::testBoolean(Condition cond, const BaseIndex &src)
+{
+    JS_ASSERT(cond == Equal || cond == NotEqual);
+    extractTag(src, ScratchRegister);
+    ma_cmp(ScratchRegister, ImmTag(JSVAL_TAG_BOOLEAN));
+    return cond;
+}
+
+Assembler::Condition
+MacroAssemblerARMCompat::testString(Condition cond, const BaseIndex &src)
+{
+    JS_ASSERT(cond == Equal || cond == NotEqual);
+    extractTag(src, ScratchRegister);
+    ma_cmp(ScratchRegister, ImmTag(JSVAL_TAG_STRING));
+    return cond;
+}
+
+Assembler::Condition
+MacroAssemblerARMCompat::testInt32(Condition cond, const BaseIndex &src)
+{
+    JS_ASSERT(cond == Equal || cond == NotEqual);
+    extractTag(src, ScratchRegister);
+    ma_cmp(ScratchRegister, ImmTag(JSVAL_TAG_INT32));
+    return cond;
+}
+
+Assembler::Condition
+MacroAssemblerARMCompat::testObject(Condition cond, const BaseIndex &src)
+{
+    JS_ASSERT(cond == Equal || cond == NotEqual);
+    extractTag(src, ScratchRegister);
+    ma_cmp(ScratchRegister, ImmTag(JSVAL_TAG_OBJECT));
+    return cond;
+}
+
+Assembler::Condition
+MacroAssemblerARMCompat::testDouble(Condition cond, const BaseIndex &src)
+{
+    JS_ASSERT(cond == Equal || cond == NotEqual);
+    Assembler::Condition actual = (cond == Equal) ? Below : AboveOrEqual;
+    extractTag(src, ScratchRegister);
+    ma_cmp(ScratchRegister, ImmTag(JSVAL_TAG_CLEAR));
+    return actual;
+}
+
+Assembler::Condition
+MacroAssemblerARMCompat::testMagic(Condition cond, const BaseIndex &address)
+{
+    JS_ASSERT(cond == Equal || cond == NotEqual);
+    extractTag(address, ScratchRegister);
+    ma_cmp(ScratchRegister, ImmTag(JSVAL_TAG_MAGIC));
+    return cond;
+}
+
+Assembler::Condition
+MacroAssemblerARMCompat::testGCThing(Condition cond, const BaseIndex &address)
+{
+    JS_ASSERT(cond == Equal || cond == NotEqual);
+    extractTag(address, ScratchRegister);
+    ma_cmp(ScratchRegister, ImmTag(JSVAL_LOWER_INCL_TAG_OF_GCTHING_SET));
+    return cond == Equal ? AboveOrEqual : Below;
 }
 
 void

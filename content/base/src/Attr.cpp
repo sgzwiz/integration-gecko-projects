@@ -29,7 +29,12 @@
 #include "nsAsyncDOMEvent.h"
 #include "nsWrapperCacheInlines.h"
 
-DOMCI_NODE_DATA(Attr, mozilla::dom::Attr)
+nsIAttribute::nsIAttribute(nsDOMAttributeMap* aAttrMap,
+                           already_AddRefed<nsINodeInfo> aNodeInfo,
+                           bool aNsAware)
+: nsINode(aNodeInfo), mAttrMap(aAttrMap), mNsAware(aNsAware)
+{
+}
 
 namespace mozilla {
 namespace dom {
@@ -58,27 +63,50 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Attr)
   if (!nsINode::Traverse(tmp, cb)) {
     return NS_SUCCESS_INTERRUPTED_TRAVERSE;
   }
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAttrMap)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(Attr)
-  nsINode::Trace(tmp, aCallback, aClosure);
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
+NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(Attr)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Attr)
   nsINode::Unlink(tmp);
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mAttrMap)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(Attr)
+  Element* ownerElement = tmp->GetContentInternal();
+  if (tmp->IsBlack()) {
+    if (ownerElement) {
+      // The attribute owns the element via attribute map so we can
+      // mark it when the attribute is certainly alive.
+      mozilla::dom::FragmentOrElement::MarkNodeChildren(ownerElement);
+    }
+    return true;
+  }
+  if (ownerElement &&
+      mozilla::dom::FragmentOrElement::CanSkip(ownerElement, true)) {
+    return true;
+  }
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_END
+
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_BEGIN(Attr)
+  return tmp->IsBlackAndDoesNotNeedTracing(static_cast<nsIAttribute*>(tmp));
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_END
+
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_BEGIN(Attr)
+  return tmp->IsBlack();
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
 
 // QueryInterface implementation for Attr
 NS_INTERFACE_TABLE_HEAD(Attr)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
-  NS_NODE_INTERFACE_TABLE5(Attr, nsIDOMAttr, nsIAttribute, nsIDOMNode,
-                           nsIDOMEventTarget, EventTarget)
-  NS_INTERFACE_MAP_ENTRIES_CYCLE_COLLECTION(Attr)
+  NS_INTERFACE_TABLE6(Attr, nsINode, nsIDOMAttr, nsIAttribute, nsIDOMNode,
+                      nsIDOMEventTarget, EventTarget)
+  NS_INTERFACE_TABLE_TO_MAP_SEGUE_CYCLE_COLLECTION(Attr)
   NS_INTERFACE_MAP_ENTRY_TEAROFF(nsISupportsWeakReference,
                                  new nsNodeSupportsWeakRefTearoff(this))
   NS_INTERFACE_MAP_ENTRY_TEAROFF(nsIDOMXPathNSResolver,
                                  new nsNode3Tearoff(this))
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(Attr)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(Attr)
@@ -338,12 +366,6 @@ Attr::IndexOf(const nsINode* aPossibleChild) const
 nsresult
 Attr::InsertChildAt(nsIContent* aKid, uint32_t aIndex,
                               bool aNotify)
-{
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-nsresult
-Attr::AppendChildTo(nsIContent* aKid, bool aNotify)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }

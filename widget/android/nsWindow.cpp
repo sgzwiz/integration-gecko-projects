@@ -40,6 +40,7 @@ using mozilla::unused;
 #include "BasicLayers.h"
 #include "LayerManagerOGL.h"
 #include "mozilla/layers/LayerManagerComposite.h"
+#include "mozilla/layers/AsyncCompositionManager.h"
 #include "GLContext.h"
 #include "GLContextProvider.h"
 
@@ -70,12 +71,12 @@ static gfxIntSize gAndroidScreenBounds;
 #include "mozilla/Mutex.h"
 #include "nsThreadUtils.h"
 
-
 class ContentCreationNotifier;
 static nsCOMPtr<ContentCreationNotifier> gContentCreationNotifier;
+
 // A helper class to send updates when content processes
 // are created. Currently an update for the screen size is sent.
-class ContentCreationNotifier : public nsIObserver
+class ContentCreationNotifier MOZ_FINAL : public nsIObserver
 {
     NS_DECL_ISUPPORTS
 
@@ -980,8 +981,13 @@ nsWindow::DrawTo(gfxASurface *targetSurface, const nsIntRect &invalidRect)
                     AutoLayerManagerSetup
                       setupLayerManager(this, ctx, mozilla::layers::BUFFER_NONE);
 
-                    mWidgetListener->PaintWindow(this, region, 0);
+                    mWidgetListener->PaintWindow(this, region);
                 }
+                break;
+            }
+
+            case mozilla::layers::LAYERS_CLIENT: {
+                mWidgetListener->PaintWindow(this, region);
                 break;
             }
 
@@ -990,7 +996,7 @@ nsWindow::DrawTo(gfxASurface *targetSurface, const nsIntRect &invalidRect)
                 static_cast<mozilla::layers::LayerManagerOGL*>(GetLayerManager(nullptr))->
                     SetClippingRegion(nsIntRegion(boundsRect));
 
-                mWidgetListener->PaintWindow(this, region, 0);
+                mWidgetListener->PaintWindow(this, region);
                 break;
             }
 
@@ -2490,24 +2496,6 @@ public:
             targetLayer->SetAsyncPanZoomController(controller);
             controller->NotifyLayersUpdated(targetLayer->AsContainerLayer()->GetFrameMetrics(), isFirstPaint);
         }
-    }
-
-    virtual void SyncFrameMetrics(Layer* aLayer, const ViewTransform& aTreeTransform,
-                                  const gfxPoint& aScrollOffset, mozilla::gfx::Margin& aFixedLayerMargins,
-                                  float& aOffsetX, float& aOffsetY,
-                                  bool aIsFirstPaint, bool aLayersUpdated) MOZ_OVERRIDE
-    {
-        const gfx3DMatrix& rootTransform = GetLayerManager()->GetRoot()->GetTransform();
-        ContainerLayer* container = aLayer->AsContainerLayer();
-        const FrameMetrics& metrics = container->GetFrameMetrics();
-
-        mozilla::gfx::Rect displayPortLayersPixels(metrics.mCriticalDisplayPort.IsEmpty() ?
-                                          metrics.mDisplayPort : metrics.mCriticalDisplayPort);
-        mozilla::gfx::Point scrollOffset(aScrollOffset.x, aScrollOffset.y);
-
-        AndroidBridge::Bridge()->SyncFrameMetrics(scrollOffset, aTreeTransform.mScale.width, metrics.mScrollableRect,
-                                                  aLayersUpdated, displayPortLayersPixels, 1 / rootTransform.GetXScale(),
-                                                  aIsFirstPaint, aFixedLayerMargins, aOffsetX, aOffsetY);
     }
 };
 

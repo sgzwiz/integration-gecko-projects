@@ -103,6 +103,8 @@ ImageHostSingle::Composite(EffectChain& aEffectChain,
       gfx::Rect rect(tileRect.x, tileRect.y, tileRect.width, tileRect.height);
       GetCompositor()->DrawQuad(rect, aClipRect, aEffectChain,
                                 aOpacity, aTransform, aOffset);
+      GetCompositor()->DrawDiagnostics(gfx::Color(0.5,0.0,0.0,1.0),
+                                       rect, aClipRect, aTransform, aOffset);
     } while (it->NextTile());
     it->EndTileIteration();
   } else {
@@ -127,6 +129,8 @@ ImageHostSingle::Composite(EffectChain& aEffectChain,
 
     GetCompositor()->DrawQuad(rect, aClipRect, aEffectChain,
                               aOpacity, aTransform, aOffset);
+    GetCompositor()->DrawDiagnostics(gfx::Color(1.0,0.1,0.1,1.0),
+                                     rect, aClipRect, aTransform, aOffset);
   }
 
   mTextureHost->Unlock();
@@ -173,6 +177,23 @@ ImageHostBuffered::MakeTextureHost(TextureIdentifier aTextureId,
                                    aTextureInfo);
   if (mTextureHost) {
     mTextureHost->SetBuffer(new SurfaceDescriptor(null_t()), aAllocator);
+  }
+}
+
+void
+ImageHostSingle::Dump(FILE* aFile,
+                      const char* aPrefix,
+                      bool aDumpHtml)
+{
+  if (!aFile) {
+    aFile = stderr;
+  }
+  if (mTextureHost) {
+    fprintf(aFile, "%s", aPrefix);
+    fprintf(aFile, aDumpHtml ? "<ul><li>TextureHost: "
+                             : "TextureHost: ");
+    DumpTextureHost(aFile, mTextureHost);
+    fprintf(aFile, aDumpHtml ? " </li></ul> " : " ");
   }
 }
 

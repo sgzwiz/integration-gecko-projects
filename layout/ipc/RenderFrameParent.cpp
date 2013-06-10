@@ -24,6 +24,7 @@
 #include "nsSubDocumentFrame.h"
 #include "nsViewportFrame.h"
 #include "RenderFrameParent.h"
+#include "mozilla/layers/LayerManagerComposite.h"
 
 typedef nsContentView::ViewConfig ViewConfig;
 using namespace mozilla::dom;
@@ -711,8 +712,8 @@ RenderFrameParent::BuildLayer(nsDisplayListBuilder* aBuilder,
       return nullptr;
     }
     static_cast<RefLayer*>(layer.get())->SetReferentId(id);
-    layer->SetVisibleRegion(aVisibleRect);
     nsIntPoint offset = GetContentRectLayerOffset(aFrame, aBuilder);
+    layer->SetVisibleRegion(aVisibleRect - offset);
     // We can only have an offset if we're a child of an inactive
     // container, but our display item is LAYER_ACTIVE_FORCE which
     // forces all layers above to be active.
@@ -791,8 +792,9 @@ void
 RenderFrameParent::NotifyDimensionsChanged(int width, int height)
 {
   if (mPanZoomController) {
+    // I don't know what units width/height are in, hence FromUnknownRect
     mPanZoomController->UpdateCompositionBounds(
-      nsIntRect(0, 0, width, height));
+      LayerIntRect::FromUnknownRect(gfx::IntRect(0, 0, width, height)));
   }
 }
 
@@ -912,7 +914,7 @@ RenderFrameParent::TriggerRepaint()
     return;
   }
 
-  docFrame->SchedulePaint();
+  docFrame->InvalidateLayer(nsDisplayItem::TYPE_REMOTE);
 }
 
 LayerTransactionParent*

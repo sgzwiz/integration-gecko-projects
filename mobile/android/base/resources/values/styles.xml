@@ -3,7 +3,7 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
-<resources>
+<resources xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
         Base application styles. This could be overridden in other res/values-XXX/themes.xml.
@@ -40,10 +40,6 @@
         <item name="android:textAppearance">@style/TextAppearance.Widget.TextView</item>
     </style>
 
-    <style name="Widget.TextView.SpinnerItem">
-        <item name="android:textAppearance">@style/TextAppearance.Widget.TextView</item>
-    </style>
-
     <style name="Widget.ListView" parent="Widget.BaseListView">
         <item name="android:divider">#D1D5DA</item>
         <item name="android:dividerHeight">1dp</item>
@@ -53,7 +49,10 @@
 
     <style name="Widget.ExpandableListView" parent="Widget.ListView">
         <item name="android:groupIndicator">@android:color/transparent</item>
-        <item name="android:childDivider">#D1D5DA</item>
+
+        <!-- Using a color for the childDivider is broken for Froyo and GB
+             phones (see bug 862761), so we use a drawable instead. -->
+        <item name="android:childDivider">@drawable/awesomebar_listview_divider</item>
     </style>
 
     <style name="Widget.ListItem">
@@ -65,6 +64,12 @@
         <item name="android:checkMark">?android:attr/listChoiceIndicatorMultiple</item>
         <item name="android:ellipsize">marquee</item>
     </style>
+
+    <style name="Widget.Spinner" parent="android:style/Widget.Spinner">
+        <item name="android:minWidth">@dimen/doorhanger_input_width</item>
+    </style>
+
+    <style name="Widget.TextView.SpinnerItem" parent="android:style/Widget.TextView.SpinnerItem"/>
 
     <!--
         TextAppearance
@@ -87,7 +92,7 @@
         <item name="android:textColor">?android:attr/textColorPrimaryInverse</item>
         <item name="android:textColorHint">?android:attr/textColorHintInverse</item>
         <item name="android:textColorHighlight">@color/text_color_highlight_inverse</item>
-        <item name="android:textColorLink">?android:attr/textColorLinkInverse</item>
+        <item name="android:textColorLink">?android:attr/textColorLink</item>
     </style>
 
     <style name="TextAppearance.Large">
@@ -98,7 +103,7 @@
         <item name="android:textColor">?android:attr/textColorPrimaryInverse</item>
         <item name="android:textColorHint">?android:attr/textColorHintInverse</item>
         <item name="android:textColorHighlight">@color/text_color_highlight_inverse</item>
-        <item name="android:textColorLink">?android:attr/textColorLinkInverse</item>
+        <item name="android:textColorLink">?android:attr/textColorLink</item>
     </style>
 
     <style name="TextAppearance.Medium">
@@ -109,7 +114,7 @@
         <item name="android:textColor">?android:attr/textColorPrimaryInverse</item>
         <item name="android:textColorHint">?android:attr/textColorHintInverse</item>
         <item name="android:textColorHighlight">@color/text_color_highlight_inverse</item>
-        <item name="android:textColorLink">?android:attr/textColorLinkInverse</item>
+        <item name="android:textColorLink">?android:attr/textColorLink</item>
     </style>
 
     <style name="TextAppearance.Small">
@@ -121,7 +126,7 @@
         <item name="android:textColor">?android:attr/textColorSecondaryInverse</item>
         <item name="android:textColorHint">?android:attr/textColorHintInverse</item>
         <item name="android:textColorHighlight">@color/text_color_highlight_inverse</item>
-        <item name="android:textColorLink">?android:attr/textColorLinkInverse</item>
+        <item name="android:textColorLink">?android:attr/textColorLink</item>
     </style>
 
     <style name="TextAppearance.Micro">
@@ -133,7 +138,7 @@
         <item name="android:textColor">?android:attr/textColorTertiaryInverse</item>
         <item name="android:textColorHint">?android:attr/textColorHintInverse</item>
         <item name="android:textColorHighlight">@color/text_color_highlight_inverse</item>
-        <item name="android:textColorLink">?android:attr/textColorLinkInverse</item>
+        <item name="android:textColorLink">?android:attr/textColorLink</item>
     </style>
 
     <style name="TextAppearance.Widget" />
@@ -159,6 +164,13 @@
         <item name="android:layout_width">fill_parent</item>
         <item name="android:layout_height">@dimen/browser_toolbar_height</item>
         <item name="android:orientation">horizontal</item>
+    </style>
+
+    <style name="AddressBar.ImageButton.TabCount">
+        <item name="android:background">@drawable/tabs_count</item>
+        <item name="android:gravity">center_horizontal</item>
+        <item name="android:clipChildren">false</item>
+        <item name="android:clipToPadding">false</item>
     </style>
 
     <!-- Address bar -->
@@ -426,6 +438,13 @@
     <style name="PopupAnimation">
         <item name="@android:windowEnterAnimation">@anim/popup_show</item>
         <item name="@android:windowExitAnimation">@anim/popup_hide</item>
-    </style>   
+    </style>
+
+    <style name="MenuItemDefault">
+          <item name="android:textSize">16sp</item>
+          <item name="android:textColor">@color/menu_item_title</item>
+          <item name="android:singleLine">true</item>
+          <item name="android:ellipsize">middle</item>
+    </style>
 
 </resources>

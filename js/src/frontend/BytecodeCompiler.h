@@ -7,25 +7,46 @@
 #ifndef BytecodeCompiler_h__
 #define BytecodeCompiler_h__
 
-#include "frontend/Parser.h"
+#include "jsapi.h"
+#include "jsprvtd.h"
 
 namespace js {
 namespace frontend {
 
-RawScript
+JSScript *
 CompileScript(JSContext *cx, HandleObject scopeChain, HandleScript evalCaller,
               const CompileOptions &options, const jschar *chars, size_t length,
               JSString *source_ = NULL, unsigned staticLevel = 0,
               SourceCompressionToken *extraSct = NULL);
 
 bool
-ParseScript(JSContext *cx, HandleObject scopeChain,
-            const CompileOptions &options, StableCharPtr chars, size_t length);
+CompileLazyFunction(JSContext *cx, HandleFunction fun, LazyScript *lazy,
+                    const jschar *chars, size_t length);
 
 bool
 CompileFunctionBody(JSContext *cx, MutableHandleFunction fun, CompileOptions options,
                     const AutoNameVector &formals, const jschar *chars, size_t length,
                     bool isAsmJSRecompile = false);
+
+/*
+ * True if str consists of an IdentifierStart character, followed by one or
+ * more IdentifierPart characters, i.e. it matches the IdentifierName production
+ * in the language spec.
+ *
+ * This returns true even if str is a keyword like "if".
+ *
+ * Defined in TokenStream.cpp.
+ */
+bool
+IsIdentifier(JSLinearString *str);
+
+/* True if str is a keyword. Defined in TokenStream.cpp. */
+bool
+IsKeyword(JSLinearString *str);
+
+/* GC marking. Defined in Parser.cpp. */
+void
+MarkParser(JSTracer *trc, AutoGCRooter *parser);
 
 } /* namespace frontend */
 } /* namespace js */

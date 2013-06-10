@@ -10,12 +10,10 @@
 #include "mozilla/Util.h"
 
 #include "RegExpObject.h"
-#include "RegExpStatics.h"
 
 #include "jsobjinlines.h"
 #include "jsstrinlines.h"
 
-#include "RegExpStatics-inl.h"
 #include "String-inl.h"
 
 inline js::RegExpObject &
@@ -104,8 +102,8 @@ inline bool
 RegExpShared::isJITRuntimeEnabled(JSContext *cx)
 {
 #if ENABLE_YARR_JIT
-# if defined(ANDROID) && defined(JS_METHODJIT)
-    return cx->methodJitEnabled;
+# if defined(ANDROID)
+    return !cx->jitIsBroken;
 # else
     return true;
 # endif

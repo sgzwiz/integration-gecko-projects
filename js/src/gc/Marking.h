@@ -101,6 +101,7 @@ DeclMarker(Object, JSObject)
 DeclMarker(Object, JSFunction)
 DeclMarker(Object, ScopeObject)
 DeclMarker(Script, JSScript)
+DeclMarker(LazyScript, LazyScript)
 DeclMarker(Shape, Shape)
 DeclMarker(String, JSAtom)
 DeclMarker(String, JSString)
@@ -204,11 +205,11 @@ void
 MarkObjectSlots(JSTracer *trc, JSObject *obj, uint32_t start, uint32_t nslots);
 
 void
-MarkCrossCompartmentObjectUnbarriered(JSTracer *trc, RawObject src, JSObject **dst_obj,
+MarkCrossCompartmentObjectUnbarriered(JSTracer *trc, JSObject *src, JSObject **dst_obj,
                                       const char *name);
 
 void
-MarkCrossCompartmentScriptUnbarriered(JSTracer *trc, RawObject src, JSScript **dst_script,
+MarkCrossCompartmentScriptUnbarriered(JSTracer *trc, JSObject *src, JSScript **dst_script,
                                       const char *name);
 
 /*
@@ -216,7 +217,7 @@ MarkCrossCompartmentScriptUnbarriered(JSTracer *trc, RawObject src, JSScript **d
  * being GC'd. (Although it won't be marked if it's in the wrong compartment.)
  */
 void
-MarkCrossCompartmentSlot(JSTracer *trc, RawObject src, HeapSlot *dst_slot, const char *name);
+MarkCrossCompartmentSlot(JSTracer *trc, JSObject *src, HeapSlot *dst_slot, const char *name);
 
 
 /*** Special Cases ***/
@@ -245,7 +246,7 @@ MarkChildren(JSTracer *trc, JSObject *obj);
  * JS_TraceShapeCycleCollectorChildren.
  */
 void
-MarkCycleCollectorChildren(JSTracer *trc, RawShape shape);
+MarkCycleCollectorChildren(JSTracer *trc, Shape *shape);
 
 void
 PushArena(GCMarker *gcmarker, ArenaHeader *aheader);
@@ -394,6 +395,12 @@ inline JSGCTraceKind
 TraceKind(JSScript *script)
 {
     return JSTRACE_SCRIPT;
+}
+
+inline JSGCTraceKind
+TraceKind(LazyScript *lazy)
+{
+    return JSTRACE_LAZY_SCRIPT;
 }
 
 } /* namespace gc */

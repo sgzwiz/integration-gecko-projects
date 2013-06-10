@@ -479,6 +479,27 @@ let test_read_write_all = maketest("read_write_all", function read_write_all(tes
     // Cleanup.
     OS.File.remove(pathDest);
 
+    // Check that writeAtomic fails when destination path is undefined
+    try {
+      let path = undefined;
+      let options = {tmpPath: tmpPath};
+      yield OS.File.writeAtomic(path, contents, options);
+      test.fail("With file path undefined, writeAtomic should have failed");
+    } catch (err) {
+      test.ok(err.message == "TypeError: File path should be a (non-empty) string",
+              "With file path undefined, writeAtomic correctly failed");
+    }
+
+    // Check that writeAtomic fails when destination path is an empty string
+    try {
+      let path = "";
+      let options = {tmpPath: tmpPath};
+      yield OS.File.writeAtomic(path, contents, options);
+      test.fail("With file path an empty string, writeAtomic should have failed");
+    } catch (err) {
+      test.ok(err.message == "TypeError: File path should be a (non-empty) string",
+              "With file path an empty string, writeAtomic correctly failed");
+    }
   });
 });
 
@@ -840,6 +861,9 @@ let test_system_shutdown = maketest("system_shutdown", function system_shutdown(
         };
         waitObservation.promise.then(cleanUp, cleanUp);
 
+        // Measure how long it takes to receive a log message.
+        let logStart;
+
         let listener = {
           observe: function (aMessage) {
             test.info("Waiting for a console message mentioning resource " + resource);
@@ -861,6 +885,8 @@ let test_system_shutdown = maketest("system_shutdown", function system_shutdown(
                   "be activated 2 times.");
               }
               test.ok(true, "Leaked resource is correctly listed in the log.");
+              test.info(
+                "It took " + (Date.now() - logStart) + "MS to receive a log message.");
               setTimeout(function() { waitObservation.resolve(); });
             } else {
               test.info("This log didn't list the expected resource: " + resource + "\ngot " + aMessage.message);
@@ -868,13 +894,14 @@ let test_system_shutdown = maketest("system_shutdown", function system_shutdown(
           }
         };
         Services.console.registerListener(listener);
+        logStart = Date.now();
         f();
-        // If listener does not resolve webObservation in timely manner (100MS),
+        // If listener does not resolve webObservation in timely manner (1000MS),
         // reject it.
         setTimeout(function() {
           test.info("waitObservation timeout exceeded.");
           waitObservation.reject();
-        }, 100);
+        }, 1000);
         yield waitObservation.promise;
       });
     }
@@ -890,9 +917,9 @@ let test_system_shutdown = maketest("system_shutdown", function system_shutdown(
         Services.obs.notifyObservers(null, "test.osfile.web-workers-shutdown",
           null);
       });
-      test.ok(true, "Log messages observervation promise resolved as expected.");
+      test.ok(true, "Log messages observation promise resolved as expected.");
     } catch (ex) {
-      test.fail("Log messages observervation promise was rejected.");
+      test.fail("Log messages observation promise was rejected.");
     }
     yield iterator.close();
 
@@ -905,10 +932,10 @@ let test_system_shutdown = maketest("system_shutdown", function system_shutdown(
               null);
           });
           test.ok(shouldResolve,
-            "Log message observervation promise resolved as expected.");
+            "Log message observation promise resolved as expected.");
         } catch (ex) {
           test.ok(!shouldResolve,
-            "Log message observervation promise was rejected as expected.");
+            "Log message observation promise was rejected as expected.");
         }
         yield openedFile.close();
       });
@@ -938,17 +965,19 @@ let test_duration = maketest("duration", function duration(test) {
     let currentDir = yield OS.File.getCurrentDirectory();
     let pathSource = OS.Path.join(currentDir, EXISTING_FILE);
     let copyFile = pathSource + ".bak";
-    let testOptions = function testOptions(options) {
-      test.info("Gathered method duration time: " +
-        options.outExecutionDuration + " MS");
+    let testOptions = function testOptions(options, name) {
+      test.info("Checking outExecutionDuration for operation: " + name);
+      test.info(name + ": Gathered method duration time: " +
+        options.outExecutionDuration + "ms");
       // Making sure that duration was updated.
-      test.ok(typeof options.outExecutionDuration === "number" &&
-        options.outExecutionDuration >= 0,
-        "Operation duration time was updated correctly with a numeric value.");
+      test.ok(typeof options.outExecutionDuration === "number",
+              name + ": Operation duration is a number");
+      test.ok(options.outExecutionDuration >= 0,
+              name + ": Operation duration time is non-negative.");
     };
     // Testing duration of OS.File.copy.
     yield OS.File.copy(pathSource, copyFile, copyOptions);
-    testOptions(copyOptions);
+    testOptions(copyOptions, "OS.File.copy");
     yield OS.File.remove(copyFile);
 
     // Trying an operation where options are cloned.
@@ -959,7 +988,7 @@ let test_duration = maketest("duration", function duration(test) {
       outExecutionDuration: null
     };
     let contents = yield OS.File.read(pathSource, undefined, readOptions);
-    testOptions(readOptions);
+    testOptions(readOptions, "OS.File.read");
     // Options structure passed to a OS.File writeAtomic method.
     let writeAtomicOptions = {
       // This field should be first initialized with the actual
@@ -968,7 +997,7 @@ let test_duration = maketest("duration", function duration(test) {
       tmpPath: tmpPath
     };
     yield OS.File.writeAtomic(pathDest, contents, writeAtomicOptions);
-    testOptions(writeAtomicOptions);
+    testOptions(writeAtomicOptions, "OS.File.writeAtomic");
     yield OS.File.remove(pathDest);
 
     test.info("Ensuring that we can use outExecutionDuration to accumulate durations");

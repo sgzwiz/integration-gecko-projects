@@ -58,7 +58,6 @@
 #include "gc/GCInternals.h"
 #include "gc/Marking.h"
 #include "gc/Memory.h"
-#include "methodjit/MethodJIT.h"
 #include "vm/Debugger.h"
 #include "vm/Shape.h"
 #include "vm/String.h"
@@ -122,6 +121,7 @@ const uint32_t Arena::ThingSizes[] = {
     sizeof(JSObject_Slots16),   /* FINALIZE_OBJECT16            */
     sizeof(JSObject_Slots16),   /* FINALIZE_OBJECT16_BACKGROUND */
     sizeof(JSScript),           /* FINALIZE_SCRIPT              */
+    sizeof(LazyScript),         /* FINALIZE_LAZY_SCRIPT         */
     sizeof(Shape),              /* FINALIZE_SHAPE               */
     sizeof(BaseShape),          /* FINALIZE_BASE_SHAPE          */
     sizeof(types::TypeObject),  /* FINALIZE_TYPE_OBJECT         */
@@ -147,6 +147,7 @@ const uint32_t Arena::FirstThingOffsets[] = {
     OFFSET(JSObject_Slots16),   /* FINALIZE_OBJECT16            */
     OFFSET(JSObject_Slots16),   /* FINALIZE_OBJECT16_BACKGROUND */
     OFFSET(JSScript),           /* FINALIZE_SCRIPT              */
+    OFFSET(LazyScript),         /* FINALIZE_LAZY_SCRIPT         */
     OFFSET(Shape),              /* FINALIZE_SHAPE               */
     OFFSET(BaseShape),          /* FINALIZE_BASE_SHAPE          */
     OFFSET(types::TypeObject),  /* FINALIZE_TYPE_OBJECT         */
@@ -212,6 +213,7 @@ static const AllocKind BackgroundPhaseStrings[] = {
 };
 
 static const AllocKind BackgroundPhaseShapes[] = {
+    FINALIZE_LAZY_SCRIPT,
     FINALIZE_SHAPE,
     FINALIZE_BASE_SHAPE,
     FINALIZE_TYPE_OBJECT
@@ -260,12 +262,6 @@ ArenaHeader::checkSynchronizedWithFreeList() const
      * empty and also points to this arena. Thus they must the same.
      */
     JS_ASSERT(firstSpan.isSameNonEmptySpan(list));
-}
-
-bool
-js::gc::Cell::isTenured() const
-{
-    return !IsInsideNursery(runtime(), this);
 }
 #endif
 
@@ -434,6 +430,8 @@ FinalizeArenas(FreeOp *fop,
         return FinalizeTypedArenas<JSObject>(fop, src, dest, thingKind, budget);
       case FINALIZE_SCRIPT:
         return FinalizeTypedArenas<JSScript>(fop, src, dest, thingKind, budget);
+      case FINALIZE_LAZY_SCRIPT:
+        return FinalizeTypedArenas<LazyScript>(fop, src, dest, thingKind, budget);
       case FINALIZE_SHAPE:
         return FinalizeTypedArenas<Shape>(fop, src, dest, thingKind, budget);
       case FINALIZE_BASE_SHAPE:
@@ -865,12 +863,6 @@ js::SetGCZeal(JSRuntime *rt, uint8_t zeal, uint32_t frequency)
             VerifyBarriers(rt, PostBarrierVerifier);
     }
 
-#ifdef JS_METHODJIT
-    /* In case Zone::compileBarriers() changed... */
-    for (ZonesIter zone(rt); !zone.done(); zone.next())
-        mjit::ClearAllFrames(zone);
-#endif
-
     bool schedule = zeal >= js::gc::ZealAllocValue;
     rt->gcZeal_ = zeal;
     rt->gcZealFrequency = frequency;
@@ -952,7 +944,7 @@ js_InitGC(JSRuntime *rt, uint32_t maxbytes)
 #endif
 
 #ifdef JSGC_GENERATIONAL
-    if (!rt->gcNursery.enable())
+    if (!rt->gcNursery.init())
         return false;
 
     if (!rt->gcStoreBuffer.enable())
@@ -1448,6 +1440,7 @@ ArenaLists::queueScriptsForSweep(FreeOp *fop)
 {
     gcstats::AutoPhase ap(fop->runtime()->gcStats, gcstats::PHASE_SWEEP_SCRIPT);
     queueForForegroundSweep(fop, FINALIZE_SCRIPT);
+    queueForBackgroundSweep(fop, FINALIZE_LAZY_SCRIPT);
 }
 
 void
@@ -1915,8 +1908,8 @@ void
 js::TriggerGC(JSRuntime *rt, JS::gcreason::Reason reason)
 {
     /* Wait till end of parallel section to trigger GC. */
-    if (ForkJoinSlice *slice = ForkJoinSlice::Current()) {
-        slice->requestGC(reason);
+    if (InParallelSection()) {
+        ForkJoinSlice::Current()->requestGC(reason);
         return;
     }
 
@@ -1932,9 +1925,12 @@ js::TriggerGC(JSRuntime *rt, JS::gcreason::Reason reason)
 void
 js::TriggerZoneGC(Zone *zone, JS::gcreason::Reason reason)
 {
-    /* Wait till end of parallel section to trigger GC. */
-    if (ForkJoinSlice *slice = ForkJoinSlice::Current()) {
-        slice->requestZoneGC(zone, reason);
+    /*
+     * If parallel threads are running, wait till they
+     * are stopped to trigger GC.
+     */
+    if (InParallelSection()) {
+        ForkJoinSlice::Current()->requestZoneGC(zone, reason);
         return;
     }
 
@@ -2581,8 +2577,8 @@ PurgeRuntime(JSRuntime *rt)
     rt->sourceDataCache.purge();
     rt->evalCache.clear();
 
-    for (ContextIter acx(rt); !acx.done(); acx.next())
-        acx->purge();
+    if (!rt->activeCompilations)
+        rt->parseMapPool.purgeAll();
 }
 
 static bool
@@ -3247,6 +3243,7 @@ JSCompartment::findOutgoingEdges(ComponentFinder<JS::Zone> &finder)
             }
         } else {
             JS_ASSERT(kind == CrossCompartmentKey::DebuggerScript ||
+                      kind == CrossCompartmentKey::DebuggerSource ||
                       kind == CrossCompartmentKey::DebuggerObject ||
                       kind == CrossCompartmentKey::DebuggerEnvironment);
             /*
@@ -3358,7 +3355,7 @@ GetNextZoneGroup(JSRuntime *rt)
  */
 
 static bool
-IsGrayListObject(RawObject obj)
+IsGrayListObject(JSObject *obj)
 {
     JS_ASSERT(obj);
     return IsCrossCompartmentWrapper(obj) && !IsDeadProxyObject(obj);
@@ -3367,7 +3364,7 @@ IsGrayListObject(RawObject obj)
 const unsigned JSSLOT_GC_GRAY_LINK = JSSLOT_PROXY_EXTRA + 1;
 
 static unsigned
-GrayLinkSlot(RawObject obj)
+GrayLinkSlot(JSObject *obj)
 {
     JS_ASSERT(IsGrayListObject(obj));
     return JSSLOT_GC_GRAY_LINK;
@@ -3375,24 +3372,24 @@ GrayLinkSlot(RawObject obj)
 
 #ifdef DEBUG
 static void
-AssertNotOnGrayList(RawObject obj)
+AssertNotOnGrayList(JSObject *obj)
 {
     JS_ASSERT_IF(IsGrayListObject(obj), obj->getReservedSlot(GrayLinkSlot(obj)).isUndefined());
 }
 #endif
 
 static JSObject *
-CrossCompartmentPointerReferent(RawObject obj)
+CrossCompartmentPointerReferent(JSObject *obj)
 {
     JS_ASSERT(IsGrayListObject(obj));
     return &GetProxyPrivate(obj).toObject();
 }
 
-static RawObject
-NextIncomingCrossCompartmentPointer(RawObject prev, bool unlink)
+static JSObject *
+NextIncomingCrossCompartmentPointer(JSObject *prev, bool unlink)
 {
     unsigned slot = GrayLinkSlot(prev);
-    RawObject next = prev->getReservedSlot(slot).toObjectOrNull();
+    JSObject *next = prev->getReservedSlot(slot).toObjectOrNull();
     JS_ASSERT_IF(next, IsGrayListObject(next));
 
     if (unlink)
@@ -3402,7 +3399,7 @@ NextIncomingCrossCompartmentPointer(RawObject prev, bool unlink)
 }
 
 void
-js::DelayCrossCompartmentGrayMarking(RawObject src)
+js::DelayCrossCompartmentGrayMarking(JSObject *src)
 {
     JS_ASSERT(IsGrayListObject(src));
 
@@ -3423,7 +3420,7 @@ js::DelayCrossCompartmentGrayMarking(RawObject src)
      * Assert that the object is in our list, also walking the list to check its
      * integrity.
      */
-    RawObject obj = comp->gcIncomingGrayPointers;
+    JSObject *obj = comp->gcIncomingGrayPointers;
     bool found = false;
     while (obj) {
         if (obj == src)
@@ -3453,7 +3450,7 @@ MarkIncomingCrossCompartmentPointers(JSRuntime *rt, const uint32_t color)
         JS_ASSERT_IF(color == BLACK, c->zone()->isGCMarkingBlack());
         JS_ASSERT_IF(c->gcIncomingGrayPointers, IsGrayListObject(c->gcIncomingGrayPointers));
 
-        for (RawObject src = c->gcIncomingGrayPointers;
+        for (JSObject *src = c->gcIncomingGrayPointers;
              src;
              src = NextIncomingCrossCompartmentPointer(src, unlinkList))
         {
@@ -3480,7 +3477,7 @@ MarkIncomingCrossCompartmentPointers(JSRuntime *rt, const uint32_t color)
 }
 
 static bool
-RemoveFromGrayList(RawObject wrapper)
+RemoveFromGrayList(JSObject *wrapper)
 {
     if (!IsGrayListObject(wrapper))
         return false;
@@ -3489,11 +3486,11 @@ RemoveFromGrayList(RawObject wrapper)
     if (wrapper->getReservedSlot(slot).isUndefined())
         return false;  /* Not on our list. */
 
-    RawObject tail = wrapper->getReservedSlot(slot).toObjectOrNull();
+    JSObject *tail = wrapper->getReservedSlot(slot).toObjectOrNull();
     wrapper->setReservedSlot(slot, UndefinedValue());
 
     JSCompartment *comp = CrossCompartmentPointerReferent(wrapper)->compartment();
-    RawObject obj = comp->gcIncomingGrayPointers;
+    JSObject *obj = comp->gcIncomingGrayPointers;
     if (obj == wrapper) {
         comp->gcIncomingGrayPointers = tail;
         return true;
@@ -3501,7 +3498,7 @@ RemoveFromGrayList(RawObject wrapper)
 
     while (obj) {
         unsigned slot = GrayLinkSlot(obj);
-        RawObject next = obj->getReservedSlot(slot).toObjectOrNull();
+        JSObject *next = obj->getReservedSlot(slot).toObjectOrNull();
         if (next == wrapper) {
             obj->setCrossCompartmentSlot(slot, ObjectOrNullValue(tail));
             return true;
@@ -3516,14 +3513,14 @@ RemoveFromGrayList(RawObject wrapper)
 static void
 ResetGrayList(JSCompartment *comp)
 {
-    RawObject src = comp->gcIncomingGrayPointers;
+    JSObject *src = comp->gcIncomingGrayPointers;
     while (src)
         src = NextIncomingCrossCompartmentPointer(src, true);
     comp->gcIncomingGrayPointers = NULL;
 }
 
 void
-js::NotifyGCNukeWrapper(RawObject obj)
+js::NotifyGCNukeWrapper(JSObject *obj)
 {
     /*
      * References to target of wrapper are being removed, we no longer have to
@@ -3538,7 +3535,7 @@ enum {
 };
 
 unsigned
-js::NotifyGCPreSwap(RawObject a, RawObject b)
+js::NotifyGCPreSwap(JSObject *a, JSObject *b)
 {
     /*
      * Two objects in the same compartment are about to have had their contents
@@ -3550,7 +3547,7 @@ js::NotifyGCPreSwap(RawObject a, RawObject b)
 }
 
 void
-js::NotifyGCPostSwap(RawObject a, RawObject b, unsigned removedFlags)
+js::NotifyGCPostSwap(JSObject *a, JSObject *b, unsigned removedFlags)
 {
     /*
      * Two objects in the same compartment have had their contents swapped.  If
@@ -4837,29 +4834,24 @@ void PreventGCDuringInteractiveDebug()
 void
 js::ReleaseAllJITCode(FreeOp *fop)
 {
-#ifdef JS_METHODJIT
+#ifdef JS_ION
     for (ZonesIter zone(fop->runtime()); !zone.done(); zone.next()) {
-        mjit::ClearAllFrames(zone);
-# ifdef JS_ION
 
-#  ifdef DEBUG
+# ifdef DEBUG
         /* Assert no baseline scripts are marked as active. */
         for (CellIter i(zone, FINALIZE_SCRIPT); !i.done(); i.next()) {
             JSScript *script = i.get<JSScript>();
             JS_ASSERT_IF(script->hasBaselineScript(), !script->baselineScript()->active());
         }
-#  endif
+# endif
 
         /* Mark baseline scripts on the stack as active. */
         ion::MarkActiveBaselineScripts(zone);
 
         ion::InvalidateAll(fop, zone);
-# endif
 
         for (CellIter i(zone, FINALIZE_SCRIPT); !i.done(); i.next()) {
             JSScript *script = i.get<JSScript>();
-            mjit::ReleaseScriptCode(fop, script);
-# ifdef JS_ION
             ion::FinishInvalidation(fop, script);
 
             /*
@@ -4867,7 +4859,6 @@ js::ReleaseAllJITCode(FreeOp *fop)
              * this also resets the active flag.
              */
             ion::FinishDiscardBaselineScript(fop, script);
-# endif
         }
     }
 #endif
@@ -4945,7 +4936,7 @@ js::StopPCCountProfiling(JSContext *cx)
 
     for (ZonesIter zone(rt); !zone.done(); zone.next()) {
         for (CellIter i(zone, FINALIZE_SCRIPT); !i.done(); i.next()) {
-            RawScript script = i.get<JSScript>();
+            JSScript *script = i.get<JSScript>();
             if (script->hasScriptCounts && script->types) {
                 ScriptAndCounts sac;
                 sac.script = script;
@@ -4975,19 +4966,12 @@ js::PurgePCCounts(JSContext *cx)
 void
 js::PurgeJITCaches(Zone *zone)
 {
-#ifdef JS_METHODJIT
-    mjit::ClearAllFrames(zone);
-
+#ifdef JS_ION
     for (CellIterUnderGC i(zone, FINALIZE_SCRIPT); !i.done(); i.next()) {
         JSScript *script = i.get<JSScript>();
 
-        /* Discard JM caches. */
-        mjit::PurgeCaches(script);
-
-#ifdef JS_ION
         /* Discard Ion caches. */
         ion::PurgeCaches(script, zone);
-#endif
     }
 #endif
 }
@@ -5092,9 +5076,11 @@ AutoSuppressGC::AutoSuppressGC(JSCompartment *comp)
 }
 
 #ifdef DEBUG
-AutoDisableProxyCheck::AutoDisableProxyCheck(JSRuntime *rt)
+AutoDisableProxyCheck::AutoDisableProxyCheck(JSRuntime *rt
+                                             MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
   : count(rt->gcDisableStrictProxyCheckingCount)
 {
+    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     count++;
 }
 #endif

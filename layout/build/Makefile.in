@@ -16,18 +16,13 @@ SHELL := ksh
 endif
 
 LIBRARY_NAME	= gklayout
+MSVC_ENABLE_PGO := 1
 EXPORT_LIBRARY = 1
 IS_COMPONENT	= 1
 MODULE_NAME	= nsLayoutModule
 LIBXUL_LIBRARY	= 1
 FAIL_ON_WARNINGS = 1
 
-
-CPPSRCS		= \
-		nsLayoutModule.cpp \
-		nsContentDLF.cpp \
-		nsLayoutStatics.cpp \
-		$(NULL)
 
 SHARED_LIBRARY_LIBS = \
 	../base/$(LIB_PREFIX)gkbase_s.$(LIB_SUFFIX) \
@@ -116,10 +111,11 @@ LOCAL_INCLUDES	+= \
 	$(NULL)
 endif
 
-ifeq (gonk,$(MOZ_WIDGET_TOOLKIT)) #{
+ifdef MOZ_OMX_DECODER #{
 # include OMX decoder
 SHARED_LIBRARY_LIBS 	+= \
 	$(DEPTH)/content/media/omx/$(LIB_PREFIX)gkconomx_s.$(LIB_SUFFIX) \
+	$(DEPTH)/content/media/omx/mediaresourcemanager/$(LIB_PREFIX)mediaresourcemanager.$(LIB_SUFFIX) \
 	$(NULL)
 endif #}
 

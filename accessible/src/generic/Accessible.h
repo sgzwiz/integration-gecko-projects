@@ -9,7 +9,7 @@
 #include "mozilla/a11y/AccTypes.h"
 #include "mozilla/a11y/Role.h"
 #include "mozilla/a11y/States.h"
-#include "nsAccessNodeWrap.h"
+#include "nsAccessNode.h"
 
 #include "nsIAccessible.h"
 #include "nsIAccessibleHyperLink.h"
@@ -100,7 +100,7 @@ typedef nsRefPtrHashtable<nsPtrHashKey<const void>, Accessible>
   { 0xbd, 0x50, 0x42, 0x6b, 0xd1, 0xd6, 0xe1, 0xad }    \
 }
 
-class Accessible : public nsAccessNodeWrap,
+class Accessible : public nsAccessNode,
                    public nsIAccessible,
                    public nsIAccessibleHyperLink,
                    public nsIAccessibleSelectable,
@@ -880,16 +880,6 @@ protected:
    * Return group info.
    */
   AccGroupInfo* GetGroupInfo();
-
-  /**
-   * Fires platform accessible event. It's notification method only. It does
-   * change nothing on Gecko side. Don't use it until you're sure what you do
-   * (see example in XUL tree accessible), use nsEventShell::FireEvent()
-   * instead. MUST be overridden in wrap classes.
-   *
-   * @param aEvent  the accessible event to fire.
-   */
-  virtual nsresult FirePlatformEvent(AccEvent* aEvent) = 0;
 
   // Data Members
   nsRefPtr<Accessible> mParent;

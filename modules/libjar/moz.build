@@ -16,7 +16,12 @@ XPIDL_SOURCES += [
 MODULE = 'jar'
 
 EXPORTS += [
-    'zipstruct.h',
     'nsJARURI.h',
     'nsZipArchive.h',
+    'zipstruct.h',
 ]
+
+CPP_SOURCES += [
+    '$(MODULES_LIBJAR_LCPPSRCS)',
+]
+

@@ -97,8 +97,9 @@ LayerManagerComposite::~LayerManagerComposite()
 bool
 LayerManagerComposite::Initialize()
 {
+  bool result = mCompositor->Initialize();
   mComposer2D = mCompositor->GetWidget()->GetComposer2D();
-  return mCompositor->Initialize();
+  return result;
 }
 
 void
@@ -271,6 +272,9 @@ LayerManagerComposite::Render()
     return;
   }
 
+  
+  mCompositor->GetWidget()->PreRender(this);
+
   nsIntRect clipRect;
   Rect bounds(mRenderBounds.x, mRenderBounds.y, mRenderBounds.width, mRenderBounds.height);
   Rect actualBounds;
@@ -283,6 +287,10 @@ LayerManagerComposite::Render()
     gfx::Rect rect;
     mCompositor->BeginFrame(nullptr, mWorldMatrix, bounds, &rect, &actualBounds);
     clipRect = nsIntRect(rect.x, rect.y, rect.width, rect.height);
+  }
+
+  if (actualBounds.IsEmpty()) {
+    return;
   }
 
   // Allow widget to render a custom background.
@@ -651,6 +659,7 @@ LayerComposite::LayerComposite(LayerManagerComposite *aManager)
   , mCompositor(aManager->GetCompositor())
   , mShadowOpacity(1.0)
   , mUseShadowClipRect(false)
+  , mShadowTransformSetByAnimation(false)
   , mDestroyed(false)
 { }
 

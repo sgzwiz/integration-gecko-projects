@@ -21,7 +21,9 @@
 #include "nsIDOMFile.h"
 #include "mozilla/dom/ipc/Blob.h"
 #include "mozilla/dom/ContentParent.h"
+#include "nsContentUtils.h"
 #include "nsTArrayHelpers.h"
+#include "nsCxPusher.h"
 
 namespace mozilla {
 namespace dom {
@@ -31,9 +33,7 @@ static JSObject*
 MmsAttachmentDataToJSObject(JSContext* aContext,
                             const MmsAttachmentData& aAttachment)
 {
-  JSAutoRequest ar(aContext);
-
-  JSObject* obj = JS_NewObject(aContext, nullptr, nullptr, nullptr);
+  JS::Rooted<JSObject*> obj(aContext, JS_NewObject(aContext, nullptr, nullptr, nullptr));
   NS_ENSURE_TRUE(obj, nullptr);
 
   JSString* idStr = JS_NewUCStringCopyN(aContext,
@@ -55,12 +55,13 @@ MmsAttachmentDataToJSObject(JSContext* aContext,
   }
 
   nsCOMPtr<nsIDOMBlob> blob = static_cast<BlobParent*>(aAttachment.contentParent())->GetBlob();
-  JS::Value content;
+  JS::Rooted<JS::Value> content(aContext);
+  JS::Rooted<JSObject*> global(aContext, JS_GetGlobalForScopeChain(aContext));
   nsresult rv = nsContentUtils::WrapNative(aContext,
-                                           JS_GetGlobalForScopeChain(aContext),
+                                           global,
                                            blob,
                                            &NS_GET_IID(nsIDOMBlob),
-                                           &content);
+                                           content.address());
   NS_ENSURE_SUCCESS(rv, nullptr);
   if (!JS_DefineProperty(aContext, obj, "content", content,
                          nullptr, nullptr, 0)) {
@@ -75,9 +76,7 @@ GetParamsFromSendMmsMessageRequest(JSContext* aCx,
                                    const SendMmsMessageRequest& aRequest,
                                    JS::Value* aParam)
 {
-  JSAutoRequest ar(aCx);
-
-  JSObject* paramsObj = JS_NewObject(aCx, nullptr, nullptr, nullptr);
+  JS::Rooted<JSObject*> paramsObj(aCx, JS_NewObject(aCx, nullptr, nullptr, nullptr));
   NS_ENSURE_TRUE(paramsObj, false);
 
   // smil
@@ -101,10 +100,10 @@ GetParamsFromSendMmsMessageRequest(JSContext* aCx,
   }
 
   // receivers
-  JSObject* receiverArray;
+  JS::Rooted<JSObject*> receiverArray(aCx);
   if (NS_FAILED(nsTArrayToJSArray(aCx,
                                   aRequest.receivers(),
-                                  &receiverArray))) {
+                                  receiverArray.address()))) {
     return false;
   }
   if (!JS_DefineProperty(aCx, paramsObj, "receivers",
@@ -113,15 +112,15 @@ GetParamsFromSendMmsMessageRequest(JSContext* aCx,
   }
 
   // attachments
-  JSObject* attachmentArray = JS_NewArrayObject(aCx,
-                                                aRequest.attachments().Length(),
-                                                nullptr);
+  JS::Rooted<JSObject*> attachmentArray(aCx, JS_NewArrayObject(aCx,
+                                                               aRequest.attachments().Length(),
+                                                               nullptr));
   for (uint32_t i = 0; i < aRequest.attachments().Length(); i++) {
-    JSObject *obj = MmsAttachmentDataToJSObject(aCx,
-                                                aRequest.attachments().ElementAt(i));
+    JS::Rooted<JSObject*> obj(aCx,
+      MmsAttachmentDataToJSObject(aCx, aRequest.attachments().ElementAt(i)));
     NS_ENSURE_TRUE(obj, false);
-    jsval val = JS::ObjectValue(*obj);
-    if (!JS_SetElement(aCx, attachmentArray, i, &val)) {
+    JS::Rooted<JS::Value> val(aCx, JS::ObjectValue(*obj));
+    if (!JS_SetElement(aCx, attachmentArray, i, val.address())) {
       return false;
     }
   }
@@ -146,6 +145,7 @@ SmsParent::SmsParent()
   }
 
   obs->AddObserver(this, kSmsReceivedObserverTopic, false);
+  obs->AddObserver(this, kSmsRetrievingObserverTopic, false);
   obs->AddObserver(this, kSmsSendingObserverTopic, false);
   obs->AddObserver(this, kSmsSentObserverTopic, false);
   obs->AddObserver(this, kSmsFailedObserverTopic, false);
@@ -162,6 +162,7 @@ SmsParent::ActorDestroy(ActorDestroyReason why)
   }
 
   obs->RemoveObserver(this, kSmsReceivedObserverTopic);
+  obs->RemoveObserver(this, kSmsRetrievingObserverTopic);
   obs->RemoveObserver(this, kSmsSendingObserverTopic);
   obs->RemoveObserver(this, kSmsSentObserverTopic);
   obs->RemoveObserver(this, kSmsFailedObserverTopic);
@@ -181,6 +182,17 @@ SmsParent::Observe(nsISupports* aSubject, const char* aTopic,
     }
 
     unused << SendNotifyReceivedMessage(msgData);
+    return NS_OK;
+  }
+
+  if (!strcmp(aTopic, kSmsRetrievingObserverTopic)) {
+    MobileMessageData msgData;
+    if (!GetMobileMessageDataFromMessage(aSubject, msgData)) {
+      NS_ERROR("Got a 'sms-retrieving' topic without a valid message!");
+      return NS_OK;
+    }
+
+    unused << SendNotifyRetrievingMessage(msgData);
     return NS_OK;
   }
 
@@ -419,12 +431,12 @@ SmsRequestParent::DoRequest(const SendMessageRequest& aRequest)
       nsCOMPtr<nsIMmsService> mmsService = do_GetService(MMS_SERVICE_CONTRACTID);
       NS_ENSURE_TRUE(mmsService, true);
 
-      JS::Value params;
       AutoJSContext cx;
+      JS::Rooted<JS::Value> params(cx);
       if (!GetParamsFromSendMmsMessageRequest(
               cx,
               aRequest.get_SendMmsMessageRequest(),
-              &params)) {
+              params.address())) {
         NS_WARNING("SmsRequestParent: Fail to build MMS params.");
         return true;
       }
@@ -481,7 +493,9 @@ SmsRequestParent::DoRequest(const DeleteMessageRequest& aRequest)
   nsCOMPtr<nsIMobileMessageDatabaseService> dbService =
     do_GetService(MOBILE_MESSAGE_DATABASE_SERVICE_CONTRACTID);
   if (dbService) {
-    rv = dbService->DeleteMessage(aRequest.messageId(), this);
+    const InfallibleTArray<int32_t>& messageIds = aRequest.messageIds();
+    rv = dbService->DeleteMessage(const_cast<int32_t *>(messageIds.Elements()),
+                                  messageIds.Length(), this);
   }
 
   if (NS_FAILED(rv)) {
@@ -582,9 +596,11 @@ SmsRequestParent::NotifyGetMessageFailed(int32_t aError)
 }
 
 NS_IMETHODIMP
-SmsRequestParent::NotifyMessageDeleted(bool aDeleted)
+SmsRequestParent::NotifyMessageDeleted(bool *aDeleted, uint32_t aSize)
 {
-  return SendReply(ReplyMessageDelete(aDeleted));
+  ReplyMessageDelete data;
+  data.deleted().AppendElements(aDeleted, aSize);
+  return SendReply(data);
 }
 
 NS_IMETHODIMP

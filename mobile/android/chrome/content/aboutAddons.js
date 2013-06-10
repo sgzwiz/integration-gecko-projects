@@ -52,7 +52,8 @@ var ContextMenus = {
       document.getElementById("contextmenu-uninstall").removeAttribute("hidden");
     }
 
-    if (this.target.getAttribute("isDisabled") != "true") {
+    let enabled = this.target.getAttribute("isDisabled") != "true";
+    if (enabled) {
       document.getElementById("contextmenu-enable").setAttribute("hidden", "true");
       document.getElementById("contextmenu-disable").removeAttribute("hidden");
     } else {
@@ -60,7 +61,8 @@ var ContextMenus = {
       document.getElementById("contextmenu-disable").setAttribute("hidden", "true");
     }
 
-    if (addon.type == "search") {
+    // Only show the "Set as Default" menuitem for enabled non-default search engines.
+    if (addon.type == "search" && enabled && addon.id != Services.search.defaultEngine.name) {
       document.getElementById("contextmenu-default").removeAttribute("hidden");
     } else {
       document.getElementById("contextmenu-default").setAttribute("hidden", "true");
@@ -226,12 +228,12 @@ var Addons = {
   },
 
   getAddons: function getAddons() {
-    // Clear all content before filling the addons
-    let list = document.getElementById("addons-list");
-    list.innerHTML = "";
-
     let self = this;
     AddonManager.getAddonsByTypes(["extension", "theme", "locale"], function(aAddons) {
+      // Clear all content before filling the addons
+      let list = document.getElementById("addons-list");
+      list.innerHTML = "";
+
       for (let i=0; i<aAddons.length; i++) {
         let item = self._createItemForAddon(aAddons[i]);
         list.appendChild(item);

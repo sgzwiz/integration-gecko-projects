@@ -156,12 +156,23 @@ function clearSelection(aTarget) {
 function hideContextUI()
 {
   purgeEventQueue();
-  if (ContextUI.isVisible) {
-    info("is visible, waiting...");
-    let promise = waitForEvent(Elements.tray, "transitionend");
-    ContextUI.dismiss();
-    return promise;
-  }
+
+  return Task.spawn(function() {
+    if (ContextUI.isExpanded) {
+      let promise = waitForEvent(Elements.tray, "transitionend", null, Elements.tray);
+      if (ContextUI.dismiss())
+      {
+        info("ContextUI dismissed, waiting...");
+        yield promise;
+      }
+    }
+
+    if (Elements.contextappbar.isShowing) {
+      let promise = waitForEvent(Elements.contextappbar, "transitionend", null, Elements.contextappbar);
+      Elements.contextappbar.dismiss();
+      yield promise;
+    }
+  });
 }
 
 function showNavBar()
@@ -177,7 +188,7 @@ function fireAppBarDisplayEvent()
 {
   let promise = waitForEvent(Elements.tray, "transitionend");
   let event = document.createEvent("Events");
-  event.initEvent("MozEdgeUIGesture", true, false);
+  event.initEvent("MozEdgeUICompleted", true, false);
   gWindow.dispatchEvent(event);
   purgeEventQueue();
   return promise;
@@ -186,6 +197,8 @@ function fireAppBarDisplayEvent()
 /*=============================================================================
   Asynchronous test helpers
 =============================================================================*/
+let gOpenedTabs = [];
+
 /**
  *  Loads a URL in a new tab asynchronously.
  *
@@ -205,9 +218,24 @@ function addTab(aUrl) {
     yield tab.pageShowPromise;
 
     is(tab.browser.currentURI.spec, aUrl, aUrl + " is loaded");
-    registerCleanupFunction(function() Browser.closeTab(tab));
+
+    yield hideContextUI();
+
+    gOpenedTabs.push(tab);
+
     throw new Task.Result(tab);
   });
+}
+
+/**
+ * Cleans up tabs left open by addTab().
+ * This is being called at runTests() after the test loop.
+ */
+function cleanUpOpenedTabs() {
+  let tab;
+  while(tab = gOpenedTabs.shift()) {
+    Browser.closeTab(Browser.getTabFromChrome(tab.chromeTab), { forceClose: true })
+  }
 }
 
 /**
@@ -230,15 +258,19 @@ function addTab(aUrl) {
  * @param aTimeoutMs the number of miliseconds to wait before giving up
  * @returns a Promise that resolves to the received event, or to an Error
  */
-function waitForEvent(aSubject, aEventName, aTimeoutMs) {
+function waitForEvent(aSubject, aEventName, aTimeoutMs, aTarget) {
   let eventDeferred = Promise.defer();
   let timeoutMs = aTimeoutMs || kDefaultWait;
+  let stack = new Error().stack;
   let timerID = setTimeout(function wfe_canceller() {
     aSubject.removeEventListener(aEventName, onEvent);
-    eventDeferred.reject( new Error(aEventName+" event timeout") );
+    eventDeferred.reject( new Error(aEventName+" event timeout at " + stack) );
   }, timeoutMs);
 
   function onEvent(aEvent) {
+    if (aTarget && aTarget !== aEvent.target)
+        return;
+
     // stop the timeout clock and resume
     clearTimeout(timerID);
     eventDeferred.resolve(aEvent);
@@ -644,25 +676,49 @@ let gTests = [];
 
 function runTests() {
   waitForExplicitFinish();
+
   Task.spawn(function() {
     while((gCurrentTest = gTests.shift())){
-      info("START " + gCurrentTest.desc);
       try {
         if ('function' == typeof gCurrentTest.setUp) {
           info("SETUP " + gCurrentTest.desc);
           yield Task.spawn(gCurrentTest.setUp.bind(gCurrentTest));
         }
-        yield Task.spawn(gCurrentTest.run.bind(gCurrentTest));
-        if ('function' == typeof gCurrentTest.tearDown) {
-          info("TEARDOWN " + gCurrentTest.desc);
-          yield Task.spawn(gCurrentTest.tearDown.bind(gCurrentTest));
+        try {
+          info("RUN " + gCurrentTest.desc);
+          yield Task.spawn(gCurrentTest.run.bind(gCurrentTest));
+        } finally {
+          if ('function' == typeof gCurrentTest.tearDown) {
+            info("TEARDOWN " + gCurrentTest.desc);
+            yield Task.spawn(gCurrentTest.tearDown.bind(gCurrentTest));
+          }
         }
       } catch (ex) {
-        ok(false, "runTests: Task failed - " + ex);
+        ok(false, "runTests: Task failed - " + ex + ' at ' + ex.stack);
       } finally {
         info("END " + gCurrentTest.desc);
       }
     }
+
+    try {
+      cleanUpOpenedTabs();
+
+      let badTabs = [];
+      Browser.tabs.forEach(function(item, index, array) {
+        let location = item.browser.currentURI.spec;
+        if (index == 0 && location == "about:blank")
+          return;
+        ok(false, "Left over tab after test: '" + location + "'");
+        badTabs.push(item);
+      });
+
+      badTabs.forEach(function(item, index, array) {
+        Browser.closeTab(item, { forceClose: true });
+      });
+    } catch (ex) {
+      ok(false, "Cleanup tabs failed - " + ex);
+    }
+
     finish();
   });
 }

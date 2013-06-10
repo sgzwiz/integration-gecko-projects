@@ -77,6 +77,8 @@ MacroAssembler::guardTypeSet(const Source &address, const TypeSet *types,
         branchTestString(Equal, tag, matched);
     if (types->hasType(types::Type::NullType()))
         branchTestNull(Equal, tag, matched);
+    if (types->hasType(types::Type::MagicArgType()))
+        branchTestMagic(Equal, tag, matched);
 
     if (types->hasType(types::Type::AnyObjectType())) {
         branchTestObject(Equal, tag, matched);
@@ -433,6 +435,26 @@ MacroAssembler::newGCThing(const Register &result, gc::AllocKind allocKind, Labe
     branch32(Assembler::NotEqual, result, Imm32(0), fail);
 #endif
 
+    // Don't execute the inline path if the compartment has an object metadata callback,
+    // as the metadata to use for the object may vary between executions of the op.
+    if (GetIonContext()->compartment->objectMetadataCallback)
+        jump(fail);
+
+#ifdef JSGC_GENERATIONAL
+    Nursery &nursery = zone->rt->gcNursery;
+    if (nursery.isEnabled() && allocKind <= gc::FINALIZE_OBJECT_LAST) {
+        // Inline Nursery::allocate. No explicit check for nursery.isEnabled()
+        // is needed, as the comparison with the nursery's end will always fail
+        // in such cases.
+        loadPtr(AbsoluteAddress(nursery.addressOfPosition()), result);
+        addPtr(Imm32(thingSize), result);
+        branchPtr(Assembler::BelowOrEqual, AbsoluteAddress(nursery.addressOfCurrentEnd()), result, fail);
+        storePtr(result, AbsoluteAddress(nursery.addressOfPosition()));
+        subPtr(Imm32(thingSize), result);
+        return;
+    }
+#endif // JSGC_GENERATIONAL
+
     // Inline FreeSpan::allocate.
     // There is always exactly one FreeSpan per allocKind per JSCompartment.
     // If a FreeSpan is replaced, its members are updated in the freeLists table,
@@ -698,118 +720,24 @@ MacroAssembler::generateBailoutTail(Register scratch, Register bailoutInfo)
 {
     enterExitFrame();
 
-    Label reflow;
-    Label interpret;
     Label exception;
-    Label osr;
-    Label boundscheck;
-    Label overrecursed;
-    Label invalidate;
     Label baseline;
 
     // The return value from Bailout is tagged as:
-    // - 0x0: done (thunk to interpreter)
+    // - 0x0: done (enter baseline)
     // - 0x1: error (handle exception)
-    // - 0x2: reflow args
-    // - 0x3: reflow barrier
-    // - 0x4: monitor types
-    // - 0x5: bounds check failure
-    // - 0x6: force invalidation
-    // - 0x7: overrecursed
-    // - 0x8: cached shape guard failure
-    // - 0x9: bailout to baseline
+    // - 0x2: overrecursed
 
-    branch32(LessThan, ReturnReg, Imm32(BAILOUT_RETURN_FATAL_ERROR), &interpret);
+    branch32(Equal, ReturnReg, Imm32(BAILOUT_RETURN_OK), &baseline);
     branch32(Equal, ReturnReg, Imm32(BAILOUT_RETURN_FATAL_ERROR), &exception);
 
-    branch32(LessThan, ReturnReg, Imm32(BAILOUT_RETURN_BOUNDS_CHECK), &reflow);
-
-    branch32(Equal, ReturnReg, Imm32(BAILOUT_RETURN_BOUNDS_CHECK), &boundscheck);
-    branch32(Equal, ReturnReg, Imm32(BAILOUT_RETURN_OVERRECURSED), &overrecursed);
-    branch32(Equal, ReturnReg, Imm32(BAILOUT_RETURN_SHAPE_GUARD), &invalidate);
-    branch32(Equal, ReturnReg, Imm32(BAILOUT_RETURN_BASELINE), &baseline);
-
-    // Fall-through: cached shape guard failure.
-    {
-        setupUnalignedABICall(0, scratch);
-        callWithABI(JS_FUNC_TO_DATA_PTR(void *, CachedShapeGuardFailure));
-
-        branchTest32(Zero, ReturnReg, ReturnReg, &exception);
-        jump(&interpret);
-    }
-
-    // Force invalidation.
-    bind(&invalidate);
-    {
-        setupUnalignedABICall(0, scratch);
-        callWithABI(JS_FUNC_TO_DATA_PTR(void *, ShapeGuardFailure));
-
-        branchTest32(Zero, ReturnReg, ReturnReg, &exception);
-        jump(&interpret);
-    }
-
-    // Bounds-check failure.
-    bind(&boundscheck);
-    {
-        setupUnalignedABICall(0, scratch);
-        callWithABI(JS_FUNC_TO_DATA_PTR(void *, BoundsCheckFailure));
-
-        branchTest32(Zero, ReturnReg, ReturnReg, &exception);
-        jump(&interpret);
-    }
-
-    // Reflow types.
-    bind(&reflow);
-    {
-        setupUnalignedABICall(1, scratch);
-        passABIArg(ReturnReg);
-        callWithABI(JS_FUNC_TO_DATA_PTR(void *, ReflowTypeInfo));
-
-        branchTest32(Zero, ReturnReg, ReturnReg, &exception);
-        jump(&interpret);
-    }
-
-    // Throw an over-recursion error.
-    bind(&overrecursed);
+    // Fall-through: overrecursed.
     {
         loadJSContext(ReturnReg);
         setupUnalignedABICall(1, scratch);
         passABIArg(ReturnReg);
         callWithABI(JS_FUNC_TO_DATA_PTR(void *, js_ReportOverRecursed));
         jump(&exception);
-    }
-
-    bind(&interpret);
-    {
-        // Reserve space for Interpret() to store a Value.
-        subPtr(Imm32(sizeof(Value)), StackPointer);
-        mov(StackPointer, ReturnReg);
-
-        // Call out to the interpreter.
-        setupUnalignedABICall(1, scratch);
-        passABIArg(ReturnReg);
-        callWithABI(JS_FUNC_TO_DATA_PTR(void *, ThunkToInterpreter));
-
-        // Load the value the interpreter returned.
-        popValue(JSReturnOperand);
-
-        // Check for an exception.
-        JS_STATIC_ASSERT(!Interpret_Error);
-        branchTest32(Zero, ReturnReg, ReturnReg, &exception);
-
-        // Remove the exitCode pointer from the stack.
-        leaveExitFrame();
-
-        branch32(Equal, ReturnReg, Imm32(Interpret_OSR), &osr);
-
-        // Return to the caller.
-        ret();
-    }
-
-    bind(&osr);
-    {
-        unboxPrivate(JSReturnOperand, OsrFrameReg);
-        performOsr();
     }
 
     bind(&exception);
@@ -960,6 +888,38 @@ MacroAssembler::loadBaselineOrIonRaw(Register script, Register dest, ExecutionMo
             branchPtr(Assembler::BelowOrEqual, dest, ImmWord(ION_COMPILING_SCRIPT), failure);
         loadPtr(Address(dest, IonScript::offsetOfMethod()), dest);
         loadPtr(Address(dest, IonCode::offsetOfCode()), dest);
+    }
+}
+
+void
+MacroAssembler::loadBaselineOrIonNoArgCheck(Register script, Register dest, ExecutionMode mode,
+                                            Label *failure)
+{
+    if (mode == SequentialExecution) {
+        loadPtr(Address(script, JSScript::offsetOfBaselineOrIonSkipArgCheck()), dest);
+        if (failure)
+            branchTestPtr(Assembler::Zero, dest, dest, failure);
+    } else {
+        // Find second register to get the offset to skip argument check
+        Register offset = script;
+        if (script == dest) {
+            GeneralRegisterSet regs(GeneralRegisterSet::All());
+            regs.take(dest);
+            offset = regs.takeAny();
+        }
+
+        loadPtr(Address(script, JSScript::offsetOfParallelIonScript()), dest);
+        if (failure)
+            branchPtr(Assembler::BelowOrEqual, dest, ImmWord(ION_COMPILING_SCRIPT), failure);
+
+        Push(offset);
+        load32(Address(script, IonScript::offsetOfSkipArgCheckEntryOffset()), offset);
+
+        loadPtr(Address(dest, IonScript::offsetOfMethod()), dest);
+        loadPtr(Address(dest, IonCode::offsetOfCode()), dest);
+        addPtr(offset, dest);
+
+        Pop(offset);
     }
 }
 
@@ -1132,6 +1092,49 @@ MacroAssembler::convertInt32ValueToDouble(const Address &address, Register scrat
     unboxInt32(address, scratch);
     convertInt32ToDouble(scratch, ScratchFloatReg);
     storeDouble(ScratchFloatReg, address);
+}
+
+void
+MacroAssembler::PushEmptyRooted(VMFunction::RootType rootType)
+{
+    switch (rootType) {
+      case VMFunction::RootNone:
+        JS_NOT_REACHED("Handle must have root type");
+        break;
+      case VMFunction::RootObject:
+      case VMFunction::RootString:
+      case VMFunction::RootPropertyName:
+      case VMFunction::RootFunction:
+      case VMFunction::RootCell:
+        Push(ImmWord((void *)NULL));
+        break;
+      case VMFunction::RootValue:
+        Push(UndefinedValue());
+        break;
+    }
+}
+
+void
+MacroAssembler::popRooted(VMFunction::RootType rootType, Register cellReg,
+                          const ValueOperand &valueReg)
+{
+    switch (rootType) {
+      case VMFunction::RootNone:
+        JS_NOT_REACHED("Handle must have root type");
+        break;
+      case VMFunction::RootObject:
+      case VMFunction::RootString:
+      case VMFunction::RootPropertyName:
+      case VMFunction::RootFunction:
+      case VMFunction::RootCell:
+        loadPtr(Address(StackPointer, 0), cellReg);
+        freeStack(sizeof(void *));
+        break;
+      case VMFunction::RootValue:
+        loadValue(Address(StackPointer, 0), valueReg);
+        freeStack(sizeof(Value));
+        break;
+    }
 }
 
 #ifdef JS_ASMJS

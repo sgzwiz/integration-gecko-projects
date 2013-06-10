@@ -5,6 +5,7 @@
 #ifndef nsIDocument_h___
 #define nsIDocument_h___
 
+#include "mozilla/Attributes.h"
 #include "mozFlushType.h"                // for enum
 #include "nsAutoPtr.h"                   // for member
 #include "nsCOMArray.h"                  // for member
@@ -113,8 +114,8 @@ typedef CallbackObjectHolder<NodeFilter, nsIDOMNodeFilter> NodeFilterHolder;
 } // namespace mozilla
 
 #define NS_IDOCUMENT_IID \
-{ 0x8f33bc23, 0x5625, 0x448a, \
-  { 0xb3, 0x38, 0xfe, 0x88, 0x16, 0xe, 0xb3, 0xdb } }
+{ 0x308f8444, 0x7679, 0x445a, \
+ { 0xa6, 0xcc, 0xb9, 0x5c, 0x61, 0xff, 0xe2, 0x66 } }
 
 // Flag for AddStyleSheet().
 #define NS_STYLESHEET_FROM_CATALOG                (1 << 0)
@@ -260,7 +261,7 @@ public:
   {
     return mDocumentBaseURI ? mDocumentBaseURI : mDocumentURI;
   }
-  virtual already_AddRefed<nsIURI> GetBaseURI() const
+  virtual already_AddRefed<nsIURI> GetBaseURI() const MOZ_OVERRIDE
   {
     nsCOMPtr<nsIURI> uri = GetDocBaseURI();
 
@@ -534,10 +535,9 @@ public:
    * method is responsible for calling BeginObservingDocument() on the
    * presshell if the presshell should observe document mutations.
    */
-  virtual nsresult CreateShell(nsPresContext* aContext,
-                               nsViewManager* aViewManager,
-                               nsStyleSet* aStyleSet,
-                               nsIPresShell** aInstancePtrResult) = 0;
+  virtual already_AddRefed<nsIPresShell> CreateShell(nsPresContext* aContext,
+                                                     nsViewManager* aViewManager,
+                                                     nsStyleSet* aStyleSet) = 0;
   virtual void DeleteShell() = 0;
 
   nsIPresShell* GetShell() const
@@ -826,7 +826,7 @@ public:
    */
   nsPIDOMWindow* GetInnerWindow()
   {
-    return mRemovedFromDocShell ? GetInnerWindowInternal() : mWindow;
+    return mRemovedFromDocShell ? nullptr : mWindow;
   }
 
   /**
@@ -2029,7 +2029,7 @@ public:
   }
   bool Hidden() const
   {
-    return mVisibilityState != mozilla::dom::VisibilityStateValues::Visible;
+    return mVisibilityState != mozilla::dom::VisibilityState::Visible;
   }
   bool MozHidden() // Not const because of WarnOnceAbout
   {
@@ -2097,7 +2097,20 @@ public:
   already_AddRefed<nsIDOMTouchList>
     CreateTouchList(const mozilla::dom::Sequence<mozilla::dom::OwningNonNull<mozilla::dom::Touch> >& aTouches);
 
+  void SetStyleSheetChangeEventsEnabled(bool aValue)
+  {
+    mStyleSheetChangeEventsEnabled = aValue;
+  }
+
+  bool StyleSheetChangeEventsEnabled() const
+  {
+    return mStyleSheetChangeEventsEnabled;
+  }
+
   virtual nsHTMLDocument* AsHTMLDocument() { return nullptr; }
+
+  virtual JSObject* WrapObject(JSContext *aCx,
+                               JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 
 private:
   uint64_t mWarnedAbout;
@@ -2108,9 +2121,6 @@ protected:
 
   // Never ever call this. Only call GetWindow!
   virtual nsPIDOMWindow *GetWindowInternal() const = 0;
-
-  // Never ever call this. Only call GetInnerWindow!
-  virtual nsPIDOMWindow *GetInnerWindowInternal() = 0;
 
   // Never ever call this. Only call GetScriptHandlingObject!
   virtual nsIScriptGlobalObject* GetScriptHandlingObjectInternal() const = 0;
@@ -2142,10 +2152,6 @@ protected:
   {
     return mContentType;
   }
-
-  // All document WrapNode implementations MUST call this method.  A
-  // false return value means an exception was thrown.
-  bool PostCreateWrapper(JSContext* aCx, JSObject *aNewObject);
 
   nsCString mReferrer;
   nsString mLastModified;
@@ -2303,6 +2309,9 @@ protected:
   bool mHaveInputEncoding;
 
   bool mHasHadDefaultView;
+
+  // Whether style sheet change events will be dispatched for this document
+  bool mStyleSheetChangeEventsEnabled;
 
   // The document's script global object, the object from which the
   // document can get its script context and scope. This is the

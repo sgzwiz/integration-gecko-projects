@@ -185,10 +185,8 @@ nsJSScriptTimeoutHandler::Init(nsGlobalWindow *aWindow, bool *aIsInterval,
   ncc->GetArgc(&argc);
   ncc->GetArgvPtr(&argv);
 
-  JSFlatString *expr = nullptr;
-  JSObject *funobj = nullptr;
-
-  JSAutoRequest ar(cx);
+  JS::Rooted<JSFlatString*> expr(cx);
+  JS::Rooted<JSObject*> funobj(cx);
 
   if (argc < 1) {
     ::JS_ReportError(cx, "Function %s requires at least 2 parameter",

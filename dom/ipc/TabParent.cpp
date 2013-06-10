@@ -200,6 +200,7 @@ TabParent::TabParent(const TabContext& aContext)
   , mDimensions(0, 0)
   , mOrientation(0)
   , mDPI(0)
+  , mDefaultScale(0)
   , mShown(false)
   , mUpdatedDimensions(false)
   , mMarkedDestroying(false)
@@ -216,7 +217,7 @@ void
 TabParent::SetOwnerElement(nsIDOMElement* aElement)
 {
   mFrameElement = aElement;
-  TryCacheDPI();
+  TryCacheDPIAndScale();
 }
 
 void
@@ -635,6 +636,18 @@ bool TabParent::SendRealTouchEvent(nsTouchEvent& event)
     return false;
   }
   if (event.message == NS_TOUCH_START) {
+    // Adjust the widget coordinates to be relative to our frame.
+    nsRefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
+    if (!frameLoader) {
+      // No frame anymore?
+      sEventCapturer = nullptr;
+      return false;
+    }
+
+    mChildProcessOffsetAtTouchStart =
+        nsEventStateManager::GetChildProcessOffset(frameLoader,
+                                                   event);
+
     MOZ_ASSERT((!sEventCapturer && mEventCaptureDepth == 0) ||
                (sEventCapturer == this && mEventCaptureDepth > 0));
     // We want to capture all remaining touch events in this series
@@ -692,16 +705,8 @@ TabParent::TryCapture(const nsGUIEvent& aEvent)
     return false;
   }
 
-  // Adjust the widget coordinates to be relative to our frame.
-  nsRefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
-
-  if (!frameLoader) {
-    // No frame anymore?
-    sEventCapturer = nullptr;
-    return false;
-  }
-
-  nsEventStateManager::MapEventCoordinatesForChildProcess(frameLoader, &event);
+  nsEventStateManager::MapEventCoordinatesForChildProcess(
+    mChildProcessOffsetAtTouchStart, &event);
 
   SendRealTouchEvent(event);
   return true;
@@ -1043,11 +1048,22 @@ TabParent::RecvSetInputContext(const int32_t& aIMEEnabled,
 bool
 TabParent::RecvGetDPI(float* aValue)
 {
-  TryCacheDPI();
+  TryCacheDPIAndScale();
 
   NS_ABORT_IF_FALSE(mDPI > 0,
                     "Must not ask for DPI before OwnerElement is received!");
   *aValue = mDPI;
+  return true;
+}
+
+bool
+TabParent::RecvGetDefaultScale(double* aValue)
+{
+  TryCacheDPIAndScale();
+
+  NS_ABORT_IF_FALSE(mDefaultScale > 0,
+                    "Must not ask for scale before OwnerElement is received!");
+  *aValue = mDefaultScale;
   return true;
 }
 
@@ -1081,12 +1097,11 @@ TabParent::ReceiveMessage(const nsString& aMessage,
   if (frameLoader && frameLoader->GetFrameMessageManager()) {
     nsRefPtr<nsFrameMessageManager> manager =
       frameLoader->GetFrameMessageManager();
-    JSContext* ctx = manager->GetJSContext();
-    JSAutoRequest ar(ctx);
+    AutoPushJSContext ctx(manager->GetJSContext());
     uint32_t len = 0; //TODO: obtain a real value in bug 572685
     // Because we want JS messages to have always the same properties,
     // create array even if len == 0.
-    JSObject* objectsArray = JS_NewArrayObject(ctx, len, NULL);
+    JS::Rooted<JSObject*> objectsArray(ctx, JS_NewArrayObject(ctx, len, NULL));
     if (!objectsArray) {
       return false;
     }
@@ -1157,6 +1172,14 @@ TabParent::RecvPIndexedDBConstructor(PIndexedDBParent* aActor,
 
   nsCOMPtr<nsPIDOMWindow> window = doc->GetInnerWindow();
   NS_ENSURE_TRUE(window, false);
+
+  // Let's do a current inner check to see if the inner is active or is in
+  // bf cache, and bail out if it's not active.
+  nsCOMPtr<nsPIDOMWindow> outer = doc->GetWindow();
+  if (!outer || outer->GetCurrentInnerWindow() != window) {
+    *aAllowed = false;
+    return true;
+  }
 
   ContentParent* contentParent = static_cast<ContentParent*>(Manager());
   NS_ASSERTION(contentParent, "Null manager?!");
@@ -1362,7 +1385,7 @@ TabParent::GetFrameLoader() const
 }
 
 void
-TabParent::TryCacheDPI()
+TabParent::TryCacheDPIAndScale()
 {
   if (mDPI > 0) {
     return;
@@ -1382,6 +1405,7 @@ TabParent::TryCacheDPI()
 
   if (widget) {
     mDPI = widget->GetDPI();
+    mDefaultScale = widget->GetDefaultScale();
   }
 }
 

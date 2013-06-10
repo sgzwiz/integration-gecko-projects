@@ -8,10 +8,7 @@
 #include "PCOMContentPermissionRequestChild.h"
 
 #include "nsIPrincipal.h"
-#include "nsIJSContextStack.h"
-
 #include "nsIAlertsService.h"
-
 #include "nsIContentPermissionPrompt.h"
 
 #include "nsIObserver.h"
@@ -159,7 +156,7 @@ class DesktopNotificationRequest : public nsIContentPermissionRequest,
   DesktopNotificationRequest(DesktopNotification* notification)
     : mDesktopNotification(notification) {}
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() MOZ_OVERRIDE
   {
     nsCOMPtr<nsIContentPermissionPrompt> prompt =
       do_CreateInstance(NS_CONTENT_PERMISSION_PROMPT_CONTRACTID);
@@ -173,7 +170,7 @@ class DesktopNotificationRequest : public nsIContentPermissionRequest,
   {
   }
 
- bool Recv__delete__(const bool& allow)
+ virtual bool Recv__delete__(const bool& allow) MOZ_OVERRIDE
  {
    if (allow)
      (void) Allow();
@@ -181,7 +178,7 @@ class DesktopNotificationRequest : public nsIContentPermissionRequest,
      (void) Cancel();
    return true;
  }
- void IPDLRelease() { Release(); }
+ virtual void IPDLRelease() MOZ_OVERRIDE { Release(); }
 
   nsRefPtr<DesktopNotification> mDesktopNotification;
 };

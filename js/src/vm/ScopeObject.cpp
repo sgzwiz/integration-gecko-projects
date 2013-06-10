@@ -28,7 +28,7 @@ typedef Rooted<ArgumentsObject *> RootedArgumentsObject;
 
 /*****************************************************************************/
 
-StaticScopeIter::StaticScopeIter(JSContext *cx, HandleObject objArg)
+StaticScopeIter::StaticScopeIter(JSContext *cx, JSObject *objArg)
   : obj(cx, objArg), onNamedLambda(false)
 {
     JS_ASSERT_IF(obj, obj->isStaticBlock() || obj->isFunction());
@@ -63,7 +63,7 @@ StaticScopeIter::hasDynamicScopeObject() const
            : obj->toFunction()->isHeavyweight();
 }
 
-RawShape
+Shape *
 StaticScopeIter::scopeShape() const
 {
     JS_ASSERT(hasDynamicScopeObject());
@@ -88,7 +88,7 @@ StaticScopeIter::block() const
     return obj->asStaticBlock();
 }
 
-RawScript
+JSScript *
 StaticScopeIter::funScript() const
 {
     JS_ASSERT(type() == FUNCTION);
@@ -97,20 +97,23 @@ StaticScopeIter::funScript() const
 
 /*****************************************************************************/
 
-RawShape
-js::ScopeCoordinateToStaticScopeShape(JSContext *cx, JSScript *script, jsbytecode *pc)
+static JSObject *
+InnermostStaticScope(JSScript *script, jsbytecode *pc)
 {
     JS_ASSERT(pc >= script->code && pc < script->code + script->length);
     JS_ASSERT(JOF_OPTYPE(*pc) == JOF_SCOPECOORD);
 
     uint32_t blockIndex = GET_UINT32_INDEX(pc + 2 * sizeof(uint16_t));
-    RootedObject innermostStaticScope(cx, NULL);
-    if (blockIndex == UINT32_MAX)
-        innermostStaticScope = script->function();
-    else
-        innermostStaticScope = &script->getObject(blockIndex)->asStaticBlock();
 
-    StaticScopeIter ssi(cx, innermostStaticScope);
+    if (blockIndex == UINT32_MAX)
+        return script->function();
+    return &script->getObject(blockIndex)->asStaticBlock();
+}
+
+Shape *
+js::ScopeCoordinateToStaticScopeShape(JSContext *cx, JSScript *script, jsbytecode *pc)
+{
+    StaticScopeIter ssi(cx, InnermostStaticScope(script, pc));
     ScopeCoordinate sc(pc);
     while (true) {
         if (ssi.hasDynamicScopeObject()) {
@@ -138,6 +141,24 @@ js::ScopeCoordinateName(JSContext *cx, JSScript *script, jsbytecode *pc)
     return JSID_TO_ATOM(id)->asPropertyName();
 }
 
+JSScript *
+js::ScopeCoordinateFunctionScript(JSContext *cx, JSScript *script, jsbytecode *pc)
+{
+    StaticScopeIter ssi(cx, InnermostStaticScope(script, pc));
+    ScopeCoordinate sc(pc);
+    while (true) {
+        if (ssi.hasDynamicScopeObject()) {
+            if (!sc.hops)
+                break;
+            sc.hops--;
+        }
+        ssi++;
+    }
+    if (ssi.type() != StaticScopeIter::FUNCTION)
+        return NULL;
+    return ssi.funScript();
+}
+
 /*****************************************************************************/
 
 /*
@@ -145,16 +166,24 @@ js::ScopeCoordinateName(JSContext *cx, JSScript *script, jsbytecode *pc)
  * The call object must be further initialized to be usable.
  */
 CallObject *
-CallObject::create(JSContext *cx, HandleShape shape, HandleTypeObject type, HeapSlot *slots)
+CallObject::create(JSContext *cx, HandleScript script, HandleShape shape, HandleTypeObject type, HeapSlot *slots)
 {
     gc::AllocKind kind = gc::GetGCObjectKind(shape->numFixedSlots());
     JS_ASSERT(CanBeFinalizedInBackground(kind, &CallClass));
     kind = gc::GetBackgroundAllocKind(kind);
 
-    JSObject *obj = JSObject::create(cx, kind, GetInitialHeap(GenericObject, &CallClass),
-                                     shape, type, slots);
+    gc::InitialHeap heap = script->treatAsRunOnce ? gc::TenuredHeap : gc::DefaultHeap;
+    JSObject *obj = JSObject::create(cx, kind, heap, shape, type, slots);
     if (!obj)
         return NULL;
+
+    if (script->treatAsRunOnce) {
+        RootedObject nobj(cx, obj);
+        if (!JSObject::setSingletonType(cx, nobj))
+            return NULL;
+        return &nobj->asCall();
+    }
+
     return &obj->asCall();
 }
 
@@ -164,7 +193,7 @@ CallObject::create(JSContext *cx, HandleShape shape, HandleTypeObject type, Heap
  * callee) or used as a template for jit compilation.
  */
 CallObject *
-CallObject::createTemplateObject(JSContext *cx, HandleScript script)
+CallObject::createTemplateObject(JSContext *cx, HandleScript script, gc::InitialHeap heap)
 {
     RootedShape shape(cx, script->bindings.callObjShape());
     JS_ASSERT(shape->getObjectClass() == &CallClass);
@@ -177,7 +206,7 @@ CallObject::createTemplateObject(JSContext *cx, HandleScript script)
     JS_ASSERT(CanBeFinalizedInBackground(kind, &CallClass));
     kind = gc::GetBackgroundAllocKind(kind);
 
-    JSObject *obj = JSObject::create(cx, kind, gc::TenuredHeap, shape, type);
+    JSObject *obj = JSObject::create(cx, kind, heap, shape, type);
     if (!obj)
         return NULL;
 
@@ -193,12 +222,21 @@ CallObject::createTemplateObject(JSContext *cx, HandleScript script)
 CallObject *
 CallObject::create(JSContext *cx, HandleScript script, HandleObject enclosing, HandleFunction callee)
 {
-    CallObject *callobj = CallObject::createTemplateObject(cx, script);
+    gc::InitialHeap heap = script->treatAsRunOnce ? gc::TenuredHeap : gc::DefaultHeap;
+    CallObject *callobj = CallObject::createTemplateObject(cx, script, heap);
     if (!callobj)
         return NULL;
 
     callobj->asScope().setEnclosingScope(enclosing);
     callobj->initFixedSlot(CALLEE_SLOT, ObjectOrNullValue(callee));
+
+    if (script->treatAsRunOnce) {
+        Rooted<CallObject*> ncallobj(cx, callobj);
+        if (!JSObject::setSingletonType(cx, ncallobj))
+            return NULL;
+        return ncallobj;
+    }
+
     return callobj;
 }
 
@@ -236,8 +274,10 @@ CallObject::createForFunction(JSContext *cx, AbstractFramePtr frame)
         return NULL;
 
     /* Copy in the closed-over formal arguments. */
-    for (AliasedFormalIter i(frame.script()); i; i++)
-        callobj->setAliasedVar(i, frame.unaliasedFormal(i.frameIndex(), DONT_CHECK_ALIASING));
+    for (AliasedFormalIter i(frame.script()); i; i++) {
+        callobj->setAliasedVar(cx, i, i->name(),
+                               frame.unaliasedFormal(i.frameIndex(), DONT_CHECK_ALIASING));
+    }
 
     return callobj;
 }
@@ -286,7 +326,7 @@ Class js::DeclEnvClass = {
  * scope and callee) or used as a template for jit compilation.
  */
 DeclEnvObject *
-DeclEnvObject::createTemplateObject(JSContext *cx, HandleFunction fun)
+DeclEnvObject::createTemplateObject(JSContext *cx, HandleFunction fun, gc::InitialHeap heap)
 {
     RootedTypeObject type(cx, cx->compartment->getNewType(cx, &DeclEnvClass, NULL));
     if (!type)
@@ -294,12 +334,12 @@ DeclEnvObject::createTemplateObject(JSContext *cx, HandleFunction fun)
 
     RootedShape emptyDeclEnvShape(cx);
     emptyDeclEnvShape = EmptyShape::getInitialShape(cx, &DeclEnvClass, NULL,
-                                                    cx->global(), FINALIZE_KIND,
+                                                    cx->global(), NULL, FINALIZE_KIND,
                                                     BaseShape::DELEGATE);
     if (!emptyDeclEnvShape)
         return NULL;
 
-    RootedObject obj(cx, JSObject::create(cx, FINALIZE_KIND, gc::DefaultHeap, emptyDeclEnvShape, type));
+    RootedObject obj(cx, JSObject::create(cx, FINALIZE_KIND, heap, emptyDeclEnvShape, type));
     if (!obj)
         return NULL;
 
@@ -320,7 +360,7 @@ DeclEnvObject::createTemplateObject(JSContext *cx, HandleFunction fun)
 DeclEnvObject *
 DeclEnvObject::create(JSContext *cx, HandleObject enclosing, HandleFunction callee)
 {
-    RootedObject obj(cx, createTemplateObject(cx, callee));
+    RootedObject obj(cx, createTemplateObject(cx, callee, gc::DefaultHeap));
     if (!obj)
         return NULL;
 
@@ -337,7 +377,7 @@ WithObject::create(JSContext *cx, HandleObject proto, HandleObject enclosing, ui
         return NULL;
 
     RootedShape shape(cx, EmptyShape::getInitialShape(cx, &WithClass, TaggedProto(proto),
-                                                      &enclosing->global(), FINALIZE_KIND));
+                                                      &enclosing->global(), NULL, FINALIZE_KIND));
     if (!shape)
         return NULL;
 
@@ -348,7 +388,7 @@ WithObject::create(JSContext *cx, HandleObject proto, HandleObject enclosing, ui
     obj->asScope().setEnclosingScope(enclosing);
     obj->setReservedSlot(DEPTH_SLOT, PrivateUint32Value(depth));
 
-    RawObject thisp = JSObject::thisObject(cx, proto);
+    JSObject *thisp = JSObject::thisObject(cx, proto);
     if (!thisp)
         return NULL;
 
@@ -670,7 +710,7 @@ StaticBlockObject::create(JSContext *cx)
         return NULL;
 
     RootedShape emptyBlockShape(cx);
-    emptyBlockShape = EmptyShape::getInitialShape(cx, &BlockClass, NULL, NULL, FINALIZE_KIND,
+    emptyBlockShape = EmptyShape::getInitialShape(cx, &BlockClass, NULL, NULL, NULL, FINALIZE_KIND,
                                                   BaseShape::DELEGATE);
     if (!emptyBlockShape)
         return NULL;
@@ -682,7 +722,7 @@ StaticBlockObject::create(JSContext *cx)
     return &obj->asStaticBlock();
 }
 
-/* static */ RawShape
+/* static */ Shape *
 StaticBlockObject::addVar(JSContext *cx, Handle<StaticBlockObject*> block, HandleId id,
                           int index, bool *redeclared)
 {
@@ -1180,10 +1220,6 @@ class DebugScopeProxy : public BaseProxyHandler
                     if (action == GET)
                         vp.set(UndefinedValue());
                 }
-
-                if (action == SET)
-                    TypeScript::SetLocal(cx, script, i, vp);
-
             } else {
                 JS_ASSERT(bi->kind() == ARGUMENT);
                 unsigned i = bi.frameIndex();
@@ -1223,7 +1259,7 @@ class DebugScopeProxy : public BaseProxyHandler
         /* Handle unaliased let and catch bindings at block scope. */
         if (scope->isClonedBlock()) {
             Rooted<ClonedBlockObject *> block(cx, &scope->asClonedBlock());
-            RawShape shape = block->lastProperty()->search(cx, id);
+            Shape *shape = block->lastProperty()->search(cx, id);
             if (!shape)
                 return false;
 
@@ -1232,7 +1268,7 @@ class DebugScopeProxy : public BaseProxyHandler
                 return false;
 
             if (maybeframe) {
-                RawScript script = maybeframe.script();
+                JSScript *script = maybeframe.script();
                 unsigned local = block->slotToLocalIndex(script->bindings, shape->slot());
                 if (action == GET)
                     vp.set(maybeframe.unaliasedLocal(local));
@@ -1492,7 +1528,8 @@ DebugScopeProxy DebugScopeProxy::singleton;
 DebugScopeObject::create(JSContext *cx, ScopeObject &scope, HandleObject enclosing)
 {
     JS_ASSERT(scope.compartment() == cx->compartment);
-    JSObject *obj = NewProxyObject(cx, &DebugScopeProxy::singleton, ObjectValue(scope),
+    RootedValue priv(cx, ObjectValue(scope));
+    JSObject *obj = NewProxyObject(cx, &DebugScopeProxy::singleton, priv,
                                    NULL /* proto */, &scope.global(), ProxyNotCallable);
     if (!obj)
         return NULL;
@@ -1538,7 +1575,7 @@ DebugScopeObject::isForDeclarative() const
 }
 
 bool
-js_IsDebugScopeSlow(RawObject obj)
+js_IsDebugScopeSlow(JSObject *obj)
 {
     return obj->getClass() == &ObjectProxyClass &&
            GetProxyHandler(obj) == &DebugScopeProxy::singleton;
@@ -1723,6 +1760,7 @@ DebugScopes::addDebugScope(JSContext *cx, const ScopeIter &si, DebugScopeObject 
         js_ReportOutOfMemory(cx);
         return false;
     }
+    HashTableWriteBarrierPost(cx->runtime, &scopes->liveScopes, &debugScope.scope());
 
     return true;
 }
@@ -1872,10 +1910,12 @@ DebugScopes::onGeneratorFrameChange(AbstractFramePtr from, AbstractFramePtr to, 
              */
             JS_ASSERT(toIter.scope().compartment() == cx->compartment);
             LiveScopeMap::AddPtr livePtr = scopes->liveScopes.lookupForAdd(&toIter.scope());
-            if (livePtr)
+            if (livePtr) {
                 livePtr->value = to;
-            else
+            } else {
                 scopes->liveScopes.add(livePtr, &toIter.scope(), to);  // OOM here?
+                HashTableWriteBarrierPost(cx->runtime, &scopes->liveScopes, &toIter.scope());
+            }
         } else {
             ScopeIter si(toIter, from, cx);
             JS_ASSERT(si.frame().scopeChain()->compartment() == cx->compartment);
@@ -1936,6 +1976,7 @@ DebugScopes::updateLiveScopes(JSContext *cx)
                     return false;
                 if (!scopes->liveScopes.put(&si.scope(), frame))
                     return false;
+                HashTableWriteBarrierPost(cx->runtime, &scopes->liveScopes, &si.scope());
             }
         }
 

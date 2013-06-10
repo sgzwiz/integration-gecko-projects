@@ -46,6 +46,14 @@ public:
   JSContext*
   GetJSContext() const;
 
+  void
+  TraceJSObject(JSTracer* aTrc, const char* aName)
+  {
+    if (GetJSObject()) {
+      TraceWrapperJSObject(aTrc, aName);
+    }
+  }
+
 #ifdef DEBUG
   JSObject*
   GetJSObject() const;
@@ -56,15 +64,13 @@ public:
   JSObject*
   GetJSObject() const
   {
-    // Reach in and grab the bits directly.
-    return GetJSObjectFromBits();
+    return GetWrapperJSObject();
   }
 
   void
   SetJSObject(JSObject* aObject)
   {
-    // Set the bits directly.
-    SetWrapperBits(aObject);
+    SetWrapperJSObject(aObject);
   }
 #endif
 };

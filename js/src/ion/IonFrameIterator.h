@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_frame_iterator_h__
+#if !defined(jsion_frame_iterator_h__) && defined(JS_ION)
 #define jsion_frame_iterator_h__
 
 #include "jstypes.h"
@@ -138,6 +138,7 @@ class IonFrameIterator
     bool isNative() const;
     bool isOOLNativeGetter() const;
     bool isOOLPropertyOp() const;
+    bool isOOLProxyGet() const;
     bool isDOMExit() const;
     bool isEntry() const {
         return type_ == IonFrame_Entry;
@@ -153,7 +154,7 @@ class IonFrameIterator
     JSFunction *callee() const;
     JSFunction *maybeCallee() const;
     unsigned numActualArgs() const;
-    RawScript script() const;
+    JSScript *script() const;
     void baselineScriptAndPc(JSScript **scriptRes, jsbytecode **pcRes) const;
     Value *nativeVp() const;
     Value *actualArgs() const;
@@ -270,7 +271,7 @@ class SnapshotIterator : public SnapshotReader
     template <class Op>
     inline void readFrameArgs(Op &op, const Value *argv, Value *scopeChain, Value *thisv,
                               unsigned start, unsigned formalEnd, unsigned iterEnd,
-                              RawScript script);
+                              JSScript *script);
 
     Value maybeReadSlotByIndex(size_t index) {
         while (index--) {
@@ -324,7 +325,7 @@ class InlineFrameIteratorMaybeGC
     template <class Op>
     inline void forEachCanonicalActualArg(JSContext *cx, Op op, unsigned start, unsigned count) const;
 
-    RawScript script() const {
+    JSScript *script() const {
         return script_;
     }
     jsbytecode *pc() const {

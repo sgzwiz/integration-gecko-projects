@@ -185,9 +185,17 @@ ComparePolicy::adjustInputs(MInstruction *def)
         }
 
         switch (type) {
-          case MIRType_Double:
-            replace = MToDouble::New(in);
+          case MIRType_Double: {
+            MToDouble::ConversionKind convert = MToDouble::NumbersOnly;
+            if (compare->compareType() == MCompare::Compare_DoubleMaybeCoerceLHS && i == 0)
+                convert = MToDouble::NonNullNonStringPrimitives;
+            else if (compare->compareType() == MCompare::Compare_DoubleMaybeCoerceRHS && i == 1)
+                convert = MToDouble::NonNullNonStringPrimitives;
+            if (convert == MToDouble::NumbersOnly && in->type() == MIRType_Boolean)
+                in = boxAt(def, in);
+            replace = MToDouble::New(in, convert);
             break;
+          }
           case MIRType_Int32:
             replace = MToInt32::New(in);
             break;
@@ -348,6 +356,7 @@ DoublePolicy<Op>::staticAdjustInputs(MInstruction *def)
 }
 
 template bool DoublePolicy<0>::staticAdjustInputs(MInstruction *def);
+template bool DoublePolicy<1>::staticAdjustInputs(MInstruction *def);
 
 template <unsigned Op>
 bool

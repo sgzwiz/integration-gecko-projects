@@ -100,7 +100,6 @@ using namespace mozilla::system;
 
 #include "nsError.h"
 
-#include "nsCycleCollector.h"
 #include "nsJSEnvironment.h"
 #include "nsContentSink.h"
 #include "nsFrameMessageManager.h"
@@ -381,7 +380,6 @@ nsLayoutStatics::Shutdown()
   nsLayoutUtils::Shutdown();
 
   nsHyphenationManager::Shutdown();
-  nsEditorSpellCheck::ShutDown();
   nsDOMMutationObserver::Shutdown();
 
   AudioChannelService::Shutdown();

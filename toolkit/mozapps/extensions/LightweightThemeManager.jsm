@@ -67,7 +67,7 @@ this.__defineSetter__("_maxUsedThemes", function maxUsedThemesSetter(aVal) {
 // events so cached AddonWrapper instances can return correct values for
 // permissions and pendingOperations
 var _themeIDBeingEnabled = null;
-var _themeIDBeingDisbled = null;
+var _themeIDBeingDisabled = null;
 
 this.LightweightThemeManager = {
   get usedThemes () {
@@ -195,6 +195,10 @@ this.LightweightThemeManager = {
     req.mozBackgroundRequest = true;
     req.overrideMimeType("text/plain");
     req.open("GET", theme.updateURL, true);
+    // Prevent the request from reading from the cache.
+    req.channel.loadFlags |= Ci.nsIRequest.LOAD_BYPASS_CACHE;
+    // Prevent the request from writing to the cache.
+    req.channel.loadFlags |= Ci.nsIRequest.INHIBIT_CACHING;
 
     var self = this;
     req.addEventListener("load", function loadEventListener() {
@@ -311,7 +315,7 @@ this.LightweightThemeManager = {
     if (current) {
       if (current.id == id)
         return;
-      _themeIDBeingDisbled = current.id;
+      _themeIDBeingDisabled = current.id;
       let wrapper = new AddonWrapper(current);
       if (aPendingRestart) {
         Services.prefs.setCharPref(PREF_LWTHEME_TO_SELECT, "");
@@ -322,7 +326,7 @@ this.LightweightThemeManager = {
         this.themeChanged(null);
         AddonManagerPrivate.callAddonListeners("onDisabled", wrapper);
       }
-      _themeIDBeingDisbled = null;
+      _themeIDBeingDisabled = null;
     }
 
     if (id) {
@@ -470,7 +474,7 @@ function AddonWrapper(aTheme) {
   this.__defineGetter__("userDisabled", function AddonWrapper_userDisabledGetter() {
     if (_themeIDBeingEnabled == aTheme.id)
       return false;
-    if (_themeIDBeingDisbled == aTheme.id)
+    if (_themeIDBeingDisabled == aTheme.id)
       return true;
 
     try {

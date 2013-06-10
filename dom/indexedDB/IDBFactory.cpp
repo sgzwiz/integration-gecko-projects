@@ -15,7 +15,6 @@
 #include "nsIXPCScriptable.h"
 
 #include <algorithm>
-#include "jsdbgapi.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/IDBFactoryBinding.h"
@@ -28,6 +27,7 @@
 #include "nsIScriptSecurityManager.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsDOMClassInfoID.h"
 #include "nsGlobalWindow.h"
 #include "nsHashKeys.h"
@@ -158,7 +158,7 @@ IDBFactory::Create(nsPIDOMWindow* aWindow,
 // static
 nsresult
 IDBFactory::Create(JSContext* aCx,
-                   JSObject* aOwningObject,
+                   JS::Handle<JSObject*> aOwningObject,
                    ContentParent* aContentParent,
                    IDBFactory** aFactory)
 {
@@ -209,8 +209,7 @@ IDBFactory::Create(ContentParent* aContentParent,
     do_CreateInstance("@mozilla.org/nullprincipal;1");
   NS_ENSURE_TRUE(principal, NS_ERROR_FAILURE);
 
-  SafeAutoJSContext cx;
-  JSAutoRequest ar(cx);
+  AutoSafeJSContext cx;
 
   nsIXPConnect* xpc = nsContentUtils::XPConnect();
   NS_ASSERTION(xpc, "This should never be null!");
@@ -219,13 +218,12 @@ IDBFactory::Create(ContentParent* aContentParent,
   nsresult rv = xpc->CreateSandbox(cx, principal, getter_AddRefs(globalHolder));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  JSObject* global;
-  rv = globalHolder->GetJSObject(&global);
-  NS_ENSURE_SUCCESS(rv, rv);
+  JS::Rooted<JSObject*> global(cx, globalHolder->GetJSObject());
+  NS_ENSURE_STATE(global);
 
   // The CreateSandbox call returns a proxy to the actual sandbox object. We
   // don't need a proxy here.
-  global = JS_UnwrapObject(global);
+  global = js::UncheckedUnwrap(global);
 
   JSAutoCompartment ac(cx, global);
 
@@ -336,7 +334,7 @@ IDBFactory::LoadDatabaseInformation(mozIStorageConnection* aConnection,
                                     uint64_t* aVersion,
                                     ObjectStoreInfoArray& aObjectStores)
 {
-  NS_ASSERTION(!NS_IsMainThread(), "Wrong thread!");
+  AssertIsOnIOThread();
   NS_ASSERTION(aConnection, "Null pointer!");
 
   aObjectStores.Clear();
@@ -535,7 +533,7 @@ IDBFactory::OpenInternal(const nsAString& aName,
   NS_ASSERTION(mWindow || mOwningObject, "Must have one of these!");
 
   nsCOMPtr<nsPIDOMWindow> window;
-  JSObject* scriptOwner = nullptr;
+  JS::Rooted<JSObject*> scriptOwner(aCallingCx);
   StoragePrivilege privilege;
 
   if (mWindow) {
@@ -623,8 +621,8 @@ IDBFactory::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 }
 
 int16_t
-IDBFactory::Cmp(JSContext* aCx, JS::Value aFirst, JS::Value aSecond,
-                ErrorResult& aRv)
+IDBFactory::Cmp(JSContext* aCx, JS::Handle<JS::Value> aFirst,
+                JS::Handle<JS::Value> aSecond, ErrorResult& aRv)
 {
   Key first, second;
   nsresult rv = first.SetFromJSVal(aCx, aFirst);

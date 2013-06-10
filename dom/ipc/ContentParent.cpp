@@ -26,6 +26,7 @@
 #include "IndexedDatabaseManager.h"
 #include "mozIApplication.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/ExternalHelperAppParent.h"
 #include "mozilla/dom/PMemoryReportRequestParent.h"
 #include "mozilla/dom/power/PowerManagerService.h"
@@ -87,6 +88,8 @@
 #include "StructuredCloneUtils.h"
 #include "TabParent.h"
 #include "URIUtils.h"
+#include "nsIWebBrowserChrome.h"
+#include "nsIDocShell.h"
 
 #ifdef ANDROID
 # include "gfxAndroidPlatform.h"
@@ -419,10 +422,29 @@ ContentParent::CreateBrowserOrApp(const TabContext& aContext,
         if (nsRefPtr<ContentParent> cp = GetNewOrUsed(aContext.IsBrowserElement())) {
             nsRefPtr<TabParent> tp(new TabParent(aContext));
             tp->SetOwnerElement(aFrameElement);
+            uint32_t chromeFlags = 0;
+
+            // Propagate the private-browsing status of the element's parent
+            // docshell to the remote docshell, via the chrome flags.
+            nsCOMPtr<Element> frameElement = do_QueryInterface(aFrameElement);
+            MOZ_ASSERT(frameElement);
+            nsIDocShell* docShell =
+                frameElement->OwnerDoc()->GetWindow()->GetDocShell();
+            MOZ_ASSERT(docShell);
+            nsCOMPtr<nsILoadContext> loadContext = do_QueryInterface(docShell);
+            if (loadContext && loadContext->UsePrivateBrowsing()) {
+                chromeFlags |= nsIWebBrowserChrome::CHROME_PRIVATE_WINDOW;
+            }
+            bool affectLifetime;
+            docShell->GetAffectPrivateSessionLifetime(&affectLifetime);
+            if (affectLifetime) {
+                chromeFlags |= nsIWebBrowserChrome::CHROME_PRIVATE_LIFETIME;
+            }
+
             PBrowserParent* browser = cp->SendPBrowserConstructor(
                 tp.forget().get(), // DeallocPBrowserParent() releases this ref.
                 aContext.AsIPCTabContext(),
-                /* chromeFlags */ 0);
+                chromeFlags);
             return static_cast<TabParent*>(browser);
         }
         return nullptr;
@@ -844,7 +866,7 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
     if (ppm) {
       ppm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm.get()),
                           CHILD_PROCESS_SHUTDOWN_MESSAGE, false,
-                          nullptr, nullptr, nullptr);
+                          nullptr, JS::NullPtr(), nullptr);
     }
     nsCOMPtr<nsIThreadObserver>
         kungFuDeathGrip(static_cast<nsIThreadObserver*>(this));
@@ -1114,7 +1136,7 @@ ContentParent::~ContentParent()
         // In general, we expect sAppContentParents->Get(mAppManifestURL) to be
         // NULL.  But it could be that we created another ContentParent for this
         // app after we did this->ActorDestroy(), so the right check is that
-        // gAppContentParent->Get(mAppManifestURL) != this.
+        // sAppContentParents->Get(mAppManifestURL) != this.
         MOZ_ASSERT(!sAppContentParents ||
                    sAppContentParents->Get(mAppManifestURL) != this);
     }
@@ -1341,7 +1363,7 @@ ContentParent::RecvFirstIdle()
     // use as an indicator that it's a good time to prelaunch another process.
     // If we prelaunch any sooner than this, then we'll be competing with the
     // child process and slowing it down.
-    PreallocatedProcessManager::AllocateOnIdle();
+    PreallocatedProcessManager::AllocateAfterDelay();
     return true;
 }
 
@@ -1489,7 +1511,7 @@ ContentParent::Observe(nsISupports* aSubject,
         CopyUTF16toUTF8(aData, creason);
         DeviceStorageFile* file = static_cast<DeviceStorageFile*>(aSubject);
 
-        unused << SendFilePathUpdate(file->mStorageType, file->mPath, creason);
+        unused << SendFilePathUpdate(file->mStorageType, file->mStorageName, file->mPath, creason);
     }
 #ifdef MOZ_WIDGET_GONK
     else if(!strcmp(aTopic, NS_VOLUME_STATE_CHANGED)) {
@@ -2309,7 +2331,7 @@ ContentParent::RecvSyncMessage(const nsString& aMsg,
   if (ppm) {
     StructuredCloneData cloneData = ipc::UnpackClonedMessageDataForParent(aData);
     ppm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm.get()),
-                        aMsg, true, &cloneData, nullptr, aRetvals);
+                        aMsg, true, &cloneData, JS::NullPtr(), aRetvals);
   }
   return true;
 }
@@ -2322,23 +2344,27 @@ ContentParent::RecvAsyncMessage(const nsString& aMsg,
   if (ppm) {
     StructuredCloneData cloneData = ipc::UnpackClonedMessageDataForParent(aData);
     ppm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm.get()),
-                        aMsg, false, &cloneData, nullptr, nullptr);
+                        aMsg, false, &cloneData, JS::NullPtr(), nullptr);
   }
   return true;
 }
 
 bool
 ContentParent::RecvFilePathUpdateNotify(const nsString& aType,
+                                        const nsString& aStorageName,
                                         const nsString& aFilePath,
                                         const nsCString& aReason)
 {
-    nsRefPtr<DeviceStorageFile> dsf = new DeviceStorageFile(aType, aFilePath);
+    nsRefPtr<DeviceStorageFile> dsf = new DeviceStorageFile(aType,
+                                                            aStorageName,
+                                                            aFilePath);
 
     nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
     if (!obs) {
         return false;
     }
-    obs->NotifyObservers(dsf, "file-watcher-update", NS_ConvertASCIItoUTF16(aReason).get());
+    obs->NotifyObservers(dsf, "file-watcher-update",
+                         NS_ConvertASCIItoUTF16(aReason).get());
     return true;
 }
 

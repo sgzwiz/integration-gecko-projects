@@ -8,8 +8,8 @@ MODULE = 'content'
 XPIDL_MODULE = 'dom_webspeechrecognition'
 
 XPIDL_SOURCES = [
-  'nsIDOMSpeechRecognitionEvent.idl',
   'nsIDOMSpeechRecognitionError.idl',
+  'nsIDOMSpeechRecognitionEvent.idl',
   'nsISpeechRecognitionService.idl'
 ]
 
@@ -24,5 +24,20 @@ EXPORTS.mozilla.dom += [
     'SpeechRecognitionResult.h',
     'SpeechRecognitionResultList.h',
     'SpeechStreamListener.h',
+]
+
+CPP_SOURCES += [
+    'EnableWebSpeechRecognitionCheck.cpp',
+    'FakeSpeechRecognitionService.cpp',
+    'SpeechGrammar.cpp',
+    'SpeechGrammarList.cpp',
+    'SpeechRecognition.cpp',
+    'SpeechRecognitionAlternative.cpp',
+    'SpeechRecognitionResult.cpp',
+    'SpeechRecognitionResultList.cpp',
+    'SpeechStreamListener.cpp',
+    'endpointer.cc',
+    'energy_endpointer.cc',
+    'energy_endpointer_params.cc',
 ]
 

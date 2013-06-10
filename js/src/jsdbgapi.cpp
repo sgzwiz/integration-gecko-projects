@@ -17,7 +17,6 @@
 #include "jscntxt.h"
 #include "jsfun.h"
 #include "jsgc.h"
-#include "jsinterp.h"
 #include "jsobj.h"
 #include "jsopcode.h"
 #include "jsscript.h"
@@ -25,8 +24,9 @@
 #include "jswatchpoint.h"
 #include "jswrapper.h"
 
-#include "frontend/BytecodeEmitter.h"
+#include "frontend/SourceNotes.h"
 #include "vm/Debugger.h"
+#include "vm/Interpreter.h"
 #include "vm/Shape.h"
 
 #ifdef JS_ASMJS
@@ -36,9 +36,10 @@
 #include "jsatominlines.h"
 #include "jsinferinlines.h"
 #include "jsobjinlines.h"
-#include "jsinterpinlines.h"
 #include "jsscriptinlines.h"
 
+#include "vm/Debugger-inl.h"
+#include "vm/Interpreter-inl.h"
 #include "vm/Stack-inl.h"
 
 using namespace js;
@@ -311,7 +312,8 @@ JS_SetWatchPoint(JSContext *cx, JSObject *obj_, jsid id_,
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_CANT_WATCH_PROP);
         return false;
     } else {
-        if (!ValueToId<CanGC>(cx, IdToValue(id), &propid))
+        RootedValue val(cx, IdToValue(id));
+        if (!ValueToId<CanGC>(cx, val, &propid))
             return false;
     }
 
@@ -383,7 +385,7 @@ JS_ClearAllWatchPoints(JSContext *cx)
 /************************************************************************/
 
 JS_PUBLIC_API(unsigned)
-JS_PCToLineNumber(JSContext *cx, RawScript script, jsbytecode *pc)
+JS_PCToLineNumber(JSContext *cx, JSScript *script, jsbytecode *pc)
 {
     return js::PCToLineNumber(script, pc);
 }
@@ -517,7 +519,7 @@ JS_GetFunctionScript(JSContext *cx, JSFunction *fun)
     if (fun->isInterpretedLazy()) {
         RootedFunction rootedFun(cx, fun);
         AutoCompartment funCompartment(cx, rootedFun);
-        RawScript script = rootedFun->getOrCreateScript(cx);
+        JSScript *script = rootedFun->getOrCreateScript(cx);
         if (!script)
             MOZ_CRASH();
         return script;
@@ -597,18 +599,6 @@ JS_PUBLIC_API(JSVersion)
 JS_GetScriptVersion(JSContext *cx, JSScript *script)
 {
     return VersionNumber(script->getVersion());
-}
-
-JS_PUBLIC_API(bool)
-JS_GetScriptUserBit(JSScript *script)
-{
-    return script->userBit;
-}
-
-JS_PUBLIC_API(void)
-JS_SetScriptUserBit(JSScript *script, bool b)
-{
-    script->userBit = b;
 }
 
 JS_PUBLIC_API(bool)
@@ -951,18 +941,6 @@ JS_DumpCompartmentPCCounts(JSContext *cx)
 #endif
 }
 
-JS_PUBLIC_API(JSObject *)
-JS_UnwrapObject(JSObject *obj)
-{
-    return UncheckedUnwrap(obj);
-}
-
-JS_PUBLIC_API(JSObject *)
-JS_UnwrapObjectAndInnerize(JSObject *obj)
-{
-    return UncheckedUnwrap(obj, /* stopAtOuter = */ false);
-}
-
 JS_FRIEND_API(JSBool)
 js_CallContextDebugHandler(JSContext *cx)
 {
@@ -1046,8 +1024,9 @@ class AutoPropertyDescArray
 };
 
 static const char *
-FormatValue(JSContext *cx, const Value &v, JSAutoByteString &bytes)
+FormatValue(JSContext *cx, const Value &vArg, JSAutoByteString &bytes)
 {
+    RootedValue v(cx, vArg);
     JSString *str = ToString<CanGC>(cx, v);
     if (!str)
         return NULL;
@@ -1382,20 +1361,20 @@ JSBrokenFrameIterator::JSBrokenFrameIterator(JSContext *cx)
 
 JSBrokenFrameIterator::~JSBrokenFrameIterator()
 {
-    js_free((StackIter::Data *)data_);
+    js_free((ScriptFrameIter::Data *)data_);
 }
 
 bool
 JSBrokenFrameIterator::done() const
 {
-    NonBuiltinScriptFrameIter iter(*(StackIter::Data *)data_);
+    NonBuiltinScriptFrameIter iter(*(ScriptFrameIter::Data *)data_);
     return iter.done();
 }
 
 JSBrokenFrameIterator &
 JSBrokenFrameIterator::operator++()
 {
-    StackIter::Data *data = (StackIter::Data *)data_;
+    ScriptFrameIter::Data *data = (ScriptFrameIter::Data *)data_;
     NonBuiltinScriptFrameIter iter(*data);
     ++iter;
     *data = iter.data_;
@@ -1405,20 +1384,20 @@ JSBrokenFrameIterator::operator++()
 JSAbstractFramePtr
 JSBrokenFrameIterator::abstractFramePtr() const
 {
-    NonBuiltinScriptFrameIter iter(*(StackIter::Data *)data_);
+    NonBuiltinScriptFrameIter iter(*(ScriptFrameIter::Data *)data_);
     return Jsvalify(iter.abstractFramePtr());
 }
 
 jsbytecode *
 JSBrokenFrameIterator::pc() const
 {
-    NonBuiltinScriptFrameIter iter(*(StackIter::Data *)data_);
+    NonBuiltinScriptFrameIter iter(*(ScriptFrameIter::Data *)data_);
     return iter.pc();
 }
 
 bool
 JSBrokenFrameIterator::isConstructing() const
 {
-    NonBuiltinScriptFrameIter iter(*(StackIter::Data *)data_);
+    NonBuiltinScriptFrameIter iter(*(ScriptFrameIter::Data *)data_);
     return iter.isConstructing();
 }

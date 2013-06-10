@@ -11,13 +11,13 @@
 
 #include "jscompartment.h"
 #include "jsgc.h"
-#include "jsinterp.h"
 #include "jsproxy.h"
 
 #include "gc/Heap.h"
 #include "gc/Marking.h"
 #include "js/TemplateLib.h"
 
+#include "Interpreter.h"
 #include "ObjectImpl.h"
 
 namespace js {
@@ -52,13 +52,13 @@ js::ObjectImpl::getTaggedProto() const
     return TaggedProto(getProto());
 }
 
-inline js::RawShape
+inline js::Shape *
 js::ObjectImpl::nativeLookup(JSContext *cx, PropertyId pid)
 {
     return nativeLookup(cx, pid.asId());
 }
 
-inline js::RawShape
+inline js::Shape *
 js::ObjectImpl::nativeLookup(JSContext *cx, PropertyName *name)
 {
     return nativeLookup(cx, NameToId(name));
@@ -226,6 +226,12 @@ inline bool
 js::ObjectImpl::isNative() const
 {
     return lastProperty()->isNative();
+}
+
+inline bool
+js::ObjectImpl::isProxy() const
+{
+    return js::IsProxy(const_cast<JSObject*>(this->asObjectPtr()));
 }
 
 inline js::HeapSlot &

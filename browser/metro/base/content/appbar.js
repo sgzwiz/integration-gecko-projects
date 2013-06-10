@@ -1,9 +1,11 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+"use strict";
+
 var Appbar = {
-  get appbar()        { return document.getElementById('appbar'); },
   get consoleButton() { return document.getElementById('console-button'); },
   get jsShellButton() { return document.getElementById('jsshell-button'); },
-  get zoomInButton()  { return document.getElementById('zoomin-button'); },
-  get zoomOutButton() { return document.getElementById('zoomout-button'); },
   get starButton()    { return document.getElementById('star-button'); },
   get pinButton()     { return document.getElementById('pin-button'); },
   get moreButton()    { return document.getElementById('more-button'); },
@@ -12,15 +14,18 @@ var Appbar = {
   activeTileset: null,
 
   init: function Appbar_init() {
-    window.addEventListener('MozAppbarShowing', this, false);
-    window.addEventListener('MozPrecisePointer', this, false);
-    window.addEventListener('MozImprecisePointer', this, false);
+    window.addEventListener('MozContextUIShow', this);
+    window.addEventListener('MozContextUIDismiss', this);
+    window.addEventListener('MozAppbarDismiss', this);
+    Elements.contextappbar.addEventListener('MozAppbarShowing', this, false);
+    Elements.contextappbar.addEventListener('MozAppbarDismissing', this, false);
     window.addEventListener('MozContextActionsChange', this, false);
     Elements.browsers.addEventListener('URLChanged', this, true);
     Elements.tabList.addEventListener('TabSelect', this, true);
+    Elements.panelUI.addEventListener('ToolPanelShown', this, false);
+    Elements.panelUI.addEventListener('ToolPanelHidden', this, false);
 
     this._updateDebugButtons();
-    this._updateZoomButtons();
 
     // tilegroup selection events for all modules get bubbled up
     window.addEventListener("selectionchange", this, false);
@@ -30,15 +35,28 @@ var Appbar = {
     switch (aEvent.type) {
       case 'URLChanged':
       case 'TabSelect':
-        this.appbar.dismiss();
+        this.update();
+        Elements.navbar.dismiss();
+        Elements.contextappbar.dismiss();
+        break;
+      case 'MozContextUIShow':
+        Elements.navbar.show();
+        break;
+      case 'MozAppbarDismiss':
+      case 'MozContextUIDismiss':
+      case 'ToolPanelShown':
+      case 'ToolPanelHidden':
+        Elements.navbar.dismiss();
+        Elements.contextappbar.dismiss();
         break;
       case 'MozAppbarShowing':
-        this._updatePinButton();
-        this._updateStarButton();
         break;
-      case 'MozPrecisePointer':
-      case 'MozImprecisePointer':
-        this._updateZoomButtons();
+      case 'MozAppbarDismissing':
+        if (this.activeTileset) {
+          this.activeTileset.clearSelection();
+        }
+        this.clearContextualActions();
+        this.activeTileset = null;
         break;
       case 'MozContextActionsChange':
         let actions = aEvent.actions;
@@ -54,17 +72,19 @@ var Appbar = {
     }
   },
 
+  /*
+   * Called from various places when the visible content
+   * has changed such that button states may need to be
+   * updated.
+   */
+  update: function update() {
+    this._updatePinButton();
+    this._updateStarButton();
+  },
+
   onDownloadButton: function() {
     PanelUI.show("downloads-container");
     ContextUI.dismiss();
-  },
-
-  onZoomOutButton: function() {
-    Browser.zoom(1);
-  },
-
-  onZoomInButton: function() {
-    Browser.zoom(-1);
   },
 
   onPinButton: function() {
@@ -105,7 +125,7 @@ var Appbar = {
       }
 
       var x = this.moreButton.getBoundingClientRect().left;
-      var y = this.appbar.getBoundingClientRect().top;
+      var y = Elements.navbar.getBoundingClientRect().top;
       ContextMenuUI.showContextMenu({
         json: {
           types: typesArray,
@@ -154,11 +174,17 @@ var Appbar = {
       activeTileset.dispatchEvent(event);
       if (!event.defaultPrevented) {
         activeTileset.clearSelection();
-        this.appbar.dismiss();
+        Elements.contextappbar.dismiss();
       }
     }
   },
-  showContextualActions: function(aVerbs){
+
+  showContextualActions: function(aVerbs) {
+    if (aVerbs.length)
+      Elements.contextappbar.show();
+    else
+      Elements.contextappbar.hide();
+
     let doc = document;
     // button element id to action verb lookup
     let buttonsMap = new Map();
@@ -173,7 +199,7 @@ var Appbar = {
     // sort buttons into 2 buckets - needing showing and needing hiding
     let toHide = [],
         toShow = [];
-    for (let btnNode of this.appbar.querySelectorAll("#contextualactions-tray > toolbarbutton")) {
+    for (let btnNode of Elements.contextappbar.querySelectorAll("#contextualactions-tray > toolbarbutton")) {
       // correct the hidden state for each button;
       // .. buttons present in the map should be visible, otherwise not
       if (buttonsMap.has(btnNode.id)) {
@@ -191,6 +217,11 @@ var Appbar = {
       }
     });
   },
+
+  clearContextualActions: function() {
+    this.showContextualActions([]);
+  },
+
   _onTileSelectionChanged: function _onTileSelectionChanged(aEvent){
     let activeTileset = aEvent.target;
 
@@ -210,12 +241,12 @@ var Appbar = {
     let event = document.createEvent("Events");
     event.actions = verbs;
     event.initEvent("MozContextActionsChange", true, false);
-    this.appbar.dispatchEvent(event);
+    Elements.contextappbar.dispatchEvent(event);
 
     if (verbs.length) {
-      this.appbar.show(); // should be no-op if we're already showing
+      Elements.contextappbar.show(); // should be no-op if we're already showing
     } else {
-      this.appbar.dismiss();
+      Elements.contextappbar.dismiss();
     }
   },
 
@@ -233,9 +264,4 @@ var Appbar = {
     this.consoleButton.disabled = !ConsolePanelView.enabled;
     this.jsShellButton.disabled = MetroUtils.immersive;
   },
-
-  _updateZoomButtons: function() {
-    let zoomDisabled = !InputSourceHelper.isPrecise;
-    this.zoomOutButton.disabled = this.zoomInButton.disabled = zoomDisabled;
-  }
   };

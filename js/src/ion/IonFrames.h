@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_frames_h__
+#if !defined(jsion_frames_h__) && defined(JS_ION)
 #define jsion_frames_h__
 
 #include "mozilla/DebugOnly.h"
@@ -49,7 +49,7 @@ CalleeToParallelToken(JSFunction *fun)
     return CalleeToken(uintptr_t(fun) | uintptr_t(CalleeToken_ParallelFunction));
 }
 static inline CalleeToken
-CalleeToToken(RawScript script)
+CalleeToToken(JSScript *script)
 {
     return CalleeToken(uintptr_t(script) | uintptr_t(CalleeToken_Script));
 }
@@ -64,20 +64,20 @@ CalleeTokenToFunction(CalleeToken token)
     JS_ASSERT(CalleeTokenIsFunction(token));
     return (JSFunction *)token;
 }
-static inline RawFunction
+static inline JSFunction *
 CalleeTokenToParallelFunction(CalleeToken token)
 {
     JS_ASSERT(GetCalleeTokenTag(token) == CalleeToken_ParallelFunction);
     return (JSFunction *)(uintptr_t(token) & ~uintptr_t(0x3));
 }
-static inline RawScript
+static inline JSScript *
 CalleeTokenToScript(CalleeToken token)
 {
     JS_ASSERT(GetCalleeTokenTag(token) == CalleeToken_Script);
-    return (RawScript)(uintptr_t(token) & ~uintptr_t(0x3));
+    return (JSScript *)(uintptr_t(token) & ~uintptr_t(0x3));
 }
 
-static inline RawScript
+static inline JSScript *
 ScriptFromCalleeToken(CalleeToken token)
 {
     switch (GetCalleeTokenTag(token)) {
@@ -293,7 +293,7 @@ MakeFrameDescriptor(uint32_t frameSize, FrameType type)
 namespace js {
 namespace ion {
 
-RawScript
+JSScript *
 GetTopIonJSScript(JSContext *cx,
                   const SafepointIndex **safepointIndexOut = NULL,
                   void **returnAddrOut = NULL);
@@ -324,7 +324,7 @@ ReadFrameDoubleSlot(IonJSFrameLayout *fp, int32_t slot)
     return *(double *)((char *)fp + OffsetOfFrameSlot(slot));
 }
 
-void
+CalleeToken
 MarkCalleeToken(JSTracer *trc, CalleeToken token);
 
 } /* namespace ion */

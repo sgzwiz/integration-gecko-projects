@@ -532,7 +532,7 @@ nsIContent *
 nsContentList::NamedItem(const nsAString& aName, bool aDoFlush)
 {
   BringSelfUpToDate(aDoFlush);
-    
+
   uint32_t i, count = mElements.Length();
 
   // Typically IDs and names are atomized
@@ -673,9 +673,9 @@ nsContentList::NamedItem(JSContext* cx, const nsAString& name,
   if (!item) {
     return nullptr;
   }
-  JSObject* wrapper = GetWrapper();
+  JS::Rooted<JSObject*> wrapper(cx, GetWrapper());
   JSAutoCompartment ac(cx, wrapper);
-  JS::Value v;
+  JS::Rooted<JS::Value> v(cx);
   if (!mozilla::dom::WrapObject(cx, wrapper, item, item, nullptr, &v)) {
     error.Throw(NS_ERROR_FAILURE);
     return nullptr;

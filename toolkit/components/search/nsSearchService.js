@@ -9,7 +9,6 @@ const Cr = Components.results;
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/Services.jsm");
 Components.utils.import("resource://gre/modules/commonjs/sdk/core/promise.js");
-Components.utils.import("resource://gre/modules/Deprecated.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "DeferredTask",
   "resource://gre/modules/DeferredTask.jsm");
@@ -85,10 +84,6 @@ const SEARCH_TYPE_SHERLOCK       = Ci.nsISearchEngine.TYPE_SHERLOCK;
 const SEARCH_DATA_XML            = Ci.nsISearchEngine.DATA_XML;
 const SEARCH_DATA_TEXT           = Ci.nsISearchEngine.DATA_TEXT;
 
-// File extensions for search plugin description files
-const XML_FILE_EXT      = "xml";
-const SHERLOCK_FILE_EXT = "src";
-
 // Delay for lazy serialization (ms)
 const LAZY_SERIALIZE_DELAY = 100;
 
@@ -100,9 +95,6 @@ const CACHE_INVALIDATION_DELAY = 1000;
 const CACHE_VERSION = 7;
 
 const ICON_DATAURL_PREFIX = "data:image/x-icon;base64,";
-
-// Supported extensions for Sherlock plugin icons
-const SHERLOCK_ICON_EXTENSIONS = [".gif", ".png", ".jpg", ".jpeg"];
 
 const NEW_LINES = /(\r\n|\r|\n)/;
 
@@ -284,6 +276,20 @@ function ERROR(message, resultCode) {
 function FAIL(message, resultCode) {
   LOG(message);
   throw Components.Exception(message, resultCode || Cr.NS_ERROR_INVALID_ARG);
+}
+
+/**
+ * Truncates big blobs of (data-)URIs to console-friendly sizes
+ * @param str
+ *        String to tone down
+ * @param len
+ *        Maximum length of the string to return. Defaults to the length of a tweet.
+ */
+function limitURILength(str, len) {
+  len = len || 140;
+  if (str.length > len)
+    return str.slice(0, len) + "...";
+  return str;
 }
 
 /**
@@ -705,7 +711,7 @@ function getBoolPref(aName, aDefault) {
  *          unique sanitized name.
  */
 function getSanitizedFile(aName) {
-  var fileName = sanitizeName(aName) + "." + XML_FILE_EXT;
+  var fileName = sanitizeName(aName) + ".xml";
   var file = getDir(NS_APP_USER_SEARCH_DIR);
   file.append(fileName);
   file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, PERMS_FILE);
@@ -1182,17 +1188,8 @@ Engine.prototype = {
 
         this._data = doc.documentElement;
         break;
-      case SEARCH_DATA_TEXT:
-        var binaryInStream = Cc["@mozilla.org/binaryinputstream;1"].
-                             createInstance(Ci.nsIBinaryInputStream);
-        binaryInStream.setInputStream(fileInStream);
-
-        var bytes = binaryInStream.readByteArray(binaryInStream.available());
-        this._data = bytes;
-
-        break;
       default:
-        ERROR("Bogus engine _dataType: \"" + this._dataType + "\"",
+        ERROR("Unsuppored engine _dataType in _initFromFile: \"" + this._dataType + "\"",
               Cr.NS_ERROR_UNEXPECTED);
     }
     fileInStream.close();
@@ -1471,7 +1468,7 @@ Engine.prototype = {
     if (!uri)
       return;
 
-    LOG("_setIcon: Setting icon url \"" + uri.spec + "\" for engine \""
+    LOG("_setIcon: Setting icon url \"" + limitURILength(uri.spec) + "\" for engine \""
         + this.name + "\".");
     // Only accept remote icons from http[s] or ftp
     switch (uri.scheme) {
@@ -1684,7 +1681,7 @@ Engine.prototype = {
    * @see http://opensearch.a9.com/spec/1.1/description/#image
    */
   _parseImage: function SRCH_ENG_parseImage(aElement) {
-    LOG("_parseImage: Image textContent: \"" + aElement.textContent + "\"");
+    LOG("_parseImage: Image textContent: \"" + limitURILength(aElement.textContent) + "\"");
     if (aElement.getAttribute("width")  == "16" &&
         aElement.getAttribute("height") == "16") {
       this._setIcon(aElement.textContent, true);
@@ -2491,10 +2488,35 @@ Engine.prototype = {
     this._lazySerializeToFile();
   },
 
+#ifdef ANDROID
+  get _defaultMobileResponseType() {
+    let type = URLTYPE_SEARCH_HTML;
+
+    let sysInfo = Cc["@mozilla.org/system-info;1"].getService(Ci.nsIPropertyBag2);
+    let isTablet = sysInfo.get("tablet");
+    if (isTablet && this.supportsResponseType("application/x-moz-tabletsearch")) {
+      // Check for a tablet-specific search URL override
+      type = "application/x-moz-tabletsearch";
+    } else if (!isTablet && this.supportsResponseType("application/x-moz-phonesearch")) {
+      // Check for a phone-specific search URL override
+      type = "application/x-moz-phonesearch";
+    }
+
+    delete this._defaultMobileResponseType;
+    return this._defaultMobileResponseType = type;
+  },
+#endif
+
   // from nsISearchEngine
   getSubmission: function SRCH_ENG_getSubmission(aData, aResponseType, aPurpose) {
-    if (!aResponseType)
+#ifdef ANDROID
+    if (!aResponseType) {
+      aResponseType = this._defaultMobileResponseType;
+    }
+#endif
+    if (!aResponseType) {
       aResponseType = URLTYPE_SEARCH_HTML;
+    }
 
     var url = this._getURLOfType(aResponseType);
 
@@ -2592,13 +2614,11 @@ SearchService.prototype = {
     }
 
     let warning =
-      "Search service falling back to synchronous initialization at " +
-      new Error().stack +
-      "\n" +
+      "Search service falling back to synchronous initialization. " +
       "This is generally the consequence of an add-on using a deprecated " +
       "search service API.";
-    // Bug 785487 - Disable reportError until our own callers are fixed.
-    //Components.utils.reportError(warning);
+    // Bug 785487 - Disable warning until our own callers are fixed.
+    //Deprecated.warning(warning, "https://developer.mozilla.org/en-US/docs/XPCOM_Interface_Reference/nsIBrowserSearchService#async_warning");
     LOG(warning);
 
     engineMetadataService.syncInit();
@@ -2612,6 +2632,7 @@ SearchService.prototype = {
   // Used by |_ensureInitialized| as a fallback if initialization is not
   // complete. In this implementation, it is also used by |init|.
   _syncInit: function SRCH_SVC__syncInit() {
+    LOG("_syncInit start");
     try {
       this._syncLoadEngines();
     } catch (ex) {
@@ -2622,7 +2643,7 @@ SearchService.prototype = {
 
     gInitialized = true;
     this._initObservers.resolve(this._initRV);
-    LOG("_syncInit: Completed _syncInit");
+    LOG("_syncInit end");
   },
 
   _engines: { },
@@ -2791,7 +2812,7 @@ SearchService.prototype = {
     try {
       stream.init(aFile, MODE_RDONLY, PERMS_FILE, 0);
       return json.decodeFromStream(stream, stream.available());
-    } catch(ex) {
+    } catch (ex) {
       LOG("_readCacheFile: Error reading cache file: " + ex);
     } finally {
       stream.close();
@@ -2927,45 +2948,18 @@ SearchService.prototype = {
       var fileExtension = fileURL.fileExtension.toLowerCase();
       var isWritable = isInProfile && file.isWritable();
 
-      var dataType;
-      switch (fileExtension) {
-        case XML_FILE_EXT:
-          dataType = SEARCH_DATA_XML;
-          break;
-        case SHERLOCK_FILE_EXT:
-          dataType = SEARCH_DATA_TEXT;
-          break;
-        default:
-          // Not an engine
-          continue;
+      if (fileExtension != "xml") {
+        // Not an engine
+        continue;
       }
 
       var addedEngine = null;
       try {
-        addedEngine = new Engine(file, dataType, !isWritable);
+        addedEngine = new Engine(file, SEARCH_DATA_XML, !isWritable);
         addedEngine._initFromFile();
       } catch (ex) {
         LOG("_loadEnginesFromDir: Failed to load " + file.path + "!\n" + ex);
         continue;
-      }
-
-      if (fileExtension == SHERLOCK_FILE_EXT) {
-        if (isWritable) {
-          try {
-            this._convertSherlockFile(addedEngine, fileURL.fileBaseName);
-          } catch (ex) {
-            LOG("_loadEnginesFromDir: Failed to convert: " + fileURL.path + "\n" + ex + "\n" + ex.stack);
-            // The engine couldn't be converted, mark it as read-only
-            addedEngine._readOnly = true;
-          }
-        }
-
-        // If the engine still doesn't have an icon, see if we can find one
-        if (!addedEngine._iconURI) {
-          var icon = this._findSherlockIcon(file, fileURL.fileBaseName);
-          if (icon)
-            addedEngine._iconURI = NetUtil.ioService.newFileURI(icon);
-        }
       }
 
       this._addEngineToStore(addedEngine);
@@ -3161,118 +3155,6 @@ SearchService.prototype = {
   },
 
   /**
-   * Converts a Sherlock file and its icon into the custom XML format used by
-   * the Search Service. Saves the engine's icon (if present) into the XML as a
-   * data: URI and changes the extension of the source file from ".src" to
-   * ".xml". The engine data is then written to the file as XML.
-   * @param aEngine
-   *        The Engine object that needs to be converted.
-   * @param aBaseName
-   *        The basename of the Sherlock file.
-   *          Example: "foo" for file "foo.src".
-   *
-   * @throws NS_ERROR_FAILURE if the file could not be converted.
-   *
-   * @see nsIURL::fileBaseName
-   */
-  _convertSherlockFile: function SRCH_SVC_convertSherlock(aEngine, aBaseName) {
-    ENSURE_WARN(aEngine._file, "can't convert an engine with no file",
-                Cr.NS_ERROR_UNEXPECTED);
-
-    var oldSherlockFile = aEngine._file;
-
-    // Back up the old file
-    try {
-      var backupDir = oldSherlockFile.parent;
-      backupDir.append("searchplugins-backup");
-
-      if (!backupDir.exists())
-        backupDir.create(Ci.nsIFile.DIRECTORY_TYPE, PERMS_DIRECTORY);
-
-      oldSherlockFile.copyTo(backupDir, null);
-    } catch (ex) {
-      // Just bail. Engines that can't be backed up won't be converted, but
-      // engines that aren't converted are loaded as readonly.
-      FAIL("_convertSherlockFile: Couldn't back up " + oldSherlockFile.path +
-           ":\n" + ex, Cr.NS_ERROR_FAILURE);
-    }
-
-    // Rename the file, but don't clobber existing files
-    var newXMLFile = oldSherlockFile.parent.clone();
-    newXMLFile.append(aBaseName + "." + XML_FILE_EXT);
-
-    if (newXMLFile.exists()) {
-      // There is an existing file with this name, create a unique file
-      newXMLFile.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, PERMS_FILE);
-    }
-
-    // Rename the .src file to .xml
-    oldSherlockFile.moveTo(null, newXMLFile.leafName);
-
-    aEngine._file = newXMLFile;
-
-    // Write the converted engine to disk
-    aEngine._serializeToFile();
-
-    // Update the engine's _type.
-    aEngine._type = SEARCH_TYPE_MOZSEARCH;
-
-    // See if it has a corresponding icon
-    try {
-      var icon = this._findSherlockIcon(aEngine._file, aBaseName);
-      if (icon && icon.fileSize < MAX_ICON_SIZE) {
-        // Use this as the engine's icon
-        var bStream = Cc["@mozilla.org/binaryinputstream;1"].
-                        createInstance(Ci.nsIBinaryInputStream);
-        var fileInStream = Cc["@mozilla.org/network/file-input-stream;1"].
-                           createInstance(Ci.nsIFileInputStream);
-
-        fileInStream.init(icon, MODE_RDONLY, PERMS_FILE, 0);
-        bStream.setInputStream(fileInStream);
-
-        var bytes = [];
-        while (bStream.available() != 0)
-          bytes = bytes.concat(bStream.readByteArray(bStream.available()));
-        bStream.close();
-
-        // Convert the byte array to a base64-encoded string
-        var str = btoa(String.fromCharCode.apply(null, bytes));
-
-        aEngine._iconURI = makeURI(ICON_DATAURL_PREFIX + str);
-        LOG("_importSherlockEngine: Set sherlock iconURI to: \"" +
-            aEngine._iconURL + "\"");
-
-        // Write the engine to disk to save changes
-        aEngine._serializeToFile();
-
-        // Delete the icon now that we're sure everything's been saved
-        icon.remove(false);
-      }
-    } catch (ex) { LOG("_convertSherlockFile: Error setting icon:\n" + ex); }
-  },
-
-  /**
-   * Finds an icon associated to a given Sherlock file. Searches the provided
-   * file's parent directory looking for files with the same base name and one
-   * of the file extensions in SHERLOCK_ICON_EXTENSIONS.
-   * @param aEngineFile
-   *        The Sherlock plugin file.
-   * @param aBaseName
-   *        The basename of the Sherlock file.
-   *          Example: "foo" for file "foo.src".
-   * @see nsIURL::fileBaseName
-   */
-  _findSherlockIcon: function SRCH_SVC_findSherlock(aEngineFile, aBaseName) {
-    for (var i = 0; i < SHERLOCK_ICON_EXTENSIONS.length; i++) {
-      var icon = aEngineFile.parent.clone();
-      icon.append(aBaseName + SHERLOCK_ICON_EXTENSIONS[i]);
-      if (icon.exists() && icon.isFile())
-        return icon;
-    }
-    return null;
-  },
-
-  /**
    * Get a sorted array of engines.
    * @param aWithHidden
    *        True if hidden plugins should be included in the result.
@@ -3288,6 +3170,7 @@ SearchService.prototype = {
 
   // nsIBrowserSearchService
   init: function SRCH_SVC_init(observer) {
+    LOG("SearchService.init");
     let self = this;
     if (!this._initStarted) {
       TelemetryStopwatch.start("SEARCH_SERVICE_INIT_MS");
@@ -3776,7 +3659,7 @@ var engineMetadataService = {
       let initializer = this._initializer = Promise.defer();
       TaskUtils.spawn((function task_init() {
         LOG("metadata init: starting");
-        switch(this._initState) {
+        switch (this._initState) {
           case engineMetadataService._InitStates.NOT_STARTED:
             // 1. Load json file if it exists
             try {
@@ -3788,6 +3671,7 @@ var engineMetadataService = {
               }
               this._store = JSON.parse(new TextDecoder().decode(contents));
               this._initState = engineMetadataService._InitStates.FINISHED_SUCCESS;
+              return;
             } catch (ex) {
               if (this._initState == engineMetadataService._InitStates.FINISHED_SUCCESS) {
                 // No need to pursue asynchronous initialization,
@@ -3808,7 +3692,7 @@ var engineMetadataService = {
             // Fall through to the next state
 
           case engineMetadataService._InitStates.JSON_LOADING_ATTEMPTED:
-              // 2. Otherwise, load db
+            // 2. Otherwise, load db
             try {
               let store = yield this._asyncMigrateOldDB();
               if (this._initState == engineMetadataService._InitStates.FINISHED_SUCCESS) {
@@ -3838,9 +3722,10 @@ var engineMetadataService = {
             break;
 
           default:
-              throw new Error("Internal error: invalid state " + this._initState);
-          }}).bind(this)).then(
-
+            throw new Error("metadata init: invalid state " + this._initState);
+        }
+        LOG("metadata init: complete");
+      }).bind(this)).then(
         // 3. Inform any observers
         function onSuccess() {
           initializer.resolve();
@@ -3862,9 +3747,8 @@ var engineMetadataService = {
    * initialization.
    */
   syncInit: function epsSyncInit() {
-    Deprecated.warning("Search service falling back to deprecated synchronous initializer.", "https://developer.mozilla.org/en-US/docs/XPCOM_Interface_Reference/nsIBrowserSearchService#async_warning");
-    LOG("metadata syncInit: starting");
-    switch(this._initState) {
+    LOG("metadata syncInit start");
+    switch (this._initState) {
       case engineMetadataService._InitStates.NOT_STARTED:
         let jsonFile = new FileUtils.File(this._jsonFile);
         // 1. Load json file if it exists
@@ -3904,7 +3788,7 @@ var engineMetadataService = {
         break;
 
       default:
-        throw new Error("Internal error: invalid state " + this._initState);
+        throw new Error("metadata syncInit: invalid state " + this._initState);
     }
 
     // 3. Inform any observers
@@ -3913,6 +3797,7 @@ var engineMetadataService = {
     } else {
       this._initializer = Promise.resolve();
     }
+    LOG("metadata syncInit end");
   },
 
   getAttr: function epsGetAttr(engine, name) {
@@ -3992,16 +3877,15 @@ var engineMetadataService = {
   },
 
    _syncMigrateOldDB: function SRCH_SVC_EMS_migrate() {
-     LOG("SRCH_SVC_EMS_migrate start");
      let sqliteFile = FileUtils.getFile(NS_APP_USER_PROFILE_50_DIR,
                                         ["search.sqlite"]);
      if (!sqliteFile.exists()) {
-       LOG("SRCH_SVC_EMS_migrate search.sqlite does not exist");
+       LOG("metadata _syncMigrateOldDB: search.sqlite does not exist");
        return null;
      }
      let store = {};
      try {
-       LOG("SRCH_SVC_EMS_migrate Migrating data from SQL");
+       LOG("metadata _syncMigrateOldDB: Migrating data from SQL");
        const sqliteDb = Services.storage.openDatabase(sqliteFile);
        const statement = sqliteDb.createStatement("SELECT * from engine_data");
        while (statement.executeStep()) {
@@ -4017,7 +3901,7 @@ var engineMetadataService = {
       statement.finalize();
       sqliteDb.close();
      } catch (ex) {
-       LOG("SRCH_SVC_EMS_migrate failed: " + ex);
+       LOG("metadata _syncMigrateOldDB failed: " + ex);
        return null;
      }
      return store;
@@ -4030,47 +3914,45 @@ var engineMetadataService = {
     * - we do not remove search.sqlite after migration, so as to allow
     * downgrading and forensics;
     */
-   _asyncMigrateOldDB: function SRCH_SVC_EMS_asyncMigrate() {
-     LOG("SRCH_SVC_EMS_asyncMigrate start");
-     return TaskUtils.spawn(function task() {
-       let sqliteFile = FileUtils.getFile(NS_APP_USER_PROFILE_50_DIR,
-           ["search.sqlite"]);
-       if (!(yield OS.File.exists(sqliteFile.path))) {
-         LOG("SRCH_SVC_EMS_migrate search.sqlite does not exist");
-         throw new Task.Result(); // Bail out
-       }
-       let store = {};
-       LOG("SRCH_SVC_EMS_migrate Migrating data from SQL");
-       const sqliteDb = Services.storage.openDatabase(sqliteFile);
-       const statement = sqliteDb.createStatement("SELECT * from engine_data");
-       try {
-         yield TaskUtils.executeStatement(
-           statement,
-           function onResult(aResultSet) {
-             while (true) {
-               let row = aResultSet.getNextRow();
-               if (!row) {
-                 break;
-               }
-               let engine = row.engineid;
-               let name   = row.name;
-               let value  = row.value;
-               if (!store[engine]) {
-                 store[engine] = {};
-               }
-               store[engine][name] = value;
-             }
-           }
-         );
-       } catch(ex) {
-         // If loading the db failed, ignore the db
-         throw new Task.Result(); // Bail out
-       } finally {
-         sqliteDb.asyncClose();
-       }
-       throw new Task.Result(store);
-     });
-   },
+  _asyncMigrateOldDB: function SRCH_SVC_EMS_asyncMigrate() {
+    return TaskUtils.spawn(function task() {
+      let sqliteFile = FileUtils.getFile(NS_APP_USER_PROFILE_50_DIR, ["search.sqlite"]);
+      if (!(yield OS.File.exists(sqliteFile.path))) {
+        LOG("metadata _asyncMigrateOldDB: search.sqlite does not exist");
+        throw new Task.Result(); // Bail out
+      }
+      LOG("metadata _asyncMigrateOldDB: Migrating data from SQL");
+      let store = {};
+      const sqliteDb = Services.storage.openDatabase(sqliteFile);
+      const statement = sqliteDb.createStatement("SELECT * from engine_data");
+      try {
+        yield TaskUtils.executeStatement(
+          statement,
+          function onResult(aResultSet) {
+            while (true) {
+              let row = aResultSet.getNextRow();
+              if (!row) {
+                break;
+              }
+              let engine = row.engineid;
+              let name   = row.name;
+              let value  = row.value;
+              if (!store[engine]) {
+                store[engine] = {};
+              }
+              store[engine][name] = value;
+            }
+          }
+        );
+      } catch (ex) {
+        // If loading the db failed, ignore the db
+        throw new Task.Result(); // Bail out
+      } finally {
+        sqliteDb.asyncClose();
+      }
+      throw new Task.Result(store);
+    });
+  },
 
   /**
    * Commit changes to disk, asynchronously.
@@ -4084,34 +3966,34 @@ var engineMetadataService = {
    *               If not specified, this._store is used.
    */
   _commit: function epsCommit(aStore) {
-    LOG("epsCommit: start");
+    LOG("metadata _commit: start");
     let store = aStore || this._store;
     if (!store) {
-      LOG("epsCommit: nothing to do");
+      LOG("metadata _commit: nothing to do");
       return;
     }
 
     if (!this._lazyWriter) {
-      LOG("epsCommit: initializing lazy writer");
+      LOG("metadata _commit: initializing lazy writer");
       function writeCommit() {
-        LOG("epsWriteCommit: start");
+        LOG("metadata writeCommit: start");
         let data = gEncoder.encode(JSON.stringify(store));
         let path = engineMetadataService._jsonFile;
-        LOG("epsCommit path " + path);
+        LOG("metadata writeCommit: path " + path);
         let promise = OS.File.writeAtomic(path, data, { tmpPath: path + ".tmp" });
         promise = promise.then(
           function onSuccess() {
             Services.obs.notifyObservers(null,
               SEARCH_SERVICE_TOPIC,
               SEARCH_SERVICE_METADATA_WRITTEN);
-            LOG("epsWriteCommit: done");
+            LOG("metadata writeCommit: done");
           }
         );
         TaskUtils.captureErrors(promise);
       }
       this._lazyWriter = new DeferredTask(writeCommit, LAZY_SERIALIZE_DELAY);
     }
-    LOG("epsCommit: (re)setting timer");
+    LOG("metadata _commit: (re)setting timer");
     this._lazyWriter.start();
   },
   _lazyWriter: null
@@ -4186,4 +4068,4 @@ var engineUpdateService = {
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([SearchService]);
 
-#include ../../../toolkit/content/debug.js
+#include ../../../toolkit/modules/debug.js

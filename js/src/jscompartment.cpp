@@ -21,7 +21,6 @@
 #include "ion/IonCompartment.h"
 #endif
 #include "js/RootingAPI.h"
-#include "vm/Debugger.h"
 
 #include "jsgcinlines.h"
 #include "jsobjinlines.h"
@@ -42,6 +41,7 @@ JSCompartment::JSCompartment(Zone *zone)
     lastCodeRelease(0),
     analysisLifoAlloc(ANALYSIS_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
     data(NULL),
+    objectMetadataCallback(NULL),
     lastAnimationTime(0),
     regExps(rt),
     propertyTree(thisForCtor()),
@@ -97,9 +97,6 @@ JSCompartment::init(JSContext *cx)
 
     if (!regExps.init(cx))
         return false;
-
-    if (cx)
-        InitRandom(cx->runtime, &rngState);
 
     enumerators = NativeIterator::allocateSentinel(cx);
     if (!enumerators)
@@ -206,7 +203,7 @@ JSCompartment::wrap(JSContext *cx, MutableHandleValue vp, HandleObject existingA
         return true;
 
     if (vp.isString()) {
-        RawString str = vp.toString();
+        JSString *str = vp.toString();
 
         /* If the string is already in this compartment, we are done. */
         if (str->zone() == zone())
@@ -269,7 +266,7 @@ JSCompartment::wrap(JSContext *cx, MutableHandleValue vp, HandleObject existingA
     if (WrapperMap::Ptr p = crossCompartmentWrappers.lookup(key)) {
         vp.set(p->value);
         if (vp.isObject()) {
-            DebugOnly<RawObject> obj = &vp.toObject();
+            DebugOnly<JSObject *> obj = &vp.toObject();
             JS_ASSERT(obj->isCrossCompartmentWrapper());
             JS_ASSERT(obj->getParent() == global);
         }
@@ -281,7 +278,7 @@ JSCompartment::wrap(JSContext *cx, MutableHandleValue vp, HandleObject existingA
         if (!str)
             return false;
 
-        RawString wrapped = js_NewStringCopyN<CanGC>(cx, str->chars(), str->length());
+        JSString *wrapped = js_NewStringCopyN<CanGC>(cx, str->chars(), str->length());
         if (!wrapped)
             return false;
 
@@ -379,7 +376,7 @@ JSCompartment::wrapId(JSContext *cx, jsid *idp)
     if (!wrap(cx, &value))
         return false;
     RootedId id(cx);
-    if (!ValueToId<CanGC>(cx, value.get(), &id))
+    if (!ValueToId<CanGC>(cx, value, &id))
         return false;
 
     *idp = id;
@@ -519,7 +516,6 @@ JSCompartment::sweep(FreeOp *fop, bool releaseTypes)
         sweepInitialShapeTable();
         sweepNewTypeObjectTable(newTypeObjects);
         sweepNewTypeObjectTable(lazyTypeObjects);
-        sweepBreakpoints(fop);
         sweepCallsiteClones();
 
         if (global_ && IsObjectAboutToBeFinalized(global_.unsafeGet()))
@@ -660,16 +656,8 @@ JSCompartment::updateForDebugMode(FreeOp *fop, AutoDebugModeGC &dmgc)
             acx->updateJITEnabled();
     }
 
-#ifdef JS_METHODJIT
-    bool enabled = debugMode();
-
-    JS_ASSERT_IF(enabled, !hasScriptsOnStack());
-
-    for (gc::CellIter i(zone(), gc::FINALIZE_SCRIPT); !i.done(); i.next()) {
-        JSScript *script = i.get<JSScript>();
-        if (script->compartment() == this)
-            script->debugMode = enabled;
-    }
+#ifdef JS_ION
+    JS_ASSERT_IF(debugMode(), !hasScriptsOnStack());
 
     // When we change a compartment's debug mode, whether we're turning it
     // on or off, we must always throw away all analyses: debug mode
@@ -763,36 +751,6 @@ JSCompartment::clearTraps(FreeOp *fop)
         JSScript *script = i.get<JSScript>();
         if (script->compartment() == this && script->hasAnyBreakpointsOrStepMode())
             script->clearTraps(fop);
-    }
-}
-
-void
-JSCompartment::sweepBreakpoints(FreeOp *fop)
-{
-    gcstats::AutoPhase ap(rt->gcStats, gcstats::PHASE_SWEEP_TABLES_BREAKPOINT);
-
-    if (rt->debuggerList.isEmpty())
-        return;
-
-    for (CellIterUnderGC i(zone(), FINALIZE_SCRIPT); !i.done(); i.next()) {
-        JSScript *script = i.get<JSScript>();
-        if (script->compartment() != this || !script->hasAnyBreakpointsOrStepMode())
-            continue;
-        bool scriptGone = IsScriptAboutToBeFinalized(&script);
-        JS_ASSERT(script == i.get<JSScript>());
-        for (unsigned i = 0; i < script->length; i++) {
-            BreakpointSite *site = script->getBreakpointSite(script->code + i);
-            if (!site)
-                continue;
-            // nextbp is necessary here to avoid possibly reading *bp after
-            // destroying it.
-            Breakpoint *nextbp;
-            for (Breakpoint *bp = site->firstBreakpoint(); bp; bp = nextbp) {
-                nextbp = bp->nextInSite();
-                if (scriptGone || IsObjectAboutToBeFinalized(&bp->debugger->toJSObjectRef()))
-                    bp->destroy(fop);
-            }
-        }
     }
 }
 

@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_bytecode_analyzer_h__
+#if !defined(jsion_bytecode_analyzer_h__) && defined(JS_ION)
 #define jsion_bytecode_analyzer_h__
 
 // This file declares the data structures for building a MIRGraph from a
@@ -29,6 +29,16 @@ class IonBuilder : public MIRGenerator
         ControlStatus_Joined,       // Created a join node.
         ControlStatus_Jumped,       // Parsing another branch at the same level.
         ControlStatus_None          // No control flow.
+    };
+
+    enum SetElemSafety {
+        // Normal write like a[b] = c.
+        SetElem_Normal,
+
+        // Write due to UnsafeSetElement:
+        // - assumed to be in bounds,
+        // - not checked for data races
+        SetElem_Unsafe,
     };
 
     struct DeferredEdge : public TempObject
@@ -321,7 +331,7 @@ class IonBuilder : public MIRGenerator
 
     MInstruction *addConvertElementsToDoubles(MDefinition *elements);
     MInstruction *addBoundsCheck(MDefinition *index, MDefinition *length);
-    MInstruction *addShapeGuard(MDefinition *obj, const RawShape shape, BailoutKind bailoutKind);
+    MInstruction *addShapeGuard(MDefinition *obj, Shape *const shape, BailoutKind bailoutKind);
 
     JSObject *getNewArrayTemplateObject(uint32_t count);
     MDefinition *convertShiftToMaskForStaticTypedArray(MDefinition *id,
@@ -329,9 +339,11 @@ class IonBuilder : public MIRGenerator
 
     bool invalidatedIdempotentCache();
 
-    bool loadSlot(MDefinition *obj, HandleShape shape, MIRType rvalType,
+    bool hasStaticScopeObject(ScopeCoordinate sc, MutableHandleObject pcall);
+    bool loadSlot(MDefinition *obj, Shape *shape, MIRType rvalType,
                   bool barrier, types::StackTypeSet *types);
-    bool storeSlot(MDefinition *obj, RawShape shape, MDefinition *value, bool needsBarrier);
+    bool storeSlot(MDefinition *obj, Shape *shape, MDefinition *value, bool needsBarrier,
+                   MIRType slotType = MIRType_None);
 
     // jsop_getprop() helpers.
     bool getPropTryArgumentsLength(bool *emitted);
@@ -340,10 +352,10 @@ class IonBuilder : public MIRGenerator
                                 bool barrier, types::StackTypeSet *types);
     bool getPropTryCommonGetter(bool *emitted, HandleId id,
                                 bool barrier, types::StackTypeSet *types);
-    bool getPropTryMonomorphic(bool *emitted, HandleId id,
-                               bool barrier, types::StackTypeSet *types);
-    bool getPropTryPolymorphic(bool *emitted, HandlePropertyName name, HandleId id,
-                               bool barrier, types::StackTypeSet *types);
+    bool getPropTryInlineAccess(bool *emitted, HandlePropertyName name, HandleId id,
+                                bool barrier, types::StackTypeSet *types);
+    bool getPropTryCache(bool *emitted, HandlePropertyName name, HandleId id,
+                         bool barrier, types::StackTypeSet *types);
 
     // Typed array helpers.
     MInstruction *getTypedArrayLength(MDefinition *obj);
@@ -371,8 +383,8 @@ class IonBuilder : public MIRGenerator
     bool jsop_dup2();
     bool jsop_loophead(jsbytecode *pc);
     bool jsop_compare(JSOp op);
-    bool jsop_getgname(HandlePropertyName name);
-    bool jsop_setgname(HandlePropertyName name);
+    bool getStaticName(HandleObject staticObject, HandlePropertyName name, bool *psucceeded);
+    bool setStaticName(HandleObject staticObject, HandlePropertyName name);
     bool jsop_getname(HandlePropertyName name);
     bool jsop_intrinsic(HandlePropertyName name);
     bool jsop_bindname(PropertyName *name);
@@ -382,15 +394,22 @@ class IonBuilder : public MIRGenerator
     bool jsop_getelem_typed_static(bool *psucceeded);
     bool jsop_getelem_string();
     bool jsop_setelem();
-    bool jsop_setelem_dense(types::StackTypeSet::DoubleConversion conversion);
-    bool jsop_setelem_typed(int arrayType);
-    bool jsop_setelem_typed_static(bool *psucceeded);
+    bool jsop_setelem_dense(types::StackTypeSet::DoubleConversion conversion,
+                            SetElemSafety safety,
+                            MDefinition *object, MDefinition *index, MDefinition *value);
+    bool jsop_setelem_typed(int arrayType,
+                            SetElemSafety safety,
+                            MDefinition *object, MDefinition *index, MDefinition *value);
+    bool jsop_setelem_typed_static(MDefinition *object, MDefinition *index, MDefinition *value,
+                                   bool *psucceeded);
     bool jsop_length();
     bool jsop_length_fastPath();
     bool jsop_arguments();
     bool jsop_arguments_length();
     bool jsop_arguments_getelem();
-    bool jsop_arguments_setelem();
+    bool jsop_arguments_setelem(MDefinition *object, MDefinition *index, MDefinition *value);
+    bool jsop_runonce();
+    bool jsop_rest();
     bool jsop_not();
     bool jsop_getprop(HandlePropertyName name);
     bool jsop_setprop(HandlePropertyName name);
@@ -445,6 +464,7 @@ class IonBuilder : public MIRGenerator
     InliningStatus inlineMathFloor(CallInfo &callInfo);
     InliningStatus inlineMathRound(CallInfo &callInfo);
     InliningStatus inlineMathSqrt(CallInfo &callInfo);
+    InliningStatus inlineMathAtan2(CallInfo &callInfo);
     InliningStatus inlineMathMinMax(CallInfo &callInfo, bool max);
     InliningStatus inlineMathPow(CallInfo &callInfo);
     InliningStatus inlineMathRandom(CallInfo &callInfo);
@@ -464,7 +484,7 @@ class IonBuilder : public MIRGenerator
     InliningStatus inlineUnsafeSetElement(CallInfo &callInfo);
     bool inlineUnsafeSetDenseArrayElement(CallInfo &callInfo, uint32_t base);
     bool inlineUnsafeSetTypedArrayElement(CallInfo &callInfo, uint32_t base, int arrayType);
-    InliningStatus inlineShouldForceSequentialOrInParallelSection(CallInfo &callInfo);
+    InliningStatus inlineForceSequentialOrInParallelSection(CallInfo &callInfo);
     InliningStatus inlineNewDenseArray(CallInfo &callInfo);
     InliningStatus inlineNewDenseArrayForSequentialExecution(CallInfo &callInfo);
     InliningStatus inlineNewDenseArrayForParallelExecution(CallInfo &callInfo);
@@ -756,6 +776,8 @@ class CallInfo
 };
 
 bool TypeSetIncludes(types::TypeSet *types, MIRType input, types::TypeSet *inputTypes);
+
+bool NeedsPostBarrier(CompileInfo &info, MDefinition *value);
 
 } // namespace ion
 } // namespace js

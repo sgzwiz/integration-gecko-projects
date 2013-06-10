@@ -12,6 +12,7 @@
 #include "AudioNodeStream.h"
 #include "AudioProcessingEvent.h"
 #include "WebAudioUtils.h"
+#include "nsCxPusher.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/PodOperations.h"
 #include <deque>
@@ -19,11 +20,11 @@
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(ScriptProcessorNode, AudioNode)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ScriptProcessorNode)
   if (tmp->Context()) {
     tmp->Context()->UnregisterScriptProcessorNode(tmp);
   }
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END_INHERITED(AudioNode)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(ScriptProcessorNode, AudioNode)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
@@ -171,11 +172,10 @@ public:
     , mSource(nullptr)
     , mDestination(static_cast<AudioNodeStream*> (aDestination->Stream()))
     , mBufferSize(aBufferSize)
+    , mDefaultNumberOfInputChannels(aNumberOfInputChannels)
     , mInputWriteIndex(0)
     , mSeenNonSilenceInput(false)
   {
-    mInputChannels.SetLength(aNumberOfInputChannels);
-    AllocateInputBlock();
   }
 
   void SetSourceStream(AudioNodeStream* aSource)
@@ -190,11 +190,13 @@ public:
   {
     MutexAutoLock lock(NodeMutex());
 
-    // If our node is dead, just output silence
+    // If our node is dead, just output silence.
     if (!Node()) {
       aOutput->SetNull(WEBAUDIO_BLOCK_SIZE);
       return;
     }
+
+    EnsureInputChannels(aInput.mChannelData.Length());
 
     // First, record our input buffer
     for (uint32_t i = 0; i < mInputChannels.Length(); ++i) {
@@ -229,6 +231,25 @@ private:
   {
     for (unsigned i = 0; i < mInputChannels.Length(); ++i) {
       if (!mInputChannels[i]) {
+        mInputChannels[i] = new float[mBufferSize];
+      }
+    }
+  }
+
+  void EnsureInputChannels(uint32_t aNumberOfChannels)
+  {
+    if (aNumberOfChannels == 0) {
+      aNumberOfChannels = mDefaultNumberOfInputChannels;
+    }
+    if (mInputChannels.Length() == 0) {
+      mInputChannels.SetLength(aNumberOfChannels);
+      AllocateInputBlock();
+    } else if (aNumberOfChannels < mInputChannels.Length()) {
+      mInputChannels.SetLength(aNumberOfChannels);
+    } else if (aNumberOfChannels > mInputChannels.Length()) {
+      uint32_t oldLength = mInputChannels.Length();
+      mInputChannels.SetLength(aNumberOfChannels);
+      for (uint32_t i = oldLength; i < aNumberOfChannels; ++i) {
         mInputChannels[i] = new float[mBufferSize];
       }
     }
@@ -286,13 +307,12 @@ private:
           MutexAutoLock lock(mStream->Engine()->NodeMutex());
           node = static_cast<ScriptProcessorNode*>(mStream->Engine()->Node());
         }
-        if (!node) {
+        if (!node || !node->Context()) {
           return NS_OK;
         }
 
         AutoPushJSContext cx(node->Context()->GetJSContext());
         if (cx) {
-          JSAutoRequest ar(cx);
 
           // Create the input buffer
           nsRefPtr<AudioBuffer> inputBuffer;
@@ -350,6 +370,7 @@ private:
   AudioNodeStream* mDestination;
   InputChannels mInputChannels;
   const uint32_t mBufferSize;
+  const uint32_t mDefaultNumberOfInputChannels;
   // The write index into the current input buffer
   uint32_t mInputWriteIndex;
   bool mSeenNonSilenceInput;
@@ -359,7 +380,10 @@ ScriptProcessorNode::ScriptProcessorNode(AudioContext* aContext,
                                          uint32_t aBufferSize,
                                          uint32_t aNumberOfInputChannels,
                                          uint32_t aNumberOfOutputChannels)
-  : AudioNode(aContext)
+  : AudioNode(aContext,
+              aNumberOfInputChannels,
+              mozilla::dom::ChannelCountMode::Explicit,
+              mozilla::dom::ChannelInterpretation::Speakers)
   , mSharedBuffers(new SharedBuffers())
   , mBufferSize(aBufferSize ?
                   aBufferSize : // respect what the web developer requested
@@ -372,8 +396,7 @@ ScriptProcessorNode::ScriptProcessorNode(AudioContext* aContext,
                                   aContext->Destination(),
                                   BufferSize(),
                                   aNumberOfInputChannels);
-  mStream = aContext->Graph()->CreateAudioNodeStream(engine, MediaStreamGraph::INTERNAL_STREAM,
-                                                     aNumberOfInputChannels);
+  mStream = aContext->Graph()->CreateAudioNodeStream(engine, MediaStreamGraph::INTERNAL_STREAM);
   engine->SetSourceStream(static_cast<AudioNodeStream*> (mStream.get()));
 }
 

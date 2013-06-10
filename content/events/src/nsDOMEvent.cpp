@@ -34,6 +34,7 @@
 #include "nsDOMClassInfoID.h"
 #include "nsDOMEventTargetHelper.h"
 #include "nsPIWindowRoot.h"
+#include "nsGlobalWindow.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -43,6 +44,18 @@ static char *sPopupAllowedEvents;
 
 nsDOMEvent::nsDOMEvent(mozilla::dom::EventTarget* aOwner,
                        nsPresContext* aPresContext, nsEvent* aEvent)
+{
+  ConstructorInit(aOwner, aPresContext, aEvent);
+}
+
+nsDOMEvent::nsDOMEvent(nsPIDOMWindow* aParent)
+{
+  ConstructorInit(static_cast<nsGlobalWindow *>(aParent), nullptr, nullptr);
+  SetIsDOMBinding();
+}
+
+void nsDOMEvent::ConstructorInit(mozilla::dom::EventTarget* aOwner,
+                                 nsPresContext* aPresContext, nsEvent* aEvent)
 {
   SetOwner(aOwner);
 
@@ -115,7 +128,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsDOMEvent)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMEvent)
   NS_INTERFACE_MAP_ENTRY(nsIDOMEvent)
-  NS_INTERFACE_MAP_ENTRY(nsIJSNativeInitializer)
+  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIJSNativeInitializer, !IsDOMBinding())
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(Event)
 NS_INTERFACE_MAP_END
 
@@ -147,6 +160,9 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDOMEvent)
         break;
       case NS_MUTATION_EVENT:
         static_cast<nsMutationEvent*>(tmp->mEvent)->mRelatedNode = nullptr;
+        break;
+      case NS_FOCUS_EVENT:
+        static_cast<nsFocusEvent*>(tmp->mEvent)->relatedTarget = nullptr;
         break;
       default:
         break;
@@ -189,6 +205,11 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsDOMEvent)
         NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mEvent->mRelatedNode");
         cb.NoteXPCOMChild(
           static_cast<nsMutationEvent*>(tmp->mEvent)->mRelatedNode);
+        break;
+      case NS_FOCUS_EVENT:
+        NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mEvent->relatedTarget");
+        cb.NoteXPCOMChild(
+          static_cast<nsFocusEvent*>(tmp->mEvent)->relatedTarget);
         break;
       default:
         break;
@@ -314,9 +335,10 @@ nsDOMEvent::SetTrusted(bool aTrusted)
 
 NS_IMETHODIMP
 nsDOMEvent::Initialize(nsISupports* aOwner, JSContext* aCx, JSObject* aObj,
-                       uint32_t aArgc, JS::Value* aArgv)
+                       const JS::CallArgs& aArgs)
 {
-  NS_ENSURE_TRUE(aArgc >= 1, NS_ERROR_XPC_NOT_ENOUGH_ARGS);
+  MOZ_ASSERT(!IsDOMBinding());
+  NS_ENSURE_TRUE(aArgs.length() >= 1, NS_ERROR_XPC_NOT_ENOUGH_ARGS);
 
   bool trusted = false;
   nsCOMPtr<nsPIDOMWindow> w = do_QueryInterface(aOwner);
@@ -335,8 +357,7 @@ nsDOMEvent::Initialize(nsISupports* aOwner, JSContext* aCx, JSObject* aObj,
     mOwner = w;
   }
 
-  JSAutoRequest ar(aCx);
-  JSString* jsstr = JS_ValueToString(aCx, aArgv[0]);
+  JSString* jsstr = JS_ValueToString(aCx, aArgs[0]);
   if (!jsstr) {
     return NS_ERROR_DOM_SYNTAX_ERR;
   }
@@ -346,7 +367,7 @@ nsDOMEvent::Initialize(nsISupports* aOwner, JSContext* aCx, JSObject* aObj,
   nsDependentJSString type;
   NS_ENSURE_STATE(type.init(aCx, jsstr));
 
-  nsresult rv = InitFromCtor(type, aCx, aArgc >= 2 ? &(aArgv[1]) : nullptr);
+  nsresult rv = InitFromCtor(type, aCx, aArgs.length() >= 2 ? &(aArgs[1]) : nullptr);
   NS_ENSURE_SUCCESS(rv, rv);
 
   SetTrusted(trusted);
@@ -455,50 +476,6 @@ nsDOMEvent::StopImmediatePropagation()
 {
   mEvent->mFlags.mPropagationStopped = true;
   mEvent->mFlags.mImmediatePropagationStopped = true;
-  return NS_OK;
-}
-
-static nsIDocument* GetDocumentForReport(nsEvent* aEvent)
-{
-  EventTarget* target = aEvent->currentTarget;
-  if (nsCOMPtr<nsINode> node = do_QueryInterface(target)) {
-    return node->OwnerDoc();
-  }
-
-  if (nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(target)) {
-    return window->GetExtantDoc();
-  }
-
-  return nullptr;
-}
-
-static void
-ReportUseOfDeprecatedMethod(nsEvent* aEvent, nsIDOMEvent* aDOMEvent,
-                            const char* aWarning)
-{
-  nsCOMPtr<nsIDocument> doc(GetDocumentForReport(aEvent));
-
-  nsAutoString type;
-  aDOMEvent->GetType(type);
-  const PRUnichar *strings[] = { type.get() };
-  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
-                                  "DOM Events", doc,
-                                  nsContentUtils::eDOM_PROPERTIES,
-                                  aWarning,
-                                  strings, ArrayLength(strings));
-}
-
-NS_IMETHODIMP
-nsDOMEvent::PreventBubble()
-{
-  ReportUseOfDeprecatedMethod(mEvent, this, "UseOfPreventBubbleWarning");
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMEvent::PreventCapture()
-{
-  ReportUseOfDeprecatedMethod(mEvent, this, "UseOfPreventCaptureWarning");
   return NS_OK;
 }
 
@@ -829,7 +806,8 @@ nsDOMEvent::DuplicatePrivateData()
         static_cast<nsTransitionEvent*>(mEvent);
       newEvent = new nsTransitionEvent(false, msg,
                                        oldTransitionEvent->propertyName,
-                                       oldTransitionEvent->elapsedTime);
+                                       oldTransitionEvent->elapsedTime,
+                                       oldTransitionEvent->pseudoElement);
       NS_ENSURE_TRUE(newEvent, NS_ERROR_OUT_OF_MEMORY);
       break;
     }
@@ -839,7 +817,8 @@ nsDOMEvent::DuplicatePrivateData()
         static_cast<nsAnimationEvent*>(mEvent);
       newEvent = new nsAnimationEvent(false, msg,
                                       oldAnimationEvent->animationName,
-                                      oldAnimationEvent->elapsedTime);
+                                      oldAnimationEvent->elapsedTime,
+                                      oldAnimationEvent->pseudoElement);
       NS_ENSURE_TRUE(newEvent, NS_ERROR_OUT_OF_MEMORY);
       break;
     }
@@ -1032,6 +1011,22 @@ nsDOMEvent::GetEventPopupControlState(nsEvent *aEvent)
       case NS_KEY_DOWN :
         if (::PopupAllowedForEvent("keydown"))
           abuse = openControlled;
+        break;
+      }
+    }
+    break;
+  case NS_TOUCH_EVENT :
+    if (aEvent->mFlags.mIsTrusted) {
+      switch (aEvent->message) {
+      case NS_TOUCH_START :
+        if (PopupAllowedForEvent("touchstart")) {
+          abuse = openControlled;
+        }
+        break;
+      case NS_TOUCH_END :
+        if (PopupAllowedForEvent("touchend")) {
+          abuse = openControlled;
+        }
         break;
       }
     }
@@ -1231,6 +1226,17 @@ const char* nsDOMEvent::GetEventName(uint32_t aEventType)
   // arrays in nsEventListenerManager too, since the events for which
   // this is a problem generally *are* created by nsDOMEvent.)
   return nullptr;
+}
+
+bool
+nsDOMEvent::GetPreventDefault() const
+{
+  if (mOwner) {
+    if (nsIDocument* doc = mOwner->GetExtantDoc()) {
+      doc->WarnOnceAbout(nsIDocument::eGetPreventDefault);
+    }
+  }
+  return DefaultPrevented();
 }
 
 NS_IMETHODIMP

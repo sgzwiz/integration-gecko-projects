@@ -6,6 +6,7 @@
 
 #include "base/basictypes.h"
 
+#include "mozilla/Poison.h"
 #include "mozilla/XPCOM.h"
 #include "nsXULAppAPI.h"
 
@@ -15,6 +16,7 @@
 #include "nsStaticComponents.h"
 #include "prlink.h"
 
+#include "nsCycleCollector.h"
 #include "nsObserverList.h"
 #include "nsObserverService.h"
 #include "nsProperties.h"
@@ -328,7 +330,10 @@ NS_InitXPCOM2(nsIServiceManager* *result,
               nsIFile* binDirectory,
               nsIDirectoryServiceProvider* appFileLocationProvider)
 {
-    profiler_init();
+    mozPoisonValueInit();
+
+    char aLocal;
+    profiler_init(&aLocal);
     nsresult rv = NS_OK;
 
      // We are not shutting down

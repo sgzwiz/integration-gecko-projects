@@ -9,6 +9,7 @@
 #include "AudioNodeEngine.h"
 #include "AudioNodeStream.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/PodOperations.h"
 #include "kiss_fft/kiss_fftr.h"
 
 namespace mozilla {
@@ -60,7 +61,7 @@ public:
   virtual void ProduceAudioBlock(AudioNodeStream* aStream,
                                  const AudioChunk& aInput,
                                  AudioChunk* aOutput,
-                                 bool* aFinished)
+                                 bool* aFinished) MOZ_OVERRIDE
   {
     *aOutput = aInput;
 
@@ -75,7 +76,10 @@ public:
 };
 
 AnalyserNode::AnalyserNode(AudioContext* aContext)
-  : AudioNode(aContext)
+  : AudioNode(aContext,
+              1,
+              ChannelCountMode::Explicit,
+              ChannelInterpretation::Speakers)
   , mFFTSize(2048)
   , mMinDecibels(-100.)
   , mMaxDecibels(-30.)
@@ -272,12 +276,17 @@ AnalyserNode::AppendChunk(const AudioChunk& aChunk)
 {
   const uint32_t bufferSize = mBuffer.Length();
   const uint32_t channelCount = aChunk.mChannelData.Length();
-  const uint32_t chunkCount = aChunk.mDuration;
+  uint32_t chunkDuration = aChunk.mDuration;
   MOZ_ASSERT((bufferSize & (bufferSize - 1)) == 0); // Must be a power of two!
   MOZ_ASSERT(channelCount > 0);
-  MOZ_ASSERT(chunkCount == WEBAUDIO_BLOCK_SIZE);
+  MOZ_ASSERT(chunkDuration == WEBAUDIO_BLOCK_SIZE);
 
-  memcpy(mBuffer.Elements() + mWriteIndex, aChunk.mChannelData[0], sizeof(float) * chunkCount);
+  if (chunkDuration > bufferSize) {
+    // Copy a maximum bufferSize samples.
+    chunkDuration = bufferSize;
+  }
+
+  PodCopy(mBuffer.Elements() + mWriteIndex, static_cast<const float*>(aChunk.mChannelData[0]), chunkDuration);
   for (uint32_t i = 1; i < channelCount; ++i) {
     AudioBlockAddChannelWithScale(static_cast<const float*>(aChunk.mChannelData[i]), 1.0f,
                                   mBuffer.Elements() + mWriteIndex);
@@ -286,7 +295,7 @@ AnalyserNode::AppendChunk(const AudioChunk& aChunk)
     AudioBlockInPlaceScale(mBuffer.Elements() + mWriteIndex, 1,
                            1.0f / aChunk.mChannelData.Length());
   }
-  mWriteIndex += chunkCount;
+  mWriteIndex += chunkDuration;
   MOZ_ASSERT(mWriteIndex <= bufferSize);
   if (mWriteIndex >= bufferSize) {
     mWriteIndex = 0;

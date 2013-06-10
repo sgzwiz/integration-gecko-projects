@@ -306,7 +306,8 @@ nsSVGGlyphFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
 {
   nsSVGGlyphFrameBase::DidSetStyleContext(aOldStyleContext);
 
-  if (!(GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+  if (!(GetStateBits() & NS_FRAME_FIRST_REFLOW) ||
+      (GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD)) {
     ClearTextRun();
     NotifyGlyphMetricsChange();
   }
@@ -392,11 +393,6 @@ nsSVGGlyphFrame::PaintSVG(nsRenderingContext *aContext,
     if (!iter.SetInitialMatrix(gfx)) {
       return NS_OK;
     }
-
-    if (GetClipRule() == NS_STYLE_FILL_RULE_EVENODD)
-      gfx->SetFillRule(gfxContext::FILL_RULE_EVEN_ODD);
-    else
-      gfx->SetFillRule(gfxContext::FILL_RULE_WINDING);
 
     if (renderMode == SVGAutoRenderState::CLIP_MASK) {
       gfx->SetColor(gfxRGBA(1.0f, 1.0f, 1.0f, 1.0f));
@@ -1285,7 +1281,8 @@ nsSVGGlyphFrame::GetExtentOfChar(uint32_t charnum, dom::SVGIRect **_retval)
                             metrics.mAscent + metrics.mDescent));
   tmpCtx->IdentityMatrix();
 
-  nsRefPtr<dom::SVGRect> rect = NS_NewSVGRect(tmpCtx->GetUserPathExtent());
+  nsRefPtr<dom::SVGRect> rect =
+    NS_NewSVGRect(mContent, tmpCtx->GetUserPathExtent());
 
   rect.forget(_retval);
   return NS_OK;

@@ -509,6 +509,13 @@ nsMediaFeatures::features[] = {
         GetSystemMetric
     },
     {
+        &nsGkAtoms::_moz_overlay_scrollbars,
+        nsMediaFeature::eMinMaxNotAllowed,
+        nsMediaFeature::eBoolInteger,
+        { &nsGkAtoms::overlay_scrollbars },
+        GetSystemMetric
+    },
+    {
         &nsGkAtoms::_moz_windows_default_theme,
         nsMediaFeature::eMinMaxNotAllowed,
         nsMediaFeature::eBoolInteger,
@@ -584,6 +591,14 @@ nsMediaFeatures::features[] = {
         nsMediaFeature::eMinMaxNotAllowed,
         nsMediaFeature::eBoolInteger,
         { &nsGkAtoms::swipe_animation_enabled },
+        GetSystemMetric
+    },
+
+    {
+        &nsGkAtoms::_moz_physical_home_button,
+        nsMediaFeature::eMinMaxNotAllowed,
+        nsMediaFeature::eBoolInteger,
+        { &nsGkAtoms::physical_home_button },
         GetSystemMetric
     },
 

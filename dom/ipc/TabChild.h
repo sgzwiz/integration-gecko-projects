@@ -72,8 +72,7 @@ class ClonedMessageData;
 
 class TabChildGlobal : public nsDOMEventTargetHelper,
                        public nsIContentFrameMessageManager,
-                       public nsIScriptObjectPrincipal,
-                       public nsIScriptContextPrincipal
+                       public nsIScriptObjectPrincipal
 {
 public:
   TabChildGlobal(TabChild* aTabChild);
@@ -92,17 +91,17 @@ public:
       ? mMessageManager->SendSyncMessage(aMessageName, aObject, aCx, aArgc, aRetval)
       : NS_ERROR_NULL_POINTER;
   }
-  NS_IMETHOD GetContent(nsIDOMWindow** aContent);
-  NS_IMETHOD GetDocShell(nsIDocShell** aDocShell);
-  NS_IMETHOD Dump(const nsAString& aStr)
+  NS_IMETHOD GetContent(nsIDOMWindow** aContent) MOZ_OVERRIDE;
+  NS_IMETHOD GetDocShell(nsIDocShell** aDocShell) MOZ_OVERRIDE;
+  NS_IMETHOD Dump(const nsAString& aStr) MOZ_OVERRIDE
   {
     return mMessageManager ? mMessageManager->Dump(aStr) : NS_OK;
   }
-  NS_IMETHOD PrivateNoteIntentionalCrash();
+  NS_IMETHOD PrivateNoteIntentionalCrash() MOZ_OVERRIDE;
   NS_IMETHOD Btoa(const nsAString& aBinaryData,
-                  nsAString& aAsciiBase64String);
+                  nsAString& aAsciiBase64String) MOZ_OVERRIDE;
   NS_IMETHOD Atob(const nsAString& aAsciiString,
-                  nsAString& aBinaryData);
+                  nsAString& aBinaryData) MOZ_OVERRIDE;
 
   NS_IMETHOD AddEventListener(const nsAString& aType,
                               nsIDOMEventListener* aListener,
@@ -116,7 +115,7 @@ public:
   NS_IMETHOD AddEventListener(const nsAString& aType,
                               nsIDOMEventListener* aListener,
                               bool aUseCapture, bool aWantsUntrusted,
-                              uint8_t optional_argc)
+                              uint8_t optional_argc) MOZ_OVERRIDE
   {
     return nsDOMEventTargetHelper::AddEventListener(aType, aListener,
                                                     aUseCapture,
@@ -124,9 +123,8 @@ public:
                                                     optional_argc);
   }
 
-  virtual nsIScriptObjectPrincipal* GetObjectPrincipal() { return this; }
-  virtual JSContext* GetJSContextForEventHandlers();
-  virtual nsIPrincipal* GetPrincipal();
+  virtual JSContext* GetJSContextForEventHandlers() MOZ_OVERRIDE;
+  virtual nsIPrincipal* GetPrincipal() MOZ_OVERRIDE;
 
   nsCOMPtr<nsIContentFrameMessageManager> mMessageManager;
   TabChild* mTabChild;
@@ -296,6 +294,7 @@ public:
 
     /** Return the DPI of the widget this TabChild draws to. */
     void GetDPI(float* aDPI);
+    void GetDefaultScale(double *aScale);
 
     gfxSize GetZoom() { return mLastMetrics.mZoom; }
 
@@ -306,6 +305,17 @@ public:
     void NotifyPainted();
 
     bool IsAsyncPanZoomEnabled();
+
+    /** Return a boolean indicating if the page has called preventDefault on
+     *  the event.
+     */
+    bool DispatchMouseEvent(const nsString& aType,
+                            const float&    aX,
+                            const float&    aY,
+                            const int32_t&  aButton,
+                            const int32_t&  aClickCount,
+                            const int32_t&  aModifiers,
+                            const bool&     aIgnoreRootScrollFrame);
 
     /**
      * Signal to this TabChild that it should be made visible:
@@ -367,6 +377,7 @@ private:
     bool InitRenderingState();
     void DestroyWindow();
     void SetProcessNameToAppName();
+    bool ProcessUpdateFrame(const mozilla::layers::FrameMetrics& aFrameMetrics);
 
     // Call RecvShow(nsIntSize(0, 0)) and block future calls to RecvShow().
     void DoFakeShow();
@@ -421,6 +432,7 @@ private:
     class CachedFileDescriptorInfo;
     class CachedFileDescriptorCallbackRunnable;
 
+    TextureFactoryIdentifier mTextureFactoryIdentifier;
     nsCOMPtr<nsIWebNavigation> mWebNav;
     nsCOMPtr<nsIWidget> mWidget;
     nsCOMPtr<nsIURI> mLastURI;
@@ -439,6 +451,8 @@ private:
     // the touch we're tracking.  That is, if touchend or a touchmove
     // that exceeds the gesture threshold doesn't happen.
     CancelableTask* mTapHoldTimer;
+    // Whether we have already received a FileDescriptor for the app package.
+    bool mAppPackageFileDescriptorRecved;
     // At present only 1 of these is really expected.
     nsAutoTArray<nsAutoPtr<CachedFileDescriptorInfo>, 1>
         mCachedFileDescriptorInfos;

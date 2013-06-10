@@ -96,6 +96,8 @@ static int gCMSIntent = -2;
 static void ShutdownCMS();
 static void MigratePrefs();
 
+static bool sDrawLayerBorders = false;
+
 #include "mozilla/gfx/2D.h"
 using namespace mozilla::gfx;
 
@@ -244,6 +246,7 @@ gfxPlatform::gfxPlatform()
     mFallbackUsesCmaps = UNINITIALIZED_VALUE;
 
     mGraphiteShapingEnabled = UNINITIALIZED_VALUE;
+    mOpenTypeSVGEnabled = UNINITIALIZED_VALUE;
     mBidiNumeralOption = UNINITIALIZED_VALUE;
 
     uint32_t canvasMask = (1 << BACKEND_CAIRO) | (1 << BACKEND_SKIA);
@@ -400,6 +403,10 @@ gfxPlatform::Init()
 
     gPlatform->mOrientationSyncMillis = Preferences::GetUint("layers.orientation.sync.timeout", (uint32_t)0);
 
+    mozilla::Preferences::AddBoolVarCache(&sDrawLayerBorders,
+                                          "layers.draw-borders",
+                                          false);
+
     CreateCMSOutputProfile();
 }
 
@@ -546,6 +553,7 @@ void SourceBufferDestroy(void *srcSurfUD)
   delete static_cast<SourceSurfaceUserData*>(srcSurfUD);
 }
 
+#if MOZ_TREE_CAIRO
 void SourceSnapshotDetached(cairo_surface_t *nullSurf)
 {
   gfxImageSurface* origSurf =
@@ -553,6 +561,13 @@ void SourceSnapshotDetached(cairo_surface_t *nullSurf)
 
   origSurf->SetData(&kSourceSurface, NULL, NULL);
 }
+#else
+void SourceSnapshotDetached(void *nullSurf)
+{
+  gfxImageSurface* origSurf = static_cast<gfxImageSurface*>(nullSurf);
+  origSurf->SetData(&kSourceSurface, NULL, NULL);
+}
+#endif
 
 RefPtr<SourceSurface>
 gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurface)
@@ -665,6 +680,7 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
 
     }
 
+#if MOZ_TREE_CAIRO
     cairo_surface_t *nullSurf =
 	cairo_null_surface_create(CAIRO_CONTENT_COLOR_ALPHA);
     cairo_surface_set_user_data(nullSurf,
@@ -673,6 +689,9 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
                                 NULL);
     cairo_surface_attach_snapshot(imgSurface->CairoSurface(), nullSurf, SourceSnapshotDetached);
     cairo_surface_destroy(nullSurf);
+#else
+    cairo_surface_set_mime_data(imgSurface->CairoSurface(), "mozilla/magic", (const unsigned char*) "data", 4, SourceSnapshotDetached, imgSurface.get());
+#endif
   }
 
   SourceSurfaceUserData *srcSurfUD = new SourceSurfaceUserData;
@@ -710,6 +729,16 @@ DataDrawTargetDestroy(void *aTarget)
 }
 
 bool
+gfxPlatform::SupportsAzureContentForDrawTarget(DrawTarget* aTarget)
+{
+  if (!aTarget) {
+    return false;
+  }
+
+  return (1 << aTarget->GetType()) & mContentBackendBitmask;
+}
+
+bool
 gfxPlatform::UseAcceleratedSkiaCanvas()
 {
   return Preferences::GetBool("gfx.canvas.azure.accelerated", false) &&
@@ -734,7 +763,7 @@ gfxPlatform::GetThebesSurfaceForDrawTarget(DrawTarget *aTarget)
   RefPtr<DataSourceSurface> data = source->GetDataSurface();
 
   if (!data) {
-    return NULL;
+    return nullptr;
   }
 
   IntSize size = data->GetSize();
@@ -867,6 +896,17 @@ gfxPlatform::UseCmapsDuringSystemFallback()
     }
 
     return mFallbackUsesCmaps;
+}
+
+bool
+gfxPlatform::OpenTypeSVGEnabled()
+{
+    if (mOpenTypeSVGEnabled == UNINITIALIZED_VALUE) {
+        mOpenTypeSVGEnabled =
+            Preferences::GetBool(GFX_PREF_OPENTYPE_SVG, false);
+    }
+
+    return mOpenTypeSVGEnabled > 0;
 }
 
 bool
@@ -1103,6 +1143,13 @@ gfxPlatform::IsLangCJK(eFontPrefLang aLang)
     }
 }
 
+bool
+gfxPlatform::DrawLayerBorders()
+{
+    return sDrawLayerBorders;
+}
+
+
 void
 gfxPlatform::GetLangPrefs(eFontPrefLang aPrefLangs[], uint32_t &aLen, eFontPrefLang aCharLang, eFontPrefLang aPageLang)
 {
@@ -1249,6 +1296,7 @@ gfxPlatform::InitBackendPrefs(uint32_t aCanvasBitmask, uint32_t aContentBitmask)
     }
     mFallbackCanvasBackend = GetCanvasBackendPref(aCanvasBitmask & ~(1 << mPreferredCanvasBackend));
     mContentBackend = GetContentBackendPref(aContentBitmask);
+    mContentBackendBitmask = aContentBitmask;
 }
 
 /* static */ BackendType
@@ -1661,6 +1709,7 @@ gfxPlatform::FontsPrefsChanged(const char *aPref)
     } else if (!strcmp(BIDI_NUMERAL_PREF, aPref)) {
         mBidiNumeralOption = UNINITIALIZED_VALUE;
     } else if (!strcmp(GFX_PREF_OPENTYPE_SVG, aPref)) {
+        mOpenTypeSVGEnabled = UNINITIALIZED_VALUE;
         gfxFontCache::GetCache()->AgeAllGenerations();
     }
 }

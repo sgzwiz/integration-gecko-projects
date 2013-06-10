@@ -17,7 +17,7 @@ if (typeof arguments[0] != 'string' || typeof arguments[1] != 'string')
 var gcFunctionsFile = arguments[0];
 var suppressedFunctionsFile = arguments[1];
 var gcTypesFile = arguments[2];
-var batch = arguments[3]|0;
+var batch = (arguments[3]|0) || 1;
 var numBatches = (arguments[4]|0) || 1;
 var tmpfile = arguments[5] || "tmp.txt";
 
@@ -106,6 +106,35 @@ function edgeUsesVariable(edge, variable)
         return false;
     default:
         assert(false);
+    }
+}
+
+function expressionIsVariableAddress(exp, variable)
+{
+    while (exp.Kind == "Fld")
+        exp = exp.Exp[0];
+    return exp.Kind == "Var" && sameVariable(exp.Variable, variable);
+}
+
+function edgeTakesVariableAddress(edge, variable)
+{
+    if (ignoreEdgeUse(edge, variable))
+        return false;
+    if (ignoreEdgeAddressTaken(edge))
+        return false;
+    switch (edge.Kind) {
+    case "Assign":
+        return expressionIsVariableAddress(edge.Exp[1], variable);
+    case "Call":
+        if ("PEdgeCallArguments" in edge) {
+            for (var exp of edge.PEdgeCallArguments.Exp) {
+                if (expressionIsVariableAddress(exp, variable))
+                    return true;
+            }
+        }
+        return false;
+    default:
+        return false;
     }
 }
 
@@ -326,6 +355,21 @@ function variableLiveAcrossGC(variable)
     return null;
 }
 
+function unsafeVariableAddressTaken(variable)
+{
+    for (var body of functionBodies) {
+        if (!("PEdge" in body))
+            continue;
+        for (var edge of body.PEdge) {
+            if (edgeTakesVariableAddress(edge, variable)) {
+                if (edge.Kind == "Assign" || edgeCanGC(edge))
+                    return {body:body, ppoint:edge.Index[0]};
+            }
+        }
+    }
+    return null;
+}
+
 function computePrintedLines()
 {
     assert(!system("xdbfind src_body.xdb '" + functionName + "' > " + tmpfile));
@@ -474,6 +518,14 @@ function processBodies()
                       " at " + lineText);
                 printEntryTrace(result.why);
             }
+            result = unsafeVariableAddressTaken(variable.Variable);
+            if (result) {
+                var lineText = findLocation(result.body, result.ppoint);
+                print("\nFunction '" + functionName + "'" +
+                      " takes unsafe address of unrooted '" + name + "'" +
+                      " at " + lineText);
+                printEntryTrace({body:result.body, ppoint:result.ppoint});
+            }
         }
     }
 }
@@ -502,7 +554,7 @@ for (var nameIndex = start; nameIndex <= end; nameIndex++) {
         body.suppressed = [];
     for (var body of functionBodies)
         computeSuppressedPoints(body);
-     processBodies();
+    processBodies();
 
     xdb.free_string(name);
     xdb.free_string(data);

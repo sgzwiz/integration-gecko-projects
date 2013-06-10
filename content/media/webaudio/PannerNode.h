@@ -33,10 +33,8 @@ public:
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 
-  virtual bool SupportsMediaStreams() const MOZ_OVERRIDE
-  {
-    return true;
-  }
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(PannerNode, AudioNode)
 
   PanningModelType PanningModel() const
   {
@@ -44,6 +42,15 @@ public:
   }
   void SetPanningModel(PanningModelType aPanningModel)
   {
+    // Handle the alternate enum values
+    switch (aPanningModel) {
+    case PanningModelType::_0: aPanningModel = PanningModelType::Equalpower; break;
+    case PanningModelType::_1: aPanningModel = PanningModelType::HRTF; break;
+    default:
+      // Shut up the compiler warning
+      break;
+    }
+
     mPanningModel = aPanningModel;
     SendInt32ParameterToStream(PANNING_MODEL, int32_t(mPanningModel));
   }
@@ -54,6 +61,16 @@ public:
   }
   void SetDistanceModel(DistanceModelType aDistanceModel)
   {
+    // Handle the alternate enum values
+    switch (aDistanceModel) {
+    case DistanceModelType::_0: aDistanceModel = DistanceModelType::Linear; break;
+    case DistanceModelType::_1: aDistanceModel = DistanceModelType::Inverse; break;
+    case DistanceModelType::_2: aDistanceModel = DistanceModelType::Exponential; break;
+    default:
+      // Shut up the compiler warning
+      break;
+    }
+
     mDistanceModel = aDistanceModel;
     SendInt32ParameterToStream(DISTANCE_MODEL, int32_t(mDistanceModel));
   }

@@ -35,7 +35,9 @@ RegExpObjectBuilder::getOrCreate()
     if (reobj_)
         return true;
 
-    JSObject *obj = NewBuiltinClassInstance(cx, &RegExpClass);
+    // Note: RegExp objects are always allocated in the tenured heap. This is
+    // not strictly required, but simplifies embedding them in jitcode.
+    JSObject *obj = NewBuiltinClassInstance(cx, &RegExpClass, TenuredObject);
     if (!obj)
         return false;
     obj->initPrivate(NULL);
@@ -49,7 +51,10 @@ RegExpObjectBuilder::getOrCreateClone(RegExpObject *proto)
 {
     JS_ASSERT(!reobj_);
 
-    JSObject *clone = NewObjectWithGivenProto(cx, &RegExpClass, proto, proto->getParent());
+    // Note: RegExp objects are always allocated in the tenured heap. This is
+    // not strictly required, but simplifies embedding them in jitcode.
+    JSObject *clone = NewObjectWithGivenProto(cx, &RegExpClass, proto, proto->getParent(),
+                                              TenuredObject);
     if (!clone)
         return false;
     clone->initPrivate(NULL);
@@ -191,7 +196,7 @@ VectorMatchPairs::allocOrExpandArray(size_t pairCount)
 /* RegExpObject */
 
 static void
-regexp_trace(JSTracer *trc, RawObject obj)
+regexp_trace(JSTracer *trc, JSObject *obj)
 {
      /*
       * We have to check both conditions, since:
@@ -265,7 +270,7 @@ RegExpObject::createShared(JSContext *cx, RegExpGuard *g)
     return true;
 }
 
-RawShape
+Shape *
 RegExpObject::assignInitialShape(JSContext *cx)
 {
     JS_ASSERT(isRegExp());
@@ -616,11 +621,15 @@ RegExpShared::executeMatchOnly(JSContext *cx, const jschar *chars, size_t length
     if (result == JSC::Yarr::offsetNoMatch)
         return RegExpRunStatus_Success_NotFound;
 
+    match = MatchPair(result, matches[0].limit);
+    match.displace(displacement);
+
+#ifdef DEBUG
     matches.displace(displacement);
     matches.checkAgainst(origLength);
+#endif
 
-    *lastIndex = matches[0].limit;
-    match = MatchPair(result, matches[0].limit);
+    *lastIndex = match.limit;
     return RegExpRunStatus_Success;
 }
 

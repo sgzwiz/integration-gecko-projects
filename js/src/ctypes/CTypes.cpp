@@ -1322,7 +1322,7 @@ JS_InitCTypesClass(JSContext* cx, JSObject *globalArg)
 }
 
 JS_PUBLIC_API(void)
-JS_SetCTypesCallbacks(JSRawObject ctypesObj, JSCTypesCallbacks* callbacks)
+JS_SetCTypesCallbacks(JSObject *ctypesObj, JSCTypesCallbacks* callbacks)
 {
   JS_ASSERT(callbacks);
   JS_ASSERT(IsCTypesGlobal(ctypesObj));
@@ -1904,7 +1904,7 @@ jsvalToIntegerExplicit(jsval val, IntegerType* result)
   if (JSVAL_IS_DOUBLE(val)) {
     // Convert -Inf, Inf, and NaN to 0; otherwise, convert by C-style cast.
     double d = JSVAL_TO_DOUBLE(val);
-    *result = MOZ_DOUBLE_IS_FINITE(d) ? IntegerType(d) : 0;
+    *result = mozilla::IsFinite(d) ? IntegerType(d) : 0;
     return true;
   }
   if (!JSVAL_IS_PRIMITIVE(val)) {
@@ -2185,7 +2185,7 @@ bool CanConvertTypedArrayItemTo(JSObject *baseType, JSObject *valObj, JSContext 
 //    caller; 'freePointer' will be set to indicate this.
 JSBool
 ImplicitConvert(JSContext* cx,
-                jsval val,
+                HandleValue val,
                 JSObject* targetType_,
                 void* buffer,
                 bool isArgument,
@@ -2291,7 +2291,7 @@ ImplicitConvert(JSContext* cx,
       break;
     }
 
-    JSObject* baseType = PointerType::GetBaseType(targetType);
+    JS::Rooted<JSObject*> baseType(cx, PointerType::GetBaseType(targetType));
     if (sourceData) {
       // First, determine if the targetType is ctypes.void_t.ptr.
       TypeCode sourceCode = CType::GetTypeCode(sourceType);
@@ -2457,12 +2457,12 @@ ImplicitConvert(JSContext* cx,
       }
 
       for (uint32_t i = 0; i < sourceLength; ++i) {
-        js::AutoValueRooter item(cx);
-        if (!JS_GetElement(cx, valObj, i, item.jsval_addr()))
+        RootedValue item(cx);
+        if (!JS_GetElement(cx, valObj, i, item.address()))
           return false;
 
         char* data = intermediate.get() + elementSize * i;
-        if (!ImplicitConvert(cx, item.jsval_value(), baseType, data, false, NULL))
+        if (!ImplicitConvert(cx, item, baseType, data, false, NULL))
           return false;
       }
 
@@ -2539,13 +2539,13 @@ ImplicitConvert(JSContext* cx,
         if (!field)
           return false;
 
-        js::AutoValueRooter prop(cx);
-        if (!JS_GetPropertyById(cx, valObj, id, prop.jsval_addr()))
+        RootedValue prop(cx);
+        if (!JS_GetPropertyById(cx, valObj, id, prop.address()))
           return false;
 
         // Convert the field via ImplicitConvert().
         char* fieldData = intermediate.get() + field->mOffset;
-        if (!ImplicitConvert(cx, prop.jsval_value(), field->mType, fieldData, false, NULL))
+        if (!ImplicitConvert(cx, prop, field->mType, fieldData, false, NULL))
           return false;
 
         ++i;
@@ -2585,8 +2585,8 @@ ExplicitConvert(JSContext* cx, HandleValue val, HandleObject targetType, void* b
   // If ImplicitConvert failed, and there is no pending exception, then assume
   // hard failure (out of memory, or some other similarly serious condition).
   // We store any pending exception in case we need to re-throw it.
-  js::AutoValueRooter ex(cx);
-  if (!JS_GetPendingException(cx, ex.jsval_addr()))
+  RootedValue ex(cx);
+  if (!JS_GetPendingException(cx, ex.address()))
     return false;
 
   // Otherwise, assume soft failure. Clear the pending exception so that we
@@ -2634,7 +2634,7 @@ ExplicitConvert(JSContext* cx, HandleValue val, HandleObject targetType, void* b
   case TYPE_array:
   case TYPE_struct:
     // ImplicitConvert is sufficient. Re-throw the exception it generated.
-    JS_SetPendingException(cx, ex.jsval_value());
+    JS_SetPendingException(cx, ex);
     return false;
   case TYPE_void_t:
   case TYPE_function:
@@ -3326,8 +3326,10 @@ CType::Trace(JSTracer* trc, JSObject* obj)
     FieldInfoHash* fields =
       static_cast<FieldInfoHash*>(JSVAL_TO_PRIVATE(slot));
     for (FieldInfoHash::Range r = fields->all(); !r.empty(); r.popFront()) {
-      JS_CallStringTracer(trc, r.front().key, "fieldName");
-      JS_CallObjectTracer(trc, r.front().value.mType, "fieldType");
+      JSString *key = r.front().key;
+      JS_CallStringTracer(trc, &key, "fieldName");
+      JS_ASSERT(key == r.front().key);
+      JS_CallObjectTracer(trc, &r.front().value.mType, "fieldType");
     }
 
     break;
@@ -3342,10 +3344,10 @@ CType::Trace(JSTracer* trc, JSObject* obj)
     JS_ASSERT(fninfo);
 
     // Identify our objects to the tracer.
-    JS_CallObjectTracer(trc, fninfo->mABI, "abi");
-    JS_CallObjectTracer(trc, fninfo->mReturnType, "returnType");
+    JS_CallObjectTracer(trc, &fninfo->mABI, "abi");
+    JS_CallObjectTracer(trc, &fninfo->mReturnType, "returnType");
     for (size_t i = 0; i < fninfo->mArgTypes.length(); ++i)
-      JS_CallObjectTracer(trc, fninfo->mArgTypes[i], "argType");
+      JS_CallObjectTracer(trc, &fninfo->mArgTypes[i], "argType");
 
     break;
   }
@@ -3747,7 +3749,7 @@ CType::HasInstance(JSContext* cx, JSHandleObject obj, JSMutableHandleValue v, JS
   JS_ASSERT(CType::IsCType(obj));
 
   jsval slot = JS_GetReservedSlot(obj, SLOT_PROTO);
-  JSObject* prototype = &slot.toObject();
+  JS::Rooted<JSObject*> prototype(cx, &slot.toObject());
   JS_ASSERT(prototype);
   JS_ASSERT(CData::IsCDataProto(prototype));
 
@@ -4288,9 +4290,9 @@ ArrayType::ConstructData(JSContext* cx,
       // We were given an object with a .length property.
       // This could be a JS array, or a CData array.
       RootedObject arg(cx, &args[0].toObject());
-      js::AutoValueRooter lengthVal(cx);
-      if (!JS_GetProperty(cx, arg, "length", lengthVal.jsval_addr()) ||
-          !jsvalToSize(cx, lengthVal.jsval_value(), false, &length)) {
+      RootedValue lengthVal(cx);
+      if (!JS_GetProperty(cx, arg, "length", lengthVal.address()) ||
+          !jsvalToSize(cx, lengthVal, false, &length)) {
         JS_ReportError(cx, "argument must be an array object or length");
         return JS_FALSE;
       }
@@ -4333,9 +4335,6 @@ ArrayType::ConstructData(JSContext* cx,
     if (!obj)
       return JS_FALSE;
   }
-
-  // Root the CType object, in case we created one above.
-  js::AutoObjectRooter root(cx, obj);
 
   JSObject* result = CData::Create(cx, obj, NullPtr(), NULL, true);
   if (!result)
@@ -4620,7 +4619,6 @@ ExtractStructField(JSContext* cx, jsval val, JSObject** typeObj)
   RootedObject iter(cx, JS_NewPropertyIterator(cx, obj));
   if (!iter)
     return NULL;
-  js::AutoObjectRooter iterroot(cx, iter);
 
   RootedId nameid(cx);
   if (!JS_NextProperty(cx, iter, nameid.address()))
@@ -4644,12 +4642,11 @@ ExtractStructField(JSContext* cx, jsval val, JSObject** typeObj)
     return NULL;
   }
 
-  js::AutoValueRooter propVal(cx);
-  if (!JS_GetPropertyById(cx, obj, nameid, propVal.jsval_addr()))
+  RootedValue propVal(cx);
+  if (!JS_GetPropertyById(cx, obj, nameid, propVal.address()))
     return NULL;
 
-  if (propVal.value().isPrimitive() ||
-      !CType::IsCType(JSVAL_TO_OBJECT(propVal.jsval_value()))) {
+  if (propVal.isPrimitive() || !CType::IsCType(&propVal.toObject())) {
     JS_ReportError(cx, "struct field descriptors require a valid name and type");
     return NULL;
   }
@@ -4657,7 +4654,7 @@ ExtractStructField(JSContext* cx, jsval val, JSObject** typeObj)
   // Undefined size or zero size struct members are illegal.
   // (Zero-size arrays are legal as struct members in C++, but libffi will
   // choke on a zero-size struct, so we disallow them.)
-  *typeObj = JSVAL_TO_OBJECT(propVal.jsval_value());
+  *typeObj = &propVal.toObject();
   size_t size;
   if (!CType::GetSafeSize(*typeObj, &size) || size == 0) {
     JS_ReportError(cx, "struct field types must have defined and nonzero size");
@@ -4772,7 +4769,7 @@ StructType::DefineInternal(JSContext* cx, JSObject* typeObj_, JSObject* fieldsOb
     JS_ReportOutOfMemory(cx);
     return JS_FALSE;
   }
-  js::AutoArrayRooter fieldRoots(cx, fieldRootsArray.length(), 
+  js::AutoArrayRooter fieldRoots(cx, fieldRootsArray.length(),
     fieldRootsArray.begin());
 
   // Process the field types.
@@ -4782,12 +4779,12 @@ StructType::DefineInternal(JSContext* cx, JSObject* typeObj_, JSObject* fieldsOb
     structAlign = 0;
 
     for (uint32_t i = 0; i < len; ++i) {
-      js::AutoValueRooter item(cx);
-      if (!JS_GetElement(cx, fieldsObj, i, item.jsval_addr()))
+      RootedValue item(cx);
+      if (!JS_GetElement(cx, fieldsObj, i, item.address()))
         return JS_FALSE;
 
       RootedObject fieldType(cx, NULL);
-      JSFlatString* flat = ExtractStructField(cx, item.jsval_value(), fieldType.address());
+      JSFlatString* flat = ExtractStructField(cx, item, fieldType.address());
       if (!flat)
         return JS_FALSE;
       Rooted<JSStableString*> name(cx, flat->ensureStable(cx));
@@ -4795,16 +4792,12 @@ StructType::DefineInternal(JSContext* cx, JSObject* typeObj_, JSObject* fieldsOb
         return JS_FALSE;
       fieldRootsArray[i] = OBJECT_TO_JSVAL(fieldType);
 
-      // Make sure each field name is unique, and add it to the hash.
+      // Make sure each field name is unique
       FieldInfoHash::AddPtr entryPtr = fields->lookupForAdd(name);
       if (entryPtr) {
         JS_ReportError(cx, "struct fields must have unique names");
         return JS_FALSE;
       }
-      ASSERT_OK(fields->add(entryPtr, name, FieldInfo()));
-      FieldInfo& info = entryPtr->value;
-      info.mType = fieldType;
-      info.mIndex = i;
 
       // Add the field to the StructType's 'prototype' property.
       if (!JS_DefineUCProperty(cx, prototype,
@@ -4823,7 +4816,14 @@ StructType::DefineInternal(JSContext* cx, JSObject* typeObj_, JSObject* fieldsOb
         JS_ReportError(cx, "size overflow");
         return JS_FALSE;
       }
+
+      // Add field name to the hash
+      FieldInfo info;
+      info.mType = fieldType;
+      info.mIndex = i;
       info.mOffset = fieldOffset;
+      ASSERT_OK(fields->add(entryPtr, name, info));
+
       structSize = fieldOffset + fieldSize;
 
       if (fieldAlign > structAlign)
@@ -5035,7 +5035,7 @@ StructType::ConstructData(JSContext* cx,
     for (FieldInfoHash::Range r = fields->all(); !r.empty(); r.popFront()) {
       const FieldInfo& field = r.front().value;
       STATIC_ASSUME(field.mIndex < fields->count());  /* Quantified invariant */
-      if (!ImplicitConvert(cx, args[field.mIndex], field.mType,
+      if (!ImplicitConvert(cx, args.handleAt(field.mIndex), field.mType,
              buffer + field.mOffset,
              false, NULL))
         return JS_FALSE;
@@ -5620,7 +5620,6 @@ FunctionType::CreateInternal(JSContext* cx,
                         NULL, JSVAL_VOID, JSVAL_VOID, NULL);
   if (!typeObj)
     return NULL;
-  js::AutoObjectRooter root(cx, typeObj);
 
   // Stash the FunctionInfo in a reserved slot.
   JS_SetReservedSlot(typeObj, SLOT_FNINFO, PRIVATE_TO_JSVAL(fninfo.forget()));
@@ -5654,10 +5653,9 @@ FunctionType::ConstructData(JSContext* cx,
     return JS_FALSE;
   }
 
-  JSObject* closureObj = CClosure::Create(cx, typeObj, fnObj, thisObj, errVal, data);
+  RootedObject closureObj(cx, CClosure::Create(cx, typeObj, fnObj, thisObj, errVal, data));
   if (!closureObj)
     return JS_FALSE;
-  js::AutoObjectRooter root(cx, closureObj);
 
   // Set the closure object as the referent of the new CData object.
   JS_SetReservedSlot(dataObj, SLOT_REFERENT, OBJECT_TO_JSVAL(closureObj));
@@ -5675,7 +5673,7 @@ typedef Array<AutoValue, 16> AutoValueAutoArray;
 
 static JSBool
 ConvertArgument(JSContext* cx,
-                jsval arg,
+                HandleValue arg,
                 JSObject* type,
                 AutoValue* value,
                 AutoValueAutoArray* strings)
@@ -5755,7 +5753,7 @@ FunctionType::Call(JSContext* cx,
   }
 
   for (unsigned i = 0; i < argcFixed; ++i)
-    if (!ConvertArgument(cx, args[i], fninfo->mArgTypes[i], &values[i], &strings))
+    if (!ConvertArgument(cx, args.handleAt(i), fninfo->mArgTypes[i], &values[i], &strings))
       return false;
 
   if (fninfo->mIsVariadic) {
@@ -5780,7 +5778,7 @@ FunctionType::Call(JSContext* cx,
           !(type = PrepareType(cx, OBJECT_TO_JSVAL(type))) ||
           // Relying on ImplicitConvert only for the limited purpose of
           // converting one CType to another (e.g., T[] to T*).
-          !ConvertArgument(cx, args[i], type, &values[i], &strings) ||
+          !ConvertArgument(cx, args.handleAt(i), type, &values[i], &strings) ||
           !(fninfo->mFFITypes[i] = CType::GetFFIType(cx, type))) {
         // These functions report their own errors.
         return false;
@@ -6085,10 +6083,10 @@ CClosure::Trace(JSTracer* trc, JSObject* obj)
 
   // Identify our objects to the tracer. (There's no need to identify
   // 'closureObj', since that's us.)
-  JS_CallObjectTracer(trc, cinfo->typeObj, "typeObj");
-  JS_CallObjectTracer(trc, cinfo->jsfnObj, "jsfnObj");
+  JS_CallObjectTracer(trc, &cinfo->typeObj, "typeObj");
+  JS_CallObjectTracer(trc, &cinfo->jsfnObj, "jsfnObj");
   if (cinfo->thisObj)
-    JS_CallObjectTracer(trc, cinfo->thisObj, "thisObj");
+    JS_CallObjectTracer(trc, &cinfo->thisObj, "thisObj");
 }
 
 void
@@ -6156,9 +6154,6 @@ CClosure::ClosureStub(ffi_cif* cif, void* result, void** args, void* userData)
     }
     memset(result, 0, rvSize);
   }
-
-  // Get a death grip on 'closureObj'.
-  js::AutoObjectRooter root(cx, cinfo->closureObj);
 
   // Set up an array for converted arguments.
   Array<jsval, 16> argv;
@@ -7118,7 +7113,7 @@ CDataFinalizer::Methods::Forget(JSContext* cx, unsigned argc, jsval *vp)
     return JS_FALSE;
   }
 
-  JSObject *obj = JS_THIS_OBJECT(cx, vp);
+  JS::Rooted<JSObject*> obj(cx, args.thisv().toObjectOrNull());
   if (!obj)
     return JS_FALSE;
   if (!CDataFinalizer::IsCDataFinalizer(obj)) {

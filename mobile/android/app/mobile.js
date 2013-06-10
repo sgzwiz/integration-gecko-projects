@@ -95,6 +95,9 @@ pref("network.http.max-connections", 20);
 pref("network.http.max-persistent-connections-per-server", 6);
 pref("network.http.max-persistent-connections-per-proxy", 20);
 
+// spdy
+pref("network.http.spdy.push-allowance", 32768);
+
 // See bug 545869 for details on why these are set the way they are
 pref("network.buffer.cache.count", 24);
 pref("network.buffer.cache.size",  16384);
@@ -267,6 +270,11 @@ pref("browser.search.noCurrentEngine", true);
 pref("browser.search.official", true);
 #endif
 
+// Enable sparse localization by setting a few package locale overrides
+pref("chrome.override_package.global", "browser");
+pref("chrome.override_package.mozapps", "browser");
+pref("chrome.override_package.passwordmgr", "browser");
+
 // enable xul error pages
 pref("browser.xul.error_pages.enabled", true);
 
@@ -352,11 +360,6 @@ pref("gfx.displayport.strategy_vb.danger_y_incr", -1); // additional danger zone
 // prediction bias strategy options
 pref("gfx.displayport.strategy_pb.threshold", -1); // velocity threshold in inches/frame
 
-// disable Graphite font shaping by default on Android until memory footprint
-// of using the Charis SIL fonts that we ship with the product is addressed
-// (see bug 700023, bug 846832, bug 847344)
-pref("gfx.font_rendering.graphite.enabled", false);
-
 // don't allow JS to move and resize existing windows
 pref("dom.disable_window_move_resize", true);
 
@@ -432,11 +435,16 @@ pref("browser.ui.touch.top", 48);
 pref("browser.ui.touch.bottom", 16);
 pref("browser.ui.touch.weight.visited", 120); // percentage
 
+// The percentage of the screen that needs to be scrolled before margins are exposed.
+pref("browser.ui.show-margins-threshold", 20);
+
 // plugins
 pref("plugin.disable", false);
 pref("dom.ipc.plugins.enabled", false);
 
 pref("plugins.click_to_play", true);
+// The default value for nsIPluginTag.enabledState (STATE_CLICKTOPLAY = 1)
+pref("plugin.default.state", 1);
 
 // product URLs
 // The breakpad report server to link to in about:crashes
@@ -602,6 +610,9 @@ pref("browser.firstrun.show.localepicker", false);
 // $ adb shell start
 pref("browser.dom.window.dump.enabled", true);
 
+// SimplePush
+pref("services.push.enabled", false);
+
 // controls if we want camera support
 pref("device.camera.enabled", true);
 pref("media.realtime_decoder.enabled", true);
@@ -644,14 +655,19 @@ pref("network.manage-offline-status", true);
 // increase the timeout clamp for background tabs to 15 minutes
 pref("dom.min_background_timeout_value", 900000);
 
-// The default of font size in reader (1-7)
-pref("reader.font_size", 4);
+// The default state of reader mode works on loaded a page.
+pref("reader.parse-on-load.enabled", true);
 
-// The default of margin size in reader (5%-25%)
-pref("reader.margin_size", 5);
+// Force to enable reader mode to parse on loaded a page.
+// Allow reader mode even on low-memory platforms
+pref("reader.parse-on-load.force-enabled", false);
 
-// The default color scheme in reader (light, dark, sepia)
-pref("reader.color_scheme", "light");
+// The default of font size in reader (1-5)
+pref("reader.font_size", 3);
+
+// The default color scheme in reader (light, dark, sepia, auto)
+// auto = color automatically adjusts according to ambient light level
+pref("reader.color_scheme", "auto");
 
 // The font type in reader (sans-serif, serif)
 pref("reader.font_type", "sans-serif");
@@ -684,6 +700,11 @@ pref("layout.imagevisibility.enabled", false);
 // Enable the dynamic toolbar
 pref("browser.chrome.dynamictoolbar", true);
 
+// The mode of browser titlebar
+// 0: Show a current page title.
+// 1: Show a current page url.
+pref("browser.chrome.titlebarMode", 0);
+
 #ifdef MOZ_PKG_SPECIAL
 // Disable webgl on ARMv6 because running the reftests takes
 // too long for some reason (bug 843738)
@@ -708,6 +729,12 @@ pref("browser.contentHandlers.types.3.type", "application/vnd.mozilla.maybe.feed
 // Enable Web Audio for Firefox for Android in Nightly and Aurora
 pref("media.webaudio.enabled", true);
 #endif
+
+pref("dom.payment.provider.0.name", "Firefox Marketplace");
+pref("dom.payment.provider.0.description", "marketplace.firefox.com");
+pref("dom.payment.provider.0.uri", "https://marketplace.firefox.com/mozpay/?req=");
+pref("dom.payment.provider.0.type", "mozilla/payments/pay/v1");
+pref("dom.payment.provider.0.requestMethod", "GET");
 
 // This needs more tests and stability fixes first, as well as UI.
 pref("media.navigator.enabled", false);

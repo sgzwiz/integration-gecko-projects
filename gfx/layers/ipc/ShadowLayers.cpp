@@ -29,6 +29,8 @@
 #include "mozilla/layers/ContentClient.h"
 #include "ISurfaceAllocator.h"
 
+#include "nsTraceRefcntImpl.h"
+
 using namespace mozilla::ipc;
 using namespace mozilla::gl;
 using namespace mozilla::dom;
@@ -160,11 +162,14 @@ CompositableForwarder::IdentifyTextureHost(const TextureFactoryIdentifier& aIden
 {
   mMaxTextureSize = aIdentifier.mMaxTextureSize;
   mCompositorBackend = aIdentifier.mParentBackend;
+  mSupportsTextureBlitting = aIdentifier.mSupportsTextureBlitting;
+  mSupportsPartialUploads = aIdentifier.mSupportsPartialUploads;
 }
 
 ShadowLayerForwarder::ShadowLayerForwarder()
  : mShadowManager(NULL)
  , mIsFirstPaint(false)
+ , mDrawColoredBorders(false)
 {
   mTxn = new Transaction();
 }
@@ -317,6 +322,23 @@ ShadowLayerForwarder::UpdateTexture(CompositableClient* aCompositable,
 }
 
 void
+ShadowLayerForwarder::UpdateTextureNoSwap(CompositableClient* aCompositable,
+                                          TextureIdentifier aTextureId,
+                                          SurfaceDescriptor* aDescriptor)
+{
+  if (aDescriptor->type() != SurfaceDescriptor::T__None &&
+      aDescriptor->type() != SurfaceDescriptor::Tnull_t) {
+    MOZ_ASSERT(aCompositable);
+    MOZ_ASSERT(aCompositable->GetIPDLActor());
+    mTxn->AddNoSwapPaint(OpPaintTexture(nullptr, aCompositable->GetIPDLActor(), 1,
+                                        SurfaceDescriptor(*aDescriptor)));
+    *aDescriptor = SurfaceDescriptor();
+  } else {
+    NS_WARNING("Trying to send a null SurfaceDescriptor.");
+  }
+}
+
+void
 ShadowLayerForwarder::UpdateTextureRegion(CompositableClient* aCompositable,
                                           const ThebesBufferData& aThebesBufferData,
                                           const nsIntRegion& aUpdatedRegion)
@@ -327,6 +349,25 @@ ShadowLayerForwarder::UpdateTextureRegion(CompositableClient* aCompositable,
                                       aThebesBufferData,
                                       aUpdatedRegion));
 }
+
+void
+ShadowLayerForwarder::UpdateTextureIncremental(CompositableClient* aCompositable,
+                                               TextureIdentifier aTextureId,
+                                               SurfaceDescriptor& aDescriptor,
+                                               const nsIntRegion& aUpdatedRegion,
+                                               const nsIntRect& aBufferRect,
+                                               const nsIntPoint& aBufferRotation)
+{
+  MOZ_ASSERT(aCompositable);
+  MOZ_ASSERT(aCompositable->GetIPDLActor());
+  mTxn->AddNoSwapPaint(OpPaintTextureIncremental(nullptr, aCompositable->GetIPDLActor(),
+                                                 aTextureId,
+                                                 aDescriptor,
+                                                 aUpdatedRegion,
+                                                 aBufferRect,
+                                                 aBufferRotation));
+}
+
 
 void
 ShadowLayerForwarder::UpdatePictureRect(CompositableClient* aCompositable,
@@ -342,6 +383,11 @@ ShadowLayerForwarder::EndTransaction(InfallibleTArray<EditReply>* aReplies)
   RenderTraceScope rendertrace("Foward Transaction", "000091");
   NS_ABORT_IF_FALSE(HasShadowManager(), "no manager to forward to");
   NS_ABORT_IF_FALSE(!mTxn->Finished(), "forgot BeginTransaction?");
+
+  if (mDrawColoredBorders != gfxPlatform::DrawLayerBorders()) {
+    mDrawColoredBorders = gfxPlatform::DrawLayerBorders();
+    mTxn->AddEdit(OpSetColoredBorders(mDrawColoredBorders));
+  }
 
   AutoTxnEnd _(mTxn);
 
@@ -484,6 +530,16 @@ ShadowLayerForwarder::OpenDescriptor(OpenMode aMode,
                                size,
                                stride,
                                rgbFormat);
+    return surf.forget();
+  }
+  case SurfaceDescriptor::TMemoryImage: {
+    const MemoryImage& image = aSurface.get_MemoryImage();
+    gfxASurface::gfxImageFormat format
+      = static_cast<gfxASurface::gfxImageFormat>(image.format());
+    surf = new gfxImageSurface((unsigned char *)image.data(),
+                               image.size(),
+                               image.stride(),
+                               format);
     return surf.forget();
   }
   default:
@@ -679,6 +735,15 @@ ShadowLayerForwarder::CreatedSingleBuffer(CompositableClient* aCompositable,
                                    *aDescriptorOnWhite,
                                    aTextureInfo));
   }
+}
+
+void
+ShadowLayerForwarder::CreatedIncrementalBuffer(CompositableClient* aCompositable,
+                                               const TextureInfo& aTextureInfo,
+                                               const nsIntRect& aBufferRect)
+{
+  mTxn->AddNoSwapPaint(OpCreatedIncrementalTexture(nullptr, aCompositable->GetIPDLActor(),
+                                                   aTextureInfo, aBufferRect));
 }
 
 void

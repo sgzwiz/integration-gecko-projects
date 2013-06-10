@@ -65,6 +65,7 @@ struct CrossCompartmentKey
         ObjectWrapper,
         StringWrapper,
         DebuggerScript,
+        DebuggerSource,
         DebuggerObject,
         DebuggerEnvironment
     };
@@ -181,6 +182,8 @@ struct JSCompartment
 
     void                         *data;
 
+    js::ObjectMetadataCallback   objectMetadataCallback;
+
   private:
     js::WrapperMap               crossCompartmentWrappers;
 
@@ -242,7 +245,7 @@ struct JSCompartment
      * debugger wrapper objects.  The list link is either in the second extra
      * slot for the former, or a special slot for the latter.
      */
-    js::RawObject                gcIncomingGrayPointers;
+    JSObject                     *gcIncomingGrayPointers;
 
     /* Linked list of live array buffers with >1 view. */
     JSObject                     *gcLiveArrayBuffers;

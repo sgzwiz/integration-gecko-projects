@@ -27,7 +27,6 @@ const DENY_ACTION = Ci.nsIPermissionManager.DENY_ACTION;
 const PROMPT_ACTION = Ci.nsIPermissionManager.PROMPT_ACTION;
 
 // Permissions Matrix: https://docs.google.com/spreadsheet/ccc?key=0Akyz_Bqjgf5pdENVekxYRjBTX0dCXzItMnRyUU1RQ0E#gid=0
-// Also, keep in sync with https://mxr.mozilla.org/mozilla-central/source/extensions/cookie/Permission.txt
 
 // Permissions that are implicit:
 // battery-status, network-information, vibration,
@@ -117,6 +116,11 @@ this.PermissionsTable =  { geolocation: {
                            mobileconnection: {
                              app: DENY_ACTION,
                              privileged: DENY_ACTION,
+                             certified: ALLOW_ACTION
+                           },
+                           mobilenetwork: {
+                             app: DENY_ACTION,
+                             privileged: ALLOW_ACTION,
                              certified: ALLOW_ACTION
                            },
                            power: {

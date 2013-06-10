@@ -15,6 +15,7 @@
 #include "jsatominlines.h"
 
 #include "gc/Barrier-inl.h"
+#include "gc/Marking.h"
 #include "vm/ObjectImpl-inl.h"
 #include "vm/Shape-inl.h"
 
@@ -196,8 +197,8 @@ js::ObjectImpl::checkShapeConsistency()
 
     MOZ_ASSERT(isNative());
 
-    RawShape shape = lastProperty();
-    RawShape prev = NULL;
+    Shape *shape = lastProperty();
+    Shape *prev = NULL;
 
     if (inDictionaryMode()) {
         MOZ_ASSERT(shape->hasTable());
@@ -294,7 +295,7 @@ js::ObjectImpl::slotInRange(uint32_t slot, SentinelAllowed sentinel) const
  */
 MOZ_NEVER_INLINE
 #endif
-RawShape
+Shape *
 js::ObjectImpl::nativeLookup(JSContext *cx, jsid id)
 {
     MOZ_ASSERT(isNative());
@@ -643,9 +644,8 @@ js::GetProperty(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> rece
             return false;
         }
 
-        PropDesc desc;
-        PropDesc::AutoRooter rootDesc(cx, &desc);
-        if (!GetOwnProperty(cx, current, pid, resolveFlags, &desc))
+        AutoPropDescRooter desc(cx);
+        if (!GetOwnProperty(cx, current, pid, resolveFlags, &desc.getPropDesc()))
             return false;
 
         /* No property?  Recur or bottom out. */
@@ -1000,4 +1000,13 @@ js::SetElement(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> recei
 
     MOZ_NOT_REACHED("buggy control flow");
     return false;
+}
+
+void
+AutoPropDescRooter::trace(JSTracer *trc)
+{
+    gc::MarkValueRoot(trc, &propDesc.pd_, "AutoPropDescRooter pd");
+    gc::MarkValueRoot(trc, &propDesc.value_, "AutoPropDescRooter value");
+    gc::MarkValueRoot(trc, &propDesc.get_, "AutoPropDescRooter get");
+    gc::MarkValueRoot(trc, &propDesc.set_, "AutoPropDescRooter set");
 }

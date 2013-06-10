@@ -7,7 +7,12 @@
 MODULE = 'dom'
 
 EXPORTS.mozilla.dom += [
-    'Notification.h',
     'DesktopNotification.h',
+    'Notification.h',
+]
+
+CPP_SOURCES += [
+    'DesktopNotification.cpp',
+    'Notification.cpp',
 ]
 

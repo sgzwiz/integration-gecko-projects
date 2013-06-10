@@ -296,6 +296,12 @@ public:
 
   // Get the current MediaResource being used. Its URI will be returned
   // by currentSrc. Returns what was passed to Load(), if Load() has been called.
+  // Note: The MediaResource is refcounted, but it outlives the MediaDecoder,
+  // so it's OK to use the reference returned by this function without
+  // refcounting, *unless* you need to store and use the reference after the
+  // MediaDecoder has been destroyed. You might need to do this if you're
+  // wrapping the MediaResource in some kind of byte stream interface to be
+  // passed to a platform decoder.
   MediaResource* GetResource() const MOZ_FINAL MOZ_OVERRIDE
   {
     return mResource;
@@ -325,6 +331,12 @@ public:
   // Start playback of a video. 'Load' must have previously been
   // called.
   virtual nsresult Play();
+
+  // Set/Unset dormant state if necessary.
+  // Dormant state is a state to free all scarce media resources
+  //  (like hw video codec), did not decoding and stay dormant.
+  // It is used to share scarece media resources in system.
+  virtual void SetDormantIfNecessary(bool aDormant);
 
   // Pause video playback.
   virtual void Pause();
@@ -730,6 +742,8 @@ public:
   // Notifies the element that decoding has failed.
   virtual void DecodeError();
 
+  MediaDecoderOwner* GetOwner() MOZ_OVERRIDE;
+
 #ifdef MOZ_RAW
   static bool IsRawEnabled();
 #endif
@@ -751,7 +765,7 @@ public:
   static bool IsGStreamerEnabled();
 #endif
 
-#ifdef MOZ_WIDGET_GONK
+#ifdef MOZ_OMX_DECODER
   static bool IsOmxEnabled();
 #endif
 
@@ -991,6 +1005,10 @@ public:
   // can be read on any thread while holding the monitor, or on the main thread
   // without holding the monitor.
   nsAutoPtr<DecodedStreamData> mDecodedStream;
+
+  // True if this decoder is in dormant state.
+  // Should be true only when PlayState is PLAY_STATE_LOADING.
+  bool mIsDormant;
 
   // Set to one of the valid play states.
   // This can only be changed on the main thread while holding the decoder

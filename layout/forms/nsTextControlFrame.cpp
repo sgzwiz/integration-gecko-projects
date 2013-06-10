@@ -65,7 +65,6 @@
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsINativeKeyBindings.h"
-#include "nsIJSContextStack.h"
 #include "nsFocusManager.h"
 #include "nsTextEditRules.h"
 #include "nsPresState.h"
@@ -73,6 +72,7 @@
 #include "nsAttrValueInlines.h"
 #include "mozilla/Selection.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsTextNode.h"
 
 #define DEFAULT_COLUMN_WIDTH 20

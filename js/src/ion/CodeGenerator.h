@@ -33,6 +33,7 @@ class OutOfLineTypeOfV;
 class OutOfLineLoadTypedArray;
 class OutOfLineParNewGCThing;
 class OutOfLineUpdateCache;
+class OutOfLineCallPostWriteBarrier;
 
 class CodeGenerator : public CodeGeneratorSpecific
 {
@@ -87,6 +88,9 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool visitConvertElementsToDoubles(LConvertElementsToDoubles *lir);
     bool visitTypeBarrier(LTypeBarrier *lir);
     bool visitMonitorTypes(LMonitorTypes *lir);
+    bool visitPostWriteBarrierO(LPostWriteBarrierO *lir);
+    bool visitPostWriteBarrierV(LPostWriteBarrierV *lir);
+    bool visitOutOfLineCallPostWriteBarrier(OutOfLineCallPostWriteBarrier *ool);
     bool visitCallNative(LCallNative *call);
     bool emitCallInvokeFunction(LInstruction *call, Register callereg,
                                 uint32_t argc, uint32_t unusedStack);
@@ -141,7 +145,16 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool visitLoadFixedSlotT(LLoadFixedSlotT *ins);
     bool visitStoreFixedSlotV(LStoreFixedSlotV *ins);
     bool visitStoreFixedSlotT(LStoreFixedSlotT *ins);
+    bool emitGetPropertyPolymorphic(LInstruction *lir, Register obj,
+                                    Register scratch, const TypedOrValueRegister &output);
+    bool visitGetPropertyPolymorphicV(LGetPropertyPolymorphicV *ins);
+    bool visitGetPropertyPolymorphicT(LGetPropertyPolymorphicT *ins);
+    bool emitSetPropertyPolymorphic(LInstruction *lir, Register obj,
+                                    Register scratch, const ConstantOrRegister &value);
+    bool visitSetPropertyPolymorphicV(LSetPropertyPolymorphicV *ins);
+    bool visitSetPropertyPolymorphicT(LSetPropertyPolymorphicT *ins);
     bool visitAbsI(LAbsI *lir);
+    bool visitAtan2D(LAtan2D *lir);
     bool visitPowI(LPowI *lir);
     bool visitPowD(LPowD *lir);
     bool visitRandom(LRandom *lir);
@@ -203,11 +216,17 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool visitIteratorEnd(LIteratorEnd *lir);
     bool visitArgumentsLength(LArgumentsLength *lir);
     bool visitGetArgument(LGetArgument *lir);
+    bool visitRunOncePrologue(LRunOncePrologue *lir);
+    bool emitRest(LInstruction *lir, Register array, Register numActuals,
+                  Register temp0, Register temp1, unsigned numFormals,
+                  JSObject *templateObject, const VMFunction &f);
+    bool visitRest(LRest *lir);
+    bool visitParRest(LParRest *lir);
     bool visitCallSetProperty(LCallSetProperty *ins);
     bool visitCallDeleteProperty(LCallDeleteProperty *lir);
     bool visitBitNotV(LBitNotV *lir);
     bool visitBitOpV(LBitOpV *lir);
-    bool emitInstanceOf(LInstruction *ins, RawObject prototypeObject);
+    bool emitInstanceOf(LInstruction *ins, JSObject *prototypeObject);
     bool visitIn(LIn *ins);
     bool visitInArray(LInArray *ins);
     bool visitInstanceOfO(LInstanceOfO *ins);
@@ -240,6 +259,9 @@ class CodeGenerator : public CodeGeneratorSpecific
 
     bool visitOutOfLineParNewGCThing(OutOfLineParNewGCThing *ool);
     bool visitOutOfLineParallelAbort(OutOfLineParallelAbort *ool);
+    bool visitOutOfLinePropagateParallelAbort(OutOfLinePropagateParallelAbort *ool);
+    void loadJSScriptForBlock(MBasicBlock *block, Register reg);
+    void loadOutermostJSScript(Register reg);
 
     // Inline caches visitors.
     bool visitOutOfLineCache(OutOfLineUpdateCache *ool);
@@ -248,6 +270,8 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool visitGetPropertyCacheT(LGetPropertyCacheT *ins);
     bool visitGetElementCacheV(LGetElementCacheV *ins);
     bool visitGetElementCacheT(LGetElementCacheT *ins);
+    bool visitSetElementCacheV(LSetElementCacheV *ins);
+    bool visitSetElementCacheT(LSetElementCacheT *ins);
     bool visitBindNameCache(LBindNameCache *ins);
     bool visitCallSetProperty(LInstruction *ins);
     bool visitSetPropertyCacheV(LSetPropertyCacheV *ins);
@@ -259,6 +283,7 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool visitParallelGetPropertyIC(OutOfLineUpdateCache *ool, ParallelGetPropertyIC *ic);
     bool visitSetPropertyIC(OutOfLineUpdateCache *ool, SetPropertyIC *ic);
     bool visitGetElementIC(OutOfLineUpdateCache *ool, GetElementIC *ic);
+    bool visitSetElementIC(OutOfLineUpdateCache *ool, SetElementIC *ic);
     bool visitBindNameIC(OutOfLineUpdateCache *ool, BindNameIC *ic);
     bool visitNameIC(OutOfLineUpdateCache *ool, NameIC *ic);
     bool visitCallsiteCloneIC(OutOfLineUpdateCache *ool, CallsiteCloneIC *ic);
@@ -273,17 +298,19 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool addGetPropertyCache(LInstruction *ins, RegisterSet liveRegs, Register objReg,
                              PropertyName *name, TypedOrValueRegister output,
                              bool allowGetters);
+    bool checkForParallelBailout(LInstruction *lir);
 
-    bool checkForParallelBailout();
     bool generateBranchV(const ValueOperand &value, Label *ifTrue, Label *ifFalse, FloatRegister fr);
 
-    bool emitParAllocateGCThing(const Register &objReg,
+    bool emitParAllocateGCThing(LInstruction *lir,
+                                const Register &objReg,
                                 const Register &threadContextReg,
                                 const Register &tempReg1,
                                 const Register &tempReg2,
                                 JSObject *templateObj);
 
-    bool emitParCallToUncompiledScript(Register calleeReg);
+    bool emitParCallToUncompiledScript(LInstruction *lir,
+                                       Register calleeReg);
 
     void emitLambdaInit(const Register &resultReg,
                         const Register &scopeChainReg,
@@ -313,6 +340,8 @@ class CodeGenerator : public CodeGeneratorSpecific
 
     // Script counts created when compiling code with no associated JSScript.
     IonScriptCounts *unassociatedScriptCounts_;
+
+    PerfSpewer perfSpewer_;
 };
 
 } // namespace ion

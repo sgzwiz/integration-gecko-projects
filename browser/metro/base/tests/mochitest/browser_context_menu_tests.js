@@ -50,6 +50,8 @@ gTests.push({
     let span = win.document.getElementById("text1");
     win.getSelection().selectAllChildren(span);
 
+    yield waitForMs(0);
+
     // invoke selection context menu
     let promise = waitForEvent(document, "popupshown");
     sendContextMenuClickToElement(win, span, 85, 10);
@@ -283,6 +285,7 @@ gTests.push({
     // context in empty input, no data on clipboard (??)
 
     emptyClipboard();
+    ContextUI.dismiss();
 
     input = win.document.getElementById("text3-input");
     input.value = "";
@@ -297,7 +300,7 @@ gTests.push({
     // the test above will invoke the app bar
     yield hideContextUI();
 
-    Browser.closeTab(Browser.selectedTab);
+    Browser.closeTab(Browser.selectedTab, { forceClose: true });
     purgeEventQueue();
   }
 });
@@ -345,7 +348,7 @@ gTests.push({
     ContextMenuUI.hide();
     yield promise;
 
-    Browser.closeTab(Browser.selectedTab);
+    Browser.closeTab(Browser.selectedTab, { forceClose: true });
   }
 });
 
@@ -492,8 +495,7 @@ gTests.push({
     let imagetab = Browser.getTabFromChrome(event.originalTarget);
     ok(imagetab != null, "tab created");
 
-    Browser.closeTab(imagetab);
-    yield waitForEvent(imagetab.chromeTab.parentNode, "TabRemove");
+    Browser.closeTab(imagetab, { forceClose: true });
   }
 });
 

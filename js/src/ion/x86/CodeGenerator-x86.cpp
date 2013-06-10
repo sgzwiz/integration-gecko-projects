@@ -21,6 +21,8 @@ using namespace js;
 using namespace js::ion;
 
 using mozilla::DebugOnly;
+using mozilla::DoubleExponentBias;
+using mozilla::DoubleExponentShift;
 
 CodeGeneratorX86::CodeGeneratorX86(MIRGenerator *gen, LIRGraph *graph, MacroAssembler *masm)
   : CodeGeneratorX86Shared(gen, graph, masm)
@@ -503,8 +505,10 @@ CodeGeneratorX86::visitOutOfLineLoadTypedArrayOutOfBounds(OutOfLineLoadTypedArra
 {
     if (ool->dest().isFloat())
         masm.movsd(&js_NaN, ool->dest().fpu());
-    else
-        masm.movl(Imm32(0), ool->dest().gpr());
+    else {
+        Register destReg = ool->dest().gpr();
+        masm.xorl(destReg, destReg);
+    }
     masm.jmp(ool->rejoin());
     return true;
 }
@@ -715,8 +719,8 @@ CodeGeneratorX86::visitOutOfLineTruncate(OutOfLineTruncate *ool)
         masm.movsd(input, Operand(esp, 0));
 
         static const uint32_t EXPONENT_MASK = 0x7ff00000;
-        static const uint32_t EXPONENT_SHIFT = MOZ_DOUBLE_EXPONENT_SHIFT - 32;
-        static const uint32_t TOO_BIG_EXPONENT = (MOZ_DOUBLE_EXPONENT_BIAS + 63) << EXPONENT_SHIFT;
+        static const uint32_t EXPONENT_SHIFT = DoubleExponentShift - 32;
+        static const uint32_t TOO_BIG_EXPONENT = (DoubleExponentBias + 63) << EXPONENT_SHIFT;
 
         // Check exponent to avoid fp exceptions.
         Label failPopDouble;

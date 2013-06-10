@@ -17,7 +17,6 @@
 #include "nsVariant.h"
 #include "nsIDOMBeforeUnloadEvent.h"
 #include "nsGkAtoms.h"
-#include "nsIJSContextStack.h"
 #include "xpcpublic.h"
 #include "nsJSEnvironment.h"
 #include "nsDOMJSUtils.h"
@@ -67,7 +66,7 @@ nsJSEventListener::~nsJSEventListener()
 
 /* virtual */
 void
-nsJSEventListener::UpdateScopeObject(JSObject* aScopeObject)
+nsJSEventListener::UpdateScopeObject(JS::Handle<JSObject*> aScopeObject)
 {
   if (mScopeObject && !aScopeObject) {
     mScopeObject = nullptr;

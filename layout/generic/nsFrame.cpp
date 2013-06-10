@@ -205,13 +205,13 @@ nsFrame::GetLogModuleInfo()
 }
 
 void
-nsFrame::DumpFrameTree(nsIFrame* aFrame)
+nsIFrame::DumpFrameTree(nsIFrame* aFrame)
 {
     RootFrameList(aFrame->PresContext(), stdout, 0);
 }
 
 void
-nsFrame::RootFrameList(nsPresContext* aPresContext, FILE* out, int32_t aIndent)
+nsIFrame::RootFrameList(nsPresContext* aPresContext, FILE* out, int32_t aIndent)
 {
   if (!aPresContext || !out)
     return;
@@ -692,22 +692,6 @@ nsFrame::GetOffsets(int32_t &aStart, int32_t &aEnd) const
   return NS_OK;
 }
 
-static bool
-EqualImages(imgIRequest *aOldImage, imgIRequest *aNewImage)
-{
-  if (aOldImage == aNewImage)
-    return true;
-
-  if (!aOldImage || !aNewImage)
-    return false;
-
-  nsCOMPtr<nsIURI> oldURI, newURI;
-  aOldImage->GetURI(getter_AddRefs(oldURI));
-  aNewImage->GetURI(getter_AddRefs(newURI));
-  bool equal;
-  return NS_SUCCEEDED(oldURI->Equals(newURI, &equal)) && equal;
-}
-
 // Subclass hook for style post processing
 /* virtual */ void
 nsFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
@@ -730,7 +714,7 @@ nsFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
     NS_FOR_VISIBLE_BACKGROUND_LAYERS_BACK_TO_FRONT(i, oldBG) {
       // If there is an image in oldBG that's not in newBG, drop it.
       if (i >= newBG->mImageCount ||
-          oldBG->mLayers[i].mImage != newBG->mLayers[i].mImage) {
+          !oldBG->mLayers[i].mImage.ImageDataEquals(newBG->mLayers[i].mImage)) {
         const nsStyleImage& oldImage = oldBG->mLayers[i].mImage;
         if (oldImage.GetType() != eStyleImageType_Image) {
           continue;
@@ -745,7 +729,7 @@ nsFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
   NS_FOR_VISIBLE_BACKGROUND_LAYERS_BACK_TO_FRONT(i, newBG) {
     // If there is an image in newBG that's not in oldBG, add it.
     if (!oldBG || i >= oldBG->mImageCount ||
-        newBG->mLayers[i].mImage != oldBG->mLayers[i].mImage) {
+        !newBG->mLayers[i].mImage.ImageDataEquals(oldBG->mLayers[i].mImage)) {
       const nsStyleImage& newImage = newBG->mLayers[i].mImage;
       if (newImage.GetType() != eStyleImageType_Image) {
         continue;
@@ -809,7 +793,7 @@ nsFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
   // is loaded) and paint.  We also don't really care about any callers
   // who try to paint borders with a different style context, because
   // they won't have the correct size for the border either.
-  if (!EqualImages(oldBorderImage, newBorderImage)) {
+  if (oldBorderImage != newBorderImage) {
     // stop and restart the image loading/notification
     if (oldBorderImage) {
       imageLoader->DisassociateRequestFromFrame(oldBorderImage, this);
@@ -3836,7 +3820,6 @@ nsFrame::ComputeSize(nsRenderingContext *aRenderingContext,
   bool isFlexItem = IsFlexItem();
   bool isHorizontalFlexItem = false;
  
-#ifdef MOZ_FLEXBOX
   if (isFlexItem) {
     // Flex items use their "flex-basis" property in place of their main-size
     // property (e.g. "width") for sizing purposes, *unless* they have
@@ -3868,7 +3851,6 @@ nsFrame::ComputeSize(nsRenderingContext *aRenderingContext,
       }
     }
   }
-#endif // MOZ_FLEXBOX
 
   // Compute width
 
@@ -4863,7 +4845,7 @@ nsIFrame::TryUpdateTransformOnly()
   // non-translation change, bail and schedule an invalidating paint.
   // (We can often do better than this, for example for scale-down
   // changes.)
- static const gfx::Float kError = 0.0001;
+ static const gfx::Float kError = 0.0001f;
   if (!transform3d.Is2D(&transform) ||
       !layer->GetBaseTransform().Is2D(&previousTransform) ||
       !gfx::FuzzyEqual(transform.xx, previousTransform.xx, kError) ||
@@ -4945,24 +4927,6 @@ nsIFrame::InvalidateLayer(uint32_t aDisplayItemKey, const nsIntRect* aDamageRect
 
   SchedulePaint(PAINT_COMPOSITE_ONLY);
   return layer;
-}
-
-NS_DECLARE_FRAME_PROPERTY(DeferInvalidatesProperty, nsIFrame::DestroyRegion)
-
-void
-nsIFrame::BeginDeferringInvalidatesForDisplayRoot(const nsRegion& aExcludeRegion)
-{
-  NS_ASSERTION(nsLayoutUtils::GetDisplayRootFrame(this) == this,
-               "Can only call this on display roots");
-  Properties().Set(DeferInvalidatesProperty(), new nsRegion(aExcludeRegion));
-}
-
-void
-nsIFrame::EndDeferringInvalidatesForDisplayRoot()
-{
-  NS_ASSERTION(nsLayoutUtils::GetDisplayRootFrame(this) == this,
-               "Can only call this on display roots");
-  Properties().Delete(DeferInvalidatesProperty());
 }
 
 /**
@@ -5277,42 +5241,82 @@ DebugListFrameTree(nsIFrame* aFrame)
 
 
 // Debugging
-NS_IMETHODIMP
-nsFrame::List(FILE* out, int32_t aIndent, uint32_t aFlags) const
+void
+nsIFrame::ListGeneric(FILE* out, int32_t aIndent, uint32_t aFlags) const
 {
   IndentBy(out, aIndent);
   ListTag(out);
-#ifdef DEBUG_waterson
-  fprintf(out, " [parent=%p]", static_cast<void*>(mParent));
-#endif
   if (HasView()) {
     fprintf(out, " [view=%p]", static_cast<void*>(GetView()));
   }
+  if (GetNextSibling()) {
+    fprintf(out, " next=%p", static_cast<void*>(GetNextSibling()));
+  }
+  if (GetPrevContinuation()) {
+    bool fluid = GetPrevInFlow() == GetPrevContinuation();
+    fprintf(out, " prev-%s=%p", fluid?"in-flow":"continuation",
+            static_cast<void*>(GetPrevContinuation()));
+  }
+  if (GetNextContinuation()) {
+    bool fluid = GetNextInFlow() == GetNextContinuation();
+    fprintf(out, " next-%s=%p", fluid?"in-flow":"continuation",
+            static_cast<void*>(GetNextContinuation()));
+  }
+  void* IBsibling = Properties().Get(IBSplitSpecialSibling());
+  if (IBsibling) {
+    fprintf(out, " IBSplitSpecialSibling=%p", IBsibling);
+  }
+  void* IBprevsibling = Properties().Get(IBSplitSpecialPrevSibling());
+  if (IBprevsibling) {
+    fprintf(out, " IBSplitSpecialPrevSibling=%p", IBprevsibling);
+  }
   fprintf(out, " {%d,%d,%d,%d}", mRect.x, mRect.y, mRect.width, mRect.height);
+  nsIFrame* f = const_cast<nsIFrame*>(this);
+  if (f->HasOverflowAreas()) {
+    nsRect vo = f->GetVisualOverflowRect();
+    if (!vo.IsEqualEdges(mRect)) {
+      fprintf(out, " vis-overflow=%d,%d,%d,%d", vo.x, vo.y, vo.width, vo.height);
+    }
+    nsRect so = f->GetScrollableOverflowRect();
+    if (!so.IsEqualEdges(mRect)) {
+      fprintf(out, " scr-overflow=%d,%d,%d,%d", so.x, so.y, so.width, so.height);
+    }
+  }
   if (0 != mState) {
     fprintf(out, " [state=%016llx]", (unsigned long long)mState);
   }
-  nsIFrame* prevInFlow = GetPrevInFlow();
-  nsIFrame* nextInFlow = GetNextInFlow();
-  if (nullptr != prevInFlow) {
-    fprintf(out, " prev-in-flow=%p", static_cast<void*>(prevInFlow));
+  if (IsTransformed()) {
+    fprintf(out, " transformed");
   }
-  if (nullptr != nextInFlow) {
-    fprintf(out, " next-in-flow=%p", static_cast<void*>(nextInFlow));
+  if (ChildrenHavePerspective()) {
+    fprintf(out, " perspective");
   }
-  fprintf(out, " [content=%p]", static_cast<void*>(mContent));
-  nsFrame* f = const_cast<nsFrame*>(this);
-  if (f->HasOverflowAreas()) {
-    nsRect overflowArea = f->GetVisualOverflowRect();
-    fprintf(out, " [vis-overflow=%d,%d,%d,%d]", overflowArea.x, overflowArea.y,
-            overflowArea.width, overflowArea.height);
-    overflowArea = f->GetScrollableOverflowRect();
-    fprintf(out, " [scr-overflow=%d,%d,%d,%d]", overflowArea.x, overflowArea.y,
-            overflowArea.width, overflowArea.height);
+  if (Preserves3DChildren()) {
+    fprintf(out, " preserves-3d-children");
   }
-  fprintf(out, " [sc=%p]", static_cast<void*>(mStyleContext));
+  if (Preserves3D()) {
+    fprintf(out, " preserves-3d");
+  }
+  if (mContent) {
+    fprintf(out, " [content=%p]", static_cast<void*>(mContent));
+  }
+  fprintf(out, " [sc=%p", static_cast<void*>(mStyleContext));
+  if (mStyleContext) {
+    nsIAtom* pseudoTag = mStyleContext->GetPseudo();
+    if (pseudoTag) {
+      nsAutoString atomString;
+      pseudoTag->ToString(atomString);
+      fprintf(out, "%s", NS_LossyConvertUTF16toASCII(atomString).get());
+    }
+  }
+  fputs("]", out);
+}
+
+void
+nsIFrame::List(FILE* out, int32_t aIndent, uint32_t aFlags) const
+{
+  ListGeneric(out, aIndent, aFlags);
   fputs("\n", out);
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -7267,13 +7271,6 @@ nsFrame::GetFirstLeaf(nsPresContext* aPresContext, nsIFrame **aFrame)
       return;//nothing to do
     *aFrame = child;
   }
-}
-
-/* virtual */ const void*
-nsFrame::StyleDataExternal(nsStyleStructID aSID) const
-{
-  NS_ASSERTION(mStyleContext, "unexpected null pointer");
-  return mStyleContext->StyleData(aSID);
 }
 
 /* virtual */ bool

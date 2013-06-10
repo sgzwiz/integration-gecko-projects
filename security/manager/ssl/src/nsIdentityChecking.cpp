@@ -4,12 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "CertVerifier.h"
 #include "nsNSSCertificate.h"
 #include "nsNSSComponent.h"
-#include "nsSSLStatus.h"
-
-#ifndef NSS_NO_LIBPKIX
-
 #include "mozilla/RefPtr.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsStreamUtils.h"
@@ -126,18 +123,6 @@ static struct nsMyTrustedEVInfo myTrustedEVInfos[] = {
     "dW50cnVzdHdvcnRoeSkgQ0ExEzARBgNVBCkTCmV2LXRlc3QtY2ExLDAqBgkqhkiG"
     "9w0BCQEWHWNoYXJsYXRhbkB0ZXN0aW5nLmV4YW1wbGUuY29t",
     "AK/FPSJmJkky",
-    nullptr
-  },
-  {
-    // CN=WellsSecure Public Root Certificate Authority,OU=Wells Fargo Bank NA,O=Wells Fargo WellsSecure,C=US
-    "2.16.840.1.114171.500.9",
-    "WellsSecure EV OID",
-    SEC_OID_UNKNOWN,
-    "E7:B4:F6:9D:61:EC:90:69:DB:7E:90:A7:40:1A:3C:F4:7D:4F:E8:EE",
-    "MIGFMQswCQYDVQQGEwJVUzEgMB4GA1UECgwXV2VsbHMgRmFyZ28gV2VsbHNTZWN1"
-    "cmUxHDAaBgNVBAsME1dlbGxzIEZhcmdvIEJhbmsgTkExNjA0BgNVBAMMLVdlbGxz"
-    "U2VjdXJlIFB1YmxpYyBSb290IENlcnRpZmljYXRlIEF1dGhvcml0eQ==",
-    "AQ==",
     nullptr
   },
   {
@@ -661,6 +646,18 @@ static struct nsMyTrustedEVInfo myTrustedEVInfos[] = {
     nullptr
   },
   {
+    // CN=T-TeleSec GlobalRoot Class 3,OU=T-Systems Trust Center,O=T-Systems Enterprise Services GmbH,C=DE
+    "1.3.6.1.4.1.7879.13.24.1",
+    "T-Systems EV OID",
+    SEC_OID_UNKNOWN,
+    "55:A6:72:3E:CB:F2:EC:CD:C3:23:74:70:19:9D:2A:BE:11:E3:81:D1",
+    "MIGCMQswCQYDVQQGEwJERTErMCkGA1UECgwiVC1TeXN0ZW1zIEVudGVycHJpc2Ug"
+    "U2VydmljZXMgR21iSDEfMB0GA1UECwwWVC1TeXN0ZW1zIFRydXN0IENlbnRlcjEl"
+    "MCMGA1UEAwwcVC1UZWxlU2VjIEdsb2JhbFJvb3QgQ2xhc3MgMw==",
+    "AQ==",
+    nullptr
+  },
+  {
     // OU=Sample Certification Authority,O=\"Sample, Inc.\",C=US
     "0.0.0.0",
     0, // for real entries use a string like "Sample INVALID EV OID"
@@ -1017,7 +1014,9 @@ isEVPolicy(SECOidTag policyOIDTag)
   return false;
 }
 
-static CERTCertList*
+namespace mozilla { namespace psm {
+
+CERTCertList*
 getRootsForOid(SECOidTag oid_tag)
 {
   CERTCertList *certList = CERT_NewCertList();
@@ -1037,6 +1036,8 @@ getRootsForOid(SECOidTag oid_tag)
 #endif
   return certList;
 }
+
+} } // namespace mozilla::psm
 
 static bool 
 isApprovedForEV(SECOidTag policyOIDTag, CERTCertificate *rootCert)
@@ -1131,8 +1132,9 @@ nsNSSComponent::IdentityInfoInit()
   return PR_SUCCESS;
 }
 
+namespace mozilla { namespace psm {
 // Find the first policy OID that is known to be an EV policy OID.
-static SECStatus getFirstEVPolicy(CERTCertificate *cert, SECOidTag &outOidTag)
+SECStatus getFirstEVPolicy(CERTCertificate *cert, SECOidTag &outOidTag)
 {
   if (!cert)
     return SECFailure;
@@ -1177,7 +1179,7 @@ static SECStatus getFirstEVPolicy(CERTCertificate *cert, SECOidTag &outOidTag)
   return SECFailure;
 }
 
-#endif
+} } // namespace mozilla::psm
 
 NS_IMETHODIMP
 nsSSLStatus::GetIsExtendedValidation(bool* aIsEV)
@@ -1227,101 +1229,23 @@ nsNSSCertificate::hasValidEVOidTag(SECOidTag &resultOidTag, bool &validEV)
     return nrv;
   nssComponent->EnsureIdentityInfoLoaded();
 
-  RefPtr<nsCERTValInParamWrapper> certVal;
-  nrv = nssComponent->GetDefaultCERTValInParam(certVal);
-  NS_ENSURE_SUCCESS(nrv, nrv);
+  RefPtr<mozilla::psm::CertVerifier> certVerifier(mozilla::psm::GetDefaultCertVerifier());
+  NS_ENSURE_TRUE(certVerifier, NS_ERROR_UNEXPECTED);
 
   validEV = false;
   resultOidTag = SEC_OID_UNKNOWN;
 
-  SECOidTag oid_tag;
-  SECStatus rv = getFirstEVPolicy(mCert, oid_tag);
-  if (rv != SECSuccess)
-    return NS_OK;
+  SECStatus rv = certVerifier->VerifyCert(mCert,
+                                          certificateUsageSSLServer, PR_Now(),
+                                          nullptr /* XXX pinarg*/,
+                                          0, nullptr, &resultOidTag);
 
-  if (oid_tag == SEC_OID_UNKNOWN) // not in our list of OIDs accepted for EV
-    return NS_OK;
-
-  ScopedCERTCertList rootList(getRootsForOid(oid_tag));
-
-  CERTRevocationMethodIndex preferedRevMethods[1] = { 
-    cert_revocation_method_ocsp
-  };
-
-  uint64_t revMethodFlags = 
-    CERT_REV_M_TEST_USING_THIS_METHOD
-    | (certVal->IsOCSPDownloadEnabled() ? CERT_REV_M_ALLOW_NETWORK_FETCHING
-                                        : CERT_REV_M_FORBID_NETWORK_FETCHING)
-    | CERT_REV_M_ALLOW_IMPLICIT_DEFAULT_SOURCE
-    | CERT_REV_M_REQUIRE_INFO_ON_MISSING_SOURCE
-    | CERT_REV_M_IGNORE_MISSING_FRESH_INFO
-    | CERT_REV_M_STOP_TESTING_ON_FRESH_INFO;
-
-  uint64_t revMethodIndependentFlags = 
-    CERT_REV_MI_TEST_ALL_LOCAL_INFORMATION_FIRST
-    | CERT_REV_MI_REQUIRE_SOME_FRESH_INFO_AVAILABLE;
-
-  uint64_t methodFlags[2];
-  methodFlags[cert_revocation_method_crl] = revMethodFlags;
-  methodFlags[cert_revocation_method_ocsp] = revMethodFlags;
-
-  CERTRevocationFlags rev;
-
-  rev.leafTests.number_of_defined_methods = cert_revocation_method_ocsp +1;
-  rev.leafTests.cert_rev_flags_per_method = methodFlags;
-  rev.leafTests.number_of_preferred_methods = 1;
-  rev.leafTests.preferred_methods = preferedRevMethods;
-  rev.leafTests.cert_rev_method_independent_flags =
-    revMethodIndependentFlags;
-
-  rev.chainTests.number_of_defined_methods = cert_revocation_method_ocsp +1;
-  rev.chainTests.cert_rev_flags_per_method = methodFlags;
-  rev.chainTests.number_of_preferred_methods = 1;
-  rev.chainTests.preferred_methods = preferedRevMethods;
-  rev.chainTests.cert_rev_method_independent_flags =
-    revMethodIndependentFlags;
-
-  CERTValInParam cvin[4];
-  cvin[0].type = cert_pi_policyOID;
-  cvin[0].value.arraySize = 1; 
-  cvin[0].value.array.oids = &oid_tag;
-
-  cvin[1].type = cert_pi_revocationFlags;
-  cvin[1].value.pointer.revocation = &rev;
-
-  cvin[2].type = cert_pi_trustAnchors;
-  cvin[2].value.pointer.chain = rootList;
-
-  cvin[3].type = cert_pi_end;
-
-  CERTValOutParam cvout[2];
-  cvout[0].type = cert_po_trustAnchor;
-  cvout[0].value.pointer.cert = nullptr;
-  cvout[1].type = cert_po_end;
-
-  PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("calling CERT_PKIXVerifyCert nss cert %p\n", mCert.get()));
-  rv = CERT_PKIXVerifyCert(mCert, certificateUsageSSLServer,
-                           cvin, cvout, nullptr);
-  if (rv != SECSuccess)
-    return NS_OK;
-
-  ScopedCERTCertificate issuerCert(cvout[0].value.pointer.cert);
-
-#ifdef PR_LOGGING
-  if (PR_LOG_TEST(gPIPNSSLog, PR_LOG_DEBUG)) {
-    nsNSSCertificate ic(issuerCert);
-    nsAutoString fingerprint;
-    ic.GetSha1Fingerprint(fingerprint);
-    NS_LossyConvertUTF16toASCII fpa(fingerprint);
-    PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("CERT_PKIXVerifyCert returned success, issuer: %s, SHA1: %s\n", 
-      issuerCert->subjectName, fpa.get()));
+  if (rv != SECSuccess) {
+    resultOidTag = SEC_OID_UNKNOWN;
   }
-#endif
-
-  validEV = isApprovedForEV(oid_tag, issuerCert);
-  if (validEV)
-    resultOidTag = oid_tag;
- 
+  if (resultOidTag != SEC_OID_UNKNOWN) {
+    validEV = true;
+  }
   return NS_OK;
 }
 

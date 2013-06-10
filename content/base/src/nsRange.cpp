@@ -662,6 +662,11 @@ nsRange::ContentRemoved(nsIDocument* aDocument,
     gravitateEnd = true;
   }
 
+  if (!mEnableGravitationOnElementRemoval) {
+    // Do not gravitate.
+    return;
+  }
+
   if (gravitateStart || gravitateEnd) {
     DoSetRange(gravitateStart ? container : mStartParent.get(),
                gravitateStart ? aIndexInContainer : mStartOffset,
@@ -3076,4 +3081,16 @@ nsRange::AutoInvalidateSelection::~AutoInvalidateSelection()
   if (commonAncestor != mCommonAncestor) {
     ::InvalidateAllFrames(commonAncestor);
   }
+}
+
+/* static */ already_AddRefed<nsRange>
+nsRange::Constructor(const dom::GlobalObject& aGlobal, ErrorResult& aRv)
+{
+  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aGlobal.Get());
+  if (!window || !window->GetDoc()) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return nullptr;
+  }
+
+  return window->GetDoc()->CreateRange(aRv);
 }

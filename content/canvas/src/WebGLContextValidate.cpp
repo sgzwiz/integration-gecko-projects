@@ -65,6 +65,18 @@ WebGLProgram::UpdateInfo()
         }
     }
 
+    if (!mUniformInfoMap) {
+        mUniformInfoMap = new CStringToUniformInfoMap;
+        mUniformInfoMap->Init();
+        for (size_t i = 0; i < mAttachedShaders.Length(); i++) {
+            for (size_t j = 0; j < mAttachedShaders[i]->mUniforms.Length(); j++) {
+	        const WebGLMappedIdentifier& uniform = mAttachedShaders[i]->mUniforms[j];
+	        const WebGLUniformInfo& info = mAttachedShaders[i]->mUniformInfos[j];
+	        mUniformInfoMap->Put(uniform.mapped, info);
+            }
+        }
+    }
+
     return true;
 }
 
@@ -877,6 +889,10 @@ WebGLContext::InitAndValidateGL()
     mDisableExtensions = Preferences::GetBool("webgl.disable-extensions", false);
     mLoseContextOnHeapMinimize = Preferences::GetBool("webgl.lose-context-on-heap-minimize", false);
     mCanLoseContextInForeground = Preferences::GetBool("webgl.can-lose-context-in-foreground", true);
+
+    if (MinCapabilityMode()) {
+      mDisableFragHighP = true;
+    }
 
     mActiveTexture = 0;
     mWebGLError = LOCAL_GL_NO_ERROR;

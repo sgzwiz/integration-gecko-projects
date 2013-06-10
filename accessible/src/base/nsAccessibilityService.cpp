@@ -287,11 +287,10 @@ nsAccessibilityService::CreatePluginAccessible(nsObjectFrame* aFrame,
     HWND pluginPort = nullptr;
     aFrame->GetPluginPort(&pluginPort);
 
-    Accessible* accessible =
+    nsRefPtr<Accessible> accessible =
       new HTMLWin32ObjectOwnerAccessible(aContent, aContext->Document(),
                                          pluginPort);
-    NS_ADDREF(accessible);
-    return accessible;
+    return accessible.forget();
 
 #elif MOZ_ACCESSIBILITY_ATK
     if (!AtkSocketAccessible::gCanEmbed)
@@ -421,6 +420,20 @@ nsAccessibilityService::TreeViewChanged(nsIPresShell* aPresShell,
       XULTreeAccessible* treeAcc = accessible->AsXULTree();
       if (treeAcc) 
         treeAcc->TreeViewChanged(aView);
+    }
+  }
+}
+
+void
+nsAccessibilityService::RangeValueChanged(nsIPresShell* aPresShell,
+                                          nsIContent* aContent)
+{
+  DocAccessible* document = GetDocAccessible(aPresShell);
+  if (document) {
+    Accessible* accessible = document->GetAccessible(aContent);
+    if (accessible) {
+      document->FireDelayedEvent(nsIAccessibleEvent::EVENT_VALUE_CHANGE,
+                                 accessible);
     }
   }
 }
@@ -1508,6 +1521,9 @@ nsAccessibilityService::CreateAccessibleByFrameType(nsIFrame* aFrame,
       break;
     case eHTMLRadioButtonType:
       newAcc = new HTMLRadioButtonAccessible(aContent, document);
+      break;
+    case eHTMLRangeType:
+      newAcc = new HTMLRangeAccessible(aContent, document);
       break;
     case eHTMLTableType:
       newAcc = new HTMLTableAccessibleWrap(aContent, document);

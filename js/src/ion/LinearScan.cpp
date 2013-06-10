@@ -555,6 +555,13 @@ LinearScanAllocator::populateSafepoints()
                     // add a torn entry.
                     if (!safepoint->addNunboxParts(*typeAlloc, *payloadAlloc))
                         return false;
+
+                    // If the nunbox is stored in multiple places, we need to
+                    // trace all of them to allow the GC to relocate objects.
+                    if (payloadAlloc->isGeneralReg() && isSpilledAt(payloadInterval, inputOf(ins))) {
+                        if (!safepoint->addNunboxParts(*typeAlloc, *payload->canonicalSpill()))
+                            return false;
+                    }
                 }
 #endif
             }
@@ -735,8 +742,12 @@ LinearScanAllocator::allocateSlotFor(const LiveInterval *interval)
     LinearScanVirtualRegister *reg = &vregs[interval->vreg()];
 
     SlotList *freed;
-    if (reg->type() == LDefinition::DOUBLE || IsNunbox(reg))
+    if (reg->type() == LDefinition::DOUBLE)
         freed = &finishedDoubleSlots_;
+#ifdef JS_NUNBOX32
+    else if (IsNunbox(reg))
+        freed = &finishedNunboxSlots_;
+#endif
     else
         freed = &finishedSlots_;
 
@@ -841,7 +852,7 @@ LinearScanAllocator::freeAllocation(LiveInterval *interval, LAllocation *alloc)
         if (!candidate->canonicalSpill()->isStackSlot())
             return;
 
-        finishedDoubleSlots_.append(candidate->lastInterval());
+        finishedNunboxSlots_.append(candidate->lastInterval());
     }
 #endif
 }

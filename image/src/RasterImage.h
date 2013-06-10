@@ -611,6 +611,14 @@ private:
   bool AdvanceFrame(mozilla::TimeStamp aTime, nsIntRect* aDirtyRect);
 
   /**
+   * Gets the length of a single loop of this image, in milliseconds.
+   *
+   * If this image is not finished decoding, is not animated, or it is animated
+   * but does not loop, returns 0.
+   */
+  uint32_t GetSingleLoopTime() const;
+
+  /**
    * Deletes and nulls out the frame in mFrames[framenum].
    *
    * Does not change the size of mFrames.
@@ -712,7 +720,8 @@ private:
   bool IsInUpdateImageContainer() { return mInUpdateImageContainer; }
   enum RequestDecodeType {
       ASYNCHRONOUS,
-      SOMEWHAT_SYNCHRONOUS
+      SYNCHRONOUS_NOTIFY,
+      SYNCHRONOUS_NOTIFY_AND_SOME_DECODE
   };
   NS_IMETHOD RequestDecodeCore(RequestDecodeType aDecodeType);
 

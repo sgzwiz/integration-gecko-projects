@@ -7,6 +7,7 @@
 #ifndef nsXMLHttpRequest_h__
 #define nsXMLHttpRequest_h__
 
+#include "mozilla/Attributes.h"
 #include "nsIXMLHttpRequest.h"
 #include "nsISupportsUtils.h"
 #include "nsString.h"
@@ -171,7 +172,7 @@ public:
   {
     // Pretend like someone passed null, so we can pick up the default values
     mozilla::dom::MozXMLHttpRequestParameters params;
-    if (!params.Init(aCx, JS::NullValue())) {
+    if (!params.Init(aCx, JS::NullHandleValue)) {
       aRv.Throw(NS_ERROR_UNEXPECTED);
       return nullptr;
     }
@@ -473,7 +474,7 @@ public:
   bool AllowUploadProgress();
   void RootJSResultObjects();
 
-  virtual void DisconnectFromOwner();
+  virtual void DisconnectFromOwner() MOZ_OVERRIDE;
 
 protected:
   nsresult DetectCharset();
@@ -662,6 +663,8 @@ protected:
   nsCOMPtr<nsIChannel> mNewRedirectChannel;
   
   JS::Value mResultJSON;
+
+  js::ArrayBufferBuilder mArrayBufferBuilder;
   JSObject* mResultArrayBuffer;
 
   void ResetResponse();
@@ -719,7 +722,7 @@ class nsXHRParseEndListener : public nsIDOMEventListener
 {
 public:
   NS_DECL_ISUPPORTS
-  NS_IMETHOD HandleEvent(nsIDOMEvent *event)
+  NS_IMETHOD HandleEvent(nsIDOMEvent *event) MOZ_OVERRIDE
   {
     nsCOMPtr<nsIXMLHttpRequest> xhr = do_QueryReferent(mXHR);
     if (xhr) {

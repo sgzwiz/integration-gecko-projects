@@ -4,7 +4,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsDOMKeyboardEvent.h"
-#include "nsDOMClassInfoID.h"
 
 nsDOMKeyboardEvent::nsDOMKeyboardEvent(mozilla::dom::EventTarget* aOwner,
                                        nsPresContext* aPresContext,
@@ -35,11 +34,8 @@ nsDOMKeyboardEvent::~nsDOMKeyboardEvent()
 NS_IMPL_ADDREF_INHERITED(nsDOMKeyboardEvent, nsDOMUIEvent)
 NS_IMPL_RELEASE_INHERITED(nsDOMKeyboardEvent, nsDOMUIEvent)
 
-DOMCI_DATA(KeyboardEvent, nsDOMKeyboardEvent)
-
 NS_INTERFACE_MAP_BEGIN(nsDOMKeyboardEvent)
   NS_INTERFACE_MAP_ENTRY(nsIDOMKeyEvent)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(KeyboardEvent)
 NS_INTERFACE_MAP_END_INHERITING(nsDOMUIEvent)
 
 NS_IMETHODIMP
@@ -132,15 +128,6 @@ nsDOMKeyboardEvent::KeyCode()
     return static_cast<nsKeyEvent*>(mEvent)->keyCode;
   }
   return 0;
-}
-
-/* virtual */
-nsresult
-nsDOMKeyboardEvent::Which(uint32_t* aWhich)
-{
-  NS_ENSURE_ARG_POINTER(aWhich);
-  *aWhich = Which();
-  return NS_OK;
 }
 
 uint32_t

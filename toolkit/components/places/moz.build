@@ -13,11 +13,11 @@ XPIDL_SOURCES += [
 
 if CONFIG['MOZ_PLACES']:
     XPIDL_SOURCES += [
-        'mozIAsyncHistory.idl',
         'mozIAsyncFavicons.idl',
+        'mozIAsyncHistory.idl',
         'mozIAsyncLivemarks.idl',
-        'mozIPlacesAutoComplete.idl',
         'mozIColorAnalyzer.idl',
+        'mozIPlacesAutoComplete.idl',
         'nsIAnnotationService.idl',
         'nsIBrowserHistory.idl',
         'nsIFaviconService.idl',
@@ -30,6 +30,25 @@ if CONFIG['MOZ_PLACES']:
     EXPORTS.mozilla.places = [
         'History.h',
         'Database.h',
+    ]
+
+    CPP_SOURCES += [
+        'nsAnnoProtocolHandler.cpp',
+        'nsAnnotationService.cpp',
+        'nsFaviconService.cpp',
+        'nsNavHistory.cpp',
+        'nsNavHistoryQuery.cpp',
+        'nsNavHistoryResult.cpp',
+        'nsNavBookmarks.cpp',
+        'nsMaybeWeakPtr.cpp',
+        'nsPlacesModule.cpp',
+        'SQLFunctions.cpp',
+        'Helpers.cpp',
+        'History.cpp',
+        'AsyncFaviconHelpers.cpp',
+        'PlaceInfo.cpp',
+        'VisitInfo.cpp',
+        'Database.cpp',
     ]
 
 MODULE = 'places'

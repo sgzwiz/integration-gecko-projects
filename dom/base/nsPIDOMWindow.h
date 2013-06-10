@@ -58,8 +58,8 @@ class AudioContext;
 }
 
 #define NS_PIDOMWINDOW_IID \
-{ 0x01decdb6, 0xd8ca, 0x401b, \
-  { 0x8b, 0xd1, 0x85, 0x83, 0x2c, 0xe9, 0x92, 0x0e } }
+{ 0xc7f20d00, 0xed38, 0x4d60, \
+ { 0x90, 0xf6, 0x3e, 0xde, 0x7b, 0x71, 0xc3, 0xb3 } }
 
 class nsPIDOMWindow : public nsIDOMWindowInternal
 {
@@ -603,11 +603,14 @@ public:
   /**
    * Set a arguments for this window. This will be set on the window
    * right away (if there's an existing document) and it will also be
-   * installed on the window when the next document is loaded. Each
-   * language impl is responsible for converting to an array of args
-   * as appropriate for that language.
+   * installed on the window when the next document is loaded.
+   *
+   * This function serves double-duty for passing both |arguments| and
+   * |dialogArguments| back from nsWindowWatcher to nsGlobalWindow. For the
+   * latter, the array is an array of length 0 whose only element is a
+   * DialogArgumentsHolder representing the JS value passed to showModalDialog.
    */
-  virtual nsresult SetArguments(nsIArray *aArguments, nsIPrincipal *aOrigin) = 0;
+  virtual nsresult SetArguments(nsIArray *aArguments) = 0;
 
   /**
    * NOTE! This function *will* be called on multiple threads so the
@@ -642,8 +645,23 @@ public:
 
   void AddAudioContext(mozilla::dom::AudioContext* aAudioContext);
 
+  // Given an inner window, return its outer if the inner is the current inner.
+  // Otherwise (argument null or not an inner or not current) return null.
+  static nsPIDOMWindow* GetOuterFromCurrentInner(nsPIDOMWindow* aInner)
+  {
+    if (!aInner) {
+      return nullptr;
+    }
+
+    nsPIDOMWindow* outer = aInner->GetOuterWindow();
+    if (!outer || outer->GetCurrentInnerWindow() != aInner) {
+      return nullptr;
+    }
+
+    return outer;
+  }
+
   // WebIDL-ish APIs
-  static bool HasPerformanceSupport();
   nsPerformance* GetPerformance();
 
 protected:

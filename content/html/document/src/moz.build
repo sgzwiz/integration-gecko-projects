@@ -10,3 +10,15 @@ EXPORTS += [
     'nsIHTMLDocument.h',
 ]
 
+EXPORTS.mozilla.dom += [
+    'ImageDocument.h',
+]
+
+CPP_SOURCES += [
+    'ImageDocument.cpp',
+    'MediaDocument.cpp',
+    'PluginDocument.cpp',
+    'VideoDocument.cpp',
+    'nsHTMLContentSink.cpp',
+    'nsHTMLDocument.cpp',
+]

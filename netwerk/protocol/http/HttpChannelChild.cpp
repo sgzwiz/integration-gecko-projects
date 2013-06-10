@@ -38,9 +38,10 @@ HttpChannelChild::HttpChannelChild()
   , mSendResumeAt(false)
   , mIPCOpen(false)
   , mKeptAlive(false)
-  , ALLOW_THIS_IN_INITIALIZER_LIST(mEventQ(static_cast<nsIHttpChannel*>(this)))
 {
   LOG(("Creating HttpChannelChild @%x\n", this));
+
+  mEventQ = new ChannelEventQueue(static_cast<nsIHttpChannel*>(this));
 }
 
 HttpChannelChild::~HttpChannelChild()
@@ -107,7 +108,7 @@ NS_INTERFACE_MAP_END_INHERITING(HttpBaseChannel)
 void
 HttpChannelChild::AddIPDLReference()
 {
-  NS_ABORT_IF_FALSE(!mIPCOpen, "Attempt to retain more than one IPDL reference");
+  MOZ_ASSERT(!mIPCOpen, "Attempt to retain more than one IPDL reference");
   mIPCOpen = true;
   AddRef();
 }
@@ -115,7 +116,7 @@ HttpChannelChild::AddIPDLReference()
 void
 HttpChannelChild::ReleaseIPDLReference()
 {
-  NS_ABORT_IF_FALSE(mIPCOpen, "Attempt to release nonexistent IPDL reference");
+  MOZ_ASSERT(mIPCOpen, "Attempt to release nonexistent IPDL reference");
   mIPCOpen = false;
   Release();
 }
@@ -141,8 +142,8 @@ bool
 HttpChannelChild::RecvAssociateApplicationCache(const nsCString &groupID,
                                                 const nsCString &clientID)
 {
-  if (mEventQ.ShouldEnqueue()) {
-    mEventQ.Enqueue(new AssociateApplicationCacheEvent(this, groupID, clientID));
+  if (mEventQ->ShouldEnqueue()) {
+    mEventQ->Enqueue(new AssociateApplicationCacheEvent(this, groupID, clientID));
   } else {
     AssociateApplicationCache(groupID, clientID);
   }
@@ -189,8 +190,8 @@ class StartRequestEvent : public ChannelEvent
   , mPeerAddr(peerAddr)
   {}
 
-  void Run() 
-  { 
+  void Run()
+  {
     mChild->OnStartRequest(mResponseHead, mUseResponseHead, mRequestHeaders,
                            mIsFromCache, mCacheEntryAvailable,
                            mCacheExpirationTime, mCachedCharset,
@@ -210,7 +211,7 @@ class StartRequestEvent : public ChannelEvent
   NetAddr mPeerAddr;
 };
 
-bool 
+bool
 HttpChannelChild::RecvOnStartRequest(const nsHttpResponseHead& responseHead,
                                      const bool& useResponseHead,
                                      const nsHttpHeaderArray& requestHeaders,
@@ -222,8 +223,8 @@ HttpChannelChild::RecvOnStartRequest(const nsHttpResponseHead& responseHead,
                                      const NetAddr& selfAddr,
                                      const NetAddr& peerAddr)
 {
-  if (mEventQ.ShouldEnqueue()) {
-    mEventQ.Enqueue(new StartRequestEvent(this, responseHead, useResponseHead,
+  if (mEventQ->ShouldEnqueue()) {
+    mEventQ->Enqueue(new StartRequestEvent(this, responseHead, useResponseHead,
                                           requestHeaders, isFromCache,
                                           cacheEntryAvailable,
                                           cacheExpirationTime, cachedCharset,
@@ -237,7 +238,7 @@ HttpChannelChild::RecvOnStartRequest(const nsHttpResponseHead& responseHead,
   return true;
 }
 
-void 
+void
 HttpChannelChild::OnStartRequest(const nsHttpResponseHead& responseHead,
                                  const bool& useResponseHead,
                                  const nsHttpHeaderArray& requestHeaders,
@@ -249,13 +250,13 @@ HttpChannelChild::OnStartRequest(const nsHttpResponseHead& responseHead,
                                  const NetAddr& selfAddr,
                                  const NetAddr& peerAddr)
 {
-  LOG(("HttpChannelChild::RecvOnStartRequest [this=%x]\n", this));
+  LOG(("HttpChannelChild::RecvOnStartRequest [this=%p]\n", this));
 
   if (useResponseHead && !mCanceled)
     mResponseHead = new nsHttpResponseHead(responseHead);
 
   if (!securityInfoSerialization.IsEmpty()) {
-    NS_DeserializeObject(securityInfoSerialization, 
+    NS_DeserializeObject(securityInfoSerialization,
                          getter_AddRefs(mSecurityInfo));
   }
 
@@ -331,9 +332,9 @@ HttpChannelChild::RecvOnTransportAndData(const nsresult& status,
                                          const uint64_t& offset,
                                          const uint32_t& count)
 {
-  if (mEventQ.ShouldEnqueue()) {
-    mEventQ.Enqueue(new TransportAndDataEvent(this, status, progress,
-                                              progressMax, data, offset, 
+  if (mEventQ->ShouldEnqueue()) {
+    mEventQ->Enqueue(new TransportAndDataEvent(this, status, progress,
+                                              progressMax, data, offset,
                                               count));
   } else {
     OnTransportAndData(status, progress, progressMax, data, offset, count);
@@ -349,7 +350,7 @@ HttpChannelChild::OnTransportAndData(const nsresult& status,
                                      const uint64_t& offset,
                                      const uint32_t& count)
 {
-  LOG(("HttpChannelChild::OnTransportAndData [this=%x]\n", this));
+  LOG(("HttpChannelChild::OnTransportAndData [this=%p]\n", this));
 
   if (mCanceled)
     return;
@@ -372,9 +373,8 @@ HttpChannelChild::OnTransportAndData(const nsresult& status,
   {
     // OnStatus
     //
-    NS_ASSERTION(status == NS_NET_STATUS_RECEIVING_FROM ||
-                 status == NS_NET_STATUS_READING,
-                 "unexpected status code");
+    MOZ_ASSERT(status == NS_NET_STATUS_RECEIVING_FROM ||
+               status == NS_NET_STATUS_READING);
 
     nsAutoCString host;
     mURI->GetHost(host);
@@ -383,7 +383,7 @@ HttpChannelChild::OnTransportAndData(const nsresult& status,
     // OnProgress
     //
     if (progress > 0) {
-      NS_ASSERTION(progress <= progressMax, "unexpected progress values");
+      MOZ_ASSERT(progress <= progressMax, "unexpected progress values");
       mProgressSink->OnProgress(this, nullptr, progress, progressMax);
     }
   }
@@ -425,21 +425,21 @@ class StopRequestEvent : public ChannelEvent
   nsresult mStatusCode;
 };
 
-bool 
+bool
 HttpChannelChild::RecvOnStopRequest(const nsresult& statusCode)
 {
-  if (mEventQ.ShouldEnqueue()) {
-    mEventQ.Enqueue(new StopRequestEvent(this, statusCode));
+  if (mEventQ->ShouldEnqueue()) {
+    mEventQ->Enqueue(new StopRequestEvent(this, statusCode));
   } else {
     OnStopRequest(statusCode);
   }
   return true;
 }
 
-void 
+void
 HttpChannelChild::OnStopRequest(const nsresult& statusCode)
 {
-  LOG(("HttpChannelChild::OnStopRequest [this=%x status=%u]\n", 
+  LOG(("HttpChannelChild::OnStopRequest [this=%p status=%x]\n",
            this, statusCode));
 
   mIsPending = false;
@@ -492,8 +492,8 @@ bool
 HttpChannelChild::RecvOnProgress(const uint64_t& progress,
                                  const uint64_t& progressMax)
 {
-  if (mEventQ.ShouldEnqueue())  {
-    mEventQ.Enqueue(new ProgressEvent(this, progress, progressMax));
+  if (mEventQ->ShouldEnqueue())  {
+    mEventQ->Enqueue(new ProgressEvent(this, progress, progressMax));
   } else {
     OnProgress(progress, progressMax);
   }
@@ -518,11 +518,11 @@ HttpChannelChild::OnProgress(const uint64_t& progress,
 
   // block socket status event after Cancel or OnStopRequest has been called,
   // or if channel has LOAD_BACKGROUND set
-  if (mProgressSink && NS_SUCCEEDED(mStatus) && mIsPending && 
-      !(mLoadFlags & LOAD_BACKGROUND)) 
+  if (mProgressSink && NS_SUCCEEDED(mStatus) && mIsPending &&
+      !(mLoadFlags & LOAD_BACKGROUND))
   {
     if (progress > 0) {
-      NS_ASSERTION(progress <= progressMax, "unexpected progress values");
+      MOZ_ASSERT(progress <= progressMax, "unexpected progress values");
       mProgressSink->OnProgress(this, nullptr, progress, progressMax);
     }
   }
@@ -545,8 +545,8 @@ class StatusEvent : public ChannelEvent
 bool
 HttpChannelChild::RecvOnStatus(const nsresult& status)
 {
-  if (mEventQ.ShouldEnqueue()) {
-    mEventQ.Enqueue(new StatusEvent(this, status));
+  if (mEventQ->ShouldEnqueue()) {
+    mEventQ->Enqueue(new StatusEvent(this, status));
   } else {
     OnStatus(status);
   }
@@ -569,8 +569,8 @@ HttpChannelChild::OnStatus(const nsresult& status)
 
   // block socket status event after Cancel or OnStopRequest has been called,
   // or if channel has LOAD_BACKGROUND set
-  if (mProgressSink && NS_SUCCEEDED(mStatus) && mIsPending && 
-      !(mLoadFlags & LOAD_BACKGROUND)) 
+  if (mProgressSink && NS_SUCCEEDED(mStatus) && mIsPending &&
+      !(mLoadFlags & LOAD_BACKGROUND))
   {
     nsAutoCString host;
     mURI->GetHost(host);
@@ -595,8 +595,8 @@ class FailedAsyncOpenEvent : public ChannelEvent
 bool
 HttpChannelChild::RecvFailedAsyncOpen(const nsresult& status)
 {
-  if (mEventQ.ShouldEnqueue()) {
-    mEventQ.Enqueue(new FailedAsyncOpenEvent(this, status));
+  if (mEventQ->ShouldEnqueue()) {
+    mEventQ->Enqueue(new FailedAsyncOpenEvent(this, status));
   } else {
     FailedAsyncOpen(status);
   }
@@ -642,8 +642,8 @@ class DeleteSelfEvent : public ChannelEvent
 bool
 HttpChannelChild::RecvDeleteSelf()
 {
-  if (mEventQ.ShouldEnqueue()) {
-    mEventQ.Enqueue(new DeleteSelfEvent(this));
+  if (mEventQ->ShouldEnqueue()) {
+    mEventQ->Enqueue(new DeleteSelfEvent(this));
   } else {
     DeleteSelf();
   }
@@ -670,10 +670,10 @@ class Redirect1Event : public ChannelEvent
   , mRedirectFlags(redirectFlags)
   , mResponseHead(responseHead) {}
 
-  void Run() 
-  { 
+  void Run()
+  {
     mChild->Redirect1Begin(mNewChannelId, mNewURI, mRedirectFlags,
-                           mResponseHead); 
+                           mResponseHead);
   }
  private:
   HttpChannelChild*   mChild;
@@ -689,8 +689,8 @@ HttpChannelChild::RecvRedirect1Begin(const uint32_t& newChannelId,
                                      const uint32_t& redirectFlags,
                                      const nsHttpResponseHead& responseHead)
 {
-  if (mEventQ.ShouldEnqueue()) {
-    mEventQ.Enqueue(new Redirect1Event(this, newChannelId, newUri,
+  if (mEventQ->ShouldEnqueue()) {
+    mEventQ->Enqueue(new Redirect1Event(this, newChannelId, newUri,
                                        redirectFlags, responseHead));
   } else {
     Redirect1Begin(newChannelId, newUri, redirectFlags, responseHead);
@@ -730,7 +730,7 @@ HttpChannelChild::Redirect1Begin(const uint32_t& newChannelId,
 
   bool rewriteToGET = nsHttp::ShouldRewriteRedirectToGET(
                                mResponseHead->Status(), mRequestHead.Method());
-  
+
   rv = SetupReplacementChannel(uri, newChannel, !rewriteToGET);
   if (NS_FAILED(rv)) {
     // Veto redirect.  nsHttpChannel decides to cancel or continue.
@@ -745,7 +745,7 @@ HttpChannelChild::Redirect1Begin(const uint32_t& newChannelId,
     NS_ERROR("Redirecting to a protocol that doesn't support universal protocol redirect");
   }
 
-  rv = gHttpHandler->AsyncOnChannelRedirect(this, 
+  rv = gHttpHandler->AsyncOnChannelRedirect(this,
                                             newChannel,
                                             redirectFlags);
   if (NS_FAILED(rv))
@@ -764,8 +764,8 @@ class Redirect3Event : public ChannelEvent
 bool
 HttpChannelChild::RecvRedirect3Complete()
 {
-  if (mEventQ.ShouldEnqueue()) {
-    mEventQ.Enqueue(new Redirect3Event(this));
+  if (mEventQ->ShouldEnqueue()) {
+    mEventQ->Enqueue(new Redirect3Event(this));
   } else {
     Redirect3Complete();
   }
@@ -826,10 +826,10 @@ HttpChannelChild::ConnectParent(uint32_t id)
 }
 
 NS_IMETHODIMP
-HttpChannelChild::CompleteRedirectSetup(nsIStreamListener *listener, 
+HttpChannelChild::CompleteRedirectSetup(nsIStreamListener *listener,
                                         nsISupports *aContext)
 {
-  LOG(("HttpChannelChild::FinishRedirectSetup [this=%x]\n", this));
+  LOG(("HttpChannelChild::FinishRedirectSetup [this=%p]\n", this));
 
   NS_ENSURE_TRUE(!mIsPending, NS_ERROR_IN_PROGRESS);
   NS_ENSURE_TRUE(!mWasOpened, NS_ERROR_ALREADY_OPENED);
@@ -846,7 +846,7 @@ HttpChannelChild::CompleteRedirectSetup(nsIStreamListener *listener,
   mListener = listener;
   mListenerContext = aContext;
 
-  // add ourselves to the load group. 
+  // add ourselves to the load group.
   if (mLoadGroup)
     mLoadGroup->AddRequest(this, nullptr);
 
@@ -932,22 +932,10 @@ HttpChannelChild::Suspend()
   NS_ENSURE_TRUE(RemoteChannelExists(), NS_ERROR_NOT_AVAILABLE);
   if (!mSuspendCount++) {
     SendSuspend();
-    mEventQ.Suspend();
   }
+  mEventQ->Suspend();
+
   return NS_OK;
-}
-
-void
-HttpChannelChild::CompleteResume()
-{
-  if (mCallOnResume) {
-    (this->*mCallOnResume)();
-    mCallOnResume = 0;
-  }
-
-  // Don't resume event queue until now, else queued events could get
-  // flushed/called before mCallOnResume, which needs to run first.
-  mEventQ.Resume();
 }
 
 NS_IMETHODIMP
@@ -960,8 +948,13 @@ HttpChannelChild::Resume()
 
   if (!--mSuspendCount) {
     SendResume();
-    rv = AsyncCall(&HttpChannelChild::CompleteResume);
+    if (mCallOnResume) {
+      AsyncCall(mCallOnResume);
+      mCallOnResume = nullptr;
+    }
   }
+  mEventQ->Resume();
+
   return rv;
 }
 
@@ -980,7 +973,7 @@ HttpChannelChild::GetSecurityInfo(nsISupports **aSecurityInfo)
 NS_IMETHODIMP
 HttpChannelChild::AsyncOpen(nsIStreamListener *listener, nsISupports *aContext)
 {
-  LOG(("HttpChannelChild::AsyncOpen [this=%x uri=%s]\n", this, mSpec.get()));
+  LOG(("HttpChannelChild::AsyncOpen [this=%p uri=%s]\n", this, mSpec.get()));
 
   if (mCanceled)
     return mStatus;
@@ -1020,7 +1013,7 @@ HttpChannelChild::AsyncOpen(nsIStreamListener *listener, nsISupports *aContext)
   mListener = listener;
   mListenerContext = aContext;
 
-  // add ourselves to the load group. 
+  // add ourselves to the load group.
   if (mLoadGroup)
     mLoadGroup->AddRequest(this, nullptr);
 
@@ -1098,8 +1091,8 @@ HttpChannelChild::AsyncOpen(nsIStreamListener *listener, nsISupports *aContext)
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-HttpChannelChild::SetRequestHeader(const nsACString& aHeader, 
-                                   const nsACString& aValue, 
+HttpChannelChild::SetRequestHeader(const nsACString& aHeader,
+                                   const nsACString& aValue,
                                    bool aMerge)
 {
   nsresult rv = HttpBaseChannel::SetRequestHeader(aHeader, aValue, aMerge);
@@ -1353,7 +1346,7 @@ HttpChannelChild::GetAssociatedContentSecurity(
 }
 
 /* attribute unsigned long countSubRequestsBrokenSecurity; */
-NS_IMETHODIMP 
+NS_IMETHODIMP
 HttpChannelChild::GetCountSubRequestsBrokenSecurity(
                     int32_t *aSubRequestsBrokenSecurity)
 {
@@ -1363,7 +1356,7 @@ HttpChannelChild::GetCountSubRequestsBrokenSecurity(
 
   return assoc->GetCountSubRequestsBrokenSecurity(aSubRequestsBrokenSecurity);
 }
-NS_IMETHODIMP 
+NS_IMETHODIMP
 HttpChannelChild::SetCountSubRequestsBrokenSecurity(
                     int32_t aSubRequestsBrokenSecurity)
 {

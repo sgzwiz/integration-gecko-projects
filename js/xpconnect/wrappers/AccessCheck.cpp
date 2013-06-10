@@ -35,6 +35,12 @@ GetCompartmentPrincipal(JSCompartment *compartment)
     return nsJSPrincipals::get(JS_GetCompartmentPrincipals(compartment));
 }
 
+nsIPrincipal *
+GetObjectPrincipal(JSObject *obj)
+{
+    return GetCompartmentPrincipal(js::GetObjectCompartment(obj));
+}
+
 // Does the principal of compartment a subsume the principal of compartment b?
 bool
 AccessCheck::subsumes(JSCompartment *a, JSCompartment *b)
@@ -216,11 +222,19 @@ AccessCheck::isCrossOriginAccessPermitted(JSContext *cx, JSObject *wrapperArg, j
         return true;
 
     if (act == Wrapper::CALL)
-        return true;
+        return false;
 
     RootedId id(cx, idArg);
     RootedObject wrapper(cx, wrapperArg);
     RootedObject obj(cx, Wrapper::wrappedObject(wrapper));
+
+    // Enumerate-like operations pass JSID_VOID to |enter|, since there isn't
+    // another sane value to pass. For XOWs, we generally want to deny such
+    // operations but fail silently (see CrossOriginAccessiblePropertiesOnly::
+    // deny). We could just fall through here and rely on the fact that none
+    // of the whitelisted properties below will match JSID_VOID, but EIBTI.
+    if (id == JSID_VOID)
+        return false;
 
     const char *name;
     js::Class *clasp = js::GetObjectClass(obj);
@@ -252,13 +266,6 @@ AccessCheck::isCrossOriginAccessPermitted(JSContext *cx, JSObject *wrapperArg, j
 }
 
 bool
-AccessCheck::isSystemOnlyAccessPermitted(JSContext *cx)
-{
-    MOZ_ASSERT(cx == nsContentUtils::GetCurrentJSContext());
-    return nsContentUtils::CanAccessNativeAnon();
-}
-
-bool
 AccessCheck::needsSystemOnlyWrapper(JSObject *obj)
 {
     JSObject* wrapper = obj;
@@ -270,21 +277,6 @@ AccessCheck::needsSystemOnlyWrapper(JSObject *obj)
 
     XPCWrappedNative *wn = static_cast<XPCWrappedNative *>(js::GetObjectPrivate(obj));
     return wn->NeedsSOW();
-}
-
-bool
-OnlyIfSubjectIsSystem::isSafeToUnwrap()
-{
-    // It's nasty to use the context stack here, but the alternative is passing cx all
-    // the way down through CheckedUnwrap, which we just undid in a 100k patch. :-(
-    JSContext *cx = nsContentUtils::GetCurrentJSContext();
-    if (!cx)
-        return true;
-    // If XBL scopes are enabled for this compartment, this hook doesn't need to
-    // be dynamic at all, since SOWs can be opaque.
-    if (xpc::AllowXBLScope(js::GetContextCompartment(cx)))
-        return false;
-    return AccessCheck::isSystemOnlyAccessPermitted(cx);
 }
 
 enum Access { READ = (1<<0), WRITE = (1<<1), NO_ACCESS = 0 };

@@ -510,11 +510,7 @@ class MIRGraph
     MStart *osrStart_;
 
     // List of compiled/inlined scripts.
-    Vector<RawScript, 4, IonAllocPolicy> scripts_;
-
-    // List of possible scripts that this graph may call. Currently this is
-    // only tracked when compiling for parallel execution.
-    Vector<RawScript, 4, IonAllocPolicy> callTargets_;
+    Vector<JSScript *, 4, IonAllocPolicy> scripts_;
 
     size_t numBlocks_;
 
@@ -634,7 +630,7 @@ class MIRGraph
     MStart *osrStart() {
         return osrStart_;
     }
-    bool addScript(RawScript script) {
+    bool addScript(JSScript *script) {
         // The same script may be inlined multiple times, add it only once.
         for (size_t i = 0; i < scripts_.length(); i++) {
             if (scripts_[i] == script)
@@ -647,19 +643,6 @@ class MIRGraph
     }
     JSScript **scripts() {
         return scripts_.begin();
-    }
-    bool addCallTarget(RawScript script) {
-        for (size_t i = 0; i < callTargets_.length(); i++) {
-            if (callTargets_[i] == script)
-                return true;
-        }
-        return callTargets_.append(script);
-    }
-    size_t numCallTargets() const {
-        return callTargets_.length();
-    }
-    JSScript **callTargets() {
-        return callTargets_.begin();
     }
 
     // The ParSlice is an instance of ForkJoinSlice*, it carries

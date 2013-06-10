@@ -10,6 +10,7 @@
 #ifndef mozilla_dom_Attr_h
 #define mozilla_dom_Attr_h
 
+#include "mozilla/Attributes.h"
 #include "nsIAttribute.h"
 #include "nsIDOMAttr.h"
 #include "nsIDOMText.h"
@@ -39,43 +40,40 @@ public:
 
   // nsIDOMNode interface
   NS_FORWARD_NSIDOMNODE_TO_NSINODE
-  virtual void GetTextContentInternal(nsAString& aTextContent);
+  virtual void GetTextContentInternal(nsAString& aTextContent) MOZ_OVERRIDE;
   virtual void SetTextContentInternal(const nsAString& aTextContent,
-                                      mozilla::ErrorResult& aError);
-  virtual void GetNodeValueInternal(nsAString& aNodeValue);
+                                      ErrorResult& aError) MOZ_OVERRIDE;
+  virtual void GetNodeValueInternal(nsAString& aNodeValue) MOZ_OVERRIDE;
   virtual void SetNodeValueInternal(const nsAString& aNodeValue,
-                                    mozilla::ErrorResult& aError);
+                                    ErrorResult& aError) MOZ_OVERRIDE;
 
   // nsIDOMAttr interface
   NS_DECL_NSIDOMATTR
 
-  virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor);
+  virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor) MOZ_OVERRIDE;
 
   // nsIAttribute interface
-  void SetMap(nsDOMAttributeMap *aMap);
-  nsIContent *GetContent() const;
-  nsresult SetOwnerDocument(nsIDocument* aDocument);
+  void SetMap(nsDOMAttributeMap *aMap) MOZ_OVERRIDE;
+  nsIContent *GetContent() const MOZ_OVERRIDE;
+  nsresult SetOwnerDocument(nsIDocument* aDocument) MOZ_OVERRIDE;
 
   // nsINode interface
-  virtual bool IsNodeOfType(uint32_t aFlags) const;
-  virtual uint32_t GetChildCount() const;
-  virtual nsIContent *GetChildAt(uint32_t aIndex) const;
-  virtual nsIContent * const * GetChildArray(uint32_t* aChildCount) const;
+  virtual bool IsNodeOfType(uint32_t aFlags) const MOZ_OVERRIDE;
+  virtual uint32_t GetChildCount() const MOZ_OVERRIDE;
+  virtual nsIContent *GetChildAt(uint32_t aIndex) const MOZ_OVERRIDE;
+  virtual nsIContent * const * GetChildArray(uint32_t* aChildCount) const MOZ_OVERRIDE;
   virtual int32_t IndexOf(const nsINode* aPossibleChild) const MOZ_OVERRIDE;
   virtual nsresult InsertChildAt(nsIContent* aKid, uint32_t aIndex,
-                                 bool aNotify);
-  virtual nsresult AppendChildTo(nsIContent* aKid, bool aNotify);
-  virtual void RemoveChildAt(uint32_t aIndex, bool aNotify);
-  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
-  virtual already_AddRefed<nsIURI> GetBaseURI() const;
+                                 bool aNotify) MOZ_OVERRIDE;
+  virtual void RemoveChildAt(uint32_t aIndex, bool aNotify) MOZ_OVERRIDE;
+  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const MOZ_OVERRIDE;
+  virtual already_AddRefed<nsIURI> GetBaseURI() const MOZ_OVERRIDE;
 
   static void Initialize();
   static void Shutdown();
 
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(Attr,
-                                                         nsIAttribute)
-
-  virtual nsXPCClassInfo* GetClassInfo();
+  NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS_AMBIGUOUS(Attr,
+                                                                   nsIAttribute)
 
   virtual nsIDOMNode* AsDOMNode() { return this; }
 
@@ -97,7 +95,7 @@ public:
   Element* GetOwnerElement(ErrorResult& aRv);
 
 protected:
-  virtual mozilla::dom::Element* GetNameSpaceElement()
+  virtual Element* GetNameSpaceElement()
   {
     return GetContentInternal();
   }
@@ -106,7 +104,7 @@ protected:
 
 private:
   already_AddRefed<nsIAtom> GetNameAtom(nsIContent* aContent);
-  mozilla::dom::Element* GetContentInternal() const;
+  Element* GetContentInternal() const;
 
   nsString mValue;
 };

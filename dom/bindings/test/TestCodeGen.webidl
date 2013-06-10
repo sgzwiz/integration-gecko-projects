@@ -36,6 +36,7 @@ callback interface TestSingleOperationCallbackInterface {
 };
 
 enum TestEnum {
+  "1",
   "a",
   "b"
 };
@@ -101,6 +102,7 @@ interface OnlyForUseInConstructor {
  Constructor(unsigned long num, boolean? boolArg),
  Constructor(TestInterface? iface),
  Constructor(long arg1, IndirectlyImplementedInterface iface),
+ Constructor(Date arg1),
  // Constructor(long arg1, long arg2, (TestInterface or OnlyForUseInConstructor) arg3),
  NamedConstructor=Test,
  NamedConstructor=Test(DOMString str),
@@ -116,7 +118,9 @@ interface TestInterface {
   void passByte(byte arg);
   byte receiveByte();
   void passOptionalByte(optional byte arg);
+  void passOptionalUndefinedMissingByte([TreatUndefinedAs=Missing] optional byte arg);
   void passOptionalByteWithDefault(optional byte arg = 0);
+  void passOptionalUndefinedMissingByteWithDefault([TreatUndefinedAs=Missing] optional byte arg = 0);
   void passNullableByte(byte? arg);
   void passOptionalNullableByte(optional byte? arg);
   void passVariadicByte(byte... arg);
@@ -336,6 +340,10 @@ interface TestInterface {
 
   sequence<any> receiveAnySequence();
   sequence<any>? receiveNullableAnySequence();
+  sequence<sequence<any>> receiveAnySequenceSequence();
+
+  sequence<object> receiveObjectSequence();
+  sequence<object?> receiveNullableObjectSequence();
 
   void passSequenceOfSequences(sequence<sequence<long>> arg);
   sequence<sequence<long>> receiveSequenceOfSequences();
@@ -362,7 +370,9 @@ interface TestInterface {
   void passString(DOMString arg);
   void passNullableString(DOMString? arg);
   void passOptionalString(optional DOMString arg);
+  void passOptionalUndefinedMissingString([TreatUndefinedAs=Missing] optional DOMString arg);
   void passOptionalStringWithDefaultValue(optional DOMString arg = "abc");
+  void passOptionalUndefinedMissingStringWithDefaultValue([TreatUndefinedAs=Missing] optional DOMString arg = "abc");
   void passOptionalNullableString(optional DOMString? arg);
   void passOptionalNullableStringWithDefaultValue(optional DOMString? arg = null);
   void passVariadicString(DOMString... arg);
@@ -396,16 +406,32 @@ interface TestInterface {
 
   // Any types
   void passAny(any arg);
+  void passVariadicAny(any... arg);
   void passOptionalAny(optional any arg);
   void passAnyDefaultNull(optional any arg = null);
+  void passSequenceOfAny(sequence<any> arg);
+  void passNullableSequenceOfAny(sequence<any>? arg);
+  void passOptionalSequenceOfAny(optional sequence<any> arg);
+  void passOptionalNullableSequenceOfAny(optional sequence<any>? arg);
+  void passOptionalSequenceOfAnyWithDefaultValue(optional sequence<any>? arg = null);
+  void passSequenceOfSequenceOfAny(sequence<sequence<any>> arg);
+  void passSequenceOfNullableSequenceOfAny(sequence<sequence<any>?> arg);
+  void passNullableSequenceOfNullableSequenceOfAny(sequence<sequence<any>?>? arg);
+  void passOptionalNullableSequenceOfNullableSequenceOfAny(optional sequence<sequence<any>?>? arg);
   any receiveAny();
 
   // object types
   void passObject(object arg);
+  void passVariadicObject(object... arg);
   void passNullableObject(object? arg);
+  void passVariadicNullableObject(object... arg);
   void passOptionalObject(optional object arg);
   void passOptionalNullableObject(optional object? arg);
   void passOptionalNullableObjectWithDefaultValue(optional object? arg = null);
+  void passSequenceOfObject(sequence<object> arg);
+  void passSequenceOfNullableObject(sequence<object?> arg);
+  void passOptionalNullableSequenceOfNullableSequenceOfObject(optional sequence<sequence<object>?>? arg);
+  void passOptionalNullableSequenceOfNullableSequenceOfNullableObject(optional sequence<sequence<object?>?>? arg);
   object receiveObject();
   object? receiveNullableObject();
 
@@ -428,6 +454,17 @@ interface TestInterface {
   void passUnionWithObject((object or long) arg);
   //void passUnionWithDict((Dict or long) arg);
 
+  // Date types
+  void passDate(Date arg);
+  void passNullableDate(Date? arg);
+  void passOptionalDate(optional Date arg);
+  void passOptionalNullableDate(optional Date? arg);
+  void passOptionalNullableDateWithDefaultValue(optional Date? arg = null);
+  void passDateSequence(sequence<Date> arg);
+  void passNullableDateSequence(sequence<Date?> arg);
+  Date receiveDate();
+  Date? receiveNullableDate();
+
   // binaryNames tests
   void methodRenamedFrom();
   void methodRenamedFrom(byte argument);
@@ -436,8 +473,11 @@ interface TestInterface {
 
   void passDictionary(optional Dict x);
   Dict receiveDictionary();
+  Dict? receiveNullableDictionary();
   void passOtherDictionary(optional GrandparentDict x);
   void passSequenceOfDictionaries(sequence<Dict> x);
+  // No support for nullable dictionaries inside a sequence (nor should there be)
+  //  void passSequenceOfNullableDictionaries(sequence<Dict?> x);
   void passDictionaryOrLong(optional Dict x);
   void passDictionaryOrLong(long x);
 
@@ -468,6 +508,7 @@ interface TestInterface {
   void overload2(TestInterface arg);
   void overload2(optional Dict arg);
   void overload2(DOMString arg);
+  void overload2(Date arg);
   void overload3(TestInterface arg);
   void overload3(TestCallback arg);
   void overload3(DOMString arg);
@@ -611,6 +652,7 @@ dictionary Dict : ParentDict {
   object? anotherObj = null;
   TestCallback? someCallback = null;
   any someAny;
+  any anotherAny = null;
 
   unrestricted float  urFloat = 0;
   unrestricted float  urFloat2 = 1.1;
@@ -633,6 +675,7 @@ dictionary Dict : ParentDict {
 dictionary ParentDict : GrandparentDict {
   long c = 5;
   TestInterface someInterface;
+  TestInterface? someNullableInterface = null;
   TestExternalInterface someExternalInterface;
   any parentAny;
 };
@@ -644,6 +687,13 @@ dictionary DictContainingDict {
 dictionary DictContainingSequence {
   sequence<long> ourSequence;
   sequence<TestInterface> ourSequence2;
+  sequence<any> ourSequence3;
+  sequence<object> ourSequence4;
+  sequence<object?> ourSequence5;
+  sequence<object>? ourSequence6;
+  sequence<object?>? ourSequence7;
+  sequence<object>? ourSequence8 = null;
+  sequence<object?>? ourSequence9 = null;
 };
 
 dictionary DictForConstructor {
@@ -652,7 +702,9 @@ dictionary DictForConstructor {
   sequence<Dict> seq1;
   sequence<sequence<Dict>>? seq2;
   sequence<sequence<Dict>?> seq3;
-  // No support for sequences of "any" or "object" as return values yet.
+  sequence<any> seq4;
+  sequence<any> seq5;
+  sequence<DictContainingSequence> seq6;
   object obj1;
   object? obj2;
   any any1 = null;

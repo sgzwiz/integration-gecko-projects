@@ -7,8 +7,11 @@
 #include "AndroidBridge.h"
 #include "nsIAndroidBridge.h"
 #include "nsIDOMKeyEvent.h"
+#include "nsIWidget.h"
+#include "nsGUIEvent.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 jclass AndroidGeckoEvent::jGeckoEventClass = 0;
 jfieldID AndroidGeckoEvent::jActionField = 0;
@@ -94,6 +97,8 @@ jmethodID AndroidGeckoLayerClient::jCreateFrameMethod = 0;
 jmethodID AndroidGeckoLayerClient::jActivateProgramMethod = 0;
 jmethodID AndroidGeckoLayerClient::jDeactivateProgramMethod = 0;
 jmethodID AndroidGeckoLayerClient::jGetDisplayPort = 0;
+jmethodID AndroidGeckoLayerClient::jContentDocumentChanged = 0;
+jmethodID AndroidGeckoLayerClient::jIsContentDocumentDisplayed = 0;
 jmethodID AndroidGeckoLayerClient::jViewportCtor = 0;
 jfieldID AndroidGeckoLayerClient::jDisplayportPosition = 0;
 jfieldID AndroidGeckoLayerClient::jDisplayportResolution = 0;
@@ -356,6 +361,8 @@ AndroidGeckoLayerClient::InitGeckoLayerClientClass(JNIEnv *jEnv)
     jActivateProgramMethod = getMethod("activateProgram", "()V");
     jDeactivateProgramMethod = getMethod("deactivateProgram", "()V");
     jGetDisplayPort = getMethod("getDisplayPort", "(ZZILorg/mozilla/gecko/gfx/ImmutableViewportMetrics;)Lorg/mozilla/gecko/gfx/DisplayPortMetrics;");
+    jContentDocumentChanged = getMethod("contentDocumentChanged", "()V");
+    jIsContentDocumentDisplayed = getMethod("isContentDocumentDisplayed", "()Z");
 
     jViewportClass = GetClassGlobalRef(jEnv, "org/mozilla/gecko/gfx/ImmutableViewportMetrics");
     jViewportCtor = GetMethodID(jEnv, jViewportClass, "<init>", "(FFFFFFFFFFFFF)V");
@@ -736,11 +743,11 @@ AndroidGeckoEvent::MakeTouchEvent(nsIWidget* widget)
     const nsIntPoint& offset = widget->WidgetToScreenOffset();
     event.touches.SetCapacity(endIndex - startIndex);
     for (int i = startIndex; i < endIndex; i++) {
-        nsCOMPtr<nsIDOMTouch> t(new dom::Touch(PointIndicies()[i],
-                                               Points()[i] - offset,
-                                               PointRadii()[i],
-                                               Orientations()[i],
-                                               Pressures()[i]));
+        nsRefPtr<Touch> t = new Touch(PointIndicies()[i],
+                                      Points()[i] - offset,
+                                      PointRadii()[i],
+                                      Orientations()[i],
+                                      Pressures()[i]);
         event.touches.AppendElement(t);
     }
 
@@ -856,7 +863,7 @@ AndroidProgressiveUpdateData::Init(jobject jobj)
 }
 
 void
-AndroidGeckoLayerClient::SetFirstPaintViewport(const nsIntPoint& aOffset, float aZoom, const nsIntRect& aPageRect, const gfx::Rect& aCssPageRect)
+AndroidGeckoLayerClient::SetFirstPaintViewport(const LayerIntPoint& aOffset, float aZoom, const LayerIntRect& aPageRect, const CSSRect& aCssPageRect)
 {
     NS_ASSERTION(!isNull(), "SetFirstPaintViewport called on null layer client!");
     JNIEnv *env = GetJNIForThread();    // this is called on the compositor thread
@@ -870,7 +877,7 @@ AndroidGeckoLayerClient::SetFirstPaintViewport(const nsIntPoint& aOffset, float 
 }
 
 void
-AndroidGeckoLayerClient::SetPageRect(const gfx::Rect& aCssPageRect)
+AndroidGeckoLayerClient::SetPageRect(const CSSRect& aCssPageRect)
 {
     NS_ASSERTION(!isNull(), "SetPageRect called on null layer client!");
     JNIEnv *env = GetJNIForThread();    // this is called on the compositor thread
@@ -883,9 +890,9 @@ AndroidGeckoLayerClient::SetPageRect(const gfx::Rect& aCssPageRect)
 }
 
 void
-AndroidGeckoLayerClient::SyncViewportInfo(const nsIntRect& aDisplayPort, float aDisplayResolution, bool aLayersUpdated,
-                                          nsIntPoint& aScrollOffset, float& aScaleX, float& aScaleY,
-                                          gfx::Margin& aFixedLayerMargins, float& aOffsetX, float& aOffsetY)
+AndroidGeckoLayerClient::SyncViewportInfo(const LayerIntRect& aDisplayPort, float aDisplayResolution, bool aLayersUpdated,
+                                          ScreenPoint& aScrollOffset, float& aScaleX, float& aScaleY,
+                                          gfx::Margin& aFixedLayerMargins, ScreenPoint& aOffset)
 {
     NS_ASSERTION(!isNull(), "SyncViewportInfo called on null layer client!");
     JNIEnv *env = GetJNIForThread();    // this is called on the compositor thread
@@ -906,18 +913,18 @@ AndroidGeckoLayerClient::SyncViewportInfo(const nsIntRect& aDisplayPort, float a
     AndroidViewTransform viewTransform;
     viewTransform.Init(viewTransformJObj);
 
-    aScrollOffset = nsIntPoint(viewTransform.GetX(env), viewTransform.GetY(env));
+    aScrollOffset = ScreenPoint(viewTransform.GetX(env), viewTransform.GetY(env));
     aScaleX = aScaleY = viewTransform.GetScale(env);
     viewTransform.GetFixedLayerMargins(env, aFixedLayerMargins);
 
-    aOffsetX = viewTransform.GetOffsetX(env);
-    aOffsetY = viewTransform.GetOffsetY(env);
+    aOffset.x = viewTransform.GetOffsetX(env);
+    aOffset.y = viewTransform.GetOffsetY(env);
 }
 
 void
-AndroidGeckoLayerClient::SyncFrameMetrics(const gfx::Point& aOffset, float aZoom, const gfx::Rect& aCssPageRect,
+AndroidGeckoLayerClient::SyncFrameMetrics(const gfx::Point& aScrollOffset, float aZoom, const CSSRect& aCssPageRect,
                                           bool aLayersUpdated, const gfx::Rect& aDisplayPort, float aDisplayResolution,
-                                          bool aIsFirstPaint, gfx::Margin& aFixedLayerMargins, float& aOffsetX, float& aOffsetY)
+                                          bool aIsFirstPaint, gfx::Margin& aFixedLayerMargins, ScreenPoint& aOffset)
 {
     NS_ASSERTION(!isNull(), "SyncFrameMetrics called on null layer client!");
     JNIEnv *env = GetJNIForThread();    // this is called on the compositor thread
@@ -927,13 +934,13 @@ AndroidGeckoLayerClient::SyncFrameMetrics(const gfx::Point& aOffset, float aZoom
     AutoLocalJNIFrame jniFrame(env);
 
     // convert the displayport rect from scroll-relative CSS pixels to document-relative device pixels
-    int dpX = NS_lround((aDisplayPort.x * aDisplayResolution) + aOffset.x);
-    int dpY = NS_lround((aDisplayPort.y * aDisplayResolution) + aOffset.y);
+    int dpX = NS_lround((aDisplayPort.x * aDisplayResolution) + aScrollOffset.x);
+    int dpY = NS_lround((aDisplayPort.y * aDisplayResolution) + aScrollOffset.y);
     int dpW = NS_lround(aDisplayPort.width * aDisplayResolution);
     int dpH = NS_lround(aDisplayPort.height * aDisplayResolution);
 
     jobject viewTransformJObj = env->CallObjectMethod(wrapped_obj, jSyncFrameMetricsMethod,
-            aOffset.x, aOffset.y, aZoom,
+            aScrollOffset.x, aScrollOffset.y, aZoom,
             aCssPageRect.x, aCssPageRect.y, aCssPageRect.XMost(), aCssPageRect.YMost(),
             aLayersUpdated, dpX, dpY, dpW, dpH, aDisplayResolution,
             aIsFirstPaint);
@@ -946,8 +953,8 @@ AndroidGeckoLayerClient::SyncFrameMetrics(const gfx::Point& aOffset, float aZoom
     AndroidViewTransform viewTransform;
     viewTransform.Init(viewTransformJObj);
     viewTransform.GetFixedLayerMargins(env, aFixedLayerMargins);
-    aOffsetX = viewTransform.GetOffsetX(env);
-    aOffsetY = viewTransform.GetOffsetY(env);
+    aOffset.x = viewTransform.GetOffsetX(env);
+    aOffset.y = viewTransform.GetOffsetY(env);
 }
 
 bool
@@ -1018,7 +1025,7 @@ jobject ConvertToJavaViewportMetrics(JNIEnv* env, nsIAndroidViewport* metrics) {
     return jobj;
 }
 
-class nsAndroidDisplayport : public nsIAndroidDisplayport
+class nsAndroidDisplayport MOZ_FINAL : public nsIAndroidDisplayport
 {
 public:
     NS_DECL_ISUPPORTS
@@ -1063,6 +1070,18 @@ AndroidGeckoLayerClient::GetDisplayPort(AutoLocalJNIFrame *jniFrame, bool aPageS
     if (jniFrame->CheckForException()) return;
     createDisplayPort(jniFrame, jobj, displayPort);
     (*displayPort)->AddRef();
+}
+
+void
+AndroidGeckoLayerClient::ContentDocumentChanged(AutoLocalJNIFrame *jniFrame)
+{
+    jniFrame->GetEnv()->CallVoidMethod(wrapped_obj, jContentDocumentChanged);
+}
+
+bool
+AndroidGeckoLayerClient::IsContentDocumentDisplayed(AutoLocalJNIFrame *jniFrame)
+{
+    return jniFrame->GetEnv()->CallBooleanMethod(wrapped_obj, jIsContentDocumentDisplayed);
 }
 
 bool

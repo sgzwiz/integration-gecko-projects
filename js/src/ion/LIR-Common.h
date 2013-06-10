@@ -972,22 +972,20 @@ class LCallNative : public LJSCallInstructionHelper<BOX_PIECES, 0, 4>
 };
 
 // Generates a hardcoded callsite for a known, DOM-native target.
-class LCallDOMNative : public LJSCallInstructionHelper<BOX_PIECES, 0, 5>
+class LCallDOMNative : public LJSCallInstructionHelper<BOX_PIECES, 0, 4>
 {
   public:
     LIR_HEADER(CallDOMNative)
 
     LCallDOMNative(uint32_t argslot,
                    const LDefinition &argJSContext, const LDefinition &argObj,
-                   const LDefinition &argPrivate, const LDefinition &argArgc,
-                   const LDefinition &argVp)
+                   const LDefinition &argPrivate, const LDefinition &argArgs)
       : JSCallHelper(argslot)
     {
         setTemp(0, argJSContext);
         setTemp(1, argObj);
         setTemp(2, argPrivate);
-        setTemp(3, argArgc);
-        setTemp(4, argVp);
+        setTemp(3, argArgs);
     }
 
     const LAllocation *getArgJSContext() {
@@ -999,11 +997,8 @@ class LCallDOMNative : public LJSCallInstructionHelper<BOX_PIECES, 0, 5>
     const LAllocation *getArgPrivate() {
         return getTemp(2)->output();
     }
-    const LAllocation *getArgArgc() {
+    const LAllocation *getArgArgs() {
         return getTemp(3)->output();
-    }
-    const LAllocation *getArgVp() {
-        return getTemp(4)->output();
     }
 };
 
@@ -2065,6 +2060,33 @@ class LSqrtD : public LInstructionHelper<1, 1, 0>
     }
 };
 
+class LAtan2D : public LCallInstructionHelper<1, 2, 1>
+{
+  public:
+    LIR_HEADER(Atan2D)
+    LAtan2D(const LAllocation &y, const LAllocation &x, const LDefinition &temp) {
+        setOperand(0, y);
+        setOperand(1, x);
+        setTemp(0, temp);
+    }
+
+    const LAllocation *y() {
+        return getOperand(0);
+    }
+
+    const LAllocation *x() {
+        return getOperand(1);
+    }
+
+    const LDefinition *temp() {
+        return getTemp(0);
+    }
+
+    const LDefinition *output() {
+        return getDef(0);
+    }
+};
+
 // Double raised to an integer power.
 class LPowI : public LCallInstructionHelper<1, 2, 1>
 {
@@ -2334,6 +2356,10 @@ class LValueToDouble : public LInstructionHelper<1, BOX_PIECES, 0>
   public:
     LIR_HEADER(ValueToDouble)
     static const size_t Input = 0;
+
+    MToDouble *mir() {
+        return mir_->toToDouble();
+    }
 };
 
 // Convert a value to an int32.
@@ -3527,6 +3553,107 @@ class LGetPropertyCacheT : public LInstructionHelper<1, 1, 1>
     }
 };
 
+// Emit code to load a boxed value from an object's slots if its shape matches
+// one of the shapes observed by the baseline IC, else bails out.
+class LGetPropertyPolymorphicV : public LInstructionHelper<BOX_PIECES, 1, 0>
+{
+  public:
+    LIR_HEADER(GetPropertyPolymorphicV)
+    BOX_OUTPUT_ACCESSORS()
+
+    LGetPropertyPolymorphicV(const LAllocation &obj) {
+        setOperand(0, obj);
+    }
+    const LAllocation *obj() {
+        return getOperand(0);
+    }
+    const MGetPropertyPolymorphic *mir() const {
+        return mir_->toGetPropertyPolymorphic();
+    }
+};
+
+// Emit code to load a typed value from an object's slots if its shape matches
+// one of the shapes observed by the baseline IC, else bails out.
+class LGetPropertyPolymorphicT : public LInstructionHelper<1, 1, 1>
+{
+  public:
+    LIR_HEADER(GetPropertyPolymorphicT)
+
+    LGetPropertyPolymorphicT(const LAllocation &obj, const LDefinition &temp) {
+        setOperand(0, obj);
+        setTemp(0, temp);
+    }
+    const LAllocation *obj() {
+        return getOperand(0);
+    }
+    const LDefinition *temp() {
+        return getTemp(0);
+    }
+    const MGetPropertyPolymorphic *mir() const {
+        return mir_->toGetPropertyPolymorphic();
+    }
+};
+
+// Emit code to store a boxed value to an object's slots if its shape matches
+// one of the shapes observed by the baseline IC, else bails out.
+class LSetPropertyPolymorphicV : public LInstructionHelper<0, 1 + BOX_PIECES, 1>
+{
+  public:
+    LIR_HEADER(SetPropertyPolymorphicV)
+
+    LSetPropertyPolymorphicV(const LAllocation &obj, const LDefinition &temp) {
+        setOperand(0, obj);
+        setTemp(0, temp);
+    }
+
+    static const size_t Value = 1;
+
+    const LAllocation *obj() {
+        return getOperand(0);
+    }
+    const LDefinition *temp() {
+        return getTemp(0);
+    }
+    const MSetPropertyPolymorphic *mir() const {
+        return mir_->toSetPropertyPolymorphic();
+    }
+};
+
+// Emit code to store a typed value to an object's slots if its shape matches
+// one of the shapes observed by the baseline IC, else bails out.
+class LSetPropertyPolymorphicT : public LInstructionHelper<0, 2, 1>
+{
+    MIRType valueType_;
+
+  public:
+    LIR_HEADER(SetPropertyPolymorphicT)
+
+    LSetPropertyPolymorphicT(const LAllocation &obj, const LAllocation &value, MIRType valueType,
+                             const LDefinition &temp)
+      : valueType_(valueType)
+    {
+        setOperand(0, obj);
+        setOperand(1, value);
+        setTemp(0, temp);
+    }
+
+    const LAllocation *obj() {
+        return getOperand(0);
+    }
+    const LAllocation *value() {
+        return getOperand(1);
+    }
+    const LDefinition *temp() {
+        return getTemp(0);
+    }
+    MIRType valueType() const {
+        return valueType_;
+    }
+    const MSetPropertyPolymorphic *mir() const {
+        return mir_->toSetPropertyPolymorphic();
+    }
+};
+
 class LGetElementCacheV : public LInstructionHelper<BOX_PIECES, 1 + BOX_PIECES, 0>
 {
   public:
@@ -3864,6 +3991,58 @@ class LSetPropertyCacheT : public LInstructionHelper<0, 2, 1>
     }
 };
 
+class LSetElementCacheV : public LInstructionHelper<0, 1 + 2 * BOX_PIECES, 1>
+{
+  public:
+    LIR_HEADER(SetElementCacheV);
+
+    static const size_t Index = 1;
+    static const size_t Value = 1 + BOX_PIECES;
+
+    LSetElementCacheV(const LAllocation &object, const LDefinition &temp) {
+        setOperand(0, object);
+        setTemp(0, temp);
+    }
+    const MSetElementCache *mir() const {
+        return mir_->toSetElementCache();
+    }
+
+    const LAllocation *object() {
+        return getOperand(0);
+    }
+    const LDefinition *temp() {
+        return getTemp(0);
+    }
+};
+
+class LSetElementCacheT : public LInstructionHelper<0, 2 + BOX_PIECES, 1>
+{
+  public:
+    LIR_HEADER(SetElementCacheT);
+
+    static const size_t Index = 2;
+
+    LSetElementCacheT(const LAllocation &object, const LAllocation &value,
+                      const LDefinition &temp) {
+        setOperand(0, object);
+        setOperand(1, value);
+        setTemp(0, temp);
+    }
+    const MSetElementCache *mir() const {
+        return mir_->toSetElementCache();
+    }
+
+    const LAllocation *object() {
+        return getOperand(0);
+    }
+    const LAllocation *value() {
+        return getOperand(1);
+    }
+    const LDefinition *temp() {
+        return getTemp(0);
+    }
+};
+
 class LCallIteratorStart : public LCallInstructionHelper<1, 1, 0>
 {
   public:
@@ -4001,6 +4180,61 @@ class LGetArgument : public LInstructionHelper<BOX_PIECES, 1, 0>
     }
 };
 
+class LRunOncePrologue : public LCallInstructionHelper<0, 0, 0>
+{
+  public:
+    LIR_HEADER(RunOncePrologue)
+
+    MRunOncePrologue *mir() const {
+        return mir_->toRunOncePrologue();
+    }
+};
+
+// Create the rest parameter.
+class LRest : public LCallInstructionHelper<1, 1, 3>
+{
+  public:
+    LIR_HEADER(Rest)
+
+    LRest(const LAllocation &numActuals, const LDefinition &temp1, const LDefinition &temp2,
+          const LDefinition &temp3) {
+        setOperand(0, numActuals);
+        setTemp(0, temp1);
+        setTemp(1, temp2);
+        setTemp(2, temp3);
+    }
+    const LAllocation *numActuals() {
+        return getOperand(0);
+    }
+    MRest *mir() const {
+        return mir_->toRest();
+    }
+};
+
+class LParRest : public LCallInstructionHelper<1, 2, 3>
+{
+  public:
+    LIR_HEADER(ParRest);
+
+    LParRest(const LAllocation &parSlice, const LAllocation &numActuals,
+             const LDefinition &temp1, const LDefinition &temp2, const LDefinition &temp3) {
+        setOperand(0, parSlice);
+        setOperand(1, numActuals);
+        setTemp(0, temp1);
+        setTemp(1, temp2);
+        setTemp(2, temp3);
+    }
+    const LAllocation *parSlice() {
+        return getOperand(0);
+    }
+    const LAllocation *numActuals() {
+        return getOperand(1);
+    }
+    MRest *mir() const {
+        return mir_->toRest();
+    }
+};
+
 class LParWriteGuard : public LCallInstructionHelper<0, 2, 1>
 {
   public:
@@ -4077,6 +4311,52 @@ class LMonitorTypes : public LInstructionHelper<0, BOX_PIECES, 1>
 
     const MMonitorTypes *mir() const {
         return mir_->toMonitorTypes();
+    }
+    const LDefinition *temp() {
+        return getTemp(0);
+    }
+};
+
+// Generational write barrier used when writing an object to another object.
+class LPostWriteBarrierO : public LInstructionHelper<0, 2, 0>
+{
+  public:
+    LIR_HEADER(PostWriteBarrierO)
+
+    LPostWriteBarrierO(const LAllocation &obj, const LAllocation &value) {
+        setOperand(0, obj);
+        setOperand(1, value);
+    }
+
+    const MPostWriteBarrier *mir() const {
+        return mir_->toPostWriteBarrier();
+    }
+    const LAllocation *object() {
+        return getOperand(0);
+    }
+    const LAllocation *value() {
+        return getOperand(1);
+    }
+};
+
+// Generational write barrier used when writing a value to another object.
+class LPostWriteBarrierV : public LInstructionHelper<0, 1 + BOX_PIECES, 1>
+{
+  public:
+    LIR_HEADER(PostWriteBarrierV)
+
+    LPostWriteBarrierV(const LAllocation &obj, const LDefinition &temp) {
+        setOperand(0, obj);
+        setTemp(0, temp);
+    }
+
+    static const size_t Input = 1;
+
+    const MPostWriteBarrier *mir() const {
+        return mir_->toPostWriteBarrier();
+    }
+    const LAllocation *object() {
+        return getOperand(0);
     }
     const LDefinition *temp() {
         return getTemp(0);
@@ -4249,7 +4529,7 @@ class LFunctionBoundary : public LInstructionHelper<0, 0, 1>
         return getTemp(0);
     }
 
-    RawScript script() {
+    JSScript *script() {
         return mir_->toFunctionBoundary()->script();
     }
 

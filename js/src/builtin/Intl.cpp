@@ -14,12 +14,12 @@
 #include "jsapi.h"
 #include "jsatom.h"
 #include "jscntxt.h"
-#include "jsinterp.h"
 #include "jsobj.h"
 
 #include "builtin/Intl.h"
 #include "vm/DateTime.h"
 #include "vm/GlobalObject.h"
+#include "vm/Interpreter.h"
 #include "vm/Stack.h"
 #include "vm/StringBuffer.h"
 
@@ -39,6 +39,9 @@
 #include "jsobjinlines.h"
 
 using namespace js;
+
+using mozilla::IsFinite;
+using mozilla::IsNegativeZero;
 
 #if ENABLE_INTL_API
 using icu::Locale;
@@ -193,11 +196,16 @@ enum UNumberFormatStyle {
     UNUM_CURRENCY_PLURAL,
 };
 
+enum UNumberFormatRoundingMode {
+    UNUM_ROUND_HALFUP,
+};
+
 enum UNumberFormatAttribute {
   UNUM_GROUPING_USED,
   UNUM_MIN_INTEGER_DIGITS,
   UNUM_MAX_FRACTION_DIGITS,
   UNUM_MIN_FRACTION_DIGITS,
+  UNUM_ROUNDING_MODE,
   UNUM_SIGNIFICANT_DIGITS_USED,
   UNUM_MIN_SIGNIFICANT_DIGITS,
   UNUM_MAX_SIGNIFICANT_DIGITS,
@@ -1268,7 +1276,7 @@ js::intl_numberingSystem(JSContext *cx, unsigned argc, Value *vp)
         return false;
     }
     const char *name = numbers->getName();
-    JSString *jsname = JS_NewStringCopyZ(cx, name);
+    RootedString jsname(cx, JS_NewStringCopyZ(cx, name));
     delete numbers;
     if (!jsname)
         return false;
@@ -1415,6 +1423,7 @@ NewUNumberFormat(JSContext *cx, HandleObject numberFormat)
         unum_setAttribute(nf, UNUM_MAX_FRACTION_DIGITS, uMaximumFractionDigits);
     }
     unum_setAttribute(nf, UNUM_GROUPING_USED, uUseGrouping);
+    unum_setAttribute(nf, UNUM_ROUNDING_MODE, UNUM_ROUND_HALFUP);
 
     return toClose.forget();
 }
@@ -1423,7 +1432,7 @@ static bool
 intl_FormatNumber(JSContext *cx, UNumberFormat *nf, double x, MutableHandleValue result)
 {
     // FormatNumber doesn't consider -0.0 to be negative.
-    if (MOZ_DOUBLE_IS_NEGATIVE_ZERO(x))
+    if (IsNegativeZero(x))
         x = 0.0;
 
     StringBuffer chars(cx);
@@ -1902,7 +1911,7 @@ NewUDateFormat(JSContext *cx, HandleObject dateTimeFormat)
 static bool
 intl_FormatDateTime(JSContext *cx, UDateFormat *df, double x, MutableHandleValue result)
 {
-    if (!MOZ_DOUBLE_IS_FINITE(x)) {
+    if (!IsFinite(x)) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_DATE_NOT_FINITE);
         return false;
     }

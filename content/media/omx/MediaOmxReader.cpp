@@ -35,6 +35,7 @@ MediaOmxReader::MediaOmxReader(AbstractMediaDecoder *aDecoder) :
 MediaOmxReader::~MediaOmxReader()
 {
   ResetDecode();
+  mOmxDecoder.clear();
 }
 
 nsresult MediaOmxReader::Init(MediaDecoderReader* aCloneDonor)
@@ -42,8 +43,27 @@ nsresult MediaOmxReader::Init(MediaDecoderReader* aCloneDonor)
   return NS_OK;
 }
 
+bool MediaOmxReader::IsWaitingMediaResources()
+{
+  return mOmxDecoder->IsWaitingMediaResources();
+}
+
+bool MediaOmxReader::IsDormantNeeded()
+{
+  if (!mOmxDecoder.get()) {
+    return false;
+  }
+  return mOmxDecoder->IsDormantNeeded();
+}
+
+void MediaOmxReader::ReleaseMediaResources()
+{
+  ResetDecode();
+  mOmxDecoder->ReleaseMediaResources();
+}
+
 nsresult MediaOmxReader::ReadMetadata(VideoInfo* aInfo,
-                                        MetadataTags** aTags)
+                                      MetadataTags** aTags)
 {
   NS_ASSERTION(mDecoder->OnDecodeThread(), "Should be on decode thread.");
 
@@ -54,6 +74,14 @@ nsresult MediaOmxReader::ReadMetadata(VideoInfo* aInfo,
     if (!mOmxDecoder->Init()) {
       return NS_ERROR_FAILURE;
     }
+  }
+
+  if (!mOmxDecoder->TryLoad()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (IsWaitingMediaResources()) {
+    return NS_OK;
   }
 
   // Set the total duration (the max of the audio and video track).
@@ -112,13 +140,11 @@ nsresult MediaOmxReader::ResetDecode()
   if (container) {
     container->ClearCurrentFrame();
   }
-
-  mOmxDecoder.clear();
   return NS_OK;
 }
 
 bool MediaOmxReader::DecodeVideoFrame(bool &aKeyframeSkip,
-                                        int64_t aTimeThreshold)
+                                      int64_t aTimeThreshold)
 {
   // Record number of frames decoded and parsed. Automatically update the
   // stats counters using the AutoNotifyDecoded stack-based class.
@@ -138,6 +164,11 @@ bool MediaOmxReader::DecodeVideoFrame(bool &aKeyframeSkip,
     if (!mOmxDecoder->ReadVideo(&frame, aTimeThreshold, aKeyframeSkip, doSeek)) {
       mVideoQueue.Finish();
       return false;
+    }
+
+    // Ignore empty buffer which stagefright media read will sporadically return
+    if (frame.mSize == 0 && !frame.mGraphicBuffer) {
+      return true;
     }
 
     parsed++;
@@ -339,7 +370,7 @@ void MediaOmxReader::OnDecodeThreadFinish() {
 
 void MediaOmxReader::OnDecodeThreadStart() {
   if (mOmxDecoder.get()) {
-    nsresult result = mOmxDecoder->Play();
+    DebugOnly<nsresult> result = mOmxDecoder->Play();
     NS_ASSERTION(result == NS_OK, "OmxDecoder should be in play state to continue decoding");
   }
 }

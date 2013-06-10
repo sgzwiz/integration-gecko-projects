@@ -165,6 +165,8 @@ void nsGIFDecoder2::BeginImageFrame(uint16_t aDepth)
   else
     format = gfxASurface::ImageFormatRGB24;
 
+  MOZ_ASSERT(HasSize());
+
   // Use correct format, RGB for first frame, PAL for following frames
   // and include transparency to allow for optimization of opaque images
   if (mGIFStruct.images_decoded) {
@@ -172,11 +174,22 @@ void nsGIFDecoder2::BeginImageFrame(uint16_t aDepth)
     NeedNewFrame(mGIFStruct.images_decoded, mGIFStruct.x_offset,
                  mGIFStruct.y_offset, mGIFStruct.width, mGIFStruct.height,
                  format, aDepth);
-  } else {
+  }
+
+  // Our first full frame is automatically created by the image decoding
+  // infrastructure. Just use it as long as we're not creating a subframe.
+  else if (mGIFStruct.x_offset != 0 || mGIFStruct.y_offset != 0 ||
+           int32_t(mGIFStruct.width) != mImageMetadata.GetWidth() ||
+           int32_t(mGIFStruct.height) != mImageMetadata.GetHeight()) {
     // Regardless of depth of input, image is decoded into 24bit RGB
     NeedNewFrame(mGIFStruct.images_decoded, mGIFStruct.x_offset,
                  mGIFStruct.y_offset, mGIFStruct.width, mGIFStruct.height,
                  format);
+  } else {
+    // Our preallocated frame matches up, with the possible exception of alpha.
+    if (format == gfxASurface::ImageFormatRGB24) {
+      GetCurrentFrame()->SetHasNoAlpha();
+    }
   }
 
   mCurrentFrame = mGIFStruct.images_decoded;
@@ -803,7 +816,9 @@ nsGIFDecoder2::WriteInternal(const char *aBuffer, uint32_t aCount)
     /* Netscape-specific GIF extension: animation looping */
     case gif_netscape_extension_block:
       if (*q)
-        GETN(*q, gif_consume_netscape_extension);
+        // We might need to consume 3 bytes in
+        // gif_consume_netscape_extension, so make sure we have at least that.
+        GETN(std::max(3, static_cast<int>(*q)), gif_consume_netscape_extension);
       else
         GETN(1, gif_image_start);
       break;
@@ -817,15 +832,15 @@ nsGIFDecoder2::WriteInternal(const char *aBuffer, uint32_t aCount)
           mGIFStruct.loop_count = GETINT16(q + 1);
           GETN(1, gif_netscape_extension_block);
           break;
-        
+
         case 2:
           /* Wait for specified # of bytes to enter buffer */
-          // Don't do this, this extension doesn't exist (isn't used at all) 
+          // Don't do this, this extension doesn't exist (isn't used at all)
           // and doesn't do anything, as our streaming/buffering takes care of it all...
           // See: http://semmix.pl/color/exgraf/eeg24.htm
           GETN(1, gif_netscape_extension_block);
           break;
-  
+
         default:
           // 0,3-7 are yet to be defined netscape extension codes
           mGIFStruct.state = gif_error;
@@ -893,19 +908,23 @@ nsGIFDecoder2::WriteInternal(const char *aBuffer, uint32_t aCount)
       mColorMask = 0xFF >> (8 - realDepth);
       BeginImageFrame(realDepth);
 
-      // We now need a new frame from the decoder framework. We leave all our
-      // data in the buffer as if it wasn't consumed, copy to our hold and return
-      // to the decoder framework.
-      uint32_t size = len + mGIFStruct.bytes_to_consume + mGIFStruct.bytes_in_hold;
-      if (size) {
-        if (SetHold(q, mGIFStruct.bytes_to_consume + mGIFStruct.bytes_in_hold, buf, len)) {
-          // Back into the decoder infrastructure so we can get called again.
-          GETN(9, gif_image_header_continue);
-          return;
+      if (NeedsNewFrame()) {
+        // We now need a new frame from the decoder framework. We leave all our
+        // data in the buffer as if it wasn't consumed, copy to our hold and return
+        // to the decoder framework.
+        uint32_t size = len + mGIFStruct.bytes_to_consume + mGIFStruct.bytes_in_hold;
+        if (size) {
+          if (SetHold(q, mGIFStruct.bytes_to_consume + mGIFStruct.bytes_in_hold, buf, len)) {
+            // Back into the decoder infrastructure so we can get called again.
+            GETN(9, gif_image_header_continue);
+            return;
+          }
         }
+        break;
+      } else {
+        // FALL THROUGH
       }
     }
-    break;
 
     case gif_image_header_continue:
     {

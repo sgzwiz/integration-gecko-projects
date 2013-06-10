@@ -29,11 +29,7 @@ public:
     }
     AudioNode::DestroyMediaStream();
   }
-  virtual bool SupportsMediaStreams() const MOZ_OVERRIDE
-  {
-    return true;
-  }
-  virtual uint32_t NumberOfInputs() const MOZ_FINAL MOZ_OVERRIDE
+  virtual uint16_t NumberOfInputs() const MOZ_FINAL MOZ_OVERRIDE
   {
     return 0;
   }
@@ -41,15 +37,6 @@ public:
   {
     return this;
   }
-
-  void UnregisterPannerNode() {
-    mPannerNode = nullptr;
-  }
-
-  void RegisterPannerNode(PannerNode* aPannerNode) {
-    mPannerNode = aPannerNode;
-  }
-
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(AudioBufferSourceNode, AudioNode)
 
@@ -69,7 +56,7 @@ public:
     duration.Construct(aDuration);
     Start(aWhen, aOffset, duration, aRv);
   }
-  void Stop(double aWhen, ErrorResult& aRv);
+  void Stop(double aWhen, ErrorResult& aRv, bool aShuttingDown = false);
   void NoteOff(double aWhen, ErrorResult& aRv)
   {
     Stop(aWhen, aRv);
@@ -118,6 +105,8 @@ public:
   }
   void SendDopplerShiftToStream(double aDopplerShift);
 
+  IMPL_EVENT_HANDLER(ended)
+
   virtual void NotifyMainThreadStateChanged() MOZ_OVERRIDE;
 
 private:
@@ -152,11 +141,10 @@ private:
   double mDuration;
   nsRefPtr<AudioBuffer> mBuffer;
   nsRefPtr<AudioParam> mPlaybackRate;
-  PannerNode* mPannerNode;
   SelfReference<AudioBufferSourceNode> mPlayingRef; // a reference to self while playing
   bool mLoop;
   bool mStartCalled;
-  bool mOffsetAndDurationRemembered;
+  bool mStopped;
 };
 
 }

@@ -6,7 +6,7 @@
 #include "mozilla/layers/TiledContentClient.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/MathAlgorithms.h"
-#include "BasicTiledThebesLayer.h"
+#include "ClientTiledThebesLayer.h"
 
 #ifdef GFX_TILEDLAYER_DEBUG_OVERLAY
 #include "cairo.h"
@@ -59,8 +59,8 @@ using namespace gfx;
 namespace layers {
 
 
-TiledContentClient::TiledContentClient(BasicTiledThebesLayer* aThebesLayer,
-                                       BasicShadowLayerManager* aManager)
+TiledContentClient::TiledContentClient(ClientTiledThebesLayer* aThebesLayer,
+                                       ClientLayerManager* aManager)
   : CompositableClient(aManager->AsShadowForwarder())
   , mTiledBuffer(aThebesLayer, aManager)
   , mLowPrecisionTiledBuffer(aThebesLayer, aManager)
@@ -87,8 +87,8 @@ TiledContentClient::LockCopyAndWrite(TiledBufferType aType)
   buffer->ClearPaintedRegion();
 }
 
-BasicTiledLayerBuffer::BasicTiledLayerBuffer(BasicTiledThebesLayer* aThebesLayer,
-                                             BasicShadowLayerManager* aManager)
+BasicTiledLayerBuffer::BasicTiledLayerBuffer(ClientTiledThebesLayer* aThebesLayer,
+                                             ClientLayerManager* aManager)
   : mThebesLayer(aThebesLayer)
   , mManager(aManager)
   , mLastPaintOpaque(false)
@@ -273,7 +273,7 @@ BasicTiledLayerBuffer::ValidateTile(BasicTiledLayerTile aTile,
 
 static nsIntRect
 RoundedTransformViewportBounds(const gfx::Rect& aViewport,
-                               const gfx::Point& aScrollOffset,
+                               const CSSPoint& aScrollOffset,
                                const gfxSize& aResolution,
                                float aScaleX,
                                float aScaleY,

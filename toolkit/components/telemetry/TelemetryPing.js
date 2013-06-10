@@ -174,7 +174,6 @@ TelemetryPing.prototype = {
   _pendingPings: [],
   _doLoadSaveNotifications: false,
   _startupIO : {},
-  _hashID: Ci.nsICryptoHash.SHA256,
   // The number of outstanding saved pings that we have issued loading
   // requests for.
   _pingsLoaded: 0,
@@ -611,17 +610,6 @@ TelemetryPing.prototype = {
     return { __iterator__: payloadIterWithThis };
   },
 
-  hashString: function hashString(s) {
-    let digest = Cc["@mozilla.org/security/hash;1"]
-                 .createInstance(Ci.nsICryptoHash);
-    digest.init(this._hashID);
-    let stream = Cc["@mozilla.org/io/string-input-stream;1"]
-                 .createInstance(Ci.nsIStringInputStream);
-    stream.data = s;
-    digest.updateFromStream(stream, stream.available());
-    return digest.finish(/*base64encode=*/true);
-  },
-
   /**
    * Send data to the server. Record success/send-time in histograms
    */
@@ -686,11 +674,18 @@ TelemetryPing.prototype = {
     }
   },
 
+  submissionPath: function submissionPath(ping) {
+    let slug;
+    if (!ping || ping.reason == "test-ping") {
+      slug = this._uuid;
+    } else {
+      slug = ping.slug;
+    }
+    return "/submit/telemetry/" + slug;
+  },
+
   doPing: function doPing(server, ping, onSuccess, onError) {
-    let submitPath = "/submit/telemetry/" + (ping.reason == "test-ping"
-                                             ? "test-ping"
-                                             : ping.slug);
-    let url = server + submitPath;
+    let url = server + this.submissionPath(ping);
     let request = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
                   .createInstance(Ci.nsIXMLHttpRequest);
     request.mozBackgroundRequest = true;
@@ -800,7 +795,7 @@ TelemetryPing.prototype = {
       Telemetry.canRecord = false;
       return;
     }
-    Services.obs.addObserver(this, "profile-before-change", false);
+    Services.obs.addObserver(this, "profile-before-change2", false);
     Services.obs.addObserver(this, "sessionstore-windows-restored", false);
     Services.obs.addObserver(this, "quit-application-granted", false);
 #ifdef MOZ_WIDGET_ANDROID
@@ -828,18 +823,6 @@ TelemetryPing.prototype = {
                                  Ci.nsITimer.TYPE_ONE_SHOT);
   },
 
-  ensurePingChecksum: function ensurePingChecksum(ping) {
-    /* A ping from the current session won't have a checksum.  */
-    if (!ping.checksum) {
-      return;
-    }
-
-    let checksumNow = this.hashString(ping.payload);
-    if (ping.checksum != checksumNow) {
-      throw new Error("Invalid ping checksum")
-    }
-  },
-
   addToPendingPings: function addToPendingPings(file, stream) {
     let success = false;
 
@@ -848,8 +831,6 @@ TelemetryPing.prototype = {
       stream.close();
       let ping = JSON.parse(string);
       this._pingLoadsCompleted++;
-      // This will throw if checksum is invalid.
-      this.ensurePingChecksum(ping);
       this._pendingPings.push(ping);
       if (this._doLoadSaveNotifications &&
           this._pingLoadsCompleted == this._pingsLoaded) {
@@ -857,7 +838,7 @@ TelemetryPing.prototype = {
       }
       success = true;
     } catch (e) {
-      // An error reading the file, or an error parsing/checksumming the contents.
+      // An error reading the file, or an error parsing the contents.
       stream.close();           // close is idempotent.
       file.remove(true);
     }
@@ -986,9 +967,6 @@ TelemetryPing.prototype = {
   },
 
   saveFileForPing: function saveFileForPing(ping) {
-    if (!('checksum' in ping)) {
-      ping.checksum = this.hashString(ping.payload);
-    }
     let file = this.ensurePingDirectory();
     file.append(ping.slug);
     return file;
@@ -1025,7 +1003,7 @@ TelemetryPing.prototype = {
       Services.obs.removeObserver(this, "xul-window-visible");
       this._hasXulWindowVisibleObserver = false;
     }
-    Services.obs.removeObserver(this, "profile-before-change");
+    Services.obs.removeObserver(this, "profile-before-change2");
     Services.obs.removeObserver(this, "quit-application-granted");
 #ifdef MOZ_WIDGET_ANDROID
     Services.obs.removeObserver(this, "application-background", false);
@@ -1090,9 +1068,6 @@ TelemetryPing.prototype = {
       this.setup();
       this.cacheProfileDirectory();
       break;
-    case "profile-before-change":
-      this.uninstall();
-      break;
     case "cycle-collector-begin":
       let now = new Date();
       if (!gLastMemoryPoll
@@ -1132,7 +1107,8 @@ TelemetryPing.prototype = {
     case "idle":
       this.sendIdlePing(false, this._server);
       break;
-    case "quit-application-granted":
+    case "profile-before-change2":
+      this.uninstall();
       if (Telemetry.canSend) {
         this.savePendingPings();
       }

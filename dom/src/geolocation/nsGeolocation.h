@@ -9,6 +9,7 @@
 // Microsoft's API Name hackery sucks
 #undef CreateEvent
 
+#include "mozilla/StaticPtr.h"
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
 #include "nsCOMArray.h"
@@ -71,10 +72,9 @@ class nsGeolocationRequest
   void Shutdown();
 
   // Called by the geolocation device to notify that a location has changed.
-  // isBetter: the accuracy is as good or better than the previous position. 
-  bool Update(nsIDOMGeoPosition* aPosition, bool aIsBetter);
+  bool Update(nsIDOMGeoPosition* aPosition);
 
-  void SendLocation(nsIDOMGeoPosition* location, bool aCachePosition);
+  void SendLocation(nsIDOMGeoPosition* location);
   void MarkCleared();
   bool WantsHighAccuracy() {return mOptions && mOptions->enableHighAccuracy;}
   bool IsActive() {return !mCleared;}
@@ -84,8 +84,8 @@ class nsGeolocationRequest
 
   ~nsGeolocationRequest();
 
-  bool Recv__delete__(const bool& allow);
-  void IPDLRelease() { Release(); }
+  virtual bool Recv__delete__(const bool& allow) MOZ_OVERRIDE;
+  virtual void IPDLRelease() MOZ_OVERRIDE { Release(); }
 
   int32_t WatchId() { return mWatchId; }
  private:
@@ -93,7 +93,6 @@ class nsGeolocationRequest
   void NotifyError(int16_t errorCode);
   bool mAllowed;
   bool mCleared;
-  bool mIsFirstUpdate;
   bool mIsWatchPositionRequest;
 
   nsCOMPtr<nsITimer> mTimeoutTimer;
@@ -114,7 +113,7 @@ class nsGeolocationService MOZ_FINAL : public nsIGeolocationUpdate, public nsIOb
 public:
 
   static already_AddRefed<nsGeolocationService> GetGeolocationService();
-  static nsRefPtr<nsGeolocationService> sService;
+  static mozilla::StaticRefPtr<nsGeolocationService> sService;
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIGEOLOCATIONUPDATE
@@ -135,7 +134,6 @@ public:
 
   void SetCachedPosition(nsIDOMGeoPosition* aPosition);
   nsIDOMGeoPosition* GetCachedPosition();
-  bool IsBetterPosition(nsIDOMGeoPosition *aSomewhere);
 
   // Find and startup a geolocation device (gps, nmea, etc.)
   nsresult StartDevice(nsIPrincipal* aPrincipal, bool aRequestPrivate);
@@ -160,7 +158,7 @@ private:
   nsCOMPtr<nsITimer> mDisconnectTimer;
 
   // The object providing geo location information to us.
-  nsCOMArray<nsIGeolocationProvider> mProviders;
+  nsCOMPtr<nsIGeolocationProvider> mProvider;
 
   // mGeolocators are not owned here.  Their constructor
   // adds them to this list, and their destructor removes
@@ -202,7 +200,7 @@ public:
   void GetCurrentPosition(PositionCallback& aCallback, PositionErrorCallback* aErrorCallback, const PositionOptions& aOptions, ErrorResult& aRv);
 
   // Called by the geolocation device to notify that a location has changed.
-  void Update(nsIDOMGeoPosition* aPosition, bool aIsBetter);
+  void Update(nsIDOMGeoPosition* aPosition);
 
   void SetCachedPosition(Position* aPosition);
   Position* GetCachedPosition();

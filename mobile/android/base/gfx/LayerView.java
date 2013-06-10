@@ -6,7 +6,8 @@
 package org.mozilla.gecko.gfx;
 
 import org.mozilla.gecko.GeckoAccessibility;
-import org.mozilla.gecko.GeckoApp;
+import org.mozilla.gecko.GeckoAppShell;
+import org.mozilla.gecko.GeckoEvent;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.TouchEventInterceptor;
 import org.mozilla.gecko.ZoomConstraints;
@@ -36,6 +37,7 @@ import android.view.inputmethod.InputConnection;
 import android.widget.FrameLayout;
 
 import java.nio.IntBuffer;
+import java.util.ArrayList;
 
 /**
  * A view rendered by the layer compositor.
@@ -60,7 +62,9 @@ public class LayerView extends FrameLayout {
     private TextureView mTextureView;
 
     private Listener mListener;
-    private TouchEventInterceptor mTouchInterceptor;
+
+    /* This should only be modified on the Java UI thread. */
+    private final ArrayList<TouchEventInterceptor> mTouchInterceptors;
 
     /* Flags used to determine when to show the painted surface. */
     public static final int PAINT_START = 0;
@@ -96,6 +100,8 @@ public class LayerView extends FrameLayout {
         mGLController = GLController.getInstance(this);
         mPaintState = PAINT_START;
         mBackgroundColor = Color.WHITE;
+
+        mTouchInterceptors = new ArrayList<TouchEventInterceptor>();
     }
 
     public void initializeView(EventDispatcher eventDispatcher) {
@@ -110,6 +116,45 @@ public class LayerView extends FrameLayout {
         setFocusableInTouchMode(true);
 
         GeckoAccessibility.setDelegate(this);
+    }
+
+    public void geckoConnected() {
+        mLayerClient.notifyGeckoReady();
+        addTouchInterceptor(new TouchEventInterceptor() {
+            private PointF mInitialTouchPoint = null;
+
+            @Override
+            public boolean onInterceptTouchEvent(View view, MotionEvent event) {
+                return false;
+            }
+
+            @Override
+            public boolean onTouch(View view, MotionEvent event) {
+                if (event == null) {
+                    return true;
+                }
+
+                int action = event.getActionMasked();
+                PointF point = new PointF(event.getX(), event.getY());
+                if (action == MotionEvent.ACTION_DOWN) {
+                    mInitialTouchPoint = point;
+                }
+
+                if (mInitialTouchPoint != null && action == MotionEvent.ACTION_MOVE) {
+                    if (PointUtils.subtract(point, mInitialTouchPoint).length() <
+                        PanZoomController.PAN_THRESHOLD) {
+                        // Don't send the touchmove event if if the users finger hasn't moved far.
+                        // Necessary for Google Maps to work correctly. See bug 771099.
+                        return true;
+                    } else {
+                        mInitialTouchPoint = null;
+                    }
+                }
+
+                GeckoAppShell.sendEventToGecko(GeckoEvent.createMotionEvent(event, false));
+                return true;
+            }
+        });
     }
 
     public void show() {
@@ -131,15 +176,35 @@ public class LayerView extends FrameLayout {
         }
     }
 
-    public void setTouchIntercepter(final TouchEventInterceptor touchInterceptor) {
-        // this gets run on the gecko thread, but for thread safety we want the assignment
-        // on the UI thread.
+    public void addTouchInterceptor(final TouchEventInterceptor aTouchInterceptor) {
         post(new Runnable() {
             @Override
             public void run() {
-                mTouchInterceptor = touchInterceptor;
+                mTouchInterceptors.add(aTouchInterceptor);
             }
         });
+    }
+
+    public void removeTouchInterceptor(final TouchEventInterceptor aTouchInterceptor) {
+        post(new Runnable() {
+            @Override
+            public void run() {
+                mTouchInterceptors.remove(aTouchInterceptor);
+            }
+        });
+    }
+
+    private boolean runTouchInterceptors(MotionEvent event, boolean aOnTouch) {
+        boolean result = false;
+        for (TouchEventInterceptor i : mTouchInterceptors) {
+            if (aOnTouch) {
+                result |= i.onTouch(this, event);
+            } else {
+                result |= i.onInterceptTouchEvent(this, event);
+            }
+        }
+
+        return result;
     }
 
     @Override
@@ -148,13 +213,13 @@ public class LayerView extends FrameLayout {
             requestFocus();
         }
 
-        if (mTouchInterceptor != null && mTouchInterceptor.onInterceptTouchEvent(this, event)) {
+        if (runTouchInterceptors(event, false)) {
             return true;
         }
         if (mPanZoomController != null && mPanZoomController.onTouchEvent(event)) {
             return true;
         }
-        if (mTouchInterceptor != null && mTouchInterceptor.onTouch(this, event)) {
+        if (runTouchInterceptors(event, true)) {
             return true;
         }
         return false;
@@ -162,7 +227,7 @@ public class LayerView extends FrameLayout {
 
     @Override
     public boolean onHoverEvent(MotionEvent event) {
-        if (mTouchInterceptor != null && mTouchInterceptor.onTouch(this, event)) {
+        if (runTouchInterceptors(event, true)) {
             return true;
         }
         return false;
@@ -363,7 +428,7 @@ public class LayerView extends FrameLayout {
     private Bitmap getDrawable(int resId) {
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inScaled = false;
-        return BitmapFactory.decodeResource(getContext().getResources(), resId, options);
+        return BitmapUtils.decodeResource(getContext(), resId, options);
     }
 
     Bitmap getShadowPattern() {
@@ -425,7 +490,7 @@ public class LayerView extends FrameLayout {
     /** This function is invoked by Gecko (compositor thread) via JNI; be careful when modifying signature. */
     public static GLController registerCxxCompositor() {
         try {
-            LayerView layerView = GeckoApp.mAppContext.getLayerView();
+            LayerView layerView = GeckoAppShell.getLayerView();
             GLController controller = layerView.getGLController();
             controller.compositorCreated();
             return controller;

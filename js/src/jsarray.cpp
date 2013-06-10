@@ -17,28 +17,26 @@
 #include "jscntxt.h"
 #include "jsfriendapi.h"
 #include "jsfun.h"
-#include "jsinterp.h"
 #include "jsiter.h"
 #include "jsnum.h"
 #include "jsobj.h"
 #include "jstypes.h"
 #include "jsutil.h"
 #include "ds/Sort.h"
-#include "methodjit/MethodJIT.h"
-#include "methodjit/StubCalls-inl.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/ForkJoin.h"
+#include "vm/Interpreter.h"
 #include "vm/NumericConversions.h"
 #include "vm/Shape.h"
 #include "vm/StringBuffer.h"
 
 #include "jsatominlines.h"
 #include "jscntxtinlines.h"
-#include "jsinterpinlines.h"
 #include "jsobjinlines.h"
 #include "jsstrinlines.h"
 
 #include "vm/ArgumentsObject-inl.h"
+#include "vm/Interpreter-inl.h"
 #include "vm/ObjectImpl-inl.h"
 
 using namespace js;
@@ -47,6 +45,7 @@ using namespace js::types;
 
 using mozilla::ArrayLength;
 using mozilla::DebugOnly;
+using mozilla::IsNaN;
 using mozilla::PointerRangeSize;
 
 JSBool
@@ -133,26 +132,14 @@ js::StringIsArrayIndex(JSLinearString *str, uint32_t *indexp)
     return false;
 }
 
-RawShape
-js::GetDenseArrayShape(JSContext *cx, HandleObject globalObj)
-{
-    JS_ASSERT(globalObj);
-
-    JSObject *proto = globalObj->global().getOrCreateArrayPrototype(cx);
-    if (!proto)
-        return NULL;
-
-    return EmptyShape::getInitialShape(cx, &ArrayClass, proto, proto->getParent(),
-                                       gc::FINALIZE_OBJECT0);
-}
-
 bool
 DoubleIndexToId(JSContext *cx, double index, MutableHandleId id)
 {
     if (index == uint32_t(index))
         return IndexToId(cx, uint32_t(index), id);
 
-    return ValueToId<CanGC>(cx, DoubleValue(index), id);
+    Value tmp = DoubleValue(index);
+    return ValueToId<CanGC>(cx, HandleValue::fromMarkedLocation(&tmp), id);
 }
 
 /*
@@ -364,7 +351,8 @@ DeletePropertyOrThrow(JSContext *cx, HandleObject obj, double index)
         return true;
 
     RootedId id(cx);
-    if (!ValueToId<CanGC>(cx, NumberValue(index), &id))
+    RootedValue indexv(cx, NumberValue(index));
+    if (!ValueToId<CanGC>(cx, indexv, &id))
         return false;
     return obj->reportNotConfigurable(cx, id, JSREPORT_ERROR);
 }
@@ -420,6 +408,22 @@ struct ReverseIndexComparator
     }
 };
 
+bool
+js::CanonicalizeArrayLengthValue(JSContext *cx, HandleValue v, uint32_t *newLen)
+{
+    if (!ToUint32(cx, v, newLen))
+        return false;
+
+    double d;
+    if (!ToNumber(cx, v, &d))
+        return false;
+    if (d == *newLen)
+        return true;
+
+    JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_BAD_ARRAY_LENGTH);
+    return false;
+}
+
 /* ES6 20130308 draft 8.4.2.4 ArraySetLength */
 bool
 js::ArraySetLength(JSContext *cx, HandleObject obj, HandleId id, unsigned attrs,
@@ -432,19 +436,10 @@ js::ArraySetLength(JSContext *cx, HandleObject obj, HandleId id, unsigned attrs,
 
     /* Steps 1-2 are irrelevant in our implementation. */
 
-    /* Step 3. */
+    /* Steps 3-5. */
     uint32_t newLen;
-    if (!ToUint32(cx, value, &newLen))
+    if (!CanonicalizeArrayLengthValue(cx, value, &newLen))
         return false;
-
-    /* Steps 4-5. */
-    double d;
-    if (!ToNumber(cx, value, &d))
-        return false;
-    if (d != newLen) {
-        JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_BAD_ARRAY_LENGTH);
-        return false;
-    }
 
     /* Steps 6-7. */
     bool lengthIsWritable = obj->arrayLengthIsWritable();
@@ -899,7 +894,7 @@ array_join_sub(JSContext *cx, CallArgs &args, bool locale)
     // Steps 4 and 5
     RootedString sepstr(cx, NULL);
     if (!locale && args.hasDefined(0)) {
-        sepstr = ToString<CanGC>(cx, args[0]);
+        sepstr = ToString<CanGC>(cx, args.handleAt(0));
         if (!sepstr)
             return false;
     }
@@ -1008,7 +1003,7 @@ array_toString(JSContext *cx, unsigned argc, Value *vp)
         return false;
 
     if (!js_IsCallable(join)) {
-        JSString *str = obj_toStringHelper(cx, obj);
+        JSString *str = JS_BasicObjectToString(cx, obj);
         if (!str)
             return false;
         args.rval().setString(str);
@@ -1140,11 +1135,14 @@ InitArrayElements(JSContext *cx, HandleObject obj, uint32_t start, uint32_t coun
     JS_ASSERT(start == MAX_ARRAY_INDEX + 1);
     RootedValue value(cx);
     RootedId id(cx);
+    RootedValue indexv(cx);
     double index = MAX_ARRAY_INDEX + 1;
     do {
         value = *vector++;
-        if (!ValueToId<CanGC>(cx, DoubleValue(index), &id) ||
-            !JSObject::setGeneric(cx, obj, obj, id, &value, true)) {
+        indexv = DoubleValue(index);
+        if (!ValueToId<CanGC>(cx, indexv, &id) ||
+            !JSObject::setGeneric(cx, obj, obj, id, &value, true))
+        {
             return false;
         }
         index += 1;
@@ -1464,7 +1462,7 @@ SortComparatorFunction::operator()(const Value &a, const Value &b, bool *lessOrE
      * 'consistent compare functions' that don't return NaN, but is silent
      * about what the result should be. So we currently ignore it.
      */
-    *lessOrEqualp = (MOZ_DOUBLE_IS_NaN(cmp) || cmp <= 0);
+    *lessOrEqualp = (IsNaN(cmp) || cmp <= 0);
     return true;
 }
 
@@ -1545,7 +1543,7 @@ MatchNumericComparator(const Value &v)
     if (!fun->hasScript())
         return Match_None;
 
-    RawScript script = fun->nonLazyScript();
+    JSScript *script = fun->nonLazyScript();
     jsbytecode *pc = script->code;
 
     uint16_t arg0, arg1;
@@ -1998,15 +1996,6 @@ js::ArrayShiftMoveElements(JSObject *obj)
     obj->moveDenseElementsUnbarriered(0, 1, initlen);
 }
 
-#ifdef JS_METHODJIT
-void JS_FASTCALL
-mjit::stubs::ArrayShift(VMFrame &f)
-{
-    JSObject *obj = &f.regs.sp[-1].toObject();
-    ArrayShiftMoveElements(obj);
-}
-#endif /* JS_METHODJIT */
-
 /* ES5 15.4.4.9 */
 JSBool
 js::array_shift(JSContext *cx, unsigned argc, Value *vp)
@@ -2429,7 +2418,7 @@ array_splice(JSContext *cx, unsigned argc, Value *vp)
     return true;
 }
 
-#ifdef JS_METHODJIT
+#ifdef JS_ION
 bool
 js::array_concat_dense(JSContext *cx, HandleObject obj1, HandleObject obj2, HandleObject result)
 {
@@ -2452,22 +2441,10 @@ js::array_concat_dense(JSContext *cx, HandleObject obj1, HandleObject obj2, Hand
 
     result->initDenseElements(0, obj1->getDenseElements(), initlen1);
     result->initDenseElements(initlen1, obj2->getDenseElements(), initlen2);
-
     result->setArrayLengthInt32(len);
     return true;
 }
-
-void JS_FASTCALL
-mjit::stubs::ArrayConcatTwoArrays(VMFrame &f)
-{
-    RootedObject result(f.cx, &f.regs.sp[-3].toObject());
-    RootedObject obj1(f.cx, &f.regs.sp[-2].toObject());
-    RootedObject obj2(f.cx, &f.regs.sp[-1].toObject());
-
-    if (!array_concat_dense(f.cx, obj1, obj2, result))
-        THROW();
-}
-#endif /* JS_METHODJIT */
+#endif /* JS_ION */
 
 /*
  * Python-esque sequence operations.
@@ -2694,7 +2671,7 @@ array_filter(JSContext *cx, unsigned argc, Value *vp)
                 return false;
 
             if (ToBoolean(ag.rval())) {
-                if(!SetArrayElement(cx, arr, to, kValue))
+                if (!SetArrayElement(cx, arr, to, kValue))
                     return false;
                 to++;
             }
@@ -2751,7 +2728,6 @@ static const JSFunctionSpec array_methods[] = {
          {"some",               {NULL, NULL},       1,0, "ArraySome"},
          {"every",              {NULL, NULL},       1,0, "ArrayEvery"},
 
-    JS_FN("iterator",           JS_ArrayIterator,   0,0),
     JS_FS_END
 };
 
@@ -2836,7 +2812,8 @@ js_InitArrayClass(JSContext *cx, HandleObject obj)
     if (!type)
         return NULL;
 
-    RootedShape shape(cx, EmptyShape::getInitialShape(cx, &ArrayClass, TaggedProto(proto), proto->getParent(),
+    RootedShape shape(cx, EmptyShape::getInitialShape(cx, &ArrayClass, TaggedProto(proto),
+                                                      proto->getParent(), NewObjectMetadata(cx),
                                                       gc::FINALIZE_OBJECT0));
 
     RootedObject arrayProto(cx, JSObject::createArray(cx, gc::FINALIZE_OBJECT4, gc::TenuredHeap, shape, type, 0));
@@ -2869,6 +2846,14 @@ js_InitArrayClass(JSContext *cx, HandleObject obj)
     if (!DefineConstructorAndPrototype(cx, global, JSProto_Array, ctor, arrayProto))
         return NULL;
 
+    JSFunction *fun = JS_DefineFunction(cx, arrayProto, "values", JS_ArrayIterator, 0, 0);
+    if (!fun)
+        return NULL;
+
+    RootedValue funval(cx, ObjectValue(*fun));
+    if (!JS_DefineProperty(cx, arrayProto, "iterator", funval, NULL, NULL, 0))
+        return NULL;
+
     return arrayProto;
 }
 
@@ -2895,7 +2880,7 @@ EnsureNewArrayElements(JSContext *cx, JSObject *obj, uint32_t length)
 
 template<bool allocateCapacity>
 static JS_ALWAYS_INLINE JSObject *
-NewArray(JSContext *cx, uint32_t length, RawObject protoArg, NewObjectKind newKind = GenericObject)
+NewArray(JSContext *cx, uint32_t length, JSObject *protoArg, NewObjectKind newKind = GenericObject)
 {
     gc::AllocKind allocKind = GuessArrayGCKind(length);
     JS_ASSERT(CanBeFinalizedInBackground(allocKind, &ArrayClass));
@@ -2904,7 +2889,8 @@ NewArray(JSContext *cx, uint32_t length, RawObject protoArg, NewObjectKind newKi
     NewObjectCache &cache = cx->runtime->newObjectCache;
 
     NewObjectCache::EntryIndex entry = -1;
-    if (newKind != SingletonObject &&
+    if (newKind == GenericObject &&
+        !cx->compartment->objectMetadataCallback &&
         cache.lookupGlobal(&ArrayClass, cx->global(), allocKind, &entry))
     {
         RootedObject obj(cx, cache.newObjectFromHit(cx, entry, GetInitialHeap(newKind, &ArrayClass)));
@@ -2934,11 +2920,12 @@ NewArray(JSContext *cx, uint32_t length, RawObject protoArg, NewObjectKind newKi
      * See JSObject::createArray.
      */
     RootedShape shape(cx, EmptyShape::getInitialShape(cx, &ArrayClass, TaggedProto(proto),
-                                                      cx->global(), gc::FINALIZE_OBJECT0));
+                                                      cx->global(), NewObjectMetadata(cx), gc::FINALIZE_OBJECT0));
     if (!shape)
         return NULL;
 
-    RootedObject obj(cx, JSObject::createArray(cx, allocKind, gc::DefaultHeap, shape, type, length));
+    RootedObject obj(cx, JSObject::createArray(cx, allocKind, GetInitialHeap(newKind, &ArrayClass),
+                                               shape, type, length));
     if (!obj)
         return NULL;
 
@@ -2963,41 +2950,29 @@ NewArray(JSContext *cx, uint32_t length, RawObject protoArg, NewObjectKind newKi
 }
 
 JSObject * JS_FASTCALL
-js::NewDenseEmptyArray(JSContext *cx, RawObject proto /* = NULL */,
+js::NewDenseEmptyArray(JSContext *cx, JSObject *proto /* = NULL */,
                        NewObjectKind newKind /* = GenericObject */)
 {
     return NewArray<false>(cx, 0, proto, newKind);
 }
 
 JSObject * JS_FASTCALL
-js::NewDenseAllocatedArray(JSContext *cx, uint32_t length, RawObject proto /* = NULL */,
+js::NewDenseAllocatedArray(JSContext *cx, uint32_t length, JSObject *proto /* = NULL */,
                            NewObjectKind newKind /* = GenericObject */)
 {
     return NewArray<true>(cx, length, proto, newKind);
 }
 
 JSObject * JS_FASTCALL
-js::NewDenseUnallocatedArray(JSContext *cx, uint32_t length, RawObject proto /* = NULL */,
+js::NewDenseUnallocatedArray(JSContext *cx, uint32_t length, JSObject *proto /* = NULL */,
                              NewObjectKind newKind /* = GenericObject */)
 {
     return NewArray<false>(cx, length, proto, newKind);
 }
 
-#ifdef JS_METHODJIT
-JSObject * JS_FASTCALL
-mjit::stubs::NewDenseUnallocatedArray(VMFrame &f, uint32_t length)
-{
-    JSObject *obj = NewArray<false>(f.cx, length, (RawObject)f.scratch);
-    if (!obj)
-        THROWV(NULL);
-
-    return obj;
-}
-#endif
-
 JSObject *
 js::NewDenseCopiedArray(JSContext *cx, uint32_t length, HandleObject src, uint32_t elementOffset,
-                        RawObject proto /* = NULL */)
+                        JSObject *proto /* = NULL */)
 {
     JS_ASSERT(!src->isIndexed());
 
@@ -3019,7 +2994,7 @@ js::NewDenseCopiedArray(JSContext *cx, uint32_t length, HandleObject src, uint32
 // values must point at already-rooted Value objects
 JSObject *
 js::NewDenseCopiedArray(JSContext *cx, uint32_t length, const Value *values,
-                        RawObject proto /* = NULL */, NewObjectKind newKind /* = GenericObject */)
+                        JSObject *proto /* = NULL */, NewObjectKind newKind /* = GenericObject */)
 {
     JSObject* obj = NewArray<true>(cx, length, proto);
     if (!obj)

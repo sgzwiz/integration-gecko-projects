@@ -11,7 +11,6 @@
 <?xml-stylesheet rel="stylesheet" href="chrome://browser/skin/devtools/toolbox.css" type="text/css"?>
 
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript;version=1.8" src="toolbox-options.js"></script>
   <hbox id="options-panel-container" flex="1">
     <hbox id="options-panel" flex="1">
       <vbox id="tools-box" class="options-vertical-pane" flex="1">
@@ -29,6 +28,12 @@
           <radio value="light" label="&options.lightTheme.label;"/>
           <radio value="dark" label="&options.darkTheme.label;"/>
         </radiogroup>
+        <label value="&options.webconsole.label;"/>
+        <vbox id="webconsole-options" class="options-groupbox">
+          <checkbox label="&options.enablePersistentLogging.label;"
+                    tooltiptext="&options.enablePersistentLogging.tooltip;"
+                    data-pref="devtools.webconsole.persistlog"/>
+        </vbox>
         <label value="&options.context.label;"/>
         <vbox id="context-options" class="options-groupbox">
           <checkbox label="&options.enableChrome.label;"

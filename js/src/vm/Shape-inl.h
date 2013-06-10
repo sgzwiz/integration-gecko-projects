@@ -7,7 +7,6 @@
 #ifndef Shape_inl_h__
 #define Shape_inl_h__
 
-#include "mozilla/DebugOnly.h"
 #include "mozilla/PodOperations.h"
 
 #include "jsarray.h"
@@ -21,7 +20,6 @@
 #include "gc/Marking.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/ScopeObject.h"
-#include "vm/Shape-inl.h"
 #include "vm/StringObject.h"
 
 #include "jscntxtinlines.h"
@@ -49,24 +47,28 @@ GetterSetterWriteBarrierPostRemove(JSRuntime *rt, JSObject **objp)
 }
 
 inline
-BaseShape::BaseShape(JSCompartment *comp, Class *clasp, JSObject *parent, uint32_t objectFlags)
+BaseShape::BaseShape(JSCompartment *comp, Class *clasp, JSObject *parent, JSObject *metadata,
+                     uint32_t objectFlags)
 {
     JS_ASSERT(!(objectFlags & ~OBJECT_FLAG_MASK));
     mozilla::PodZero(this);
     this->clasp = clasp;
     this->parent = parent;
+    this->metadata = metadata;
     this->flags = objectFlags;
     this->compartment_ = comp;
 }
 
 inline
-BaseShape::BaseShape(JSCompartment *comp, Class *clasp, JSObject *parent, uint32_t objectFlags,
-                     uint8_t attrs, js::PropertyOp rawGetter, js::StrictPropertyOp rawSetter)
+BaseShape::BaseShape(JSCompartment *comp, Class *clasp, JSObject *parent, JSObject *metadata,
+                     uint32_t objectFlags, uint8_t attrs,
+                     PropertyOp rawGetter, StrictPropertyOp rawSetter)
 {
     JS_ASSERT(!(objectFlags & ~OBJECT_FLAG_MASK));
     mozilla::PodZero(this);
     this->clasp = clasp;
     this->parent = parent;
+    this->metadata = metadata;
     this->flags = objectFlags;
     this->rawGetter = rawGetter;
     this->rawSetter = rawSetter;
@@ -87,6 +89,7 @@ BaseShape::BaseShape(const StackBaseShape &base)
     mozilla::PodZero(this);
     this->clasp = base.clasp;
     this->parent = base.parent;
+    this->metadata = base.metadata;
     this->flags = base.flags;
     this->rawGetter = base.rawGetter;
     this->rawSetter = base.rawSetter;
@@ -102,6 +105,7 @@ BaseShape::operator=(const BaseShape &other)
 {
     clasp = other.clasp;
     parent = other.parent;
+    metadata = other.metadata;
     flags = other.flags;
     slotSpan_ = other.slotSpan_;
     if (flags & HAS_GETTER_OBJECT) {
@@ -131,10 +135,11 @@ BaseShape::matchesGetterSetter(PropertyOp rawGetter, StrictPropertyOp rawSetter)
 }
 
 inline
-StackBaseShape::StackBaseShape(RawShape shape)
+StackBaseShape::StackBaseShape(Shape *shape)
   : flags(shape->getObjectFlags()),
     clasp(shape->getObjectClass()),
     parent(shape->getObjectParent()),
+    metadata(shape->getObjectMetadata()),
     compartment(shape->compartment())
 {
     updateGetterSetter(shape->attrs, shape->getter(), shape->setter());
@@ -160,7 +165,7 @@ StackBaseShape::updateGetterSetter(uint8_t attrs,
 }
 
 inline void
-BaseShape::adoptUnowned(RawUnownedBaseShape other)
+BaseShape::adoptUnowned(UnownedBaseShape *other)
 {
     /*
      * This is a base shape owned by a dictionary object, update it to reflect the
@@ -180,7 +185,7 @@ BaseShape::adoptUnowned(RawUnownedBaseShape other)
 }
 
 inline void
-BaseShape::setOwned(RawUnownedBaseShape unowned)
+BaseShape::setOwned(UnownedBaseShape *unowned)
 {
     flags |= OWNED_SHAPE;
     this->unowned_ = unowned;
@@ -191,12 +196,13 @@ BaseShape::assertConsistency()
 {
 #ifdef DEBUG
     if (isOwned()) {
-        RawUnownedBaseShape unowned = baseUnowned();
+        UnownedBaseShape *unowned = baseUnowned();
         JS_ASSERT(hasGetterObject() == unowned->hasGetterObject());
         JS_ASSERT(hasSetterObject() == unowned->hasSetterObject());
         JS_ASSERT_IF(hasGetterObject(), getterObject() == unowned->getterObject());
         JS_ASSERT_IF(hasSetterObject(), setterObject() == unowned->setterObject());
         JS_ASSERT(getObjectParent() == unowned->getObjectParent());
+        JS_ASSERT(getObjectMetadata() == unowned->getObjectMetadata());
         JS_ASSERT(getObjectFlags() == unowned->getObjectFlags());
     }
 #endif
@@ -216,7 +222,7 @@ Shape::Shape(const StackShape &other, uint32_t nfixed)
 }
 
 inline
-Shape::Shape(RawUnownedBaseShape base, uint32_t nfixed)
+Shape::Shape(UnownedBaseShape *base, uint32_t nfixed)
   : base_(base),
     propid_(JSID_EMPTY),
     slotInfo(SHAPE_INVALID_SLOT | (nfixed << FIXED_SLOTS_SHIFT)),
@@ -244,7 +250,7 @@ StackShape::hash() const
 }
 
 inline bool
-Shape::matches(const RawShape other) const
+Shape::matches(const Shape *other) const
 {
     return propid_.get() == other->propid_.get() &&
            matchesParamsAfterId(other->base(), other->maybeSlot(), other->attrs,
@@ -259,7 +265,7 @@ Shape::matches(const StackShape &other) const
 }
 
 inline bool
-Shape::matchesParamsAfterId(RawBaseShape base, uint32_t aslot,
+Shape::matchesParamsAfterId(BaseShape *base, uint32_t aslot,
                             unsigned aattrs, unsigned aflags, int ashortid) const
 {
     return base->unowned() == this->base()->unowned() &&
@@ -281,8 +287,10 @@ Shape::getUserId(JSContext *cx, MutableHandleId idp) const
 #endif
     if (self->hasShortID()) {
         int16_t id = self->shortid();
-        if (id < 0)
-            return ValueToId<CanGC>(cx, Int32Value(id), idp);
+        if (id < 0) {
+            RootedValue v(cx, Int32Value(id));
+            return ValueToId<CanGC>(cx, v, idp);
+        }
         idp.set(INT_TO_JSID(id));
     } else {
         idp.set(self->propid());
@@ -339,7 +347,7 @@ Shape::set(JSContext* cx, HandleObject obj, HandleObject receiver, bool strict, 
 }
 
 inline void
-Shape::setParent(RawShape p)
+Shape::setParent(Shape *p)
 {
     JS_ASSERT_IF(p && !p->hasMissingSlot() && !inDictionary(),
                  p->maybeSlot() <= maybeSlot());
@@ -396,7 +404,7 @@ Shape::initDictionaryShape(const StackShape &child, uint32_t nfixed, HeapPtrShap
 }
 
 inline
-EmptyShape::EmptyShape(RawUnownedBaseShape base, uint32_t nfixed)
+EmptyShape::EmptyShape(UnownedBaseShape *base, uint32_t nfixed)
   : js::Shape(base, nfixed)
 {
     /* Only empty shapes can be NON_NATIVE. */
@@ -405,7 +413,7 @@ EmptyShape::EmptyShape(RawUnownedBaseShape base, uint32_t nfixed)
 }
 
 inline void
-Shape::writeBarrierPre(RawShape shape)
+Shape::writeBarrierPre(Shape *shape)
 {
 #ifdef JSGC_INCREMENTAL
     if (!shape || !shape->runtime()->needsBarrier())
@@ -413,7 +421,7 @@ Shape::writeBarrierPre(RawShape shape)
 
     JS::Zone *zone = shape->zone();
     if (zone->needsBarrier()) {
-        RawShape tmp = shape;
+        Shape *tmp = shape;
         MarkShapeUnbarriered(zone->barrierTracer(), &tmp, "write barrier");
         JS_ASSERT(tmp == shape);
     }
@@ -421,17 +429,17 @@ Shape::writeBarrierPre(RawShape shape)
 }
 
 inline void
-Shape::writeBarrierPost(RawShape shape, void *addr)
+Shape::writeBarrierPost(Shape *shape, void *addr)
 {
 }
 
 inline void
-Shape::readBarrier(RawShape shape)
+Shape::readBarrier(Shape *shape)
 {
 #ifdef JSGC_INCREMENTAL
     JS::Zone *zone = shape->zone();
     if (zone->needsBarrier()) {
-        RawShape tmp = shape;
+        Shape *tmp = shape;
         MarkShapeUnbarriered(zone->barrierTracer(), &tmp, "read barrier");
         JS_ASSERT(tmp == shape);
     }
@@ -448,7 +456,7 @@ Shape::markChildren(JSTracer *trc)
 }
 
 inline void
-BaseShape::writeBarrierPre(RawBaseShape base)
+BaseShape::writeBarrierPre(BaseShape *base)
 {
 #ifdef JSGC_INCREMENTAL
     if (!base || !base->runtime()->needsBarrier())
@@ -456,7 +464,7 @@ BaseShape::writeBarrierPre(RawBaseShape base)
 
     JS::Zone *zone = base->zone();
     if (zone->needsBarrier()) {
-        RawBaseShape tmp = base;
+        BaseShape *tmp = base;
         MarkBaseShapeUnbarriered(zone->barrierTracer(), &tmp, "write barrier");
         JS_ASSERT(tmp == base);
     }
@@ -464,17 +472,17 @@ BaseShape::writeBarrierPre(RawBaseShape base)
 }
 
 inline void
-BaseShape::writeBarrierPost(RawBaseShape shape, void *addr)
+BaseShape::writeBarrierPost(BaseShape *shape, void *addr)
 {
 }
 
 inline void
-BaseShape::readBarrier(RawBaseShape base)
+BaseShape::readBarrier(BaseShape *base)
 {
 #ifdef JSGC_INCREMENTAL
     JS::Zone *zone = base->zone();
     if (zone->needsBarrier()) {
-        RawBaseShape tmp = base;
+        BaseShape *tmp = base;
         MarkBaseShapeUnbarriered(zone->barrierTracer(), &tmp, "read barrier");
         JS_ASSERT(tmp == base);
     }
@@ -495,6 +503,9 @@ BaseShape::markChildren(JSTracer *trc)
 
     if (parent)
         MarkObject(trc, &parent, "parent");
+
+    if (metadata)
+        MarkObject(trc, &metadata, "metadata");
 }
 
 /*

@@ -10,6 +10,7 @@
 #include "MediaResource.h"
 #include "GStreamerReader.h"
 #include "GStreamerFormatHelper.h"
+#include "GStreamerMozVideoBuffer.h"
 #include "VideoUtils.h"
 #include "mozilla/dom/TimeRanges.h"
 #include "mozilla/Preferences.h"
@@ -38,8 +39,6 @@ static const int MAX_CHANNELS = 4;
 static const int SHORT_FILE_SIZE = 1024 * 1024;
 // The default resource->Read() size when working in push mode
 static const int DEFAULT_SOURCE_READ_SIZE = 50 * 1024;
-
-G_DEFINE_BOXED_TYPE(BufferData, buffer_data, BufferData::Copy, BufferData::Free);
 
 typedef enum {
   GST_PLAY_FLAG_VIDEO         = (1 << 0),
@@ -139,9 +138,7 @@ nsresult GStreamerReader::Init(MediaDecoderReader* aCloneDonor)
   gst_pad_add_event_probe(sinkpad,
       G_CALLBACK(&GStreamerReader::EventProbeCb), this);
   gst_object_unref(sinkpad);
-#if GST_VERSION_MICRO >= 36
   gst_pad_set_bufferalloc_function(sinkpad, GStreamerReader::AllocateVideoBufferCb);
-#endif
   gst_pad_set_element_private(sinkpad, this);
 
   mAudioSink = gst_parse_bin_from_description("capsfilter name=filter ! "
@@ -426,34 +423,47 @@ void GStreamerReader::NotifyBytesConsumed()
   mLastReportedByteOffset = mByteOffset;
 }
 
-bool GStreamerReader::WaitForDecodedData(int* aCounter)
-{
-  ReentrantMonitorAutoEnter mon(mGstThreadsMonitor);
-
-  /* Report consumed bytes from here as we can't do it from gst threads */
-  NotifyBytesConsumed();
-  while(*aCounter == 0) {
-    if (mReachedEos) {
-      return false;
-    }
-    mon.Wait();
-    NotifyBytesConsumed();
-  }
-  (*aCounter)--;
-
-  return true;
-}
-
 bool GStreamerReader::DecodeAudioData()
 {
   NS_ASSERTION(mDecoder->OnDecodeThread(), "Should be on decode thread.");
 
-  if (!WaitForDecodedData(&mAudioSinkBufferCount)) {
-    mAudioQueue.Finish();
-    return false;
+  GstBuffer *buffer = nullptr;
+
+  {
+    ReentrantMonitorAutoEnter mon(mGstThreadsMonitor);
+
+    if (mReachedEos) {
+      mAudioQueue.Finish();
+      return false;
+    }
+
+    /* Wait something to be decoded before return or continue */
+    if (!mAudioSinkBufferCount) {
+      if(!mVideoSinkBufferCount) {
+        /* We have nothing decoded so it makes no sense to return to the state machine
+         * as it will call us back immediately, we'll return again and so on, wasting
+         * CPU cycles for no job done. So, block here until there is either video or
+         * audio data available 
+        */
+        mon.Wait();
+        if (!mAudioSinkBufferCount) {
+          /* There is still no audio data available, so either there is video data or 
+           * something else has happened (Eos, etc...). Return to the state machine
+           * to process it.
+           */
+          return true;
+        }
+      }
+      else {
+        return true;
+      }
+    }
+
+    NotifyBytesConsumed();
+    buffer = gst_app_sink_pull_buffer(mAudioAppSink);
+    mAudioSinkBufferCount--;
   }
 
-  GstBuffer* buffer = gst_app_sink_pull_buffer(mAudioAppSink);
   int64_t timestamp = GST_BUFFER_TIMESTAMP(buffer);
   timestamp = gst_segment_to_stream_time(&mAudioSegment,
       GST_FORMAT_TIME, timestamp);
@@ -482,49 +492,72 @@ bool GStreamerReader::DecodeVideoFrame(bool &aKeyFrameSkip,
 {
   NS_ASSERTION(mDecoder->OnDecodeThread(), "Should be on decode thread.");
 
-  GstBuffer* buffer = nullptr;
-  int64_t timestamp, nextTimestamp;
-  while (true)
+  GstBuffer *buffer = nullptr;
+
   {
-    if (!WaitForDecodedData(&mVideoSinkBufferCount)) {
+    ReentrantMonitorAutoEnter mon(mGstThreadsMonitor);
+
+    if (mReachedEos) {
       mVideoQueue.Finish();
-      break;
+      return false;
     }
+
+    /* Wait something to be decoded before return or continue */
+    if (!mVideoSinkBufferCount) {
+      if (!mAudioSinkBufferCount) {
+        /* We have nothing decoded so it makes no sense to return to the state machine
+         * as it will call us back immediately, we'll return again and so on, wasting
+         * CPU cycles for no job done. So, block here until there is either video or
+         * audio data available 
+        */
+        mon.Wait();
+        if (!mVideoSinkBufferCount) {
+          /* There is still no video data available, so either there is audio data or 
+           * something else has happened (Eos, etc...). Return to the state machine
+           * to process it
+           */
+          return true;
+        }
+      }
+      else {
+        return true;
+      }
+    }
+
+    NotifyBytesConsumed();
     mDecoder->NotifyDecodedFrames(0, 1);
 
     buffer = gst_app_sink_pull_buffer(mVideoAppSink);
-    bool isKeyframe = !GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DISCONT);
-    if ((aKeyFrameSkip && !isKeyframe)) {
-      gst_buffer_unref(buffer);
-      buffer = nullptr;
-      continue;
-    }
+    mVideoSinkBufferCount--;
+  }
 
-    timestamp = GST_BUFFER_TIMESTAMP(buffer);
-    {
-      ReentrantMonitorAutoEnter mon(mGstThreadsMonitor);
-      timestamp = gst_segment_to_stream_time(&mVideoSegment,
-          GST_FORMAT_TIME, timestamp);
-    }
-    NS_ASSERTION(GST_CLOCK_TIME_IS_VALID(timestamp),
-        "frame has invalid timestamp");
-    timestamp = nextTimestamp = GST_TIME_AS_USECONDS(timestamp);
-    if (GST_CLOCK_TIME_IS_VALID(GST_BUFFER_DURATION(buffer)))
-      nextTimestamp += GST_TIME_AS_USECONDS(GST_BUFFER_DURATION(buffer));
-    else if (fpsNum && fpsDen)
-      /* add 1-frame duration */
-      nextTimestamp += gst_util_uint64_scale(GST_USECOND, fpsNum, fpsDen);
+  bool isKeyframe = !GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DISCONT);
+  if ((aKeyFrameSkip && !isKeyframe)) {
+    gst_buffer_unref(buffer);
+    return true;
+  }
 
-    if (timestamp < aTimeThreshold) {
-      LOG(PR_LOG_DEBUG, ("skipping frame %" GST_TIME_FORMAT
-            " threshold %" GST_TIME_FORMAT,
-            GST_TIME_ARGS(timestamp), GST_TIME_ARGS(aTimeThreshold)));
-      gst_buffer_unref(buffer);
-      buffer = nullptr;
-      continue;
-    }
+  int64_t timestamp = GST_BUFFER_TIMESTAMP(buffer);
+  {
+    ReentrantMonitorAutoEnter mon(mGstThreadsMonitor);
+    timestamp = gst_segment_to_stream_time(&mVideoSegment,
+                                           GST_FORMAT_TIME, timestamp);
+  }
+  NS_ASSERTION(GST_CLOCK_TIME_IS_VALID(timestamp),
+               "frame has invalid timestamp");
+  int64_t nextTimestamp = timestamp = GST_TIME_AS_USECONDS(timestamp);
+  if (GST_CLOCK_TIME_IS_VALID(GST_BUFFER_DURATION(buffer)))
+    nextTimestamp += GST_TIME_AS_USECONDS(GST_BUFFER_DURATION(buffer));
+  else if (fpsNum && fpsDen)
+    /* add 1-frame duration */
+    nextTimestamp += gst_util_uint64_scale(GST_USECOND, fpsNum, fpsDen);
 
-    break;
+  if (timestamp < aTimeThreshold) {
+    LOG(PR_LOG_DEBUG, ("skipping frame %" GST_TIME_FORMAT
+                       " threshold %" GST_TIME_FORMAT,
+                       GST_TIME_ARGS(timestamp), GST_TIME_ARGS(aTimeThreshold)));
+    gst_buffer_unref(buffer);
+    return true;
   }
 
   if (!buffer)
@@ -532,15 +565,11 @@ bool GStreamerReader::DecodeVideoFrame(bool &aKeyFrameSkip,
     return false;
 
   nsRefPtr<PlanarYCbCrImage> image;
-#if GST_VERSION_MICRO >= 36
-  const GstStructure* structure = gst_buffer_get_qdata(buffer,
-      g_quark_from_string("moz-reader-data"));
-  const GValue* value = gst_structure_get_value(structure, "image");
-  if (value) {
-    BufferData* data = reinterpret_cast<BufferData*>(g_value_get_boxed(value));
-    image = data->mImage;
-  }
-#endif
+  GstMozVideoBufferData* bufferdata = reinterpret_cast<GstMozVideoBufferData*>
+      GST_IS_MOZ_VIDEO_BUFFER(buffer)?gst_moz_video_buffer_get_data(GST_MOZ_VIDEO_BUFFER(buffer)):nullptr;
+
+  if(bufferdata)
+    image = bufferdata->mImage;
 
   if (!image) {
     /* Ugh, upstream is not calling gst_pad_alloc_buffer(). Fallback to
@@ -577,8 +606,7 @@ bool GStreamerReader::DecodeVideoFrame(bool &aKeyFrameSkip,
     b.mPlanes[i].mSkip = 0;
   }
 
-  bool isKeyframe = !GST_BUFFER_FLAG_IS_SET(buffer,
-      GST_BUFFER_FLAG_DELTA_UNIT);
+  isKeyframe = !GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT);
   /* XXX ? */
   int64_t offset = 0;
   VideoData* video = VideoData::Create(mInfo, image, offset,
@@ -844,29 +872,18 @@ GstFlowReturn GStreamerReader::AllocateVideoBufferFull(GstPad* aPad,
   nsRefPtr<PlanarYCbCrImage> image = dont_AddRef(img);
 
   /* prepare a GstBuffer pointing to the underlying PlanarYCbCrImage buffer */
-  GstBuffer* buf = gst_buffer_new();
+  GstBuffer* buf = GST_BUFFER(gst_moz_video_buffer_new());
   GST_BUFFER_SIZE(buf) = aSize;
   /* allocate the actual YUV buffer */
   GST_BUFFER_DATA(buf) = image->AllocateAndGetNewBuffer(aSize);
 
   aImage = image;
 
-#if GST_VERSION_MICRO >= 36
-  /* create a GBoxed handle to hold the image */
-  BufferData* data = new BufferData(image);
+  /* create a GstMozVideoBufferData to hold the image */
+  GstMozVideoBufferData* bufferdata = new GstMozVideoBufferData(image);
 
-  /* store it in a GValue so we can put it in a GstStructure */
-  GValue value = {0,};
-  g_value_init(&value, buffer_data_get_type());
-  g_value_take_boxed(&value, data);
-
-  /* store the value in the structure */
-  GstStructure* structure = gst_structure_new("moz-reader-data", nullptr);
-  gst_structure_take_value(structure, "image", &value);
-
-  /* and attach the structure to the buffer */
-  gst_buffer_set_qdata(buf, g_quark_from_string("moz-reader-data"), structure);
-#endif
+  /* Attach bufferdata to our GstMozVideoBuffer, it will take care to free it */
+  gst_moz_video_buffer_set_data(GST_MOZ_VIDEO_BUFFER(buf), bufferdata);
 
   *aBuf = buf;
   return GST_FLOW_OK;

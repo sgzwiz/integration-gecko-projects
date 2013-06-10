@@ -13,6 +13,7 @@
 #include "BaselineJIT.h"
 #include "BaselineFrame.h"
 #include "BaselineRegisters.h"
+#include "BytecodeAnalysis.h"
 #include "IonMacroAssembler.h"
 #include "FixedList.h"
 
@@ -157,6 +158,8 @@ class StackValue
 };
 
 enum StackAdjustment { AdjustStack, DontAdjustStack };
+
+class BaselineCompilerShared;
 
 class FrameInfo
 {
@@ -317,9 +320,9 @@ class FrameInfo
 
 #ifdef DEBUG
     // Assert the state is valid before excuting "pc".
-    void assertValidState(jsbytecode *pc);
+    void assertValidState(const BytecodeInfo &info);
 #else
-    inline void assertValidState(jsbytecode *pc) {}
+    inline void assertValidState(const BytecodeInfo &info) {}
 #endif
 };
 

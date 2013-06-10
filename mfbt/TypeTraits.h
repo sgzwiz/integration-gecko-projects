@@ -144,6 +144,32 @@ struct IsArithmetic
 /* 20.9.4.3 Type properties [meta.unary.prop] */
 
 /**
+ * IsConst determines whether a type is const or not.
+ *
+ * mozilla::IsConst<int>::value is false;
+ * mozilla::IsConst<void* const>::value is true;
+ * mozilla::IsConst<const char*>::value is false.
+ */
+template<typename T>
+struct IsConst : FalseType {};
+
+template<typename T>
+struct IsConst<const T> : TrueType {};
+
+/**
+ * IsVolatile determines whether a type is volatile or not.
+ *
+ * mozilla::IsVolatile<int>::value is false;
+ * mozilla::IsVolatile<void* volatile>::value is true;
+ * mozilla::IsVolatile<volatile char*>::value is false.
+ */
+template<typename T>
+struct IsVolatile : FalseType {};
+
+template<typename T>
+struct IsVolatile<volatile T> : TrueType {};
+
+/**
  * Traits class for identifying POD types.  Until C++11 there's no automatic
  * way to detect PODs, so for the moment this is done manually.  Users may
  * define specializations of this class that inherit from mozilla::TrueType and
@@ -171,6 +197,21 @@ template<> struct IsPod<double>             : TrueType {};
 template<> struct IsPod<wchar_t>            : TrueType {};
 template<typename T> struct IsPod<T*>       : TrueType {};
 
+namespace detail {
+
+template<typename T, bool = IsFloatingPoint<T>::value>
+struct IsSignedHelper;
+
+template<typename T>
+struct IsSignedHelper<T, true> : TrueType {};
+
+template<typename T>
+struct IsSignedHelper<T, false>
+  : IntegralConstant<bool, IsArithmetic<T>::value && T(-1) < T(1)>
+{};
+
+} // namespace detail
+
 /**
  * IsSigned determines whether a type is a signed arithmetic type.
  *
@@ -183,9 +224,25 @@ template<typename T> struct IsPod<T*>       : TrueType {};
  * mozilla::IsSigned<float>::value is true.
  */
 template<typename T>
-struct IsSigned
-  : IntegralConstant<bool, IsArithmetic<T>::value && T(-1) < T(0)>
+struct IsSigned : detail::IsSignedHelper<T> {};
+
+namespace detail {
+
+template<typename T, bool = IsFloatingPoint<T>::value>
+struct IsUnsignedHelper;
+
+template<typename T>
+struct IsUnsignedHelper<T, true> : FalseType {};
+
+template<typename T>
+struct IsUnsignedHelper<T, false>
+  : IntegralConstant<bool,
+                     IsArithmetic<T>::value &&
+                     (IsSame<typename RemoveCV<T>::Type, bool>::value ||
+                      T(1) < T(-1))>
 {};
+
+} // namespace detail
 
 /**
  * IsUnsigned determines whether a type is an unsigned arithmetic type.
@@ -199,9 +256,7 @@ struct IsSigned
  * mozilla::IsUnsigned<float>::value is false.
  */
 template<typename T>
-struct IsUnsigned
-  : IntegralConstant<bool, IsArithmetic<T>::value && T(0) < T(-1)>
-{};
+struct IsUnsigned : detail::IsUnsignedHelper<T> {};
 
 /* 20.9.5 Type property queries [meta.unary.prop.query] */
 

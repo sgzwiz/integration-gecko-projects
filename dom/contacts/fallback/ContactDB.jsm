@@ -6,7 +6,7 @@
 
 this.EXPORTED_SYMBOLS = ['ContactDB'];
 
-let DEBUG = false;
+const DEBUG = false;
 function debug(s) { dump("-*- ContactDB component: " + s + "\n"); }
 
 const Cu = Components.utils;
@@ -16,37 +16,30 @@ const Ci = Components.interfaces;
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/IndexedDBHelper.jsm");
 Cu.import("resource://gre/modules/PhoneNumberUtils.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
+Cu.import("resource://gre/modules/devtools/Console.jsm");
 
 const DB_NAME = "contacts";
-const DB_VERSION = 10;
+const DB_VERSION = 11;
 const STORE_NAME = "contacts";
 const SAVED_GETALL_STORE_NAME = "getallcache";
 const CHUNK_SIZE = 20;
-const CHUNK_INTERVAL = 500;
+const REVISION_STORE = "revision";
+const REVISION_KEY = "revision";
 
-function ContactDispatcher(aContacts, aFullContacts, aCallback, aNewTxn, aClearDispatcher) {
+function ContactDispatcher(aContacts, aFullContacts, aCallback, aNewTxn, aClearDispatcher, aFailureCb) {
   let nextIndex = 0;
-  let interval;
-
-  function cancelTimeout() {
-    if (interval) {
-      clearTimeout(interval);
-      interval = null;
-    }
-  }
 
   let sendChunk;
   let count = 0;
   if (aFullContacts) {
     sendChunk = function() {
       try {
-        if (aContacts.length > 0) {
-          aCallback(aContacts.splice(0, CHUNK_SIZE));
-          interval = setTimeout(sendChunk, CHUNK_INTERVAL);
-        } else {
+        let chunk = aContacts.splice(0, CHUNK_SIZE);
+        if (chunk.length > 0) {
+          aCallback(chunk);
+        }
+        if (aContacts.length === 0) {
           aCallback(null);
-          cancelTimeout();
           aClearDispatcher();
         }
       } catch (e) {
@@ -54,28 +47,28 @@ function ContactDispatcher(aContacts, aFullContacts, aCallback, aNewTxn, aClearD
       }
     }
   } else {
-    this.count = 0;
     sendChunk = function() {
       try {
+        let start = nextIndex;
+        nextIndex += CHUNK_SIZE;
         let chunk = [];
         aNewTxn("readonly", STORE_NAME, function(txn, store) {
-          for (let i = nextIndex; i < Math.min(nextIndex+CHUNK_SIZE, aContacts.length); ++i) {
+          for (let i = start; i < Math.min(start+CHUNK_SIZE, aContacts.length); ++i) {
             store.get(aContacts[i]).onsuccess = function(e) {
               chunk.push(e.target.result);
               count++;
               if (count === aContacts.length) {
-                aCallback(chunk)
+                aCallback(chunk);
                 aCallback(null);
-                cancelTimeout();
                 aClearDispatcher();
               } else if (chunk.length === CHUNK_SIZE) {
                 aCallback(chunk);
                 chunk.length = 0;
-                nextIndex += CHUNK_SIZE;
-                interval = setTimeout(this.sendChunk, CHUNK_INTERVAL);
               }
             }
           }
+        }, null, function(errorMsg) {
+          aFailureCb(errorMsg);
         });
       } catch (e) {
         aClearDispatcher();
@@ -83,12 +76,9 @@ function ContactDispatcher(aContacts, aFullContacts, aCallback, aNewTxn, aClearD
     }
   }
 
-  sendChunk(0);
-
   return {
     sendNow: function() {
-      cancelTimeout();
-      interval = setTimeout(sendChunk, 0);
+      sendChunk();
     }
   };
 }
@@ -362,6 +352,14 @@ ContactDB.prototype = {
             cursor.continue();
           }
         };
+      } else if (currVersion == 10) {
+        if (DEBUG) debug("Adding object store for database revision");
+        db.createObjectStore(REVISION_STORE).put(0, REVISION_KEY);
+      }
+
+      // Increment the DB revision on future schema changes as well
+      if (currVersion > 10) {
+        this.incrementRevision(aTransaction);
       }
     }
 
@@ -459,7 +457,7 @@ ContactDB.prototype = {
       if (aContact.properties[field] && contact.search[field]) {
         for (let i = 0; i <= aContact.properties[field].length; i++) {
           if (aContact.properties[field][i]) {
-            if (field == "tel") {
+            if (field == "tel" && aContact.properties[field][i].value) {
               let number = aContact.properties.tel[i].value.toString();
               let normalized = PhoneNumberUtils.normalize(number);
               // We use an object here to avoid duplicates
@@ -488,22 +486,14 @@ ContactDB.prototype = {
                 }
 
                 // containsSearch holds incremental search values for:
-                // normalized number, national format, international format
+                // normalized number and national format
                 for (let i = 0; i < normalized.length; i++) {
                   containsSearch[normalized.substring(i, normalized.length)] = 1;
                 }
-                if (parsedNumber) {
-                  if (parsedNumber.nationalFormat) {
-                    let number = PhoneNumberUtils.normalize(parsedNumber.nationalFormat);
-                    for (let i = 0; i < number.length; i++) {
-                      containsSearch[number.substring(i, number.length)] = 1;
-                    }
-                  }
-                  if (parsedNumber.internationalFormat) {
-                    let number = PhoneNumberUtils.normalize(parsedNumber.internationalFormat);
-                    for (let i = 0; i < number.length; i++) {
-                      containsSearch[number.substring(i, number.length)] = 1;
-                    }
+                if (parsedNumber && parsedNumber.nationalFormat) {
+                  let number = PhoneNumberUtils.normalize(parsedNumber.nationalFormat);
+                  for (let i = 0; i < number.length; i++) {
+                    containsSearch[number.substring(i, number.length)] = 1;
                   }
                 }
               }
@@ -513,7 +503,7 @@ ContactDB.prototype = {
               for (let num in matchSearch) {
                 contact.search.parsedTel.push(num);
               }
-            } else if (field == "impp" || field == "email") {
+            } else if ((field == "impp" || field == "email") && aContact.properties[field][i].value) {
               let value = aContact.properties[field][i].value;
               if (value && typeof value == "string") {
                 contact.search[field].push(value.toLowerCase());
@@ -560,7 +550,7 @@ ContactDB.prototype = {
     record.updated = new Date();
   },
 
-  removeObjectFromCache: function CDB_removeObjectFromCache(aObjectId, aCallback) {
+  removeObjectFromCache: function CDB_removeObjectFromCache(aObjectId, aCallback, aFailureCb) {
     if (DEBUG) debug("removeObjectFromCache: " + aObjectId);
     if (!aObjectId) {
       if (DEBUG) debug("No object ID passed");
@@ -583,19 +573,29 @@ ContactDB.prototype = {
           aCallback();
         }
       }.bind(this);
-    }.bind(this));
+    }.bind(this), null,
+    function(errorMsg) {
+      aFailureCb(errorMsg);
+    });
   },
 
   // Invalidate the entire cache. It will be incrementally regenerated on demand
   // See getCacheForQuery
-  invalidateCache: function CDB_invalidateCache() {
+  invalidateCache: function CDB_invalidateCache(aErrorCb) {
     if (DEBUG) debug("invalidate cache");
     this.newTxn("readwrite", SAVED_GETALL_STORE_NAME, function (txn, store) {
       store.clear();
-    });
+    }, aErrorCb);
   },
 
-  saveContact: function saveContact(aContact, successCb, errorCb) {
+  incrementRevision: function CDB_incrementRevision(txn) {
+    let revStore = txn.objectStore(REVISION_STORE);
+    revStore.get(REVISION_KEY).onsuccess = function(e) {
+      revStore.put(parseInt(e.target.result, 10) + 1, REVISION_KEY);
+    };
+  },
+
+  saveContact: function CDB_saveContact(aContact, successCb, errorCb) {
     let contact = this.makeImport(aContact);
     this.newTxn("readwrite", STORE_NAME, function (txn, store) {
       if (DEBUG) debug("Going to update" + JSON.stringify(contact));
@@ -621,8 +621,10 @@ ContactDB.prototype = {
             store.put(contact);
           }
         }
-        this.invalidateCache();
+        this.invalidateCache(errorCb);
       }.bind(this);
+
+      this.incrementRevision(txn);
     }.bind(this), successCb, errorCb);
   },
 
@@ -633,16 +635,17 @@ ContactDB.prototype = {
         store.delete(aId).onsuccess = function() {
           aSuccessCb();
         };
-      }, null, aErrorCb);
-    }.bind(this));
+        this.incrementRevision(txn);
+      }.bind(this), null, aErrorCb);
+    }.bind(this), aErrorCb);
   },
 
   clear: function clear(aSuccessCb, aErrorCb) {
-    DEBUG = true;
     this.newTxn("readwrite", STORE_NAME, function (txn, store) {
       if (DEBUG) debug("Going to clear all!");
       store.clear();
-    }, aSuccessCb, aErrorCb);
+      this.incrementRevision(txn);
+    }.bind(this), aSuccessCb, aErrorCb);
   },
 
   createCacheForQuery: function CDB_createCacheForQuery(aQuery, aSuccessCb, aFailureCb) {
@@ -656,7 +659,7 @@ ContactDB.prototype = {
         // save contact ids in cache
         this.newTxn("readwrite", SAVED_GETALL_STORE_NAME, function(txn, store) {
           store.put(contactsArray.map(function(el) el.id), aQuery);
-        });
+        }, null, aFailureCb);
 
         // send full contacts
         aSuccessCb(contactsArray, true);
@@ -668,7 +671,7 @@ ContactDB.prototype = {
     JSON.parse(aQuery));
   },
 
-  getCacheForQuery: function CDB_getCacheForQuery(aQuery, aSuccessCb) {
+  getCacheForQuery: function CDB_getCacheForQuery(aQuery, aSuccessCb, aFailureCb) {
     if (DEBUG) debug("getCacheForQuery");
     // Here we try to get the cached results for query `aQuery'. If they don't
     // exist, it means the cache was invalidated and needs to be recreated, so
@@ -684,10 +687,10 @@ ContactDB.prototype = {
           this.createCacheForQuery(aQuery, aSuccessCb);
         }
       }.bind(this);
-      req.onerror = function() {
-
+      req.onerror = function(e) {
+        aFailureCb(e.target.errorMessage);
       };
-    }.bind(this));
+    }.bind(this), null, aFailureCb);
   },
 
   sendNow: function CDB_sendNow(aCursorId) {
@@ -696,7 +699,8 @@ ContactDB.prototype = {
     }
   },
 
-  _clearDispatcher: function CDB_clearDispatcher(aCursorId) {
+  clearDispatcher: function CDB_clearDispatcher(aCursorId) {
+    if (DEBUG) debug("clearDispatcher: " + aCursorId);
     if (aCursorId in this._dispatcher) {
       delete this._dispatcher[aCursorId];
     }
@@ -712,14 +716,34 @@ ContactDB.prototype = {
       // object store again.
       if (aCachedResults && aCachedResults.length > 0) {
         let newTxnFn = this.newTxn.bind(this);
-        let clearDispatcherFn = this._clearDispatcher.bind(this, aCursorId);
+        let clearDispatcherFn = this.clearDispatcher.bind(this, aCursorId);
         this._dispatcher[aCursorId] = new ContactDispatcher(aCachedResults, aFullContacts,
-                                                            aSuccessCb, newTxnFn, clearDispatcherFn);
+                                                            aSuccessCb, newTxnFn,
+                                                            clearDispatcherFn, aFailureCb);
+        this._dispatcher[aCursorId].sendNow();
       } else { // no contacts
         if (DEBUG) debug("query returned no contacts");
         aSuccessCb(null);
       }
-    }.bind(this));
+    }.bind(this), aFailureCb);
+  },
+
+  getRevision: function CDB_getRevision(aSuccessCb) {
+    if (DEBUG) debug("getRevision");
+    this.newTxn("readonly", REVISION_STORE, function (txn, store) {
+      store.get(REVISION_KEY).onsuccess = function (e) {
+        aSuccessCb(e.target.result);
+      };
+    });
+  },
+
+  getCount: function CDB_getCount(aSuccessCb) {
+    if (DEBUG) debug("getCount");
+    this.newTxn("readonly", STORE_NAME, function (txn, store) {
+      store.count().onsuccess = function (e) {
+        aSuccessCb(e.target.result);
+      };
+    });
   },
 
   /*
@@ -731,28 +755,35 @@ ContactDB.prototype = {
     if (!aFindOptions)
       return;
     if (aFindOptions.sortBy != "undefined") {
+      const sortOrder = aFindOptions.sortOrder;
+      const sortBy = aFindOptions.sortBy == "familyName" ? [ "familyName", "givenName" ] : [ "givenName" , "familyName" ];
+
       aResults.sort(function (a, b) {
         let x, y;
         let result = 0;
-        let sortOrder = aFindOptions.sortOrder;
-        let sortBy = aFindOptions.sortBy == "familyName" ? [ "familyName", "givenName" ] : [ "givenName" , "familyName" ];
         let xIndex = 0;
         let yIndex = 0;
 
         do {
           while (xIndex < sortBy.length && !x) {
-            x = a.properties[sortBy[xIndex]] && a.properties[sortBy[xIndex]][0] ? a.properties[sortBy[xIndex]][0].toLowerCase() : null;
+            x = a.properties[sortBy[xIndex]];
+            if (x) {
+              x = x.join("").toLowerCase();
+            }
             xIndex++;
           }
           if (!x) {
-            return sortOrder == 'descending' ? 1 : -1;
+            return sortOrder == "descending" ? 1 : -1;
           }
           while (yIndex < sortBy.length && !y) {
-            y = b.properties[sortBy[yIndex]] && b.properties[sortBy[yIndex]][0] ? b.properties[sortBy[yIndex]][0].toLowerCase() : null;
+            y = b.properties[sortBy[yIndex]];
+            if (y) {
+              y = y.join("").toLowerCase();
+            }
             yIndex++;
           }
           if (!y) {
-            return sortOrder == 'ascending' ? 1 : -1;
+            return sortOrder == "ascending" ? 1 : -1;
           }
 
           result = x.localeCompare(y);
@@ -760,7 +791,7 @@ ContactDB.prototype = {
           y = null;
         } while (result == 0);
 
-        return sortOrder == 'ascending' ? result : -result;
+        return sortOrder == "ascending" ? result : -result;
       });
     }
     if (aFindOptions.filterLimit && aFindOptions.filterLimit != 0) {
@@ -782,11 +813,11 @@ ContactDB.prototype = {
    *        - count
    */
   find: function find(aSuccessCb, aFailureCb, aOptions) {
-    DEBUG = false;
     if (DEBUG) debug("ContactDB:find val:" + aOptions.filterValue + " by: " + aOptions.filterBy + " op: " + aOptions.filterOp);
     let self = this;
     this.newTxn("readonly", STORE_NAME, function (txn, store) {
-      if (aOptions && (["equals", "contains", "match"].indexOf(aOptions.filterOp) >= 0)) {
+      let filterOps = ["equals", "contains", "match", "startsWith"];
+      if (aOptions && (filterOps.indexOf(aOptions.filterOp) >= 0)) {
         self._findWithIndex(txn, store, aOptions);
       } else {
         self._findAll(txn, store, aOptions);
@@ -832,7 +863,8 @@ ContactDB.prototype = {
         let index = store.index(key);
         let filterValue = options.filterValue;
         if (key == "tel") {
-          filterValue = PhoneNumberUtils.normalize(filterValue);
+          filterValue = PhoneNumberUtils.normalize(filterValue,
+                                                   /*numbersOnly*/ true);
         }
         request = index.mozGetAll(filterValue, limit);
       } else if (options.filterOp == "match") {
@@ -843,13 +875,19 @@ ContactDB.prototype = {
         }
 
         let index = store.index("telMatch");
-        let normalized = PhoneNumberUtils.normalize(options.filterValue)
+        let normalized = PhoneNumberUtils.normalize(options.filterValue,
+                                                    /*numbersOnly*/ true);
         request = index.mozGetAll(normalized, limit);
       } else {
+        // XXX: "contains" should be handled separately, this is "startsWith"
+        if (options.filterOp === 'contains' && key !== 'tel') {
+          console.warn("ContactDB: 'contains' only works for 'tel'. " +
+                       "Falling back to 'startsWith'.");
+        }
         // not case sensitive
         let tmp = options.filterValue.toString().toLowerCase();
-        if (key === 'tel') {
-          tmp = PhoneNumberUtils.normalize(tmp);
+        if (key === "tel") {
+          tmp = PhoneNumberUtils.normalize(tmp, /*numbersOnly*/ true);
         }
         let range = this._global.IDBKeyRange.bound(tmp, tmp + "\uFFFF");
         let index = store.index(key + "LowerCase");
@@ -883,6 +921,6 @@ ContactDB.prototype = {
   },
 
   init: function init(aGlobal) {
-      this.initDBHelper(DB_NAME, DB_VERSION, [STORE_NAME, SAVED_GETALL_STORE_NAME], aGlobal);
+      this.initDBHelper(DB_NAME, DB_VERSION, [STORE_NAME, SAVED_GETALL_STORE_NAME, REVISION_STORE], aGlobal);
   }
 };

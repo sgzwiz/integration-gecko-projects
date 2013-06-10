@@ -25,6 +25,12 @@ nsSVGAnimatedTransformList::SetBaseValueString(const nsAString& aValue)
     return rv;
   }
 
+  return SetBaseValue(newBaseValue);
+}
+
+nsresult
+nsSVGAnimatedTransformList::SetBaseValue(const SVGTransformList& aValue)
+{
   SVGAnimatedTransformList *domWrapper =
     SVGAnimatedTransformList::GetDOMWrapperIfExists(this);
   if (domWrapper) {
@@ -33,14 +39,14 @@ nsSVGAnimatedTransformList::SetBaseValueString(const nsAString& aValue)
     // to remove DOM items from itself, and any removed DOM items need to copy
     // their internal counterpart values *before* we change them.
     //
-    domWrapper->InternalBaseValListWillChangeLengthTo(newBaseValue.Length());
+    domWrapper->InternalBaseValListWillChangeLengthTo(aValue.Length());
   }
 
   // We don't need to call DidChange* here - we're only called by
   // nsSVGElement::ParseAttribute under Element::SetAttr,
   // which takes care of notifying.
 
-  rv = mBaseVal.CopyFrom(newBaseValue);
+  nsresult rv = mBaseVal.CopyFrom(aValue);
   if (NS_FAILED(rv) && domWrapper) {
     // Attempting to increase mBaseVal's length failed - reduce domWrapper
     // back to the same length:
@@ -219,7 +225,7 @@ nsSVGAnimatedTransformList::SMILAnimatedTransformList::ParseValue(
     return;
   }
 
-  nsSMILValue val(&SVGTransformListSMILType::sSingleton);
+  nsSMILValue val(SVGTransformListSMILType::Singleton());
   SVGTransformSMILData transform(transformType, params);
   if (NS_FAILED(SVGTransformListSMILType::AppendTransform(transform, val))) {
     return; // OOM
@@ -286,7 +292,7 @@ nsSVGAnimatedTransformList::SMILAnimatedTransformList::GetBaseValue() const
   // To benefit from Return Value Optimization and avoid copy constructor calls
   // due to our use of return-by-value, we must return the exact same object
   // from ALL return points. This function must only return THIS variable:
-  nsSMILValue val(&SVGTransformListSMILType::sSingleton);
+  nsSMILValue val(SVGTransformListSMILType::Singleton());
   if (!SVGTransformListSMILType::AppendTransforms(mVal->mBaseVal, val)) {
     val = nsSMILValue();
   }
@@ -299,7 +305,7 @@ nsSVGAnimatedTransformList::SMILAnimatedTransformList::SetAnimValue(
   const nsSMILValue& aNewAnimValue)
 {
   NS_ABORT_IF_FALSE(
-    aNewAnimValue.mType == &SVGTransformListSMILType::sSingleton,
+    aNewAnimValue.mType == SVGTransformListSMILType::Singleton(),
     "Unexpected type to assign animated value");
   SVGTransformList animVal;
   if (!SVGTransformListSMILType::GetTransforms(aNewAnimValue,

@@ -94,6 +94,10 @@ MarkUserDataHandler(void* aNode, nsIAtom* aKey, void* aValue, void* aData)
 static void
 MarkMessageManagers()
 {
+  // The global message manager only exists in the root process.
+  if (XRE_GetProcessType() != GeckoProcessType_Default) {
+    return;
+  }
   nsCOMPtr<nsIMessageBroadcaster> strongGlobalMM =
     do_GetService("@mozilla.org/globalmessagemanager;1");
   if (!strongGlobalMM) {
@@ -419,9 +423,7 @@ TraceActiveWindowGlobal(const uint64_t& aId, nsGlobalWindow*& aWindow, void* aCl
 {
   if (aWindow->GetDocShell() && aWindow->IsOuterWindow()) {
     TraceClosure* closure = static_cast<TraceClosure*>(aClosure);
-    if (JSObject* global = aWindow->FastGetGlobalJSObject()) {
-      JS_CallObjectTracer(closure->mTrc, global, "active window global");
-    }
+    aWindow->TraceGlobalJSObject(closure->mTrc);
 #ifdef MOZ_XUL
     nsIDocument* doc = aWindow->GetExtantDoc();
     if (doc && doc->IsXUL()) {

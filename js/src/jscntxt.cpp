@@ -44,9 +44,6 @@
 #include "ion/Ion.h"
 #endif
 
-#ifdef JS_METHODJIT
-# include "methodjit/MethodJIT.h"
-#endif
 #include "gc/Marking.h"
 #include "js/CharacterEncoding.h"
 #include "js/MemoryMetrics.h"
@@ -208,25 +205,6 @@ JSRuntime::createMathCache(JSContext *cx)
     return mathCache_;
 }
 
-#ifdef JS_METHODJIT
-mjit::JaegerRuntime *
-JSRuntime::createJaegerRuntime(JSContext *cx)
-{
-    JS_ASSERT(!jaegerRuntime_);
-    JS_ASSERT(cx->runtime == this);
-
-    mjit::JaegerRuntime *jr = js_new<mjit::JaegerRuntime>();
-    if (!jr || !jr->init(cx)) {
-        js_ReportOutOfMemory(cx);
-        js_delete(jr);
-        return NULL;
-    }
-
-    jaegerRuntime_ = jr;
-    return jaegerRuntime_;
-}
-#endif
-
 void
 JSCompartment::sweepCallsiteClones()
 {
@@ -240,7 +218,7 @@ JSCompartment::sweepCallsiteClones()
     }
 }
 
-RawFunction
+JSFunction *
 js::CloneFunctionAtCallsite(JSContext *cx, HandleFunction fun, HandleScript script, jsbytecode *pc)
 {
     JS_ASSERT(cx->typeInferenceEnabled());
@@ -255,13 +233,13 @@ js::CloneFunctionAtCallsite(JSContext *cx, HandleFunction fun, HandleScript scri
     if (!table.initialized() && !table.init())
         return NULL;
 
-    Key key;
-    SkipRoot skipKey(cx, &key); /* Stop the analysis complaining about unrooted key. */
-    key.script = script;
-    key.offset = pc - script->code;
-    key.original = fun;
+    uint32_t offset = pc - script->code;
+    void* originalScript = script;
+    void* originalFun = fun;
+    SkipRoot skipScript(cx, &originalScript);
+    SkipRoot skipFun(cx, &originalFun);
 
-    Table::AddPtr p = table.lookupForAdd(key);
+    Table::AddPtr p = table.lookupForAdd(Key(fun, script, offset));
     SkipRoot skipHash(cx, &p); /* Prevent the hash from being poisoned. */
     if (p)
         return p->value;
@@ -279,11 +257,11 @@ js::CloneFunctionAtCallsite(JSContext *cx, HandleFunction fun, HandleScript scri
     clone->nonLazyScript()->isCallsiteClone = true;
     clone->nonLazyScript()->setOriginalFunctionObject(fun);
 
+    Key key(fun, script, offset);
+
     /* Recalculate the hash if script or fun have been moved. */
-    if (key.script != script && key.original != fun) {
-        key.script = script;
-        key.original = fun;
-        Table::AddPtr p = table.lookupForAdd(key);
+    if (script != originalScript || fun != originalFun) {
+        p = table.lookupForAdd(key);
         JS_ASSERT(!p);
     }
 
@@ -487,37 +465,38 @@ PopulateReportBlame(JSContext *cx, JSErrorReport *report)
 }
 
 /*
- * We don't post an exception in this case, since doing so runs into
- * complications of pre-allocating an exception object which required
- * running the Exception class initializer early etc.
- * Instead we just invoke the errorReporter with an "Out Of Memory"
- * type message, and then hope the process ends swiftly.
+ * Since memory has been exhausted, avoid the normal error-handling path which
+ * allocates an error object, report and callstack. If code is running, simply
+ * throw the static atom "out of memory". If code is not running, call the
+ * error reporter directly.
+ *
+ * Furthermore, callers of js_ReportOutOfMemory (viz., malloc) assume a GC does
+ * not occur, so GC must be avoided or suppressed.
  */
 void
 js_ReportOutOfMemory(JSContext *cx)
 {
     cx->runtime->hadOutOfMemory = true;
 
-    JSErrorReport report;
-    JSErrorReporter onError = cx->errorReporter;
+    if (JS_IsRunning(cx)) {
+        cx->setPendingException(StringValue(cx->names().outOfMemory));
+        return;
+    }
 
-    /* Get the message for this error, but we won't expand any arguments. */
+    /* Get the message for this error, but we don't expand any arguments. */
     const JSErrorFormatString *efs =
         js_GetLocalizedErrorMessage(cx, NULL, NULL, JSMSG_OUT_OF_MEMORY);
     const char *msg = efs ? efs->format : "Out of memory";
 
     /* Fill out the report, but don't do anything that requires allocation. */
+    JSErrorReport report;
     PodZero(&report);
     report.flags = JSREPORT_ERROR;
     report.errorNumber = JSMSG_OUT_OF_MEMORY;
     PopulateReportBlame(cx, &report);
 
-    /*
-     * We clear a pending exception, if any, now so the hook can replace the
-     * out-of-memory error by a script-catchable exception.
-     */
-    cx->clearPendingException();
-    if (onError) {
+    /* Report the error. */
+    if (JSErrorReporter onError = cx->errorReporter) {
         AutoSuppressGC suppressGC(cx);
         onError(cx, msg, &report);
     }
@@ -565,7 +544,7 @@ checkReportFlags(JSContext *cx, unsigned *flags)
          * We assume that if the top frame is a native, then it is strict if
          * the nearest scripted frame is strict, see bug 536306.
          */
-        RawScript script = cx->stack.currentScript();
+        JSScript *script = cx->stack.currentScript();
         if (script && script->strict)
             *flags &= ~JSREPORT_WARNING;
         else if (cx->hasStrictOption())
@@ -623,7 +602,7 @@ js::ReportUsageError(JSContext *cx, HandleObject callee, const char *msg)
     const char *usageStr = "usage";
     PropertyName *usageAtom = Atomize(cx, usageStr, strlen(usageStr))->asPropertyName();
     RootedId id(cx, NameToId(usageAtom));
-    DebugOnly<RawShape> shape = static_cast<RawShape>(callee->nativeLookup(cx, id));
+    DebugOnly<Shape *> shape = static_cast<Shape *>(callee->nativeLookup(cx, id));
     JS_ASSERT(!shape->configurable());
     JS_ASSERT(!shape->writable());
     JS_ASSERT(shape->hasDefaultGetter());
@@ -1108,6 +1087,11 @@ js_InvokeOperationCallback(JSContext *cx)
     if (rt->gcIsNeeded)
         GCSlice(rt, GC_NORMAL, rt->gcTriggerReason);
 
+#ifdef JSGC_GENERATIONAL
+    if (rt->gcStoreBuffer.isAboutToOverflow())
+        MinorGC(rt, JS::gcreason::FULL_STORE_BUFFER);
+#endif
+
 #ifdef JS_ION
     /*
      * A worker thread may have set the callback after finishing an Ion
@@ -1148,7 +1132,6 @@ JSContext::JSContext(JSRuntime *rt)
     savedFrameChains_(),
     defaultCompartmentObject_(NULL),
     stack(thisDuringConstruction()),
-    parseMapPool_(NULL),
     cycleDetectorSet(thisDuringConstruction()),
     errorReporter(NULL),
     operationCallback(NULL),
@@ -1159,18 +1142,16 @@ JSContext::JSContext(JSRuntime *rt)
 #endif
     resolveFlags(0),
     iterValue(MagicValue(JS_NO_ITER_VALUE)),
-#ifdef JS_METHODJIT
-    methodJitEnabled(false),
-#endif
+    jitIsBroken(false),
 #ifdef MOZ_TRACE_JSCALLS
     functionCallback(NULL),
 #endif
-    innermostGenerator_(NULL),
-#ifdef DEBUG
-    stackIterAssertionEnabled(true),
-#endif
-    activeCompilations(0)
+    innermostGenerator_(NULL)
 {
+#ifdef DEBUG
+    stackIterAssertionEnabled = true;
+#endif
+
     JS_ASSERT(static_cast<ContextFriendFields*>(this) ==
               ContextFriendFields::get(this));
 
@@ -1185,9 +1166,6 @@ JSContext::JSContext(JSRuntime *rt)
 JSContext::~JSContext()
 {
     /* Free the stuff hanging off of cx. */
-    if (parseMapPool_)
-        js_delete(parseMapPool_);
-
     JS_ASSERT(!resolvingList);
 }
 
@@ -1376,16 +1354,6 @@ JSRuntime::onOutOfMemory(void *p, size_t nbytes, JSContext *cx)
     return NULL;
 }
 
-void
-JSContext::purge()
-{
-    if (!activeCompilations) {
-        js_delete(parseMapPool_);
-        parseMapPool_ = NULL;
-    }
-}
-
-#if defined(JS_METHODJIT)
 static bool
 ComputeIsJITBroken()
 {
@@ -1456,14 +1424,11 @@ IsJITBrokenHere()
     }
     return isBroken;
 }
-#endif
 
 void
 JSContext::updateJITEnabled()
 {
-#ifdef JS_METHODJIT
-    methodJitEnabled = (options_ & JSOPTION_METHODJIT) && !IsJITBrokenHere();
-#endif
+    jitIsBroken = IsJITBrokenHere();
 }
 
 size_t

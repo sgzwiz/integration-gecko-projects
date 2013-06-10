@@ -4,14 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsion_compilemode_h__
-#define jsion_compilemode_h__
+#if !defined(jsion_executionmodeinlines_h__) && defined(JS_ION)
+#define jsion_executionmodeinlines_h__
 
 namespace js {
 namespace ion {
 
 static inline bool
-HasIonScript(RawScript script, ExecutionMode cmode)
+HasIonScript(JSScript *script, ExecutionMode cmode)
 {
     switch (cmode) {
       case SequentialExecution: return script->hasIonScript();
@@ -22,7 +22,7 @@ HasIonScript(RawScript script, ExecutionMode cmode)
 }
 
 static inline IonScript *
-GetIonScript(RawScript script, ExecutionMode cmode)
+GetIonScript(JSScript *script, ExecutionMode cmode)
 {
     switch (cmode) {
       case SequentialExecution: return script->maybeIonScript();
@@ -33,7 +33,7 @@ GetIonScript(RawScript script, ExecutionMode cmode)
 }
 
 static inline void
-SetIonScript(RawScript script, ExecutionMode cmode, IonScript *ionScript)
+SetIonScript(JSScript *script, ExecutionMode cmode, IonScript *ionScript)
 {
     switch (cmode) {
       case SequentialExecution: script->setIonScript(ionScript); return;
@@ -53,7 +53,7 @@ OffsetOfIonInJSScript(ExecutionMode cmode)
 }
 
 static inline bool
-CanIonCompile(RawScript script, ExecutionMode cmode)
+CanIonCompile(JSScript *script, ExecutionMode cmode)
 {
     switch (cmode) {
       case SequentialExecution: return script->canIonCompile();
@@ -64,13 +64,13 @@ CanIonCompile(RawScript script, ExecutionMode cmode)
 }
 
 static inline bool
-CanIonCompile(RawFunction fun, ExecutionMode cmode)
+CanIonCompile(JSFunction *fun, ExecutionMode cmode)
 {
     return fun->isInterpreted() && CanIonCompile(fun->nonLazyScript(), cmode);
 }
 
 static inline bool
-CompilingOffThread(RawScript script, ExecutionMode cmode)
+CompilingOffThread(JSScript *script, ExecutionMode cmode)
 {
     switch (cmode) {
       case SequentialExecution: return script->isIonCompilingOffThread();
@@ -105,4 +105,4 @@ CompilerOutputKind(ExecutionMode cmode)
 }
 }
 
-#endif
+#endif  // jsion_executionmodeinlines_h__

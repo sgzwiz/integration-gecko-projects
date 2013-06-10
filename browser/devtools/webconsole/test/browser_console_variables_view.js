@@ -3,8 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-// Test that makes sure web console eval happens in the user-selected stackframe
-// from the js debugger.
+// Check that variables view works as expected in the web console.
 
 const TEST_URI = "http://example.com/browser/browser/devtools/webconsole/test/test-eval-in-stackframe.html";
 
@@ -71,7 +70,7 @@ function onTestPropFound(aResults)
 function onFooObjFetchAfterUpdate(aEvent, aVar)
 {
   info("onFooObjFetchAfterUpdate");
-  let para = content.document.querySelector("p");
+  let para = content.wrappedJSObject.document.querySelector("p");
   let expectedValue = content.document.title + content.location + para;
 
   findVariableViewProperties(aVar, [
@@ -101,7 +100,7 @@ function onFooObjFetchAfterPropRename(aEvent, aVar)
 {
   info("onFooObjFetchAfterPropRename");
 
-  let para = content.document.querySelector("p");
+  let para = content.wrappedJSObject.document.querySelector("p");
   let expectedValue = content.document.title + content.location + para;
 
   // Check that the new value is in the variables view.
@@ -135,7 +134,7 @@ function onPropUpdateError(aEvent, aVar)
 {
   info("onPropUpdateError");
 
-  let para = content.document.querySelector("p");
+  let para = content.wrappedJSObject.document.querySelector("p");
   let expectedValue = content.document.title + content.location + para;
 
   // Make sure the property did not change.

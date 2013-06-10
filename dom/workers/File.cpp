@@ -65,7 +65,7 @@ public:
 
 private:
   static nsIDOMBlob*
-  GetInstancePrivate(JSContext* aCx, JSObject* aObj, const char* aFunctionName)
+  GetInstancePrivate(JSContext* aCx, JS::Handle<JSObject*> aObj, const char* aFunctionName)
   {
     nsIDOMBlob* blob = GetPrivate(aObj);
     if (blob) {
@@ -158,7 +158,7 @@ private:
   static JSBool
   Slice(JSContext* aCx, unsigned aArgc, jsval* aVp)
   {
-    JSObject* obj = JS_THIS_OBJECT(aCx, aVp);
+    JS::Rooted<JSObject*> obj(aCx, JS_THIS_OBJECT(aCx, aVp));
     if (!obj) {
       return false;
     }
@@ -169,9 +169,9 @@ private:
     }
 
     double start = 0, end = 0;
-    JSString* jsContentType = JS_GetEmptyString(JS_GetRuntime(aCx));
+    JS::Rooted<JSString*> jsContentType(aCx, JS_GetEmptyString(JS_GetRuntime(aCx)));
     if (!JS_ConvertArguments(aCx, aArgc, JS_ARGV(aCx, aVp), "/IIS", &start,
-                             &end, &jsContentType)) {
+                             &end, jsContentType.address())) {
       return false;
     }
 
@@ -271,7 +271,7 @@ public:
 
 private:
   static nsIDOMFile*
-  GetInstancePrivate(JSContext* aCx, JSObject* aObj, const char* aFunctionName)
+  GetInstancePrivate(JSContext* aCx, JS::Handle<JSObject*> aObj, const char* aFunctionName)
   {
     nsIDOMFile* file = GetPrivate(aObj);
     if (file) {
@@ -357,8 +357,8 @@ private:
       return false;
     }
 
-    JS::Value value;
-    if (NS_FAILED(file->GetLastModifiedDate(aCx, &value))) {
+    JS::Rooted<JS::Value> value(aCx);
+    if (NS_FAILED(file->GetLastModifiedDate(aCx, value.address()))) {
       return false;
     }
 
@@ -412,7 +412,7 @@ CreateBlob(JSContext* aCx, nsIDOMBlob* aBlob)
 }
 
 bool
-InitClasses(JSContext* aCx, JSObject* aGlobal)
+InitClasses(JSContext* aCx, JS::Handle<JSObject*> aGlobal)
 {
   JSObject* blobProto = Blob::InitClass(aCx, aGlobal);
   return blobProto && File::InitClass(aCx, aGlobal, blobProto);

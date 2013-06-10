@@ -6,14 +6,15 @@
 
 #include "jscntxt.h"
 #include "jscompartment.h"
-#include "jsinterp.h"
 #include "jsobj.h"
+#include "jsfriendapi.h"
 
 #include "builtin/Intl.h"
 #include "builtin/ParallelArray.h"
 #include "gc/Marking.h"
+
 #include "vm/ForkJoin.h"
-#include "vm/ParallelDo.h"
+#include "vm/Interpreter.h"
 #include "vm/ThreadPool.h"
 
 #include "jsfuninlines.h"
@@ -120,7 +121,7 @@ intrinsic_AssertionFailed(JSContext *cx, unsigned argc, Value *vp)
     CallArgs args = CallArgsFromVp(argc, vp);
     if (args.length() > 0) {
         // try to dump the informative string
-        JSString *str = ToString<CanGC>(cx, args[0]);
+        JSString *str = ToString<CanGC>(cx, args.handleAt(0));
         if (str) {
             const jschar *chars = str->getChars(cx);
             if (chars) {
@@ -139,10 +140,22 @@ static JSBool
 intrinsic_MakeConstructible(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
-    JS_ASSERT(args.length() >= 1);
+    JS_ASSERT(args.length() == 2);
     JS_ASSERT(args[0].isObject());
     JS_ASSERT(args[0].toObject().isFunction());
-    args[0].toObject().toFunction()->setIsSelfHostedConstructor();
+    JS_ASSERT(args[1].isObject());
+
+    // Normal .prototype properties aren't enumerable.  But for this to clone
+    // correctly, it must be enumerable.
+    RootedObject ctor(cx, &args[0].toObject());
+    if (!JSObject::defineProperty(cx, ctor, cx->names().classPrototype, args.handleAt(1),
+                                  JS_PropertyStub, JS_StrictPropertyStub,
+                                  JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+    {
+        return false;
+    }
+
+    ctor->toFunction()->setIsSelfHostedConstructor();
     args.rval().setUndefined();
     return true;
 }
@@ -238,44 +251,23 @@ js::intrinsic_Dump(JSContext *cx, unsigned argc, Value *vp)
 #endif
 
 /*
- * ParallelDo(func, feedback): Invokes |func| many times in parallel.
+ * ForkJoin(func, feedback): Invokes |func| many times in parallel.
  *
- * Executed based on the fork join pool described in vm/ForkJoin.h.
- * If func() has not been compiled for parallel execution, it will
- * first be invoked various times sequentially as a warmup phase,
- * which is used to gather TI information and to determine which
- * functions func() will invoke.
- *
- * func() should expect the following arguments:
- *
- *     func(id, n, warmup, args...)
- *
- * Here, |id| is the slice id. |n| is the total number of slices;
- * |warmup| is true if this is a warmup or recovery phase.
- * Typically, if |warmup| is true, you will want to do less work.
- *
- * The |feedback| argument is optional.  If provided, it should be a
- * closure.  This closure will be invoked with a double argument
- * representing the number of bailouts that occurred before a
- * successful parallel execution.  If the number is infinity, then
- * parallel execution was abandoned and |func| was simply invoked
- * sequentially.
- *
- * See ParallelArray.js for examples.
+ * See ForkJoin.cpp for details and ParallelArray.js for examples.
  */
 static JSBool
-intrinsic_ParallelDo(JSContext *cx, unsigned argc, Value *vp)
+intrinsic_ForkJoin(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
-    return parallel::Do(cx, args);
+    return ForkJoin(cx, args);
 }
 
 /*
- * ParallelSlices(): Returns the number of parallel slices that will
- * be created by ParallelDo().
+ * ForkJoinSlices(): Returns the number of parallel slices that will
+ * be created by ForkJoin().
  */
 static JSBool
-intrinsic_ParallelSlices(JSContext *cx, unsigned argc, Value *vp)
+intrinsic_ForkJoinSlices(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     args.rval().setInt32(ForkJoinSlices(cx));
@@ -415,14 +407,7 @@ static JSBool
 intrinsic_ParallelTestsShouldPass(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
-#if defined(JS_THREADSAFE) && defined(JS_ION)
-    args.rval().setBoolean(ion::IsEnabled(cx) &&
-                           ion::IsBaselineEnabled(cx) &&
-                           !ion::js_IonOptions.eagerCompilation &&
-                           ion::js_IonOptions.baselineUsesBeforeCompile != 0);
-#else
-    args.rval().setBoolean(false);
-#endif
+    args.rval().setBoolean(ParallelTestsShouldPass(cx));
     return true;
 }
 
@@ -478,8 +463,8 @@ const JSFunctionSpec intrinsic_functions[] = {
     JS_FN("DecompileArg",         intrinsic_DecompileArg,         2,0),
     JS_FN("RuntimeDefaultLocale", intrinsic_RuntimeDefaultLocale, 0,0),
 
-    JS_FN("ParallelDo",           intrinsic_ParallelDo,           2,0),
-    JS_FN("ParallelSlices",       intrinsic_ParallelSlices,       0,0),
+    JS_FN("ForkJoin",             intrinsic_ForkJoin,             2,0),
+    JS_FN("ForkJoinSlices",       intrinsic_ForkJoinSlices,       0,0),
     JS_FN("NewParallelArray",     intrinsic_NewParallelArray,     3,0),
     JS_FN("NewDenseArray",        intrinsic_NewDenseArray,        1,0),
     JS_FN("UnsafeSetElement",     intrinsic_UnsafeSetElement,     3,0),
@@ -512,7 +497,7 @@ bool
 JSRuntime::initSelfHosting(JSContext *cx)
 {
     JS_ASSERT(!selfHostingGlobal_);
-    RootedObject savedGlobal(cx, JS_GetGlobalObject(cx));
+    RootedObject savedGlobal(cx, js::GetDefaultGlobalForContext(cx));
     if (!(selfHostingGlobal_ = JS_NewGlobalObject(cx, &self_hosting_global_class, NULL)))
         return false;
     JS_SetGlobalObject(cx, selfHostingGlobal_);
@@ -532,6 +517,7 @@ JSRuntime::initSelfHosting(JSContext *cx)
     CompileOptions options(cx);
     options.setFileAndLine("self-hosted", 1);
     options.setSelfHostingMode(true);
+    options.setCanLazilyParse(false);
     options.setSourcePolicy(CompileOptions::NO_SOURCE);
     options.setVersion(JSVERSION_LATEST);
 
@@ -618,7 +604,7 @@ CloneProperties(JSContext *cx, HandleObject obj, HandleObject clone, CloneMemory
     return true;
 }
 
-static RawObject
+static JSObject *
 CloneObject(JSContext *cx, HandleObject srcObj, CloneMemory &clonedObjects)
 {
     CloneMemory::AddPtr p = clonedObjects.lookupForAdd(srcObj.get());
@@ -632,7 +618,7 @@ CloneObject(JSContext *cx, HandleObject srcObj, CloneMemory &clonedObjects)
                 return NULL;
         } else {
             RootedFunction fun(cx, srcObj->toFunction());
-            clone = CloneFunctionObject(cx, fun, cx->global(), fun->getAllocKind());
+            clone = CloneFunctionObject(cx, fun, cx->global(), fun->getAllocKind(), TenuredObject);
         }
     } else if (srcObj->isRegExp()) {
         RegExpObject &reobj = srcObj->asRegExp();
@@ -653,11 +639,11 @@ CloneObject(JSContext *cx, HandleObject srcObj, CloneMemory &clonedObjects)
             return NULL;
         clone = StringObject::create(cx, str);
     } else if (srcObj->isArray()) {
-        clone = NewDenseEmptyArray(cx);
+        clone = NewDenseEmptyArray(cx, NULL, TenuredObject);
     } else {
         JS_ASSERT(srcObj->isNative());
-        clone = NewObjectWithClassProto(cx, srcObj->getClass(), NULL, cx->global(),
-                                        srcObj->tenuredGetAllocKind());
+        clone = NewObjectWithGivenProto(cx, srcObj->getClass(), NULL, cx->global(),
+                                        srcObj->tenuredGetAllocKind(), SingletonObject);
     }
     if (!clone || !clonedObjects.relookupOrAdd(p, srcObj.get(), clone.get()) ||
         !CloneProperties(cx, srcObj, clone, clonedObjects))
@@ -707,7 +693,7 @@ JSRuntime::cloneSelfHostedFunctionScript(JSContext *cx, Handle<PropertyName*> na
     RootedFunction sourceFun(cx, funVal.toObject().toFunction());
     RootedScript sourceScript(cx, sourceFun->nonLazyScript());
     JS_ASSERT(!sourceScript->enclosingStaticScope());
-    RawScript cscript = CloneScript(cx, NullPtr(), targetFun, sourceScript);
+    JSScript *cscript = CloneScript(cx, NullPtr(), targetFun, sourceScript);
     if (!cscript)
         return false;
     targetFun->setScript(cscript);

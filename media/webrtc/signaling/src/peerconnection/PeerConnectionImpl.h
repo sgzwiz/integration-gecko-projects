@@ -133,6 +133,18 @@ public:
     kClosed
   };
 
+  /* Must match constants in IPeerConnection.idl */
+  /* Must also be int the same order as in fsmdef_states.h */
+  enum SignalingState {
+    kSignalingInvalid            = 0,
+    kSignalingStable             = 1,
+    kSignalingHaveLocalOffer     = 2,
+    kSignalingHaveRemoteOffer    = 3,
+    kSignalingHaveLocalPranswer  = 4,
+    kSignalingHaveRemotePranswer = 5,
+    kSignalingClosed             = 6
+  };
+
   enum SipccState {
     kIdle,
     kStarting,
@@ -268,6 +280,9 @@ public:
   // Called to retreive the list of parsing errors.
   const std::vector<std::string> &GetSdpParseErrors();
 
+  // Sets the RTC Signaling State
+  void SetSignalingState_m(SignalingState aSignalingState);
+
 private:
   PeerConnectionImpl(const PeerConnectionImpl&rhs);
   PeerConnectionImpl& operator=(PeerConnectionImpl);
@@ -281,7 +296,7 @@ private:
   NS_IMETHODIMP CreateAnswerInt(MediaConstraints& constraints);
   NS_IMETHODIMP EnsureDataConnection(uint16_t aNumstreams);
 
-  nsresult CloseInt(bool aIsSynchronous);
+  nsresult CloseInt();
   void ChangeReadyState(ReadyState aReadyState);
   nsresult CheckApiState(bool assert_ice_ready) const;
   void CheckThread() const {
@@ -303,8 +318,8 @@ private:
   void virtualDestroyNSSReference() MOZ_FINAL;
 #endif
 
-  // Shut down media. Called on any thread.
-  void ShutdownMedia(bool isSynchronous);
+  // Shut down media - called on main thread only
+  void ShutdownMedia();
 
   // ICE callbacks run on the right thread.
   nsresult IceStateChange_m(IceState aState);
@@ -315,6 +330,7 @@ private:
   // The call
   CSF::CC_CallPtr mCall;
   ReadyState mReadyState;
+  SignalingState mSignalingState;
 
   // ICE State
   IceState mIceState;

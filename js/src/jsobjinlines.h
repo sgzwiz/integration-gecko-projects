@@ -7,6 +7,8 @@
 #ifndef jsobjinlines_h___
 #define jsobjinlines_h___
 
+#include "jsobj.h"
+
 #include "jsapi.h"
 #include "jsarray.h"
 #include "jsbool.h"
@@ -15,15 +17,13 @@
 #include "jsiter.h"
 #include "jslock.h"
 #include "jsnum.h"
-#include "jsobj.h"
-#include "jsprobes.h"
 #include "jspropertytree.h"
 #include "jsproxy.h"
 #include "jsstr.h"
 #include "jstypedarray.h"
 #include "jswrapper.h"
 
-#include "builtin/Iterator-inl.h"
+#include "builtin/Module.h"
 #include "gc/Barrier.h"
 #include "gc/Marking.h"
 #include "js/MemoryMetrics.h"
@@ -33,6 +33,7 @@
 #include "vm/GlobalObject.h"
 #include "vm/Shape.h"
 #include "vm/NumberObject.h"
+#include "vm/Probes.h"
 #include "vm/RegExpStatics.h"
 #include "vm/StringObject.h"
 
@@ -41,13 +42,9 @@
 #include "jsfuninlines.h"
 #include "jsgcinlines.h"
 #include "jsinferinlines.h"
-#include "jsscriptinlines.h"
-
 #include "gc/Barrier-inl.h"
-
 #include "vm/ObjectImpl-inl.h"
 #include "vm/Shape-inl.h"
-#include "vm/RegExpStatics-inl.h"
 #include "vm/String-inl.h"
 
 /* static */ inline bool
@@ -252,6 +249,12 @@ JSObject::getParent() const
 }
 
 inline JSObject *
+JSObject::getMetadata() const
+{
+    return lastProperty()->getObjectMetadata();
+}
+
+inline JSObject *
 JSObject::enclosingScope()
 {
     return isScope()
@@ -275,7 +278,7 @@ JSObject::dynamicSlotIndex(size_t slot)
 }
 
 inline void
-JSObject::setLastPropertyInfallible(js::RawShape shape)
+JSObject::setLastPropertyInfallible(js::Shape *shape)
 {
     JS_ASSERT(!shape->inDictionary());
     JS_ASSERT(shape->compartment() == compartment());
@@ -306,8 +309,9 @@ JSObject::canRemoveLastProperty()
      * converted to dictionary mode instead. See BaseShape comment in jsscope.h
      */
     JS_ASSERT(!inDictionaryMode());
-    js::RawShape previous = lastProperty()->previous().get();
+    js::Shape *previous = lastProperty()->previous().get();
     return previous->getObjectParent() == lastProperty()->getObjectParent()
+        && previous->getObjectMetadata() == lastProperty()->getObjectMetadata()
         && previous->getObjectFlags() == lastProperty()->getObjectFlags();
 }
 
@@ -316,20 +320,6 @@ JSObject::getRawSlots()
 {
     JS_ASSERT(isGlobal());
     return slots;
-}
-
-inline const js::Value &
-JSObject::getReservedSlot(uint32_t index) const
-{
-    JS_ASSERT(index < JSSLOT_FREE(getClass()));
-    return getSlot(index);
-}
-
-inline js::HeapSlot &
-JSObject::getReservedSlotRef(uint32_t index)
-{
-    JS_ASSERT(index < JSSLOT_FREE(getClass()));
-    return getSlotRef(index);
 }
 
 inline void
@@ -856,6 +846,16 @@ inline bool JSObject::setUncacheableProto(JSContext *cx)
     return setFlag(cx, js::BaseShape::UNCACHEABLE_PROTO, GENERATE_SHAPE);
 }
 
+inline bool JSObject::hadElementsAccess() const
+{
+    return lastProperty()->hasObjectFlag(js::BaseShape::HAD_ELEMENTS_ACCESS);
+}
+
+inline bool JSObject::setHadElementsAccess(JSContext *cx)
+{
+    return setFlag(cx, js::BaseShape::HAD_ELEMENTS_ACCESS);
+}
+
 inline bool JSObject::isBoundFunction() const
 {
     return lastProperty()->hasObjectFlag(js::BaseShape::BOUND_FUNCTION);
@@ -896,6 +896,7 @@ inline bool JSObject::isPrimitive() const { return isNumber() || isString() || i
 inline bool JSObject::isRegExp() const { return hasClass(&js::RegExpClass); }
 inline bool JSObject::isRegExpStatics() const { return hasClass(&js::RegExpStaticsClass); }
 inline bool JSObject::isScope() const { return isCall() || isDeclEnv() || isNestedScope(); }
+inline bool JSObject::isScriptSource() const { return hasClass(&js::ScriptSourceClass); }
 inline bool JSObject::isSetIterator() const { return hasClass(&js::SetIteratorClass); }
 inline bool JSObject::isStaticBlock() const { return isBlock() && !getProto(); }
 inline bool JSObject::isStopIteration() const { return hasClass(&js::StopIterationClass); }
@@ -919,10 +920,24 @@ JSObject::asString()
     return *static_cast<js::StringObject *>(this);
 }
 
+inline js::ScriptSourceObject &
+JSObject::asScriptSource()
+{
+    JS_ASSERT(isScriptSource());
+    return *static_cast<js::ScriptSourceObject *>(this);
+}
+
+inline js::Module &
+JSObject::asModule()
+{
+    JS_ASSERT(isModule());
+    return *static_cast<js::Module *>(this);
+}
+
 inline bool
 JSObject::isDebugScope() const
 {
-    extern bool js_IsDebugScopeSlow(js::RawObject obj);
+    extern bool js_IsDebugScopeSlow(JSObject *obj);
     return getClass() == &js::ObjectProxyClass && js_IsDebugScopeSlow(const_cast<JSObject*>(this));
 }
 
@@ -1053,7 +1068,7 @@ JSObject::hasProperty(JSContext *cx, js::HandleObject obj,
 inline bool
 JSObject::isCallable()
 {
-    return isFunction() || getClass()->call;
+    return getClass()->isCallable();
 }
 
 inline void
@@ -1094,6 +1109,10 @@ JSObject::hasShapeTable() const
 JSObject::lookupGeneric(JSContext *cx, js::HandleObject obj, js::HandleId id,
                         js::MutableHandleObject objp, js::MutableHandleShape propp)
 {
+    /* NB: The logic of lookupGeneric is implicitly reflected in IonBuilder.cpp's
+     *     |CanEffectlesslyCallLookupGenericOnObject| logic.
+     *     If this changes, please remember to update the logic there as well.
+     */
     js::LookupGenericOp op = obj->getOps()->lookupGeneric;
     if (op)
         return op(cx, obj, id, objp, propp);
@@ -1268,12 +1287,6 @@ JSObject::getSpecialAttributes(JSContext *cx, js::HandleObject obj,
 {
     JS::RootedId id(cx, SPECIALID_TO_JSID(sid));
     return getGenericAttributes(cx, obj, id, attrsp);
-}
-
-inline bool
-js::ObjectImpl::isProxy() const
-{
-    return js::IsProxy(const_cast<JSObject*>(this->asObjectPtr()));
 }
 
 inline bool
@@ -1673,8 +1686,11 @@ CopyInitializerObject(JSContext *cx, HandleObject baseobj, NewObjectKind newKind
     if (!obj)
         return NULL;
 
+    RootedObject metadata(cx, obj->getMetadata());
     RootedShape lastProp(cx, baseobj->lastProperty());
     if (!JSObject::setLastProperty(cx, obj, lastProp))
+        return NULL;
+    if (metadata && !JSObject::setMetadata(cx, obj, metadata))
         return NULL;
 
     return obj;
@@ -1781,6 +1797,18 @@ DefineConstructorAndPrototype(JSContext *cx, HandleObject obj, JSProtoKey key, H
                               const JSPropertySpec *static_ps, const JSFunctionSpec *static_fs,
                               JSObject **ctorp = NULL,
                               gc::AllocKind ctorKind = JSFunction::FinalizeKind);
+
+static JS_ALWAYS_INLINE JSObject *
+NewObjectMetadata(JSContext *cx)
+{
+    // The metadata callback is invoked before each created object, except when
+    // analysis is active as the callback may reenter JS.
+    if (JS_UNLIKELY((size_t)cx->compartment->objectMetadataCallback) && !cx->compartment->activeAnalysis) {
+        gc::AutoSuppressGC suppress(cx);
+        return cx->compartment->objectMetadataCallback(cx);
+    }
+    return NULL;
+}
 
 } /* namespace js */
 

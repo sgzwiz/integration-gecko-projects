@@ -324,17 +324,11 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(XULDocument, XMLDocument)
     // document, so we'll traverse the table here instead of from the element.
     if (tmp->mTemplateBuilderTable)
         tmp->mTemplateBuilderTable->EnumerateRead(TraverseTemplateBuilders, &cb);
-        
+
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCurrentPrototype)
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMasterPrototype)
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCommandDispatcher)
-
-    uint32_t i, count = tmp->mPrototypes.Length();
-    for (i = 0; i < count; ++i) {
-        NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mPrototypes[i]");
-        cb.NoteXPCOMChild(static_cast<nsIScriptGlobalObjectOwner*>(tmp->mPrototypes[i]));
-    }
-
+    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPrototypes);
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLocalStore)
 
     if (tmp->mOverlayLoadObservers.IsInitialized())
@@ -357,14 +351,10 @@ NS_IMPL_RELEASE_INHERITED(XULDocument, XMLDocument)
 
 // QueryInterface implementation for XULDocument
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(XULDocument)
-    NS_DOCUMENT_INTERFACE_TABLE_BEGIN(XULDocument)
-      NS_INTERFACE_TABLE_ENTRY(XULDocument, nsIXULDocument)
-      NS_INTERFACE_TABLE_ENTRY(XULDocument, nsIDOMXULDocument)
-      NS_INTERFACE_TABLE_ENTRY(XULDocument, nsIStreamLoaderObserver)
-      NS_INTERFACE_TABLE_ENTRY(XULDocument, nsICSSLoaderObserver)
-    NS_OFFSET_AND_INTERFACE_TABLE_END
-    NS_OFFSET_AND_INTERFACE_TABLE_TO_MAP_SEGUE
-NS_INTERFACE_MAP_END_INHERITING(XMLDocument)
+    NS_INTERFACE_TABLE_INHERITED4(XULDocument, nsIXULDocument,
+                                  nsIDOMXULDocument, nsIStreamLoaderObserver,
+                                  nsICSSLoaderObserver)
+NS_INTERFACE_TABLE_TAIL_INHERITING(XMLDocument)
 
 
 //----------------------------------------------------------------------
@@ -433,8 +423,7 @@ XULDocument::StartDocumentLoad(const char* aCommand, nsIChannel* aChannel,
         NS_GetFinalChannelURI(aChannel, getter_AddRefs(mDocumentURI));
     NS_ENSURE_SUCCESS(rv, rv);
     
-    rv = ResetStylesheetsToURI(mDocumentURI);
-    if (NS_FAILED(rv)) return rv;
+    ResetStylesheetsToURI(mDocumentURI);
 
     RetrieveRelevantHeaders(aChannel);
 
@@ -3645,7 +3634,8 @@ XULDocument::OnStreamComplete(nsIStreamLoader* aLoader,
 
 
 nsresult
-XULDocument::ExecuteScript(nsIScriptContext * aContext, JSScript* aScriptObject)
+XULDocument::ExecuteScript(nsIScriptContext * aContext,
+                           JS::Handle<JSScript*> aScriptObject)
 {
     NS_PRECONDITION(aScriptObject != nullptr && aContext != nullptr, "null ptr");
     if (! aScriptObject || ! aContext)
@@ -4762,11 +4752,7 @@ XULDocument::GetBoxObjectFor(nsIDOMElement* aElement, nsIBoxObject** aResult)
 JSObject*
 XULDocument::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  JSObject* obj = XULDocumentBinding::Wrap(aCx, aScope, this);
-  if (obj && !PostCreateWrapper(aCx, obj)) {
-    return nullptr;
-  }
-  return obj;
+  return XULDocumentBinding::Wrap(aCx, aScope, this);
 }
 
 } // namespace dom

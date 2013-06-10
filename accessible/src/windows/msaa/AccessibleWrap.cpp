@@ -96,7 +96,7 @@ AccessibleWrap::QueryInterface(REFIID iid, void** ppv)
     if (IsDefunct() || (!HasOwnContent() && !IsDoc()))
       return E_NOINTERFACE;
 
-    *ppv = new sdnAccessible(GetNode());
+    *ppv = static_cast<ISimpleDOMNode*>(new sdnAccessible(GetNode()));
   }
 
   if (nullptr == *ppv) {
@@ -564,9 +564,7 @@ public:
   ~AccessibleEnumerator() { }
 
   // IUnknown
-  STDMETHODIMP QueryInterface(REFIID iid, void ** ppvObject);
-  STDMETHODIMP_(ULONG) AddRef(void);
-  STDMETHODIMP_(ULONG) Release(void);
+  DECL_IUNKNOWN
 
   // IEnumVARIANT
   STDMETHODIMP Next(unsigned long celt, VARIANT FAR* rgvar, unsigned long FAR* pceltFetched);
@@ -581,10 +579,9 @@ public:
 private:
   nsCOMPtr<nsIArray> mArray;
   uint32_t mCurIndex;
-  nsAutoRefCnt mRefCnt;
 };
 
-HRESULT
+STDMETHODIMP
 AccessibleEnumerator::QueryInterface(REFIID iid, void ** ppvObject)
 {
   A11Y_TRYBLOCK_BEGIN
@@ -604,21 +601,6 @@ AccessibleEnumerator::QueryInterface(REFIID iid, void ** ppvObject)
   return E_NOINTERFACE;
 
   A11Y_TRYBLOCK_END
-}
-
-STDMETHODIMP_(ULONG)
-AccessibleEnumerator::AddRef(void)
-{
-  return ++mRefCnt;
-}
-
-STDMETHODIMP_(ULONG)
-AccessibleEnumerator::Release(void)
-{
-  ULONG r = --mRefCnt;
-  if (r == 0)
-    delete this;
-  return r;
 }
 
 STDMETHODIMP
@@ -865,7 +847,7 @@ AccessibleWrap::accNavigate(
   VariantInit(pvarEndUpAt);
 
   Accessible* navAccessible = nullptr;
-  uint32_t xpRelation = 0;
+  int32_t xpRelation = -1;
 
   switch(navDir) {
     case NAVDIR_FIRSTCHILD:
@@ -937,6 +919,9 @@ AccessibleWrap::accNavigate(
     case NAVRELATION_DESCRIPTION_FOR:
       xpRelation = nsIAccessibleRelation::RELATION_DESCRIPTION_FOR;
       break;
+    case NAVRELATION_NODE_PARENT_OF:
+      xpRelation = nsIAccessibleRelation::RELATION_NODE_PARENT_OF;
+      break;
 
     default:
       return E_INVALIDARG;
@@ -944,7 +929,7 @@ AccessibleWrap::accNavigate(
 
   pvarEndUpAt->vt = VT_EMPTY;
 
-  if (xpRelation) {
+  if (xpRelation >= 0) {
     Relation rel = RelationByType(xpRelation);
     navAccessible = rel.Next();
   }
@@ -1269,6 +1254,10 @@ AccessibleWrap::get_states(AccessibleStates *aStates)
     *aStates |= IA2_STATE_TRANSIENT;
   if (state & states::VERTICAL)
     *aStates |= IA2_STATE_VERTICAL;
+  if (state & states::CHECKED)
+    *aStates |= IA2_STATE_CHECKABLE;
+  if (state & states::PINNED)
+    *aStates |= IA2_STATE_PINNED;
 
   return S_OK;
 
@@ -1523,15 +1512,6 @@ AccessibleWrap::HandleAccEvent(AccEvent* aEvent)
   nsresult rv = Accessible::HandleAccEvent(aEvent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return FirePlatformEvent(aEvent);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// AccessibleWrap
-
-nsresult
-AccessibleWrap::FirePlatformEvent(AccEvent* aEvent)
-{
   // Don't fire native MSAA events or mess with the system caret
   // when running in metro mode. This confuses input focus tracking
   // in metro's UIA implementation.
@@ -1600,6 +1580,9 @@ AccessibleWrap::FirePlatformEvent(AccEvent* aEvent)
 
   return NS_OK;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// AccessibleWrap
 
 //------- Helper methods ---------
 

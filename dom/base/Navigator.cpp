@@ -19,7 +19,6 @@
 #include "nsIWebContentHandlerRegistrar.h"
 #include "nsICookiePermission.h"
 #include "nsIScriptSecurityManager.h"
-#include "nsIJSContextStack.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsContentUtils.h"
 #include "nsUnicharUtils.h"
@@ -38,7 +37,10 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPtr.h"
 #include "Connection.h"
+#include "nsDOMClassInfo.h"
+#include "nsDOMEvent.h"
 #ifdef MOZ_B2G_RIL
+#include "IccManager.h"
 #include "MobileConnection.h"
 #include "mozilla/dom/CellBroadcast.h"
 #include "mozilla/dom/Voicemail.h"
@@ -75,8 +77,6 @@ DOMCI_DATA(Navigator, mozilla::dom::Navigator)
 
 namespace mozilla {
 namespace dom {
-
-static const char sJSStackContractID[] = "@mozilla.org/js/xpc/ContextStack;1";
 
 static bool sDoNotTrackEnabled = false;
 static bool sVibratorEnabled   = false;
@@ -132,6 +132,7 @@ NS_INTERFACE_MAP_BEGIN(Navigator)
   NS_INTERFACE_MAP_ENTRY(nsIMozNavigatorMobileConnection)
   NS_INTERFACE_MAP_ENTRY(nsIMozNavigatorCellBroadcast)
   NS_INTERFACE_MAP_ENTRY(nsIMozNavigatorVoicemail)
+  NS_INTERFACE_MAP_ENTRY(nsIMozNavigatorIccManager)
 #endif
 #ifdef MOZ_B2G_BT
   NS_INTERFACE_MAP_ENTRY(nsIDOMNavigatorBluetooth)
@@ -215,6 +216,11 @@ Navigator::Invalidate()
   if (mCellBroadcast) {
     mCellBroadcast = nullptr;
   }
+
+  if (mIccManager) {
+    mIccManager->Shutdown();
+    mIccManager = nullptr;
+  }
 #endif
 
 #ifdef MOZ_B2G_BT
@@ -225,11 +231,9 @@ Navigator::Invalidate()
 
   mCameraManager = nullptr;
 
-#ifdef MOZ_SYS_MSG
   if (mMessagesManager) {
     mMessagesManager = nullptr;
   }
-#endif
 
 #ifdef MOZ_AUDIO_CHANNEL_MANAGER
   if (mAudioChannelManager) {
@@ -777,7 +781,7 @@ Navigator::Vibrate(const JS::Value& aPattern, JSContext* cx)
     }
   }
   else {
-    JSObject *obj = JSVAL_TO_OBJECT(aPattern);
+    JS::Rooted<JSObject*> obj(cx, aPattern.toObjectOrNull());
     uint32_t length;
     if (!JS_GetArrayLength(cx, obj, &length) || length > sMaxVibrateListLen) {
       return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
@@ -785,9 +789,9 @@ Navigator::Vibrate(const JS::Value& aPattern, JSContext* cx)
     pattern.SetLength(length);
 
     for (uint32_t i = 0; i < length; ++i) {
-      JS::Value v;
+      JS::Rooted<JS::Value> v(cx);
       int32_t pv;
-      if (JS_GetElement(cx, obj, i, &v) &&
+      if (JS_GetElement(cx, obj, i, v.address()) &&
           GetVibrationDurationFromJsval(v, cx, &pv)) {
         pattern[i] = pv;
       }
@@ -817,9 +821,7 @@ Navigator::Vibrate(const JS::Value& aPattern, JSContext* cx)
   }
   gVibrateWindowListener = new VibrateWindowListener(win, doc);
 
-  nsCOMPtr<nsIDOMWindow> domWindow =
-    do_QueryInterface(static_cast<nsIDOMWindow*>(win));
-  hal::Vibrate(pattern, domWindow);
+  hal::Vibrate(pattern, win);
   return NS_OK;
 }
 
@@ -892,11 +894,7 @@ Navigator::MozIsLocallyAvailable(const nsAString &aURI,
   }
 
   // Same origin check.
-  nsCOMPtr<nsIJSContextStack> stack = do_GetService(sJSStackContractID);
-  NS_ENSURE_TRUE(stack, NS_ERROR_FAILURE);
-
-  JSContext* cx = nullptr;
-  rv = stack->Peek(&cx);
+  JSContext *cx = nsContentUtils::GetCurrentJSContext();
   NS_ENSURE_TRUE(cx, NS_ERROR_FAILURE);
 
   rv = nsContentUtils::GetSecurityManager()->CheckSameOrigin(cx, uri);
@@ -964,38 +962,21 @@ NS_IMETHODIMP Navigator::GetDeviceStorage(const nsAString &aType, nsIDOMDeviceSt
     return NS_OK;
   }
 
-  // We're going to obsolete getDeviceStorage, but want to leave it in for
-  // compatability right now. So we do essentially the same thing as GetDeviceStorages
-  // but only take the first element of the array.
+  nsCOMPtr<nsPIDOMWindow> win(do_QueryReferent(mWindow));
 
-  NS_WARNING("navigator.getDeviceStorage is deprecated. Returning navigator.getDeviceStorages[0]");
+  if (!win || !win->GetOuterWindow() || !win->GetDocShell()) {
+    return NS_ERROR_FAILURE;
+  }
 
-  nsCOMPtr<nsIVariant> variantArray;
+  nsRefPtr<nsDOMDeviceStorage> storage;
+  nsDOMDeviceStorage::CreateDeviceStorageFor(win, aType, getter_AddRefs(storage));
 
-  nsresult rv = GetDeviceStorages(aType, getter_AddRefs(variantArray));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  uint16_t dataType;
-  variantArray->GetDataType(&dataType);
-
-  if (dataType != nsIDataType::VTYPE_ARRAY) {
-    NS_ASSERTION(dataType == nsIDataType::VTYPE_EMPTY_ARRAY,
-                 "Expecting an empty array");
+  if (!storage) {
     return NS_OK;
   }
 
-  uint16_t valueType;
-  nsIID iid;
-  uint32_t valueCount;
-  void* rawArray;
-  variantArray->GetAsArray(&valueType, &iid, &valueCount, &rawArray);
-  NS_ASSERTION(valueCount > 0, "Expecting non-zero array size");
-  nsIDOMDeviceStorage** values = static_cast<nsIDOMDeviceStorage**>(rawArray);
-  *_retval = values[0];
-  for (uint32_t i = 1; i < valueCount; i++) {
-    values[i]->Release();
-  }
-  nsMemory::Free(rawArray);
+  NS_ADDREF(*_retval = storage.get());
+  mDeviceStorageStores.AppendElement(storage);
   return NS_OK;
 }
 
@@ -1015,7 +996,7 @@ NS_IMETHODIMP Navigator::GetDeviceStorages(const nsAString &aType, nsIVariant** 
   }
 
   nsTArray<nsRefPtr<nsDOMDeviceStorage> > stores;
-  nsDOMDeviceStorage::CreateDeviceStoragesFor(win, aType, stores);
+  nsDOMDeviceStorage::CreateDeviceStoragesFor(win, aType, stores, false);
 
   nsCOMPtr<nsIWritableVariant> result = do_CreateInstance("@mozilla.org/variant;1");
   NS_ENSURE_TRUE(result, NS_ERROR_FAILURE);
@@ -1334,6 +1315,31 @@ Navigator::GetMozVoicemail(nsIDOMMozVoicemail** aVoicemail)
   return NS_OK;
 }
 
+//*****************************************************************************
+//    nsNavigator::nsIMozNavigatorIccManager
+//*****************************************************************************
+
+NS_IMETHODIMP
+Navigator::GetMozIccManager(nsIDOMMozIccManager** aIccManager)
+{
+  *aIccManager = nullptr;
+
+  if (!mIccManager) {
+    nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
+    NS_ENSURE_TRUE(window && window->GetDocShell(), NS_OK);
+
+    if (!CheckPermission("mobileconnection")) {
+      return NS_OK;
+    }
+
+    mIccManager = new icc::IccManager();
+    mIccManager->Init(window);
+  }
+
+  NS_ADDREF(*aIccManager = mIccManager);
+  return NS_OK;
+}
+
 #endif // MOZ_B2G_RIL
 
 //*****************************************************************************
@@ -1370,7 +1376,8 @@ Navigator::GetMozMobileConnection(nsIDOMMozMobileConnection** aMobileConnection)
     nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
     NS_ENSURE_TRUE(window, NS_OK);
 
-    if (!CheckPermission("mobileconnection")) {
+    if (!CheckPermission("mobileconnection") &&
+        !CheckPermission("mobilenetwork")) {
       return NS_OK;
     }
 
@@ -1411,7 +1418,6 @@ Navigator::GetMozBluetooth(nsIDOMBluetoothManager** aBluetooth)
 //*****************************************************************************
 //    nsNavigator::nsIDOMNavigatorSystemMessages
 //*****************************************************************************
-#ifdef MOZ_SYS_MSG
 nsresult
 Navigator::EnsureMessagesManager()
 {
@@ -1431,42 +1437,42 @@ Navigator::EnsureMessagesManager()
   NS_ENSURE_TRUE(gpi, NS_ERROR_FAILURE);
 
   // We don't do anything with the return value.
-  JS::Value prop_val = JSVAL_VOID;
-  rv = gpi->Init(window, &prop_val);
+  AutoJSContext cx;
+  JS::Rooted<JS::Value> prop_val(cx);
+  rv = gpi->Init(window, prop_val.address());
   NS_ENSURE_SUCCESS(rv, rv);
 
   mMessagesManager = messageManager.forget();
 
   return NS_OK;
 }
-#endif
 
 NS_IMETHODIMP
 Navigator::MozHasPendingMessage(const nsAString& aType, bool *aResult)
 {
-#ifdef MOZ_SYS_MSG
+  if (!Preferences::GetBool("dom.sysmsg.enabled", false)) {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
   *aResult = false;
   nsresult rv = EnsureMessagesManager();
   NS_ENSURE_SUCCESS(rv, rv);
 
   return mMessagesManager->MozHasPendingMessage(aType, aResult);
-#else
-  return NS_ERROR_NOT_IMPLEMENTED;
-#endif
 }
 
 NS_IMETHODIMP
 Navigator::MozSetMessageHandler(const nsAString& aType,
                                 nsIDOMSystemMessageCallback *aCallback)
 {
-#ifdef MOZ_SYS_MSG
+  if (!Preferences::GetBool("dom.sysmsg.enabled", false)) {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
   nsresult rv = EnsureMessagesManager();
   NS_ENSURE_SUCCESS(rv, rv);
 
   return mMessagesManager->MozSetMessageHandler(aType, aCallback);
-#else
-  return NS_ERROR_NOT_IMPLEMENTED;
-#endif
 }
 
 //*****************************************************************************
@@ -1496,7 +1502,7 @@ Navigator::GetMozTime(nsIDOMMozTimeManager** aTime)
 //*****************************************************************************
 
 NS_IMETHODIMP
-Navigator::GetMozCameras(nsIDOMCameraManager** aCameraManager)
+Navigator::GetMozCameras(nsISupports** aCameraManager)
 {
   if (!mCameraManager) {
     nsCOMPtr<nsPIDOMWindow> win = do_QueryReferent(mWindow);
@@ -1510,7 +1516,7 @@ Navigator::GetMozCameras(nsIDOMCameraManager** aCameraManager)
     NS_ENSURE_TRUE(mCameraManager, NS_OK);
   }
 
-  nsRefPtr<nsDOMCameraManager> cameraManager = mCameraManager;
+  nsCOMPtr<nsIObserver> cameraManager = mCameraManager.get();
   cameraManager.forget(aCameraManager);
 
   return NS_OK;

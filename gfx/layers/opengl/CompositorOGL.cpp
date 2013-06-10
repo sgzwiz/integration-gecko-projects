@@ -24,6 +24,8 @@
 
 #include "gfxCrashReporterUtils.h"
 
+#include "nsMathUtils.h"
+
 #include "GeckoProfiler.h"
 #include <algorithm>
 
@@ -224,16 +226,19 @@ int ShaderProgramOGL::sCurrentProgramKey = 0;
 #endif
 
 CompositorOGL::CompositorOGL(nsIWidget *aWidget, int aSurfaceWidth,
-                             int aSurfaceHeight, bool aIsRenderingToEGLSurface)
+                             int aSurfaceHeight, bool aUseExternalSurfaceSize)
   : mWidget(aWidget)
   , mWidgetSize(-1, -1)
   , mSurfaceSize(aSurfaceWidth, aSurfaceHeight)
   , mHasBGRA(0)
-  , mIsRenderingToEGLSurface(aIsRenderingToEGLSurface)
+  , mUseExternalSurfaceSize(aUseExternalSurfaceSize)
   , mFrameInProgress(false)
   , mDestroyed(false)
 {
   MOZ_COUNT_CTOR(CompositorOGL);
+  mTextures[0] = 0;
+  mTextures[1] = 0;
+  mTextures[2] = 0;
   sBackend = LAYERS_OPENGL;
 }
 
@@ -277,9 +282,29 @@ CompositorOGL::AddPrograms(ShaderProgramType aType)
   }
 }
 
+GLuint
+CompositorOGL::GetTemporaryTexture(GLenum aTextureUnit)
+{
+  if (!mTextures[aTextureUnit - LOCAL_GL_TEXTURE0]) {
+    gl()->MakeCurrent();
+    gl()->fGenTextures(1, &mTextures[aTextureUnit - LOCAL_GL_TEXTURE0]);
+  }
+  return mTextures[aTextureUnit - LOCAL_GL_TEXTURE0];
+}
+
 void
 CompositorOGL::Destroy()
 {
+  if (gl()) {
+    gl()->MakeCurrent();
+    gl()->fDeleteTextures(3, mTextures);
+    mTextures[0] = 0;
+    mTextures[1] = 0;
+    mTextures[2] = 0;
+  } else {
+    MOZ_ASSERT(!mTextures[0] && !mTextures[1] && !mTextures[2]);
+  }
+
   if (!mDestroyed) {
     mDestroyed = true;
     CleanupResources();
@@ -546,10 +571,10 @@ CompositorOGL::BindAndDrawQuadWithTextureRect(ShaderProgramOGL *aProg,
   // We need to convert back to actual texels here to get proper behaviour with
   // our GL helper functions. Should fix this sometime.
   // I want to vomit.
-  IntRect texCoordRect = IntRect(aTexCoordRect.x * aTexture->GetSize().width,
-                                 aTexCoordRect.y * aTexture->GetSize().height,
-                                 aTexCoordRect.width * aTexture->GetSize().width,
-                                 aTexCoordRect.height * aTexture->GetSize().height);
+  IntRect texCoordRect = IntRect(NS_roundf(aTexCoordRect.x * aTexture->GetSize().width),
+                                 NS_roundf(aTexCoordRect.y * aTexture->GetSize().height),
+                                 NS_roundf(aTexCoordRect.width * aTexture->GetSize().width),
+                                 NS_roundf(aTexCoordRect.height * aTexture->GetSize().height));
 
   // This is fairly disgusting - if the texture should be flipped it will have a
   // negative height, in which case we un-invert the texture coords and pass the
@@ -764,7 +789,7 @@ CompositorOGL::BeginFrame(const Rect *aClipRectIn, const gfxMatrix& aTransform,
 
   mFrameInProgress = true;
   gfxRect rect;
-  if (mIsRenderingToEGLSurface) {
+  if (mUseExternalSurfaceSize) {
     rect = gfxRect(0, 0, mSurfaceSize.width, mSurfaceSize.height);
   } else {
     rect = gfxRect(aRenderBounds.x, aRenderBounds.y, aRenderBounds.width, aRenderBounds.height);
@@ -775,7 +800,7 @@ CompositorOGL::BeginFrame(const Rect *aClipRectIn, const gfxMatrix& aTransform,
       // sent atomically with rotation changes
       nsIntRect intRect;
       mWidget->GetClientBounds(intRect);
-      rect = gfxRect(intRect.x, intRect.y, intRect.width, intRect.height);
+      rect = gfxRect(0, 0, intRect.width, intRect.height);
     }
   }
 
@@ -960,8 +985,8 @@ CompositorOGL::DrawQuad(const Rect& aRect, const Rect& aClipRect,
 
   IntRect intClipRect;
   aClipRect.ToIntRect(&intClipRect);
-  mGLContext->fScissor(intClipRect.x, intClipRect.y,
-                       intClipRect.width, intClipRect.height);
+  mGLContext->PushScissorRect(nsIntRect(intClipRect.x, intClipRect.y,
+                                        intClipRect.width, intClipRect.height));
 
   MaskType maskType;
   EffectMask* effectMask;
@@ -1196,6 +1221,7 @@ CompositorOGL::DrawQuad(const Rect& aRect, const Rect& aClipRect,
     break;
   }
 
+  mGLContext->PopScissorRect();
   mGLContext->fActiveTexture(LOCAL_GL_TEXTURE0);
   // in case rendering has used some other GL context
   MakeCurrent();
@@ -1209,7 +1235,7 @@ CompositorOGL::EndFrame()
 #ifdef MOZ_DUMP_PAINTING
   if (gfxUtils::sDumpPainting) {
     nsIntRect rect;
-    if (mIsRenderingToEGLSurface) {
+    if (mUseExternalSurfaceSize) {
       rect = nsIntRect(0, 0, mSurfaceSize.width, mSurfaceSize.height);
     } else {
       mWidget->GetBounds(rect);
@@ -1287,7 +1313,7 @@ void
 CompositorOGL::CopyToTarget(gfxContext *aTarget, const gfxMatrix& aTransform)
 {
   nsIntRect rect;
-  if (mIsRenderingToEGLSurface) {
+  if (mUseExternalSurfaceSize) {
     rect = nsIntRect(0, 0, mSurfaceSize.width, mSurfaceSize.height);
   } else {
     rect = nsIntRect(0, 0, mWidgetSize.width, mWidgetSize.height);

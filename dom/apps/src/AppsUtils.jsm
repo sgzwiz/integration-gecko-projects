@@ -20,13 +20,13 @@ XPCOMUtils.defineLazyGetter(this, "NetUtil", function() {
 
 // Shared code for AppsServiceChild.jsm, Webapps.jsm and Webapps.js
 
-this.EXPORTED_SYMBOLS = ["AppsUtils", "ManifestHelper"];
+this.EXPORTED_SYMBOLS = ["AppsUtils", "ManifestHelper", "isAbsoluteURI"];
 
 function debug(s) {
   //dump("-*- AppsUtils.jsm: " + s + "\n");
 }
 
-function isAbsoluteURI(aURI) {
+this.isAbsoluteURI = function(aURI) {
   let foo = Services.io.newURI("http://foo", null, null);
   let bar = Services.io.newURI("http://bar", null, null);
   return Services.io.newURI(aURI, null, foo).prePath != foo.prePath ||
@@ -90,7 +90,10 @@ this.AppsUtils = {
       packageHash: aApp.packageHash,
       staged: aApp.staged,
       installerAppId: aApp.installerAppId || Ci.nsIScriptSecurityManager.NO_APP_ID,
-      installerIsBrowser: !!aApp.installerIsBrowser
+      installerIsBrowser: !!aApp.installerIsBrowser,
+      storeId: aApp.storeId || "",
+      storeVersion: aApp.storeVersion || 0,
+      redirects: aApp.redirects
     };
   },
 
@@ -119,6 +122,17 @@ this.AppsUtils = {
     debug("getAppLocalIdByManifestURL " + aManifestURL);
     for (let id in aApps) {
       if (aApps[id].manifestURL == aManifestURL) {
+        return aApps[id].localId;
+      }
+    }
+
+    return Ci.nsIScriptSecurityManager.NO_APP_ID;
+  },
+
+  getAppLocalIdByStoreId: function(aApps, aStoreId) {
+    debug("getAppLocalIdByStoreId:" + aStoreId);
+    for (let id in aApps) {
+      if (aApps[id].storeId == aStoreId) {
         return aApps[id].localId;
       }
     }

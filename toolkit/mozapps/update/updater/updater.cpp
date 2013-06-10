@@ -50,6 +50,8 @@
 
 #include "updatelogging.h"
 
+#include "mozilla/Compiler.h"
+
 // Amount of the progress bar to use in each of the 3 update stages,
 // should total 100.0.
 #define PROGRESS_PREPARE_SIZE 20.0f
@@ -119,12 +121,20 @@ static bool sUseHardLinks = true;
 
 // This variable lives in libbz2.  It's declared in bzlib_private.h, so we just
 // declare it here to avoid including that entire header file.
-#if (__GNUC__ >= 4) || (__GNUC__ == 3 && __GNUC_MINOR__ >= 3)
+#define BZ2_CRC32TABLE_UNDECLARED
+
+#if MOZ_IS_GCC
+#if MOZ_GCC_VERSION_AT_LEAST(3, 3, 0)
 extern "C"  __attribute__((visibility("default"))) unsigned int BZ2_crc32Table[256];
+#undef BZ2_CRC32TABLE_UNDECLARED
+#endif
 #elif defined(__SUNPRO_C) || defined(__SUNPRO_CC)
 extern "C" __global unsigned int BZ2_crc32Table[256];
-#else
+#undef BZ2_CRC32TABLE_UNDECLARED
+#endif
+#if defined(BZ2_CRC32TABLE_UNDECLARED)
 extern "C" unsigned int BZ2_crc32Table[256];
+#undef BZ2_CRC32TABLE_UNDECLARED
 #endif
 
 static unsigned int
@@ -1664,6 +1674,7 @@ PatchIfFile::Finish(int status)
 
 #ifdef XP_WIN
 #include "nsWindowsRestart.cpp"
+#include "nsWindowsHelpers.h"
 #include "uachelper.h"
 #include "pathhash.h"
 #endif
@@ -1692,6 +1703,16 @@ LaunchCallbackApp(const NS_tchar *workingDir,
   // Do not allow the callback to run when running an update through the
   // service as session 0.  The unelevated updater.exe will do the launching.
   if (!usingService) {
+#if defined(MOZ_METRO)
+    // If our callback application is the default metro browser, then
+    // launch it now.
+    for (int i = 0; i < argc; i++) {
+      if (!wcsicmp(L"-ServerName:DefaultBrowserServer", argv[i])) {
+        LaunchDefaultMetroBrowser();
+        return;
+      }
+    }
+#endif
     WinLaunchChild(argv[0], argc, argv, NULL);
   }
 #else

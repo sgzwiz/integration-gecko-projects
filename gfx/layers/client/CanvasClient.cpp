@@ -5,12 +5,16 @@
 
 #include "mozilla/layers/CanvasClient.h"
 #include "mozilla/layers/TextureClient.h"
-#include "BasicCanvasLayer.h"
+#include "ClientCanvasLayer.h"
 #include "mozilla/layers/ShadowLayers.h"
 #include "SharedTextureImage.h"
 #include "nsXULAppAPI.h"
 #include "GLContext.h"
 #include "SurfaceStream.h"
+#include "SharedSurface.h"
+#ifdef MOZ_WIDGET_GONK
+#include "SharedSurfaceGralloc.h"
+#endif
 
 using namespace mozilla::gl;
 
@@ -49,10 +53,11 @@ CanvasClient2D::CanvasClient2D(CompositableForwarder* aFwd,
 }
 
 void
-CanvasClient2D::Update(gfx::IntSize aSize, BasicCanvasLayer* aLayer)
+CanvasClient2D::Update(gfx::IntSize aSize, ClientCanvasLayer* aLayer)
 {
   if (!mTextureClient) {
-    mTextureClient = CreateTextureClient(TEXTURE_SHMEM);
+    mTextureClient = CreateTextureClient(TEXTURE_CONTENT);
+    MOZ_ASSERT(mTextureClient, "Failed to create texture client");
   }
 
   bool isOpaque = (aLayer->GetContentFlags() & Layer::CONTENT_OPAQUE);
@@ -62,9 +67,16 @@ CanvasClient2D::Update(gfx::IntSize aSize, BasicCanvasLayer* aLayer)
   mTextureClient->EnsureAllocated(aSize, contentType);
 
   gfxASurface* surface = mTextureClient->LockSurface();
-  static_cast<BasicCanvasLayer*>(aLayer)->UpdateSurface(surface, nullptr);
+  aLayer->UpdateSurface(surface);
   mTextureClient->Unlock();
 }
+
+void
+CanvasClientWebGL::Updated()
+{
+  mForwarder->UpdateTextureNoSwap(this, 1, mTextureClient->GetDescriptor());
+}
+
 
 CanvasClientWebGL::CanvasClientWebGL(CompositableForwarder* aFwd,
                                      TextureFlags aFlags)
@@ -74,10 +86,11 @@ CanvasClientWebGL::CanvasClientWebGL(CompositableForwarder* aFwd,
 }
 
 void
-CanvasClientWebGL::Update(gfx::IntSize aSize, BasicCanvasLayer* aLayer)
+CanvasClientWebGL::Update(gfx::IntSize aSize, ClientCanvasLayer* aLayer)
 {
   if (!mTextureClient) {
     mTextureClient = CreateTextureClient(TEXTURE_STREAM_GL);
+    MOZ_ASSERT(mTextureClient, "Failed to create texture client");
   }
 
   NS_ASSERTION(aLayer->mGLContext, "CanvasClientWebGL should only be used with GL canvases");
@@ -86,9 +99,33 @@ CanvasClientWebGL::Update(gfx::IntSize aSize, BasicCanvasLayer* aLayer)
   mTextureClient->EnsureAllocated(aSize, gfxASurface::CONTENT_COLOR);
 
   GLScreenBuffer* screen = aLayer->mGLContext->Screen();
-  SurfaceStreamHandle handle = screen->Stream()->GetShareHandle();
+  SurfaceStream* stream = screen->Stream();
 
-  mTextureClient->SetDescriptor(SurfaceStreamDescriptor(handle, false));
+  bool isCrossProcess = !(XRE_GetProcessType() == GeckoProcessType_Default);
+  if (isCrossProcess) {
+    // swap staging -> consumer so we can send it to the compositor
+    SharedSurface* surf = stream->SwapConsumer();
+    if (!surf) {
+      printf_stderr("surf is null post-SwapConsumer!\n");
+      return;
+    }
+
+#ifdef MOZ_WIDGET_GONK
+    if (surf->Type() != SharedSurfaceType::Gralloc) {
+      printf_stderr("Unexpected non-Gralloc SharedSurface in IPC path!");
+      return;
+    }
+
+    SharedSurface_Gralloc* grallocSurf = SharedSurface_Gralloc::Cast(surf);
+    mTextureClient->SetDescriptor(grallocSurf->GetDescriptor());
+#else
+    printf_stderr("isCrossProcess, but not MOZ_WIDGET_GONK! Someone needs to write some code!");
+    MOZ_ASSERT(false);
+#endif
+  } else {
+    SurfaceStreamHandle handle = stream->GetShareHandle();
+    mTextureClient->SetDescriptor(SurfaceStreamDescriptor(handle, false));
+  }
 
   aLayer->Painted();
 }

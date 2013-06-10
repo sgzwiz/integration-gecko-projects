@@ -17,6 +17,8 @@
 using namespace js;
 using namespace js::frontend;
 
+using mozilla::IsFinite;
+
 /*
  * Asserts to verify assumptions behind pn_ macros.
  */
@@ -344,6 +346,17 @@ ParseNode::newBinaryOrAppend(ParseNodeKind kind, JSOp op, ParseNode *left, Parse
     return handler->new_<BinaryNode>(kind, op, left, right);
 }
 
+inline void
+NameNode::initCommon(ParseContext<FullParseHandler> *pc)
+{
+    pn_expr = NULL;
+    pn_cookie.makeFree();
+    pn_dflags = (!pc->topStmt || pc->topStmt->type == STMT_BLOCK)
+                ? PND_BLOCKCHILD
+                : 0;
+    pn_blockid = pc->blockid();
+}
+
 // Note: the parse context passed into this may not equal the associated
 // parser's current context.
 NameNode *
@@ -635,7 +648,7 @@ NullaryNode::dump()
       case PNK_NUMBER: {
         ToCStringBuf cbuf;
         const char *cstr = NumberToCString(NULL, &cbuf, pn_dval);
-        if (!MOZ_DOUBLE_IS_FINITE(pn_dval))
+        if (!IsFinite(pn_dval))
             fputc('#', stderr);
         if (cstr)
             fprintf(stderr, "%s", cstr);

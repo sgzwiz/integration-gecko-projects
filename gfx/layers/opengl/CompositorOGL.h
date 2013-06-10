@@ -29,7 +29,7 @@ class CompositorOGL : public Compositor
 
 public:
   CompositorOGL(nsIWidget *aWidget, int aSurfaceWidth = -1, int aSurfaceHeight = -1,
-                bool aIsRenderingToEGLSurface = false);
+                bool aUseExternalSurfaceSize = false);
 
   virtual ~CompositorOGL();
 
@@ -39,7 +39,10 @@ public:
 
   virtual TextureFactoryIdentifier GetTextureFactoryIdentifier() MOZ_OVERRIDE
   {
-    return TextureFactoryIdentifier(LAYERS_OPENGL, GetMaxTextureSize());
+    return TextureFactoryIdentifier(LAYERS_OPENGL,
+                                    GetMaxTextureSize(),
+                                    mFBOTextureTarget == LOCAL_GL_TEXTURE_2D,
+                                    SupportsPartialTextureUpdate());
   }
 
   virtual TemporaryRef<CompositingRenderTarget> 
@@ -90,7 +93,7 @@ public:
    */
   virtual void SetDestinationSurfaceSize(const gfx::IntSize& aSize) MOZ_OVERRIDE;
 
-  virtual void SetScreenRenderOffset(const gfx::Point& aOffset) MOZ_OVERRIDE {
+  virtual void SetScreenRenderOffset(const ScreenPoint& aOffset) MOZ_OVERRIDE {
     mRenderOffset = aOffset;
   }
 
@@ -131,6 +134,13 @@ public:
            gl::RGBARectLayerProgramType : gl::RGBALayerProgramType;
   }
 
+  /**
+   * The compositor provides with temporary textures for use with direct
+   * textruing like gralloc texture.
+   * Doing so lets us use gralloc the way it has been designed to be used
+   * (see https://wiki.mozilla.org/Platform/GFX/Gralloc)
+   */
+  GLuint GetTemporaryTexture(GLenum aUnit);
 private:
   /** 
    * Context target, nullptr when drawing directly to our swap chain.
@@ -145,7 +155,7 @@ private:
   /** The size of the surface we are rendering to */
   nsIntSize mSurfaceSize;
 
-  gfx::Point mRenderOffset;
+  ScreenPoint mRenderOffset;
 
   /** Helper-class used by Initialize **/
   class ReadDrawFPSPref MOZ_FINAL : public nsRunnable {
@@ -185,11 +195,11 @@ private:
   bool mHasBGRA;
 
   /**
-   * When rendering to an EGL surface (e.g. on Android), we rely on being told
+   * When rendering to some EGL surfaces (e.g. on Android), we rely on being told
    * about size changes (via SetSurfaceSize) rather than pulling this information
    * from the widget.
    */
-  bool mIsRenderingToEGLSurface;
+  bool mUseExternalSurfaceSize;
 
   /**
    * Have we had DrawQuad calls since the last frame was rendered?
@@ -316,6 +326,9 @@ private:
   bool mDestroyed;
 
   nsAutoPtr<FPSState> mFPS;
+  // Textures used for direct texturing of buffers like gralloc.
+  // The index of the texture in this array must correspond to the texture unit.
+  GLuint mTextures[3];
   static bool sDrawFPS;
   static bool sFrameCounter;
 };

@@ -282,9 +282,10 @@ IonRuntime::generateInvalidator(JSContext *cx)
     masm.addq(Imm32(sizeof(uintptr_t)), rsp);
 
     // Push registers such that we can access them from [base + code].
-    masm.reserveStack(Registers::Total * sizeof(void *));
-    for (uint32_t i = 0; i < Registers::Total; i++)
-        masm.movq(Register::FromCode(i), Operand(rsp, i * sizeof(void *)));
+    for (uint32_t i = Registers::Total; i > 0; ) {
+        i--;
+        masm.Push(Register::FromCode(i));
+    }
 
     // Push xmm registers, such that we can access them from [base + code].
     masm.reserveStack(FloatRegisters::Total * sizeof(double));
@@ -387,7 +388,7 @@ IonRuntime::generateArgumentsRectifier(JSContext *cx, ExecutionMode mode, void *
 
     // Call the target function.
     // Note that this code assumes the function is JITted.
-    masm.movq(Operand(rax, offsetof(JSFunction, u.i.script_)), rax);
+    masm.movq(Operand(rax, JSFunction::offsetOfNativeOrScript()), rax);
     masm.loadBaselineOrIonRaw(rax, rax, mode, NULL);
     masm.call(rax);
     uint32_t returnOffset = masm.currentOffset();
@@ -415,9 +416,10 @@ static void
 GenerateBailoutThunk(JSContext *cx, MacroAssembler &masm, uint32_t frameClass)
 {
     // Push registers such that we can access them from [base + code].
-    masm.reserveStack(Registers::Total * sizeof(void *));
-    for (uint32_t i = 0; i < Registers::Total; i++)
-        masm.movq(Register::FromCode(i), Operand(rsp, i * sizeof(void *)));
+    for (uint32_t i = Registers::Total; i > 0; ) {
+        i--;
+        masm.Push(Register::FromCode(i));
+    }
 
     // Push xmm registers, such that we can access them from [base + code].
     masm.reserveStack(FloatRegisters::Total * sizeof(double));
@@ -526,7 +528,7 @@ IonRuntime::generateVMWrapper(JSContext *cx, const VMFunction &f)
 
       case Type_Handle:
         outReg = regs.takeAny();
-        masm.Push(UndefinedValue());
+        masm.PushEmptyRooted(f.outParamRootType);
         masm.movq(esp, outReg);
         break;
 
@@ -552,7 +554,10 @@ IonRuntime::generateVMWrapper(JSContext *cx, const VMFunction &f)
             MoveOperand from;
             switch (f.argProperties(explicitArg)) {
               case VMFunction::WordByValue:
-                masm.passABIArg(MoveOperand(argsBase, argDisp));
+                if (f.argPassedInFloatReg(explicitArg))
+                    masm.passABIArg(MoveOperand(argsBase, argDisp, MoveOperand::FLOAT));
+                else
+                    masm.passABIArg(MoveOperand(argsBase, argDisp));
                 argDisp += sizeof(void *);
                 break;
               case VMFunction::WordByRef:
@@ -594,6 +599,9 @@ IonRuntime::generateVMWrapper(JSContext *cx, const VMFunction &f)
     // Load the outparam and free any allocated stack.
     switch (f.outParam) {
       case Type_Handle:
+        masm.popRooted(f.outParamRootType, ReturnReg, JSReturnOperand);
+        break;
+
       case Type_Value:
         masm.loadValue(Address(esp, 0), JSReturnOperand);
         masm.freeStack(sizeof(Value));

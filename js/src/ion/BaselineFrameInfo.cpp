@@ -6,6 +6,7 @@
 
 #include "BaselineFrameInfo.h"
 #include "IonSpewer.h"
+#include "shared/BaselineCompiler-shared.h"
 
 #include "jsanalyze.h"
 #include "jsinferinlines.h"
@@ -144,11 +145,10 @@ FrameInfo::popRegsAndSync(uint32_t uses)
 
 #ifdef DEBUG
 void
-FrameInfo::assertValidState(jsbytecode *pc)
+FrameInfo::assertValidState(const BytecodeInfo &info)
 {
     // Check stack depth.
-    analyze::Bytecode *code = script->analysis()->maybeCode(pc);
-    JS_ASSERT_IF(code, stackDepth() == code->stackDepth);
+    JS_ASSERT(stackDepth() == info.stackDepth);
 
     // Start at the bottom, find the first value that's not synced.
     uint32_t i = 0;

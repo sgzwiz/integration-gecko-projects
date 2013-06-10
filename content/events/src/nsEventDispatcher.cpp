@@ -9,6 +9,7 @@
 #include "nsPresContext.h"
 #include "nsEventListenerManager.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsError.h"
 #include "nsMutationEvent.h"
 #include NEW_H
@@ -729,6 +730,9 @@ nsEventDispatcher::CreateEvent(mozilla::dom::EventTarget* aOwner,
     case NS_MOUSE_EVENT:
       return NS_NewDOMMouseEvent(aDOMEvent, aOwner, aPresContext,
                                  static_cast<nsInputEvent*>(aEvent));
+    case NS_FOCUS_EVENT:
+      return NS_NewDOMFocusEvent(aDOMEvent, aOwner, aPresContext,
+                                 static_cast<nsFocusEvent*>(aEvent));
     case NS_MOUSE_SCROLL_EVENT:
       return NS_NewDOMMouseScrollEvent(aDOMEvent, aOwner, aPresContext,
                                  static_cast<nsInputEvent*>(aEvent));
@@ -839,12 +843,6 @@ nsEventDispatcher::CreateEvent(mozilla::dom::EventTarget* aOwner,
     return NS_NewDOMDOMTransactionEvent(aDOMEvent, aOwner, aPresContext, nullptr);
   if (aEventType.LowerCaseEqualsLiteral("scrollareaevent"))
     return NS_NewDOMScrollAreaEvent(aDOMEvent, aOwner, aPresContext, nullptr);
-  // FIXME: Should get spec to say what the right string is here!  This
-  // is probably wrong!
-  if (aEventType.LowerCaseEqualsLiteral("transitionevent"))
-    return NS_NewDOMTransitionEvent(aDOMEvent, aOwner, aPresContext, nullptr);
-  if (aEventType.LowerCaseEqualsLiteral("animationevent"))
-    return NS_NewDOMAnimationEvent(aDOMEvent, aOwner, aPresContext, nullptr);
   if (aEventType.LowerCaseEqualsLiteral("popstateevent"))
     return NS_NewDOMPopStateEvent(aDOMEvent, aOwner, aPresContext, nullptr);
   if (aEventType.LowerCaseEqualsLiteral("mozaudioavailableevent"))
@@ -865,6 +863,8 @@ nsEventDispatcher::CreateEvent(mozilla::dom::EventTarget* aOwner,
   if (aEventType.LowerCaseEqualsLiteral("storageevent")) {
     return NS_NewDOMStorageEvent(aDOMEvent, aOwner, aPresContext, nullptr);
   }
+  // NEW EVENT TYPES SHOULD NOT BE ADDED HERE; THEY SHOULD USE ONLY EVENT
+  // CONSTRUCTORS
 
   return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
 }

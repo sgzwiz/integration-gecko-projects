@@ -4,7 +4,7 @@
 
 "use strict";
 
-let DEBUG = false;
+const DEBUG = false;
 function debug(s) { dump("-*- Fallback ContactService component: " + s + "\n"); }
 
 const Cu = Components.utils;
@@ -21,19 +21,6 @@ XPCOMUtils.defineLazyServiceGetter(this, "ppmm",
                                    "@mozilla.org/parentprocessmessagemanager;1",
                                    "nsIMessageListenerManager");
 
-XPCOMUtils.defineLazyGetter(this, "mRIL", function () {
-  let telephony = Cc["@mozilla.org/ril;1"];
-  if (!telephony) {
-    // Return a mock RIL because B2G Desktop build does not support telephony.
-    return {
-      getICCContacts: function(aContactType, aCallback) {
-        aCallback("!telephony", null, null);
-      }
-    };
-  }
-  return telephony.getService(Ci.nsIRadioInterfaceLayer);
-});
-
 let myGlobal = this;
 
 let ContactService = {
@@ -41,9 +28,11 @@ let ContactService = {
     if (DEBUG) debug("Init");
     this._messages = ["Contacts:Find", "Contacts:GetAll", "Contacts:GetAll:SendNow",
                       "Contacts:Clear", "Contact:Save",
-                      "Contact:Remove", "Contacts:GetSimContacts",
-                      "Contacts:RegisterForMessages", "child-process-shutdown"];
+                      "Contact:Remove", "Contacts:RegisterForMessages",
+                      "child-process-shutdown", "Contacts:GetRevision",
+                      "Contacts:GetCount"];
     this._children = [];
+    this._cursors = {};
     this._messages.forEach(function(msgName) {
       ppmm.addMessageListener(msgName, this);
     }.bind(this));
@@ -67,6 +56,8 @@ let ContactService = {
     if (this._db)
       this._db.close();
     this._db = null;
+    this._children = null;
+    this._cursors = null;
   },
 
   assertPermission: function(aMessage, aPerm) {
@@ -91,7 +82,6 @@ let ContactService = {
 
     switch (aMessage.name) {
       case "Contacts:Find":
-        DEBUG = false;
         if (!this.assertPermission(aMessage, "contacts-read")) {
           return null;
         }
@@ -112,16 +102,25 @@ let ContactService = {
         if (!this.assertPermission(aMessage, "contacts-read")) {
           return null;
         }
+        if (!this._cursors[mm]) {
+          this._cursors[mm] = [];
+        }
+        this._cursors[mm].push(msg.cursorId);
+
         this._db.getAll(
           function(aContacts) {
             try {
               mm.sendAsyncMessage("Contacts:GetAll:Next", {cursorId: msg.cursorId, contacts: aContacts});
+              if (aContacts === null) {
+                let index = this._cursors[mm].indexOf(msg.cursorId);
+                this._cursors[mm].splice(index, 1);
+              }
             } catch (e) {
               if (DEBUG) debug("Child is dead, DB should stop sending contacts");
               throw e;
             }
-          },
-          function(aErrorMsg) { mm.sendAsyncMessage("Contacts:Find:Return:KO", { errorMsg: aErrorMsg }); },
+          }.bind(this),
+          function(aErrorMsg) { mm.sendAsyncMessage("Contacts:Find:Return:KO", { requestID: msg.cursorId, errorMsg: aErrorMsg }); },
           msg.findOptions, msg.cursorId);
         break;
       case "Contacts:GetAll:SendNow":
@@ -162,7 +161,6 @@ let ContactService = {
         );
         break;
       case "Contacts:Clear":
-        DEBUG = true;
         if (!this.assertPermission(aMessage, "contacts-write")) {
           return null;
         }
@@ -174,23 +172,31 @@ let ContactService = {
           function(aErrorMsg) { mm.sendAsyncMessage("Contacts:Clear:Return:KO", { requestID: msg.requestID, errorMsg: aErrorMsg }); }.bind(this)
         );
         break;
-      case "Contacts:GetSimContacts":
+      case "Contacts:GetRevision":
         if (!this.assertPermission(aMessage, "contacts-read")) {
           return null;
         }
-        mRIL.getICCContacts(
-          msg.options.contactType,
-          function (aErrorMsg, aType, aContacts) {
-            if (aErrorMsg !== 'undefined') {
-              mm.sendAsyncMessage("Contacts:GetSimContacts:Return:KO",
-                                  {requestID: msg.requestID,
-                                   errorMsg: aErrorMsg});
-            } else {
-              mm.sendAsyncMessage("Contacts:GetSimContacts:Return:OK",
-                                  {requestID: msg.requestID,
-                                   contacts: aContacts});
-            }
-          }.bind(this));
+        this._db.getRevision(
+          function(revision) {
+            mm.sendAsyncMessage("Contacts:Revision", {
+              requestID: msg.requestID,
+              revision: revision
+            });
+          }
+        );
+        break;
+      case "Contacts:GetCount":
+        if (!this.assertPermission(aMessage, "contacts-read")) {
+          return null;
+        }
+        this._db.getCount(
+          function(count) {
+            mm.sendAsyncMessage("Contacts:Count", {
+              requestID: msg.requestID,
+              count: count
+            });
+          }
+        );
         break;
       case "Contacts:RegisterForMessages":
         if (!aMessage.target.assertPermission("contacts-read")) {
@@ -207,6 +213,12 @@ let ContactService = {
         if (index != -1) {
           if (DEBUG) debug("Unregister index: " + index);
           this._children.splice(index, 1);
+        }
+        if (this._cursors[mm]) {
+          for (let id of this._cursors[mm]) {
+            this._db.clearDispatcher(id);
+          }
+          delete this._cursors[mm];
         }
         break;
       default:

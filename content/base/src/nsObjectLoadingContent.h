@@ -13,6 +13,7 @@
 #ifndef NSOBJECTLOADINGCONTENT_H_
 #define NSOBJECTLOADINGCONTENT_H_
 
+#include "mozilla/Attributes.h"
 #include "nsImageLoadingContent.h"
 #include "nsIStreamListener.h"
 #include "nsIInterfaceRequestor.h"
@@ -144,14 +145,14 @@ class nsObjectLoadingContent : public nsImageLoadingContent
      * that our plug-in, if any, is instantiated.
      */
     // Helper for WebIDL node wrapping
-    void SetupProtoChain(JSContext* aCx, JSObject* aObject);
+    void SetupProtoChain(JSContext* aCx, JS::Handle<JSObject*> aObject);
 
     // Remove plugin from protochain
     void TeardownProtoChain();
 
     // Helper for WebIDL newResolve
     bool DoNewResolve(JSContext* aCx, JSHandleObject aObject, JSHandleId aId,
-                      unsigned aFlags, JSMutableHandleObject aObjp);
+                      unsigned aFlags, JS::MutableHandle<JSObject*> aObjp);
 
     // WebIDL API
     nsIDocument* GetContentDocument();
@@ -195,7 +196,7 @@ class nsObjectLoadingContent : public nsImageLoadingContent
     {
       aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
     }
-    JS::Value LegacyCall(JSContext* aCx, JS::Value aThisVal,
+    JS::Value LegacyCall(JSContext* aCx, JS::Handle<JS::Value> aThisVal,
                          const mozilla::dom::Sequence<JS::Value>& aArguments,
                          mozilla::ErrorResult& aRv);
 
@@ -448,7 +449,7 @@ class nsObjectLoadingContent : public nsImageLoadingContent
       SetupProtoChainRunner(nsIScriptContext* scriptContext,
                             nsObjectLoadingContent* aContent);
 
-      NS_IMETHOD Run();
+      NS_IMETHOD Run() MOZ_OVERRIDE;
 
     private:
       nsCOMPtr<nsIScriptContext> mContext;
@@ -462,7 +463,8 @@ class nsObjectLoadingContent : public nsImageLoadingContent
                                          nsNPAPIPluginInstance** aResult);
 
     // Utility method for getting our plugin JSObject
-    static nsresult GetPluginJSObject(JSContext *cx, JSObject *obj,
+    static nsresult GetPluginJSObject(JSContext *cx,
+                                      JS::Handle<JSObject*> obj,
                                       nsNPAPIPluginInstance *plugin_inst,
                                       JSObject **plugin_obj,
                                       JSObject **plugin_proto);

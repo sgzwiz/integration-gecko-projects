@@ -136,10 +136,9 @@ class ShadowLayerForwarder : public CompositableForwarder
 {
   friend class AutoOpenSurface;
   friend class TextureClientShmem;
+  friend class ContentClientIncremental;
 
 public:
-  typedef gfxASurface::gfxContentType gfxContentType;
-
   virtual ~ShadowLayerForwarder();
 
   /**
@@ -152,6 +151,9 @@ public:
                                    const SurfaceDescriptor& aDescriptor,
                                    const TextureInfo& aTextureInfo,
                                    const SurfaceDescriptor* aDescriptorOnWhite = nullptr) MOZ_OVERRIDE;
+  virtual void CreatedIncrementalBuffer(CompositableClient* aCompositable,
+                                        const TextureInfo& aTextureInfo,
+                                        const nsIntRect& aBufferRect) MOZ_OVERRIDE;
   virtual void CreatedDoubleBuffer(CompositableClient* aCompositable,
                                    const SurfaceDescriptor& aFrontDescriptor,
                                    const SurfaceDescriptor& aBackDescriptor,
@@ -274,12 +276,26 @@ public:
                              SurfaceDescriptor* aDescriptor) MOZ_OVERRIDE;
 
   /**
+   * Same as above, but performs an asynchronous layer transaction
+   */
+  virtual void UpdateTextureNoSwap(CompositableClient* aCompositable,
+                                   TextureIdentifier aTextureId,
+                                   SurfaceDescriptor* aDescriptor) MOZ_OVERRIDE;
+
+  /**
    * Communicate to the compositor that aRegion in the texture identified by aLayer
    * and aIdentifier has been updated to aThebesBuffer.
    */
   virtual void UpdateTextureRegion(CompositableClient* aCompositable,
                                    const ThebesBufferData& aThebesBufferData,
                                    const nsIntRegion& aUpdatedRegion) MOZ_OVERRIDE;
+
+  virtual void UpdateTextureIncremental(CompositableClient* aCompositable,
+                                        TextureIdentifier aTextureId,
+                                        SurfaceDescriptor& aDescriptor,
+                                        const nsIntRegion& aUpdatedRegion,
+                                        const nsIntRect& aBufferRect,
+                                        const nsIntPoint& aBufferRotation) MOZ_OVERRIDE;
 
   /**
    * Communicate the picture rect of an image to the compositor
@@ -372,8 +388,10 @@ protected:
   PLayerTransactionChild* mShadowManager;
 
 #ifdef MOZ_HAVE_SURFACEDESCRIPTORGRALLOC
+  // from ISurfaceAllocator
   virtual PGrallocBufferChild* AllocGrallocBuffer(const gfxIntSize& aSize,
-                                                  gfxASurface::gfxContentType aContent,
+                                                  uint32_t aFormat,
+                                                  uint32_t aUsage,
                                                   MaybeMagicGrallocBufferHandle* aHandle) MOZ_OVERRIDE;
 #endif
 
@@ -425,6 +443,7 @@ private:
   Transaction* mTxn;
 
   bool mIsFirstPaint;
+  bool mDrawColoredBorders;
 };
 
 class CompositableClient;

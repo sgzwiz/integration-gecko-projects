@@ -2,6 +2,7 @@
 
 "use strict";
 
+// Ignore calls made through these function pointers
 var ignoreIndirectCalls = {
     "mallocSizeOf" : true,
     "aMallocSizeOf" : true,
@@ -10,9 +11,7 @@ var ignoreIndirectCalls = {
     "__convf" : true,
     "prerrortable.c:callback_newtable" : true,
     "mozalloc_oom.cpp:void (* gAbortHandler)(size_t)" : true,
-    "JSObject* js::GetWeakmapKeyDelegate(JSObject*)" : true, // FIXME: mark with AutoAssertNoGC instead
 };
-
 
 function indirectCallCannotGC(caller, name)
 {
@@ -29,10 +28,17 @@ function indirectCallCannotGC(caller, name)
     if (/CallDestroyScriptHook/.test(caller))
         return true;
 
+    // template method called during marking and hence cannot GC
+    if (name == "op" &&
+        /^bool js::WeakMap<Key, Value, HashPolicy>::keyNeedsMark\(JSObject\*\)/.test(caller))
+    {
+        return true;
+    }
+
     return false;
 }
 
-// classes to ignore indirect calls on.
+// Ignore calls through functions pointers with these types
 var ignoreClasses = {
     "JSTracer" : true,
     "JSStringFinalizer" : true,
@@ -44,6 +50,8 @@ var ignoreClasses = {
     "_MD_IOVector" : true,
 };
 
+// Ignore calls through TYPE.FIELD, where TYPE is the class or struct name containing
+// a function pointer field named FIELD.
 var ignoreCallees = {
     "js::Class.trace" : true,
     "js::Class.finalize" : true,
@@ -51,6 +59,11 @@ var ignoreCallees = {
     "nsISupports.AddRef" : true,
     "nsISupports.Release" : true, // makes me a bit nervous; this is a bug but can happen
     "nsAXPCNativeCallContext.GetJSContext" : true,
+    "js::ion::MDefinition.op" : true, // macro generated virtuals just return a constant
+    "js::ion::MDefinition.opName" : true, // macro generated virtuals just return a constant
+    "js::ion::LInstruction.getDef" : true, // virtual but no implementation can GC
+    "js::ion::IonCache.kind" : true, // macro generated virtuals just return a constant
+    "icu_50::UObject.__deleting_dtor" : true, // destructors in ICU code can't cause GC
 };
 
 function fieldCallCannotGC(csu, fullfield)
@@ -93,11 +106,31 @@ function ignoreEdgeUse(edge, variable)
     return false;
 }
 
+function ignoreEdgeAddressTaken(edge)
+{
+    // Functions which may take indirect pointers to unrooted GC things,
+    // but will copy them into rooted locations before calling anything
+    // that can GC. These parameters should usually be replaced with
+    // handles or mutable handles.
+    if (edge.Kind == "Call") {
+        var callee = edge.Exp[0];
+        if (callee.Kind == "Var") {
+            var name = callee.Variable.Name[0];
+            if (/js::Invoke\(/.test(name))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+// Ignore calls of these functions (so ignore any stack containing these)
 var ignoreFunctions = {
     "ptio.c:pt_MapError" : true,
     "PR_ExplodeTime" : true,
     "PR_ErrorInstallTable" : true,
-    "PR_SetThreadPrivate" : true
+    "PR_SetThreadPrivate" : true,
+    "JSObject* js::GetWeakmapKeyDelegate(JSObject*)" : true, // FIXME: mark with AutoAssertNoGC instead
 };
 
 function ignoreGCFunction(fun)
@@ -118,7 +151,9 @@ function ignoreGCFunction(fun)
 function isRootedTypeName(name)
 {
     if (name == "mozilla::ErrorResult" ||
-        name == "js::frontend::TokenStream::Position")
+        name == "js::frontend::TokenStream" ||
+        name == "js::frontend::TokenStream::Position" ||
+        name == "ModuleCompiler")
     {
         return true;
     }
@@ -133,6 +168,8 @@ function isRootedPointerTypeName(name)
         name = name.substr(6);
     if (name.startsWith('const '))
         name = name.substr(6);
+    if (name.startsWith('js::ctypes::'))
+        name = name.substr(12);
     if (name.startsWith('js::'))
         name = name.substr(4);
     if (name.startsWith('JS::'))

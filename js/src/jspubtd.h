@@ -14,7 +14,6 @@
 #include "jsprototypes.h"
 #include "jstypes.h"
 
-
 namespace JS {
 
 /*
@@ -151,9 +150,10 @@ typedef enum {
     JSTRACE_SCRIPT,
 
     /*
-     * Trace kinds internal to the engine. The embedding can only them if it
-     * implements JSTraceCallback.
+     * Trace kinds internal to the engine. The embedding can only see them if
+     * it implements JSTraceCallback.
      */
+    JSTRACE_LAZY_SCRIPT,
     JSTRACE_IONCODE,
     JSTRACE_SHAPE,
     JSTRACE_BASE_SHAPE,
@@ -263,6 +263,7 @@ struct SpecificRootKind
 };
 
 template <> struct RootKind<JSObject *> : SpecificRootKind<JSObject *, THING_ROOT_OBJECT> {};
+template <> struct RootKind<JSFlatString *> : SpecificRootKind<JSFlatString *, THING_ROOT_STRING> {};
 template <> struct RootKind<JSFunction *> : SpecificRootKind<JSFunction *, THING_ROOT_OBJECT> {};
 template <> struct RootKind<JSString *> : SpecificRootKind<JSString *, THING_ROOT_STRING> {};
 template <> struct RootKind<JSScript *> : SpecificRootKind<JSScript *, THING_ROOT_SCRIPT> {};

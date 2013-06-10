@@ -36,10 +36,14 @@
 #include "ipc/IndexedDBChild.h"
 #include "ipc/IndexedDBParent.h"
 
+#include "mozilla/dom/IDBDatabaseBinding.h"
+
 USING_INDEXEDDB_NAMESPACE
 using mozilla::dom::ContentParent;
+using mozilla::dom::quota::AssertIsOnIOThread;
 using mozilla::dom::quota::Client;
 using mozilla::dom::quota::QuotaManager;
+using namespace mozilla::dom;
 
 namespace {
 
@@ -528,36 +532,22 @@ IDBDatabase::CreateObjectStore(const nsAString& aName,
 
   DatabaseInfo* databaseInfo = transaction->DBInfo();
 
-  mozilla::idl::IDBObjectStoreParameters params;
+  RootedDictionary<IDBObjectStoreParameters> params(aCx);
+  JS::Rooted<JS::Value> options(aCx, aOptions);
+  if (!params.Init(aCx, options)) {
+    return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+  }
+
   KeyPath keyPath(0);
-
-  nsresult rv;
-
-  if (!JSVAL_IS_VOID(aOptions) && !JSVAL_IS_NULL(aOptions)) {
-    rv = params.Init(aCx, &aOptions);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-
-    // We need a default value here, which the XPIDL dictionary stuff doesn't
-    // support.  WebIDL shall save us all!
-    JSBool hasProp = false;
-    JSObject* obj = JSVAL_TO_OBJECT(aOptions);
-    if (!JS_HasProperty(aCx, obj, "keyPath", &hasProp)) {
-      return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
-    }
-
-    if (NS_FAILED(KeyPath::Parse(aCx, hasProp ? params.keyPath : JSVAL_NULL,
-                                 &keyPath))) {
-      return NS_ERROR_DOM_SYNTAX_ERR;
-    }
+  if (NS_FAILED(KeyPath::Parse(aCx, params.mKeyPath, &keyPath))) {
+    return NS_ERROR_DOM_SYNTAX_ERR;
   }
 
   if (databaseInfo->ContainsStoreName(aName)) {
     return NS_ERROR_DOM_INDEXEDDB_CONSTRAINT_ERR;
   }
 
-  if (!keyPath.IsAllowedForObjectStore(params.autoIncrement)) {
+  if (!keyPath.IsAllowedForObjectStore(params.mAutoIncrement)) {
     return NS_ERROR_DOM_INVALID_ACCESS_ERR;
   }
 
@@ -566,11 +556,11 @@ IDBDatabase::CreateObjectStore(const nsAString& aName,
   guts.name = aName;
   guts.id = databaseInfo->nextObjectStoreId++;
   guts.keyPath = keyPath;
-  guts.autoIncrement = params.autoIncrement;
+  guts.autoIncrement = params.mAutoIncrement;
 
   nsRefPtr<IDBObjectStore> objectStore;
-  rv = CreateObjectStoreInternal(transaction, guts,
-                                 getter_AddRefs(objectStore));
+  nsresult rv = CreateObjectStoreInternal(transaction, guts,
+                                          getter_AddRefs(objectStore));
   NS_ENSURE_SUCCESS(rv, rv);
 
   objectStore.forget(_retval);
@@ -658,7 +648,7 @@ IDBDatabase::Transaction(const jsval& aStoreNames,
   nsTArray<nsString> storesToOpen;
 
   if (!JSVAL_IS_PRIMITIVE(aStoreNames)) {
-    JSObject* obj = JSVAL_TO_OBJECT(aStoreNames);
+    JS::Rooted<JSObject*> obj(aCx, JSVAL_TO_OBJECT(aStoreNames));
 
     // See if this is a JS array.
     if (JS_IsArrayObject(aCx, obj)) {
@@ -674,10 +664,10 @@ IDBDatabase::Transaction(const jsval& aStoreNames,
       storesToOpen.SetCapacity(length);
 
       for (uint32_t index = 0; index < length; index++) {
-        jsval val;
+        JS::Rooted<JS::Value> val(aCx);
         JSString* jsstr;
         nsDependentJSString str;
-        if (!JS_GetElement(aCx, obj, index, &val) ||
+        if (!JS_GetElement(aCx, obj, index, val.address()) ||
             !(jsstr = JS_ValueToString(aCx, val)) ||
             !str.init(aCx, jsstr)) {
           return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
@@ -905,6 +895,12 @@ CreateObjectStoreHelper::DoDatabaseWork(mozIStorageConnection* aConnection)
 
   PROFILER_LABEL("IndexedDB", "CreateObjectStoreHelper::DoDatabaseWork");
 
+  if (IndexedDatabaseManager::InLowDiskSpaceMode()) {
+    NS_WARNING("Refusing to create additional objectStore because disk space "
+               "is low!");
+    return NS_ERROR_DOM_INDEXEDDB_QUOTA_ERR;
+  }
+
   nsCOMPtr<mozIStorageStatement> stmt =
     mTransaction->GetCachedStatement(NS_LITERAL_CSTRING(
     "INSERT INTO object_store (id, auto_increment, name, key_path) "
@@ -980,10 +976,15 @@ DeleteObjectStoreHelper::DoDatabaseWork(mozIStorageConnection* aConnection)
 nsresult
 CreateFileHelper::DoDatabaseWork(mozIStorageConnection* aConnection)
 {
-  NS_ASSERTION(!NS_IsMainThread(), "Wrong thread!");
+  AssertIsOnIOThread();
   NS_ASSERTION(IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
 
   PROFILER_LABEL("IndexedDB", "CreateFileHelper::DoDatabaseWork");
+
+  if (IndexedDatabaseManager::InLowDiskSpaceMode()) {
+    NS_WARNING("Refusing to create file because disk space is low!");
+    return NS_ERROR_DOM_INDEXEDDB_QUOTA_ERR;
+  }
 
   FileManager* fileManager = mDatabase->Manager();
 

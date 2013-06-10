@@ -56,7 +56,17 @@ StoreBuffer::SlotEdge::isNullEdge() const
     return !deref();
 }
 
+void
+StoreBuffer::WholeObjectEdges::mark(JSTracer *trc)
+{
+    tenured->markChildren(trc);
+}
+
 /*** MonoTypeBuffer ***/
+
+
+/* How full we allow a store buffer to become before we request a MinorGC. */
+const static double HighwaterRatio = 7.0 / 8.0;
 
 template <typename T>
 bool
@@ -65,6 +75,9 @@ StoreBuffer::MonoTypeBuffer<T>::enable(uint8_t *region, size_t len)
     JS_ASSERT(len % sizeof(T) == 0);
     base = pos = reinterpret_cast<T *>(region);
     top = reinterpret_cast<T *>(region + len);
+    highwater = reinterpret_cast<T *>(region + size_t(double(len) * HighwaterRatio));
+    JS_ASSERT(highwater > base);
+    JS_ASSERT(highwater < top);
     return true;
 }
 
@@ -72,7 +85,7 @@ template <typename T>
 void
 StoreBuffer::MonoTypeBuffer<T>::disable()
 {
-    base = pos = top = NULL;
+    base = pos = top = highwater = NULL;
 }
 
 template <typename T>
@@ -97,6 +110,24 @@ StoreBuffer::MonoTypeBuffer<T>::compactNotInSet(NurseryType *nursery)
 
 template <typename T>
 void
+StoreBuffer::MonoTypeBuffer<T>::compactRemoveDuplicates()
+{
+    JS_ASSERT(duplicates.empty());
+
+    T *insert = base;
+    for (T *v = base; v != pos; ++v) {
+        if (!duplicates.has(v->location())) {
+            *insert++ = *v;
+            /* Failure to insert will leave the set with duplicates. Oh well. */
+            duplicates.put(v->location());
+        }
+    }
+    pos = insert;
+    duplicates.clear();
+}
+
+template <typename T>
+void
 StoreBuffer::MonoTypeBuffer<T>::compact()
 {
 #ifdef JS_GC_ZEAL
@@ -105,29 +136,7 @@ StoreBuffer::MonoTypeBuffer<T>::compact()
     else
 #endif
         compactNotInSet(&owner->runtime->gcNursery);
-}
-
-template <typename T>
-void
-StoreBuffer::MonoTypeBuffer<T>::put(const T &v)
-{
-    /* Check if we have been enabled. */
-    if (!pos)
-        return;
-
-    /*
-     * Note: it is sometimes valid for a put to happen in the middle of a GC,
-     * e.g. a rekey of a Relocatable may end up here. In general, we do not
-     * care about these new entries or any overflows they cause.
-     */
-    *pos++ = v;
-    if (isFull()) {
-        compact();
-        if (isFull()) {
-            owner->setOverflowed();
-            pos = base;
-        }
-    }
+    compactRemoveDuplicates();
 }
 
 template <typename T>
@@ -164,6 +173,39 @@ StoreBuffer::MonoTypeBuffer<T>::accumulateEdges(EdgeSet &edges)
     return true;
 }
 
+namespace js {
+namespace gc {
+class AccumulateEdgesTracer : public JSTracer
+{
+    EdgeSet *edges;
+
+    static void tracer(JSTracer *jstrc, void **thingp, JSGCTraceKind kind) {
+        AccumulateEdgesTracer *trc = static_cast<AccumulateEdgesTracer *>(jstrc);
+        trc->edges->put(thingp);
+    }
+
+  public:
+    AccumulateEdgesTracer(JSRuntime *rt, EdgeSet *edgesArg) : edges(edgesArg) {
+        JS_TracerInit(this, rt, AccumulateEdgesTracer::tracer);
+    }
+};
+
+template <>
+bool
+StoreBuffer::MonoTypeBuffer<StoreBuffer::WholeObjectEdges>::accumulateEdges(EdgeSet &edges)
+{
+    compact();
+    AccumulateEdgesTracer trc(owner->runtime, &edges);
+    StoreBuffer::WholeObjectEdges *cursor = base;
+    while (cursor != pos) {
+        cursor->tenured->markChildren(&trc);
+        cursor++;
+    }
+    return true;
+}
+} /* namespace gc */
+} /* namespace js */
+
 /*** RelocatableMonoTypeBuffer ***/
 
 template <typename T>
@@ -199,13 +241,6 @@ StoreBuffer::RelocatableMonoTypeBuffer<T>::compact()
 {
     compactMoved();
     StoreBuffer::MonoTypeBuffer<T>::compact();
-}
-
-template <typename T>
-void
-StoreBuffer::RelocatableMonoTypeBuffer<T>::unput(const T &v)
-{
-    MonoTypeBuffer<T>::put(v.tagged());
 }
 
 /*** GenericBuffer ***/
@@ -312,6 +347,10 @@ StoreBuffer::enable()
         return false;
     offset += SlotBufferSize;
 
+    if (!bufferWholeObject.enable(&asBytes[offset], WholeObjectBufferSize))
+        return false;
+    offset += WholeObjectBufferSize;
+
     if (!bufferRelocVal.enable(&asBytes[offset], RelocValueBufferSize))
         return false;
     offset += RelocValueBufferSize;
@@ -336,9 +375,12 @@ StoreBuffer::disable()
     if (!enabled)
         return;
 
+    aboutToOverflow = false;
+
     bufferVal.disable();
     bufferCell.disable();
     bufferSlot.disable();
+    bufferWholeObject.disable();
     bufferRelocVal.disable();
     bufferRelocCell.disable();
     bufferGeneric.disable();
@@ -354,9 +396,12 @@ StoreBuffer::clear()
     if (!enabled)
         return true;
 
+    aboutToOverflow = false;
+
     bufferVal.clear();
     bufferCell.clear();
     bufferSlot.clear();
+    bufferWholeObject.clear();
     bufferRelocVal.clear();
     bufferRelocCell.clear();
     bufferGeneric.clear();
@@ -373,9 +418,17 @@ StoreBuffer::mark(JSTracer *trc)
     bufferVal.mark(trc);
     bufferCell.mark(trc);
     bufferSlot.mark(trc);
+    bufferWholeObject.mark(trc);
     bufferRelocVal.mark(trc);
     bufferRelocCell.mark(trc);
     bufferGeneric.mark(trc);
+}
+
+void
+StoreBuffer::setAboutToOverflow()
+{
+    aboutToOverflow = true;
+    runtime->triggerOperationCallback();
 }
 
 void
@@ -399,6 +452,8 @@ StoreBuffer::coalesceForVerification()
         return false;
     if (!bufferSlot.accumulateEdges(edgeSet))
         return false;
+    if (!bufferWholeObject.accumulateEdges(edgeSet))
+        return false;
     if (!bufferRelocVal.accumulateEdges(edgeSet))
         return false;
     if (!bufferRelocCell.accumulateEdges(edgeSet))
@@ -418,9 +473,44 @@ StoreBuffer::releaseVerificationData()
     edgeSet.finish();
 }
 
+JS_PUBLIC_API(void)
+JS::HeapCellPostBarrier(js::gc::Cell **cellp)
+{
+    JS_ASSERT(*cellp);
+    JSRuntime *runtime = (*cellp)->runtime();
+    runtime->gcStoreBuffer.putRelocatableCell(cellp);
+}
+
+JS_PUBLIC_API(void)
+JS::HeapCellRelocate(js::gc::Cell **cellp)
+{
+    /* Called with old contents of *pp before overwriting. */
+    JS_ASSERT(*cellp);
+    JSRuntime *runtime = (*cellp)->runtime();
+    runtime->gcStoreBuffer.removeRelocatableCell(cellp);
+}
+
+JS_PUBLIC_API(void)
+JS::HeapValuePostBarrier(JS::Value *valuep)
+{
+    JS_ASSERT(JSVAL_IS_TRACEABLE(*valuep));
+    JSRuntime *runtime = static_cast<js::gc::Cell *>(valuep->toGCThing())->runtime();
+    runtime->gcStoreBuffer.putRelocatableValue(valuep);
+}
+
+JS_PUBLIC_API(void)
+JS::HeapValueRelocate(JS::Value *valuep)
+{
+    /* Called with old contents of *valuep before overwriting. */
+    JS_ASSERT(JSVAL_IS_TRACEABLE(*valuep));
+    JSRuntime *runtime = static_cast<js::gc::Cell *>(valuep->toGCThing())->runtime();
+    runtime->gcStoreBuffer.removeRelocatableValue(valuep);
+}
+
 template class StoreBuffer::MonoTypeBuffer<StoreBuffer::ValueEdge>;
 template class StoreBuffer::MonoTypeBuffer<StoreBuffer::CellPtrEdge>;
 template class StoreBuffer::MonoTypeBuffer<StoreBuffer::SlotEdge>;
+template class StoreBuffer::MonoTypeBuffer<StoreBuffer::WholeObjectEdges>;
 template class StoreBuffer::RelocatableMonoTypeBuffer<StoreBuffer::ValueEdge>;
 template class StoreBuffer::RelocatableMonoTypeBuffer<StoreBuffer::CellPtrEdge>;
 

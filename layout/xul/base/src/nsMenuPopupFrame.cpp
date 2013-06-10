@@ -551,6 +551,9 @@ nsMenuPopupFrame::InitializePopup(nsIContent* aAnchorContent,
   mXPos = aXPos;
   mYPos = aYPos;
   mAdjustOffsetForContextMenu = false;
+  mVFlip = false;
+  mHFlip = false;
+  mAlignmentOffset = 0;
 
   // if aAttributesOverride is true, then the popupanchor, popupalign and
   // position attributes on the <popup> override those values passed in.
@@ -575,6 +578,7 @@ nsMenuPopupFrame::InitializePopup(nsIContent* aAnchorContent,
     }
 
     mFlipBoth = flip.EqualsLiteral("both");
+    mSlide = flip.EqualsLiteral("slide");
 
     position.CompressWhitespace();
     int32_t spaceIdx = position.FindChar(' ');
@@ -678,6 +682,7 @@ nsMenuPopupFrame::InitializePopupAtScreen(nsIContent* aTriggerContent,
   mScreenXPos = aXPos;
   mScreenYPos = aYPos;
   mFlipBoth = false;
+  mSlide = false;
   mPopupAnchor = POPUPALIGNMENT_NONE;
   mPopupAlignment = POPUPALIGNMENT_NONE;
   mIsContextMenu = aIsContextMenu;
@@ -695,6 +700,7 @@ nsMenuPopupFrame::InitializePopupWithAnchorAlign(nsIContent* aAnchorContent,
   mPopupState = ePopupShowing;
   mAdjustOffsetForContextMenu = false;
   mFlipBoth = false;
+  mSlide = false;
 
   // this popup opening function is provided for backwards compatibility
   // only. It accepts either coordinates or an anchor and alignment value
@@ -986,6 +992,23 @@ nsMenuPopupFrame::AdjustPositionForAnchorAlign(nsRect& anchorRect,
 }
 
 nscoord
+nsMenuPopupFrame::SlideOrResize(nscoord& aScreenPoint, nscoord aSize,
+                               nscoord aScreenBegin, nscoord aScreenEnd,
+                               nscoord *aOffset)
+{
+  // The popup may be positioned such that either the left/top or bottom/right
+  // is outside the screen - but never both.
+  if (aScreenPoint < aScreenBegin) {
+    *aOffset = aScreenBegin - aScreenPoint;
+    aScreenPoint = aScreenBegin;
+  } else if (aScreenPoint + aSize > aScreenEnd) {
+    *aOffset = aScreenPoint + aSize - aScreenEnd;
+    aScreenPoint = std::max(aScreenEnd - aSize, 0);
+  }
+  return std::min(aSize, aScreenEnd - aScreenPoint);
+}
+
+nscoord
 nsMenuPopupFrame::FlipOrResize(nscoord& aScreenPoint, nscoord aSize, 
                                nscoord aScreenBegin, nscoord aScreenEnd,
                                nscoord aAnchorBegin, nscoord aAnchorEnd,
@@ -1190,12 +1213,19 @@ nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame, bool aIsMove)
     }
 
     // mXPos and mYPos specify an additonal offset passed to OpenPopup that
-    // should be added to the position
-    if (IsDirectionRTL())
-      screenPoint.x -= presContext->CSSPixelsToAppUnits(mXPos);
-    else
-      screenPoint.x += presContext->CSSPixelsToAppUnits(mXPos);
-    screenPoint.y += presContext->CSSPixelsToAppUnits(mYPos);
+    // should be added to the position.  We also add the offset to the anchor
+    // pos so a later flip/resize takes the offset into account.
+    nscoord anchorXOffset = presContext->CSSPixelsToAppUnits(mXPos);
+    if (IsDirectionRTL()) {
+      screenPoint.x -= anchorXOffset;
+      anchorRect.x -= anchorXOffset;
+    } else {
+      screenPoint.x += anchorXOffset;
+      anchorRect.x += anchorXOffset;
+    }
+    nscoord anchorYOffset = presContext->CSSPixelsToAppUnits(mYPos);
+    screenPoint.y += anchorYOffset;
+    anchorRect.y += anchorYOffset;
 
     // If this is a noautohide popup, set the screen coordinates of the popup.
     // This way, the popup stays at the location where it was opened even when
@@ -1267,16 +1297,34 @@ nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame, bool aIsMove)
 
     // at this point the anchor (anchorRect) is within the available screen
     // area (screenRect) and the popup is known to be no larger than the screen.
+
+    // We might want to "slide" an arrow if the panel is of the correct type -
+    // but we can only slide on one axis - the other axis must be "flipped or
+    // resized" as normal.
+    bool slideHorizontal = mSlide && mPosition <= POPUPPOSITION_AFTEREND;
+    bool slideVertical = mSlide && mPosition >= POPUPPOSITION_STARTBEFORE;
+
     // Next, check if there is enough space to show the popup at full size when
     // positioned at screenPoint. If not, flip the popups to the opposite side
     // of their anchor point, or resize them as necessary.
-    mRect.width = FlipOrResize(screenPoint.x, mRect.width, screenRect.x,
-                               screenRect.XMost(), anchorRect.x, anchorRect.XMost(),
-                               margin.left, margin.right, offsetForContextMenu, hFlip, &mHFlip);
-
-    mRect.height = FlipOrResize(screenPoint.y, mRect.height, screenRect.y,
-                                screenRect.YMost(), anchorRect.y, anchorRect.YMost(),
-                                margin.top, margin.bottom, offsetForContextMenu, vFlip, &mVFlip);
+    if (slideHorizontal) {
+      mRect.width = SlideOrResize(screenPoint.x, mRect.width, screenRect.x,
+                                  screenRect.XMost(), &mAlignmentOffset);
+    } else {
+      mRect.width = FlipOrResize(screenPoint.x, mRect.width, screenRect.x,
+                                 screenRect.XMost(), anchorRect.x, anchorRect.XMost(),
+                                 margin.left, margin.right, offsetForContextMenu, hFlip,
+                                 &mHFlip);
+    }
+    if (slideVertical) {
+      mRect.height = SlideOrResize(screenPoint.y, mRect.height, screenRect.y,
+                                  screenRect.YMost(), &mAlignmentOffset);
+    } else {
+      mRect.height = FlipOrResize(screenPoint.y, mRect.height, screenRect.y,
+                                  screenRect.YMost(), anchorRect.y, anchorRect.YMost(),
+                                  margin.top, margin.bottom, offsetForContextMenu, vFlip,
+                                  &mVFlip);
+    }
 
     NS_ASSERTION(screenPoint.x >= screenRect.x && screenPoint.y >= screenRect.y &&
                  screenPoint.x + mRect.width <= screenRect.XMost() &&
