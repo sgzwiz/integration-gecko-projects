@@ -29,4 +29,12 @@ CPP_SOURCES += [
     'CacheStorage.cpp',
     'CacheStorageService.cpp',
     'OldWrappers.cpp',
+    'CacheHashUtils.cpp',
+    'CacheFileIOManager.cpp',
+    'CacheFileMetadata.cpp',
+    'CacheFileChunk.cpp',
+    'CacheFileInputStream.cpp',
+    'CacheFileOutputStream.cpp',
+    'CacheFileUtils.cpp',
+    'CacheFile.cpp',
 ]
