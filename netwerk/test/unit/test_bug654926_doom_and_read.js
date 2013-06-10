@@ -40,10 +40,8 @@ function write_datafile(status, entry)
   entry.close();
 
   // open, doom, append, read
-  asyncOpenCacheEntry("data",
-                      "HTTP",
-                      Ci.nsICache.STORE_ON_DISK,
-                      Ci.nsICache.ACCESS_READ_WRITE,
+  asyncOpenCacheEntry("http://data/",
+                      "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
                       test_read_after_doom);
 
 }
@@ -74,10 +72,8 @@ function run_test() {
   // clear the cache
   evict_cache_entries();
 
-  asyncOpenCacheEntry("data",
-                      "HTTP",
-                      Ci.nsICache.STORE_ON_DISK,
-                      Ci.nsICache.ACCESS_WRITE,
+  asyncOpenCacheEntry("http://data/",
+                      "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
                       write_datafile);
 
   do_test_pending();

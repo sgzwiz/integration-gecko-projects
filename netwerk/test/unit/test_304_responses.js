@@ -72,8 +72,7 @@ add_test(function test_unexpected_304() {
 // the cache.
 add_test(function test_304_stored_in_cache() {
   asyncOpenCacheEntry(
-    baseURI + existingCached304, "HTTP",
-    Ci.nsICache.STORE_ANYWHERE, Ci.nsICache.ACCESS_READ_WRITE,
+    baseURI + existingCached304, "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
     function (entryStatus, cacheEntry) {
       cacheEntry.setMetaDataElement("request-method", "GET");
       cacheEntry.setMetaDataElement("response-head",
