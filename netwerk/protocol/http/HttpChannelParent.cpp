@@ -16,7 +16,7 @@
 #include "nsNetUtil.h"
 #include "nsISupportsPriority.h"
 #include "nsIAuthPromptProvider.h"
-#include "nsICacheEntryDescriptor.h"
+//#include "nsICacheEntryDescriptor.h"
 #include "nsSerializationHelper.h"
 #include "nsISerializable.h"
 #include "nsIAssociatedContentSecurity.h"
@@ -335,8 +335,8 @@ HttpChannelParent::RecvCancel(const nsresult& status)
 bool
 HttpChannelParent::RecvSetCacheTokenCachedCharset(const nsCString& charset)
 {
-  if (mCacheDescriptor)
-    mCacheDescriptor->SetMetaDataElement("charset", charset.get());
+  if (mCacheEntry)
+    mCacheEntry->SetMetaDataElement("charset", charset.get());
   return true;
 }
 
@@ -406,7 +406,7 @@ HttpChannelParent::RecvDocumentChannelCleanup()
 {
   // From now on only using mAssociatedContentSecurity.  Free everything else.
   mChannel = 0;          // Reclaim some memory sooner.
-  mCacheDescriptor = 0;  // Else we'll block other channels reading same URI
+  mCacheEntry = 0;  // Else we'll block other channels reading same URI
   return true;
 }
 
@@ -463,7 +463,10 @@ HttpChannelParent::OnStartRequest(nsIRequest *aRequest, nsISupports *aContext)
 
   // Keep the cache entry for future use in RecvSetCacheTokenCachedCharset().
   // It could be already released by nsHttpChannel at that time.
-  chan->GetCacheToken(getter_AddRefs(mCacheDescriptor));
+  nsCOMPtr<nsISupports> cacheEntry;
+  chan->GetCacheToken(getter_AddRefs(cacheEntry));
+  mCacheEntry = do_QueryInterface(cacheEntry);
+
 
   nsCString secInfoSerialization;
   nsCOMPtr<nsISupports> secInfoSupp;
@@ -481,7 +484,7 @@ HttpChannelParent::OnStartRequest(nsIRequest *aRequest, nsISupports *aContext)
                           !!responseHead,
                           requestHead->Headers(),
                           isFromCache,
-                          mCacheDescriptor ? true : false,
+                          mCacheEntry ? true : false,
                           expirationTime, cachedCharset, secInfoSerialization,
                           httpChan->GetSelfAddr(), httpChan->GetPeerAddr()))
   {
