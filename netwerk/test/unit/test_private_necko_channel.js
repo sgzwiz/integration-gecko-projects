@@ -46,7 +46,11 @@ function serverHandler(metadata, response) {
 }
 
 function checkRequest(request, data, context) {
-  do_check_eq(get_device_entry_count("disk"), 0);
-  do_check_eq(get_device_entry_count("memory"), 1);
-  httpserver.stop(do_test_finished);
+  get_device_entry_count("disk", function(count) {
+    do_check_eq(count, 0)
+    get_device_entry_count("memory", function(count) {
+      do_check_eq(count, 1);
+      httpserver.stop(do_test_finished);
+    });
+  });
 }
