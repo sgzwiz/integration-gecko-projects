@@ -18,7 +18,6 @@ FAIL_ON_WARNINGS := 1
 CPPSRCS		= \
 +		ArrayBufferInputStream.cpp \
 		BackgroundFileSaver.cpp \
-		LoadContextInfo.cpp \
 		nsTransportUtils.cpp \
 		nsAsyncStreamCopier.cpp \
 		nsAsyncRedirectVerifyHelper.cpp \
