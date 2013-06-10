@@ -113,9 +113,7 @@ function test_nocache() {
 
 function test_partial() {
    asyncOpenCacheEntry("http://localhost:4444/bug482601/partial",
-                       "HTTP",
-                       Ci.nsICache.STORE_ANYWHERE,
-                       Ci.nsICache.ACCESS_READ_WRITE,
+                       "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
                        test_partial2);
 }
 
@@ -139,9 +137,7 @@ function test_partial2(status, entry) {
 
 function test_cached() {
    asyncOpenCacheEntry("http://localhost:4444/bug482601/cached",
-                       "HTTP",
-                       Ci.nsICache.STORE_ANYWHERE,
-                       Ci.nsICache.ACCESS_READ_WRITE,
+                       "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
                        test_cached2);
 }
 
@@ -166,9 +162,7 @@ function test_cached2(status, entry) {
 
 function test_only_from_cache() {
    asyncOpenCacheEntry("http://localhost:4444/bug482601/only_from_cache",
-                       "HTTP",
-                       Ci.nsICache.STORE_ANYWHERE,
-                       Ci.nsICache.ACCESS_READ_WRITE,
+                       "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
                        test_only_from_cache2);
 }
 

@@ -33,10 +33,8 @@ function write_datafile(status, entry)
   entry.close();
 
   // try to open the entry for appending
-  asyncOpenCacheEntry("data",
-                      "HTTP",
-                      Ci.nsICache.STORE_ON_DISK,
-                      Ci.nsICache.ACCESS_READ_WRITE,
+  asyncOpenCacheEntry("http://data/",
+                      "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
                       open_for_readwrite);
 }
 
@@ -61,10 +59,8 @@ function run_test() {
   // clear the cache
   evict_cache_entries();
 
-  asyncOpenCacheEntry("data",
-                      "HTTP",
-                      Ci.nsICache.STORE_ON_DISK,
-                      Ci.nsICache.ACCESS_WRITE,
+  asyncOpenCacheEntry("http://data/",
+                      "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
                       write_datafile);
 
   do_test_pending();

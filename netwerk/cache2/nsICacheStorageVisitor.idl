@@ -1,0 +1,19 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+interface nsICacheEntry;
+
+[scriptable, uuid(81ef7fb0-ac72-4182-988a-05bec9094120)]
+interface nsICacheStorageVisitor : nsISupports
+{
+  /**
+   */
+  void onCacheStorageInfo(in uint32_t aEntryCount, in uint64_t aConsumption);
+
+  /**
+   */
+  void onCacheEntryInfo(in nsICacheEntry aEntry);
+};

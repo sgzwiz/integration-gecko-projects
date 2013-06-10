@@ -29,10 +29,8 @@ TestAppend.prototype = {
 
   run: function() {
     evict_cache_entries();
-    asyncOpenCacheEntry("data",
-                        "HTTP",
-                        Ci.nsICache.STORE_ON_DISK,
-                        Ci.nsICache.ACCESS_WRITE,
+    asyncOpenCacheEntry("http://data/",
+                        "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
                         this.writeData.bind(this));
   },
 
@@ -44,10 +42,8 @@ TestAppend.prototype = {
     write_and_check(os, "12345", 5);
     os.close();
     entry.close();
-    asyncOpenCacheEntry("data",
-                        "HTTP",
-                        Ci.nsICache.STORE_ON_DISK,
-                        Ci.nsICache.ACCESS_READ_WRITE,
+    asyncOpenCacheEntry("http://data/",
+                        "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
                         this.appendData.bind(this));
   },
 
@@ -58,10 +54,8 @@ TestAppend.prototype = {
     os.close();
     entry.close();
 
-    asyncOpenCacheEntry("data",
-                        "HTTP",
-                        Ci.nsICache.STORE_ON_DISK,
-                        Ci.nsICache.ACCESS_READ,
+    asyncOpenCacheEntry("http://data/",
+                        "disk", Ci.nsICacheStorage.OPEN_READONLY, null,
                         this.checkData.bind(this));
   },
 
