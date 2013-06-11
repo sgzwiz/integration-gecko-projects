@@ -72,7 +72,6 @@ CacheEntry::CacheEntry(const nsACString& aStorageID,
 , mLastModified(0)
 , mExpirationTime(0)
 , mPredictedDataSize(0)
-, mStorageDataSize(0)
 , mDataSize(0)
 , mMetadataMemoryOccupation(0)
 {
