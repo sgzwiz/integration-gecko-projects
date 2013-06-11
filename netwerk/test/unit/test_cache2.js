@@ -19,7 +19,7 @@ function LOG(o, m)
   if (!m)
     dump("TEST-INFO | CACHE2: " + o + "\n");
   else
-    dump("TEST-INFO | CACHE2: callback #" + o.order + "(" + o.workingData + ") " + m + "\n");
+    dump("TEST-INFO | CACHE2: callback #" + o.order + "(" + (o.workingData || "---") + ") " + m + "\n"); 
 }
 
 function exitPB()
@@ -69,12 +69,15 @@ OpenCallback.prototype =
     LOG(this, "onCacheEntryCheck");
     do_check_true(!this.onCheckPassed);
     this.onCheckPassed = true;
+     
+    if (this.behavior & NOTVALID) {
+      LOG(this, "onCacheEntryCheck DONE, return false");
+      return false;
+    }
 
+    // to do this check we would need to enhance the callback for "expect" and "write" data
+    // IMO overkill...
     do_check_eq(entry.getMetaDataElement("meto"), this.workingMetadata);
-
-    // Since bug 880360 (result is seen as false at C++ caller) need to throw... :(
-    if (this.behavior & NOTVALID)
-      throw Cr.NS_ERROR_FAILURE;
 
     LOG(this, "onCacheEntryCheck DONE, return true");
     return true;
@@ -137,7 +140,7 @@ OpenCallback.prototype =
   },
   selfCheck: function()
   {
-    LOG(this, "selfSheck");
+    LOG(this, "selfCheck");
 
     do_check_true(this.onCheckPassed);
     do_check_true(this.onAvailPassed);
@@ -161,9 +164,9 @@ function OpenCallback(behavior, workingMetadata, workingData, goon)
   this.workingMetadata = workingMetadata;
   this.workingData = workingData;
   this.goon = goon;
-  this.onCheckPassed = (behavior & NEW) || !workingMetadata;
+  this.onCheckPassed = (!!(behavior & NEW) || !workingMetadata) && !(behavior & NOTVALID);
   this.onAvailPassed = false;
-  this.onDataCheckPassed = (behavior & NEW) || !workingMetadata;
+  this.onDataCheckPassed = !!(behavior & NEW) || !workingMetadata;
   callbacks.push(this);
   this.order = callbacks.length;
 }
@@ -239,13 +242,16 @@ EvictionCallback.prototype =
   {
     do_check_eq(this.expectedSuccess, result == Cr.NS_OK);
     this.goon();
-  }
+  },
+  selfCheck: function() {}
 }
 
 function EvictionCallback(success, goon)
 {
   this.expectedSuccess = success;
   this.goon = goon;
+  callbacks.push(this);
+  this.order = callbacks.length;
 }
 
 function run_test_basic()
@@ -431,8 +437,8 @@ function run_test_evict_single_entry()
   var storage = getCacheStorage("disk");
   storage.asyncDoomURI(createURI("http://a/"), "",
     new EvictionCallback(true, function() {
-      //run_test_evict_single_entry2();
-      finish_test();
+      run_test_evict_single_entry2();
+      //finish_test();
     })
   );
 }
@@ -443,8 +449,8 @@ function run_test_evict_single_entry2()
     new OpenCallback(NORMAL, "b1m", "b1d", function(entry) {
       entry.asyncDoom(
         new EvictionCallback(true, function() {
-          //run_test_evict_memory_storage();
-          finish_test();
+          run_test_evict_memory_storage();        
+          //finish_test();
         })
       );
     })
@@ -464,7 +470,7 @@ function run_test_evict_memory_storage()
                 new VisitCallback(0, 0, null, function() {
                   var storage = getCacheStorage("disk");
                   storage.asyncVisitStorage(
-                    new VisitCallback(3, 30, [, "http://c/", "http://d/", "http://mem1/"], function() {
+                    new VisitCallback(2, 20, ["http://c/", "http://d/"], function() {
                       run_test_evict_storage();
                       //finish_test();
                     }),
@@ -489,7 +495,7 @@ function run_test_evict_storage()
           var storage = getCacheStorage("memory");
           storage.asyncVisitStorage(
             new VisitCallback(0, 0, null, function() {
-              finish_test();
+              run_test_dont_validate(); 
             }),
           true);
         }),
@@ -498,8 +504,47 @@ function run_test_evict_storage()
   );
 }
 
+function run_test_dont_validate()
+{
+  // Open for write, write
+  asyncOpenCacheEntry("http://v/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null, 
+    new OpenCallback(NEW, "v1m", "v1d", function(entry) {
+      // Open for rewrite (don't validate), write different meta and data
+      asyncOpenCacheEntry("http://v/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+        new OpenCallback(NOTVALID|NEW, "v2m", "v2d", function(entry) {
+          // And check...
+          asyncOpenCacheEntry("http://v/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null, 
+            new OpenCallback(NORMAL, "v2m", "v2d", function(entry) {
+              run_test_evict_non_existing();
+            })
+          );
+        })
+      );
+    })
+  );
+}
+
 function run_test_evict_non_existing()
 {
+  var storage = getCacheStorage("disk");
+  storage.asyncDoomURI(createURI("http://non-existing/"), "",
+    new EvictionCallback(false, function() {
+      run_test_evict_all();
+    })
+  );
+}
+
+function run_test_evict_all()
+{
+  var svc = get_cache_service();
+  svc.clear();
+
+  var storage = getCacheStorage("disk");
+  storage.asyncVisitStorage(
+    new VisitCallback(0, 0, null, function() {
+      finish_test();
+    }),
+  true);
 }
 
 function run_test()
