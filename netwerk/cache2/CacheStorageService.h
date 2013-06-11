@@ -12,6 +12,7 @@
 #include "nsThreadUtils.h"
 #include "nsProxyRelease.h"
 #include "mozilla/Mutex.h"
+#include "nsTArray.h"
 
 class nsIURI;
 class nsICacheEntryOpenCallback;

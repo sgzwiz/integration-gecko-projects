@@ -10,6 +10,7 @@
 #include "mozilla/SHA1.h"
 #include "pldhash.h"
 #include "prclist.h"
+#include "prio.h"
 
 class nsIFile;
 
