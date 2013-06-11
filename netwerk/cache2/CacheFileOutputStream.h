@@ -29,10 +29,10 @@ class CacheFileOutputStream : public nsIAsyncOutputStream
 public:
   CacheFileOutputStream(CacheFile *aFile);
 
-  nsresult OnChunkRead(nsresult aResult, CacheFileChunk *aChunk);
-  nsresult OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk);
-  nsresult OnChunkAvailable(nsresult aResult, CacheFileChunk *aChunk);
-  nsresult OnChunkUpdated(CacheFileChunk *aChunk);
+  NS_IMETHOD OnChunkRead(nsresult aResult, CacheFileChunk *aChunk);
+  NS_IMETHOD OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk);
+  NS_IMETHOD OnChunkAvailable(nsresult aResult, CacheFileChunk *aChunk);
+  NS_IMETHOD OnChunkUpdated(CacheFileChunk *aChunk);
 
 private:
   virtual ~CacheFileOutputStream();
