@@ -9,6 +9,7 @@
 #include "nsThreadUtils.h"
 #include "nsIFile.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/DebugOnly.h"
 
 namespace mozilla {
 namespace net {
@@ -536,7 +537,7 @@ CacheFileIOManager::OpenFile(const SHA1Sum::Hash *aHash,
 {
   MOZ_ASSERT(gInstance);
 
-  nsresult rv;
+  DebugOnly<nsresult> rv;
   rv = gInstance->mIOThread->Dispatch(
     new OpenFileEvent(aHash, aFlags, aCallback),
     nsIEventTarget::DISPATCH_NORMAL);
@@ -626,7 +627,7 @@ CacheFileIOManager::CloseHandle(CacheFileHandle *aHandle)
 {
   MOZ_ASSERT(gInstance);
 
-  nsresult rv;
+  DebugOnly<nsresult> rv;
   rv = gInstance->mIOThread->Dispatch(new CloseHandleEvent(aHandle),
                                       nsIEventTarget::DISPATCH_NORMAL);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
@@ -671,7 +672,7 @@ CacheFileIOManager::Read(CacheFileHandle *aHandle, int64_t aOffset,
 {
   MOZ_ASSERT(gInstance);
 
-  nsresult rv;
+  DebugOnly<nsresult> rv;
   rv = gInstance->mIOThread->Dispatch(
     new ReadEvent(aHandle, aOffset, aBuf, aCount, aCallback),
     nsIEventTarget::DISPATCH_NORMAL);
@@ -707,7 +708,7 @@ CacheFileIOManager::Write(CacheFileHandle *aHandle, int64_t aOffset,
 {
   MOZ_ASSERT(gInstance);
 
-  nsresult rv;
+  DebugOnly<nsresult> rv;
   rv = gInstance->mIOThread->Dispatch(
     new WriteEvent(aHandle, aOffset, aBuf, aCount, aCallback),
     nsIEventTarget::DISPATCH_NORMAL);
@@ -748,7 +749,7 @@ CacheFileIOManager::DoomFile(CacheFileHandle *aHandle,
 {
   MOZ_ASSERT(gInstance);
 
-  nsresult rv;
+  DebugOnly<nsresult> rv;
   rv = gInstance->mIOThread->Dispatch(
     new DoomFileEvent(aHandle, aCallback),
     nsIEventTarget::DISPATCH_NORMAL);
