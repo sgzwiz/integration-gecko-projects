@@ -944,7 +944,9 @@ void CacheEntry::BackgroundOp(uint32_t aOperations, bool aForceAsync)
   MOZ_ASSERT(CacheStorageService::IsOnManagementThread());
 
   if (aOperations & Ops::FRECENCYUPDATE) {
+    #ifndef M_LN2
     #define M_LN2 0.69314718055994530942
+    #endif
 
     // Half-life is 90 days.
     static double const half_life = 90.0 * (24 * 60 * 60);

@@ -10,6 +10,7 @@
 #include "CacheFileChunk.h"
 #include "../cache/nsCacheUtils.h"
 #include "mozilla/Telemetry.h"
+#include "prnetdb.h"
 
 
 namespace mozilla {
@@ -70,7 +71,7 @@ CacheFileMetadata::ReadMetadata(CacheFileMetadataListener *aListener)
     return NS_OK;
   }
 
-  if (size < sizeof(CacheFileMetadataHeader) + 2*sizeof(uint32_t)) {
+  if (size < int64_t(sizeof(CacheFileMetadataHeader) + 2*sizeof(uint32_t))) {
     // there must be at least checksum, header and offset
     aListener->OnMetadataRead(NS_ERROR_FILE_CORRUPTED);
     return NS_OK;
@@ -124,7 +125,7 @@ CacheFileMetadata::WriteMetadata(uint32_t aOffset,
   CacheHashUtils::Hash32_t hash;
   hash = CacheHashUtils::Hash(mBuf + sizeof(uint32_t),
                               p - mBuf - sizeof(uint32_t));
-  *reinterpret_cast<uint32_t *>(mWriteBuf) = htonl(hash);
+  *reinterpret_cast<uint32_t *>(mWriteBuf) = PR_htonl(hash);
 
   *reinterpret_cast<uint32_t *>(p) = aOffset;
   p += sizeof(uint32_t);
@@ -217,7 +218,7 @@ CacheHashUtils::Hash16_t
 CacheFileMetadata::GetHash(uint32_t aIndex)
 {
   MOZ_ASSERT(aIndex < mHashCount);
-  return ntohs(mHashArray[aIndex]);
+  return PR_ntohs(mHashArray[aIndex]);
 }
 
 nsresult
@@ -240,7 +241,7 @@ CacheFileMetadata::SetHash(uint32_t aIndex, CacheHashUtils::Hash16_t aHash)
     }
   }
 
-  mHashArray[aIndex] = htons(aHash);
+  mHashArray[aIndex] = PR_htons(aHash);
   return NS_OK;
 }
 
@@ -325,7 +326,7 @@ CacheFileMetadata::OnDataRead(CacheFileHandle *aHandle, nsresult aResult)
   }
 
   // check whether we have read all necessary data
-  uint32_t realOffset = ntohl(*(reinterpret_cast<uint32_t *>(
+  uint32_t realOffset = PR_ntohl(*(reinterpret_cast<uint32_t *>(
                                 mBuf + mBufSize - sizeof(uint32_t))));
 
   int64_t size = mHandle->FileSize();
@@ -412,7 +413,7 @@ CacheFileMetadata::ParseMetadata(uint32_t aMetaOffset, uint32_t aBufOffset)
   hash = CacheHashUtils::Hash(mBuf + hashesOffset,
                               metaposOffset - hashesOffset);
 
-  if (hash != ntohl(*(reinterpret_cast<uint32_t *>(mBuf + aBufOffset))))
+  if (hash != PR_ntohl(*(reinterpret_cast<uint32_t *>(mBuf + aBufOffset))))
     return NS_ERROR_FILE_CORRUPTED;
 
   // check elements
