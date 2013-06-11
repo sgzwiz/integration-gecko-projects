@@ -43,23 +43,23 @@ public:
                 bool aCreateNew,
                 CacheFileListener *aCallback);
 
-  nsresult OnChunkRead(nsresult aResult, CacheFileChunk *aChunk);
-  nsresult OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk);
-  nsresult OnChunkAvailable(nsresult aResult, CacheFileChunk *aChunk);
-  nsresult OnChunkUpdated(CacheFileChunk *aChunk);
+  NS_IMETHOD OnChunkRead(nsresult aResult, CacheFileChunk *aChunk);
+  NS_IMETHOD OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk);
+  NS_IMETHOD OnChunkAvailable(nsresult aResult, CacheFileChunk *aChunk);
+  NS_IMETHOD OnChunkUpdated(CacheFileChunk *aChunk);
 
-  nsresult OnFileOpened(CacheFileHandle *aHandle, nsresult aResult);
-  nsresult OnDataWritten(CacheFileHandle *aHandle, nsresult aResult);
-  nsresult OnDataRead(CacheFileHandle *aHandle, nsresult aResult);
-  nsresult OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult);
+  NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult);
+  NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, nsresult aResult);
+  NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, nsresult aResult);
+  NS_IMETHOD OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult);
 
-  nsresult OnMetadataRead(nsresult aResult);
-  nsresult OnMetadataWritten(nsresult aResult);
+  NS_IMETHOD OnMetadataRead(nsresult aResult);
+  NS_IMETHOD OnMetadataWritten(nsresult aResult);
 
-  nsresult OpenInputStream(nsIInputStream **_retval);
-  nsresult OpenOutputStream(nsIOutputStream **_retval);
-  nsresult SetMemoryOnly(bool aMemoryOnly);
-  nsresult Doom(CacheFileListener *aCallback);
+  NS_IMETHOD OpenInputStream(nsIInputStream **_retval);
+  NS_IMETHOD OpenOutputStream(nsIOutputStream **_retval);
+  NS_IMETHOD SetMemoryOnly(bool aMemoryOnly);
+  NS_IMETHOD Doom(CacheFileListener *aCallback);
 
   mozilla::Mutex *GetLock();
 
