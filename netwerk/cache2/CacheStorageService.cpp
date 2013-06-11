@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "CacheStorageService.h"
 #include "CacheLog.h"
+#include "CacheStorageService.h"
 
 #include "nsICacheStorageVisitor.h"
 #include "CacheStorage.h"
@@ -17,6 +17,7 @@
 #include "nsNetCID.h"
 #include "nsServiceManagerUtils.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/DebugOnly.h"
 
 namespace mozilla {
 namespace net {
@@ -470,8 +471,8 @@ CacheStorageService::UnregisterEntry(CacheEntry* aEntry)
 
   LOG(("CacheStorageService::UnregisterEntry [entry=%p]", aEntry));
 
-  bool removedFrecency = mFrecencyArray.RemoveElement(aEntry);
-  bool removedExpiration = mExpirationArray.RemoveElement(aEntry);
+  mozilla::DebugOnly<bool> removedFrecency = mFrecencyArray.RemoveElement(aEntry);
+  mozilla::DebugOnly<bool> removedExpiration = mExpirationArray.RemoveElement(aEntry);
 
   MOZ_ASSERT(removedFrecency && removedExpiration);
 
@@ -632,7 +633,9 @@ CacheStorageService::OnMemoryConsumptionChange(CacheEntry* aEntry,
     return;
   }
 
+#ifdef MOZ_LOGGING
   TimeStamp start(TimeStamp::Now());
+#endif
 
   // Throw the oldest data or whole entries away when over certain limits
   #define MEMCACHE_LIMIT (1 * 1024 * 1204) // bytes
