@@ -80,6 +80,9 @@ CacheEntry::CacheEntry(const nsACString& aStorageID,
   mMetadata.Init();
 
   mService = CacheStorageService::Self();
+
+  CacheStorageService::Self()->RecordMemoryOnlyEntry(
+    this, !aUseDisk, true /* overwrite */);
 }
 
 CacheEntry::~CacheEntry()
@@ -250,7 +253,7 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
     nsresult rv = aCallback->OnCacheEntryCheck(this, nullptr, &isValid);
     LOG(("  OnCacheEntryCheck result: rv=0x%08x, valid=%d", rv, isValid));
 
-    if ((NS_FAILED(rv)/* || !isValid*/) && !aReadOnly) {
+    if ((NS_FAILED(rv) || !isValid) && !aReadOnly) {
       LOG(("  replacing entry %p", this));
       nsRefPtr<CacheEntry> newEntry;
 
