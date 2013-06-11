@@ -64,10 +64,10 @@ public:
   CacheHashUtils::Hash16_t Hash();
   uint32_t                 DataSize();
 
-  nsresult OnFileOpened(CacheFileHandle *aHandle, nsresult aResult);
-  nsresult OnDataWritten(CacheFileHandle *aHandle, nsresult aResult);
-  nsresult OnDataRead(CacheFileHandle *aHandle, nsresult aResult);
-  nsresult OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult);
+  NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult);
+  NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, nsresult aResult);
+  NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, nsresult aResult);
+  NS_IMETHOD OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult);
 
   bool   IsReady();
   void   SetReady(bool aReady);
