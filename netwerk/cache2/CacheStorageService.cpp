@@ -132,7 +132,7 @@ public:
     : mContextKey(aContextKey)
     , mEntries(aEntries)
     , mCallback(aCallback)
-    , mUsingDisk(aUsingDisk) {}
+    , mUsingDisk(aUsingDisk) { }
 
   NS_IMETHOD Run()
   {
@@ -145,13 +145,15 @@ public:
         // - may also be invoked from the main thread...
       }
 
-      // Process only a limited number of entries during a single loop to
-      // prevent block of the management thread.
-      mBatch = 50;
-      mEntries->Enumerate(&EvictionRunnable::EvictEntry, this);
+      if (mEntries) {
+        // Process only a limited number of entries during a single loop to
+        // prevent block of the management thread.
+        mBatch = 50;
+        mEntries->Enumerate(&EvictionRunnable::EvictEntry, this);
+      }
 
       // Anything left?  Process in a separate invokation.
-      if (mEntries->Count())
+      if (mEntries && mEntries->Count())
         NS_DispatchToCurrentThread(this);
       else if (mCallback)
         NS_DispatchToMainThread(this); // TODO - we may want caller thread
@@ -400,7 +402,10 @@ NS_IMETHODIMP CacheStorageService::Clear()
   mozilla::MutexAutoLock lock(mLock);
 
   // TODO
-  // - tell the file manager to drom the current cache (all files)
+  // - tell the file manager to doom the current cache (all files)
+
+  // (Could be optimized by just throwing all away / however, should doom entries
+  // that could be used)
 
   nsTArray<nsCString> keys;
   sGlobalEntryTables->EnumerateRead(&CollectContexts, &keys);
@@ -728,7 +733,6 @@ CacheStorageService::AddStorageEntry(CacheStorage const* aStorage,
   NS_ENSURE_FALSE(mShutdown, NS_ERROR_NOT_INITIALIZED);
 
   NS_ENSURE_ARG(aStorage);
-  NS_ENSURE_ARG(aURI);
 
   nsAutoCString contextKey;
   LoadContextInfoMappingKey(contextKey, aStorage->LoadInfo());
@@ -747,6 +751,11 @@ CacheStorageService::AddStorageEntry(nsCSubstring const& aContextKey,
                                      bool aReplace,
                                      CacheEntry** aResult)
 {
+  LOG(("CacheStorageService::AddStorageEntry"));
+  NS_ENSURE_FALSE(mShutdown, NS_ERROR_NOT_INITIALIZED);
+
+  NS_ENSURE_ARG(aURI);
+
   nsAutoCString entryKey;
   entryKey.Append(aIdExtension);
   entryKey.Append(':');
@@ -758,6 +767,9 @@ CacheStorageService::AddStorageEntry(nsCSubstring const& aContextKey,
   NS_ENSURE_SUCCESS(rv, rv);
 
   entryKey.Append(spec);
+
+  LOG(("CacheStorageService::AddStorageEntry [entryKey=%s, contextKey=%s]", 
+    entryKey.get(), aContextKey.BeginReading()));
 
   nsRefPtr<CacheEntry> entry, doom;
 
