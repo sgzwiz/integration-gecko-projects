@@ -247,7 +247,6 @@ private:
   nsCOMPtr<nsISupports> mSecurityInfo;
 
   int64_t mPredictedDataSize;
-  uint32_t mStorageDataSize; // ??? + 64bit?
   uint32_t mDataSize; // ???
 
   uint32_t mMetadataMemoryOccupation;
