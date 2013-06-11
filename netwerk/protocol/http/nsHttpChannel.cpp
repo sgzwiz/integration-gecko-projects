@@ -2388,7 +2388,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
         // The cached response does not contain an entity.  We can only reuse
         // the response if the current request is also HEAD.
         if (mRequestHead.Method() != nsHttp::Head)
-            return /* BUG 880360 */ NS_ERROR_FAILURE; //NS_OK;
+            return NS_OK;
     }
     buf.Adopt(0);
 
@@ -2681,7 +2681,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
 
     LOG(("nsHTTPChannel::CheckCache exit [this=%p doValidation=%d]\n",
          this, doValidation));
-    return *aResult ? rv /* BUG 880360 */ : NS_ERROR_FAILURE; //;
+    return rv;
 }
 
 NS_IMETHODIMP
