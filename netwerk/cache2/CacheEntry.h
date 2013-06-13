@@ -6,6 +6,7 @@
 #define CacheEntry__h__
 
 #include "nsICacheEntry.h"
+#include "CacheFile.h"
 
 #include "nsIRunnable.h"
 #include "nsIOutputStream.h"
@@ -49,6 +50,7 @@ class WalkRunnable;
 
 class CacheEntry : public nsICacheEntry
                  , public nsIRunnable
+                 , public CacheFileListener
 {
 public:
   NS_DECL_ISUPPORTS
@@ -91,6 +93,14 @@ public:
   void PurgeAndDoom();
   void DoomAlreadyRemoved();
 
+  nsresult HashingKeyWithStorage(nsACString &aResult);
+  nsresult HashingKey(nsACString &aResult);
+
+  static nsresult HashingKey(nsCSubstring const& aStorageID,
+                             nsCSubstring const& aEnhanceID,
+                             nsIURI* aURI,
+                             nsACString &aResult);
+
   // Accessed only on the service management thread
   uint32_t mReportedMemorySize;
   double mFrecency;
@@ -98,6 +108,10 @@ public:
 
 private:
   virtual ~CacheEntry();
+
+  // CacheFileListener
+  NS_IMETHOD OnFileReady(nsresult aResult);
+  NS_IMETHOD OnFileDoomed(nsresult aResult);
 
   // Keep the service alive during life-time of an entry
   nsRefPtr<CacheStorageService> mService;
@@ -159,7 +173,7 @@ private:
   };
 
   // Loads from disk asynchronously
-  void Load();
+  void Load(bool aTruncate);
   void OnLoaded();
 
   void RememberCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
@@ -175,16 +189,22 @@ private:
   void TransferCallbacks(nsCOMArray<nsICacheEntryOpenCallback> const &aCallbacks,
                          nsCOMArray<nsICacheEntryOpenCallback> const &aReadOnlyCallbacks);
 
+  already_AddRefed<CacheFile> File();
+
   mozilla::Mutex mLock;
 
   nsCOMArray<nsICacheEntryOpenCallback> mCallbacks, mReadOnlyCallbacks;
   nsCOMPtr<nsICacheEntryDoomCallback> mDoomCallback;
 
+  nsRefPtr<CacheFile> mFile;
+  nsresult mFileLoadResult;
   nsCOMPtr<nsIURI> mURI;
   nsCString mEnhanceID;
   nsCString mStorageID;
 
   // Whether it's allowed to persist the data to disk
+  // Synchronized by the service management lock.
+  // Hence, leave it as a standalone boolean.
   bool mUseDisk;
 
   // Whether entry is in process of loading
@@ -202,19 +222,18 @@ private:
   bool mIsRegistered : 1;
   // After deregistration entry is no allowed to register again
   bool mIsRegistrationAllowed : 1;
+  // Whether security info has already been looked up in metadata
+  bool mSecurityInfoLoaded : 1;
 
   // Background thread scheduled operation.  Set (under the lock) one
   // of this flags to tell the background thread what to do.
   class Ops {
   public:
     static uint32_t const REGISTER =          1 << 0;
-    static uint32_t const EXPTIMEUPDATE =     1 << 1;
-    static uint32_t const LOAD =              1 << 2; // HACK? should post to the IO thread
-    static uint32_t const LOADED =            1 << 3; // HACK? to simulate...
-    static uint32_t const REPORTUSAGE =       1 << 4;
-    static uint32_t const FRECENCYUPDATE =    1 << 5;
-    static uint32_t const DOOM =              1 << 6;
-    static uint32_t const CALLBACKS =         1 << 7;
+    static uint32_t const REPORTUSAGE =       1 << 1;
+    static uint32_t const FRECENCYUPDATE =    1 << 2;
+    static uint32_t const DOOM =              1 << 3;
+    static uint32_t const CALLBACKS =         1 << 4;
 
     Ops() : mFlags(0) { }
     uint32_t Grab() { uint32_t flags = mFlags; mFlags = 0; return flags; }
@@ -223,27 +242,6 @@ private:
     uint32_t mFlags;
   } mBackgroundOperations;
 
-  int32_t mFetchCount; // ???
-  uint32_t mLastFetched; // ???
-  uint32_t mLastModified;
-  uint32_t mExpirationTime;
-
-  // SHORT THERM HACK
-  // ================
-  nsCOMPtr<nsIStorageStream> mStorageStream;
-  nsCOMPtr<nsIOutputStream> mOutputStream;
-  class OutputStreamHook : public nsIOutputStream
-  {
-  public:
-    NS_DECL_ISUPPORTS
-    OutputStreamHook(CacheEntry* e) : entry(e) {}
-    virtual ~OutputStreamHook() { Close(); entry->BackgroundOp(Ops::REPORTUSAGE); }
-    NS_FORWARD_SAFE_NSIOUTPUTSTREAM(entry->mOutputStream)
-    CacheEntry* entry;
-  };
-  // ================
-
-  nsDataHashtable<nsCStringHashKey, nsCString> mMetadata;
   nsCOMPtr<nsISupports> mSecurityInfo;
 
   int64_t mPredictedDataSize;
