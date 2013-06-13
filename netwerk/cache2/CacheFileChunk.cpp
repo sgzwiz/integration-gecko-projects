@@ -224,7 +224,19 @@ CacheFileChunk::Hash()
 uint32_t
 CacheFileChunk::DataSize()
 {
+  mFile->AssertOwnsLock();
   return mDataSize;
+}
+
+void
+CacheFileChunk::UpdateDataSize(uint32_t aDataSize, bool aEOF)
+{
+  mFile->AssertOwnsLock();
+
+  if (aEOF || aDataSize > mDataSize) {
+    mDataSize = aDataSize;
+    NotifyUpdateListeners();
+  }
 }
 
 nsresult
