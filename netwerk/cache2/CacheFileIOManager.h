@@ -77,14 +77,27 @@ class CloseFileEvent;
 class ReadEvent;
 class WriteEvent;
 
+#define CACHEFILEIOLISTENER_IID \
+{ /* dcaf2ddc-17cf-4242-bca1-8c86936375a5 */       \
+  0xdcaf2ddc,                                      \
+  0x17cf,                                          \
+  0x4242,                                          \
+  {0xbc, 0xa1, 0x8c, 0x86, 0x93, 0x63, 0x75, 0xa5} \
+}
+
 class CacheFileIOListener : public nsISupports
 {
 public:
+  NS_DECLARE_STATIC_IID_ACCESSOR(CACHEFILEIOLISTENER_IID)
+
   NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult) = 0;
   NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, nsresult aResult) = 0;
   NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, nsresult aResult) = 0;
   NS_IMETHOD OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult) = 0;
 };
+
+NS_DEFINE_STATIC_IID_ACCESSOR(CacheFileIOListener, CACHEFILEIOLISTENER_IID)
+
 
 class CacheFileIOManager
 {

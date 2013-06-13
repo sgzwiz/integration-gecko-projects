@@ -44,7 +44,10 @@ CacheEntry::Handle::~Handle()
 
 // CacheEntry
 
-NS_IMPL_THREADSAFE_ISUPPORTS2(CacheEntry, nsICacheEntry, nsIRunnable)
+NS_IMPL_THREADSAFE_ISUPPORTS3(CacheEntry,
+                              nsICacheEntry,
+                              nsIRunnable,
+                              CacheFileListener)
 
 CacheEntry::CacheEntry(const nsACString& aStorageID,
                        nsIURI* aURI,
