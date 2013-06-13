@@ -23,6 +23,7 @@ EXPORTS += [
 ]
 
 CPP_SOURCES += [
+    'AppCacheStorage.cpp',
     'CacheEntry.cpp',
     'CacheFile.cpp',
     'CacheFileChunk.cpp',

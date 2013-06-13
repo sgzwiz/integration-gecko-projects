@@ -28,25 +28,12 @@ CacheStorage::CacheStorage(nsILoadContextInfo* aInfo,
 : mLoadContextInfo(aInfo)
 , mWriteToDisk(aAllowDisk)
 , mLookupAppCache(aLookupAppCache)
-, mGeneralAppCache(false)
-{
-  MOZ_COUNT_CTOR(CacheStorage);
-}
-
-CacheStorage::CacheStorage(nsILoadContextInfo* aInfo,
-                           nsIApplicationCache* aAppCache)
-: mAppCache(aAppCache)
-, mLoadContextInfo(aInfo)
-, mWriteToDisk(true)
-, mLookupAppCache(false)
-, mGeneralAppCache(!aAppCache)
 {
   MOZ_COUNT_CTOR(CacheStorage);
 }
 
 CacheStorage::~CacheStorage()
 {
-  ProxyReleaseMainThread(mAppCache);
   MOZ_COUNT_DTOR(CacheStorage);
 }
 
@@ -70,15 +57,12 @@ NS_IMETHODIMP CacheStorage::AsyncOpenURI(nsIURI *aURI,
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIApplicationCache> appCache;
-  if (LookupAppCache() || GeneralAppCache()) {
-    MOZ_ASSERT((aFlags & nsICacheStorage::OPEN_TRUNCATE) == 0);
+  if (LookupAppCache()) {
+    MOZ_ASSERT(!truncate);
 
     rv = ChooseApplicationCache(noRefURI, getter_AddRefs(appCache));
     NS_ENSURE_SUCCESS(rv, rv);
   }
-
-  if (!appCache)
-    appCache = AppCache();
 
   if (appCache) {
     nsRefPtr<_OldApplicationCacheLoad> appCacheLoad =
@@ -86,13 +70,7 @@ NS_IMETHODIMP CacheStorage::AsyncOpenURI(nsIURI *aURI,
     rv = appCacheLoad->Start();
     NS_ENSURE_SUCCESS(rv, rv);
 
-    LOG(("CacheStorageService::AsyncOpenCacheEntry loading from appcache"));
-    return NS_OK;
-  }
-
-  if (GeneralAppCache()) {
-    LOG(("CacheStorageService::AsyncOpenCacheEntry entry not found in any appcache, giving up"));
-    aCallback->OnCacheEntryAvailable(nullptr, false, nullptr, NS_ERROR_CACHE_KEY_NOT_FOUND);
+    LOG(("CacheStorage::AsyncOpenURI loading from appcache"));
     return NS_OK;
   }
 
@@ -100,7 +78,7 @@ NS_IMETHODIMP CacheStorage::AsyncOpenURI(nsIURI *aURI,
   rv = CacheStorageService::Self()->AddStorageEntry(
     this, noRefURI, aIdExtension,
     true, // create always
-    truncate, // replace any existing one
+    truncate, // replace any existing one?
     getter_AddRefs(entry));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -116,11 +94,6 @@ NS_IMETHODIMP CacheStorage::AsyncDoomURI(nsIURI *aURI, const nsACString & aIdExt
   if (!CacheStorageService::Self())
     return NS_ERROR_NOT_INITIALIZED;
 
-  if (mAppCache) {
-    // TODO - remove entry from app cache
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-
   nsRefPtr<CacheEntry> entry;
   nsresult rv = CacheStorageService::Self()->DoomStorageEntry(
     this, aURI, aIdExtension, aCallback);
@@ -133,16 +106,6 @@ NS_IMETHODIMP CacheStorage::AsyncEvictStorage(nsICacheEntryDoomCallback* aCallba
 {
   if (!CacheStorageService::Self())
     return NS_ERROR_NOT_INITIALIZED;
-
-  if (mAppCache) {
-    // TODO - deactivate the group (clientid)
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-
-  if (mGeneralAppCache) {
-    // TODO - throw the whole appcache away
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
 
   nsresult rv = CacheStorageService::Self()->DoomStorageEntries(
     this, aCallback);
