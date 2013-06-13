@@ -35,26 +35,21 @@ public:
   CacheStorage(nsILoadContextInfo* aInfo,
                bool aAllowDisk,
                bool aLookupAppCache);
-  CacheStorage(nsILoadContextInfo* aInfo,
-               nsIApplicationCache* aAppCache);
 
-private:
+protected:
   virtual ~CacheStorage();
 
   nsresult ChooseApplicationCache(nsIURI* aURI, nsIApplicationCache** aCache);
 
-  nsCOMPtr<nsIApplicationCache> mAppCache;
   nsCOMPtr<nsILoadContextInfo> mLoadContextInfo;
   bool mWriteToDisk : 1;
   bool mLookupAppCache : 1;
-  bool mGeneralAppCache : 1;
 
 public:
-  nsIApplicationCache* AppCache() const { return mAppCache; }
+  nsIApplicationCache* AppCache() const { return nullptr; }
   nsILoadContextInfo* LoadInfo() const { return mLoadContextInfo; }
   bool WriteToDisk() const { return mWriteToDisk && !mLoadContextInfo->IsPrivate(); }
   bool LookupAppCache() const { return mLookupAppCache; }
-  bool GeneralAppCache() const { return mGeneralAppCache; }
 };
 
 } // net
