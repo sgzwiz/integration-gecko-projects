@@ -9,6 +9,7 @@
 #include "CacheFileOutputStream.h"
 #include "CacheFileUtils.h"
 #include "nsThreadUtils.h"
+#include "nsProxyRelease.h"
 #include <algorithm>
 
 namespace mozilla {
@@ -492,7 +493,7 @@ CacheFile::RemoveChunk(CacheFileChunk *aChunk)
       // We also shouldn't have any queued listener for this chunk
       ChunkListeners *listeners;
       mChunkListeners.Get(chunk->Index(), &listeners);
-      MOZ_ASSERT(listeners);
+      MOZ_ASSERT(!listeners);
     }
 #endif
 
@@ -541,7 +542,10 @@ CacheFile::RemoveOutput(CacheFileOutputStream *aOutput)
   if (mOutput != aOutput)
     return NS_ERROR_FAILURE;
 
-  mOutput = nullptr;
+  NS_ProxyRelease(NS_GetCurrentThread(), static_cast<nsIOutputStream*>(mOutput),
+                  true);
+  mOutput.forget();
+
   return NS_OK;
 }
 
@@ -593,7 +597,6 @@ CacheFile::NotifyChunkListeners(uint32_t aIndex, nsresult aResult,
 
   ChunkListeners *listeners;
   mChunkListeners.Get(aIndex, &listeners);
-  mChunkListeners.Remove(aIndex);
   MOZ_ASSERT(listeners);
 
   rv = NS_OK;
@@ -604,7 +607,8 @@ CacheFile::NotifyChunkListeners(uint32_t aIndex, nsresult aResult,
       rv = rv2;
     delete item;
   }
-  delete listeners;
+
+  mChunkListeners.Remove(aIndex);
 
   return rv;
 }
