@@ -110,7 +110,7 @@ private:
   virtual ~CacheEntry();
 
   // CacheFileListener
-  NS_IMETHOD OnFileReady(nsresult aResult);
+  NS_IMETHOD OnFileReady(nsresult aResult, bool aIsNew);
   NS_IMETHOD OnFileDoomed(nsresult aResult);
 
   // Keep the service alive during life-time of an entry
