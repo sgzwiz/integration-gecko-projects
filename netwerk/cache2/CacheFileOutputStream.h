@@ -37,9 +37,21 @@ public:
 private:
   virtual ~CacheFileOutputStream();
 
+  void ReleaseChunk();
+  void EnsureCorrectChunk(bool aReleaseOnly);
+  void CanWrite(int64_t *aCanWrite, char **aBuf);
+  void FillHole();
+  void NotifyListener();
+
   nsRefPtr<CacheFile>      mFile;
   nsRefPtr<CacheFileChunk> mChunk;
   int64_t                  mPos;
+  bool                     mClosed;
+  nsresult                 mStatus;
+
+  nsCOMPtr<nsIOutputStreamCallback> mCallback;
+  uint32_t                          mCallbackFlags;
+  nsCOMPtr<nsIEventTarget>          mCallbackTarget;
 };
 
 
