@@ -69,6 +69,11 @@ CacheFileInputStream::Close()
 NS_IMETHODIMP
 CacheFileInputStream::Available(uint64_t *_retval)
 {
+  MutexAutoLock lock(*mFile->GetLock());
+
+  if (mClosed)
+    return NS_ERROR_NOT_AVAILABLE;
+
   // TODO what to return when we have an output stream?
   *_retval = mFile->DataSize() - mPos;
   return NS_OK;
@@ -254,6 +259,9 @@ CacheFileInputStream::Seek(int32_t whence, int64_t offset)
 {
   MutexAutoLock lock(*mFile->GetLock());
 
+  if (mClosed)
+    return NS_ERROR_NOT_AVAILABLE;
+
   int64_t newPos = offset;
   switch (whence) {
     case NS_SEEK_SET:
@@ -277,6 +285,11 @@ CacheFileInputStream::Seek(int32_t whence, int64_t offset)
 NS_IMETHODIMP
 CacheFileInputStream::Tell(int64_t *_retval)
 {
+  MutexAutoLock lock(*mFile->GetLock());
+
+  if (mClosed)
+    return NS_ERROR_NOT_AVAILABLE;
+
   *_retval = mPos;
   return NS_OK;
 }
@@ -310,6 +323,11 @@ CacheFileInputStream::OnChunkAvailable(nsresult aResult, CacheFileChunk *aChunk)
 
   MOZ_ASSERT(!mChunk);
   MOZ_ASSERT(!mWaitingForUpdate);
+
+  if (mClosed) {
+    MOZ_ASSERT(!mCallback);
+    return NS_OK;
+  }
 
   mChunk = aChunk;
 
