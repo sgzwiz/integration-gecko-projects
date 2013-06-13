@@ -62,6 +62,8 @@ public:
   NS_IMETHOD Doom(CacheFileListener *aCallback);
 
   mozilla::Mutex *GetLock();
+  CacheFileMetadata* Metadata();
+  int64_t DataSize();
 
 private:
   friend class CacheFileChunk;
@@ -89,7 +91,6 @@ private:
   nsresult NotifyChunkListeners(uint32_t aIndex, nsresult aResult,
                                 CacheFileChunk *aChunk);
 
-  int64_t  DataSize();
 
   mozilla::Mutex mLock;
   bool           mReady;

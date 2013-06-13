@@ -98,6 +98,13 @@ CacheFile::Init(const nsACString &aKey,
   return NS_OK;
 }
 
+CacheFileMetadata*
+CacheFile::Metadata()
+{
+  AssertOwnsLock();
+  return mMetadata;
+}
+
 nsresult
 CacheFile::OnChunkRead(nsresult aResult, CacheFileChunk *aChunk)
 {
@@ -297,6 +304,9 @@ CacheFile::OpenOutputStream(nsIOutputStream **_retval)
 nsresult
 CacheFile::SetMemoryOnly(bool aMemoryOnly)
 {
+  if (mMemoryOnly == aMemoryOnly)
+    return NS_OK;
+
   MOZ_ASSERT(mReady);
   // MemoryOnly can be set only before we start reading/writting data
   MOZ_ASSERT(!mDataAccessed);
