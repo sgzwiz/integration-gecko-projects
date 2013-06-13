@@ -21,12 +21,26 @@ typedef struct {
   uint32_t        mKeySize;
 } CacheFileMetadataHeader;
 
+#define CACHEFILEMETADATALISTENER_IID \
+{ /* a9e36125-3f01-4020-9540-9dafa8d31ba7 */       \
+  0xa9e36125,                                      \
+  0x3f01,                                          \
+  0x4020,                                          \
+  {0x95, 0x40, 0x9d, 0xaf, 0xa8, 0xd3, 0x1b, 0xa7} \
+}
+
 class CacheFileMetadataListener : public nsISupports
 {
 public:
+  NS_DECLARE_STATIC_IID_ACCESSOR(CACHEFILEMETADATALISTENER_IID)
+
   NS_IMETHOD OnMetadataRead(nsresult aResult) = 0;
   NS_IMETHOD OnMetadataWritten(nsresult aResult) = 0;
 };
+
+NS_DEFINE_STATIC_IID_ACCESSOR(CacheFileMetadataListener,
+                              CACHEFILEMETADATALISTENER_IID)
+
 
 class CacheFileMetadata : public CacheFileIOListener
 {
