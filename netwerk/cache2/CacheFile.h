@@ -26,7 +26,7 @@ class GapFiller;
 class CacheFileListener : public nsISupports
 {
 public:
-  NS_IMETHOD OnFileReady(nsresult aResult) = 0;
+  NS_IMETHOD OnFileReady(nsresult aResult, bool aIsNew) = 0;
   NS_IMETHOD OnFileDoomed(nsresult aResult) = 0;
 };
 

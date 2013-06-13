@@ -54,6 +54,7 @@ public:
   nsresult GetFetchCount(uint32_t *_retval);
 
   int64_t  Offset() { return mOffset; }
+  uint32_t ElementsSize() { return mElementsSize; }
 
   NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult);
   NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, nsresult aResult);
