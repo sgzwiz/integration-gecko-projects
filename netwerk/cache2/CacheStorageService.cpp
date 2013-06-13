@@ -7,6 +7,7 @@
 
 #include "nsICacheStorageVisitor.h"
 #include "CacheStorage.h"
+#include "AppCacheStorage.h"
 #include "CacheEntry.h"
 
 #include "OldWrappers.h"
@@ -389,8 +390,10 @@ NS_IMETHODIMP CacheStorageService::AppCacheStorage(nsILoadContextInfo *aLoadCont
   NS_ENSURE_ARG(aLoadContextInfo);
   NS_ENSURE_ARG(_retval);
 
-  nsRefPtr<CacheStorage> storage =
-    new CacheStorage(aLoadContextInfo, aApplicationCache);
+  // Using classification since cl believes we want to instantiate this method
+  // having the same name as the desired class...
+  nsRefPtr<mozilla::net::AppCacheStorage> storage =
+    new mozilla::net::AppCacheStorage(aLoadContextInfo, aApplicationCache);
 
   storage.forget(_retval);
   return NS_OK;
@@ -832,17 +835,6 @@ CacheStorageService::DoomStorageEntry(CacheStorage const* aStorage,
 
   NS_ENSURE_ARG(aStorage);
   NS_ENSURE_ARG(aURI);
-
-  nsCOMPtr<nsIApplicationCache> appCache = aStorage->AppCache();
-  if (appCache) {
-    // TODO - delete the entry from the app cache
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-
-  if (aStorage->GeneralAppCache()) {
-    // Not sure what to do in this case...
-    return NS_ERROR_NOT_AVAILABLE;
-  }
 
   nsAutoCString contextKey;
   LoadContextInfoMappingKey(contextKey, aStorage->LoadInfo());
