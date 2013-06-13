@@ -5,6 +5,7 @@
 #include "CacheObserver.h"
 
 #include "CacheStorageService.h"
+#include "CacheFileIOManager.h"
 #include "nsIObserverService.h"
 #include "mozilla/Services.h"
 #include "nsServiceManagerUtils.h"
@@ -33,6 +34,7 @@ CacheObserver::Init()
   sSelf = new CacheObserver();
   NS_ADDREF(sSelf);
 
+  obs->AddObserver(sSelf, "profile-after-change", true);
   obs->AddObserver(sSelf, "profile-before-change", true);
   obs->AddObserver(sSelf, "xpcom-shutdown", true);
   obs->AddObserver(sSelf, "last-pb-context-exited", true);
@@ -56,6 +58,11 @@ CacheObserver::Observe(nsISupports* aSubject,
                        const char* aTopic,
                        const PRUnichar* aData)
 {
+  if (!strcmp(aTopic, "profile-after-change")) {
+    CacheFileIOManager::Init();
+    return NS_OK;
+  }
+
   if (!strcmp(aTopic, "profile-before-change") ||
       !strcmp(aTopic, "xpcom-shutdown")) {
     CacheStorageService* service = CacheStorageService::Self();
@@ -63,6 +70,7 @@ CacheObserver::Observe(nsISupports* aSubject,
       return NS_OK;
 
     service->Shutdown();
+    CacheFileIOManager::Shutdown();
     return NS_OK;
   }
 
