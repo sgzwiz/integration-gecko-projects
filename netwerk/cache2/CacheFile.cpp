@@ -197,7 +197,7 @@ CacheFile::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
 
   if (NS_FAILED(aResult)) {
     mListener.swap(listener);
-    listener->OnFileReady(aResult);
+    listener->OnFileReady(aResult, false);
     return NS_OK;
   }
 
@@ -208,7 +208,7 @@ CacheFile::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
   rv = mMetadata->ReadMetadata(this);
   if (NS_FAILED(rv)) {
     mListener.swap(listener);
-    listener->OnFileReady(rv);
+    listener->OnFileReady(rv, false);
     return NS_OK;
   }
 
@@ -234,14 +234,17 @@ CacheFile::OnMetadataRead(nsresult aResult)
 {
   MOZ_ASSERT(mListener);
 
+  bool isNew = false;
   if (NS_SUCCEEDED(aResult)) {
     mReady = true;
     mDataSize = mMetadata->Offset();
+    if (mDataSize == 0 && mMetadata->ElementsSize() == 0)
+      isNew = true;
   }
 
   nsCOMPtr<CacheFileListener> listener;
   mListener.swap(listener);
-  listener->OnFileReady(aResult);
+  listener->OnFileReady(aResult, isNew);
   return NS_OK;
 }
 

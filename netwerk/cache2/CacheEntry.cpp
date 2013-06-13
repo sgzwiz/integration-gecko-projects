@@ -159,18 +159,19 @@ void CacheEntry::Load(bool aTruncate)
     rv = mFile->Init(fileKey, aTruncate, this);
 
   if (NS_FAILED(rv))
-    OnFileReady(rv);
+    OnFileReady(rv, false);
 }
 
-NS_IMETHODIMP CacheEntry::OnFileReady(nsresult aResult)
+NS_IMETHODIMP CacheEntry::OnFileReady(nsresult aResult, bool aIsNew)
 {
-  LOG(("CacheEntry::OnFileReady [this=%p, rv=0x%08x]", this, aResult));
+  LOG(("CacheEntry::OnFileReady [this=%p, rv=0x%08x, new=%d]",
+      this, aResult, aIsNew));
 
   {
     mozilla::MutexAutoLock lock(mLock);
     mIsLoaded = true;
     mIsLoading = false;
-    mIsReady = false; // TODO no way to recognize, michal fixes it
+    mIsReady = !aIsNew;
 
     if (NS_FAILED(aResult))
       mFile = nullptr;
