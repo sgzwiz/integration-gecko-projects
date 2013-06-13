@@ -78,6 +78,7 @@ public:
   uint32_t                 Index();
   CacheHashUtils::Hash16_t Hash();
   uint32_t                 DataSize();
+  void                     UpdateDataSize(uint32_t aDataSize, bool aEOF);
 
   NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult);
   NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, nsresult aResult);
