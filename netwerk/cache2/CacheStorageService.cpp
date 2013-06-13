@@ -79,7 +79,7 @@ CacheStorageService::CacheStorageService()
   sGlobalEntryTables = new GlobalEntryTables();
   sGlobalEntryTables->Init();
 
-  NS_NewNamedThread("Cache2", getter_AddRefs(mThread));
+  NS_NewNamedThread("Cache Mngmnt", getter_AddRefs(mThread));
 }
 
 CacheStorageService::~CacheStorageService()
@@ -525,18 +525,11 @@ CacheStorageService::RemoveEntry(CacheEntry* aEntry)
   LOG(("CacheStorageService::RemoveEntry [entry=%p]", aEntry));
 
   nsAutoCString entryKey;
-  entryKey.Append(aEntry->GetEnhanceID());
-  entryKey.Append(':');
-
-  nsresult rv;
-
-  nsAutoCString spec;
-  rv = aEntry->GetURI()->GetAsciiSpec(spec);
+  nsresult rv = aEntry->HashingKey(entryKey);
   if (NS_FAILED(rv)) {
-    NS_ERROR("aEntry->GetURI()->GetAsciiSpec() failed?");
+    NS_ERROR("aEntry->HashingKey() failed?");
     return;
   }
-  entryKey.Append(spec);
 
   mozilla::MutexAutoLock lock(mLock);
 
@@ -566,19 +559,14 @@ CacheStorageService::RecordMemoryOnlyEntry(CacheEntry* aEntry,
 
   mLock.AssertCurrentThreadOwns();
 
-  nsAutoCString entryKey;
-  entryKey.Append(aEntry->GetEnhanceID());
-  entryKey.Append(':');
-
   nsresult rv;
 
-  nsAutoCString spec;
-  rv = aEntry->GetURI()->GetAsciiSpec(spec);
+  nsAutoCString entryKey;
+  rv = aEntry->HashingKey(entryKey);
   if (NS_FAILED(rv)) {
-    NS_ERROR("aEntry->GetURI()->GetAsciiSpec() failed?");
+    NS_ERROR("aEntry->HashingKey() failed?");
     return;
   }
-  entryKey.Append(spec);
 
   CacheEntryTable* entries = nullptr;
   nsAutoCString memoryStorageID(aEntry->GetStorageID());
@@ -624,7 +612,7 @@ CacheStorageService::OnMemoryConsumptionChange(CacheEntry* aEntry,
 
   bool dataRaise = savedMemorySize < aCurrentMemorySize;
 
-  // Exchange saved sizes with current ones.
+  // Exchange saved size with current one.
   aEntry->ReportedMemorySize() = aCurrentMemorySize;
 
   // Bypass purging when memory has not grew up significantly
@@ -759,17 +747,11 @@ CacheStorageService::AddStorageEntry(nsCSubstring const& aContextKey,
 
   NS_ENSURE_ARG(aURI);
 
-  nsAutoCString entryKey;
-  entryKey.Append(aIdExtension);
-  entryKey.Append(':');
-
   nsresult rv;
 
-  nsAutoCString spec;
-  rv = aURI->GetAsciiSpec(spec);
+  nsAutoCString entryKey;
+  rv = CacheEntry::HashingKey(EmptyCString(), aIdExtension, aURI, entryKey);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  entryKey.Append(spec);
 
   LOG(("CacheStorageService::AddStorageEntry [entryKey=%s, contextKey=%s]", 
     entryKey.get(), aContextKey.BeginReading()));
@@ -866,14 +848,8 @@ CacheStorageService::DoomStorageEntry(CacheStorage const* aStorage,
   LoadContextInfoMappingKey(contextKey, aStorage->LoadInfo());
 
   nsAutoCString entryKey;
-  entryKey.Append(aIdExtension);
-  entryKey.Append(':');
-
-  nsAutoCString spec;
-  nsresult rv = aURI->GetAsciiSpec(spec);
+  nsresult rv = CacheEntry::HashingKey(EmptyCString(), aIdExtension, aURI, entryKey);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  entryKey.Append(spec);
 
   nsRefPtr<CacheEntry> entry;
   {

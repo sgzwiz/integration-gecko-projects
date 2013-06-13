@@ -6,15 +6,18 @@
 #include "CacheStorageService.h"
 #include "CacheLog.h"
 
-#include "nsIStorageStream.h"
+#include "nsIInputStream.h"
 #include "nsIOutputStream.h"
+#include "nsISeekableStream.h"
 #include "nsIURI.h"
 #include "nsICacheEntryOpenCallback.h"
 #include "nsICacheStorage.h"
+#include "nsISerializable.h"
 
 #include "nsComponentManagerUtils.h"
 #include "nsString.h"
 #include "nsProxyRelease.h"
+#include "nsSerializationHelper.h"
 #include <math.h>
 
 namespace mozilla {
@@ -39,11 +42,6 @@ CacheEntry::Handle::~Handle()
   MOZ_COUNT_DTOR(CacheEntry::Handle);
 }
 
-
-// Short term hack
-NS_IMPL_THREADSAFE_ISUPPORTS1(CacheEntry::OutputStreamHook, nsIOutputStream)
-
-
 // CacheEntry
 
 NS_IMPL_THREADSAFE_ISUPPORTS2(CacheEntry, nsICacheEntry, nsIRunnable)
@@ -56,6 +54,7 @@ CacheEntry::CacheEntry(const nsACString& aStorageID,
 , mFrecency(0)
 , mSortingExpirationTime(uint32_t(-1))
 , mLock("CacheEntry")
+, mFileLoadResult(NS_OK)
 , mURI(aURI)
 , mEnhanceID(aEnhanceID)
 , mStorageID(aStorageID)
@@ -67,16 +66,12 @@ CacheEntry::CacheEntry(const nsACString& aStorageID,
 , mIsDoomed(false)
 , mIsRegistered(false)
 , mIsRegistrationAllowed(true)
-, mFetchCount(0)
-, mLastFetched(0)
-, mLastModified(0)
-, mExpirationTime(0)
+, mSecurityInfoLoaded(false)
 , mPredictedDataSize(0)
 , mDataSize(0)
 , mMetadataMemoryOccupation(0)
 {
   MOZ_COUNT_CTOR(CacheEntry);
-  mMetadata.Init();
 
   mService = CacheStorageService::Self();
 
@@ -92,29 +87,118 @@ CacheEntry::~CacheEntry()
   MOZ_COUNT_DTOR(CacheEntry);
 }
 
-void CacheEntry::Load()
+nsresult CacheEntry::HashingKeyWithStorage(nsACString &aResult)
+{
+  return HashingKey(mStorageID, mEnhanceID, mURI, aResult);
+}
+
+nsresult CacheEntry::HashingKey(nsACString &aResult)
+{
+  return HashingKey(EmptyCString(), mEnhanceID, mURI, aResult);
+}
+
+// static
+nsresult CacheEntry::HashingKey(nsCSubstring const& aStorageID,
+                                nsCSubstring const& aEnhanceID,
+                                nsIURI* aURI,
+                                nsACString &aResult)
+{
+  /**
+   * This key is used to salt hash that is a base for disk file name.
+   * Changing it will cause we will not be able to find files on disk.
+   */
+
+  if (aStorageID.Length()) {
+    aResult.Append(aStorageID);
+    aResult.Append(':');
+  }
+
+  if (aEnhanceID.Length()) {
+    aResult.Append(aEnhanceID);
+    aResult.Append(':');
+  }
+
+  nsAutoCString spec;
+  nsresult rv = aURI->GetAsciiSpec(spec);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  aResult.Append(spec);
+
+  return NS_OK;
+}
+
+void CacheEntry::Load(bool aTruncate)
 {
   LOG(("CacheEntry::Load [this=%p]", this));
 
   {
     mozilla::MutexAutoLock lock(mLock);
-    mIsLoading = true;
+
+    MOZ_ASSERT(!mFile);
+    MOZ_ASSERT(!mIsReady);
+
+    if (aTruncate || !mUseDisk) {
+      mIsLoading = false;
+      mIsLoaded = true;
+    }
+    else {
+      mIsLoading = true;
+      mIsLoaded = false;
+    }
+
+    mFile = new CacheFile();
   }
 
-  BackgroundOp(Ops::LOAD);
+  nsresult rv;
+
+  nsAutoCString fileKey;
+  rv = HashingKeyWithStorage(fileKey);
+
+  // TODO tell the file to store on disk or not from the very start
+  if (NS_SUCCEEDED(rv))
+    rv = mFile->Init(fileKey, aTruncate, this);
+
+  if (NS_FAILED(rv))
+    OnFileReady(rv);
 }
 
-void CacheEntry::OnLoaded()
+NS_IMETHODIMP CacheEntry::OnFileReady(nsresult aResult)
 {
-  LOG(("CacheEntry::OnLoaded [this=%p]", this));
+  LOG(("CacheEntry::OnFileReady [this=%p, rv=0x%08x]", this, aResult));
 
   {
     mozilla::MutexAutoLock lock(mLock);
     mIsLoaded = true;
     mIsLoading = false;
+    mIsReady = false; // TODO no way to recognize, michal fixes it
+
+    if (NS_FAILED(aResult))
+      mFile = nullptr;
   }
 
+  if (NS_FAILED(aResult))
+    AsyncDoom(nullptr);
+
   InvokeCallbacks();
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP CacheEntry::OnFileDoomed(nsresult aResult)
+{
+  nsCOMPtr<nsICacheEntryDoomCallback> callback;
+  {
+    mozilla::MutexAutoLock lock(mLock);
+    mDoomCallback.swap(callback);
+  }
+
+  if (callback) {
+    nsRefPtr<DoomCallbackRunnable> event =
+      new DoomCallbackRunnable(callback, NS_OK);
+    NS_DispatchToMainThread(event);
+  }
+
+  return NS_OK;
 }
 
 void CacheEntry::AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags)
@@ -125,44 +209,26 @@ void CacheEntry::AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags
   // Call to this methods means a demand to access this entry by a single consumer.
   // Thus, update frecency.
 
-  MOZ_ASSERT(!(aFlags & nsICacheStorage::OPEN_TRUNCATE) || !(aFlags & nsICacheStorage::OPEN_READONLY));
-
   bool readonly = aFlags & nsICacheStorage::OPEN_READONLY;
-  bool loaded, loading, first;
+  bool truncate = aFlags & nsICacheStorage::OPEN_TRUNCATE;
+  MOZ_ASSERT(!readonly || !truncate);
+
+  bool loading, loaded;
   {
     mozilla::MutexAutoLock lock(mLock);
-
-    first = !mIsLoaded && !mIsLoading;
-
-    if (aFlags & nsICacheStorage::OPEN_TRUNCATE) {
-      mIsLoaded = true;
-      mIsReady = false;
-
-      if (mUseDisk) {
-        // TODO
-        // - async truncate disk file
-      }
-    }
-    else if (!mIsLoading && !mIsLoaded && !mUseDisk) {
-      // This is just an inmemory entry, nothing to load from file
-      // Just in case this entry has first been searched in disk storage
-      // and later someone opens it in memory storage, we must not set the
-      // flag since it races with file currently being loaded from disk.
-      mIsLoaded = true;
-    }
-
     loaded = mIsLoaded;
     loading = mIsLoading;
   }
 
-  if (first) {
-    BackgroundOp(Ops::REGISTER);
-  }
+  // Must not call truncate on already loaded entry
+  MOZ_ASSERT(!(truncate && loaded));
 
   if (!loaded) {
     RememberCallback(aCallback, readonly);
-    if (!loading)
-      Load();
+    if (!loading) {
+      BackgroundOp(Ops::REGISTER);
+      Load(truncate);
+    }
 
     return;
   }
@@ -256,6 +322,14 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
       LOG(("  replacing entry %p", this));
       nsRefPtr<CacheEntry> newEntry;
 
+      // Grab all callbacks first, it makes this code reentrant
+      nsCOMArray<nsICacheEntryOpenCallback> callbacks, readOnlyCallbacks;
+      {
+        mozilla::MutexAutoLock lock(mLock);
+        mCallbacks.SwapElements(callbacks);
+        mReadOnlyCallbacks.SwapElements(readOnlyCallbacks);
+      }
+
       // The following call dooms this (current) entry and creates a new one for the
       // URL in the same storage.  We then transfer callbacks to that new entry.
       // NOTE: dooming _posts_ InvokeCallbacks() on this entry so that this code
@@ -269,19 +343,15 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
 
       if (NS_SUCCEEDED(rv)) {
         newEntry->AsyncOpen(aCallback, nsICacheStorage::OPEN_TRUNCATE);
-
-        nsCOMArray<nsICacheEntryOpenCallback> callbacks, readOnlyCallbacks;
-        {
-          mozilla::MutexAutoLock lock(mLock);
-          mCallbacks.SwapElements(callbacks);
-          mReadOnlyCallbacks.SwapElements(readOnlyCallbacks);
-        }
         newEntry->TransferCallbacks(callbacks, readOnlyCallbacks);
+
+        // aCallback transfered to the new entry
+        return true;
       }
 
-      // aCallback transfered to the new entry
-      if (NS_SUCCEEDED(rv))
-        return true;
+      mozilla::MutexAutoLock lock(mLock);
+      mCallbacks.AppendElements(callbacks);
+      mReadOnlyCallbacks.AppendElements(readOnlyCallbacks);
     }
   }
   else if (writing) {
@@ -319,8 +389,6 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
   bool ready, doomed;
   {
     mozilla::MutexAutoLock lock(mLock);
-    ++mFetchCount;
-    mLastFetched = uint32_t(PR_Now() / int64_t(PR_USEC_PER_SEC));
 
     ready = mIsReady;
     doomed = mIsDoomed;
@@ -367,8 +435,6 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
     return;
   }
 
-  // TODO - here is the place to start opening the file, but maybe we can
-  // do it even sooner... failures of OnCacheEntryAvailable are IMO uncommon.
   LOG(("  writing"));
 }
 
@@ -410,6 +476,13 @@ void CacheEntry::TransferCallbacks(nsCOMArray<nsICacheEntryOpenCallback> const &
     BackgroundOp(Ops::CALLBACKS, true);
 }
 
+already_AddRefed<CacheFile> CacheEntry::File()
+{
+  mozilla::MutexAutoLock lock(mLock);
+  nsRefPtr<CacheFile> file(mFile);
+  return file.forget();
+}
+
 bool CacheEntry::UsingDisk() const
 {
   CacheStorageService::Self()->Lock().AssertCurrentThreadOwns();
@@ -419,6 +492,8 @@ bool CacheEntry::UsingDisk() const
 
 bool CacheEntry::SetUsingDisk(bool aUsingDisk)
 {
+  // Called by the service when this entry is reopen to reflect
+  // demanded storage target.
   CacheStorageService::Self()->Lock().AssertCurrentThreadOwns();
 
   bool changed = mUseDisk != aUsingDisk;
@@ -450,18 +525,24 @@ uint32_t CacheEntry::GetDataMemoryOccupation() const
 
 NS_IMETHODIMP CacheEntry::GetPersistToDisk(bool *aPersistToDisk)
 {
-  mozilla::MutexAutoLock lock(CacheStorageService::Self()->Lock());
-
+  // No need to sync when only reading.
+  // When consumer needs to be consistent with state of the memory storage entries
+  // table, then let it use GetUseDisk getter that must be called under the service lock.
   *aPersistToDisk = mUseDisk;
   return NS_OK;
 }
 NS_IMETHODIMP CacheEntry::SetPersistToDisk(bool aPersistToDisk)
 {
+  if (mUseDisk == aPersistToDisk)
+    return NS_OK;
+
   mozilla::MutexAutoLock lock(CacheStorageService::Self()->Lock());
 
   mUseDisk = aPersistToDisk;
   CacheStorageService::Self()->RecordMemoryOnlyEntry(
     this, !aPersistToDisk, false /* don't overwrite */);
+
+  // File persistence is setup just before we open output stream on it.
 
   return NS_OK;
 }
@@ -473,37 +554,84 @@ NS_IMETHODIMP CacheEntry::GetKey(nsACString & aKey)
 
 NS_IMETHODIMP CacheEntry::GetFetchCount(int32_t *aFetchCount)
 {
-  *aFetchCount = mFetchCount;
-  return NS_OK;
+  nsRefPtr<CacheFile> file(File());
+  if (!file)
+    return NS_ERROR_NOT_AVAILABLE;
+
+  mozilla::MutexAutoLock lock(*file->GetLock());
+
+  CacheFileMetadata* metadata = file->Metadata();
+  MOZ_ASSERT(metadata);
+  NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
+
+  return metadata->GetFetchCount(reinterpret_cast<uint32_t*>(aFetchCount));
 }
 
 NS_IMETHODIMP CacheEntry::GetLastFetched(uint32_t *aLastFetched)
 {
-  *aLastFetched = mLastFetched;
-  return NS_OK;
+  nsRefPtr<CacheFile> file(File());
+  if (!file)
+    return NS_ERROR_NOT_AVAILABLE;
+
+  mozilla::MutexAutoLock lock(*file->GetLock());
+
+  CacheFileMetadata* metadata = file->Metadata();
+  MOZ_ASSERT(metadata);
+  NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
+
+  return metadata->GetLastFetched(aLastFetched);
 }
 
 NS_IMETHODIMP CacheEntry::GetLastModified(uint32_t *aLastModified)
 {
-  *aLastModified = mLastModified;
+  nsRefPtr<CacheFile> file(File());
+  if (!file)
+    return NS_ERROR_NOT_AVAILABLE;
+
+  mozilla::MutexAutoLock lock(*file->GetLock());
+
+  CacheFileMetadata* metadata = file->Metadata();
+  MOZ_ASSERT(metadata);
+  NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
+
+  return metadata->GetLastModified(aLastModified);
   return NS_OK;
 }
 
 NS_IMETHODIMP CacheEntry::GetExpirationTime(uint32_t *aExpirationTime)
 {
-  mozilla::MutexAutoLock lock(mLock);
-  *aExpirationTime = mExpirationTime;
-  return NS_OK;
+  nsRefPtr<CacheFile> file(File());
+  if (!file)
+    return NS_ERROR_NOT_AVAILABLE;
+
+  mozilla::MutexAutoLock lock(*file->GetLock());
+
+  CacheFileMetadata* metadata = file->Metadata();
+  MOZ_ASSERT(metadata);
+  NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
+
+  return metadata->GetExpirationTime(aExpirationTime);
 }
 
-NS_IMETHODIMP CacheEntry::SetExpirationTime(uint32_t expirationTime)
+NS_IMETHODIMP CacheEntry::SetExpirationTime(uint32_t aExpirationTime)
 {
+  nsRefPtr<CacheFile> file(File());
+  if (!file)
+    return NS_ERROR_NOT_AVAILABLE;
+
   {
-    mozilla::MutexAutoLock lock(mLock);
-    mExpirationTime = expirationTime;
+    mozilla::MutexAutoLock lock(*file->GetLock());
+
+    CacheFileMetadata* metadata = file->Metadata();
+    MOZ_ASSERT(metadata);
+    NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
+
+    nsresult rv = metadata->SetExpirationTime(aExpirationTime);
+    NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  BackgroundOp(Ops::EXPTIMEUPDATE);
+  // Aligned assignment, thus atomic.
+  mSortingExpirationTime = aExpirationTime;
   return NS_OK;
 }
 
@@ -511,29 +639,35 @@ NS_IMETHODIMP CacheEntry::OpenInputStream(uint32_t offset, nsIInputStream * *_re
 {
   LOG(("CacheEntry::OpenInputStream [this=%p]", this));
 
-  mozilla::MutexAutoLock lock(mLock);
+  nsRefPtr<CacheFile> file;
+  {
+    mozilla::MutexAutoLock lock(mLock);
 
-  if (mIsDoomed) {
-    LOG(("  doomed..."));
-    return NS_ERROR_NOT_AVAILABLE;
+    if (mIsDoomed) {
+      LOG(("  doomed..."));
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+
+    file = mFile;
   }
+
+  if (!file)
+    return NS_ERROR_NOT_AVAILABLE;
 
   nsresult rv;
 
-  // HACK...
-  if (!mStorageStream) {
-    LOG(("  create storage stream (read)"));
-
-    mStorageStream = do_CreateInstance("@mozilla.org/storagestream;1", &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = mStorageStream->Init(4096, (uint32_t) -1, nullptr);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  rv = mStorageStream->NewInputStream(offset, _retval);
+  nsCOMPtr<nsIInputStream> stream;
+  rv = file->OpenInputStream(getter_AddRefs(stream));
   NS_ENSURE_SUCCESS(rv, rv);
 
+  nsCOMPtr<nsISeekableStream> seekable =
+    do_QueryInterface(stream, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = seekable->Seek(nsISeekableStream::NS_SEEK_SET, offset);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  stream.forget(_retval);
   return NS_OK;
 }
 
@@ -541,56 +675,43 @@ NS_IMETHODIMP CacheEntry::OpenOutputStream(uint32_t offset, nsIOutputStream * *_
 {
   LOG(("CacheEntry::OpenOutputStream [this=%p]", this));
 
-  mozilla::MutexAutoLock lock(mLock);
+  nsRefPtr<CacheFile> file;
+  {
+    mozilla::MutexAutoLock lock(mLock);
 
-  if (mIsDoomed) {
-    LOG(("  doomed..."));
-    return NS_ERROR_NOT_AVAILABLE;
+    if (mIsDoomed) {
+      LOG(("  doomed..."));
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+
+    file = mFile;
   }
+
+  if (!file)
+    return NS_ERROR_NOT_AVAILABLE;
 
   nsresult rv;
 
-  // HACK...
-  if (mStorageStream) {
-    uint32_t dataSize;
-    rv = mStorageStream->GetLength(&dataSize);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    if (offset == dataSize) {
-      // stream will append (partial content)
-      LOG(("  appending"));
-    }
-    else if (offset == 0) {
-      // new data is about to be written
-      // HACK - throw the current storage stream away, active read consumers
-      // will use the old stream, new ones will use the newly created bellow
-      mStorageStream = nullptr;
-      // TODO? - file will just rewrite, no need for any special stuff
-      LOG(("  rewriting"));
-    }
-    else {
-      // We don't know anything else than rewrite from start or append :(
-      // TODO ?
-      LOG(("  NOT SUPPORTED - neither append nor rewrite, size=%u, offset=%u", dataSize, offset));
-      MOZ_ASSERT(false);
-      return NS_ERROR_NOT_IMPLEMENTED;
-    }
-  }
-
-  if (!mStorageStream) {
-    LOG(("  create storage stream"));
-
-    mStorageStream = do_CreateInstance("@mozilla.org/storagestream;1", &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = mStorageStream->Init(4096, (uint32_t) -1, nullptr);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  rv = mStorageStream->GetOutputStream(offset, getter_AddRefs(mOutputStream));
+  // No need to sync on mUseDisk here, we don't need to be consistent
+  // with content of memory storage entries hash table.
+  // TODO test no-store response followed by normal response ; maybe
+  // reopen the file here?  what to do with the metadata?  probably reopen
+  // the file in CacheFile internally
+  rv = file->SetMemoryOnly(!mUseDisk);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  NS_ADDREF(*_retval = new OutputStreamHook(this));
+  nsCOMPtr<nsIOutputStream> stream;
+  rv = file->OpenOutputStream(getter_AddRefs(stream));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsISeekableStream> seekable =
+    do_QueryInterface(stream, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = seekable->Seek(nsISeekableStream::NS_SEEK_SET, offset);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  stream.forget(_retval);
   return NS_OK;
 }
 
@@ -607,14 +728,89 @@ NS_IMETHODIMP CacheEntry::SetPredictedDataSize(int64_t aPredictedDataSize)
 
 NS_IMETHODIMP CacheEntry::GetSecurityInfo(nsISupports * *aSecurityInfo)
 {
-  mozilla::MutexAutoLock lock(mLock);
-  NS_IF_ADDREF(*aSecurityInfo = mSecurityInfo);
+  nsRefPtr<CacheFile> file;
+  {
+    mozilla::MutexAutoLock lock(mLock);
+
+    if (mSecurityInfoLoaded) {
+      NS_IF_ADDREF(*aSecurityInfo = mSecurityInfo);
+      return NS_OK;
+    }
+
+    if (!mFile)
+      return NS_ERROR_NOT_AVAILABLE;
+
+    file = mFile;
+  }
+
+  char const* info;
+  nsCOMPtr<nsISupports> secInfo;
+  {
+    mozilla::MutexAutoLock lock(*file->GetLock());
+
+    CacheFileMetadata* metadata = file->Metadata();
+    MOZ_ASSERT(metadata);
+    NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
+
+    info = metadata->GetElement("security-info");
+  }
+
+  if (info) {
+    nsresult rv = NS_DeserializeObject(nsDependentCString(info),
+                                       getter_AddRefs(secInfo));
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  {
+    mozilla::MutexAutoLock lock(mLock);
+
+    mSecurityInfoLoaded = true;
+    mSecurityInfo.swap(secInfo);
+
+    NS_IF_ADDREF(*aSecurityInfo = mSecurityInfo);
+  }
+
   return NS_OK;
 }
 NS_IMETHODIMP CacheEntry::SetSecurityInfo(nsISupports *aSecurityInfo)
 {
-  mozilla::MutexAutoLock lock(mLock);
-  mSecurityInfo = aSecurityInfo;
+  nsresult rv;
+
+  nsRefPtr<CacheFile> file;
+  {
+    mozilla::MutexAutoLock lock(mLock);
+
+    mSecurityInfo = aSecurityInfo;
+    mSecurityInfoLoaded = true;
+
+    if (!mFile)
+      return NS_ERROR_NOT_AVAILABLE;
+
+    file = mFile;
+  }
+
+  nsCOMPtr<nsISerializable> serializable =
+    do_QueryInterface(aSecurityInfo);
+  if (aSecurityInfo && !serializable)
+    return NS_ERROR_UNEXPECTED;
+
+  nsCString info;
+  if (serializable) {
+    rv = NS_SerializeToString(serializable, info);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  {
+    mozilla::MutexAutoLock lock(*file->GetLock());
+
+    CacheFileMetadata* metadata = file->Metadata();
+    MOZ_ASSERT(metadata);
+    NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
+
+    rv = metadata->SetElement("security-info", info.Length() ? info.get() : nullptr);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
   return NS_OK;
 }
 
@@ -622,10 +818,7 @@ NS_IMETHODIMP CacheEntry::GetStorageDataSize(uint32_t *aStorageDataSize)
 {
   mozilla::MutexAutoLock lock(mLock);
 
-  if (!mStorageStream)
-    return NS_ERROR_NOT_AVAILABLE;
-
-  mStorageStream->GetLength(aStorageDataSize);
+  *aStorageDataSize = 0; // will be reported in callback from file or a getter on file will be exposed
   return NS_OK;
 }
 
@@ -643,56 +836,48 @@ NS_IMETHODIMP CacheEntry::AsyncDoom(nsICacheEntryDoomCallback *aCallback)
 
   // Immediately remove the entry from the storage hash table
   CacheStorageService::Self()->RemoveEntry(this);
-
   BackgroundOp(Ops::DOOM);
 
   return NS_OK;
 }
 
-NS_IMETHODIMP CacheEntry::GetMetaDataElement(const char * key, char * *_retval)
+NS_IMETHODIMP CacheEntry::GetMetaDataElement(const char * aKey, char * *aRetval)
 {
-  mozilla::MutexAutoLock lock(mLock);
-
-  nsCString value;
-  if (!mMetadata.Get(nsDependentCString(key), &value))
+  nsRefPtr<CacheFile> file(File());
+  if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  *_retval = NS_strdup(value.get());
+  mozilla::MutexAutoLock lock(*file->GetLock());
+
+  CacheFileMetadata* metadata = file->Metadata();
+  MOZ_ASSERT(metadata);
+  NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
+
+  char const *value = metadata->GetElement(aKey);
+  if (!value)
+    return NS_ERROR_NOT_AVAILABLE;
+
+  *aRetval = NS_strdup(value);
   return NS_OK;
 }
 
-NS_IMETHODIMP CacheEntry::SetMetaDataElement(const char * key, const char * value)
+NS_IMETHODIMP CacheEntry::SetMetaDataElement(const char * aKey, const char * aValue)
 {
-  mozilla::MutexAutoLock lock(mLock);
+  nsRefPtr<CacheFile> file(File());
+  if (!file)
+    return NS_ERROR_NOT_AVAILABLE;
 
-  nsCString existingValue;
-  if (!mMetadata.Get(nsDependentCString(key), &existingValue)) {
-    if (!value) {
-      return NS_OK;
-    }
+  mozilla::MutexAutoLock lock(*file->GetLock());
 
-    mMetadataMemoryOccupation += strlen(key);
-  }
-  else {
-    mMetadataMemoryOccupation -= existingValue.Length();
-  }
+  CacheFileMetadata* metadata = file->Metadata();
+  MOZ_ASSERT(metadata);
+  NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
 
-  if (!value) {
-    mMetadata.Remove(nsDependentCString(key));
-    mMetadataMemoryOccupation -= strlen(key);
-  }
-  else {
-    nsDependentCString newValue(value);
-    mMetadataMemoryOccupation += newValue.Length();
-    mMetadata.Put(nsDependentCString(key), newValue);
-  }
-
-  return NS_OK;
+  return metadata->SetElement(aKey, aValue);
 }
 
 NS_IMETHODIMP CacheEntry::MetaDataReady()
 {
-  // Needs a lock..
   LOG(("CacheEntry::MetaDataReady [this=%p, ready=%d]", this, (bool)mIsReady));
 
   {
@@ -704,6 +889,7 @@ NS_IMETHODIMP CacheEntry::MetaDataReady()
     mIsWriting = false;
   }
 
+  BackgroundOp(Ops::REPORTUSAGE);
   InvokeCallbacks();
   return NS_OK;
 }
@@ -719,15 +905,21 @@ NS_IMETHODIMP CacheEntry::GetDataSize(uint32_t *aDataSize)
 {
   *aDataSize = 0;
 
-  mozilla::MutexAutoLock lock(mLock);
-  if (!mStorageStream)
-    return NS_OK;
+  nsRefPtr<CacheFile> file;
+  {
+    mozilla::MutexAutoLock lock(mLock);
+    if (mIsWriting)
+      return NS_ERROR_IN_PROGRESS;
 
-  if (mIsWriting)
-    return NS_ERROR_IN_PROGRESS;
+    mFile = file;
+  }
 
   // mayhemer: TODO Problem with compression
-  return mStorageStream->GetLength(aDataSize);
+  if (!file)
+    return NS_OK; // really OK?
+
+  *aDataSize = file->DataSize();
+  return NS_OK;
 }
 
 NS_IMETHODIMP CacheEntry::MarkValid()
@@ -819,12 +1011,6 @@ bool CacheEntry::Purge(uint32_t aWhat)
   MOZ_ASSERT(CacheStorageService::IsOnManagementThread());
 
   {
-    mozilla::MutexAutoLock lock(mLock);
-    if (mIsWriting) {
-      LOG(("  is writing"));
-      return false;
-    }
-
     switch (aWhat) {
     case PURGE_DATA_ONLY_DISK_BACKED:
     case PURGE_WHOLE_ONLY_DISK_BACKED:
@@ -833,6 +1019,18 @@ bool CacheEntry::Purge(uint32_t aWhat)
         LOG(("  not using disk"));
         return false;
       }
+    }
+
+    mozilla::MutexAutoLock lock(mLock);
+
+    if (mIsWriting || mIsLoading || mFrecency == 0) {
+      // In-progress (write or load) entries should (at least for consistency and from
+      // the logical point of view) stay in memory.
+      // Zero-frecency entries are those which have never been given to any consumer, those
+      // are actually very fresh and should not go just because frecency had not been set
+      // so far.
+      LOG(("  is writing=%d, loading=%d, frecency=%1.10f", mIsWriting, mIsLoading, mFrecency));
+      return false;
     }
   }
 
@@ -853,13 +1051,16 @@ bool CacheEntry::Purge(uint32_t aWhat)
     {
       uint32_t metadataSize;
 
+      nsRefPtr<CacheFile> file;
       {
         mozilla::MutexAutoLock lock(mLock);
-        // HACK - throw the stream away
-        mStorageStream = nullptr;
-        mOutputStream = nullptr;
-
+        file = mFile;
         metadataSize = mMetadataMemoryOccupation;
+      }
+
+      if (file) {
+        // TODO
+        // file->ThrowMemoryCachedData();
       }
 
       CacheStorageService::Self()->OnMemoryConsumptionChange(this, metadataSize);
@@ -901,18 +1102,18 @@ void CacheEntry::DoomAlreadyRemoved()
   CacheStorageService::Self()->OnMemoryConsumptionChange(this, 0);
 
   nsCOMPtr<nsICacheEntryDoomCallback> callback;
+  nsRefPtr<CacheFile> file;
   bool invokeCallbacks;
   {
     mozilla::MutexAutoLock lock(mLock);
 
-    // HACK - throw the stream away
-    mStorageStream = nullptr;
-    // TODO
-    // - release buffers
-    // - doom the file
-
     invokeCallbacks = mCallbacks.Length() || mReadOnlyCallbacks.Length();
-    mDoomCallback.swap(callback);
+
+    // Otherwise wait for the file to be doomed
+    if (!mFile)
+      mDoomCallback.swap(callback);
+    else
+      file = mFile;
   }
 
   if (invokeCallbacks) {
@@ -921,7 +1122,10 @@ void CacheEntry::DoomAlreadyRemoved()
     BackgroundOp(Ops::CALLBACKS, true);
   }
 
-  if (callback) {
+  if (file) {
+    file->Doom(this);
+  }
+  else if (callback) {
     nsRefPtr<DoomCallbackRunnable> event =
       new DoomCallbackRunnable(callback, NS_OK);
     NS_DispatchToMainThread(event);
@@ -965,37 +1169,10 @@ void CacheEntry::BackgroundOp(uint32_t aOperations, bool aForceAsync)
     LOG(("CacheEntry FRECENCYUPDATE [this=%p, frecency=%1.10f]", this, mFrecency));
   }
 
-  if (aOperations & Ops::EXPTIMEUPDATE) {
-    mozilla::MutexAutoLock lock(mLock);
-    mSortingExpirationTime = mExpirationTime;
-    LOG(("CacheEntry EXPTIMEUPDATE [this=%p, exptime=%u (now=%u)]",
-      this, mSortingExpirationTime, NowInSeconds()));
-  }
-
   if (aOperations & Ops::REGISTER) {
     LOG(("CacheEntry REGISTER [this=%p]", this));
 
     CacheStorageService::Self()->RegisterEntry(this);
-  }
-
-  if (aOperations & Ops::LOAD) {
-    LOG(("CacheEntry LOAD [this=%p]", this));
-
-    // HACK
-    // Nothing to load (metadata not ready), this is only an inmemory hack
-    // TODO Demand the file here?
-    {
-      mozilla::MutexAutoLock lock(mLock);
-      mIsReady = false;
-    }
-
-    BackgroundOp(Ops::LOADED, true);
-  }
-
-  if (aOperations & Ops::LOADED) {
-    LOG(("CacheEntry LOADED [this=%p]", this));
-
-    OnLoaded();
   }
 
   if (aOperations & Ops::REPORTUSAGE) {
