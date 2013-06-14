@@ -13,15 +13,23 @@
 #include "nsICacheEntryOpenCallback.h"
 #include "nsICacheStorage.h"
 #include "nsISerializable.h"
+#include "nsIStreamTransportService.h"
+#include "nsIPipe.h"
 
 #include "nsComponentManagerUtils.h"
+#include "nsServiceManagerUtils.h"
 #include "nsString.h"
 #include "nsProxyRelease.h"
 #include "nsSerializationHelper.h"
+#include "nsStreamUtils.h"
 #include <math.h>
 
 namespace mozilla {
 namespace net {
+
+static uint32_t const ENTRY_NOT_VALID = nsICacheEntryOpenCallback::ENTRY_NOT_VALID;
+static uint32_t const ENTRY_VALID = nsICacheEntryOpenCallback::ENTRY_VALID;
+static uint32_t const ENTRY_NEEDS_REVALIDATION = nsICacheEntryOpenCallback::ENTRY_NEEDS_REVALIDATION;
 
 NS_IMPL_THREADSAFE_ISUPPORTS1(CacheEntry::Handle, nsICacheEntry)
 
@@ -66,10 +74,12 @@ CacheEntry::CacheEntry(const nsACString& aStorageID,
 , mIsLoaded(false)
 , mIsReady(false)
 , mIsWriting(false)
+, mIsRevalidating(false)
 , mIsDoomed(false)
 , mIsRegistered(false)
 , mIsRegistrationAllowed(true)
 , mSecurityInfoLoaded(false)
+, mPreventCallbacks(false)
 , mPredictedDataSize(0)
 , mDataSize(0)
 , mMetadataMemoryOccupation(0)
@@ -134,6 +144,7 @@ void CacheEntry::Load(bool aTruncate)
 {
   LOG(("CacheEntry::Load [this=%p]", this));
 
+  bool syncOpen = false;
   {
     mozilla::MutexAutoLock lock(mLock);
 
@@ -143,6 +154,7 @@ void CacheEntry::Load(bool aTruncate)
     if (aTruncate || !mUseDisk) {
       mIsLoading = false;
       mIsLoaded = true;
+      syncOpen = true;
     }
     else {
       mIsLoading = true;
@@ -161,8 +173,8 @@ void CacheEntry::Load(bool aTruncate)
   if (NS_SUCCEEDED(rv))
     rv = mFile->Init(fileKey, aTruncate, this);
 
-  if (NS_FAILED(rv))
-    OnFileReady(rv, false);
+  if (NS_FAILED(rv) || syncOpen)
+    OnFileReady(rv, syncOpen);
 }
 
 NS_IMETHODIMP CacheEntry::OnFileReady(nsresult aResult, bool aIsNew)
@@ -243,9 +255,68 @@ void CacheEntry::AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags
   }
 }
 
+already_AddRefed<CacheEntry> CacheEntry::ReopenTruncated(nsICacheEntryOpenCallback* aCallback)
+{
+  LOG(("CacheEntry::ReopenTruncated [this=%p]", this));
+  mLock.AssertCurrentThreadOwns();
+
+  // Hold callbacks invocation, AddStorageEntry would invoke from doom prematurly
+  mPreventCallbacks = true;
+
+  nsRefPtr<CacheEntry> newEntry;
+  {
+    mozilla::MutexAutoUnlock unlock(mLock);
+
+    // The following call dooms this entry (calls DoomAlreadyRemoved on us)
+    nsresult rv = CacheStorageService::Self()->AddStorageEntry(
+      GetStorageID(), GetURI(), GetEnhanceID(),
+      mUseDisk,
+      true, // always create
+      true, // truncate existing (this one)
+      getter_AddRefs(newEntry));
+
+    LOG(("  exchanged entry %p by entry %p, rv=0x%08x", this, newEntry.get(), rv));
+
+    if (NS_SUCCEEDED(rv)) {
+      newEntry->AsyncOpen(aCallback, nsICacheStorage::OPEN_TRUNCATE);
+    }
+  }
+
+  mPreventCallbacks = false;
+
+  if (!newEntry)
+    return nullptr;
+
+  newEntry->TransferCallbacks(mCallbacks, mReadOnlyCallbacks);
+  return newEntry.forget();
+}
+
+void CacheEntry::TransferCallbacks(nsCOMArray<nsICacheEntryOpenCallback> const &aCallbacks,
+                                   nsCOMArray<nsICacheEntryOpenCallback> const &aReadOnlyCallbacks)
+{
+  bool invoke;
+  {
+    mozilla::MutexAutoLock lock(mLock);
+    LOG(("CacheEntry::TransferCallbacks [entry=%p, %d, %d, %d, %d]",
+      this, mCallbacks.Length(), mReadOnlyCallbacks.Length(), aCallbacks.Length(), aReadOnlyCallbacks.Length()));
+
+    mCallbacks.AppendObjects(aCallbacks);
+    mReadOnlyCallbacks.AppendObjects(aReadOnlyCallbacks);
+
+    invoke = mCallbacks.Length() || mReadOnlyCallbacks.Length();
+  }
+
+  if (invoke)
+    BackgroundOp(Ops::CALLBACKS, true);
+}
+
 void CacheEntry::RememberCallback(nsICacheEntryOpenCallback* aCallback,
                                   bool aReadOnly)
 {
+  // AsyncOpen can be called w/o a callback reference (when this is a new/truncated entry)
+  if (!aCallback)
+    return;
+
   LOG(("CacheEntry::RememberCallback [this=%p, cb=%p]", this, aCallback));
 
   mozilla::MutexAutoLock lock(mLock);
@@ -257,55 +328,84 @@ void CacheEntry::RememberCallback(nsICacheEntryOpenCallback* aCallback,
 
 void CacheEntry::InvokeCallbacks()
 {
-  LOG(("CacheEntry::InvokeCallbacks START [this=%p]", this));
+  LOG(("CacheEntry::InvokeCallbacks BEGIN [this=%p]", this));
 
   mozilla::MutexAutoLock lock(mLock);
 
-  while (mCallbacks.Count()) {
-    nsCOMPtr<nsICacheEntryOpenCallback> callback = mCallbacks[0];
-    mCallbacks.RemoveElementAt(0);
-
-    {
-      mozilla::MutexAutoUnlock unlock(mLock);
-      InvokeCallback(callback, false);
-    }
-
-    if (!mIsReady) {
-      // Stop invoking other callbacks since one of them
-      // is now writing to the entry.  No consumers should
-      // get this entry until metadata are filled with
-      // values downloaded from the server.
-      LOG(("CacheEntry::InvokeCallbacks DONE (not ready) [this=%p]", this));
+  do {
+    if (mPreventCallbacks) {
+      LOG(("CacheEntry::InvokeCallbacks END callbacks prevented!"));
       return;
     }
-  }
+
+    if (!mCallbacks.Count()) {
+      LOG(("  no r/w callbacks"));
+      break;
+    }
+
+    nsCOMPtr<nsICacheEntryOpenCallback> callback = mCallbacks[0];
+
+    CallbackResult result;
+    {
+      mozilla::MutexAutoUnlock unlock(mLock);
+      result = InvokeCallback(callback, false);
+    }
+
+    switch (result) {
+    case BYPASSED:
+      LOG(("CacheEntry::InvokeCallbacks END callback bypassed"));
+      return;
+
+    case INVALID: {
+      mCallbacks.RemoveElementAt(0);
+      nsRefPtr<CacheEntry> newEntry = ReopenTruncated(callback);
+      if (newEntry)
+        return;
+
+      // Failed to create a new entry.
+      // We must tell the currently iterated consumer that renew failed.
+      mCallbacks.AppendElement(callback);
+      break;
+    }
+
+    case INVOKED:
+      mCallbacks.RemoveElementAt(0);
+      // Go to the next callback.
+      break;
+    }
+  } while (true);
 
   while (mReadOnlyCallbacks.Count()) {
     nsCOMPtr<nsICacheEntryOpenCallback> callback = mReadOnlyCallbacks[0];
 
     {
       mozilla::MutexAutoUnlock unlock(mLock);
-      if (!InvokeCallback(callback, true)) {
+      if (InvokeCallback(callback, true) == BYPASSED) {
         // Didn't trigger, so we must stop
         break;
       }
     }
 
-    mReadOnlyCallbacks.RemoveElement(callback);
+    mReadOnlyCallbacks.RemoveElementAt(0);
   }
 
-  LOG(("CacheEntry::InvokeCallbacks DONE [this=%p]", this));
+  LOG(("CacheEntry::InvokeCallbacks END [this=%p]", this));
 }
 
-bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
-                                bool aReadOnly)
+CacheEntry::CallbackResult
+CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
+                           bool aReadOnly)
 {
   LOG(("CacheEntry::InvokeCallback [this=%p, cb=%p]", this, aCallback));
+
+  if (!aCallback)
+    return INVOKED; // simulate we've done the work to prevent any endless loops
+
   // When we are here, the entry must be loaded from disk
   MOZ_ASSERT(mIsLoaded);
   MOZ_ASSERT(!mIsLoading);
 
-  bool ready, writing, doomed;
+  bool ready, writing, doomed, reval;
   {
     mozilla::MutexAutoLock lock(mLock);
     LOG(("  ready=%d, loaded=%d, writing=%d, doomed=%d",
@@ -314,58 +414,48 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
     ready = mIsReady;
     writing = mIsWriting;
     doomed = mIsDoomed;
+    reval = mIsRevalidating;
   }
 
-  if (ready && !doomed) {
-    // Metadata present, validate the entry
-    bool isValid;
-    nsresult rv = aCallback->OnCacheEntryCheck(this, nullptr, &isValid);
-    LOG(("  OnCacheEntryCheck result: rv=0x%08x, valid=%d", rv, isValid));
-
-    if ((NS_FAILED(rv) || !isValid) && !aReadOnly) {
-      LOG(("  replacing entry %p", this));
-      nsRefPtr<CacheEntry> newEntry;
-
-      // Grab all callbacks first, it makes this code reentrant
-      nsCOMArray<nsICacheEntryOpenCallback> callbacks, readOnlyCallbacks;
-      {
-        mozilla::MutexAutoLock lock(mLock);
-        mCallbacks.SwapElements(callbacks);
-        mReadOnlyCallbacks.SwapElements(readOnlyCallbacks);
-      }
-
-      // The following call dooms this (current) entry and creates a new one for the
-      // URL in the same storage.  We then transfer callbacks to that new entry.
-      // NOTE: dooming _posts_ InvokeCallbacks() on this entry so that this code
-      // is not reentered.
-      rv = CacheStorageService::Self()->AddStorageEntry(
-        GetStorageID(), GetURI(), GetEnhanceID(),
-        mUseDisk,
-        true, // always create
-        true, // truncate existing (this one)
-        getter_AddRefs(newEntry));
-
-      if (NS_SUCCEEDED(rv)) {
-        newEntry->AsyncOpen(aCallback, nsICacheStorage::OPEN_TRUNCATE);
-        newEntry->TransferCallbacks(callbacks, readOnlyCallbacks);
-
-        // aCallback transfered to the new entry
-        return true;
-      }
-
-      mozilla::MutexAutoLock lock(mLock);
-      mCallbacks.AppendElements(callbacks);
-      mReadOnlyCallbacks.AppendElements(readOnlyCallbacks);
+  if (!doomed) {
+    if (writing || reval) {
+      // Prevent invoking other callbacks since one of them is now writing
+      // or revalidating this entry.  No consumers should get this entry
+      // until metadata are filled with values downloaded from the server
+      // or the entry revalidated.
+      LOG(("  entry is being written/revalidated, callback bypassed"));
+      return BYPASSED;
     }
-  }
-  else if (writing) {
-    // Not ready and writing, don't let others interfer.
-    LOG(("  entry is being written, callback bypassed"));
-    return false;
+
+    if (ready && !aReadOnly) {
+      // Metadata present, validate the entry
+      uint32_t validityState;
+      nsresult rv = aCallback->OnCacheEntryCheck(this, nullptr, &validityState);
+      LOG(("  OnCacheEntryCheck result: rv=0x%08x, validity=%d", rv, validityState));
+
+      if (NS_FAILED(rv))
+        validityState = ENTRY_NOT_VALID;
+
+      switch (validityState) {
+      case ENTRY_NOT_VALID:
+        // Entry found not valid, break callback execution.  This result
+        // will cause this entry replacement with a new truncated one.
+        return INVALID;
+
+      case ENTRY_NEEDS_REVALIDATION:
+        LOG(("  will be holding callbacks until entry is revalidated"));
+        mIsRevalidating = true;
+        // NO BREAK
+
+      case ENTRY_VALID:
+        // Nothing more to do here, proceed to callback...
+        break;
+      }
+    }
   }
 
   InvokeAvailableCallback(aCallback, aReadOnly);
-  return true;
+  return INVOKED;
 }
 
 void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
@@ -389,12 +479,14 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
     return;
   }
 
+  // This happens only on the main thread / :( /
 
-  bool ready, doomed;
+  bool ready, doomed, reval;
   {
     mozilla::MutexAutoLock lock(mLock);
 
     ready = mIsReady;
+    reval = mIsRevalidating;
     doomed = mIsDoomed;
   }
 
@@ -404,7 +496,7 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
     return;
   }
 
-  if (ready) {
+  if (ready && !reval) {
     LOG(("  ready, notifying OCEA with entry and NS_OK"));
     BackgroundOp(Ops::FRECENCYUPDATE);
     aCallback->OnCacheEntryAvailable(this, false, nullptr, NS_OK);
@@ -412,16 +504,18 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
   }
 
   if (aReadOnly) {
+    // NOTE: we cannot get here while waiting for revalidation
     LOG(("  r/o and not ready, notifying OCEA with NS_ERROR_CACHE_KEY_NOT_FOUND"));
     aCallback->OnCacheEntryAvailable(nullptr, false, nullptr, NS_ERROR_CACHE_KEY_NOT_FOUND);
     return;
   }
 
-  // This is a new entry and needs to be fetched first.
+  // This is a new or potentially non-valid entry and needs to be fetched first.
   // The Handle blocks other consumers until the channel
-  // either releases the entry or marks metadata as filled.
+  // either releases the entry or marks metadata as filled or whole entry valid,
+  // i.e. until SetValid() on the entry is called.
 
-  // Consumer will be responsible to fill the entry metadata and data.
+  // Consumer will be responsible to fill or validate the entry metadata and data.
   {
     mozilla::MutexAutoLock lock(mLock);
     mIsWriting = true;
@@ -429,7 +523,7 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
 
   BackgroundOp(Ops::FRECENCYUPDATE);
   nsRefPtr<Handle> handle = new Handle(this);
-  nsresult rv = aCallback->OnCacheEntryAvailable(handle, true, nullptr, NS_OK);
+  nsresult rv = aCallback->OnCacheEntryAvailable(handle, !ready, nullptr, NS_OK);
 
   if (NS_FAILED(rv)) {
     LOG(("  writing failed (0x%08x)", rv));
@@ -446,38 +540,27 @@ void CacheEntry::OnWriterClosed(Handle const* aHandle)
 {
   LOG(("CacheEntry::OnWriterClosed [this=%p, handle=%p]", this, aHandle));
 
+  nsRefPtr<CacheFile> file;
+  bool ready;
   {
-    BackgroundOp(Ops::REPORTUSAGE);
 
     mozilla::MutexAutoLock lock(mLock);
 
     LOG(("  ready=%d, loaded=%d, writing=%d", (bool)mIsReady, (bool)mIsLoaded, (bool)mIsWriting));
-    if (!mIsWriting)
-      return;
 
     mIsWriting = false;
+    mIsRevalidating = false;
+    file = mFile;
+    ready = mIsReady;
   }
 
+  if (file && ready) {
+    // TODO
+    //file->WriteDone();
+  }
+
+  BackgroundOp(Ops::REPORTUSAGE);
   InvokeCallbacks();
-}
-
-void CacheEntry::TransferCallbacks(nsCOMArray<nsICacheEntryOpenCallback> const &aCallbacks,
-                                   nsCOMArray<nsICacheEntryOpenCallback> const &aReadOnlyCallbacks)
-{
-  bool invoke;
-  {
-    mozilla::MutexAutoLock lock(mLock);
-    LOG(("CacheEntry::TransferCallbacks [entry=%p, %d, %d, %d, %d]",
-      this, mCallbacks.Length(), mReadOnlyCallbacks.Length(), aCallbacks.Length(), aReadOnlyCallbacks.Length()));
-
-    mCallbacks.AppendObjects(aCallbacks);
-    mReadOnlyCallbacks.AppendObjects(aReadOnlyCallbacks);
-
-    invoke = aCallbacks.Length() || aReadOnlyCallbacks.Length();
-  }
-
-  if (invoke)
-    BackgroundOp(Ops::CALLBACKS, true);
 }
 
 already_AddRefed<CacheFile> CacheEntry::File()
@@ -639,6 +722,21 @@ NS_IMETHODIMP CacheEntry::SetExpirationTime(uint32_t aExpirationTime)
   return NS_OK;
 }
 
+NS_IMETHODIMP CacheEntry::Recreate(nsICacheEntry **_retval)
+{
+  {
+    mozilla::MutexAutoLock lock(mLock);
+    nsRefPtr<CacheEntry> newEntry = ReopenTruncated(nullptr);
+    if (newEntry) {
+      newEntry.forget(_retval);
+      return NS_OK;
+    }
+  }
+
+  BackgroundOp(Ops::CALLBACKS, true);
+  return NS_OK;
+}
+
 NS_IMETHODIMP CacheEntry::OpenInputStream(uint32_t offset, nsIInputStream * *_retval)
 {
   LOG(("CacheEntry::OpenInputStream [this=%p]", this));
@@ -697,10 +795,7 @@ NS_IMETHODIMP CacheEntry::OpenOutputStream(uint32_t offset, nsIOutputStream * *_
   nsresult rv;
 
   // No need to sync on mUseDisk here, we don't need to be consistent
-  // with content of memory storage entries hash table.
-  // TODO test no-store response followed by normal response ; maybe
-  // reopen the file here?  what to do with the metadata?  probably reopen
-  // the file in CacheFile internally
+  // with content of the memory storage entries hash table.
   rv = file->SetMemoryOnly(!mUseDisk);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -715,7 +810,28 @@ NS_IMETHODIMP CacheEntry::OpenOutputStream(uint32_t offset, nsIOutputStream * *_
   rv = seekable->Seek(nsISeekableStream::NS_SEEK_SET, offset);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  stream.forget(_retval);
+  // MEMORY COPYING !
+  // Unfortunatelly, our consumer here is nsStreamTee, that requires
+  // blocking stream as its sink.  The stream we get from CacheFile
+  // is non-blocking, so we need to buffer :(
+  nsCOMPtr<nsIAsyncOutputStream> pipeOut;
+  nsCOMPtr<nsIAsyncInputStream> pipeIn;
+  rv = NS_NewPipe2(getter_AddRefs(pipeIn),
+                   getter_AddRefs(pipeOut),
+                   true, // non-blocking input
+                   false, // blocking output
+                   4096, (uint32_t)-1);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIEventTarget> streamTransportThread =
+    do_GetService("@mozilla.org/network/stream-transport-service;1", &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = NS_AsyncCopy(pipeIn, stream, streamTransportThread,
+                    NS_ASYNCCOPY_VIA_READSEGMENTS, 4096);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  CallQueryInterface(pipeOut, _retval);
   return NS_OK;
 }
 
@@ -880,17 +996,16 @@ NS_IMETHODIMP CacheEntry::SetMetaDataElement(const char * aKey, const char * aVa
   return metadata->SetElement(aKey, aValue);
 }
 
-NS_IMETHODIMP CacheEntry::MetaDataReady()
+NS_IMETHODIMP CacheEntry::SetValid()
 {
-  LOG(("CacheEntry::MetaDataReady [this=%p, ready=%d]", this, (bool)mIsReady));
+  LOG(("CacheEntry::SetValid [this=%p, ready=%d]", this, (bool)mIsReady));
 
   {
     mozilla::MutexAutoLock lock(mLock);
-    if (mIsReady)
-      return NS_OK;
 
     mIsReady = true;
     mIsWriting = false;
+    mIsRevalidating = false;
   }
 
   BackgroundOp(Ops::REPORTUSAGE);
@@ -1122,7 +1237,7 @@ void CacheEntry::DoomAlreadyRemoved()
 
   if (invokeCallbacks) {
     // Must force post here since may be indirectly called from
-    // InvokeCallback of this entry and we don't want reentrancy here.
+    // InvokeCallbacks of this entry and we don't want reentrancy here.
     BackgroundOp(Ops::CALLBACKS, true);
   }
 
