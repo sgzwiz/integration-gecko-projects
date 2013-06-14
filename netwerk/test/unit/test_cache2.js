@@ -110,7 +110,7 @@ OpenCallback.prototype =
         }
         catch(ex) {}
         entry.setMetaDataElement("meto", self.workingMetadata);
-        entry.metaDataReady();
+        entry.setValid();
         do_execute_soon(function() { // emulate more network latency
           var os = entry.openOutputStream(0);
           var wrt = os.write(self.workingData, self.workingData.length);
@@ -549,6 +549,7 @@ function run_test_evict_all()
 
 function run_test()
 {
+  do_get_profile();
   run_test_basic();
   do_test_pending();
 }

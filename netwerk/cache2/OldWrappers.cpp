@@ -209,7 +209,7 @@ _OldGenericCacheLoad::OnCacheEntryAvailable(nsICacheEntryDescriptor *entry,
   mNew = !entry || !(access & nsICache::ACCESS_READ);
 
   if (entry && !mNew) {
-    bool valid;
+    uint32_t valid;
     nsresult rv = mCallback->OnCacheEntryCheck(mCacheEntry, mAppCache, &valid);
     LOG(("OnCacheEntryCheck result ent=%p, cb=%p, appcache=%p, rv=0x%08x",
       mCacheEntry.get(), mCallback.get(), mAppCache.get(), rv));

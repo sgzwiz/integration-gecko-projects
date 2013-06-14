@@ -7,9 +7,26 @@
 interface nsICacheEntry;
 interface nsIApplicationCache;
 
-[scriptable, uuid(9d678295-b1d8-4174-b5d1-86068a380421)]
+[scriptable, uuid(da600c23-0750-4f49-9761-8a27635db419)]
 interface nsICacheEntryOpenCallback : nsISupports
 {
+  /**
+   * State of the entry determined by onCacheEntryCheck.
+   *
+   * ENTRY_NOT_VALID - entry has been found unusable right during the examination
+   *    by the callback.
+   * ENTRY_VALID - entry has been found valid and can be directly used w/o any
+   *    revalidation with the server
+   * ENTRY_NEEDS_REVALIDATION - entry needs to be revalidated first with origin server,
+   *    this means the loading channel will decide whether to use the entry content
+   *    as is after it gets a positive response from the server about validity of the
+   *    content ; when a new content needs to be loaded from the server, the loading
+   *    channel opens a new entry with OPEN_TRUNCATE flag
+   */
+  const unsigned long ENTRY_NOT_VALID = 0;
+  const unsigned long ENTRY_VALID = 1;
+  const unsigned long ENTRY_NEEDS_REVALIDATION = 2;
+
   /**
    * Callback to perform any validity checks before the entry should be used.
    * Called before onCacheEntryAvailable callback.
@@ -20,12 +37,12 @@ interface nsICacheEntryOpenCallback : nsISupports
    * @param aApplicationCache
    *    Optional, application cache the entry has been found in, if any.
    * @return
-   *    Whether the entry is valid (i.e. should be used).
+   *    State of the entry, see the constants just above.
    *
    * NOTE: This callback is invoked on the cache background thread.
    */
-  boolean onCacheEntryCheck(in nsICacheEntry aEntry,
-                            in nsIApplicationCache aApplicationCache);
+  unsigned long onCacheEntryCheck(in nsICacheEntry aEntry,
+                                  in nsIApplicationCache aApplicationCache);
 
   /**
    * Callback implemented by consumers of nsICacheStorage fetching
