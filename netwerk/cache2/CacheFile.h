@@ -120,7 +120,7 @@ private:
   nsRefPtrHashtable<nsUint32HashKey, CacheFileChunk> mChunks;
   nsClassHashtable<nsUint32HashKey, ChunkListeners> mChunkListeners;
 
-  nsTArray<nsRefPtr<CacheFileInputStream> > mInputs;
+  nsTArray<CacheFileInputStream*> mInputs;
   nsRefPtr<CacheFileOutputStream> mOutput;
 };
 
