@@ -199,7 +199,7 @@ CacheFileOutputStream::Seek(int32_t whence, int64_t offset)
       newPos += mPos;
       break;
     case NS_SEEK_END:
-      newPos += mFile->DataSize();
+      newPos += mFile->mDataSize;
       break;
     default:
       NS_ERROR("invalid whence");
