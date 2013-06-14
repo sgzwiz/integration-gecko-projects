@@ -2082,6 +2082,11 @@ nsHttpChannel::ProcessNotModified()
     gHttpHandler->OnExamineMergedResponse(this);
 
     mCachedContentIsValid = true;
+
+    // Tell the consumers the entry is OK to use
+    rv = mCacheEntry->SetValid();
+    if (NS_FAILED(rv)) return rv;
+
     rv = ReadFromCache(false);
     if (NS_FAILED(rv)) return rv;
 
@@ -2356,7 +2361,7 @@ nsHttpChannel::OpenCacheEntry(bool usingSSL)
 
 NS_IMETHODIMP
 nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appCache,
-                                 bool* aResult)
+                                 uint32_t* aResult)
 {
     //AssertOnCacheThread();
 
@@ -2375,7 +2380,8 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
         mRequestHead.PeekHeader(nsHttp::If_Range);
 
     // Be pessimistic: assume the cache entry has no useful data.
-    *aResult = (mCachedContentIsValid = false);
+    *aResult = ENTRY_NOT_VALID;
+    mCachedContentIsValid = false;
 
     nsXPIDLCString buf;
 
@@ -2429,7 +2435,8 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
          mFallbackChannel)) {
         rv = OpenCacheInputStream(entry, true);
         if (NS_SUCCEEDED(rv)) {
-            *aResult = (mCachedContentIsValid = true);
+            *aResult = ENTRY_VALID;
+            mCachedContentIsValid = true;
             // XXX: Isn't the cache entry already valid?
             MaybeMarkCacheEntryValid(this, entry, mCacheEntryIsWriteOnly);
         }
@@ -2477,8 +2484,10 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
                             mRequestHead.ClearHeader(nsHttp::If_Range);
                         }
 
-                        // Muset report the content as valid to let it be used.
-                        *aResult = mCachedContentIsPartial;
+                        if (mCachedContentIsPartial) {
+                          // Must report the content as valid to let it be used.
+                          *aResult = ENTRY_VALID;
+                        }
                     }
                     return rv;
                 }
@@ -2623,7 +2632,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
             mRedirectedCachekeys->AppendElement(cacheKey);
     }
 
-    *aResult = (mCachedContentIsValid = !doValidation);
+    mCachedContentIsValid = !doValidation;
 
     if (doValidation) {
         //
@@ -2673,6 +2682,10 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
             *aResult = (mCachedContentIsValid = false);
         }
     }
+
+    *aResult = mCachedContentIsValid
+      ? (mDidReval ? ENTRY_NEEDS_REVALIDATION : ENTRY_VALID)
+      : ENTRY_NOT_VALID;
 
     if (mCachedContentIsValid) {
         // XXX: Isn't the cache entry already valid?
@@ -3336,8 +3349,16 @@ nsHttpChannel::InitCacheEntry()
     LOG(("nsHttpChannel::InitCacheEntry [this=%p entry=%p]\n",
         this, mCacheEntry.get()));
 
+    if (mDidReval) {
+        LOG(("  revalidation with origin server failed, recreating cache entry\n"));
+        nsCOMPtr<nsICacheEntry> currentEntry;
+        currentEntry.swap(mCacheEntry);
+        rv = currentEntry->Recreate(getter_AddRefs(mCacheEntry));
+        if (NS_FAILED(rv)) return rv;
+    }
+
     if (mLoadFlags & INHIBIT_PERSISTENT_CACHING) {
-        rv = mCacheEntry->SetStoragePolicy(nsICache::STORE_IN_MEMORY);
+        rv = mCacheEntry->SetPersistToDisk(false);
         if (NS_FAILED(rv)) return rv;
     }
 
@@ -3491,7 +3512,7 @@ nsHttpChannel::AddCacheEntryHeaders(nsICacheEntry *entry)
 
     // Tell other waiting consumers this entry now has been filled the metadata
     // and can now be used.
-    rv = entry->MetaDataReady();
+    rv = entry->SetValid();
 
     return rv;
 }
@@ -5499,6 +5520,8 @@ nsHttpChannel::InvalidateCacheEntryForLocation(const char *location)
 void
 nsHttpChannel::DoInvalidateCacheEntry(const nsCString &key)
 {
+    // mayhemer TODO !!
+
     // NOTE:
     // Following comments 24,32 and 33 in bug #327765, we only care about
     // the cache in the protocol-handler, not the application cache.
