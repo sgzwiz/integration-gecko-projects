@@ -29,7 +29,6 @@ CacheFileInputStream::Release()
 
   if (count == 1) {
     mFile->RemoveInput(this);
-    mFile = nullptr;
   }
 
   return count;
