@@ -29,7 +29,6 @@ CacheFileOutputStream::Release()
 
   if (count == 1) {
     mFile->RemoveOutput(this);
-    mFile = nullptr;
   }
 
   return count;
