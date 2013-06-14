@@ -111,6 +111,7 @@ public:
   CacheFileIOManager();
 
   static nsresult Init();
+  static nsresult OnProfile();
   static nsresult Shutdown();
 
   static nsresult OpenFile(const SHA1Sum::Hash *aHash,

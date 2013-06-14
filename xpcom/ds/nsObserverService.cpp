@@ -152,6 +152,7 @@ NS_IMETHODIMP nsObserverService::NotifyObservers(nsISupports *aSubject,
                                                  const PRUnichar *someData)
 {
     LOG(("nsObserverService::NotifyObservers(%s)", aTopic));
+    printf("NotifyObservers: %s\n", aTopic);
 
     NS_ENSURE_VALIDCALL
     NS_ENSURE_ARG(aTopic);
