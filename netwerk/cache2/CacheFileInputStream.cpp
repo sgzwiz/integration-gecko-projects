@@ -88,7 +88,7 @@ CacheFileInputStream::Read(char *aBuf, uint32_t aCount, uint32_t *_retval)
   if (mClosed)
     return mStatus;
 
-  EnsureCorrectChunk(true);
+  EnsureCorrectChunk(false);
   if (!mChunk)
     return NS_BASE_STREAM_WOULD_BLOCK;
 
@@ -107,7 +107,7 @@ CacheFileInputStream::Read(char *aBuf, uint32_t aCount, uint32_t *_retval)
     memcpy(aBuf, buf, *_retval);
     mPos += *_retval;
 
-    EnsureCorrectChunk(canRead < aCount && mPos % kChunkSize);
+    EnsureCorrectChunk(!(canRead < aCount && mPos % kChunkSize));
 
     rv = NS_OK;
   }
@@ -136,7 +136,7 @@ CacheFileInputStream::ReadSegments(nsWriteSegmentFun aWriter, void *aClosure,
   if (mClosed)
     return mStatus;
 
-  EnsureCorrectChunk(true);
+  EnsureCorrectChunk(false);
   if (!mChunk)
     return NS_BASE_STREAM_WOULD_BLOCK;
 
@@ -159,7 +159,7 @@ CacheFileInputStream::ReadSegments(nsWriteSegmentFun aWriter, void *aClosure,
       mPos += *_retval;
     }
 
-    EnsureCorrectChunk(canRead < aCount && mPos % kChunkSize);
+    EnsureCorrectChunk(!(canRead < aCount && mPos % kChunkSize));
 
     rv = NS_OK;
   }
@@ -230,7 +230,7 @@ CacheFileInputStream::AsyncWait(nsIInputStreamCallback *aCallback,
     return NS_OK;
   }
 
-  EnsureCorrectChunk(true);
+  EnsureCorrectChunk(false);
 
   if (!mChunk || mWaitingForUpdate) {
     // wait for OnChunkAvailable or OnChunkUpdated
@@ -276,7 +276,7 @@ CacheFileInputStream::Seek(int32_t whence, int64_t offset)
       return NS_ERROR_INVALID_ARG;
   }
   mPos = newPos;
-  EnsureCorrectChunk(false);
+  EnsureCorrectChunk(true);
 
   return NS_OK;
 }
