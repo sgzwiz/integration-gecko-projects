@@ -9,7 +9,6 @@
 #include "CacheFileOutputStream.h"
 #include "CacheFileUtils.h"
 #include "nsThreadUtils.h"
-#include "nsProxyRelease.h"
 #include <algorithm>
 
 namespace mozilla {
@@ -279,6 +278,7 @@ CacheFile::OpenInputStream(nsIInputStream **_retval)
   CacheFileInputStream *input = new CacheFileInputStream(this);
 
   mInputs.AppendElement(input);
+  NS_ADDREF(input);
 
   mDataAccessed = true;
   NS_ADDREF(*_retval = input);
@@ -519,13 +519,17 @@ CacheFile::RemoveChunk(CacheFileChunk *aChunk)
 nsresult
 CacheFile::RemoveInput(CacheFileInputStream *aInput)
 {
-  MutexAutoLock lock(mLock);
+  {
+    MutexAutoLock lock(mLock);
 
 #ifdef DEBUG
-  bool found =
+    bool found =
 #endif
-  mInputs.RemoveElement(aInput);
-  MOZ_ASSERT(found);
+    mInputs.RemoveElement(aInput);
+    MOZ_ASSERT(found);
+  }
+
+  NS_RELEASE(aInput);
 
   return NS_OK;
 }
@@ -533,18 +537,20 @@ CacheFile::RemoveInput(CacheFileInputStream *aInput)
 nsresult
 CacheFile::RemoveOutput(CacheFileOutputStream *aOutput)
 {
-  MutexAutoLock lock(mLock);
+  nsRefPtr<CacheFileOutputStream> output;
 
-  // TODO cancel all queued chunk listeners that cannot be satisfied
+  {
+    MutexAutoLock lock(mLock);
 
-  MOZ_ASSERT(mOutput == aOutput);
+    // TODO cancel all queued chunk listeners that cannot be satisfied
 
-  if (mOutput != aOutput)
-    return NS_ERROR_FAILURE;
+    MOZ_ASSERT(mOutput == aOutput);
 
-  NS_ProxyRelease(NS_GetCurrentThread(), static_cast<nsIOutputStream*>(mOutput),
-                  true);
-  mOutput.forget();
+    if (mOutput != aOutput)
+      return NS_ERROR_FAILURE;
+
+    mOutput.swap(output);
+  }
 
   return NS_OK;
 }
