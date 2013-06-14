@@ -652,7 +652,9 @@ CacheFileIOManager::CloseHandleInternal(CacheFileHandle *aHandle)
   aHandle->mRemovingHandle = true;
 
   // Close file handle
-  PR_Close(aHandle->mFD);
+  if (aHandle->mFD) {
+    PR_Close(aHandle->mFD);
+  }
 
   // If the entry was doomed delete the file
   if (aHandle->IsDoomed()) {
