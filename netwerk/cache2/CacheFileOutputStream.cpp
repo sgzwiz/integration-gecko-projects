@@ -80,7 +80,7 @@ CacheFileOutputStream::Write(const char * aBuf, uint32_t aCount,
   if (mClosed)
     return mStatus;
 
-  EnsureCorrectChunk(true);
+  EnsureCorrectChunk(false);
   if (!mChunk)
     return NS_BASE_STREAM_WOULD_BLOCK;
 
@@ -97,7 +97,7 @@ CacheFileOutputStream::Write(const char * aBuf, uint32_t aCount,
 
   mChunk->UpdateDataSize(mPos - mChunk->Index() * kChunkSize, false);
 
-  EnsureCorrectChunk(canWrite < aCount && mPos % kChunkSize);
+  EnsureCorrectChunk(!(canWrite < aCount && mPos % kChunkSize));
 
   return NS_OK;
 }
@@ -164,7 +164,7 @@ CacheFileOutputStream::AsyncWait(nsIOutputStreamCallback *aCallback,
     return NS_OK;
   }
 
-  EnsureCorrectChunk(true);
+  EnsureCorrectChunk(false);
 
   if (!mChunk) {
     // wait for OnChunkAvailable
@@ -206,7 +206,7 @@ CacheFileOutputStream::Seek(int32_t whence, int64_t offset)
       return NS_ERROR_INVALID_ARG;
   }
   mPos = newPos;
-  EnsureCorrectChunk(false);
+  EnsureCorrectChunk(true);
 
   return NS_OK;
 }
