@@ -10,6 +10,8 @@
 #include "nsIFile.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/DebugOnly.h"
+#include "nsDirectoryServiceUtils.h"
+#include "nsAppDirectoryServiceDefs.h"
 
 namespace mozilla {
 namespace net {
@@ -495,6 +497,24 @@ CacheFileIOManager::Init()
   if (NS_FAILED(rv)) {
     delete gInstance;
     return rv;
+  }
+
+  return NS_OK;
+}
+
+nsresult
+CacheFileIOManager::OnProfile()
+{
+  nsresult rv;
+  nsCOMPtr<nsIFile> directory;
+  rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
+                              getter_AddRefs(directory));
+  if (NS_SUCCEEDED(rv)) {
+    rv = directory->Clone(getter_AddRefs(gInstance->mCacheDirectory));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    rv = gInstance->mCacheDirectory->Append(NS_LITERAL_STRING("cache2"));
+    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   return NS_OK;
