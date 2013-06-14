@@ -74,7 +74,7 @@ CacheFileInputStream::Available(uint64_t *_retval)
     return NS_ERROR_NOT_AVAILABLE;
 
   // TODO what to return when we have an output stream?
-  *_retval = mFile->DataSize() - mPos;
+  *_retval = mFile->mDataSize - mPos;
   return NS_OK;
 }
 
@@ -269,7 +269,7 @@ CacheFileInputStream::Seek(int32_t whence, int64_t offset)
       newPos += mPos;
       break;
     case NS_SEEK_END:
-      newPos += mFile->DataSize();
+      newPos += mFile->mDataSize;
       break;
     default:
       NS_ERROR("invalid whence");
