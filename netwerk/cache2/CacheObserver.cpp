@@ -8,6 +8,7 @@
 #include "CacheFileIOManager.h"
 #include "nsIObserverService.h"
 #include "mozilla/Services.h"
+#include "mozilla/Preferences.h"
 #include "nsServiceManagerUtils.h"
 
 namespace mozilla {
@@ -34,7 +35,8 @@ CacheObserver::Init()
   sSelf = new CacheObserver();
   NS_ADDREF(sSelf);
 
-  obs->AddObserver(sSelf, "profile-after-change", true);
+  obs->AddObserver(sSelf, "prefservice:after-app-defaults", true);
+  obs->AddObserver(sSelf, "profile-do-change", true);
   obs->AddObserver(sSelf, "profile-before-change", true);
   obs->AddObserver(sSelf, "xpcom-shutdown", true);
   obs->AddObserver(sSelf, "last-pb-context-exited", true);
@@ -58,8 +60,14 @@ CacheObserver::Observe(nsISupports* aSubject,
                        const char* aTopic,
                        const PRUnichar* aData)
 {
-  if (!strcmp(aTopic, "profile-after-change")) {
+  if (!strcmp(aTopic, "prefservice:after-app-defaults")) {
     CacheFileIOManager::Init();
+    return NS_OK;
+  }
+
+  if (!strcmp(aTopic, "profile-do-change")) {
+    CacheFileIOManager::Init();
+    CacheFileIOManager::OnProfile();
     return NS_OK;
   }
 

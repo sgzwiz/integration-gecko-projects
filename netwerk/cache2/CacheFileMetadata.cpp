@@ -29,6 +29,7 @@ CacheFileMetadata::CacheFileMetadata(CacheFileHandle *aHandle, const nsACString 
   , mBuf(nullptr)
   , mBufSize(0)
   , mWriteBuf(nullptr)
+  , mElementsSize(0)
 {
   MOZ_COUNT_CTOR(CacheFileMetadata);
   memset(&mMetaHdr, 0, sizeof(CacheFileMetadataHeader));

@@ -759,7 +759,7 @@ CacheStorageService::AddStorageEntry(nsCSubstring const& aContextKey,
   LOG(("CacheStorageService::AddStorageEntry [entryKey=%s, contextKey=%s]", 
     entryKey.get(), aContextKey.BeginReading()));
 
-  nsRefPtr<CacheEntry> entry, doom;
+  nsRefPtr<CacheEntry> entry;
 
   {
     mozilla::MutexAutoLock lock(mLock);
@@ -797,10 +797,13 @@ CacheStorageService::AddStorageEntry(nsCSubstring const& aContextKey,
     // If truncate is demanded, delete and doom the current entry
     if (entryExists && aReplace) {
       entries->Remove(entryKey);
-      doom.swap(entry);
 
+      LOG(("  dooming entry %p for %s because of OPEN_TRUNCATE", entry.get(), entryKey.get()));
+      // On purpose called under the lock to prevent races of doom and open on I/O thread
+      entry->DoomAlreadyRemoved();
+
+      entry = nullptr;
       entryExists = false;
-      LOG(("  dooming entry %p for %s because of OPEN_TRUNCATE", doom.get(), entryKey.get()));
     }
 
     if (entryExists && entry->SetUsingDisk(aWriteToDisk)) {
@@ -815,9 +818,6 @@ CacheStorageService::AddStorageEntry(nsCSubstring const& aContextKey,
       LOG(("  new entry %p for %s", entry.get(), entryKey.get()));
     }
   }
-
-  if (doom)
-    doom->DoomAlreadyRemoved();
 
   entry.forget(aResult);
   return NS_OK;

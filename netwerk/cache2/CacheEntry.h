@@ -176,9 +176,17 @@ private:
   void Load(bool aTruncate);
   void OnLoaded();
 
+  enum CallbackResult {
+    // OnCacheEntryCheck returned NOT_VALID
+    INVALID,
+    // Callback bypassed because entry is in progress of being written
+    BYPASSED,
+    // Callback invoked normally
+    INVOKED,
+  };
   void RememberCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
   void InvokeCallbacks();
-  bool InvokeCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
+  CallbackResult InvokeCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
   void InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
   void OnWriterClosed(Handle const* aHandle);
 
@@ -186,6 +194,8 @@ private:
   // When executed on the management thread directly, the operation(s)
   // is (are) executed immediately.
   void BackgroundOp(uint32_t aOperation, bool aForceAsync = false);
+
+  already_AddRefed<CacheEntry> ReopenTruncated(nsICacheEntryOpenCallback* aCallback);
   void TransferCallbacks(nsCOMArray<nsICacheEntryOpenCallback> const &aCallbacks,
                          nsCOMArray<nsICacheEntryOpenCallback> const &aReadOnlyCallbacks);
 
@@ -216,6 +226,8 @@ private:
   bool mIsReady : 1;
   // Whether the entry is in process of being written (by a channel)
   bool mIsWriting : 1;
+  // True when OnCacheEntryCheck return ENTRY_NEEDS_REVALIDATION
+  bool mIsRevalidating : 1;
   // Doomed entry, don't let new consumers use it
   bool mIsDoomed : 1;
   // Whether this entry is registered in the storage service helper arrays
@@ -224,6 +236,8 @@ private:
   bool mIsRegistrationAllowed : 1;
   // Whether security info has already been looked up in metadata
   bool mSecurityInfoLoaded : 1;
+  // Prevents any callback invocation
+  bool mPreventCallbacks : 1;
 
   // Background thread scheduled operation.  Set (under the lock) one
   // of this flags to tell the background thread what to do.
