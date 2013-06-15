@@ -19,17 +19,19 @@ namespace net {
 #define kMinMetadataRead 1024  // TODO find optimal value from telemetry
 #define kAlignSize       4096
 
-NS_IMPL_THREADSAFE_ISUPPORTS0(CacheFileMetadata)
+NS_IMPL_THREADSAFE_ISUPPORTS1(CacheFileMetadata, CacheFileIOListener)
 
 CacheFileMetadata::CacheFileMetadata(CacheFileHandle *aHandle, const nsACString &aKey)
   : mHandle(aHandle)
   , mHashArray(nullptr)
   , mHashArraySize(0)
+  , mHashCount(0)
   , mOffset(-1)
   , mBuf(nullptr)
   , mBufSize(0)
   , mWriteBuf(nullptr)
   , mElementsSize(0)
+  , mIsDirty(false)
 {
   MOZ_COUNT_CTOR(CacheFileMetadata);
   memset(&mMetaHdr, 0, sizeof(CacheFileMetadataHeader));
@@ -69,6 +71,7 @@ CacheFileMetadata::ReadMetadata(CacheFileMetadataListener *aListener)
     mOffset = 0;
     aListener->OnMetadataRead(NS_OK);
     mMetaHdr.mFetchCount++;
+    mMetaHdr.mKeySize = mKey.Length();
     return NS_OK;
   }
 
@@ -79,7 +82,7 @@ CacheFileMetadata::ReadMetadata(CacheFileMetadataListener *aListener)
   }
 
   // round offset to 4k blocks
-  int64_t offset = size & kAlignSize;
+  int64_t offset = (size / kAlignSize) * kAlignSize;
 
   if (size - offset < kMinMetadataRead && offset > kAlignSize)
     offset -= kAlignSize;
@@ -107,13 +110,16 @@ CacheFileMetadata::WriteMetadata(uint32_t aOffset,
 
   nsresult rv;
 
+  mIsDirty = false;
+
   mWriteBuf = static_cast<char *>(moz_xmalloc(sizeof(uint32_t) +
-                mHashArraySize + sizeof(CacheFileMetadataHeader) +
-                mKey.Length() + 1 + mElementsSize + sizeof(uint32_t)));
+                mHashCount * sizeof(CacheHashUtils::Hash16_t) +
+                sizeof(CacheFileMetadataHeader) + mKey.Length() + 1 +
+                mElementsSize + sizeof(uint32_t)));
 
   char *p = mWriteBuf + sizeof(uint32_t);
-  memcpy(p, mHashArray, mHashArraySize);
-  p += mHashArraySize;
+  memcpy(p, mHashArray, mHashCount * sizeof(CacheHashUtils::Hash16_t));
+  p += mHashCount * sizeof(CacheHashUtils::Hash16_t);
   memcpy(p, &mMetaHdr, sizeof(CacheFileMetadataHeader));
   p += sizeof(CacheFileMetadataHeader);
   memcpy(p, mKey.get(), mKey.Length());
@@ -121,14 +127,14 @@ CacheFileMetadata::WriteMetadata(uint32_t aOffset,
   *p = 0;
   p++;
   memcpy(p, mBuf, mElementsSize);
-  p += sizeof(mElementsSize);
+  p += mElementsSize;
 
   CacheHashUtils::Hash32_t hash;
-  hash = CacheHashUtils::Hash(mBuf + sizeof(uint32_t),
-                              p - mBuf - sizeof(uint32_t));
+  hash = CacheHashUtils::Hash(mWriteBuf + sizeof(uint32_t),
+                              p - mWriteBuf - sizeof(uint32_t));
   *reinterpret_cast<uint32_t *>(mWriteBuf) = PR_htonl(hash);
 
-  *reinterpret_cast<uint32_t *>(p) = aOffset;
+  *reinterpret_cast<uint32_t *>(p) = PR_htonl(aOffset);
   p += sizeof(uint32_t);
 
   mListener = aListener;
@@ -167,6 +173,8 @@ CacheFileMetadata::GetElement(const char *aKey)
 nsresult
 CacheFileMetadata::SetElement(const char *aKey, const char *aValue)
 {
+  MarkDirty();
+
   const uint32_t keySize = strlen(aKey) + 1;
   char *pos = const_cast<char *>(GetElement(aKey));
 
@@ -225,6 +233,8 @@ CacheFileMetadata::GetHash(uint32_t aIndex)
 nsresult
 CacheFileMetadata::SetHash(uint32_t aIndex, CacheHashUtils::Hash16_t aHash)
 {
+  MarkDirty();
+
   MOZ_ASSERT(aIndex <= mHashCount);
 
   if (aIndex > mHashCount) {
@@ -238,8 +248,9 @@ CacheFileMetadata::SetHash(uint32_t aIndex, CacheHashUtils::Hash16_t aHash)
         mHashArraySize *= 2;
       mHashArray = static_cast<CacheHashUtils::Hash16_t *>(
                      moz_xrealloc(mHashArray, mHashArraySize));
-      mHashCount++;
     }
+
+    mHashCount++;
   }
 
   mHashArray[aIndex] = PR_htons(aHash);
@@ -249,6 +260,7 @@ CacheFileMetadata::SetHash(uint32_t aIndex, CacheHashUtils::Hash16_t aHash)
 nsresult
 CacheFileMetadata::SetExpirationTime(uint32_t aExpirationTime)
 {
+  MarkDirty();
   mMetaHdr.mExpirationTime = aExpirationTime;
   return NS_OK;
 }
@@ -263,6 +275,7 @@ CacheFileMetadata::GetExpirationTime(uint32_t *_retval)
 nsresult
 CacheFileMetadata::SetLastModified(uint32_t aLastModified)
 {
+  MarkDirty();
   mMetaHdr.mLastModified = aLastModified;
   return NS_OK;
 }
@@ -296,7 +309,8 @@ CacheFileMetadata::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
 }
 
 nsresult
-CacheFileMetadata::OnDataWritten(CacheFileHandle *aHandle, nsresult aResult)
+CacheFileMetadata::OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
+                                 nsresult aResult)
 {
   MOZ_ASSERT(mListener);
   MOZ_ASSERT(mWriteBuf);
@@ -313,7 +327,8 @@ CacheFileMetadata::OnDataWritten(CacheFileHandle *aHandle, nsresult aResult)
 }
 
 nsresult
-CacheFileMetadata::OnDataRead(CacheFileHandle *aHandle, nsresult aResult)
+CacheFileMetadata::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
+                              nsresult aResult)
 {
   MOZ_ASSERT(mListener);
 
@@ -328,7 +343,7 @@ CacheFileMetadata::OnDataRead(CacheFileHandle *aHandle, nsresult aResult)
 
   // check whether we have read all necessary data
   uint32_t realOffset = PR_ntohl(*(reinterpret_cast<uint32_t *>(
-                                mBuf + mBufSize - sizeof(uint32_t))));
+                                 mBuf + mBufSize - sizeof(uint32_t))));
 
   int64_t size = mHandle->FileSize();
   MOZ_ASSERT(size != -1);
@@ -393,7 +408,7 @@ CacheFileMetadata::ParseMetadata(uint32_t aMetaOffset, uint32_t aBufOffset)
     return NS_ERROR_FILE_CORRUPTED;
 
   uint32_t elementsOffset = reinterpret_cast<CacheFileMetadataHeader *>(
-                              mBuf + hdrOffset)->mKeySize + keyOffset;
+                              mBuf + hdrOffset)->mKeySize + keyOffset + 1;
 
   if (elementsOffset > metaposOffset)
     return NS_ERROR_FILE_CORRUPTED;
@@ -432,6 +447,7 @@ CacheFileMetadata::ParseMetadata(uint32_t aMetaOffset, uint32_t aBufOffset)
 
   memcpy(&mMetaHdr, mBuf + hdrOffset, sizeof(CacheFileMetadataHeader));
   mMetaHdr.mFetchCount++;
+  MarkDirty();
 
   mElementsSize = metaposOffset - elementsOffset;
   memmove(mBuf, mBuf + elementsOffset, mElementsSize);
