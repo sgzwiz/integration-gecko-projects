@@ -69,10 +69,13 @@ public:
 
   int64_t  Offset() { return mOffset; }
   uint32_t ElementsSize() { return mElementsSize; }
+  void     MarkDirty() { mIsDirty = true; }
+  bool     IsDirty() { return mIsDirty; }
 
   NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult);
-  NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, nsresult aResult);
-  NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, nsresult aResult);
+  NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
+                           nsresult aResult);
+  NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, char *aBuf, nsresult aResult);
   NS_IMETHOD OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult);
 
 private:
@@ -94,6 +97,7 @@ private:
   char                               *mWriteBuf;
   CacheFileMetadataHeader             mMetaHdr;
   uint32_t                            mElementsSize;
+  bool                                mIsDirty;
   nsCOMPtr<CacheFileMetadataListener> mListener;
 };
 

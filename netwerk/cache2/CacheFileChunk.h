@@ -35,7 +35,8 @@ public:
 
   NS_IMETHOD OnChunkRead(nsresult aResult, CacheFileChunk *aChunk) = 0;
   NS_IMETHOD OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk) = 0;
-  NS_IMETHOD OnChunkAvailable(nsresult aResult, CacheFileChunk *aChunk) = 0;
+  NS_IMETHOD OnChunkAvailable(nsresult aResult, uint32_t aChunkIdx,
+                              CacheFileChunk *aChunk) = 0;
   NS_IMETHOD OnChunkUpdated(CacheFileChunk *aChunk) = 0;
 };
 
@@ -81,8 +82,9 @@ public:
   void                     UpdateDataSize(uint32_t aDataSize, bool aEOF);
 
   NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult);
-  NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, nsresult aResult);
-  NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, nsresult aResult);
+  NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
+                           nsresult aResult);
+  NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, char *aBuf, nsresult aResult);
   NS_IMETHOD OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult);
 
   bool   IsReady();
