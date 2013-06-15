@@ -31,7 +31,8 @@ public:
 
   NS_IMETHOD OnChunkRead(nsresult aResult, CacheFileChunk *aChunk);
   NS_IMETHOD OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk);
-  NS_IMETHOD OnChunkAvailable(nsresult aResult, CacheFileChunk *aChunk);
+  NS_IMETHOD OnChunkAvailable(nsresult aResult, uint32_t aChunkIdx,
+                              CacheFileChunk *aChunk);
   NS_IMETHOD OnChunkUpdated(CacheFileChunk *aChunk);
 
 private:
@@ -48,6 +49,7 @@ private:
   bool                     mClosed;
   nsresult                 mStatus;
   bool                     mWaitingForUpdate;
+  int64_t                  mListeningForChunk;
 
   nsCOMPtr<nsIInputStreamCallback> mCallback;
   uint32_t                         mCallbackFlags;

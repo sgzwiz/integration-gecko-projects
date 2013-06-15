@@ -29,11 +29,13 @@ public:
 
   NS_IMETHOD OnChunkRead(nsresult aResult, CacheFileChunk *aChunk);
   NS_IMETHOD OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk);
-  NS_IMETHOD OnChunkAvailable(nsresult aResult, CacheFileChunk *aChunk);
+  NS_IMETHOD OnChunkAvailable(nsresult aResult, uint32_t aChunkIdx,
+                              CacheFileChunk *aChunk);
   NS_IMETHOD OnChunkUpdated(CacheFileChunk *aChunk);
 
 protected:
-  nsresult NotifyListener(nsresult aResult, CacheFileChunk *aChunk);
+  nsresult NotifyListener(nsresult aResult, uint32_t aChunkIdx,
+                          CacheFileChunk *aChunk);
 
   uint32_t                         mStartChunk;
   uint32_t                         mEndChunk;

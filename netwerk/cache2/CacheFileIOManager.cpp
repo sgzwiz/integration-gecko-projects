@@ -6,6 +6,7 @@
 
 #include "CacheLog.h"
 #include "../cache/nsCacheUtils.h"
+#include "CacheHashUtils.h"
 #include "nsThreadUtils.h"
 #include "nsIFile.h"
 #include "mozilla/Telemetry.h"
@@ -98,6 +99,8 @@ CacheFileHandles::~CacheFileHandles()
 nsresult
 CacheFileHandles::Init()
 {
+  LOG(("CacheFileHandles::Init() %p", this));
+
   MOZ_ASSERT(!mInitialized);
   mInitialized = PL_DHashTableInit(&mTable, &mOps, nullptr,
                                    sizeof(CacheFileHandlesEntry), 512);
@@ -108,6 +111,8 @@ CacheFileHandles::Init()
 void
 CacheFileHandles::Shutdown()
 {
+  LOG(("CacheFileHandles::Shutdown() %p", this));
+
   if (mInitialized) {
     PL_DHashTableFinish(&mTable);
     mInitialized = false;
@@ -148,6 +153,9 @@ CacheFileHandles::MoveEntry(PLDHashTable *table,
   dst->mHandles = src->mHandles;
   memcpy(&dst->mHash, &src->mHash, sizeof(SHA1Sum::Hash));
 
+  LOG(("CacheFileHandles::MoveEntry() hash=%08x%08x%08x%08x%08x "
+       "moving from %p to %p", LOGSHA1(src->mHash), from, to));
+
   // update pointer to mHash in all handles
   CacheFileHandle *handle = (CacheFileHandle *)PR_LIST_HEAD(dst->mHandles);
   while (handle != dst->mHandles) {
@@ -177,14 +185,23 @@ CacheFileHandles::GetHandle(const SHA1Sum::Hash *aHash,
     PL_DHashTableOperate(&mTable,
                          (void *)aHash,
                          PL_DHASH_LOOKUP));
-  if (PL_DHASH_ENTRY_IS_FREE(entry))
+  if (PL_DHASH_ENTRY_IS_FREE(entry)) {
+    LOG(("CacheFileHandles::GetHandle() hash=%08x%08x%08x%08x%08x "
+         "no handle found", LOGSHA1(aHash)));
     return NS_ERROR_NOT_AVAILABLE;
+  }
 
   // Check if the entry is doomed
-  CacheFileHandle *handle = static_cast<CacheFileHandle *>(PR_LIST_HEAD(entry->mHandles));
-  if (handle->IsDoomed())
+  CacheFileHandle *handle = static_cast<CacheFileHandle *>(
+                              PR_LIST_HEAD(entry->mHandles));
+  if (handle->IsDoomed()) {
+    LOG(("CacheFileHandles::GetHandle() hash=%08x%08x%08x%08x%08x "
+         "found doomed handle %p, entry %p", LOGSHA1(aHash), handle, entry));
     return NS_ERROR_NOT_AVAILABLE;
+  }
 
+  LOG(("CacheFileHandles::GetHandle() hash=%08x%08x%08x%08x%08x "
+       "found handle %p, entry %p", LOGSHA1(aHash), handle, entry));
   NS_ADDREF(*_retval = handle);
   return NS_OK;
 }
@@ -209,17 +226,24 @@ CacheFileHandles::NewHandle(const SHA1Sum::Hash *aHash,
     entry->mHandles = new PRCList;
     memcpy(&entry->mHash, aHash, sizeof(SHA1Sum::Hash));
     PR_INIT_CLIST(entry->mHandles);
+
+    LOG(("CacheFileHandles::NewHandle() hash=%08x%08x%08x%08x%08x "
+         "created new entry %p, list %p", LOGSHA1(aHash), entry,
+         entry->mHandles));
   }
 #if DEBUG
   else {
     MOZ_ASSERT(!PR_CLIST_IS_EMPTY(entry->mHandles));
-    CacheFileHandle * handle = (CacheFileHandle *)PR_LIST_HEAD(entry->mHandles);
+    CacheFileHandle *handle = (CacheFileHandle *)PR_LIST_HEAD(entry->mHandles);
     MOZ_ASSERT(handle->IsDoomed());
   }
 #endif
 
   nsRefPtr<CacheFileHandle> handle = new CacheFileHandle(&entry->mHash);
   PR_APPEND_LINK(handle, entry->mHandles);
+
+  LOG(("CacheFileHandles::NewHandle() hash=%08x%08x%08x%08x%08x "
+       "created new handle %p, entry=%p", LOGSHA1(aHash), handle.get(), entry));
 
   NS_ADDREF(*_retval = handle);
   handle.forget();
@@ -254,11 +278,18 @@ CacheFileHandles::RemoveHandle(CacheFileHandle *aHandle)
   }
 #endif
 
+  LOG(("CacheFileHandles::RemoveHandle() hash=%08x%08x%08x%08x%08x "
+       "removing handle %p", LOGSHA1(&entry->mHash), aHandle));
+
   PR_REMOVE_AND_INIT_LINK(aHandle);
   NS_RELEASE(aHandle);
 
-  if (PR_CLIST_IS_EMPTY(entry->mHandles))
+  if (PR_CLIST_IS_EMPTY(entry->mHandles)) {
+    LOG(("CacheFileHandles::RemoveHandle() hash=%08x%08x%08x%08x%08x "
+         "list %p is empty, removing entry %p", LOGSHA1(&entry->mHash),
+         entry->mHandles, entry));
     PL_DHashTableOperate(&mTable, key, PL_DHASH_REMOVE);
+  }
 }
 
 // Events
@@ -268,13 +299,16 @@ public:
   OpenFileEvent(const SHA1Sum::Hash *aHash,
                 uint32_t aFlags,
                 CacheFileIOListener *aCallback)
-    : mHash(aHash)
-    , mFlags(aFlags)
+    : mFlags(aFlags)
     , mCallback(aCallback)
     , mRV(NS_ERROR_FAILURE)
   {
     MOZ_COUNT_CTOR(OpenFileEvent);
-    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+    memcpy(&mHash, aHash, sizeof(SHA1Sum::Hash));
+//    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+    nsCOMPtr<nsIThread> mainThread;               // temporary HACK
+    NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
+    mTarget = mainThread;                         // using streamcopier's thread
     MOZ_ASSERT(mTarget);
   }
 
@@ -287,7 +321,7 @@ public:
   {
     if (mTarget) {
       mRV = CacheFileIOManager::gInstance->OpenFileInternal(
-        mHash, mFlags, getter_AddRefs(mHandle));
+        &mHash, mFlags, getter_AddRefs(mHandle));
 
       nsCOMPtr<nsIEventTarget> target;
       mTarget.swap(target);
@@ -300,7 +334,7 @@ public:
   }
 
 protected:
-  const SHA1Sum::Hash          *mHash;
+  SHA1Sum::Hash                 mHash;
   bool                          mFlags;
   nsCOMPtr<CacheFileIOListener> mCallback;
   nsCOMPtr<nsIEventTarget>      mTarget;
@@ -343,7 +377,10 @@ public:
     , mRV(NS_ERROR_FAILURE)
   {
     MOZ_COUNT_CTOR(ReadEvent);
-    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+//    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+    nsCOMPtr<nsIThread> mainThread;               // temporary HACK
+    NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
+    mTarget = mainThread;                         // using streamcopier's thread
     MOZ_ASSERT(mTarget);
   }
 
@@ -364,7 +401,7 @@ public:
     }
     else {
       if (mCallback)
-        mCallback->OnDataRead(mHandle, mRV);
+        mCallback->OnDataRead(mHandle, mBuf, mRV);
     }
     return NS_OK;
   }
@@ -391,7 +428,10 @@ public:
     , mRV(NS_ERROR_FAILURE)
   {
     MOZ_COUNT_CTOR(WriteEvent);
-    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+//    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+    nsCOMPtr<nsIThread> mainThread;               // temporary HACK
+    NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
+    mTarget = mainThread;                         // using streamcopier's thread
     MOZ_ASSERT(mTarget);
   }
 
@@ -412,7 +452,7 @@ public:
     }
     else {
       if (mCallback)
-        mCallback->OnDataWritten(mHandle, mRV);
+        mCallback->OnDataWritten(mHandle, mBuf, mRV);
     }
     return NS_OK;
   }
@@ -436,7 +476,10 @@ public:
     , mRV(NS_ERROR_FAILURE)
   {
     MOZ_COUNT_CTOR(DoomFileEvent);
-    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+//    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+    nsCOMPtr<nsIThread> mainThread;               // temporary HACK
+    NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
+    mTarget = mainThread;                         // using streamcopier's thread
     MOZ_ASSERT(mTarget);
   }
 
