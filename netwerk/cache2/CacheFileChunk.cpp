@@ -151,7 +151,10 @@ CacheFileChunk::WaitForUpdate(CacheFileChunkListener *aCallback)
 #endif
 
   ChunkListenerItem *item = new ChunkListenerItem();
-  item->mTarget = NS_GetCurrentThread();
+//  item->mTarget = NS_GetCurrentThread();
+  nsCOMPtr<nsIThread> mainThread;               // temporary HACK
+  NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
+  item->mTarget = mainThread;                   // using streamcopier's thread
   item->mCallback = aCallback;
 
   mUpdateListeners.AppendElement(item);
@@ -233,6 +236,13 @@ CacheFileChunk::UpdateDataSize(uint32_t aDataSize, bool aEOF)
 {
   mFile->AssertOwnsLock();
 
+  mIsDirty = true;
+
+  int64_t fileSize = kChunkSize * mIndex + aDataSize;
+  if (aEOF || fileSize > mFile->mDataSize) {
+    mFile->mDataSize = fileSize;
+  }
+
   if (aEOF || aDataSize > mDataSize) {
     mDataSize = aDataSize;
     NotifyUpdateListeners();
@@ -247,7 +257,8 @@ CacheFileChunk::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
 }
 
 nsresult
-CacheFileChunk::OnDataWritten(CacheFileHandle *aHandle, nsresult aResult)
+CacheFileChunk::OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
+                              nsresult aResult)
 {
   MOZ_ASSERT(mListener);
 
@@ -260,7 +271,8 @@ CacheFileChunk::OnDataWritten(CacheFileHandle *aHandle, nsresult aResult)
 }
 
 nsresult
-CacheFileChunk::OnDataRead(CacheFileHandle *aHandle, nsresult aResult)
+CacheFileChunk::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
+                           nsresult aResult)
 {
   MOZ_ASSERT(mListener);
 

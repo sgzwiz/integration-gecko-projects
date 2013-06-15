@@ -33,7 +33,7 @@ GapFiller::Run()
 
   rv = mFile->GetChunk(mStartChunk, true, this);
   if (NS_FAILED(rv)) {
-    return NotifyListener(rv, nullptr);
+    return NotifyListener(rv, mStartChunk, nullptr);
   }
 
   return NS_OK;
@@ -54,27 +54,29 @@ GapFiller::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
 }
 
 nsresult
-GapFiller::OnChunkAvailable(nsresult aResult, CacheFileChunk *aChunk)
+GapFiller::OnChunkAvailable(nsresult aResult, uint32_t aChunkIdx,
+                            CacheFileChunk *aChunk)
 {
   nsresult rv;
 
   if (NS_FAILED(aResult)) {
-    return NotifyListener(aResult, nullptr);
+    return NotifyListener(aResult, aChunkIdx, nullptr);
   }
 
-  if (aChunk->Index() == mEndChunk) {
-    return NotifyListener(NS_OK, aChunk);
+  if (aChunkIdx == mEndChunk) {
+    return NotifyListener(NS_OK, aChunkIdx, aChunk);
   }
 
   {
-    MutexAutoLock lock(*mFile->GetLock());
+    CacheFileAutoLock lock(mFile);
     memset(aChunk->Buf() + aChunk->DataSize(), 0,
            kChunkSize - aChunk->DataSize());
+    aChunk->UpdateDataSize(kChunkSize, false);
   }
 
-  rv = mFile->GetChunk(aChunk->Index() + 1, true, this);
+  rv = mFile->GetChunk(aChunkIdx + 1, true, this);
   if (NS_FAILED(rv)) {
-    return NotifyListener(rv, nullptr);
+    return NotifyListener(rv, aChunkIdx, nullptr);
   }
 
   return NS_OK;
@@ -88,15 +90,16 @@ GapFiller::OnChunkUpdated(CacheFileChunk *aChunk)
 }
 
 nsresult
-GapFiller::NotifyListener(nsresult aResult, CacheFileChunk *aChunk)
+GapFiller::NotifyListener(nsresult aResult, uint32_t aChunkIdx,
+                          CacheFileChunk *aChunk)
 {
   {
-    MutexAutoLock lock(*mFile->GetLock());
+    CacheFileAutoLock lock(mFile);
     mFile->mGapFiller = nullptr;
   }
   nsCOMPtr<CacheFileChunkListener> listener;
   mListener.swap(listener);
-  listener->OnChunkAvailable(aResult, aChunk);
+  listener->OnChunkAvailable(aResult, aChunkIdx, aChunk);
 
   return NS_OK;
 }
