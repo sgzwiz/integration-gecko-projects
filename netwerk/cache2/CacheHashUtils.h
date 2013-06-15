@@ -6,6 +6,14 @@
 #define CacheHashUtils__h__
 
 #include "mozilla/Types.h"
+#include "prnetdb.h"
+
+#define LOGSHA1(x) \
+    PR_htonl((reinterpret_cast<const uint32_t *>(x))[0]), \
+    PR_htonl((reinterpret_cast<const uint32_t *>(x))[1]), \
+    PR_htonl((reinterpret_cast<const uint32_t *>(x))[2]), \
+    PR_htonl((reinterpret_cast<const uint32_t *>(x))[3]), \
+    PR_htonl((reinterpret_cast<const uint32_t *>(x))[4])
 
 namespace mozilla {
 namespace net {
