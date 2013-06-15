@@ -645,7 +645,7 @@ NS_IMETHODIMP CacheEntry::GetFetchCount(int32_t *aFetchCount)
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  mozilla::MutexAutoLock lock(*file->GetLock());
+  CacheFileAutoLock lock(mFile);
 
   CacheFileMetadata* metadata = file->Metadata();
   MOZ_ASSERT(metadata);
@@ -660,7 +660,7 @@ NS_IMETHODIMP CacheEntry::GetLastFetched(uint32_t *aLastFetched)
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  mozilla::MutexAutoLock lock(*file->GetLock());
+  CacheFileAutoLock lock(mFile);
 
   CacheFileMetadata* metadata = file->Metadata();
   MOZ_ASSERT(metadata);
@@ -675,7 +675,7 @@ NS_IMETHODIMP CacheEntry::GetLastModified(uint32_t *aLastModified)
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  mozilla::MutexAutoLock lock(*file->GetLock());
+  CacheFileAutoLock lock(mFile);
 
   CacheFileMetadata* metadata = file->Metadata();
   MOZ_ASSERT(metadata);
@@ -691,7 +691,7 @@ NS_IMETHODIMP CacheEntry::GetExpirationTime(uint32_t *aExpirationTime)
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  mozilla::MutexAutoLock lock(*file->GetLock());
+  CacheFileAutoLock lock(mFile);
 
   CacheFileMetadata* metadata = file->Metadata();
   MOZ_ASSERT(metadata);
@@ -707,7 +707,7 @@ NS_IMETHODIMP CacheEntry::SetExpirationTime(uint32_t aExpirationTime)
     return NS_ERROR_NOT_AVAILABLE;
 
   {
-    mozilla::MutexAutoLock lock(*file->GetLock());
+    CacheFileAutoLock lock(mFile);
 
     CacheFileMetadata* metadata = file->Metadata();
     MOZ_ASSERT(metadata);
@@ -866,7 +866,7 @@ NS_IMETHODIMP CacheEntry::GetSecurityInfo(nsISupports * *aSecurityInfo)
   char const* info;
   nsCOMPtr<nsISupports> secInfo;
   {
-    mozilla::MutexAutoLock lock(*file->GetLock());
+    CacheFileAutoLock lock(mFile);
 
     CacheFileMetadata* metadata = file->Metadata();
     MOZ_ASSERT(metadata);
@@ -921,7 +921,7 @@ NS_IMETHODIMP CacheEntry::SetSecurityInfo(nsISupports *aSecurityInfo)
   }
 
   {
-    mozilla::MutexAutoLock lock(*file->GetLock());
+    CacheFileAutoLock lock(mFile);
 
     CacheFileMetadata* metadata = file->Metadata();
     MOZ_ASSERT(metadata);
@@ -967,7 +967,7 @@ NS_IMETHODIMP CacheEntry::GetMetaDataElement(const char * aKey, char * *aRetval)
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  mozilla::MutexAutoLock lock(*file->GetLock());
+  CacheFileAutoLock lock(mFile);
 
   CacheFileMetadata* metadata = file->Metadata();
   MOZ_ASSERT(metadata);
@@ -987,7 +987,7 @@ NS_IMETHODIMP CacheEntry::SetMetaDataElement(const char * aKey, const char * aVa
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  mozilla::MutexAutoLock lock(*file->GetLock());
+  CacheFileAutoLock lock(mFile);
 
   CacheFileMetadata* metadata = file->Metadata();
   MOZ_ASSERT(metadata);
