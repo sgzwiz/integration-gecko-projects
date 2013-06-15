@@ -91,8 +91,10 @@ public:
   NS_DECLARE_STATIC_IID_ACCESSOR(CACHEFILEIOLISTENER_IID)
 
   NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult) = 0;
-  NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, nsresult aResult) = 0;
-  NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, nsresult aResult) = 0;
+  NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
+                           nsresult aResult) = 0;
+  NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, char *aBuf,
+                        nsresult aResult) = 0;
   NS_IMETHOD OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult) = 0;
 };
 
