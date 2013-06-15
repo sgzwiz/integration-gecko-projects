@@ -58,12 +58,14 @@ public:
 
   NS_IMETHOD OnChunkRead(nsresult aResult, CacheFileChunk *aChunk);
   NS_IMETHOD OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk);
-  NS_IMETHOD OnChunkAvailable(nsresult aResult, CacheFileChunk *aChunk);
+  NS_IMETHOD OnChunkAvailable(nsresult aResult, uint32_t aChunkIdx,
+                              CacheFileChunk *aChunk);
   NS_IMETHOD OnChunkUpdated(CacheFileChunk *aChunk);
 
   NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult);
-  NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, nsresult aResult);
-  NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, nsresult aResult);
+  NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
+                           nsresult aResult);
+  NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, char *aBuf, nsresult aResult);
   NS_IMETHOD OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult);
 
   NS_IMETHOD OnMetadataRead(nsresult aResult);
@@ -74,7 +76,6 @@ public:
   NS_IMETHOD SetMemoryOnly(bool aMemoryOnly);
   NS_IMETHOD Doom(CacheFileListener *aCallback);
 
-  mozilla::Mutex *GetLock();
   CacheFileMetadata* Metadata();
   int64_t DataSize();
 
@@ -83,10 +84,15 @@ private:
   friend class CacheFileInputStream;
   friend class CacheFileOutputStream;
   friend class GapFiller;
+  friend class CacheFileAutoLock;
 
   virtual ~CacheFile();
 
+  void     Lock();
+  void     Unlock();
   void     AssertOwnsLock();
+  void     ReleaseOutsideLock(nsISupports *aObject);
+
   nsresult GetChunk(uint32_t aIndex, bool aWriter,
                     CacheFileChunkListener *aCallback);
   nsresult GetChunkLocked(uint32_t aIndex, bool aWriter,
@@ -98,17 +104,20 @@ private:
   nsresult NotifyChunkListener(CacheFileChunkListener *aCallback,
                                nsIEventTarget *aTarget,
                                nsresult aResult,
+                               uint32_t aChunkIdx,
                                CacheFileChunk *aChunk);
   nsresult QueueChunkListener(uint32_t aIndex,
                               CacheFileChunkListener *aCallback);
   nsresult NotifyChunkListeners(uint32_t aIndex, nsresult aResult,
                                 CacheFileChunk *aChunk);
 
+  void WriteMetadataIfNeeded();
 
   mozilla::Mutex mLock;
   bool           mReady;
   bool           mMemoryOnly;
   bool           mDataAccessed;
+  bool           mWritingMetadata;
   int64_t        mDataSize;
   nsCString      mKey;
 
@@ -122,6 +131,24 @@ private:
 
   nsTArray<CacheFileInputStream*> mInputs;
   nsRefPtr<CacheFileOutputStream> mOutput;
+
+  nsTArray<nsISupports*>          mObjsToRelease;
+};
+
+class CacheFileAutoLock {
+public:
+  CacheFileAutoLock(CacheFile *aFile)
+    : mFile(aFile)
+  {
+    mFile->Lock();
+  }
+  ~CacheFileAutoLock()
+  {
+    mFile->Unlock();
+  }
+
+private:
+  nsRefPtr<CacheFile> mFile;
 };
 
 } // net
