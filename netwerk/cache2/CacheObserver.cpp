@@ -71,15 +71,20 @@ CacheObserver::Observe(nsISupports* aSubject,
     return NS_OK;
   }
 
-  if (!strcmp(aTopic, "profile-before-change") ||
-      !strcmp(aTopic, "xpcom-shutdown")) {
+  if (!strcmp(aTopic, "profile-before-change")) {
     CacheStorageService* service = CacheStorageService::Self();
-    if (!service)
-      return NS_OK;
+    if (service)
+      service->Shutdown();
 
-    service->Shutdown();
-    CacheFileIOManager::Shutdown();
     return NS_OK;
+  }
+
+  if (!strcmp(aTopic, "xpcom-shutdown")) {
+    CacheStorageService* service = CacheStorageService::Self();
+    if (service)
+      service->Shutdown();
+
+    CacheFileIOManager::Shutdown();
   }
 
   if (!strcmp(aTopic, "last-pb-context-exited")) {
