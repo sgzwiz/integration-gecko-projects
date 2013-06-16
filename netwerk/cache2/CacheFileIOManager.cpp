@@ -550,9 +550,15 @@ CacheFileIOManager::OnProfile()
 {
   nsresult rv;
   nsCOMPtr<nsIFile> directory;
-  rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
+  rv = NS_GetSpecialDirectory(NS_APP_CACHE_PARENT_DIR,
                               getter_AddRefs(directory));
-  if (NS_SUCCEEDED(rv)) {
+
+  if (!directory) {
+    rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_LOCAL_50_DIR,
+                                getter_AddRefs(directory));
+  }
+
+  if (directory) {
     rv = directory->Clone(getter_AddRefs(gInstance->mCacheDirectory));
     NS_ENSURE_SUCCESS(rv, rv);
 
