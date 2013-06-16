@@ -76,6 +76,8 @@ public:
   NS_IMETHOD SetMemoryOnly(bool aMemoryOnly);
   NS_IMETHOD Doom(CacheFileListener *aCallback);
 
+  nsresult   ThrowMemoryCachedData();
+
   CacheFileMetadata* Metadata();
   int64_t DataSize();
 
@@ -128,6 +130,7 @@ private:
 
   nsRefPtrHashtable<nsUint32HashKey, CacheFileChunk> mChunks;
   nsClassHashtable<nsUint32HashKey, ChunkListeners> mChunkListeners;
+  nsRefPtrHashtable<nsUint32HashKey, CacheFileChunk> mCachedChunks;
 
   nsTArray<CacheFileInputStream*> mInputs;
   nsRefPtr<CacheFileOutputStream> mOutput;
