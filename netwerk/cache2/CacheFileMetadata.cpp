@@ -54,6 +54,25 @@ CacheFileMetadata::~CacheFileMetadata()
   }
 }
 
+CacheFileMetadata::CacheFileMetadata(const nsACString &aKey)
+  : mHandle(nullptr)
+  , mHashArray(nullptr)
+  , mHashArraySize(0)
+  , mHashCount(0)
+  , mOffset(0)
+  , mBuf(nullptr)
+  , mBufSize(0)
+  , mWriteBuf(nullptr)
+  , mElementsSize(0)
+  , mIsDirty(true)
+{
+  MOZ_COUNT_CTOR(CacheFileMetadata);
+  memset(&mMetaHdr, 0, sizeof(CacheFileMetadataHeader));
+  mKey = aKey;
+  mMetaHdr.mFetchCount++;
+  mMetaHdr.mKeySize = mKey.Length();
+}
+
 nsresult
 CacheFileMetadata::ReadMetadata(CacheFileMetadataListener *aListener)
 {
@@ -69,9 +88,9 @@ CacheFileMetadata::ReadMetadata(CacheFileMetadataListener *aListener)
   if (size == 0) {
     // this is a new entry
     mOffset = 0;
-    aListener->OnMetadataRead(NS_OK);
     mMetaHdr.mFetchCount++;
     mMetaHdr.mKeySize = mKey.Length();
+    aListener->OnMetadataRead(NS_OK);
     return NS_OK;
   }
 

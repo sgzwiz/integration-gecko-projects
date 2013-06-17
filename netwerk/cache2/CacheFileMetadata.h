@@ -48,6 +48,7 @@ public:
   NS_DECL_ISUPPORTS
 
   CacheFileMetadata(CacheFileHandle *aHandle, const nsACString &aKey);
+  CacheFileMetadata(const nsACString &aKey);
 
   nsresult ReadMetadata(CacheFileMetadataListener *aListener);
   nsresult WriteMetadata(uint32_t aOffset,

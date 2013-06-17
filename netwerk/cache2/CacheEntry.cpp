@@ -171,9 +171,9 @@ void CacheEntry::Load(bool aTruncate)
 
   // TODO tell the file to store on disk or not from the very start
   if (NS_SUCCEEDED(rv))
-    rv = mFile->Init(fileKey, aTruncate, this);
+    rv = mFile->Init(fileKey, aTruncate, !mUseDisk, mUseDisk ? this : nullptr);
 
-  if (NS_FAILED(rv) || syncOpen)
+  if (NS_FAILED(rv) || syncOpen || !mUseDisk)
     OnFileReady(rv, syncOpen);
 }
 
