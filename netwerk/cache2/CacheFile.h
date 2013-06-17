@@ -54,6 +54,7 @@ public:
 
   nsresult Init(const nsACString &aKey,
                 bool aCreateNew,
+                bool aMemoryOnly,
                 CacheFileListener *aCallback);
 
   NS_IMETHOD OnChunkRead(nsresult aResult, CacheFileChunk *aChunk);
