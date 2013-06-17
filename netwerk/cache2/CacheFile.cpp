@@ -84,6 +84,7 @@ CacheFile::~CacheFile()
 nsresult
 CacheFile::Init(const nsACString &aKey,
                 bool aCreateNew,
+                bool aMemoryOnly,
                 CacheFileListener *aCallback)
 {
   MOZ_ASSERT(!mListener);
@@ -92,27 +93,38 @@ CacheFile::Init(const nsACString &aKey,
   nsresult rv;
 
   mKey = aKey;
+  mMemoryOnly = aMemoryOnly;
 
-  SHA1Sum sum;
-  SHA1Sum::Hash hash;
-  sum.update(mKey.get(), mKey.Length());
-  sum.finish(hash);
+  if (mMemoryOnly) {
+    MOZ_ASSERT(!aCallback);
 
-  LOG(("CacheFile::Init() [this=%p, key=%s, createNew=%d, listener=%p, "
-       "hash=%08x%08x%08x%08x%08x]", this, mKey.get(), aCreateNew, aCallback,
-       LOGSHA1(&hash)));
+    mMetadata = new CacheFileMetadata(mKey);
+    mReady = true;
+    mDataSize = mMetadata->Offset();
+    return NS_OK;
+  }
+  else {
+    SHA1Sum sum;
+    SHA1Sum::Hash hash;
+    sum.update(mKey.get(), mKey.Length());
+    sum.finish(hash);
 
-  uint32_t flags;
-  if (aCreateNew)
-    flags = CacheFileIOManager::CREATE_NEW;
-  else
-    flags = CacheFileIOManager::CREATE;
+    LOG(("CacheFile::Init() [this=%p, key=%s, createNew=%d, memoryOnly= %d, "
+         "listener=%p, hash=%08x%08x%08x%08x%08x]", this, mKey.get(),
+         aCreateNew, aCallback, LOGSHA1(&hash)));
 
-  mListener = aCallback;
-  rv = CacheFileIOManager::OpenFile(&hash, flags, this);
-  if (NS_FAILED(rv)) {
-    mListener = nullptr;
-    NS_ENSURE_SUCCESS(rv, rv);
+    uint32_t flags;
+    if (aCreateNew)
+      flags = CacheFileIOManager::CREATE_NEW;
+    else
+      flags = CacheFileIOManager::CREATE;
+
+    mListener = aCallback;
+    rv = CacheFileIOManager::OpenFile(&hash, flags, this);
+    if (NS_FAILED(rv)) {
+      mListener = nullptr;
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
   }
 
   return NS_OK;
@@ -157,6 +169,8 @@ nsresult
 CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
 {
   CacheFileAutoLock lock(this);
+
+  MOZ_ASSERT(!mMemoryOnly);
 
   LOG(("CacheFile::OnChunkWritten() [this=%p, rv=0x%08x, chunk=%p, idx=%d]",
        this, aResult, aChunk, aChunk->Index()));
@@ -208,7 +222,8 @@ CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
   }
 
   mChunks.Remove(aChunk->Index());
-  WriteMetadataIfNeeded();
+  if (!mMemoryOnly)
+    WriteMetadataIfNeeded();
 
   return NS_OK;
 }
@@ -312,7 +327,8 @@ CacheFile::OnMetadataWritten(nsresult aResult)
     // TODO close streams with an error ???
   }
 
-  WriteMetadataIfNeeded();
+  if (!mMemoryOnly)
+    WriteMetadataIfNeeded();
 
   return NS_OK;
 }
@@ -336,7 +352,7 @@ CacheFile::OpenInputStream(nsIInputStream **_retval)
 {
   CacheFileAutoLock lock(this);
 
-  MOZ_ASSERT(mHandle);
+  MOZ_ASSERT(mHandle || mMemoryOnly);
 
   if (!mReady) {
     LOG(("CacheFile::OpenInputStream() - CacheFile is not ready [this=%p]",
@@ -363,7 +379,7 @@ CacheFile::OpenOutputStream(nsIOutputStream **_retval)
 {
   CacheFileAutoLock lock(this);
 
-  MOZ_ASSERT(mHandle);
+  MOZ_ASSERT(mHandle || mMemoryOnly);
 
   if (!mReady) {
     LOG(("CacheFile::OpenOutputStream() - CacheFile is not ready [this=%p]",
@@ -451,6 +467,13 @@ CacheFile::ThrowMemoryCachedData()
   CacheFileAutoLock lock(this);
 
   LOG(("CacheFile::ThrowMemoryCachedData() [this=%p]", this));
+
+  if (mMemoryOnly) {
+    LOG(("CacheFile::ThrowMemoryCachedData() - Ignoring request because the "
+         "entry is memory-only [this=%p]", this));
+
+    return NS_OK;
+  }
 
   mCachedChunks.Clear();
   return NS_OK;
@@ -651,14 +674,6 @@ CacheFile::RemoveChunk(CacheFileChunk *aChunk)
       return NS_OK;
     }
 
-    if (mMemoryOnly) {
-      LOG(("CacheFile::RemoveChunk() - Not releasing chunk because the entry is"
-           " memory-only [this=%p]", this));
-
-      // cannot release chunks in case of memory only entry
-      return NS_OK;
-    }
-
 #ifdef DEBUG
     {
       // We can be here iff the chunk is in the hash table
@@ -673,7 +688,7 @@ CacheFile::RemoveChunk(CacheFileChunk *aChunk)
     }
 #endif
 
-    if (chunk->IsDirty()) {
+    if (chunk->IsDirty() && !mMemoryOnly) {
       LOG(("CacheFile::RemoveChunk() - Writing dirty chunk to the disk "
            "[this=%p]", this));
 
@@ -694,7 +709,8 @@ CacheFile::RemoveChunk(CacheFileChunk *aChunk)
     chunk->mRemovingChunk = true;
     mCachedChunks.Put(chunk->Index(), chunk);
     mChunks.Remove(chunk->Index());
-    WriteMetadataIfNeeded();
+    if (!mMemoryOnly)
+      WriteMetadataIfNeeded();
   }
 
   return NS_OK;
@@ -715,7 +731,8 @@ CacheFile::RemoveInput(CacheFileInputStream *aInput)
 
   ReleaseOutsideLock(static_cast<nsIInputStream*>(aInput));
 
-  WriteMetadataIfNeeded();
+  if (!mMemoryOnly)
+    WriteMetadataIfNeeded();
 
   return NS_OK;
 }
@@ -736,7 +753,8 @@ CacheFile::RemoveOutput(CacheFileOutputStream *aOutput)
 
   ReleaseOutsideLock(static_cast<nsIOutputStream*>(mOutput.forget().get()));
 
-  WriteMetadataIfNeeded();
+  if (!mMemoryOnly)
+    WriteMetadataIfNeeded();
 
   return NS_OK;
 }
@@ -833,6 +851,7 @@ CacheFile::WriteMetadataIfNeeded()
   LOG(("CacheFile::WriteMetadataIfNeeded() [this=%p]", this));
 
   AssertOwnsLock();
+  MOZ_ASSERT(!mMemoryOnly);
 
   nsresult rv;
 
