@@ -199,7 +199,8 @@ CacheFileInputStream::CloseWithStatus(nsresult aStatus)
   mClosed = true;
   mStatus = NS_FAILED(aStatus) ? aStatus : NS_BASE_STREAM_CLOSED;
 
-  ReleaseChunk();
+  if (mChunk)
+    ReleaseChunk();
 
   // TODO propagate error from input stream to other streams ???
 
