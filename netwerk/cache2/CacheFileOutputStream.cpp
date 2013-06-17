@@ -138,7 +138,8 @@ CacheFileOutputStream::CloseWithStatus(nsresult aStatus)
   mClosed = true;
   mStatus = NS_FAILED(aStatus) ? aStatus : NS_BASE_STREAM_CLOSED;
 
-  ReleaseChunk();
+  if (mChunk)
+    ReleaseChunk();
 
   if (mCallback)
     NotifyListener();
