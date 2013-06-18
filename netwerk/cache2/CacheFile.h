@@ -74,7 +74,7 @@ public:
 
   NS_IMETHOD OpenInputStream(nsIInputStream **_retval);
   NS_IMETHOD OpenOutputStream(nsIOutputStream **_retval);
-  NS_IMETHOD SetMemoryOnly(bool aMemoryOnly);
+  NS_IMETHOD SetMemoryOnly();
   NS_IMETHOD Doom(CacheFileListener *aCallback);
 
   nsresult   ThrowMemoryCachedData();
@@ -116,7 +116,12 @@ private:
 
   void WriteMetadataIfNeeded();
 
+  static PLDHashOperator WriteAllCachedChunks(const uint32_t& aIdx,
+                                              nsRefPtr<CacheFileChunk>& aChunk,
+                                              void* aClosure);
+
   mozilla::Mutex mLock;
+  bool           mOpeningFile;
   bool           mReady;
   bool           mMemoryOnly;
   bool           mDataAccessed;
