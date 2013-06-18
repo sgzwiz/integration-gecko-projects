@@ -258,7 +258,7 @@ void CacheEntry::AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags
 already_AddRefed<CacheEntry> CacheEntry::ReopenTruncated(nsICacheEntryOpenCallback* aCallback)
 {
   LOG(("CacheEntry::ReopenTruncated [this=%p]", this));
-  mLock.AssertCurrentThreadOwns();
+  mozilla::MutexAutoLock lock(mLock);
 
   // Hold callbacks invocation, AddStorageEntry would invoke from doom prematurly
   mPreventCallbacks = true;
@@ -279,6 +279,9 @@ already_AddRefed<CacheEntry> CacheEntry::ReopenTruncated(nsICacheEntryOpenCallba
 
     if (NS_SUCCEEDED(rv)) {
       newEntry->AsyncOpen(aCallback, nsICacheStorage::OPEN_TRUNCATE);
+    }
+    else {
+      AsyncDoom(nullptr);
     }
   }
 
@@ -344,34 +347,18 @@ void CacheEntry::InvokeCallbacks()
     }
 
     nsCOMPtr<nsICacheEntryOpenCallback> callback = mCallbacks[0];
+    mCallbacks.RemoveElementAt(0);
 
-    CallbackResult result;
+    bool called;
     {
       mozilla::MutexAutoUnlock unlock(mLock);
-      result = InvokeCallback(callback, false);
+      called = InvokeCallback(callback, false);
     }
 
-    switch (result) {
-    case BYPASSED:
+    if (!called) {
+      mCallbacks.InsertElementAt(0, callback);
       LOG(("CacheEntry::InvokeCallbacks END callback bypassed"));
       return;
-
-    case INVALID: {
-      mCallbacks.RemoveElementAt(0);
-      nsRefPtr<CacheEntry> newEntry = ReopenTruncated(callback);
-      if (newEntry)
-        return;
-
-      // Failed to create a new entry.
-      // We must tell the currently iterated consumer that renew failed.
-      mCallbacks.AppendElement(callback);
-      break;
-    }
-
-    case INVOKED:
-      mCallbacks.RemoveElementAt(0);
-      // Go to the next callback.
-      break;
     }
   } while (true);
 
@@ -380,7 +367,7 @@ void CacheEntry::InvokeCallbacks()
 
     {
       mozilla::MutexAutoUnlock unlock(mLock);
-      if (InvokeCallback(callback, true) == BYPASSED) {
+      if (!InvokeCallback(callback, true)) {
         // Didn't trigger, so we must stop
         break;
       }
@@ -392,14 +379,13 @@ void CacheEntry::InvokeCallbacks()
   LOG(("CacheEntry::InvokeCallbacks END [this=%p]", this));
 }
 
-CacheEntry::CallbackResult
-CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
-                           bool aReadOnly)
+bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
+                                bool aReadOnly)
 {
   LOG(("CacheEntry::InvokeCallback [this=%p, cb=%p]", this, aCallback));
 
   if (!aCallback)
-    return INVOKED; // simulate we've done the work to prevent any endless loops
+    return true; // simulate we've done the work to prevent any endless loops
 
   // When we are here, the entry must be loaded from disk
   MOZ_ASSERT(mIsLoaded);
@@ -424,7 +410,7 @@ CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
       // until metadata are filled with values downloaded from the server
       // or the entry revalidated.
       LOG(("  entry is being written/revalidated, callback bypassed"));
-      return BYPASSED;
+      return false;
     }
 
     if (ready && !aReadOnly) {
@@ -438,13 +424,24 @@ CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
 
       switch (validityState) {
       case ENTRY_NOT_VALID:
+      {
         // Entry found not valid, break callback execution.  This result
-        // will cause this entry replacement with a new truncated one.
-        return INVALID;
+        // causes this entry replacement with a new truncated one.
+        nsRefPtr<CacheEntry> newEntry = ReopenTruncated(aCallback);
+        if (newEntry) {
+          // This new entry now grabbed all our callbacks, indicate callback
+          // had been invoked.
+          return true;
+        }
+        break;
+      }
 
       case ENTRY_NEEDS_REVALIDATION:
         LOG(("  will be holding callbacks until entry is revalidated"));
-        mIsRevalidating = true;
+        {
+          mozilla::MutexAutoLock lock(mLock);
+          mIsRevalidating = true;
+        }
         // NO BREAK
 
       case ENTRY_VALID:
@@ -455,21 +452,17 @@ CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
   }
 
   InvokeAvailableCallback(aCallback, aReadOnly);
-  return INVOKED;
+  return true;
 }
 
 void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
                                          bool aReadOnly)
 {
-  // ifdef log and debug
-  {
-    mozilla::MutexAutoLock lock(mLock);
-    LOG(("CacheEntry::InvokeAvailableCallback [this=%p, cb=%p, ready=%d, r/o=%d]",
-      this, aCallback, (bool)mIsReady, aReadOnly));
+  LOG(("CacheEntry::InvokeAvailableCallback [this=%p, cb=%p, ready=%d, r/o=%d]",
+    this, aCallback, (bool)mIsReady, aReadOnly));
 
-    // When we are here, the entry must be loaded from disk
-    MOZ_ASSERT(mIsLoaded);
-  }
+  // When we are here, the entry must be loaded from disk
+  MOZ_ASSERT(mIsLoaded);
 
   if (!NS_IsMainThread()) {
     // Must happen on the main thread :(
@@ -814,13 +807,23 @@ NS_IMETHODIMP CacheEntry::OpenOutputStream(uint32_t offset, nsIOutputStream * *_
   // Unfortunatelly, our consumer here is nsStreamTee, that requires
   // blocking stream as its sink.  The stream we get from CacheFile
   // is non-blocking, so we need to buffer :(
+
+  // Speed vs memory consumption based on predicted data size
+  uint32_t segment;
+  if (mPredictedDataSize > 1024 * 1024)
+    segment = 256 * 1024; // use 256k segments for 1MB+ content
+  else if (mPredictedDataSize > 10 * 1024)
+    segment = 64 * 1024;  // use 64k segments for 10kB+ content
+  else
+    segment = 4 * 1024;   // use 4k segments for smaller then 10kB or unknown (chunked)
+
   nsCOMPtr<nsIAsyncOutputStream> pipeOut;
   nsCOMPtr<nsIAsyncInputStream> pipeIn;
   rv = NS_NewPipe2(getter_AddRefs(pipeIn),
                    getter_AddRefs(pipeOut),
                    true, // non-blocking input
                    false, // blocking output
-                   4096, (uint32_t)-1);
+                   segment, (uint32_t)-1);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIEventTarget> streamTransportThread =
@@ -828,7 +831,7 @@ NS_IMETHODIMP CacheEntry::OpenOutputStream(uint32_t offset, nsIOutputStream * *_
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = NS_AsyncCopy(pipeIn, stream, streamTransportThread,
-                    NS_ASYNCCOPY_VIA_READSEGMENTS, 4096);
+                    NS_ASYNCCOPY_VIA_READSEGMENTS, segment);
   NS_ENSURE_SUCCESS(rv, rv);
 
   CallQueryInterface(pipeOut, _retval);
