@@ -11,6 +11,7 @@ const NOTVALID =    1 << 1;
 const THROWAVAIL =  1 << 2;
 const READONLY =    1 << 3;
 const NOTFOUND =    1 << 4;
+const REVAL =       1 << 5;
 
 var log = true;
 function LOG(o, m)
@@ -71,16 +72,19 @@ OpenCallback.prototype =
     this.onCheckPassed = true;
      
     if (this.behavior & NOTVALID) {
-      LOG(this, "onCacheEntryCheck DONE, return false");
-      return false;
+      LOG(this, "onCacheEntryCheck DONE, return ENTRY_NOT_VALID");
+      return Ci.nsICacheEntryOpenCallback.ENTRY_NOT_VALID;
     }
 
-    // to do this check we would need to enhance the callback for "expect" and "write" data
-    // IMO overkill...
     do_check_eq(entry.getMetaDataElement("meto"), this.workingMetadata);
 
-    LOG(this, "onCacheEntryCheck DONE, return true");
-    return true;
+    if (this.behavior & REVAL) {
+      LOG(this, "onCacheEntryCheck DONE, return REVAL");
+      return Ci.nsICacheEntryOpenCallback.ENTRY_NEEDS_REVALIDATION;
+    }
+
+    LOG(this, "onCacheEntryCheck DONE, return ENTRY_VALID");
+    return Ci.nsICacheEntryOpenCallback.ENTRY_VALID;
   },
   onCacheEntryAvailable: function(entry, isnew, appCache, status)
   {
@@ -102,13 +106,16 @@ OpenCallback.prototype =
       if (this.behavior & THROWAVAIL)
         this.throwAndNotify(entry);
 
+      this.goon(entry);
+      
+      try {
+        entry.getMetaDataElement("meto");
+        do_check_true(false);
+      }
+      catch (ex) {}
+
       var self = this;
       do_execute_soon(function() { // emulate network latency
-        try {
-          entry.getMetaDataElement("meto");
-          do_throw();
-        }
-        catch(ex) {}
         entry.setMetaDataElement("meto", self.workingMetadata);
         entry.setValid();
         do_execute_soon(function() { // emulate more network latency
@@ -116,8 +123,6 @@ OpenCallback.prototype =
           var wrt = os.write(self.workingData, self.workingData.length);
           do_check_eq(wrt, self.workingData.length);
           os.close();
-          // HACK (should invoke immediately from OCEA, but storage stream is not async)
-          self.goon(entry);
         })
       })
     }
@@ -253,6 +258,25 @@ function EvictionCallback(success, goon)
   callbacks.push(this);
   this.order = callbacks.length;
 }
+
+MultipleCallbacks.prototype =
+{
+  fired: function()
+  {
+    if (--this.pending == 0)
+      this.goon();
+  }
+}
+
+function MultipleCallbacks(number, goon)
+{
+  this.pending = number;
+  this.goon = goon;
+}
+
+// ---------------------------------------------------------------------
+// ------------------------------- TESTS -------------------------------
+// ---------------------------------------------------------------------
 
 function run_test_basic()
 {
@@ -433,7 +457,6 @@ function run_test_evict_existing_disk_entry_using_memory_storage()
 
 function run_test_evict_single_entry()
 {
-  // BROKEN - MISSING CALLBACK IMPL IN CacheEntry
   var storage = getCacheStorage("disk");
   storage.asyncDoomURI(createURI("http://a/"), "",
     new EvictionCallback(true, function() {
@@ -515,9 +538,114 @@ function run_test_dont_validate()
           // And check...
           asyncOpenCacheEntry("http://v/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null, 
             new OpenCallback(NORMAL, "v2m", "v2d", function(entry) {
+              //run_test_basic_concurent_readers();
               run_test_evict_non_existing();
             })
           );
+        })
+      );
+    })
+  );
+}
+
+function run_test_basic_concurent_readers()
+{
+  asyncOpenCacheEntry("http://x/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+    new OpenCallback(NEW, "x1m", "x1d", function(entry) {
+      // nothing to do here, we expect concurent callbacks to get
+      // all notified, then the whole test chain continues
+    })
+  );
+  
+  var mc = new MultipleCallbacks(3, run_test_needs_reval_304);
+  
+  asyncOpenCacheEntry("http://x/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+    new OpenCallback(NORMAL, "x1m", "x1d", function(entry) {
+      mc.fired();
+    })
+  );
+  asyncOpenCacheEntry("http://x/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+    new OpenCallback(NORMAL, "x1m", "x1d", function(entry) {
+      mc.fired();
+    })
+  );
+  asyncOpenCacheEntry("http://x/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+    new OpenCallback(NORMAL, "x1m", "x1d", function(entry) {
+      mc.fired();
+    })
+  );
+}
+
+function run_test_needs_reval_304()
+{
+  // Open for write, write
+  asyncOpenCacheEntry("http://304/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null, 
+    new OpenCallback(NEW, "31m", "31d", function(entry) {
+      // Open normally but wait for validation from the server
+      asyncOpenCacheEntry("http://304/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+        new OpenCallback(REVAL, "31m", "31d", function(entry) {
+          // emulate 304 from the server
+          do_execute_soon(function() {
+            entry.setValid(); // this will trigger OpenCallbacks bellow
+          });
+        })
+      );
+      
+      var mc = new MultipleCallbacks(3, run_test_needs_reval_200);
+      
+      asyncOpenCacheEntry("http://304/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+        new OpenCallback(NORMAL, "31m", "31d", function(entry) {
+          mc.fired();
+        })
+      );
+      asyncOpenCacheEntry("http://304/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+        new OpenCallback(NORMAL, "31m", "31d", function(entry) {
+          mc.fired();
+        })
+      );
+      asyncOpenCacheEntry("http://304/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+        new OpenCallback(NORMAL, "31m", "31d", function(entry) {
+          mc.fired();
+        })
+      );
+    })
+  );
+}
+
+function run_test_needs_reval_200()
+{
+  // Open for write, write
+  asyncOpenCacheEntry("http://200/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null, 
+    new OpenCallback(NEW, "21m", "21d", function(entry) {
+      // Open normally but wait for validation from the server
+      asyncOpenCacheEntry("http://200/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+        new OpenCallback(REVAL, "21m", "21d", function(entry) {
+          // emulate 200 from server (new content)
+          do_execute_soon(function() {
+            var entry2 = entry.recreate(); 
+            
+            // now fill the new entry, use OpenCallback directly for it
+            var callback2 = new OpenCallback(NEW, "22m", "22d", function() {});
+            callback2.onCacheEntryAvailable(entry2, true, null, Cr.NS_OK);
+          });
+        })
+      );
+
+      var mc = new MultipleCallbacks(3, run_test_evict_non_existing);
+
+      asyncOpenCacheEntry("http://200/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+        new OpenCallback(NORMAL, "22m", "22d", function(entry) {
+          mc.fired();
+        })
+      );
+      asyncOpenCacheEntry("http://200/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+        new OpenCallback(NORMAL, "22m", "22d", function(entry) {
+          mc.fired();
+        })
+      );
+      asyncOpenCacheEntry("http://200/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+        new OpenCallback(NORMAL, "22m", "22d", function(entry) {
+          mc.fired();
         })
       );
     })
@@ -551,6 +679,7 @@ function run_test()
 {
   do_get_profile();
   run_test_basic();
+  // run_test_basic_concurent_readers();
   do_test_pending();
 }
 
