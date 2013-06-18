@@ -79,6 +79,7 @@ CacheFileMetadata::ReadMetadata(CacheFileMetadataListener *aListener)
   MOZ_ASSERT(!mListener);
   MOZ_ASSERT(!mHashArray);
   MOZ_ASSERT(!mBuf);
+  MOZ_ASSERT(!mWriteBuf);
 
   nsresult rv;
 
@@ -109,14 +110,15 @@ CacheFileMetadata::ReadMetadata(CacheFileMetadataListener *aListener)
   mBufSize = size - offset;
   mBuf = static_cast<char *>(moz_xmalloc(mBufSize));
 
+  mListener = aListener;
   rv = CacheFileIOManager::Read(mHandle, offset, mBuf, mBufSize, this);
   if (NS_FAILED(rv)) {
-    free(mWriteBuf);
-    mWriteBuf = nullptr;
+    mListener = nullptr;
+    free(mBuf);
+    mBuf = nullptr;
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  mListener = aListener;
   return NS_OK;
 }
 
@@ -126,6 +128,7 @@ CacheFileMetadata::WriteMetadata(uint32_t aOffset,
 {
   MOZ_ASSERT(!mListener);
   MOZ_ASSERT(!mWriteBuf);
+  MOZ_ASSERT(mBuf);
 
   nsresult rv;
 
