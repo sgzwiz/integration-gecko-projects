@@ -218,6 +218,8 @@ CacheFileChunk::Index()
 CacheHashUtils::Hash16_t
 CacheFileChunk::Hash()
 {
+  mFile->AssertOwnsLock();
+
   MOZ_ASSERT(mBuf);
   MOZ_ASSERT(!mListener);
 
@@ -260,11 +262,17 @@ nsresult
 CacheFileChunk::OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
                               nsresult aResult)
 {
-  MOZ_ASSERT(mListener);
-
-  mIsDirty = false;
   nsCOMPtr<CacheFileChunkListener> listener;
-  mListener.swap(listener);
+
+  {
+    CacheFileAutoLock lock(mFile);
+
+    MOZ_ASSERT(mListener);
+
+    mIsDirty = false;
+    mListener.swap(listener);
+  }
+
   listener->OnChunkWritten(aResult, this);
 
   return NS_OK;
@@ -274,13 +282,19 @@ nsresult
 CacheFileChunk::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
                            nsresult aResult)
 {
-  MOZ_ASSERT(mListener);
-
-  if (NS_FAILED(aResult))
-    mDataSize = 0;
-
   nsCOMPtr<CacheFileChunkListener> listener;
-  mListener.swap(listener);
+
+  {
+    CacheFileAutoLock lock(mFile);
+
+    MOZ_ASSERT(mListener);
+
+    if (NS_FAILED(aResult))
+      mDataSize = 0;
+
+    mListener.swap(listener);
+  }
+
   listener->OnChunkRead(aResult, this);
 
   return NS_OK;
@@ -296,24 +310,32 @@ CacheFileChunk::OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult)
 bool
 CacheFileChunk::IsReady()
 {
+  mFile->AssertOwnsLock();
+
   return mIsReady;
 }
 
 void
 CacheFileChunk::SetReady(bool aReady)
 {
+  mFile->AssertOwnsLock();
+
   mIsReady = aReady;
 }
 
 bool
 CacheFileChunk::IsDirty()
 {
+  mFile->AssertOwnsLock();
+
   return mIsDirty;
 }
 
 char *
 CacheFileChunk::Buf()
 {
+  mFile->AssertOwnsLock();
+
   return mBuf;
 }
 
