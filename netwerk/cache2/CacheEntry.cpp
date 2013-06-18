@@ -171,7 +171,7 @@ void CacheEntry::Load(bool aTruncate)
 
   // TODO tell the file to store on disk or not from the very start
   if (NS_SUCCEEDED(rv))
-    rv = mFile->Init(fileKey, aTruncate, !mUseDisk, mUseDisk ? this : nullptr);
+    rv = mFile->Init(fileKey, aTruncate, !mUseDisk, syncOpen ? nullptr : this);
 
   if (NS_FAILED(rv) || syncOpen || !mUseDisk)
     OnFileReady(rv, syncOpen);
@@ -789,8 +789,10 @@ NS_IMETHODIMP CacheEntry::OpenOutputStream(uint32_t offset, nsIOutputStream * *_
 
   // No need to sync on mUseDisk here, we don't need to be consistent
   // with content of the memory storage entries hash table.
-  rv = file->SetMemoryOnly(!mUseDisk);
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (!mUseDisk) {
+    rv = file->SetMemoryOnly();
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   nsCOMPtr<nsIOutputStream> stream;
   rv = file->OpenOutputStream(getter_AddRefs(stream));
