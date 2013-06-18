@@ -60,6 +60,7 @@ NS_IMPL_THREADSAFE_ISUPPORTS3(CacheFile,
 
 CacheFile::CacheFile()
   : mLock("CacheFile.mLock")
+  , mOpeningFile(false)
   , mReady(false)
   , mMemoryOnly(false)
   , mDataAccessed(false)
@@ -98,6 +99,9 @@ CacheFile::Init(const nsACString &aKey,
   if (mMemoryOnly) {
     MOZ_ASSERT(!aCallback);
 
+    LOG(("CacheFile::Init() [this=%p, key=%s, createNew=%d, memoryOnly=%d, "
+         "listener=%p]", this, mKey.get(), aCreateNew, aMemoryOnly, aCallback));
+
     mMetadata = new CacheFileMetadata(mKey);
     mReady = true;
     mDataSize = mMetadata->Offset();
@@ -109,21 +113,39 @@ CacheFile::Init(const nsACString &aKey,
     sum.update(mKey.get(), mKey.Length());
     sum.finish(hash);
 
-    LOG(("CacheFile::Init() [this=%p, key=%s, createNew=%d, memoryOnly= %d, "
+    LOG(("CacheFile::Init() [this=%p, key=%s, createNew=%d, memoryOnly=%d, "
          "listener=%p, hash=%08x%08x%08x%08x%08x]", this, mKey.get(),
-         aCreateNew, aCallback, LOGSHA1(&hash)));
+         aCreateNew, aMemoryOnly, aCallback, LOGSHA1(&hash)));
 
     uint32_t flags;
-    if (aCreateNew)
+    if (aCreateNew) {
+      MOZ_ASSERT(!aCallback);
       flags = CacheFileIOManager::CREATE_NEW;
+
+      // make sure we can use this entry immediately
+      mMetadata = new CacheFileMetadata(mKey);
+      mReady = true;
+      mDataSize = mMetadata->Offset();
+    }
     else
       flags = CacheFileIOManager::CREATE;
 
+    mOpeningFile = true;
     mListener = aCallback;
     rv = CacheFileIOManager::OpenFile(&hash, flags, this);
     if (NS_FAILED(rv)) {
       mListener = nullptr;
-      NS_ENSURE_SUCCESS(rv, rv);
+      mOpeningFile = false;
+
+      if (aCreateNew) {
+        mMemoryOnly = true;
+        NS_WARNING("Forcing memory-only entry since OpenFile failed");
+        LOG(("CacheFile::Init() - CacheFileIOManager::OpenFile() failed "
+             "synchronously. We can continue in memory-only mode since "
+             "aCreateNew == true. [this=%p]", this));
+      } else {
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
     }
   }
 
@@ -222,8 +244,7 @@ CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
   }
 
   mChunks.Remove(aChunk->Index());
-  if (!mMemoryOnly)
-    WriteMetadataIfNeeded();
+  WriteMetadataIfNeeded();
 
   return NS_OK;
 }
@@ -246,21 +267,52 @@ CacheFile::OnChunkUpdated(CacheFileChunk *aChunk)
 nsresult
 CacheFile::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
 {
-  MOZ_ASSERT(mListener);
-
-  LOG(("CacheFile::OnFileOpened() [this=%p, rv=0x%08x, handle=%p]",
-       this, aResult, aHandle));
-
   nsresult rv;
+
   nsCOMPtr<CacheFileListener> listener;
 
-  if (NS_FAILED(aResult)) {
-    mListener.swap(listener);
+  {
+    CacheFileAutoLock lock(this);
+
+    MOZ_ASSERT((mListener && !mMetadata) || (!mListener && mMetadata));
+    MOZ_ASSERT(mOpeningFile);
+    MOZ_ASSERT(!mMemoryOnly);
+
+    LOG(("CacheFile::OnFileOpened() [this=%p, rv=0x%08x, handle=%p]",
+         this, aResult, aHandle));
+
+    if (NS_FAILED(aResult)) {
+      mOpeningFile = false;
+      if (mMetadata) {
+        // This entry was initialized as createNew, just switch to memory-only
+        // mode. There is no listener to notify.
+        mMemoryOnly = true;
+        return NS_OK;
+      }
+      mListener.swap(listener);
+    }
+  }
+
+  if (listener) {
     listener->OnFileReady(aResult, false);
     return NS_OK;
   }
 
-  mHandle = aHandle;
+  {
+    CacheFileAutoLock lock(this);
+
+    mHandle = aHandle;
+    mOpeningFile = false;
+
+    if (mMetadata) {
+      // The entry was initialized as createNew, don't try to read metadata.
+      // Write all cached chunks, otherwise thay may stay unwritten.
+      mCachedChunks.Enumerate(&CacheFile::WriteAllCachedChunks, this);
+
+      // There is no listener to notify.
+      return NS_OK;
+    }
+  }
 
   mMetadata = new CacheFileMetadata(mHandle, mKey);
 
@@ -268,7 +320,6 @@ CacheFile::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
   if (NS_FAILED(rv)) {
     mListener.swap(listener);
     listener->OnFileReady(rv, false);
-    return NS_OK;
   }
 
   return NS_OK;
@@ -352,7 +403,7 @@ CacheFile::OpenInputStream(nsIInputStream **_retval)
 {
   CacheFileAutoLock lock(this);
 
-  MOZ_ASSERT(mHandle || mMemoryOnly);
+  MOZ_ASSERT(mHandle || mMemoryOnly || mOpeningFile);
 
   if (!mReady) {
     LOG(("CacheFile::OpenInputStream() - CacheFile is not ready [this=%p]",
@@ -379,7 +430,7 @@ CacheFile::OpenOutputStream(nsIOutputStream **_retval)
 {
   CacheFileAutoLock lock(this);
 
-  MOZ_ASSERT(mHandle || mMemoryOnly);
+  MOZ_ASSERT(mHandle || mMemoryOnly || mOpeningFile);
 
   if (!mReady) {
     LOG(("CacheFile::OpenOutputStream() - CacheFile is not ready [this=%p]",
@@ -406,12 +457,12 @@ CacheFile::OpenOutputStream(nsIOutputStream **_retval)
 }
 
 nsresult
-CacheFile::SetMemoryOnly(bool aMemoryOnly)
+CacheFile::SetMemoryOnly()
 {
-  LOG(("CacheFile::SetMemoryOnly() mMemoryOnly=%d, aMemoryOnly=%d [this=%p]",
-       mMemoryOnly, aMemoryOnly, this));
+  LOG(("CacheFile::SetMemoryOnly() aMemoryOnly=%d [this=%p]",
+       mMemoryOnly, this));
 
-  if (mMemoryOnly == aMemoryOnly)
+  if (mMemoryOnly)
     return NS_OK;
 
   MOZ_ASSERT(mReady);
@@ -431,15 +482,17 @@ CacheFile::SetMemoryOnly(bool aMemoryOnly)
   }
 
   // TODO what to do when this isn't a new entry and has an existing metadata???
-  mMemoryOnly = aMemoryOnly;
+  mMemoryOnly = true;
   return NS_OK;
 }
 
 nsresult
 CacheFile::Doom(CacheFileListener *aCallback)
 {
+  CacheFileAutoLock lock(this);
+
   MOZ_ASSERT(!mListener);
-  MOZ_ASSERT(mHandle || mMemoryOnly);
+  MOZ_ASSERT(mHandle || mMemoryOnly || mOpeningFile);
 
   LOG(("CacheFile::Doom() [this=%p, listener=%p]", this, aCallback));
 
@@ -448,6 +501,9 @@ CacheFile::Doom(CacheFileListener *aCallback)
   if (mMemoryOnly) {
     // TODO what exactly to do here?
     return NS_ERROR_NOT_AVAILABLE;
+  }
+  else if (mOpeningFile) {
+    return NS_ERROR_NOT_AVAILABLE; // TODO FIXME !!!
   }
   else {
     mListener = aCallback;
@@ -471,6 +527,13 @@ CacheFile::ThrowMemoryCachedData()
   if (mMemoryOnly) {
     LOG(("CacheFile::ThrowMemoryCachedData() - Ignoring request because the "
          "entry is memory-only [this=%p]", this));
+
+    return NS_OK;
+  }
+
+  if (mOpeningFile) {
+    LOG(("CacheFile::ThrowMemoryCachedData() - Ignoring request because the "
+         "entry is still opening the file [this=%p]", this));
 
     return NS_OK;
   }
@@ -529,7 +592,7 @@ CacheFile::GetChunkLocked(uint32_t aIndex, bool aWriter,
        this, aIndex, aWriter, aCallback));
 
   MOZ_ASSERT(mReady);
-  MOZ_ASSERT(mHandle || mMemoryOnly);
+  MOZ_ASSERT(mHandle || mMemoryOnly || mOpeningFile);
 
   nsresult rv;
 
@@ -664,7 +727,7 @@ CacheFile::RemoveChunk(CacheFileChunk *aChunk)
          this, aChunk, aChunk->Index()));
 
     MOZ_ASSERT(mReady);
-    MOZ_ASSERT(mHandle || mMemoryOnly);
+    MOZ_ASSERT(mHandle || mMemoryOnly || mOpeningFile);
 
     if (aChunk->mRefCnt != 2) {
       LOG(("CacheFile::RemoveChunk() - Chunk is still used [this=%p, chunk=%p, "
@@ -688,7 +751,7 @@ CacheFile::RemoveChunk(CacheFileChunk *aChunk)
     }
 #endif
 
-    if (chunk->IsDirty() && !mMemoryOnly) {
+    if (chunk->IsDirty() && !mMemoryOnly && !mOpeningFile) {
       LOG(("CacheFile::RemoveChunk() - Writing dirty chunk to the disk "
            "[this=%p]", this));
 
@@ -856,7 +919,7 @@ CacheFile::WriteMetadataIfNeeded()
   nsresult rv;
 
   if (!mOutput && !mInputs.Length() && !mChunks.Count() && mMetadata->IsDirty() &&
-      !mWritingMetadata) {
+      !mWritingMetadata && !mOpeningFile) {
     LOG(("CacheFile::WriteMetadataIfNeeded() - Writing metadata [this=%p]",
          this));
 
@@ -870,6 +933,26 @@ CacheFile::WriteMetadataIfNeeded()
       // TODO: close streams with error
     }
   }
+}
+
+PLDHashOperator
+CacheFile::WriteAllCachedChunks(const uint32_t& aIdx,
+                                nsRefPtr<CacheFileChunk>& aChunk,
+                                void* aClosure)
+{
+  CacheFile *file = static_cast<CacheFile*>(aClosure);
+
+  LOG(("CacheFile::WriteAllCachedChunks() [this=%p, idx=%d, chunk=%p]",
+       file, aIdx, aChunk.get()));
+
+  MOZ_ASSERT(aChunk->IsReady());
+
+  file->mChunks.Put(aIdx, aChunk);
+  aChunk->mRemovingChunk = false;
+  NS_ADDREF(aChunk);
+  file->ReleaseOutsideLock(aChunk);
+
+  return PL_DHASH_REMOVE;
 }
 
 } // net
