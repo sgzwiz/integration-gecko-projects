@@ -186,7 +186,7 @@ private:
   };
   void RememberCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
   void InvokeCallbacks();
-  CallbackResult InvokeCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
+  bool InvokeCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
   void InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
   void OnWriterClosed(Handle const* aHandle);
 

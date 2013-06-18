@@ -723,7 +723,6 @@ CacheStorageService::AddStorageEntry(CacheStorage const* aStorage,
                                      bool aReplace,
                                      CacheEntry** aResult)
 {
-  LOG(("CacheStorageService::AddStorageEntry"));
   NS_ENSURE_FALSE(mShutdown, NS_ERROR_NOT_INITIALIZED);
 
   NS_ENSURE_ARG(aStorage);
@@ -745,7 +744,6 @@ CacheStorageService::AddStorageEntry(nsCSubstring const& aContextKey,
                                      bool aReplace,
                                      CacheEntry** aResult)
 {
-  LOG(("CacheStorageService::AddStorageEntry"));
   NS_ENSURE_FALSE(mShutdown, NS_ERROR_NOT_INITIALIZED);
 
   NS_ENSURE_ARG(aURI);
