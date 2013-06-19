@@ -754,7 +754,7 @@ CacheStorageService::AddStorageEntry(nsCSubstring const& aContextKey,
   rv = CacheEntry::HashingKey(EmptyCString(), aIdExtension, aURI, entryKey);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  LOG(("CacheStorageService::AddStorageEntry [entryKey=%s, contextKey=%s]", 
+  LOG(("CacheStorageService::AddStorageEntry [entryKey=%s, contextKey=%s]",
     entryKey.get(), aContextKey.BeginReading()));
 
   nsRefPtr<CacheEntry> entry;

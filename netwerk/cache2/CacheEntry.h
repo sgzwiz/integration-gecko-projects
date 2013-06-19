@@ -173,17 +173,9 @@ private:
   };
 
   // Loads from disk asynchronously
-  void Load(bool aTruncate);
+  bool Load(bool aTruncate);
   void OnLoaded();
 
-  enum CallbackResult {
-    // OnCacheEntryCheck returned NOT_VALID
-    INVALID,
-    // Callback bypassed because entry is in progress of being written
-    BYPASSED,
-    // Callback invoked normally
-    INVOKED,
-  };
   void RememberCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
   void InvokeCallbacks();
   bool InvokeCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
@@ -207,7 +199,6 @@ private:
   nsCOMPtr<nsICacheEntryDoomCallback> mDoomCallback;
 
   nsRefPtr<CacheFile> mFile;
-  nsresult mFileLoadResult;
   nsCOMPtr<nsIURI> mURI;
   nsCString mEnhanceID;
   nsCString mStorageID;
@@ -217,27 +208,35 @@ private:
   // Hence, leave it as a standalone boolean.
   bool mUseDisk;
 
-  // Whether entry is in process of loading
-  bool mIsLoading : 1;
-  // Whether the entry is in process of being loaded from disk
-  // Initially true, until we check the disk whether we have the entry
-  bool mIsLoaded : 1;
-  // Whether the entry metadata are present complete in memory
-  bool mIsReady : 1;
-  // Whether the entry is in process of being written (by a channel)
-  bool mIsWriting : 1;
-  // True when OnCacheEntryCheck return ENTRY_NEEDS_REVALIDATION
-  bool mIsRevalidating : 1;
-  // Doomed entry, don't let new consumers use it
-  bool mIsDoomed : 1;
+  // Set when entry is doomed with AsyncDoom() or DoomAlreadyRemoved().
+  bool mIsDoomed;
+
+  // Whether security info has already been looked up in metadata.
+  // Not synchronized (this is only an optimization flag).
+  bool mSecurityInfoLoaded;
+
+  // Prevents any callback invocation
+  // Synchronized by lock of this entry.
+  bool mPreventCallbacks;
+
+  // Accessed only on the management thread.
   // Whether this entry is registered in the storage service helper arrays
   bool mIsRegistered : 1;
   // After deregistration entry is no allowed to register again
   bool mIsRegistrationAllowed : 1;
-  // Whether security info has already been looked up in metadata
-  bool mSecurityInfoLoaded : 1;
-  // Prevents any callback invocation
-  bool mPreventCallbacks : 1;
+
+  enum EState {      // transiting to:
+    NOTLOADED = 0,   // -> LOADING | EMPTY
+    LOADING = 1,     // -> EMPTY | READY
+    EMPTY = 2,       // -> WRITING
+    WRITING = 3,     // -> EMPTY | READY
+    READY = 4,       // -> REVALIDATING
+    REVALIDATING = 5 // -> READY
+  };
+
+  // State of this entry, atomic access prevents using of locks, except
+  // decistion to load this entry.
+  uint32_t mState;
 
   // Background thread scheduled operation.  Set (under the lock) one
   // of this flags to tell the background thread what to do.
