@@ -318,6 +318,8 @@ CacheFile::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
 
     if (mMetadata) {
       // The entry was initialized as createNew, don't try to read metadata.
+      mMetadata->SetHandle(mHandle);
+
       // Write all cached chunks, otherwise thay may stay unwritten.
       mCachedChunks.Enumerate(&CacheFile::WriteAllCachedChunks, this);
 
@@ -331,6 +333,9 @@ CacheFile::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
 
           mListener.swap(listener);
         }
+      }
+      else {
+        return NS_OK;
       }
     }
   }
