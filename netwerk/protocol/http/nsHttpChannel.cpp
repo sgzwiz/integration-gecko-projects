@@ -3509,9 +3509,8 @@ nsHttpChannel::AddCacheEntryHeaders(nsICacheEntry *entry)
     rv = entry->SetMetaDataElement("response-head", head.get());
     if (NS_FAILED(rv)) return rv;
 
-    // Tell other waiting consumers this entry now has been filled the metadata
-    // and can now be used.
-    rv = entry->SetValid();
+    // Indicate we have successfully finished setting metadata on the cache entry.
+    rv = entry->MetaDataReady();
 
     return rv;
 }
