@@ -5,13 +5,22 @@ const Cr = Components.results;
 
 var callbacks = new Array();
 
+// Expect an existing entry
 const NORMAL =           0;
+// Expect a new entry
 const NEW =         1 << 0;
+// Return ENTRY_NOT_VALID from onCacheEntryCheck
 const NOTVALID =    1 << 1;
+// Throw from onCacheEntryAvailable
 const THROWAVAIL =  1 << 2;
+// Open entry for reading-only
 const READONLY =    1 << 3;
+// Expect the entry to not be found
 const NOTFOUND =    1 << 4;
+// Return ENTRY_NEEDS_REVALIDATION from onCacheEntryCheck
 const REVAL =       1 << 5;
+// Expect the entry is doomed, i.e. the output stream should not be possible to open
+const DOOMED =      1 << 6;
 
 var log_c2 = true;
 function LOG_C2(o, m)
@@ -81,7 +90,7 @@ OpenCallback.prototype =
   },
   onCacheEntryAvailable: function(entry, isnew, appCache, status)
   {
-    LOG_C2(this, "onCacheEntryAvailable");
+    LOG_C2(this, "onCacheEntryAvailable, " + this.behavior);
     do_check_true(!this.onAvailPassed);
     this.onAvailPassed = true;
 
@@ -112,10 +121,20 @@ OpenCallback.prototype =
         entry.setMetaDataElement("meto", self.workingMetadata);
         entry.metaDataReady();
         do_execute_soon(function() { // emulate more network latency
-          var os = entry.openOutputStream(0);
-          var wrt = os.write(self.workingData, self.workingData.length);
-          do_check_eq(wrt, self.workingData.length);
-          os.close();
+          if (self.behavior & DOOMED) {
+            try {
+              var os = entry.openOutputStream(0);
+              do_check_true(false);
+            } catch (ex) {
+              do_check_true(true);
+            }
+          }
+          else {
+            var os = entry.openOutputStream(0);
+            var wrt = os.write(self.workingData, self.workingData.length);
+            do_check_eq(wrt, self.workingData.length);
+            os.close();
+          }
         })
       })
     }
