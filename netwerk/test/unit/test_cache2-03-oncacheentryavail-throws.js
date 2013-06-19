@@ -1,9 +1,4 @@
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-const Cr = Components.results;
-
-function run_test_OCEA_throws()
+function run_test()
 {
   do_get_profile();
 
