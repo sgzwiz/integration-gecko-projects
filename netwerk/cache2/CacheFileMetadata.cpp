@@ -128,7 +128,6 @@ CacheFileMetadata::WriteMetadata(uint32_t aOffset,
 {
   MOZ_ASSERT(!mListener);
   MOZ_ASSERT(!mWriteBuf);
-  MOZ_ASSERT(mBuf);
 
   nsresult rv;
 
