@@ -359,16 +359,19 @@ void CacheEntry::InvokeCallbacks()
 
   while (mReadOnlyCallbacks.Count()) {
     nsCOMPtr<nsICacheEntryOpenCallback> callback = mReadOnlyCallbacks[0];
+    mReadOnlyCallbacks.RemoveElementAt(0);
 
+    bool called;
     {
       mozilla::MutexAutoUnlock unlock(mLock);
-      if (!InvokeCallback(callback, true)) {
-        // Didn't trigger, so we must stop
-        break;
-      }
+      called = InvokeCallback(callback, true);
     }
 
-    mReadOnlyCallbacks.RemoveElementAt(0);
+    if (!called) {
+      // Didn't trigger, so we must stop
+      mReadOnlyCallbacks.InsertElementAt(0, callback);
+      break;
+    }
   }
 
   LOG(("CacheEntry::InvokeCallbacks END [this=%p]", this));
