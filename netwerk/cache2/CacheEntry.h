@@ -225,13 +225,18 @@ private:
   // After deregistration entry is no allowed to register again
   bool mIsRegistrationAllowed : 1;
 
+#ifdef MOZ_LOGGING
+  static char const * StateString(uint32_t aState);
+#endif
+
   enum EState {      // transiting to:
     NOTLOADED = 0,   // -> LOADING | EMPTY
     LOADING = 1,     // -> EMPTY | READY
     EMPTY = 2,       // -> WRITING
-    WRITING = 3,     // -> EMPTY | READY
-    READY = 4,       // -> REVALIDATING
-    REVALIDATING = 5 // -> READY
+    WRITING = 3,     // -> EMPTY | HASMETADATA
+    HASMETADATA = 4, // -> READY
+    READY = 5,       // -> REVALIDATING
+    REVALIDATING = 6 // -> READY
   };
 
   // State of this entry, atomic access prevents using of locks, except

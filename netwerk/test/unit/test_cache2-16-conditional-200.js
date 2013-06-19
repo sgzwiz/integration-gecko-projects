@@ -13,8 +13,8 @@ function run_test()
             var entry2 = entry.recreate();
 
             // now fill the new entry, use OpenCallback directly for it
-            var callback2 = new OpenCallback(NEW, "22m", "22d", function() {});
-            callback2.onCacheEntryAvailable(entry2, true, null, Cr.NS_OK);
+            (new OpenCallback(NEW, "22m", "22d", function() {}));
+              .onCacheEntryAvailable(entry2, true, null, Cr.NS_OK);
           });
         })
       );
