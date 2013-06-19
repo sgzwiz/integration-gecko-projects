@@ -16,7 +16,7 @@ interface nsICacheListener;
 interface nsIFile;
 interface nsICacheMetaDataVisitor;
 
-[scriptable, uuid(b571bfef-f90e-4aa2-b45d-9dffa356fb5a)]
+[scriptable, uuid(11ce9c00-6691-4774-83d0-62095528b1c4)]
 interface nsICacheEntry : nsISupports
 {
   /**
@@ -58,12 +58,6 @@ interface nsICacheEntry : nsISupports
    * seconds since the Epoch).
    */
   void setExpirationTime(in uint32_t expirationTime);
-
-  /**
-   * Doom this entry and open a new, empty, entry for write.
-   * Used on 200 responses to conditional requests.
-   */
-  nsICacheEntry recreate();
 
   /**
    * Open blocking input stream to cache data.  This will fail if the cache
@@ -137,7 +131,23 @@ interface nsICacheEntry : nsISupports
    *
    * We need such method since metadata must be delivered synchronously.
    */
+  void metaDataReady();
+
+  /**
+   * Called by consumer upon 304/206 response from the server.  This marks
+   * the entry content as positively revalidated.
+   * Consumer uses this method after the consumer has returned ENTRY_NEEDS_REVALIDATION
+   * result from onCacheEntryCheck and after successfull revalidation with the server.
+   */
   void setValid();
+
+  /**
+   * Doom this entry and open a new, empty, entry for write.  Consumer has
+   * to exchange this entry for the newly created.
+   * Used on 200 responses to conditional requests.
+   */
+  nsICacheEntry recreate();
+
 
   // *************** GET RID OF THESE ??? ***************
   void setDataSize(in unsigned long size);
