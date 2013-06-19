@@ -65,21 +65,16 @@ CacheEntry::CacheEntry(const nsACString& aStorageID,
 , mFrecency(0)
 , mSortingExpirationTime(uint32_t(-1))
 , mLock("CacheEntry")
-, mFileLoadResult(NS_OK)
 , mURI(aURI)
 , mEnhanceID(aEnhanceID)
 , mStorageID(aStorageID)
 , mUseDisk(aUseDisk)
-, mIsLoading(false)
-, mIsLoaded(false)
-, mIsReady(false)
-, mIsWriting(false)
-, mIsRevalidating(false)
 , mIsDoomed(false)
-, mIsRegistered(false)
-, mIsRegistrationAllowed(true)
 , mSecurityInfoLoaded(false)
 , mPreventCallbacks(false)
+, mIsRegistered(false)
+, mIsRegistrationAllowed(true)
+, mState(NOTLOADED)
 , mPredictedDataSize(0)
 , mDataSize(0)
 , mMetadataMemoryOccupation(0)
@@ -140,41 +135,67 @@ nsresult CacheEntry::HashingKey(nsCSubstring const& aStorageID,
   return NS_OK;
 }
 
-void CacheEntry::Load(bool aTruncate)
+bool CacheEntry::Load(bool aTruncate)
 {
+  if (mState > LOADING)
+    return false;
+  if (mState == LOADING)
+    return true;
+
   LOG(("CacheEntry::Load [this=%p]", this));
 
-  bool syncOpen = false;
+  nsRefPtr<CacheFile> file;
   {
     mozilla::MutexAutoLock lock(mLock);
 
+    // Do the same check under the lock to preserve full load
+    // logic atomicity.  It would be very unfortunate to load
+    // a cache entry twice.
+    if (mState > LOADING) {
+      LOG(("  already loaded"));
+      return false;
+    }
+
+    if (mState == LOADING) {
+      LOG(("  already loading"));
+      return true;
+    }
+
+    MOZ_ASSERT(mState == NOTLOADED);
     MOZ_ASSERT(!mFile);
-    MOZ_ASSERT(!mIsReady);
 
     if (aTruncate || !mUseDisk) {
-      mIsLoading = false;
-      mIsLoaded = true;
-      syncOpen = true;
+      // Just fake the load has already been done as "new".
+      mState = EMPTY;
     }
     else {
-      mIsLoading = true;
-      mIsLoaded = false;
+      mState = LOADING;
     }
 
     mFile = new CacheFile();
+    file = mFile;
   }
+
+  BackgroundOp(Ops::REGISTER);
 
   nsresult rv;
 
   nsAutoCString fileKey;
   rv = HashingKeyWithStorage(fileKey);
 
-  // TODO tell the file to store on disk or not from the very start
+  LOG(("  performing load"));
   if (NS_SUCCEEDED(rv))
-    rv = mFile->Init(fileKey, aTruncate, !mUseDisk, syncOpen ? nullptr : this);
+    rv = file->Init(fileKey,
+                    aTruncate,
+                    !mUseDisk,
+                    mUseDisk ? this : nullptr);
 
-  if (NS_FAILED(rv) || syncOpen || !mUseDisk)
-    OnFileReady(rv, syncOpen);
+  if (NS_FAILED(rv)) {
+    AsyncDoom(nullptr);
+    return false;
+  }
+
+  return mState == LOADING;
 }
 
 NS_IMETHODIMP CacheEntry::OnFileReady(nsresult aResult, bool aIsNew)
@@ -182,21 +203,17 @@ NS_IMETHODIMP CacheEntry::OnFileReady(nsresult aResult, bool aIsNew)
   LOG(("CacheEntry::OnFileReady [this=%p, rv=0x%08x, new=%d]",
       this, aResult, aIsNew));
 
-  {
-    mozilla::MutexAutoLock lock(mLock);
-    mIsLoaded = true;
-    mIsLoading = false;
-    mIsReady = !aIsNew;
-
-    if (NS_FAILED(aResult))
-      mFile = nullptr;
-  }
+  // OnFileReady, that is the only code that can transit from LOADING
+  // to any follow-on state, can only be invoked ones on an entry,
+  // thus no need to lock.  Until this moment there is no consumer that
+  // could manipulate the entry state.
+  if (mState == LOADING)
+    mState = aIsNew ? EMPTY : READY;
 
   if (NS_FAILED(aResult))
     AsyncDoom(nullptr);
 
   InvokeCallbacks();
-
   return NS_OK;
 }
 
@@ -219,38 +236,16 @@ NS_IMETHODIMP CacheEntry::OnFileDoomed(nsresult aResult)
 
 void CacheEntry::AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags)
 {
-  LOG(("CacheEntry::AsyncOpen [this=%p, callback=%p]", this, aCallback));
-  LOG(("  ready=%d, loaded=%d, writing=%d", (bool)mIsReady, (bool)mIsLoaded, (bool)mIsWriting));
-
-  // Call to this methods means a demand to access this entry by a single consumer.
-  // Thus, update frecency.
+  LOG(("CacheEntry::AsyncOpen [this=%p, state=%d, callback=%p]", this, mState, aCallback));
 
   bool readonly = aFlags & nsICacheStorage::OPEN_READONLY;
   bool truncate = aFlags & nsICacheStorage::OPEN_TRUNCATE;
-  MOZ_ASSERT(!readonly || !truncate);
 
-  bool loading, loaded;
-  {
-    mozilla::MutexAutoLock lock(mLock);
-    loaded = mIsLoaded;
-    loading = mIsLoading;
-  }
+  MOZ_ASSERT(!readonly || !truncate, "Bad flags combination");
+  MOZ_ASSERT(!(truncate && mState > LOADING), "Must not call truncate on already loaded entry");
 
-  // Must not call truncate on already loaded entry
-  MOZ_ASSERT(!(truncate && loaded));
-
-  if (!loaded) {
-    RememberCallback(aCallback, readonly);
-    if (!loading) {
-      BackgroundOp(Ops::REGISTER);
-      Load(truncate);
-    }
-
-    return;
-  }
-
-  bool called = InvokeCallback(aCallback, readonly);
-  if (!called) {
+  if (Load(truncate) || !InvokeCallback(aCallback, readonly)) {
+    // Load in progress or callback bypassed...
     RememberCallback(aCallback, readonly);
   }
 }
@@ -382,29 +377,18 @@ void CacheEntry::InvokeCallbacks()
 bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
                                 bool aReadOnly)
 {
-  LOG(("CacheEntry::InvokeCallback [this=%p, cb=%p]", this, aCallback));
+  LOG(("CacheEntry::InvokeCallback [this=%p, state=%d, cb=%p]", this, mState, aCallback));
 
   if (!aCallback)
     return true; // simulate we've done the work to prevent any endless loops
 
-  // When we are here, the entry must be loaded from disk
-  MOZ_ASSERT(mIsLoaded);
-  MOZ_ASSERT(!mIsLoading);
+  if (!mIsDoomed) {
+    uint32_t const state = mState;
 
-  bool ready, writing, doomed, reval;
-  {
-    mozilla::MutexAutoLock lock(mLock);
-    LOG(("  ready=%d, loaded=%d, writing=%d, doomed=%d",
-      (bool)mIsReady, (bool)mIsLoaded, (bool)mIsWriting, (bool)mIsDoomed));
+    // When we are here, the entry must be loaded from disk
+    MOZ_ASSERT(state > LOADING);
 
-    ready = mIsReady;
-    writing = mIsWriting;
-    doomed = mIsDoomed;
-    reval = mIsRevalidating;
-  }
-
-  if (!doomed) {
-    if (writing || reval) {
+    if (state == WRITING || state == REVALIDATING) {
       // Prevent invoking other callbacks since one of them is now writing
       // or revalidating this entry.  No consumers should get this entry
       // until metadata are filled with values downloaded from the server
@@ -413,7 +397,7 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
       return false;
     }
 
-    if (ready && !aReadOnly) {
+    if (state == READY && !aReadOnly) {
       // Metadata present, validate the entry
       uint32_t validityState;
       nsresult rv = aCallback->OnCacheEntryCheck(this, nullptr, &validityState);
@@ -438,10 +422,10 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
 
       case ENTRY_NEEDS_REVALIDATION:
         LOG(("  will be holding callbacks until entry is revalidated"));
-        {
-          mozilla::MutexAutoLock lock(mLock);
-          mIsRevalidating = true;
-        }
+        // State is READY now and from that state entry cannot transit to any other
+        // state then REVALIDATING for which cocurrency is not an issue.  No need
+        // to lock here.
+        mState = REVALIDATING;
         // NO BREAK
 
       case ENTRY_VALID:
@@ -458,11 +442,8 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
 void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
                                          bool aReadOnly)
 {
-  LOG(("CacheEntry::InvokeAvailableCallback [this=%p, cb=%p, ready=%d, r/o=%d]",
-    this, aCallback, (bool)mIsReady, aReadOnly));
-
-  // When we are here, the entry must be loaded from disk
-  MOZ_ASSERT(mIsLoaded);
+  LOG(("CacheEntry::InvokeAvailableCallback [this=%p, state=%d, cb=%p, r/o=%d]",
+    this, mState, aCallback, aReadOnly));
 
   if (!NS_IsMainThread()) {
     // Must happen on the main thread :(
@@ -474,22 +455,18 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
 
   // This happens only on the main thread / :( /
 
-  bool ready, doomed, reval;
-  {
-    mozilla::MutexAutoLock lock(mLock);
+  uint32_t const state = mState;
 
-    ready = mIsReady;
-    reval = mIsRevalidating;
-    doomed = mIsDoomed;
-  }
+  // When we are here, the entry must be loaded from disk
+  MOZ_ASSERT(state > LOADING);
 
-  if (doomed) {
+  if (mIsDoomed) {
     LOG(("  doomed, notifying OCEA with NS_ERROR_CACHE_KEY_NOT_FOUND"));
     aCallback->OnCacheEntryAvailable(nullptr, false, nullptr, NS_ERROR_CACHE_KEY_NOT_FOUND);
     return;
   }
 
-  if (ready && !reval) {
+  if (state == READY) {
     LOG(("  ready, notifying OCEA with entry and NS_OK"));
     BackgroundOp(Ops::FRECENCYUPDATE);
     aCallback->OnCacheEntryAvailable(this, false, nullptr, NS_OK);
@@ -509,14 +486,17 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
   // i.e. until SetValid() on the entry is called.
 
   // Consumer will be responsible to fill or validate the entry metadata and data.
-  {
-    mozilla::MutexAutoLock lock(mLock);
-    mIsWriting = true;
-  }
 
   BackgroundOp(Ops::FRECENCYUPDATE);
+
+  // mayhemer: when OnCacheEntryAvailable and this method become multi-threaded
+  // state manipulation will need to be locked (interlocked compare exchanged)
+  // to prevent potential concurent writes.
+  if (state == EMPTY)
+    mState = WRITING;
+
   nsRefPtr<Handle> handle = new Handle(this);
-  nsresult rv = aCallback->OnCacheEntryAvailable(handle, !ready, nullptr, NS_OK);
+  nsresult rv = aCallback->OnCacheEntryAvailable(handle, state == EMPTY, nullptr, NS_OK);
 
   if (NS_FAILED(rv)) {
     LOG(("  writing failed (0x%08x)", rv));
@@ -531,23 +511,18 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
 
 void CacheEntry::OnWriterClosed(Handle const* aHandle)
 {
-  LOG(("CacheEntry::OnWriterClosed [this=%p, handle=%p]", this, aHandle));
+  LOG(("CacheEntry::OnWriterClosed [this=%p, state=%d, handle=%p]", this, mState, aHandle));
 
-  nsRefPtr<CacheFile> file;
-  bool ready;
-  {
+  nsRefPtr<CacheFile> file(File());
 
-    mozilla::MutexAutoLock lock(mLock);
-
-    LOG(("  ready=%d, loaded=%d, writing=%d", (bool)mIsReady, (bool)mIsLoaded, (bool)mIsWriting));
-
-    mIsWriting = false;
-    mIsRevalidating = false;
-    file = mFile;
-    ready = mIsReady;
+  // There can only be one writer at a time (i.e. only a single consumer that
+  // could manipulate with the state), so no need to lock here.
+  if (mState == WRITING) {
+    LOG(("  reverting to state EMPTY - write failed"));
+    mState = EMPTY;
   }
 
-  if (file && ready) {
+  if (file && mState == READY) {
     // TODO
     //file->WriteDone();
   }
@@ -583,8 +558,6 @@ bool CacheEntry::SetUsingDisk(bool aUsingDisk)
 
 uint32_t CacheEntry::GetMetadataMemoryOccupation() const
 {
-  CacheEntry* this_non_const = const_cast<CacheEntry*>(this);
-  mozilla::MutexAutoLock lock(this_non_const->mLock);
   return mMetadataMemoryOccupation;
 }
 
@@ -717,16 +690,12 @@ NS_IMETHODIMP CacheEntry::SetExpirationTime(uint32_t aExpirationTime)
 
 NS_IMETHODIMP CacheEntry::Recreate(nsICacheEntry **_retval)
 {
-  {
-    mozilla::MutexAutoLock lock(mLock);
-    nsRefPtr<CacheEntry> newEntry = ReopenTruncated(nullptr);
-    if (newEntry) {
-      newEntry.forget(_retval);
-      return NS_OK;
-    }
-  }
+  nsRefPtr<CacheEntry> newEntry = ReopenTruncated(nullptr);
+  if (newEntry)
+    newEntry.forget(_retval);
+  else
+    BackgroundOp(Ops::CALLBACKS, true);
 
-  BackgroundOp(Ops::CALLBACKS, true);
   return NS_OK;
 }
 
@@ -734,18 +703,12 @@ NS_IMETHODIMP CacheEntry::OpenInputStream(uint32_t offset, nsIInputStream * *_re
 {
   LOG(("CacheEntry::OpenInputStream [this=%p]", this));
 
-  nsRefPtr<CacheFile> file;
-  {
-    mozilla::MutexAutoLock lock(mLock);
-
-    if (mIsDoomed) {
-      LOG(("  doomed..."));
-      return NS_ERROR_NOT_AVAILABLE;
-    }
-
-    file = mFile;
+  if (mIsDoomed) {
+    LOG(("  doomed..."));
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
+  nsRefPtr<CacheFile> file(File());
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
@@ -770,18 +733,12 @@ NS_IMETHODIMP CacheEntry::OpenOutputStream(uint32_t offset, nsIOutputStream * *_
 {
   LOG(("CacheEntry::OpenOutputStream [this=%p]", this));
 
-  nsRefPtr<CacheFile> file;
-  {
-    mozilla::MutexAutoLock lock(mLock);
-
-    if (mIsDoomed) {
-      LOG(("  doomed..."));
-      return NS_ERROR_NOT_AVAILABLE;
-    }
-
-    file = mFile;
+  if (mIsDoomed) {
+    LOG(("  doomed..."));
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
+  nsRefPtr<CacheFile> file(File());
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
@@ -853,20 +810,14 @@ NS_IMETHODIMP CacheEntry::SetPredictedDataSize(int64_t aPredictedDataSize)
 
 NS_IMETHODIMP CacheEntry::GetSecurityInfo(nsISupports * *aSecurityInfo)
 {
-  nsRefPtr<CacheFile> file;
-  {
-    mozilla::MutexAutoLock lock(mLock);
-
-    if (mSecurityInfoLoaded) {
-      NS_IF_ADDREF(*aSecurityInfo = mSecurityInfo);
-      return NS_OK;
-    }
-
-    if (!mFile)
-      return NS_ERROR_NOT_AVAILABLE;
-
-    file = mFile;
+  if (mSecurityInfoLoaded) {
+    NS_IF_ADDREF(*aSecurityInfo = mSecurityInfo);
+    return NS_OK;
   }
+
+  nsRefPtr<CacheFile> file(File());
+  if (!file)
+    return NS_ERROR_NOT_AVAILABLE;
 
   char const* info;
   nsCOMPtr<nsISupports> secInfo;
@@ -952,8 +903,8 @@ NS_IMETHODIMP CacheEntry::AsyncDoom(nsICacheEntryDoomCallback *aCallback)
   {
     mozilla::MutexAutoLock lock(mLock);
 
-    if (mDoomCallback || mIsDoomed)
-      return NS_ERROR_IN_PROGRESS;
+    if (mIsDoomed || mDoomCallback)
+      return NS_ERROR_IN_PROGRESS; // to aggregate have DOOMING state
 
     mIsDoomed = true;
     mDoomCallback = aCallback;
@@ -1003,15 +954,13 @@ NS_IMETHODIMP CacheEntry::SetMetaDataElement(const char * aKey, const char * aVa
 
 NS_IMETHODIMP CacheEntry::SetValid()
 {
-  LOG(("CacheEntry::SetValid [this=%p, ready=%d]", this, (bool)mIsReady));
+  LOG(("CacheEntry::SetValid [this=%p, state=%d]", this, mState));
 
-  {
-    mozilla::MutexAutoLock lock(mLock);
+  MOZ_ASSERT(mState > EMPTY);
 
-    mIsReady = true;
-    mIsWriting = false;
-    mIsRevalidating = false;
-  }
+  // No need to lock here, since from READY we can transit only to
+  // REVALIDATING and there is no issue to race those two states.
+  mState = READY;
 
   BackgroundOp(Ops::REPORTUSAGE);
   InvokeCallbacks();
@@ -1029,19 +978,14 @@ NS_IMETHODIMP CacheEntry::GetDataSize(uint32_t *aDataSize)
 {
   *aDataSize = 0;
 
-  nsRefPtr<CacheFile> file;
-  {
-    mozilla::MutexAutoLock lock(mLock);
-    if (mIsWriting)
-      return NS_ERROR_IN_PROGRESS;
+  if (mState == WRITING)
+    return NS_ERROR_IN_PROGRESS;
 
-    mFile = file;
-  }
-
-  // mayhemer: TODO Problem with compression
+  nsRefPtr<CacheFile> file(File());
   if (!file)
     return NS_OK; // really OK?
 
+  // mayhemer: TODO Problem with compression
   *aDataSize = file->DataSize();
   return NS_OK;
 }
@@ -1145,15 +1089,13 @@ bool CacheEntry::Purge(uint32_t aWhat)
       }
     }
 
-    mozilla::MutexAutoLock lock(mLock);
-
-    if (mIsWriting || mIsLoading || mFrecency == 0) {
+    if (mState == WRITING || mState == LOADING || mFrecency == 0) {
       // In-progress (write or load) entries should (at least for consistency and from
       // the logical point of view) stay in memory.
       // Zero-frecency entries are those which have never been given to any consumer, those
       // are actually very fresh and should not go just because frecency had not been set
       // so far.
-      LOG(("  is writing=%d, loading=%d, frecency=%1.10f", mIsWriting, mIsLoading, mFrecency));
+      LOG(("  state=%d, frecency=%1.10f", mState, mFrecency));
       return false;
     }
   }
@@ -1173,21 +1115,13 @@ bool CacheEntry::Purge(uint32_t aWhat)
 
   case PURGE_DATA_ONLY_DISK_BACKED:
     {
-      uint32_t metadataSize;
-
-      nsRefPtr<CacheFile> file;
-      {
-        mozilla::MutexAutoLock lock(mLock);
-        file = mFile;
-        metadataSize = mMetadataMemoryOccupation;
-      }
-
+      nsRefPtr<CacheFile> file(File());
       if (file) {
         // TODO
         // file->ThrowMemoryCachedData();
       }
 
-      CacheStorageService::Self()->OnMemoryConsumptionChange(this, metadataSize);
+      CacheStorageService::Self()->OnMemoryConsumptionChange(this, mMetadataMemoryOccupation);
 
       // Entry has been left in control arrays, return false (not purged)
       return false;
@@ -1212,10 +1146,7 @@ void CacheEntry::DoomAlreadyRemoved()
 {
   LOG(("CacheEntry::DoomAlreadyRemoved [this=%p]", this));
 
-  {
-    mozilla::MutexAutoLock lock(mLock);
-    mIsDoomed = true;
-  }
+  mIsDoomed = true;
 
   if (!CacheStorageService::IsOnManagementThread()) {
     BackgroundOp(Ops::DOOM);
@@ -1310,10 +1241,7 @@ void CacheEntry::BackgroundOp(uint32_t aOperations, bool aForceAsync)
     if (NS_FAILED(rv))
       memorySize = 0;
 
-    {
-      mozilla::MutexAutoLock lock(mLock);
-      memorySize += mMetadataMemoryOccupation;
-    }
+    memorySize += mMetadataMemoryOccupation;
 
     CacheStorageService::Self()->OnMemoryConsumptionChange(this, memorySize);
   }
