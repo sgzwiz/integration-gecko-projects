@@ -73,6 +73,14 @@ CacheFileMetadata::CacheFileMetadata(const nsACString &aKey)
   mMetaHdr.mKeySize = mKey.Length();
 }
 
+void
+CacheFileMetadata::SetHandle(CacheFileHandle *aHandle)
+{
+  MOZ_ASSERT(!mHandle);
+
+  mHandle = aHandle;
+}
+
 nsresult
 CacheFileMetadata::ReadMetadata(CacheFileMetadataListener *aListener)
 {
