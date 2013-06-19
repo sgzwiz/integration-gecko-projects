@@ -30,6 +30,7 @@ public:
   NS_IMETHOD GetPersistToDisk(bool *aPersistToDisk) { return NS_OK; } // TODO - call SetStoragePolicy?
   NS_IMETHOD SetPersistToDisk(bool aPersistToDisk) { return NS_OK; } // TODO
   NS_IMETHOD SetValid() { return NS_OK; }
+  NS_IMETHOD MetaDataReady() { return NS_OK; }
   NS_IMETHOD Recreate(nsICacheEntry**) { return NS_ERROR_NOT_IMPLEMENTED; }
 
   _OldDescriptorWrapper(nsICacheEntryDescriptor* desc) : mOldDesc(desc) {}

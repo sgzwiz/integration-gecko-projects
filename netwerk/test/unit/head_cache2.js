@@ -110,7 +110,7 @@ OpenCallback.prototype =
       var self = this;
       do_execute_soon(function() { // emulate network latency
         entry.setMetaDataElement("meto", self.workingMetadata);
-        entry.setValid();
+        entry.metaDataReady();
         do_execute_soon(function() { // emulate more network latency
           var os = entry.openOutputStream(0);
           var wrt = os.write(self.workingData, self.workingData.length);

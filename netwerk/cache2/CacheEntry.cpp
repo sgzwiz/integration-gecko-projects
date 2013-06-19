@@ -95,6 +95,25 @@ CacheEntry::~CacheEntry()
   MOZ_COUNT_DTOR(CacheEntry);
 }
 
+#ifdef MOZ_LOGGING
+
+char const * CacheEntry::StateString(uint32_t aState)
+{
+  switch (aState) {
+  case NOTLOADED:     return "NOTLOADED";
+  case LOADING:       return "LOADING";
+  case EMPTY:         return "EMPTY";
+  case WRITING:       return "WRITING";
+  case HASMETADATA:   return "HASMETADATA";
+  case READY:         return "READY";
+  case REVALIDATING:  return "REVALIDATING";
+  }
+
+  return "?";
+}
+
+#endif
+
 nsresult CacheEntry::HashingKeyWithStorage(nsACString &aResult)
 {
   return HashingKey(mStorageID, mEnhanceID, mURI, aResult);
@@ -142,7 +161,7 @@ bool CacheEntry::Load(bool aTruncate)
   if (mState == LOADING)
     return true;
 
-  LOG(("CacheEntry::Load [this=%p]", this));
+  LOG(("CacheEntry::Load [this=%p, trunc=%d]", this, aTruncate));
 
   nsRefPtr<CacheFile> file;
   {
@@ -188,7 +207,7 @@ bool CacheEntry::Load(bool aTruncate)
     rv = file->Init(fileKey,
                     aTruncate,
                     !mUseDisk,
-                    mUseDisk ? this : nullptr);
+                    (aTruncate || !mUseDisk) ? nullptr : this);
 
   if (NS_FAILED(rv)) {
     AsyncDoom(nullptr);
@@ -207,8 +226,9 @@ NS_IMETHODIMP CacheEntry::OnFileReady(nsresult aResult, bool aIsNew)
   // to any follow-on state, can only be invoked ones on an entry,
   // thus no need to lock.  Until this moment there is no consumer that
   // could manipulate the entry state.
-  if (mState == LOADING)
-    mState = aIsNew ? EMPTY : READY;
+  MOZ_ASSERT(mState == LOADING);
+
+  mState = aIsNew ? EMPTY : READY;
 
   if (NS_FAILED(aResult))
     AsyncDoom(nullptr);
@@ -236,7 +256,8 @@ NS_IMETHODIMP CacheEntry::OnFileDoomed(nsresult aResult)
 
 void CacheEntry::AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags)
 {
-  LOG(("CacheEntry::AsyncOpen [this=%p, state=%d, callback=%p]", this, mState, aCallback));
+  LOG(("CacheEntry::AsyncOpen [this=%p, state=%s, flags=%d, callback=%p]",
+    this, StateString(mState), aFlags, aCallback));
 
   bool readonly = aFlags & nsICacheStorage::OPEN_READONLY;
   bool truncate = aFlags & nsICacheStorage::OPEN_TRUNCATE;
@@ -380,7 +401,7 @@ void CacheEntry::InvokeCallbacks()
 bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
                                 bool aReadOnly)
 {
-  LOG(("CacheEntry::InvokeCallback [this=%p, state=%d, cb=%p]", this, mState, aCallback));
+  LOG(("CacheEntry::InvokeCallback [this=%p, state=%s, cb=%p]", this, StateString(mState), aCallback));
 
   if (!aCallback)
     return true; // simulate we've done the work to prevent any endless loops
@@ -391,7 +412,7 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
     // When we are here, the entry must be loaded from disk
     MOZ_ASSERT(state > LOADING);
 
-    if (state == WRITING || state == REVALIDATING) {
+    if (state == WRITING || state == HASMETADATA || state == REVALIDATING) {
       // Prevent invoking other callbacks since one of them is now writing
       // or revalidating this entry.  No consumers should get this entry
       // until metadata are filled with values downloaded from the server
@@ -445,8 +466,8 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
 void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
                                          bool aReadOnly)
 {
-  LOG(("CacheEntry::InvokeAvailableCallback [this=%p, state=%d, cb=%p, r/o=%d]",
-    this, mState, aCallback, aReadOnly));
+  LOG(("CacheEntry::InvokeAvailableCallback [this=%p, state=%s, cb=%p, r/o=%d]",
+    this, StateString(mState), aCallback, aReadOnly));
 
   if (!NS_IsMainThread()) {
     // Must happen on the main thread :(
@@ -514,20 +535,13 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
 
 void CacheEntry::OnWriterClosed(Handle const* aHandle)
 {
-  LOG(("CacheEntry::OnWriterClosed [this=%p, state=%d, handle=%p]", this, mState, aHandle));
-
-  nsRefPtr<CacheFile> file(File());
+  LOG(("CacheEntry::OnWriterClosed [this=%p, state=%s, handle=%p]", this, StateString(mState), aHandle));
 
   // There can only be one writer at a time (i.e. only a single consumer that
   // could manipulate with the state), so no need to lock here.
   if (mState == WRITING) {
     LOG(("  reverting to state EMPTY - write failed"));
     mState = EMPTY;
-  }
-
-  if (file && mState == READY) {
-    // TODO
-    //file->WriteDone();
   }
 
   BackgroundOp(Ops::REPORTUSAGE);
@@ -691,17 +705,6 @@ NS_IMETHODIMP CacheEntry::SetExpirationTime(uint32_t aExpirationTime)
   return NS_OK;
 }
 
-NS_IMETHODIMP CacheEntry::Recreate(nsICacheEntry **_retval)
-{
-  nsRefPtr<CacheEntry> newEntry = ReopenTruncated(nullptr);
-  if (newEntry)
-    newEntry.forget(_retval);
-  else
-    BackgroundOp(Ops::CALLBACKS, true);
-
-  return NS_OK;
-}
-
 NS_IMETHODIMP CacheEntry::OpenInputStream(uint32_t offset, nsIInputStream * *_retval)
 {
   LOG(("CacheEntry::OpenInputStream [this=%p]", this));
@@ -740,6 +743,8 @@ NS_IMETHODIMP CacheEntry::OpenOutputStream(uint32_t offset, nsIOutputStream * *_
     LOG(("  doomed..."));
     return NS_ERROR_NOT_AVAILABLE;
   }
+
+  MOZ_ASSERT(mState == HASMETADATA);
 
   nsRefPtr<CacheFile> file(File());
   if (!file)
@@ -796,7 +801,18 @@ NS_IMETHODIMP CacheEntry::OpenOutputStream(uint32_t offset, nsIOutputStream * *_
                     NS_ASYNCCOPY_VIA_READSEGMENTS, segment);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  CallQueryInterface(pipeOut, _retval);
+  rv = CallQueryInterface(pipeOut, _retval);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Since CacheFile logic is kept very simple, we can claim the entry is ready
+  // and usable by waiting concurent readers only after output stream has been
+  // opened.  Only when output stream exists for a CacheFile, concurent readers
+  // are getting WOULD_BLOCK when reading after the end of the data.
+  mState = READY;
+
+  // Invoke any pending readers now.
+  InvokeCallbacks();
+
   return NS_OK;
 }
 
@@ -955,11 +971,30 @@ NS_IMETHODIMP CacheEntry::SetMetaDataElement(const char * aKey, const char * aVa
   return metadata->SetElement(aKey, aValue);
 }
 
+NS_IMETHODIMP CacheEntry::MetaDataReady()
+{
+  uint32_t const state = mState;
+
+  LOG(("CacheEntry::MetaDataReady [this=%p, state=%s]", this, StateString(state)));
+
+  MOZ_ASSERT(state == WRITING);
+
+  // No need to lock here, there is only one consumer (the writer) that
+  // can manipulate state of this entry.
+  mState = HASMETADATA;
+
+  BackgroundOp(Ops::REPORTUSAGE);
+
+  return NS_OK;
+}
+
 NS_IMETHODIMP CacheEntry::SetValid()
 {
-  LOG(("CacheEntry::SetValid [this=%p, state=%d]", this, mState));
+  uint32_t const state = mState;
 
-  MOZ_ASSERT(mState > EMPTY);
+  LOG(("CacheEntry::SetValid [this=%p, state=%s]", this, StateString(state)));
+
+  MOZ_ASSERT(state == REVALIDATING);
 
   // No need to lock here, since from READY we can transit only to
   // REVALIDATING and there is no issue to race those two states.
@@ -967,6 +1002,20 @@ NS_IMETHODIMP CacheEntry::SetValid()
 
   BackgroundOp(Ops::REPORTUSAGE);
   InvokeCallbacks();
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP CacheEntry::Recreate(nsICacheEntry **_retval)
+{
+  LOG(("CacheEntry::Recreate [this=%p, state=%s]", this, StateString(mState)));
+
+  nsRefPtr<CacheEntry> newEntry = ReopenTruncated(nullptr);
+  if (newEntry)
+    newEntry.forget(_retval);
+  else
+    BackgroundOp(Ops::CALLBACKS, true);
+
   return NS_OK;
 }
 
@@ -1098,7 +1147,7 @@ bool CacheEntry::Purge(uint32_t aWhat)
       // Zero-frecency entries are those which have never been given to any consumer, those
       // are actually very fresh and should not go just because frecency had not been set
       // so far.
-      LOG(("  state=%d, frecency=%1.10f", mState, mFrecency));
+      LOG(("  state=%s, frecency=%1.10f", StateString(mState), mFrecency));
       return false;
     }
   }
