@@ -5,7 +5,7 @@ function run_test()
   asyncOpenCacheEntry("http://x/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
     new OpenCallback(NEW, "x1m", "x1d", function(entry) {
       // nothing to do here, we expect concurent callbacks to get
-      // all notified, then the whole test chain continues
+      // all notified, then the test finishes
     })
   );
 
