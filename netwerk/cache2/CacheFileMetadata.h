@@ -50,6 +50,8 @@ public:
   CacheFileMetadata(CacheFileHandle *aHandle, const nsACString &aKey);
   CacheFileMetadata(const nsACString &aKey);
 
+  void SetHandle(CacheFileHandle *aHandle);
+
   nsresult ReadMetadata(CacheFileMetadataListener *aListener);
   nsresult WriteMetadata(uint32_t aOffset,
                          CacheFileMetadataListener *aListener);
