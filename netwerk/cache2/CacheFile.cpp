@@ -65,6 +65,7 @@ CacheFile::CacheFile()
   , mMemoryOnly(false)
   , mDataAccessed(false)
   , mWritingMetadata(false)
+  , mDoomRequested(false)
   , mDataSize(-1)
 {
   LOG(("CacheFile::CacheFile() [this=%p]", this));
@@ -274,7 +275,11 @@ CacheFile::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
   {
     CacheFileAutoLock lock(this);
 
-    MOZ_ASSERT((mListener && !mMetadata) || (!mListener && mMetadata));
+    MOZ_ASSERT(
+      (mListener && !mMetadata && !mDoomRequested) || // !createNew
+      (!mListener && mMetadata && !mDoomRequested) || // createNew
+      (mListener && mMetadata && mDoomRequested)   || // createNew, doomed
+      (!mListener && mMetadata && mDoomRequested));   // createNew, doomed, !cb
     MOZ_ASSERT(mOpeningFile);
     MOZ_ASSERT(!mMemoryOnly);
 
@@ -285,16 +290,23 @@ CacheFile::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
       mOpeningFile = false;
       if (mMetadata) {
         // This entry was initialized as createNew, just switch to memory-only
-        // mode. There is no listener to notify.
+        // mode. If there is a listener, it waits for doom notification.
         mMemoryOnly = true;
-        return NS_OK;
+        mDoomRequested = false;
+
+        if (!mListener)
+          return NS_OK;
       }
       mListener.swap(listener);
     }
   }
 
   if (listener) {
-    listener->OnFileReady(aResult, false);
+    if (mMemoryOnly)
+      listener->OnFileDoomed(NS_ERROR_NOT_AVAILABLE);
+    else
+      listener->OnFileReady(aResult, false);
+
     return NS_OK;
   }
 
@@ -309,9 +321,24 @@ CacheFile::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
       // Write all cached chunks, otherwise thay may stay unwritten.
       mCachedChunks.Enumerate(&CacheFile::WriteAllCachedChunks, this);
 
-      // There is no listener to notify.
-      return NS_OK;
+      if (mDoomRequested) {
+        mDoomRequested = false;
+
+        rv = CacheFileIOManager::DoomFile(mHandle, mListener ? this : nullptr);
+        if (NS_FAILED(rv)) {
+          if (!mListener)
+            return NS_OK;
+
+          mListener.swap(listener);
+        }
+      }
     }
+  }
+
+  if (listener) {
+    MOZ_ASSERT(NS_FAILED(rv));
+    listener->OnFileDoomed(rv);
+    return NS_OK;
   }
 
   mMetadata = new CacheFileMetadata(mHandle, mKey);
@@ -387,13 +414,19 @@ CacheFile::OnMetadataWritten(nsresult aResult)
 nsresult
 CacheFile::OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult)
 {
-  MOZ_ASSERT(mListener);
-
-  LOG(("CacheFile::OnFileDoomed() [this=%p, rv=0x%08x, handle=%p]",
-       this, aResult, aHandle));
-
   nsCOMPtr<CacheFileListener> listener;
-  mListener.swap(listener);
+
+  {
+    CacheFileAutoLock lock(this);
+
+    MOZ_ASSERT(mListener);
+
+    LOG(("CacheFile::OnFileDoomed() [this=%p, rv=0x%08x, handle=%p]",
+         this, aResult, aHandle));
+
+    mListener.swap(listener);
+  }
+
   listener->OnFileDoomed(aResult);
   return NS_OK;
 }
@@ -498,12 +531,21 @@ CacheFile::Doom(CacheFileListener *aCallback)
 
   nsresult rv;
 
+  if (mDoomRequested) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
   if (mMemoryOnly) {
     // TODO what exactly to do here?
     return NS_ERROR_NOT_AVAILABLE;
   }
   else if (mOpeningFile) {
-    return NS_ERROR_NOT_AVAILABLE; // TODO FIXME !!!
+    MOZ_ASSERT(!mListener);
+
+    mDoomRequested = true;
+    mListener = aCallback;
+
+    return NS_OK;
   }
   else {
     mListener = aCallback;

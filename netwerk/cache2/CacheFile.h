@@ -126,6 +126,7 @@ private:
   bool           mMemoryOnly;
   bool           mDataAccessed;
   bool           mWritingMetadata;
+  bool           mDoomRequested;
   int64_t        mDataSize;
   nsCString      mKey;
 
