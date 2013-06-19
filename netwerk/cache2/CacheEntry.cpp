@@ -307,6 +307,8 @@ already_AddRefed<CacheEntry> CacheEntry::ReopenTruncated(nsICacheEntryOpenCallba
     return nullptr;
 
   newEntry->TransferCallbacks(mCallbacks, mReadOnlyCallbacks);
+  mCallbacks.Clear();
+  mReadOnlyCallbacks.Clear();
   return newEntry.forget();
 }
 
@@ -403,63 +405,85 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
 {
   LOG(("CacheEntry::InvokeCallback [this=%p, state=%s, cb=%p]", this, StateString(mState), aCallback));
 
-  if (!aCallback)
-    return true; // simulate we've done the work to prevent any endless loops
-
   if (!mIsDoomed) {
-    uint32_t const state = mState;
+    mozilla::MutexAutoLock lock(mLock);
 
     // When we are here, the entry must be loaded from disk
-    MOZ_ASSERT(state > LOADING);
+    MOZ_ASSERT(mState > LOADING);
 
-    if (state == WRITING || state == HASMETADATA || state == REVALIDATING) {
+    if (mState == WRITING || mState == HASMETADATA || mState == REVALIDATING) {
       // Prevent invoking other callbacks since one of them is now writing
       // or revalidating this entry.  No consumers should get this entry
       // until metadata are filled with values downloaded from the server
-      // or the entry revalidated.
+      // or the entry revalidated and output stream has been opened.
       LOG(("  entry is being written/revalidated, callback bypassed"));
       return false;
     }
 
-    if (state == READY && !aReadOnly) {
-      // Metadata present, validate the entry
-      uint32_t validityState;
-      nsresult rv = aCallback->OnCacheEntryCheck(this, nullptr, &validityState);
-      LOG(("  OnCacheEntryCheck result: rv=0x%08x, validity=%d", rv, validityState));
-
-      if (NS_FAILED(rv))
-        validityState = ENTRY_NOT_VALID;
-
-      switch (validityState) {
-      case ENTRY_NOT_VALID:
-      {
-        // Entry found not valid, break callback execution.  This result
-        // causes this entry replacement with a new truncated one.
-        nsRefPtr<CacheEntry> newEntry = ReopenTruncated(aCallback);
-        if (newEntry) {
-          // This new entry now grabbed all our callbacks, indicate callback
-          // had been invoked.
-          return true;
-        }
-        break;
+    if (!aReadOnly) {
+      if (mState == EMPTY) {
+        // Advance to writing state, we expect to invoke the callback and let
+        // it fill content of this entry.  Must set and check the state here
+        // to prevent more then one
+        mState = WRITING;
+        LOG(("  advancing to WRITING state"));
       }
 
-      case ENTRY_NEEDS_REVALIDATION:
-        LOG(("  will be holding callbacks until entry is revalidated"));
-        // State is READY now and from that state entry cannot transit to any other
-        // state then REVALIDATING for which cocurrency is not an issue.  No need
-        // to lock here.
-        mState = REVALIDATING;
-        // NO BREAK
+      if (!aCallback) {
+        // We can be given no callback only in case of recreate, it is ok
+        // to advance to WRITING state since the caller of recreate is expected
+        // to write this entry now.
+        return true;
+      }
 
-      case ENTRY_VALID:
-        // Nothing more to do here, proceed to callback...
-        break;
+      if (mState == READY) {
+        // Metadata present, validate the entry
+        uint32_t validityState;
+        {
+          mozilla::MutexAutoUnlock unlock(mLock);
+
+          nsresult rv = aCallback->OnCacheEntryCheck(this, nullptr, &validityState);
+          LOG(("  OnCacheEntryCheck result: rv=0x%08x, validity=%d", rv, validityState));
+
+          if (NS_FAILED(rv))
+            validityState = ENTRY_NOT_VALID;
+        }
+
+        switch (validityState) {
+        case ENTRY_NOT_VALID:
+        {
+          mozilla::MutexAutoUnlock unlock(mLock);
+
+          // Entry found not valid, break callback execution.  This result
+          // causes this entry replacement with a new truncated one.
+          nsRefPtr<CacheEntry> newEntry = ReopenTruncated(aCallback);
+          if (newEntry) {
+            // This new entry now grabbed all our callbacks, indicate callback
+            // had been invoked.
+            return true;
+          }
+          break;
+        }
+
+        case ENTRY_NEEDS_REVALIDATION:
+          LOG(("  will be holding callbacks until entry is revalidated"));
+          // State is READY now and from that state entry cannot transit to any other
+          // state then REVALIDATING for which cocurrency is not an issue.  No need
+          // to lock here.
+          mState = REVALIDATING;
+          // NO BREAK
+
+        case ENTRY_VALID:
+          // Nothing more to do here, proceed to callback...
+          break;
+        }
       }
     }
   }
 
-  InvokeAvailableCallback(aCallback, aReadOnly);
+  if (aCallback)
+    InvokeAvailableCallback(aCallback, aReadOnly);
+
   return true;
 }
 
@@ -498,7 +522,6 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
   }
 
   if (aReadOnly) {
-    // NOTE: we cannot get here while waiting for revalidation
     LOG(("  r/o and not ready, notifying OCEA with NS_ERROR_CACHE_KEY_NOT_FOUND"));
     aCallback->OnCacheEntryAvailable(nullptr, false, nullptr, NS_ERROR_CACHE_KEY_NOT_FOUND);
     return;
@@ -513,24 +536,18 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
 
   BackgroundOp(Ops::FRECENCYUPDATE);
 
-  // mayhemer: when OnCacheEntryAvailable and this method become multi-threaded
-  // state manipulation will need to be locked (interlocked compare exchanged)
-  // to prevent potential concurent writes.
-  if (state == EMPTY)
-    mState = WRITING;
-
   nsRefPtr<Handle> handle = new Handle(this);
-  nsresult rv = aCallback->OnCacheEntryAvailable(handle, state == EMPTY, nullptr, NS_OK);
+  nsresult rv = aCallback->OnCacheEntryAvailable(handle, state == WRITING, nullptr, NS_OK);
 
   if (NS_FAILED(rv)) {
-    LOG(("  writing failed (0x%08x)", rv));
+    LOG(("  writing/revalidating failed (0x%08x)", rv));
 
     // Consumer given a new entry failed to take care of the entry.
     OnWriterClosed(handle);
     return;
   }
 
-  LOG(("  writing"));
+  LOG(("  writing/revalidating"));
 }
 
 void CacheEntry::OnWriterClosed(Handle const* aHandle)
@@ -942,7 +959,7 @@ NS_IMETHODIMP CacheEntry::GetMetaDataElement(const char * aKey, char * *aRetval)
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  CacheFileAutoLock lock(mFile);
+  CacheFileAutoLock lock(file);
 
   CacheFileMetadata* metadata = file->Metadata();
   MOZ_ASSERT(metadata);
@@ -962,7 +979,7 @@ NS_IMETHODIMP CacheEntry::SetMetaDataElement(const char * aKey, const char * aVa
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  CacheFileAutoLock lock(mFile);
+  CacheFileAutoLock lock(file);
 
   CacheFileMetadata* metadata = file->Metadata();
   MOZ_ASSERT(metadata);
@@ -973,7 +990,9 @@ NS_IMETHODIMP CacheEntry::SetMetaDataElement(const char * aKey, const char * aVa
 
 NS_IMETHODIMP CacheEntry::MetaDataReady()
 {
+#if defined(DEBUG) || defined(MOZ_LOGGING)
   uint32_t const state = mState;
+#endif
 
   LOG(("CacheEntry::MetaDataReady [this=%p, state=%s]", this, StateString(state)));
 
@@ -990,7 +1009,9 @@ NS_IMETHODIMP CacheEntry::MetaDataReady()
 
 NS_IMETHODIMP CacheEntry::SetValid()
 {
+#if defined(DEBUG) || defined(MOZ_LOGGING)
   uint32_t const state = mState;
+#endif
 
   LOG(("CacheEntry::SetValid [this=%p, state=%s]", this, StateString(state)));
 
@@ -1285,15 +1306,24 @@ void CacheEntry::BackgroundOp(uint32_t aOperations, bool aForceAsync)
   if (aOperations & Ops::REPORTUSAGE) {
     LOG(("CacheEntry REPORTUSAGE [this=%p]", this));
 
+    nsRefPtr<CacheFile> file(File());
+    if (!file)
+      return;
+
     uint32_t memorySize;
+    {
+      // TODO: The following line is wrong, need API on CacheFile to get
+      // actual allocation consumption, best with file->Metadata()->ElementsSize() included
+      memorySize = (uint32_t)std::max(uint64_t(file->DataSize()), uint64_t(PR_UINT32_MAX));
 
-    // Should get only what is actually consumed in memory..
-    // TODO - definitely more here to do
-    nsresult rv = GetStorageDataSize(&memorySize);
-    if (NS_FAILED(rv))
-      memorySize = 0;
+      CacheFileAutoLock lock(file);
 
-    memorySize += mMetadataMemoryOccupation;
+      CacheFileMetadata* metadata = file->Metadata();
+      if (metadata) {
+        mMetadataMemoryOccupation = metadata->ElementsSize();
+        memorySize += mMetadataMemoryOccupation;
+      }
+    }
 
     CacheStorageService::Self()->OnMemoryConsumptionChange(this, memorySize);
   }
