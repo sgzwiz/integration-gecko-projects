@@ -129,6 +129,8 @@ CacheFileChunk::Write(CacheFileHandle *aHandle,
 
   nsresult rv;
 
+  // TODO FIXME !!! Don't write chunk when it is empty
+
   rv = CacheFileIOManager::Write(aHandle, mIndex * kChunkSize, mBuf, mDataSize,
                                  this);
   NS_ENSURE_SUCCESS(rv, rv);
