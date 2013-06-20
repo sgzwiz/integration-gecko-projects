@@ -23,6 +23,7 @@
 #include "nsSerializationHelper.h"
 #include "nsStreamUtils.h"
 #include <math.h>
+#include <algorithm>
 
 namespace mozilla {
 namespace net {
@@ -154,48 +155,57 @@ nsresult CacheEntry::HashingKey(nsCSubstring const& aStorageID,
   return NS_OK;
 }
 
+void CacheEntry::AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags)
+{
+  LOG(("CacheEntry::AsyncOpen [this=%p, state=%s, flags=%d, callback=%p]",
+    this, StateString(mState), aFlags, aCallback));
+
+  bool readonly = aFlags & nsICacheStorage::OPEN_READONLY;
+  bool truncate = aFlags & nsICacheStorage::OPEN_TRUNCATE;
+
+  MOZ_ASSERT(!readonly || !truncate, "Bad flags combination");
+  MOZ_ASSERT(!(truncate && mState > LOADING), "Must not call truncate on already loaded entry");
+
+  mozilla::MutexAutoLock lock(mLock);
+
+  if (Load(truncate) || !InvokeCallback(aCallback, readonly)) {
+    // Load in progress or callback bypassed...
+    RememberCallback(aCallback, readonly);
+  }
+}
+
 bool CacheEntry::Load(bool aTruncate)
 {
-  if (mState > LOADING)
-    return false;
-  if (mState == LOADING)
-    return true;
-
   LOG(("CacheEntry::Load [this=%p, trunc=%d]", this, aTruncate));
 
-  nsRefPtr<CacheFile> file;
-  {
-    mozilla::MutexAutoLock lock(mLock);
+  mLock.AssertCurrentThreadOwns();
 
-    // Do the same check under the lock to preserve full load
-    // logic atomicity.  It would be very unfortunate to load
-    // a cache entry twice.
-    if (mState > LOADING) {
-      LOG(("  already loaded"));
-      return false;
-    }
-
-    if (mState == LOADING) {
-      LOG(("  already loading"));
-      return true;
-    }
-
-    MOZ_ASSERT(mState == NOTLOADED);
-    MOZ_ASSERT(!mFile);
-
-    if (aTruncate || !mUseDisk) {
-      // Just fake the load has already been done as "new".
-      mState = EMPTY;
-    }
-    else {
-      mState = LOADING;
-    }
-
-    mFile = new CacheFile();
-    file = mFile;
+  if (mState > LOADING) {
+    LOG(("  already loaded"));
+    return false;
   }
 
+  if (mState == LOADING) {
+    LOG(("  already loading"));
+    return true;
+  }
+
+  MOZ_ASSERT(mState == NOTLOADED);
+  MOZ_ASSERT(!mFile);
+
+  if (aTruncate || !mUseDisk) {
+    // Just fake the load has already been done as "new".
+    mState = EMPTY;
+  }
+  else {
+    mState = LOADING;
+  }
+
+  mFile = new CacheFile();
+
   BackgroundOp(Ops::REGISTER);
+
+  mozilla::MutexAutoUnlock unlock(mLock);
 
   nsresult rv;
 
@@ -204,10 +214,10 @@ bool CacheEntry::Load(bool aTruncate)
 
   LOG(("  performing load"));
   if (NS_SUCCEEDED(rv))
-    rv = file->Init(fileKey,
-                    aTruncate,
-                    !mUseDisk,
-                    (aTruncate || !mUseDisk) ? nullptr : this);
+    rv = mFile->Init(fileKey,
+                     aTruncate,
+                     !mUseDisk,
+                     (aTruncate || !mUseDisk) ? nullptr : this);
 
   if (NS_FAILED(rv)) {
     AsyncDoom(nullptr);
@@ -233,6 +243,8 @@ NS_IMETHODIMP CacheEntry::OnFileReady(nsresult aResult, bool aIsNew)
   if (NS_FAILED(aResult))
     AsyncDoom(nullptr);
 
+  mozilla::MutexAutoLock lock(mLock);
+
   InvokeCallbacks();
   return NS_OK;
 }
@@ -254,27 +266,11 @@ NS_IMETHODIMP CacheEntry::OnFileDoomed(nsresult aResult)
   return NS_OK;
 }
 
-void CacheEntry::AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags)
-{
-  LOG(("CacheEntry::AsyncOpen [this=%p, state=%s, flags=%d, callback=%p]",
-    this, StateString(mState), aFlags, aCallback));
-
-  bool readonly = aFlags & nsICacheStorage::OPEN_READONLY;
-  bool truncate = aFlags & nsICacheStorage::OPEN_TRUNCATE;
-
-  MOZ_ASSERT(!readonly || !truncate, "Bad flags combination");
-  MOZ_ASSERT(!(truncate && mState > LOADING), "Must not call truncate on already loaded entry");
-
-  if (Load(truncate) || !InvokeCallback(aCallback, readonly)) {
-    // Load in progress or callback bypassed...
-    RememberCallback(aCallback, readonly);
-  }
-}
-
 already_AddRefed<CacheEntry> CacheEntry::ReopenTruncated(nsICacheEntryOpenCallback* aCallback)
 {
   LOG(("CacheEntry::ReopenTruncated [this=%p]", this));
-  mozilla::MutexAutoLock lock(mLock);
+
+  mLock.AssertCurrentThreadOwns();
 
   // Hold callbacks invocation, AddStorageEntry would invoke from doom prematurly
   mPreventCallbacks = true;
@@ -315,19 +311,15 @@ already_AddRefed<CacheEntry> CacheEntry::ReopenTruncated(nsICacheEntryOpenCallba
 void CacheEntry::TransferCallbacks(nsCOMArray<nsICacheEntryOpenCallback> const &aCallbacks,
                                    nsCOMArray<nsICacheEntryOpenCallback> const &aReadOnlyCallbacks)
 {
-  bool invoke;
-  {
-    mozilla::MutexAutoLock lock(mLock);
-    LOG(("CacheEntry::TransferCallbacks [entry=%p, %d, %d, %d, %d]",
-      this, mCallbacks.Length(), mReadOnlyCallbacks.Length(), aCallbacks.Length(), aReadOnlyCallbacks.Length()));
+  mozilla::MutexAutoLock lock(mLock);
 
-    mCallbacks.AppendObjects(aCallbacks);
-    mReadOnlyCallbacks.AppendObjects(aReadOnlyCallbacks);
+  LOG(("CacheEntry::TransferCallbacks [entry=%p, %d, %d, %d, %d]",
+    this, mCallbacks.Length(), mReadOnlyCallbacks.Length(), aCallbacks.Length(), aReadOnlyCallbacks.Length()));
 
-    invoke = mCallbacks.Length() || mReadOnlyCallbacks.Length();
-  }
+  mCallbacks.AppendObjects(aCallbacks);
+  mReadOnlyCallbacks.AppendObjects(aReadOnlyCallbacks);
 
-  if (invoke)
+  if (mCallbacks.Length() || mReadOnlyCallbacks.Length())
     BackgroundOp(Ops::CALLBACKS, true);
 }
 
@@ -340,7 +332,8 @@ void CacheEntry::RememberCallback(nsICacheEntryOpenCallback* aCallback,
 
   LOG(("CacheEntry::RememberCallback [this=%p, cb=%p]", this, aCallback));
 
-  mozilla::MutexAutoLock lock(mLock);
+  mLock.AssertCurrentThreadOwns();
+
   if (!aReadOnly)
     mCallbacks.AppendObject(aCallback);
   else
@@ -351,7 +344,7 @@ void CacheEntry::InvokeCallbacks()
 {
   LOG(("CacheEntry::InvokeCallbacks BEGIN [this=%p]", this));
 
-  mozilla::MutexAutoLock lock(mLock);
+  mLock.AssertCurrentThreadOwns();
 
   do {
     if (mPreventCallbacks) {
@@ -367,13 +360,7 @@ void CacheEntry::InvokeCallbacks()
     nsCOMPtr<nsICacheEntryOpenCallback> callback = mCallbacks[0];
     mCallbacks.RemoveElementAt(0);
 
-    bool called;
-    {
-      mozilla::MutexAutoUnlock unlock(mLock);
-      called = InvokeCallback(callback, false);
-    }
-
-    if (!called) {
+    if (!InvokeCallback(callback, false)) {
       mCallbacks.InsertElementAt(0, callback);
       LOG(("CacheEntry::InvokeCallbacks END callback bypassed"));
       return;
@@ -384,13 +371,7 @@ void CacheEntry::InvokeCallbacks()
     nsCOMPtr<nsICacheEntryOpenCallback> callback = mReadOnlyCallbacks[0];
     mReadOnlyCallbacks.RemoveElementAt(0);
 
-    bool called;
-    {
-      mozilla::MutexAutoUnlock unlock(mLock);
-      called = InvokeCallback(callback, true);
-    }
-
-    if (!called) {
+    if (!InvokeCallback(callback, true)) {
       // Didn't trigger, so we must stop
       mReadOnlyCallbacks.InsertElementAt(0, callback);
       break;
@@ -405,9 +386,9 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
 {
   LOG(("CacheEntry::InvokeCallback [this=%p, state=%s, cb=%p]", this, StateString(mState), aCallback));
 
-  if (!mIsDoomed) {
-    mozilla::MutexAutoLock lock(mLock);
+  mLock.AssertCurrentThreadOwns();
 
+  if (!mIsDoomed) {
     // When we are here, the entry must be loaded from disk
     MOZ_ASSERT(mState > LOADING);
 
@@ -452,8 +433,6 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
         switch (validityState) {
         case ENTRY_NOT_VALID:
         {
-          mozilla::MutexAutoUnlock unlock(mLock);
-
           // Entry found not valid, break callback execution.  This result
           // causes this entry replacement with a new truncated one.
           nsRefPtr<CacheEntry> newEntry = ReopenTruncated(aCallback);
@@ -481,8 +460,10 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
     }
   }
 
-  if (aCallback)
+  if (aCallback) {
+    mozilla::MutexAutoUnlock unlock(mLock);
     InvokeAvailableCallback(aCallback, aReadOnly);
+  }
 
   return true;
 }
@@ -516,7 +497,11 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
 
   if (state == READY) {
     LOG(("  ready, notifying OCEA with entry and NS_OK"));
-    BackgroundOp(Ops::FRECENCYUPDATE);
+    {
+      mozilla::MutexAutoLock lock(mLock);
+      BackgroundOp(Ops::FRECENCYUPDATE);
+    }
+
     aCallback->OnCacheEntryAvailable(this, false, nullptr, NS_OK);
     return;
   }
@@ -534,7 +519,10 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
 
   // Consumer will be responsible to fill or validate the entry metadata and data.
 
-  BackgroundOp(Ops::FRECENCYUPDATE);
+  {
+    mozilla::MutexAutoLock lock(mLock);
+    BackgroundOp(Ops::FRECENCYUPDATE);
+  }
 
   nsRefPtr<Handle> handle = new Handle(this);
   nsresult rv = aCallback->OnCacheEntryAvailable(handle, state == WRITING, nullptr, NS_OK);
@@ -560,6 +548,8 @@ void CacheEntry::OnWriterClosed(Handle const* aHandle)
     LOG(("  reverting to state EMPTY - write failed"));
     mState = EMPTY;
   }
+
+  mozilla::MutexAutoLock lock(mLock);
 
   BackgroundOp(Ops::REPORTUSAGE);
   InvokeCallbacks();
@@ -828,8 +818,9 @@ NS_IMETHODIMP CacheEntry::OpenOutputStream(uint32_t offset, nsIOutputStream * *_
   mState = READY;
 
   // Invoke any pending readers now.
-  InvokeCallbacks();
+  mozilla::MutexAutoLock lock(mLock);
 
+  InvokeCallbacks();
   return NS_OK;
 }
 
@@ -846,9 +837,12 @@ NS_IMETHODIMP CacheEntry::SetPredictedDataSize(int64_t aPredictedDataSize)
 
 NS_IMETHODIMP CacheEntry::GetSecurityInfo(nsISupports * *aSecurityInfo)
 {
-  if (mSecurityInfoLoaded) {
-    NS_IF_ADDREF(*aSecurityInfo = mSecurityInfo);
-    return NS_OK;
+  {
+    mozilla::MutexAutoLock lock(mLock);
+    if (mSecurityInfoLoaded) {
+      NS_IF_ADDREF(*aSecurityInfo = mSecurityInfo);
+      return NS_OK;
+    }
   }
 
   nsRefPtr<CacheFile> file(File());
@@ -876,8 +870,8 @@ NS_IMETHODIMP CacheEntry::GetSecurityInfo(nsISupports * *aSecurityInfo)
   {
     mozilla::MutexAutoLock lock(mLock);
 
-    mSecurityInfoLoaded = true;
     mSecurityInfo.swap(secInfo);
+    mSecurityInfoLoaded = true;
 
     NS_IF_ADDREF(*aSecurityInfo = mSecurityInfo);
   }
@@ -944,11 +938,11 @@ NS_IMETHODIMP CacheEntry::AsyncDoom(nsICacheEntryDoomCallback *aCallback)
 
     mIsDoomed = true;
     mDoomCallback = aCallback;
+    BackgroundOp(Ops::DOOM);
   }
 
   // Immediately remove the entry from the storage hash table
   CacheStorageService::Self()->RemoveEntry(this);
-  BackgroundOp(Ops::DOOM);
 
   return NS_OK;
 }
@@ -990,18 +984,13 @@ NS_IMETHODIMP CacheEntry::SetMetaDataElement(const char * aKey, const char * aVa
 
 NS_IMETHODIMP CacheEntry::MetaDataReady()
 {
-#if defined(DEBUG) || defined(MOZ_LOGGING)
-  uint32_t const state = mState;
-#endif
+  mozilla::MutexAutoLock lock(mLock);
 
-  LOG(("CacheEntry::MetaDataReady [this=%p, state=%s]", this, StateString(state)));
+  LOG(("CacheEntry::MetaDataReady [this=%p, state=%s]", this, StateString(mState)));
 
-  MOZ_ASSERT(state == WRITING);
+  MOZ_ASSERT(mState == WRITING);
 
-  // No need to lock here, there is only one consumer (the writer) that
-  // can manipulate state of this entry.
   mState = HASMETADATA;
-
   BackgroundOp(Ops::REPORTUSAGE);
 
   return NS_OK;
@@ -1009,18 +998,13 @@ NS_IMETHODIMP CacheEntry::MetaDataReady()
 
 NS_IMETHODIMP CacheEntry::SetValid()
 {
-#if defined(DEBUG) || defined(MOZ_LOGGING)
-  uint32_t const state = mState;
-#endif
+  mozilla::MutexAutoLock lock(mLock);
 
-  LOG(("CacheEntry::SetValid [this=%p, state=%s]", this, StateString(state)));
+  LOG(("CacheEntry::SetValid [this=%p, state=%s]", this, StateString(mState)));
 
-  MOZ_ASSERT(state == REVALIDATING);
+  MOZ_ASSERT(mState == REVALIDATING);
 
-  // No need to lock here, since from READY we can transit only to
-  // REVALIDATING and there is no issue to race those two states.
   mState = READY;
-
   BackgroundOp(Ops::REPORTUSAGE);
   InvokeCallbacks();
 
@@ -1031,12 +1015,15 @@ NS_IMETHODIMP CacheEntry::Recreate(nsICacheEntry **_retval)
 {
   LOG(("CacheEntry::Recreate [this=%p, state=%s]", this, StateString(mState)));
 
-  nsRefPtr<CacheEntry> newEntry = ReopenTruncated(nullptr);
-  if (newEntry)
-    newEntry.forget(_retval);
-  else
-    BackgroundOp(Ops::CALLBACKS, true);
+  mozilla::MutexAutoLock lock(mLock);
 
+  nsRefPtr<CacheEntry> newEntry = ReopenTruncated(nullptr);
+  if (newEntry) {
+    newEntry.forget(_retval);
+    return NS_OK;
+  }
+
+  BackgroundOp(Ops::CALLBACKS, true);
   return NS_OK;
 }
 
@@ -1092,13 +1079,9 @@ NS_IMETHODIMP CacheEntry::Run()
 {
   MOZ_ASSERT(CacheStorageService::IsOnManagementThread());
 
-  uint32_t ops;
-  {
-    mozilla::MutexAutoLock lock(mLock);
-    ops = mBackgroundOperations.Grab();
-  }
+  mozilla::MutexAutoLock lock(mLock);
 
-  BackgroundOp(ops);
+  BackgroundOp(mBackgroundOperations.Grab());
   return NS_OK;
 }
 
@@ -1222,6 +1205,8 @@ void CacheEntry::DoomAlreadyRemoved()
   mIsDoomed = true;
 
   if (!CacheStorageService::IsOnManagementThread()) {
+    mozilla::MutexAutoLock lock(mLock);
+
     BackgroundOp(Ops::DOOM);
     return;
   }
@@ -1231,23 +1216,20 @@ void CacheEntry::DoomAlreadyRemoved()
 
   nsCOMPtr<nsICacheEntryDoomCallback> callback;
   nsRefPtr<CacheFile> file;
-  bool invokeCallbacks;
   {
     mozilla::MutexAutoLock lock(mLock);
 
-    invokeCallbacks = mCallbacks.Length() || mReadOnlyCallbacks.Length();
+    if (mCallbacks.Length() || mReadOnlyCallbacks.Length()) {
+      // Must force post here since may be indirectly called from
+      // InvokeCallbacks of this entry and we don't want reentrancy here.
+      BackgroundOp(Ops::CALLBACKS, true);
+    }
 
     // Otherwise wait for the file to be doomed
     if (!mFile)
       mDoomCallback.swap(callback);
     else
       file = mFile;
-  }
-
-  if (invokeCallbacks) {
-    // Must force post here since may be indirectly called from
-    // InvokeCallbacks of this entry and we don't want reentrancy here.
-    BackgroundOp(Ops::CALLBACKS, true);
   }
 
   if (file) {
@@ -1262,15 +1244,17 @@ void CacheEntry::DoomAlreadyRemoved()
 
 void CacheEntry::BackgroundOp(uint32_t aOperations, bool aForceAsync)
 {
-  if (!CacheStorageService::IsOnManagementThread() || aForceAsync) {
-    mozilla::MutexAutoLock lock(mLock);
+  mLock.AssertCurrentThreadOwns();
 
+  if (!CacheStorageService::IsOnManagementThread() || aForceAsync) {
     if (mBackgroundOperations.Set(aOperations))
       CacheStorageService::Self()->Dispatch(this);
 
     LOG(("CacheEntry::BackgroundOp this=%p dipatch of %x", this, aOperations));
     return;
   }
+
+  mozilla::MutexAutoUnlock unlock(mLock);
 
   MOZ_ASSERT(CacheStorageService::IsOnManagementThread());
 
@@ -1337,6 +1321,7 @@ void CacheEntry::BackgroundOp(uint32_t aOperations, bool aForceAsync)
   if (aOperations & Ops::CALLBACKS) {
     LOG(("CacheEntry CALLBACKS (invoke) [this=%p]", this));
 
+    mozilla::MutexAutoLock lock(mLock);
     InvokeCallbacks();
   }
 }
