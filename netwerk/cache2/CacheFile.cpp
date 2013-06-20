@@ -275,18 +275,45 @@ CacheFile::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
   {
     CacheFileAutoLock lock(this);
 
+    MOZ_ASSERT((NS_SUCCEEDED(aResult) && aHandle) ||
+               (NS_FAILED(aResult) && !aHandle));
     MOZ_ASSERT(
       (mListener && !mMetadata && !mDoomRequested) || // !createNew
       (!mListener && mMetadata && !mDoomRequested) || // createNew
       (mListener && mMetadata && mDoomRequested)   || // createNew, doomed
       (!mListener && mMetadata && mDoomRequested));   // createNew, doomed, !cb
     MOZ_ASSERT(mOpeningFile);
-    MOZ_ASSERT(!mMemoryOnly);
+    MOZ_ASSERT(!mMemoryOnly || mMetadata); // memory-only was set on new entry
 
     LOG(("CacheFile::OnFileOpened() [this=%p, rv=0x%08x, handle=%p]",
          this, aResult, aHandle));
 
-    if (NS_FAILED(aResult)) {
+    if (mMemoryOnly) {
+      // We can be here only in case the entry was initilized as createNew and
+      // SetMemoryOnly() was called.
+
+      // The file could also be doomed before SetMemoryOnly() was called.
+      if (mDoomRequested) {
+        mDoomRequested = false;
+        if (aHandle) {
+          // Doom the file
+          CacheFileIOManager::DoomFile(aHandle, mListener ? this : nullptr);
+          // If DoomFile fails synchronously and we have a listener, it is
+          // notified with error NS_ERROR_NOT_AVAILABLE.
+        }
+
+        if (!mListener)
+          // Nobody is interested about the dooming result
+          return NS_OK;
+
+        mListener.swap(listener);
+      }
+      else {
+        // Just don't store the handle into mHandle and exit
+        return NS_OK;
+      }
+    }
+    else if (NS_FAILED(aResult)) {
       mOpeningFile = false;
       if (mMetadata) {
         // This entry was initialized as createNew, just switch to memory-only
@@ -504,8 +531,6 @@ CacheFile::SetMemoryOnly()
     return NS_OK;
 
   MOZ_ASSERT(mReady);
-  // MemoryOnly can be set only before we start reading/writting data
-  MOZ_ASSERT(!mDataAccessed);
 
   if (!mReady) {
     LOG(("CacheFile::SetMemoryOnly() - CacheFile is not ready [this=%p]",
