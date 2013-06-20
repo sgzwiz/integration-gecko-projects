@@ -79,7 +79,7 @@ CacheFileOutputStream::Write(const char * aBuf, uint32_t aCount,
   CacheFileAutoLock lock(mFile);
 
   if (mClosed)
-    return mStatus;
+    return NS_FAILED(mStatus) ? mStatus : NS_BASE_STREAM_CLOSED;
 
   EnsureCorrectChunk(false);
   if (!mChunk)
@@ -191,7 +191,7 @@ CacheFileOutputStream::Seek(int32_t whence, int64_t offset)
   CacheFileAutoLock lock(mFile);
 
   if (mClosed)
-    return NS_ERROR_NOT_AVAILABLE;
+    return NS_BASE_STREAM_CLOSED;
 
   int64_t newPos = offset;
   switch (whence) {
@@ -219,7 +219,7 @@ CacheFileOutputStream::Tell(int64_t *_retval)
   CacheFileAutoLock lock(mFile);
 
   if (mClosed)
-    return NS_ERROR_NOT_AVAILABLE;
+    return NS_BASE_STREAM_CLOSED;
 
   *_retval = mPos;
   return NS_OK;
