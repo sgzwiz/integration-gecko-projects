@@ -1215,7 +1215,6 @@ void CacheEntry::DoomAlreadyRemoved()
   CacheStorageService::Self()->OnMemoryConsumptionChange(this, 0);
 
   nsCOMPtr<nsICacheEntryDoomCallback> callback;
-  nsRefPtr<CacheFile> file;
   {
     mozilla::MutexAutoLock lock(mLock);
 
@@ -1226,16 +1225,11 @@ void CacheEntry::DoomAlreadyRemoved()
     }
 
     // Otherwise wait for the file to be doomed
-    if (!mFile)
+    if (!mFile || NS_FAILED(mFile->Doom(this)))
       mDoomCallback.swap(callback);
-    else
-      file = mFile;
   }
 
-  if (file) {
-    file->Doom(this);
-  }
-  else if (callback) {
+  if (callback) {
     nsRefPtr<DoomCallbackRunnable> event =
       new DoomCallbackRunnable(callback, NS_OK);
     NS_DispatchToMainThread(event);

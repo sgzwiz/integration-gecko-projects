@@ -548,6 +548,8 @@ CacheFileIOManager::Init()
 nsresult
 CacheFileIOManager::OnProfile()
 {
+  MOZ_ASSERT(gInstance);
+
   nsresult rv;
   nsCOMPtr<nsIFile> directory;
   rv = NS_GetSpecialDirectory(NS_APP_CACHE_PARENT_DIR,
@@ -604,7 +606,8 @@ CacheFileIOManager::OpenFile(const SHA1Sum::Hash *aHash,
                              uint32_t aFlags,
                              CacheFileIOListener *aCallback)
 {
-  MOZ_ASSERT(gInstance);
+  if (!gInstance)
+    return NS_ERROR_NOT_INITIALIZED;
 
   DebugOnly<nsresult> rv;
   rv = gInstance->mIOThread->Dispatch(
@@ -999,6 +1002,9 @@ nsresult
 CacheFileIOManager::CreateCacheTree()
 {
   MOZ_ASSERT(!mTreeCreated);
+
+  if (!mCacheDirectory)
+    return NS_ERROR_FILE_INVALID_PATH;
 
   nsresult rv;
 
