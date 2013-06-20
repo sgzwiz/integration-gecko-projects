@@ -884,7 +884,7 @@ js_fun_apply(JSContext *cx, unsigned argc, Value *vp)
         // We do not want to use ScriptFrameIter to abstract here because this
         // is supposed to be a fast path as opposed to ScriptFrameIter which is
         // doing complex logic to settle on the next frame twice.
-        if (cx->mainThread().currentlyRunningInJit()) {
+        if (cx->currentlyRunningInJit()) {
             ion::JitActivationIterator activations(cx->runtime());
             ion::IonFrameIterator frame(activations);
             if (frame.isNative()) {
@@ -929,7 +929,7 @@ js_fun_apply(JSContext *cx, unsigned argc, Value *vp)
         } else
 #endif
         {
-            StackFrame *fp = cx->fp();
+            StackFrame *fp = cx->interpreterFrame();
             unsigned length = fp->numActualArgs();
             JS_ASSERT(length <= StackSpace::ARGS_LENGTH_MAX);
 
@@ -1654,11 +1654,11 @@ js::ReportIncompatibleMethod(JSContext *cx, CallReceiver call, Class *clasp)
                   !thisv.toObject().getProto() ||
                   thisv.toObject().getProto()->getClass() != clasp);
     } else if (thisv.isString()) {
-        JS_ASSERT(clasp != &StringClass);
+        JS_ASSERT(clasp != &StringObject::class_);
     } else if (thisv.isNumber()) {
-        JS_ASSERT(clasp != &NumberClass);
+        JS_ASSERT(clasp != &NumberObject::class_);
     } else if (thisv.isBoolean()) {
-        JS_ASSERT(clasp != &BooleanClass);
+        JS_ASSERT(clasp != &BooleanObject::class_);
     } else {
         JS_ASSERT(thisv.isUndefined() || thisv.isNull());
     }

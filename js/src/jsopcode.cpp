@@ -129,7 +129,7 @@ NumBlockSlots(JSScript *script, jsbytecode *pc)
     JS_STATIC_ASSERT(JSOP_ENTERBLOCK_LENGTH == JSOP_ENTERLET0_LENGTH);
     JS_STATIC_ASSERT(JSOP_ENTERBLOCK_LENGTH == JSOP_ENTERLET1_LENGTH);
 
-    return script->getObject(GET_UINT32_INDEX(pc))->asStaticBlock().slotCount();
+    return script->getObject(GET_UINT32_INDEX(pc))->as<StaticBlockObject>().slotCount();
 }
 
 unsigned
@@ -411,8 +411,9 @@ js_DumpPC(JSContext *cx)
     Sprinter sprinter(cx);
     if (!sprinter.init())
         return JS_FALSE;
-    RootedScript script(cx, cx->fp()->script());
-    JSBool ok = js_DisassembleAtPC(cx, script, true, cx->regs().pc, false, &sprinter);
+    ScriptFrameIter iter(cx);
+    RootedScript script(cx, iter.script());
+    JSBool ok = js_DisassembleAtPC(cx, script, true, iter.pc(), false, &sprinter);
     fprintf(stdout, "%s", sprinter.string());
     return ok;
 }
@@ -1105,7 +1106,7 @@ GetBlockChainAtPC(JSContext *cx, JSScript *script, jsbytecode *pc)
             jssrcnote *sn = js_GetSrcNote(cx, script, p);
             if (!(sn && SN_TYPE(sn) == SRC_HIDDEN)) {
                 JS_ASSERT(blockChain);
-                blockChain = blockChain->asStaticBlock().enclosingBlock();
+                blockChain = blockChain->as<StaticBlockObject>().enclosingBlock();
                 JS_ASSERT_IF(blockChain, blockChain->is<BlockObject>());
             }
             break;
