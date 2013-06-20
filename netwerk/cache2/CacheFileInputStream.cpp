@@ -72,10 +72,21 @@ CacheFileInputStream::Available(uint64_t *_retval)
   CacheFileAutoLock lock(mFile);
 
   if (mClosed)
-    return NS_ERROR_NOT_AVAILABLE;
+    return NS_FAILED(mStatus) ? mStatus : NS_BASE_STREAM_CLOSED;
 
-  // TODO what to return when we have an output stream?
-  *_retval = mFile->mDataSize - mPos;
+  EnsureCorrectChunk(false);
+  *_retval = 0;
+
+  if (!mChunk)
+    return NS_OK;
+
+  int64_t canRead;
+  const char *buf;
+  CanRead(&canRead, &buf);
+
+  if (canRead > 0)
+    *_retval = canRead;
+
   return NS_OK;
 }
 
@@ -86,8 +97,13 @@ CacheFileInputStream::Read(char *aBuf, uint32_t aCount, uint32_t *_retval)
 
   nsresult rv;
 
-  if (mClosed)
-    return mStatus;
+  if (mClosed) {
+    if NS_FAILED(mStatus)
+      return mStatus;
+
+    *_retval = 0;
+    return NS_OK;
+  }
 
   EnsureCorrectChunk(false);
   if (!mChunk)
@@ -101,7 +117,7 @@ CacheFileInputStream::Read(char *aBuf, uint32_t aCount, uint32_t *_retval)
     // file was truncated ???
     // TODO what to return?
     *_retval = 0;
-    rv = NS_BASE_STREAM_CLOSED;
+    rv = NS_OK;
   }
   else if (canRead > 0) {
     *_retval = std::min(static_cast<uint32_t>(canRead), aCount);
@@ -117,8 +133,6 @@ CacheFileInputStream::Read(char *aBuf, uint32_t aCount, uint32_t *_retval)
       rv = NS_BASE_STREAM_WOULD_BLOCK;
     else {
       *_retval = 0;
-      mClosed = true;
-      mStatus = NS_OK;
       rv = NS_OK;
     }
   }
@@ -134,8 +148,13 @@ CacheFileInputStream::ReadSegments(nsWriteSegmentFun aWriter, void *aClosure,
 
   nsresult rv;
 
-  if (mClosed)
-    return mStatus;
+  if (mClosed) {
+    if NS_FAILED(mStatus)
+      return mStatus;
+
+    *_retval = 0;
+    return NS_OK;
+  }
 
   EnsureCorrectChunk(false);
   if (!mChunk)
@@ -149,7 +168,7 @@ CacheFileInputStream::ReadSegments(nsWriteSegmentFun aWriter, void *aClosure,
     // file was truncated ???
     // TODO what to return?
     *_retval = 0;
-    rv = NS_BASE_STREAM_CLOSED;
+    rv = NS_OK;
   }
   else if (canRead > 0) {
     uint32_t toRead = std::min(static_cast<uint32_t>(canRead), aCount);
@@ -169,8 +188,6 @@ CacheFileInputStream::ReadSegments(nsWriteSegmentFun aWriter, void *aClosure,
       rv = NS_BASE_STREAM_WOULD_BLOCK;
     else {
       *_retval = 0;
-      mClosed = true;
-      mStatus = NS_OK;
       rv = NS_OK;
     }
   }
@@ -261,7 +278,7 @@ CacheFileInputStream::Seek(int32_t whence, int64_t offset)
   CacheFileAutoLock lock(mFile);
 
   if (mClosed)
-    return NS_ERROR_NOT_AVAILABLE;
+    return NS_BASE_STREAM_CLOSED;
 
   int64_t newPos = offset;
   switch (whence) {
@@ -289,7 +306,7 @@ CacheFileInputStream::Tell(int64_t *_retval)
   CacheFileAutoLock lock(mFile);
 
   if (mClosed)
-    return NS_ERROR_NOT_AVAILABLE;
+    return NS_BASE_STREAM_CLOSED;
 
   *_retval = mPos;
   return NS_OK;
