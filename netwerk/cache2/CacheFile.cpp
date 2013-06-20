@@ -15,6 +15,35 @@
 namespace mozilla {
 namespace net {
 
+class NotifyCacheFileListenerEvent : public nsRunnable {
+public:
+  NotifyCacheFileListenerEvent(CacheFileListener *aCallback,
+                               nsresult aResult,
+                               bool aIsNew)
+    : mCallback(aCallback)
+    , mRV(aResult)
+    , mIsNew(aIsNew)
+  {
+    MOZ_COUNT_CTOR(NotifyCacheFileListenerEvent);
+  }
+
+  ~NotifyCacheFileListenerEvent()
+  {
+    MOZ_COUNT_DTOR(NotifyCacheFileListenerEvent);
+  }
+
+  NS_IMETHOD Run()
+  {
+    mCallback->OnFileReady(mRV, mIsNew);
+    return NS_OK;
+  }
+
+protected:
+  nsCOMPtr<CacheFileListener> mCallback;
+  nsresult                    mRV;
+  bool                        mIsNew;
+};
+
 class NotifyChunkListenerEvent : public nsRunnable {
 public:
   NotifyChunkListenerEvent(CacheFileChunkListener *aCallback,
@@ -139,12 +168,30 @@ CacheFile::Init(const nsACString &aKey,
       mOpeningFile = false;
 
       if (aCreateNew) {
-        mMemoryOnly = true;
         NS_WARNING("Forcing memory-only entry since OpenFile failed");
         LOG(("CacheFile::Init() - CacheFileIOManager::OpenFile() failed "
              "synchronously. We can continue in memory-only mode since "
              "aCreateNew == true. [this=%p]", this));
-      } else {
+
+        mMemoryOnly = true;
+      }
+      else if (rv == NS_ERROR_NOT_INITIALIZED) {
+        NS_WARNING("Forcing memory-only entry since CacheIOManager isn't "
+                   "initialized.");
+        LOG(("CacheFile::Init() - CacheFileIOManager isn't initialized, "
+             "initializing entry as memory-only. [this=%p]", this));
+
+        mMemoryOnly = true;
+        mMetadata = new CacheFileMetadata(mKey);
+        mReady = true;
+        mDataSize = mMetadata->Offset();
+
+        nsRefPtr<NotifyCacheFileListenerEvent> ev;
+        ev = new NotifyCacheFileListenerEvent(aCallback, NS_OK, true);
+        rv = NS_DispatchToCurrentThread(ev);
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+      else {
         NS_ENSURE_SUCCESS(rv, rv);
       }
     }
@@ -271,6 +318,8 @@ CacheFile::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
   nsresult rv;
 
   nsCOMPtr<CacheFileListener> listener;
+  bool doomListener = true;
+  bool isNew = false;
 
   {
     CacheFileAutoLock lock(this);
@@ -295,6 +344,8 @@ CacheFile::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
       // The file could also be doomed before SetMemoryOnly() was called.
       if (mDoomRequested) {
         mDoomRequested = false;
+        doomListener = true;
+
         if (aHandle) {
           // Doom the file
           CacheFileIOManager::DoomFile(aHandle, mListener ? this : nullptr);
@@ -315,24 +366,57 @@ CacheFile::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
     }
     else if (NS_FAILED(aResult)) {
       mOpeningFile = false;
+
       if (mMetadata) {
         // This entry was initialized as createNew, just switch to memory-only
         // mode. If there is a listener, it waits for doom notification.
+        NS_WARNING("Forcing memory-only entry since OpenFile failed");
+        LOG(("CacheFile::OnFileOpened() - CacheFileIOManager::OpenFile() "
+             "failed asynchronously. We can continue in memory-only mode since "
+             "aCreateNew == true. [this=%p]", this));
+
         mMemoryOnly = true;
         mDoomRequested = false;
+        doomListener = true;
 
         if (!mListener)
           return NS_OK;
       }
+      else if (aResult == NS_ERROR_FILE_INVALID_PATH) {
+        // CacheFileIOManager doesn't have mCacheDirectory, switch to
+        // memory-only mode.
+        NS_WARNING("Forcing memory-only entry since CacheFileIOManager doesn't "
+                   "have mCacheDirectory.");
+        LOG(("CacheFile::OnFileOpened() - CacheFileIOManager doesn't have "
+             "mCacheDirectory, initializing entry as memory-only. [this=%p]",
+             this));
+
+        MOZ_ASSERT(!mDoomRequested);
+
+        mMemoryOnly = true;
+        mMetadata = new CacheFileMetadata(mKey);
+        mReady = true;
+        mDataSize = mMetadata->Offset();
+
+        aResult = NS_OK;
+        doomListener = false;
+        isNew = true;
+      }
+      else {
+        // CacheFileIOManager::OpenFile() failed for another reason.
+        doomListener = false;
+        isNew = false;
+      }
+
       mListener.swap(listener);
     }
   }
 
   if (listener) {
-    if (mMemoryOnly)
+    if (doomListener)
       listener->OnFileDoomed(NS_ERROR_NOT_AVAILABLE);
     else
-      listener->OnFileReady(aResult, false);
+      listener->OnFileReady(aResult, isNew);
 
     return NS_OK;
   }
