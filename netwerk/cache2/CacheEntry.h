@@ -158,17 +158,24 @@ private:
   class DoomCallbackRunnable : public nsRunnable
   {
   public:
-    DoomCallbackRunnable(nsICacheEntryDoomCallback* aCallback, nsresult aRv)
-      : mCallback(aCallback), mRv(aRv) {}
+    DoomCallbackRunnable(CacheEntry* aEntry, nsresult aRv)
+      : mEntry(aEntry), mRv(aRv) {}
 
   private:
     NS_IMETHOD Run()
     {
-      mCallback->OnCacheEntryDoomed(mRv);
+      nsCOMPtr<nsICacheEntryDoomCallback> callback;
+      {
+        mozilla::MutexAutoLock lock(mEntry->mLock);
+        mEntry->mDoomCallback.swap(callback);
+      }
+
+      if (callback)
+        callback->OnCacheEntryDoomed(mRv);
       return NS_OK;
     }
 
-    nsCOMPtr<nsICacheEntryDoomCallback> mCallback;
+    nsRefPtr<CacheEntry> mEntry;
     nsresult mRv;
   };
 

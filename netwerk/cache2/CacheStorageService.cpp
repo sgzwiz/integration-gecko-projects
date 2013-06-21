@@ -4,6 +4,7 @@
 
 #include "CacheLog.h"
 #include "CacheStorageService.h"
+#include "CacheFileIOManager.h"
 
 #include "nsICacheStorageVisitor.h"
 #include "CacheStorage.h"
@@ -75,6 +76,8 @@ CacheStorageService::CacheStorageService()
 , mMetadataSize(0)
 {
   MOZ_COUNT_CTOR(CacheStorageService);
+
+  CacheFileIOManager::Init();
 
   sSelf = this;
   sGlobalEntryTables = new GlobalEntryTables();

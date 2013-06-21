@@ -42,17 +42,17 @@ function evict_cache_entries(where)
 
   if (clearMem) {
     storage = svc.memoryCacheStorage(new LoadContextInfo());
-    storage.asyncEvictStorage();
+    storage.asyncEvictStorage(null);
   }
 
   if (clearDisk) {
     storage = svc.diskCacheStorage(new LoadContextInfo(), false);
-    storage.asyncEvictStorage();
+    storage.asyncEvictStorage(null);
   }
 
   if (clearAppCache) {
     storage = svc.appCacheStorage(new LoadContextInfo(), null);
-    storage.asyncEvictStorage();
+    storage.asyncEvictStorage(null);
   }
 }
 
@@ -91,6 +91,7 @@ function asyncOpenCacheEntry(key, where, flags, lci, callback, appcache)
     onCacheEntryCheck: function(entry, appCache) {
       if (typeof callback === "object")
         return callback.onCacheEntryCheck(entry, appCache);
+      return Ci.nsICacheEntryOpenCallback.ENTRY_VALID;
     },
 
     onCacheEntryAvailable: function (entry, isnew, appCache, status) {
