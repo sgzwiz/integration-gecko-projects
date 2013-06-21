@@ -4,6 +4,7 @@
 
 #include "CacheFileChunk.h"
 
+#include "CacheLog.h"
 #include "CacheFile.h"
 #include "nsThreadUtils.h"
 
@@ -18,16 +19,22 @@ public:
     : mCallback(aCallback)
     , mChunk(aChunk)
   {
+    LOG(("NotifyUpdateListenerEvent::NotifyUpdateListenerEvent() [this=%p]",
+         this));
     MOZ_COUNT_CTOR(NotifyUpdateListenerEvent);
   }
 
   ~NotifyUpdateListenerEvent()
   {
+    LOG(("NotifyUpdateListenerEvent::~NotifyUpdateListenerEvent() [this=%p]",
+         this));
     MOZ_COUNT_DTOR(NotifyUpdateListenerEvent);
   }
 
   NS_IMETHOD Run()
   {
+    LOG(("NotifyUpdateListenerEvent::Run() [this=%p]", this));
+
     mCallback->OnChunkUpdated(mChunk);
     return NS_OK;
   }
@@ -74,11 +81,13 @@ CacheFileChunk::CacheFileChunk(CacheFile *aFile, uint32_t aIndex)
   , mBuf(nullptr)
   , mFile(aFile)
 {
+  LOG(("CacheFileChunk::CacheFileChunk() [this=%p]", this));
   MOZ_COUNT_CTOR(CacheFileChunk);
 }
 
 CacheFileChunk::~CacheFileChunk()
 {
+  LOG(("CacheFileChunk::~CacheFileChunk() [this=%p]", this));
   MOZ_COUNT_DTOR(CacheFileChunk);
 
   if (mBuf) {
@@ -92,6 +101,8 @@ CacheFileChunk::InitNew(CacheFileChunkListener *aCallback)
 {
   mFile->AssertOwnsLock();
 
+  LOG(("CacheFileChunk::InitNew() [this=%p, listener=%p]", this, aCallback));
+
   MOZ_ASSERT(!mBuf);
 
   mBuf = static_cast<char *>(moz_xmalloc(kChunkSize));
@@ -103,6 +114,9 @@ CacheFileChunk::Read(CacheFileHandle *aHandle, uint32_t aLen,
                      CacheFileChunkListener *aCallback)
 {
   mFile->AssertOwnsLock();
+
+  LOG(("CacheFileChunk::Read() [this=%p, handle=%p, len=%d, listener=%p]",
+       this, aHandle, aLen, aCallback));
 
   MOZ_ASSERT(!mBuf);
   MOZ_ASSERT(!mIsReady);
@@ -124,6 +138,9 @@ CacheFileChunk::Write(CacheFileHandle *aHandle,
 {
   mFile->AssertOwnsLock();
 
+  LOG(("CacheFileChunk::Write() [this=%p, handle=%p, listener=%p]",
+       this, aHandle, aCallback));
+
   MOZ_ASSERT(mBuf);
   MOZ_ASSERT(!mIsReady);
 
@@ -143,6 +160,9 @@ void
 CacheFileChunk::WaitForUpdate(CacheFileChunkListener *aCallback)
 {
   mFile->AssertOwnsLock();
+
+  LOG(("CacheFileChunk::WaitForUpdate() [this=%p, listener=%p]",
+       this, aCallback));
 
   MOZ_ASSERT(mFile->mOutput);
 
@@ -166,6 +186,8 @@ nsresult
 CacheFileChunk::CancelWait(CacheFileChunkListener *aCallback)
 {
   mFile->AssertOwnsLock();
+
+  LOG(("CacheFileChunk::CancelWait() [this=%p, listener=%p]", this, aCallback));
 
   uint32_t i;
   for (i = 0 ; i < mUpdateListeners.Length() ; i++) {
@@ -192,11 +214,16 @@ CacheFileChunk::NotifyUpdateListeners()
 {
   mFile->AssertOwnsLock();
 
+  LOG(("CacheFileChunk::NotifyUpdateListeners() [this=%p]", this));
+
   nsresult rv, rv2;
 
   rv = NS_OK;
   for (uint32_t i = 0 ; i < mUpdateListeners.Length() ; i++) {
     ChunkListenerItem *item = mUpdateListeners[i];
+
+    LOG(("CacheFileChunk::NotifyUpdateListeners() - Notifying listener %p "
+         "[this=%p]", item->mCallback.get(), this));
 
     nsRefPtr<NotifyUpdateListenerEvent> ev;
     ev = new NotifyUpdateListenerEvent(item->mCallback, this);
@@ -240,6 +267,9 @@ CacheFileChunk::UpdateDataSize(uint32_t aDataSize, bool aEOF)
 {
   mFile->AssertOwnsLock();
 
+  LOG(("CacheFileChunk::UpdateDataSize() [this=%p, dataSize=%d, EOF=%d]",
+       this, aDataSize, aEOF));
+
   mIsDirty = true;
 
   int64_t fileSize = kChunkSize * mIndex + aDataSize;
@@ -264,6 +294,8 @@ nsresult
 CacheFileChunk::OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
                               nsresult aResult)
 {
+  LOG(("CacheFileChunk::OnDataWritten() [this=%p, handle=%p]", this, aHandle));
+
   nsCOMPtr<CacheFileChunkListener> listener;
 
   {
@@ -284,6 +316,9 @@ nsresult
 CacheFileChunk::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
                            nsresult aResult)
 {
+  LOG(("CacheFileChunk::OnDataRead() [this=%p, handle=%p, result=0x%08x]",
+       this, aHandle, aResult));
+
   nsCOMPtr<CacheFileChunkListener> listener;
 
   {
@@ -321,6 +356,8 @@ void
 CacheFileChunk::SetReady(bool aReady)
 {
   mFile->AssertOwnsLock();
+
+  LOG(("CacheFileChunk::SetReady() [this=%p, ready=%d]", this, aReady));
 
   mIsReady = aReady;
 }
