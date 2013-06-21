@@ -1,7 +1,3 @@
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cr = Components.results;
-
 var _PSvc;
 function get_pref_service() {
   if (_PSvc)

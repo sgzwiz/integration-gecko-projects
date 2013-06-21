@@ -2682,9 +2682,12 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
         }
     }
 
-    *aResult = mCachedContentIsValid
-      ? (mDidReval ? ENTRY_NEEDS_REVALIDATION : ENTRY_VALID)
-      : ENTRY_NOT_VALID;
+    if (mDidReval)
+      *aResult = ENTRY_NEEDS_REVALIDATION;
+    else if (mCachedContentIsValid)
+      *aResult = ENTRY_VALID;
+    else
+      *aResult = ENTRY_NOT_VALID;
 
     if (mCachedContentIsValid) {
         // XXX: Isn't the cache entry already valid?
@@ -3122,7 +3125,7 @@ nsHttpChannel::OpenCacheInputStream(nsICacheEntry* cacheEntry, bool startBufferi
         return rv;
     }
 
-    if (!startBuffering) {
+    if (1) {
         // We do not connect the stream to the stream transport service if we
         // have to validate the entry with the server. If we did, we would get
         // into a race condition between the stream transport service reading
