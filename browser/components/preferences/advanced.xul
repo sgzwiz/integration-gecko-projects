@@ -75,6 +75,11 @@
 #ifdef MOZ_UPDATER
       <preference id="app.update.enabled"              name="app.update.enabled"              type="bool"/>
       <preference id="app.update.auto"                 name="app.update.auto"                 type="bool"/>
+#ifdef XP_WIN
+#ifdef MOZ_METRO
+      <preference id="app.update.metro.enabled"        name="app.update.metro.enabled"        type="bool"/>
+#endif
+#endif
       <preference id="app.update.mode"                 name="app.update.mode"                 type="int"/>
 
       <preference id="app.update.disable_button.showUpdateHistory"
@@ -108,6 +113,7 @@
     <stringbundle id="bundleShell" src="chrome://browser/locale/shellservice.properties"/>
     <stringbundle id="bundleBrand" src="chrome://branding/locale/brand.properties"/>
 #endif
+    <stringbundle id="bundlePreferences" src="chrome://browser/locale/preferences/preferences.properties"/>
 
     <script type="application/javascript" src="chrome://browser/content/preferences/advanced.js"/>
 
@@ -340,9 +346,22 @@
             <caption label="&updateApp.label;"/>
             <radiogroup id="updateRadioGroup"
                         oncommand="gAdvancedPane.updateWritePrefs();">
-              <radio value="auto"
-                     label="&updateAuto.label;"
-                     accesskey="&updateAuto.accesskey;"/>
+#ifdef XP_WIN
+#ifdef MOZ_METRO
+              <radio id="autoMetro"
+                     value="autoMetro"
+                     label="&updateAutoMetro.label;"
+                     accesskey="&updateAutoMetro.accesskey;"/>
+              <hbox id="autoMetroIndent"
+                    class="indent">
+                <label value="&updateAutoMetroWarn.label;"/>
+              </hbox>
+#endif
+#endif
+              <radio id="autoDesktop"
+                     value="auto"
+                     label="&updateAuto1.label;"
+                     accesskey="&updateAuto1.accesskey;"/>
               <hbox class="indent">
                 <checkbox id="warnIncompatible"
                           label="&updateAutoAddonWarn.label;"

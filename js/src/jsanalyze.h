@@ -6,21 +6,15 @@
 
 /* Definitions for javascript analysis. */
 
-#ifndef jsanalyze_h___
-#define jsanalyze_h___
+#ifndef jsanalyze_h
+#define jsanalyze_h
 
 #include "mozilla/PodOperations.h"
-#include "mozilla/TypeTraits.h"
 
-#include "jsautooplen.h"
 #include "jscompartment.h"
 #include "jscntxt.h"
 #include "jsinfer.h"
 #include "jsscript.h"
-
-#include "ds/LifoAlloc.h"
-#include "js/TemplateLib.h"
-#include "vm/ScopeObject.h"
 
 class JSScript;
 
@@ -728,9 +722,7 @@ class ScriptAnalysis
     bool hasFunctionCalls_:1;
     bool modifiesArguments_:1;
     bool localsAliasStack_:1;
-    bool isJaegerInlineable:1;
     bool isIonInlineable:1;
-    bool isJaegerCompileable:1;
     bool canTrackVars:1;
     bool hasLoops_:1;
 
@@ -768,9 +760,6 @@ class ScriptAnalysis
     bool ionInlineable() const { return isIonInlineable; }
     bool ionInlineable(uint32_t argc) const { return isIonInlineable && argc == script_->function()->nargs; }
     void setIonUninlineable() { isIonInlineable = false; }
-    bool jaegerInlineable() const { return isJaegerInlineable; }
-    bool jaegerInlineable(uint32_t argc) const { return isJaegerInlineable && argc == script_->function()->nargs; }
-    bool jaegerCompileable() { return isJaegerCompileable; }
 
     /* Number of property read opcodes in the script. */
     uint32_t numPropertyReads() const { return numPropertyReads_; }
@@ -1107,4 +1096,4 @@ template <> struct IsPod<js::analyze::SSAUseChain>      : TrueType {};
 
 } /* namespace mozilla */
 
-#endif // jsanalyze_h___
+#endif /* jsanalyze_h */

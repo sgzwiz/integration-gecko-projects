@@ -51,6 +51,8 @@ MOCHITEST_FILES := \
   test_channelMergerNodeWithVolume.html \
   test_channelSplitterNode.html \
   test_channelSplitterNodeWithVolume.html \
+  test_convolverNode.html \
+  test_convolverNode_mono_mono.html \
   test_currentTime.html \
   test_delayNode.html \
   test_delayNodeSmallMaxDelay.html \
@@ -58,7 +60,9 @@ MOCHITEST_FILES := \
   test_dynamicsCompressorNode.html \
   test_gainNode.html \
   test_gainNodeInLoop.html \
+  test_maxChannelCount.html \
   test_mediaDecoding.html \
+  test_mediaStreamAudioDestinationNode.html \
   test_mixingRules.html \
   test_nodeToParamConnection.html \
   test_OfflineAudioContext.html \
@@ -66,6 +70,7 @@ MOCHITEST_FILES := \
   test_offlineDestinationChannelCountMore.html \
   test_pannerNode.html \
   test_pannerNode_equalPower.html \
+  test_periodicWave.html \
   test_scriptProcessorNode.html \
   test_scriptProcessorNodeChannelCount.html \
   test_scriptProcessorNodeZeroInputOutput.html \
@@ -73,7 +78,6 @@ MOCHITEST_FILES := \
   test_waveShaper.html \
   test_waveShaperNoCurve.html \
   test_waveShaperZeroLengthCurve.html \
-  test_waveTable.html \
   ting.ogg \
   ting-expected.wav \
   ting-dualchannel44.1.ogg \

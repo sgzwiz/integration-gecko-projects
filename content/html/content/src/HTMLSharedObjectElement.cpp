@@ -13,7 +13,6 @@
 #include "nsIPluginDocument.h"
 #include "nsIDOMDocument.h"
 #include "nsThreadUtils.h"
-#include "nsIDOMSVGDocument.h"
 #include "nsIScriptError.h"
 #include "nsIWidget.h"
 #include "nsContentUtils.h"
@@ -94,7 +93,7 @@ NS_IMPL_RELEASE_INHERITED(HTMLSharedObjectElement, Element)
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(HTMLSharedObjectElement)
   NS_HTML_CONTENT_INTERFACES_AMBIGUOUS(nsGenericHTMLElement,
                                        nsIDOMHTMLAppletElement)
-  NS_INTERFACE_TABLE_INHERITED9(HTMLSharedObjectElement,
+  NS_INTERFACE_TABLE_INHERITED8(HTMLSharedObjectElement,
                                 nsIRequestObserver,
                                 nsIStreamListener,
                                 nsIFrameLoaderOwner,
@@ -102,12 +101,10 @@ NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(HTMLSharedObjectElement)
                                 imgINotificationObserver,
                                 nsIImageLoadingContent,
                                 imgIOnloadBlocker,
-                                nsIInterfaceRequestor,
                                 nsIChannelEventSink)
   NS_INTERFACE_TABLE_TO_MAP_SEGUE
   NS_INTERFACE_MAP_ENTRY_IF_TAG(nsIDOMHTMLAppletElement, applet)
   NS_INTERFACE_MAP_ENTRY_IF_TAG(nsIDOMHTMLEmbedElement, embed)
-  NS_INTERFACE_MAP_ENTRY_IF_TAG(nsIDOMGetSVGDocument, embed)
 NS_ELEMENT_INTERFACE_MAP_END
 
 NS_IMPL_ELEMENT_CLONE(HTMLSharedObjectElement)
@@ -224,27 +221,7 @@ NS_IMPL_STRING_ATTR(HTMLSharedObjectElement, Width, width)
 int32_t
 HTMLSharedObjectElement::TabIndexDefault()
 {
-  return -1; 
-}
-
-NS_IMETHODIMP
-HTMLSharedObjectElement::GetSVGDocument(nsIDOMDocument **aResult)
-{
-  NS_ENSURE_ARG_POINTER(aResult);
-
-  *aResult = nullptr;
-
-  if (!IsInDoc()) {
-    return NS_OK;
-  }
-
-  // XXXbz should this use GetCurrentDoc()?  sXBL/XBL2 issue!
-  nsIDocument *sub_doc = OwnerDoc()->GetSubDocumentFor(this);
-  if (!sub_doc) {
-    return NS_OK;
-  }
-
-  return CallQueryInterface(sub_doc, aResult);
+  return -1;
 }
 
 bool

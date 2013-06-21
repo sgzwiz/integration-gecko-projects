@@ -4,22 +4,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef Debugger_h__
-#define Debugger_h__
+#ifndef vm_Debugger_h
+#define vm_Debugger_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/LinkedList.h"
 
 #include "jsapi.h"
 #include "jsclist.h"
 #include "jscntxt.h"
 #include "jscompartment.h"
-#include "jsgc.h"
 #include "jsweakmap.h"
-#include "jswrapper.h"
 
 #include "gc/Barrier.h"
-#include "gc/FindSCCs.h"
 #include "js/HashTable.h"
 #include "vm/GlobalObject.h"
 
@@ -422,7 +418,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
     inline bool observesNewScript() const;
     inline bool observesNewGlobalObject() const;
     inline bool observesGlobal(GlobalObject *global) const;
-    inline bool observesFrame(AbstractFramePtr frame) const;
+    bool observesFrame(AbstractFramePtr frame) const;
     bool observesScript(JSScript *script) const;
 
     /*
@@ -433,7 +429,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
     bool wrapEnvironment(JSContext *cx, Handle<Env*> env, MutableHandleValue vp);
 
     /*
-     * Like cx->compartment->wrap(cx, vp), but for the debugger compartment.
+     * Like cx->compartment()->wrap(cx, vp), but for the debugger compartment.
      *
      * Preconditions: *vp is a value from a debuggee compartment; cx is in the
      * debugger's compartment.
@@ -462,7 +458,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
      * When passing values from the debugger to the debuggee:
      *     call unwrapDebuggeeValue;  // debugger-unwrapping
      *     enter debuggee compartment;
-     *     call cx->compartment->wrap;  // compartment-rewrapping
+     *     call cx->compartment()->wrap;  // compartment-rewrapping
      *
      * (Extreme nerd sidebar: Unwrapping happens in two steps because there are
      * two different kinds of symmetry at work: regardless of which direction
@@ -655,7 +651,7 @@ Debugger::observesGlobal(GlobalObject *global) const
 JSTrapStatus
 Debugger::onEnterFrame(JSContext *cx, AbstractFramePtr frame, MutableHandleValue vp)
 {
-    if (cx->compartment->getDebuggees().empty())
+    if (cx->compartment()->getDebuggees().empty())
         return JSTRAP_CONTINUE;
     return slowPathOnEnterFrame(cx, frame, vp);
 }
@@ -663,7 +659,7 @@ Debugger::onEnterFrame(JSContext *cx, AbstractFramePtr frame, MutableHandleValue
 JSTrapStatus
 Debugger::onDebuggerStatement(JSContext *cx, MutableHandleValue vp)
 {
-    return cx->compartment->getDebuggees().empty()
+    return cx->compartment()->getDebuggees().empty()
            ? JSTRAP_CONTINUE
            : dispatchHook(cx, vp, OnDebuggerStatement);
 }
@@ -671,7 +667,7 @@ Debugger::onDebuggerStatement(JSContext *cx, MutableHandleValue vp)
 JSTrapStatus
 Debugger::onExceptionUnwind(JSContext *cx, MutableHandleValue vp)
 {
-    return cx->compartment->getDebuggees().empty()
+    return cx->compartment()->getDebuggees().empty()
            ? JSTRAP_CONTINUE
            : dispatchHook(cx, vp, OnExceptionUnwind);
 }
@@ -688,7 +684,7 @@ Debugger::onNewScript(JSContext *cx, HandleScript script, GlobalObject *compileA
 bool
 Debugger::onNewGlobalObject(JSContext *cx, Handle<GlobalObject *> global)
 {
-    if (JS_CLIST_IS_EMPTY(&cx->runtime->onNewGlobalObjectWatchers))
+    if (JS_CLIST_IS_EMPTY(&cx->runtime()->onNewGlobalObjectWatchers))
         return true;
     return Debugger::slowPathOnNewGlobalObject(cx, global);
 }
@@ -700,4 +696,4 @@ EvaluateInEnv(JSContext *cx, Handle<Env*> env, HandleValue thisv, AbstractFrameP
 
 }
 
-#endif /* Debugger_h__ */
+#endif /* vm_Debugger_h */

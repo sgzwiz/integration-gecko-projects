@@ -6,15 +6,14 @@
 
 /* JS execution context. */
 
-#ifndef jscntxt_h___
-#define jscntxt_h___
+#ifndef jscntxt_h
+#define jscntxt_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/GuardObjects.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/PodOperations.h"
 
 #include <string.h>
+#include <setjmp.h>
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
@@ -22,11 +21,6 @@
 #include "jsatom.h"
 #include "jsclist.h"
 #include "jsgc.h"
-#include "jspropertycache.h"
-#include "jspropertytree.h"
-#include "jsprototypes.h"
-#include "jsutil.h"
-#include "prmjtime.h"
 
 #include "ds/LifoAlloc.h"
 #include "frontend/ParseMaps.h"
@@ -35,13 +29,10 @@
 #include "gc/StoreBuffer.h"
 #include "js/HashTable.h"
 #include "js/Vector.h"
-#include "ion/AsmJS.h"
 #include "vm/DateTime.h"
 #include "vm/SPSProfiler.h"
 #include "vm/Stack.h"
 #include "vm/ThreadPool.h"
-
-#include "ion/PcScriptCache.h"
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -128,12 +119,14 @@ TraceCycleDetectionSet(JSTracer *trc, ObjectSet &set);
 class MathCache;
 
 namespace ion {
-class IonRuntime;
 class IonActivation;
+class IonRuntime;
+struct PcScriptCache;
 }
 
-class WeakMapBase;
+class AsmJSActivation;
 class InterpreterFrames;
+class WeakMapBase;
 class WorkerThreadState;
 
 /*
@@ -251,6 +244,8 @@ struct EvalCacheHashPolicy
 
 typedef HashSet<EvalCacheEntry, EvalCacheHashPolicy, SystemAllocPolicy> EvalCache;
 
+class PropertyIteratorObject;
+
 class NativeIterCache
 {
     static const size_t SIZE = size_t(1) << 8;
@@ -340,7 +335,7 @@ class NewObjectCache
     void purge() { mozilla::PodZero(this); }
 
     /* Remove any cached items keyed on moved objects. */
-    inline void clearNurseryObjects(JSRuntime *rt);
+    void clearNurseryObjects(JSRuntime *rt);
 
     /*
      * Get the entry index for the given lookup, return whether there was a hit
@@ -358,7 +353,7 @@ class NewObjectCache
     inline JSObject *newObjectFromHit(JSContext *cx, EntryIndex entry, js::gc::InitialHeap heap);
 
     /* Fill an entry after a cache miss. */
-    inline void fillProto(EntryIndex entry, Class *clasp, js::TaggedProto proto, gc::AllocKind kind, JSObject *obj);
+    void fillProto(EntryIndex entry, Class *clasp, js::TaggedProto proto, gc::AllocKind kind, JSObject *obj);
     inline void fillGlobal(EntryIndex entry, Class *clasp, js::GlobalObject *global, gc::AllocKind kind, JSObject *obj);
     inline void fillType(EntryIndex entry, Class *clasp, js::types::TypeObject *type, gc::AllocKind kind, JSObject *obj);
 
@@ -445,16 +440,12 @@ namespace js {
  * there is only one instance of this struct, embedded in the
  * JSRuntime as the field |mainThread|.  During Parallel JS sections,
  * however, there will be one instance per worker thread.
- *
- * The eventual plan is to designate thread-safe portions of the
- * interpreter and runtime by having them take |PerThreadData*|
- * arguments instead of |JSContext*| or |JSRuntime*|.
  */
 class PerThreadData : public js::PerThreadDataFriendFields
 {
     /*
      * Backpointer to the full shared JSRuntime* with which this
-     * thread is associaed.  This is private because accessing the
+     * thread is associated.  This is private because accessing the
      * fields of this runtime can provoke race conditions, so the
      * intention is that access will be mediated through safe
      * functions like |associatedWith()| below.
@@ -489,11 +480,6 @@ class PerThreadData : public js::PerThreadDataFriendFields
     inline void setIonStackLimit(uintptr_t limit);
 
     /*
-     * This points to the most recent Ion activation running on the thread.
-     */
-    js::ion::IonActivation  *ionActivation;
-
-    /*
      * asm.js maintains a stack of AsmJSModule activations (see AsmJS.h). This
      * stack is used by JSRuntime::triggerOperationCallback to stop long-
      * running asm.js without requiring dynamic polling operations in the
@@ -502,12 +488,23 @@ class PerThreadData : public js::PerThreadDataFriendFields
      * synchronized (by rt->operationCallbackLock).
      */
   private:
+    friend class js::Activation;
+    friend class js::ActivationIterator;
     friend class js::AsmJSActivation;
+
+    /*
+     * Points to the most recent activation running on the thread.
+     * See Activation comment in vm/Stack.h.
+     */
+    js::Activation *activation_;
 
     /* See AsmJSActivation comment. Protected by rt->operationCallbackLock. */
     js::AsmJSActivation *asmJSActivationStack_;
 
   public:
+    static unsigned offsetOfActivation() {
+        return offsetof(PerThreadData, activation_);
+    }
     static unsigned offsetOfAsmJSActivationStackReadOnly() {
         return offsetof(PerThreadData, asmJSActivationStack_);
     }
@@ -517,6 +514,10 @@ class PerThreadData : public js::PerThreadDataFriendFields
     }
     js::AsmJSActivation *asmJSActivationStackFromOwnerThread() const {
         return asmJSActivationStack_;
+    }
+
+    js::Activation *activation() const {
+        return activation_;
     }
 
     /*
@@ -896,6 +897,7 @@ struct JSRuntime : public JS::shadow::Runtime,
     double              gcLowFrequencyHeapGrowth;
     bool                gcDynamicHeapGrowth;
     bool                gcDynamicMarkSlice;
+    uint64_t            gcDecommitThreshold;
 
     /* During shutdown, the GC needs to clean up every possible object. */
     bool                gcShouldCleanUpEverything;
@@ -1036,9 +1038,6 @@ struct JSRuntime : public JS::shadow::Runtime,
     bool isHeapCollecting() { return isHeapMajorCollecting() || isHeapMinorCollecting(); }
 
 #ifdef JSGC_GENERATIONAL
-# ifdef JS_GC_ZEAL
-    js::gc::VerifierNursery      gcVerifierNursery;
-# endif
     js::Nursery                  gcNursery;
     js::gc::StoreBuffer          gcStoreBuffer;
 #endif
@@ -1245,7 +1244,6 @@ struct JSRuntime : public JS::shadow::Runtime,
     }
 
     js::GSNCache        gsnCache;
-    js::PropertyCache   propertyCache;
     js::NewObjectCache  newObjectCache;
     js::NativeIterCache nativeIterCache;
     js::SourceDataCache sourceDataCache;
@@ -1501,18 +1499,113 @@ FreeOp::free_(void *p)
     js_free(p);
 }
 
+class ForkJoinSlice;
+
+/*
+ * ThreadSafeContext is the base class for both JSContext, the "normal"
+ * sequential context, and ForkJoinSlice, the per-thread parallel context used
+ * in PJS.
+ *
+ * When cast to a ThreadSafeContext, the only usable operations are casting
+ * back to the context from which it came, and generic allocation
+ * operations. These generic versions branch internally based on whether the
+ * underneath context is really a JSContext or a ForkJoinSlice, and are in
+ * general more expensive than using the context directly.
+ *
+ * Thus, ThreadSafeContext should only be used for VM functions that may be
+ * called in both sequential and parallel execution. The most likely class of
+ * VM functions that do these are those that allocate commonly used data
+ * structures, such as concatenating strings and extending elements.
+ */
+struct ThreadSafeContext : js::ContextFriendFields,
+                           public MallocProvider<ThreadSafeContext>
+{
+  public:
+    enum ContextKind {
+        Context_JS,
+        Context_ForkJoin
+    };
+
+  private:
+    ContextKind contextKind_;
+
+  public:
+    PerThreadData *perThreadData;
+
+    explicit ThreadSafeContext(JSRuntime *rt, PerThreadData *pt, ContextKind kind);
+
+    bool isJSContext() const;
+    JSContext *asJSContext();
+
+    bool isForkJoinSlice() const;
+    ForkJoinSlice *asForkJoinSlice();
+
+#ifdef JSGC_GENERATIONAL
+    inline bool hasNursery() const {
+        return isJSContext();
+    }
+
+    inline js::Nursery &nursery() {
+        JS_ASSERT(hasNursery());
+        return runtime_->gcNursery;
+    }
+#endif
+
+    /*
+     * Allocator used when allocating GCThings on this context. If we are a
+     * JSContext, this is the Zone allocator of the JSContext's zone. If we
+     * are the per-thread data of a ForkJoinSlice, this is a per-thread
+     * allocator.
+     *
+     * This does not live in PerThreadData because the notion of an allocator
+     * is only per-thread in PJS. The runtime (and the main thread) can have
+     * more than one zone, each with its own allocator, and it's up to the
+     * context to specify what compartment and zone we are operating in.
+     */
+  protected:
+    Allocator *allocator_;
+
+  public:
+    static size_t offsetOfAllocator() { return offsetof(ThreadSafeContext, allocator_); }
+
+    inline Allocator *const allocator();
+
+    /* GC support. */
+    inline AllowGC allowGC() const;
+
+    template <typename T>
+    inline bool isInsideCurrentZone(T thing) const;
+
+    void *onOutOfMemory(void *p, size_t nbytes) {
+        return runtime_->onOutOfMemory(p, nbytes, isJSContext() ? asJSContext() : NULL);
+    }
+    inline void updateMallocCounter(size_t nbytes) {
+        /* Note: this is racy. */
+        runtime_->updateMallocCounter(zone_, nbytes);
+    }
+    void reportAllocationOverflow() {
+        js_ReportAllocationOverflow(isJSContext() ? asJSContext() : NULL);
+    }
+};
+
 } /* namespace js */
 
-struct JSContext : js::ContextFriendFields,
-                   public mozilla::LinkedListElement<JSContext>,
-                   public js::MallocProvider<JSContext>
+struct JSContext : js::ThreadSafeContext,
+                   public mozilla::LinkedListElement<JSContext>
 {
     explicit JSContext(JSRuntime *rt);
     JSContext *thisDuringConstruction() { return this; }
     ~JSContext();
 
-    inline JS::Zone *zone() const;
-    js::PerThreadData &mainThread() { return runtime->mainThread; }
+    JSRuntime *runtime() const { return runtime_; }
+    JSCompartment *compartment() const { return compartment_; }
+
+    inline JS::Zone *zone() const {
+        JS_ASSERT_IF(!compartment(), !zone_);
+        JS_ASSERT_IF(compartment(), js::GetCompartmentZone(compartment()) == zone_);
+        return zone_;
+    }
+    js::PerThreadData &mainThread() const { return runtime()->mainThread; }
 
   private:
     /* See JSContext::findVersion. */
@@ -1602,13 +1695,6 @@ struct JSContext : js::ContextFriendFields,
      */
     inline js::Handle<js::GlobalObject*> global() const;
 
-    /* ContextStack convenience functions */
-    inline bool hasfp() const               { return stack.hasfp(); }
-    inline js::StackFrame* fp() const       { return stack.fp(); }
-    inline js::StackFrame* maybefp() const  { return stack.maybefp(); }
-    inline js::FrameRegs& regs() const      { return stack.regs(); }
-    inline js::FrameRegs* maybeRegs() const { return stack.maybeRegs(); }
-
     /* Wrap cx->exception for the current compartment. */
     void wrapPendingException();
 
@@ -1677,7 +1763,7 @@ struct JSContext : js::ContextFriendFields,
      *
      * Note: if this ever shows up in a profile, just add caching!
      */
-    inline JSVersion findVersion() const;
+    JSVersion findVersion() const;
 
     void setOptions(unsigned opts) {
         JS_ASSERT((opts & JSOPTION_MASK) == opts);
@@ -1691,16 +1777,14 @@ struct JSContext : js::ContextFriendFields,
         return !!(options_ & opt);
     }
 
-    bool hasStrictOption() const { return hasOption(JSOPTION_STRICT); }
+    bool hasExtraWarningsOption() const { return hasOption(JSOPTION_EXTRA_WARNINGS); }
     bool hasWErrorOption() const { return hasOption(JSOPTION_WERROR); }
 
-    js::LifoAlloc &tempLifoAlloc() { return runtime->tempLifoAlloc; }
+    js::LifoAlloc &tempLifoAlloc() { return runtime()->tempLifoAlloc; }
     inline js::LifoAlloc &analysisLifoAlloc();
     inline js::LifoAlloc &typeLifoAlloc();
 
     inline js::PropertyTree &propertyTree();
-
-    js::PropertyCache &propertyCache() { return runtime->propertyCache; }
 
 #ifdef JS_THREADSAFE
     unsigned            outstandingRequests;/* number of JS_BeginRequest calls
@@ -1719,6 +1803,22 @@ struct JSContext : js::ContextFriendFields,
     inline bool typeInferenceEnabled() const;
 
     void updateJITEnabled();
+
+    /* Whether this context has JS frames on the stack. */
+    bool currentlyRunning() const;
+
+    bool currentlyRunningInInterpreter() const {
+        return mainThread().activation()->isInterpreter();
+    }
+    bool currentlyRunningInJit() const {
+        return mainThread().activation()->isJit();
+    }
+    js::StackFrame *interpreterFrame() const {
+        return mainThread().activation()->asInterpreter()->current();
+    }
+    js::FrameRegs &interpreterRegs() const {
+        return mainThread().activation()->asInterpreter()->regs();
+    }
 
 #ifdef MOZ_TRACE_JSCALLS
     /* Function entry/exit debugging callback. */
@@ -1742,9 +1842,11 @@ struct JSContext : js::ContextFriendFields,
     void leaveGenerator(JSGenerator *gen);
 
     void *onOutOfMemory(void *p, size_t nbytes) {
-        return runtime->onOutOfMemory(p, nbytes, this);
+        return runtime()->onOutOfMemory(p, nbytes, this);
     }
-    void updateMallocCounter(size_t nbytes);
+    void updateMallocCounter(size_t nbytes) {
+        runtime()->updateMallocCounter(zone(), nbytes);
+    }
     void reportAllocationOverflow() {
         js_ReportAllocationOverflow(this);
     }
@@ -1765,7 +1867,7 @@ struct JSContext : js::ContextFriendFields,
         exception.setUndefined();
     }
 
-    JSAtomState & names() { return runtime->atomState; }
+    JSAtomState & names() { return runtime()->atomState; }
 
 #ifdef DEBUG
     /*
@@ -2083,7 +2185,7 @@ js_ReportValueErrorFlags(JSContext *cx, unsigned flags, const unsigned errorNumb
 extern const JSErrorFormatString js_ErrorFormatString[JSErr_Limit];
 
 #ifdef JS_THREADSAFE
-# define JS_ASSERT_REQUEST_DEPTH(cx)  JS_ASSERT((cx)->runtime->requestDepth >= 1)
+# define JS_ASSERT_REQUEST_DEPTH(cx)  JS_ASSERT((cx)->runtime()->requestDepth >= 1)
 #else
 # define JS_ASSERT_REQUEST_DEPTH(cx)  ((void) 0)
 #endif
@@ -2107,7 +2209,7 @@ static MOZ_ALWAYS_INLINE bool
 JS_CHECK_OPERATION_LIMIT(JSContext *cx)
 {
     JS_ASSERT_REQUEST_DEPTH(cx);
-    return !cx->runtime->interrupt || js_InvokeOperationCallback(cx);
+    return !cx->runtime()->interrupt || js_InvokeOperationCallback(cx);
 }
 
 namespace js {
@@ -2312,7 +2414,7 @@ class RuntimeAllocPolicy
 
   public:
     RuntimeAllocPolicy(JSRuntime *rt) : runtime(rt) {}
-    RuntimeAllocPolicy(JSContext *cx) : runtime(cx->runtime) {}
+    RuntimeAllocPolicy(JSContext *cx) : runtime(cx->runtime()) {}
     void *malloc_(size_t bytes) { return runtime->malloc_(bytes); }
     void *calloc_(size_t bytes) { return runtime->calloc_(bytes); }
     void *realloc_(void *p, size_t bytes) { return runtime->realloc_(p, bytes); }
@@ -2337,11 +2439,18 @@ class ContextAllocPolicy
     void reportAllocOverflow() const { js_ReportAllocationOverflow(cx_); }
 };
 
+/* Exposed intrinsics so that Ion may inline them. */
 JSBool intrinsic_ToObject(JSContext *cx, unsigned argc, Value *vp);
 JSBool intrinsic_IsCallable(JSContext *cx, unsigned argc, Value *vp);
 JSBool intrinsic_ThrowError(JSContext *cx, unsigned argc, Value *vp);
 JSBool intrinsic_NewDenseArray(JSContext *cx, unsigned argc, Value *vp);
+
 JSBool intrinsic_UnsafeSetElement(JSContext *cx, unsigned argc, Value *vp);
+JSBool intrinsic_UnsafeSetReservedSlot(JSContext *cx, unsigned argc, Value *vp);
+JSBool intrinsic_UnsafeGetReservedSlot(JSContext *cx, unsigned argc, Value *vp);
+JSBool intrinsic_NewObjectWithClassPrototype(JSContext *cx, unsigned argc, Value *vp);
+JSBool intrinsic_HaveSameClass(JSContext *cx, unsigned argc, Value *vp);
+
 JSBool intrinsic_ShouldForceSequential(JSContext *cx, unsigned argc, Value *vp);
 JSBool intrinsic_NewParallelArray(JSContext *cx, unsigned argc, Value *vp);
 
@@ -2356,4 +2465,4 @@ JSBool intrinsic_Dump(JSContext *cx, unsigned argc, Value *vp);
 #pragma warning(pop)
 #endif
 
-#endif /* jscntxt_h___ */
+#endif /* jscntxt_h */

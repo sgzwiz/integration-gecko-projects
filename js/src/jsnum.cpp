@@ -15,8 +15,6 @@
 #include "mozilla/RangedPtr.h"
 
 #include "double-conversion.h"
-// Avoid warnings about ASSERT being defined by the assembler as well.
-#undef ASSERT
 
 #ifdef XP_OS2
 #define _PC_53  PC_53
@@ -24,16 +22,13 @@
 #define _MCW_PC MCW_PC
 #endif
 #include <locale.h>
-#include <limits.h>
 #include <math.h>
 #include <string.h>
 
 #include "jstypes.h"
-#include "jsutil.h"
 #include "jsapi.h"
 #include "jsatom.h"
 #include "jscntxt.h"
-#include "jsversion.h"
 #include "jsdtoa.h"
 #include "jsobj.h"
 #include "jsstr.h"
@@ -42,7 +37,6 @@
 #include "vm/StringBuffer.h"
 
 #include "jsatominlines.h"
-#include "jsobjinlines.h"
 #include "jsstrinlines.h"
 #include "vm/NumberObject-inl.h"
 #include "vm/String-inl.h"
@@ -75,7 +69,7 @@ ComputeAccurateDecimalInteger(JSContext *cx, const jschar *start, const jschar *
 
     char *estr;
     int err = 0;
-    *dp = js_strtod_harder(cx->runtime->dtoaState, cstr, &estr, &err);
+    *dp = js_strtod_harder(cx->runtime()->dtoaState, cstr, &estr, &err);
     if (err == JS_DTOA_ENOMEM) {
         JS_ReportOutOfMemory(cx);
         js_free(cstr);
@@ -414,7 +408,7 @@ static const JSFunctionSpec number_functions[] = {
     JS_FS_END
 };
 
-Class js::NumberClass = {
+Class NumberObject::class_ = {
     js_Number_str,
     JSCLASS_HAS_RESERVED_SLOTS(1) | JSCLASS_HAS_CACHED_PROTO(JSProto_Number),
     JS_PropertyStub,         /* addProperty */
@@ -453,7 +447,7 @@ Number(JSContext *cx, unsigned argc, Value *vp)
 JS_ALWAYS_INLINE bool
 IsNumber(const Value &v)
 {
-    return v.isNumber() || (v.isObject() && v.toObject().hasClass(&NumberClass));
+    return v.isNumber() || (v.isObject() && v.toObject().is<NumberObject>());
 }
 
 inline double
@@ -461,7 +455,7 @@ Extract(const Value &v)
 {
     if (v.isNumber())
         return v.toNumber();
-    return v.toObject().asNumber().unbox();
+    return v.toObject().as<NumberObject>().unbox();
 }
 
 #if JS_HAS_TOSOURCE
@@ -511,14 +505,14 @@ js::Int32ToString(JSContext *cx, int32_t si)
     uint32_t ui;
     if (si >= 0) {
         if (StaticStrings::hasInt(si))
-            return cx->runtime->staticStrings.getInt(si);
+            return cx->runtime()->staticStrings.getInt(si);
         ui = si;
     } else {
         ui = uint32_t(-si);
         JS_ASSERT_IF(si == INT32_MIN, ui == uint32_t(INT32_MAX) + 1);
     }
 
-    JSCompartment *c = cx->compartment;
+    JSCompartment *c = cx->compartment();
     if (JSFlatString *str = c->dtoaCache.lookup(10, si))
         return str;
 
@@ -664,7 +658,7 @@ num_toLocaleString_impl(JSContext *cx, CallArgs args)
         return true;
     }
 
-    JSRuntime *rt = cx->runtime;
+    JSRuntime *rt = cx->runtime();
     size_t thousandsLength = strlen(rt->thousandsSeparator);
     size_t decimalLength = strlen(rt->decimalSeparator);
 
@@ -732,9 +726,9 @@ num_toLocaleString_impl(JSContext *cx, CallArgs args)
         strcpy(tmpDest, nint);
     }
 
-    if (cx->runtime->localeCallbacks && cx->runtime->localeCallbacks->localeToUnicode) {
+    if (cx->runtime()->localeCallbacks && cx->runtime()->localeCallbacks->localeToUnicode) {
         Rooted<Value> v(cx, StringValue(str));
-        bool ok = !!cx->runtime->localeCallbacks->localeToUnicode(cx, buf, &v);
+        bool ok = !!cx->runtime()->localeCallbacks->localeToUnicode(cx, buf, &v);
         if (ok)
             args.rval().set(v);
         js_free(buf);
@@ -797,7 +791,7 @@ static bool
 DToStrResult(JSContext *cx, double d, JSDToStrMode mode, int precision, CallArgs args)
 {
     char buf[DTOSTR_VARIABLE_BUFFER_SIZE(MAX_PRECISION + 1)];
-    char *numStr = js_dtostr(cx->runtime->dtoaState, buf, sizeof buf, mode, precision, d);
+    char *numStr = js_dtostr(cx->runtime()->dtoaState, buf, sizeof buf, mode, precision, d);
     if (!numStr) {
         JS_ReportOutOfMemory(cx);
         return false;
@@ -1133,12 +1127,12 @@ js_InitNumberClass(JSContext *cx, HandleObject obj)
     /* XXX must do at least once per new thread, so do it per JSContext... */
     FIX_FPU();
 
-    Rooted<GlobalObject*> global(cx, &obj->asGlobal());
+    Rooted<GlobalObject*> global(cx, &obj->as<GlobalObject>());
 
-    RootedObject numberProto(cx, global->createBlankPrototype(cx, &NumberClass));
+    RootedObject numberProto(cx, global->createBlankPrototype(cx, &NumberObject::class_));
     if (!numberProto)
         return NULL;
-    numberProto->asNumber().setPrimitiveValue(0);
+    numberProto->as<NumberObject>().setPrimitiveValue(0);
 
     RootedFunction ctor(cx);
     ctor = global->createConstructor(cx, Number, cx->names().Number, 1);
@@ -1161,8 +1155,8 @@ js_InitNumberClass(JSContext *cx, HandleObject obj)
     if (!JS_DefineFunctions(cx, global, number_functions))
         return NULL;
 
-    RootedValue valueNaN(cx, cx->runtime->NaNValue);
-    RootedValue valueInfinity(cx, cx->runtime->positiveInfinityValue);
+    RootedValue valueNaN(cx, cx->runtime()->NaNValue);
+    RootedValue valueInfinity(cx, cx->runtime()->positiveInfinityValue);
 
     /* ES5 15.1.1.1, 15.1.1.2 */
     if (!DefineNativeProperty(cx, global, cx->names().NaN, valueNaN,
@@ -1206,7 +1200,7 @@ FracNumberToCString(JSContext *cx, ToCStringBuf *cbuf, double d, int base = 10)
         converter.ToShortest(d, &builder);
         numStr = builder.Finalize();
     } else {
-        numStr = cbuf->dbuf = js_dtobasestr(cx->runtime->dtoaState, base, d);
+        numStr = cbuf->dbuf = js_dtobasestr(cx->runtime()->dtoaState, base, d);
     }
     return numStr;
 }
@@ -1235,18 +1229,18 @@ js_NumberToStringWithBase(JSContext *cx, double d, int base)
     if (base < 2 || base > 36)
         return NULL;
 
-    JSCompartment *c = cx->compartment;
+    JSCompartment *c = cx->compartment();
 
     int32_t i;
     if (mozilla::DoubleIsInt32(d, &i)) {
         if (base == 10 && StaticStrings::hasInt(i))
-            return cx->runtime->staticStrings.getInt(i);
+            return cx->runtime()->staticStrings.getInt(i);
         if (unsigned(i) < unsigned(base)) {
             if (i < 10)
-                return cx->runtime->staticStrings.getInt(i);
+                return cx->runtime()->staticStrings.getInt(i);
             jschar c = 'a' + i - 10;
             JS_ASSERT(StaticStrings::hasUnit(c));
-            return cx->runtime->staticStrings.getUnit(c);
+            return cx->runtime()->staticStrings.getUnit(c);
         }
 
         if (JSFlatString *str = c->dtoaCache.lookup(base, d))
@@ -1299,9 +1293,9 @@ JSFlatString *
 js::IndexToString(JSContext *cx, uint32_t index)
 {
     if (StaticStrings::hasUint(index))
-        return cx->runtime->staticStrings.getUint(index);
+        return cx->runtime()->staticStrings.getUint(index);
 
-    JSCompartment *c = cx->compartment;
+    JSCompartment *c = cx->compartment();
     if (JSFlatString *str = c->dtoaCache.lookup(10, index))
         return str;
 
@@ -1613,7 +1607,7 @@ js_strtod(JSContext *cx, const jschar *s, const jschar *send,
         estr = istr + 8;
     } else {
         int err;
-        d = js_strtod_harder(cx->runtime->dtoaState, cstr, &estr, &err);
+        d = js_strtod_harder(cx->runtime()->dtoaState, cstr, &estr, &err);
         if (d == HUGE_VAL)
             d = js_PositiveInfinity;
         else if (d == -HUGE_VAL)

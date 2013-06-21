@@ -10,6 +10,7 @@ Components.utils.import("resource://gre/modules/Services.jsm");
 
 const NOTIFICATION_EVENT_DISMISSED = "dismissed";
 const NOTIFICATION_EVENT_REMOVED = "removed";
+const NOTIFICATION_EVENT_SHOWING = "showing";
 const NOTIFICATION_EVENT_SHOWN = "shown";
 
 const ICON_SELECTOR = ".notification-anchor-icon";
@@ -264,7 +265,8 @@ PopupNotifications.prototype = {
       // tell the user that there's a notification waiting in that window.
       // At some point we might want to do something about background tabs here
       // too.
-      if (browser == this.tabbrowser.selectedBrowser)
+      if (!notification.dismissed &&
+          browser == this.tabbrowser.selectedBrowser)
         this.window.getAttention();
 
       // Notify observers that we're not showing the popup (useful for testing)
@@ -520,6 +522,9 @@ PopupNotifications.prototype = {
   _showPanel: function PopupNotifications_showPanel(notificationsToShow, anchorElement) {
     this.panel.hidden = false;
 
+    notificationsToShow.forEach(function (n) {
+      this._fireCallback(n, NOTIFICATION_EVENT_SHOWING);
+    }, this);
     this._refreshPanel(notificationsToShow);
 
     if (this.isPanelOpen && this._currentAnchorElement == anchorElement)

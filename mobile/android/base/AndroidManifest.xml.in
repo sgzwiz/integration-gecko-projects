@@ -13,6 +13,7 @@
               android:targetSdkVersion="14"/>
 
 #include ../services/manifests/AnnouncementsAndroidManifest_permissions.xml.in
+#include ../services/manifests/HealthReportAndroidManifest_permissions.xml.in
 #include ../services/manifests/SyncAndroidManifest_permissions.xml.in
 
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
@@ -45,11 +46,6 @@
     <uses-feature android:name="android.hardware.location" android:required="false"/>
     <uses-feature android:name="android.hardware.location.gps" android:required="false"/>
     <uses-feature android:name="android.hardware.touchscreen"/>
-
-    <!-- Contacts API -->
-    <uses-permission android:name="android.permission.GET_ACCOUNTS"/>
-    <uses-permission android:name="android.permission.READ_CONTACTS"/>
-    <uses-permission android:name="android.permission.WRITE_CONTACTS"/>
 
 #ifdef MOZ_ANDROID_BEAM
     <!-- Android Beam support -->
@@ -233,7 +229,7 @@
         <activity android:name="org.mozilla.gecko.AwesomeBar"
                   android:theme="@style/Gecko.AwesomeBar"
                   android:configChanges="orientation|screenSize"
-                  android:windowSoftInputMode="stateAlwaysVisible|adjustResize"/>
+                  android:windowSoftInputMode="stateUnspecified|adjustResize"/>
 
         <activity android:name="org.mozilla.gecko.GeckoPreferences"
                   android:theme="@style/Gecko.Preferences"
@@ -283,7 +279,9 @@
 
 
 #include ../services/manifests/AnnouncementsAndroidManifest_services.xml.in
+#include ../services/manifests/HealthReportAndroidManifest_services.xml.in
 #include ../services/manifests/SyncAndroidManifest_services.xml.in
+
     </application>
 
     <permission android:name="@ANDROID_PACKAGE_NAME@.permissions.BROWSER_PROVIDER"

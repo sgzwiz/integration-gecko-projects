@@ -2089,7 +2089,7 @@ window[tabsontop="false"] richlistitem[type~="action"][actiontype="switchtab"][s
 }
 
 #historySwipeAnimationContainer {
-  background: url("chrome://browser/skin/linen-pattern.png") #B3B9C1;
+  background: url("chrome://browser/skin/subtle-pattern.png") #B3B9C1;
 }
 
 /* ----- SIDEBAR ELEMENTS ----- */
@@ -3296,7 +3296,8 @@ toolbarbutton.chevron > .toolbarbutton-menu-dropmarker {
 
 .popup-notification-icon[popupid="indexedDB-permissions-prompt"],
 .popup-notification-icon[popupid="indexedDB-quota-prompt"],
-.popup-notification-icon[popupid*="offline-app-requested"] {
+.popup-notification-icon[popupid*="offline-app-requested"],
+.popup-notification-icon[popupid="offline-app-usage"] {
   list-style-image: url(chrome://global/skin/icons/question-64.png);
 }
 

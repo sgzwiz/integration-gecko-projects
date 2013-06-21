@@ -4,16 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef Probes_inl_h__
-#define Probes_inl_h__
+#ifndef vm_Probes_inl_h
+#define vm_Probes_inl_h
 
 #include "vm/Probes.h"
 
 #include "jscntxt.h"
-#include "jsobj.h"
-#include "jsscript.h"
-
-#include "vm/Stack-inl.h"
 
 namespace js {
 
@@ -56,7 +52,7 @@ Probes::enterScript(JSContext *cx, JSScript *script, JSFunction *maybeFun,
     cx->doFunctionCallback(maybeFun, script, 1);
 #endif
 
-    JSRuntime *rt = cx->runtime;
+    JSRuntime *rt = cx->runtime();
     if (rt->spsProfiler.enabled()) {
         rt->spsProfiler.enter(cx, script, maybeFun);
         JS_ASSERT_IF(!fp->isGeneratorFrame(), !fp->hasPushedSPSFrame());
@@ -80,7 +76,7 @@ Probes::exitScript(JSContext *cx, JSScript *script, JSFunction *maybeFun,
     cx->doFunctionCallback(maybeFun, script, 0);
 #endif
 
-    JSRuntime *rt = cx->runtime;
+    JSRuntime *rt = cx->runtime();
     /*
      * Coming from IonMonkey, the fp might not be known (fp == NULL), but
      * IonMonkey will only call exitScript() when absolutely necessary, so it is
@@ -128,4 +124,4 @@ Probes::stopExecution(JSScript *script)
 
 } /* namespace js */
  
-#endif  // Probes_inl_h__
+#endif /* vm_Probes_inl_h */

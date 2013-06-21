@@ -1789,14 +1789,23 @@ CSSParserImpl::ParseMediaQuery(bool aInAtRule,
       if (!mediaType) {
         NS_RUNTIMEABORT("do_GetAtom failed - out of memory?");
       }
-      if (gotNotOrOnly ||
-          (mediaType != nsGkAtoms::_not && mediaType != nsGkAtoms::only))
-        break;
-      gotNotOrOnly = true;
-      if (mediaType == nsGkAtoms::_not)
+      if (!gotNotOrOnly && mediaType == nsGkAtoms::_not) {
+        gotNotOrOnly = true;
         query->SetNegated();
-      else
+      } else if (!gotNotOrOnly && mediaType == nsGkAtoms::only) {
+        gotNotOrOnly = true;
         query->SetHasOnly();
+      } else if (mediaType == nsGkAtoms::_not ||
+                 mediaType == nsGkAtoms::only ||
+                 mediaType == nsGkAtoms::_and ||
+                 mediaType == nsGkAtoms::_or) {
+        REPORT_UNEXPECTED_TOKEN(PEGatherMediaReservedMediaType);
+        UngetToken();
+        return false;
+      } else {
+        // valid media type
+        break;
+      }
     }
     query->SetType(mediaType);
   }
@@ -5160,8 +5169,7 @@ CSSParserImpl::ParseVariant(nsCSSValue& aValue,
           aValue.SetInheritValue();
           return true;
         }
-        else if (eCSSKeyword__moz_initial == keyword ||
-                 eCSSKeyword_initial == keyword) { // anything that can inherit can also take an initial val.
+        else if (eCSSKeyword_initial == keyword) { // anything that can inherit can also take an initial val.
           aValue.SetInitialValue();
           return true;
         }
@@ -6947,7 +6955,6 @@ CSSParserImpl::ParseBackgroundItem(CSSParserImpl::BackgroundParseState& aState)
       nsCSSKeyword keyword = nsCSSKeywords::LookupKeyword(mToken.mIdent);
       int32_t dummy;
       if (keyword == eCSSKeyword_inherit ||
-          keyword == eCSSKeyword__moz_initial ||
           keyword == eCSSKeyword_initial) {
         return false;
       } else if (keyword == eCSSKeyword_none) {
@@ -8344,7 +8351,6 @@ CSSParserImpl::ParseRect(nsCSSProperty aPropID)
         val.SetInheritValue();
         break;
       case eCSSKeyword_initial:
-      case eCSSKeyword__moz_initial:
         if (!ExpectEndProperty()) {
           return false;
         }
@@ -9055,7 +9061,7 @@ CSSParserImpl::ParseFamily(nsCSSValue& aValue)
     if (keyword == eCSSKeyword_default) {
       return false;
     }
-    if (keyword == eCSSKeyword__moz_initial || keyword == eCSSKeyword_initial) {
+    if (keyword == eCSSKeyword_initial) {
       aValue.SetInitialValue();
       return true;
     }
@@ -9084,7 +9090,6 @@ CSSParserImpl::ParseFamily(nsCSSValue& aValue)
         case eCSSKeyword_inherit:
         case eCSSKeyword_initial:
         case eCSSKeyword_default:
-        case eCSSKeyword__moz_initial:
         case eCSSKeyword__moz_use_system_font:
           return false;
         default:

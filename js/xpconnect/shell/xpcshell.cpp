@@ -84,6 +84,7 @@
 #endif
 
 using namespace mozilla;
+using namespace JS;
 
 class XPCShellDirProvider : public nsIDirectoryServiceProvider2
 {
@@ -145,7 +146,7 @@ JSPrincipals *gJSPrincipals = nullptr;
 nsAutoString *gWorkingDirectory = nullptr;
 
 static JSBool
-GetLocationProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, JSMutableHandleValue vp)
+GetLocationProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, MutableHandleValue vp)
 {
 #if !defined(XP_WIN) && !defined(XP_UNIX)
     //XXX: your platform should really implement this
@@ -698,7 +699,7 @@ static const struct JSOption {
     const char  *name;
     uint32_t    flag;
 } js_options[] = {
-    {"strict",          JSOPTION_STRICT},
+    {"strict",          JSOPTION_EXTRA_WARNINGS},
     {"werror",          JSOPTION_WERROR},
     {"strict_mode",     JSOPTION_STRICT_MODE},
 };
@@ -851,7 +852,7 @@ JSClass global_class = {
 };
 
 static JSBool
-env_setProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, JSMutableHandleValue vp)
+env_setProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, MutableHandleValue vp)
 {
 /* XXX porting may be easy, but these don't seem to supply setenv by default */
 #if !defined XP_OS2 && !defined SOLARIS
@@ -1150,7 +1151,7 @@ ProcessArgsForCompartment(JSContext *cx, char **argv, int argc)
         case 'S':
             JS_ToggleOptions(cx, JSOPTION_WERROR);
         case 's':
-            JS_ToggleOptions(cx, JSOPTION_STRICT);
+            JS_ToggleOptions(cx, JSOPTION_EXTRA_WARNINGS);
             break;
         case 'I':
             JS_ToggleOptions(cx, JSOPTION_COMPILE_N_GO);

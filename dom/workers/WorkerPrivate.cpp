@@ -6,6 +6,7 @@
 
 #include "WorkerPrivate.h"
 
+#include "amIAddonManager.h"
 #include "nsIClassInfo.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIConsoleService.h"
@@ -753,8 +754,7 @@ public:
 
 class MessageEventRunnable : public WorkerRunnable
 {
-  uint64_t* mData;
-  size_t mDataByteCount;
+  JSAutoStructuredCloneBuffer mBuffer;
   nsTArray<nsCOMPtr<nsISupports> > mClonedObjects;
 
 public:
@@ -766,20 +766,13 @@ public:
                                                        UnchangedBusyCount,
                    SkipWhenClearing)
   {
-    aData.steal(&mData, &mDataByteCount);
-
+    mBuffer.swap(aData);
     mClonedObjects.SwapElements(aClonedObjects);
   }
 
   bool
   WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
   {
-    JSAutoStructuredCloneBuffer buffer;
-    buffer.adopt(mData, mDataByteCount);
-
-    mData = nullptr;
-    mDataByteCount = 0;
-
     bool mainRuntime;
     JS::Rooted<JSObject*> target(aCx);
     if (mTarget == ParentThread) {
@@ -796,7 +789,6 @@ public:
 
       if (aWorkerPrivate->IsSuspended()) {
         aWorkerPrivate->QueueRunnable(this);
-        buffer.steal(&mData, &mDataByteCount);
         return true;
       }
 
@@ -812,7 +804,7 @@ public:
     NS_ASSERTION(target, "This should never be null!");
 
     JS::Rooted<JSObject*> event(aCx,
-      CreateMessageEvent(aCx, buffer, mClonedObjects, mainRuntime));
+      CreateMessageEvent(aCx, mBuffer, mClonedObjects, mainRuntime));
     if (!event) {
       return false;
     }
@@ -1481,7 +1473,7 @@ public:
     // aZoneStats->extra is a xpc::ZoneStatsExtras pointer.
     xpc::ZoneStatsExtras* extras = new xpc::ZoneStatsExtras;
     extras->pathPrefix = mRtPath;
-    extras->pathPrefix += nsPrintfCString("zone(%p)/", (void *)aZone);
+    extras->pathPrefix += nsPrintfCString("zone(0x%p)/", (void *)aZone);
     aZoneStats->extra = extras;
   }
 
@@ -1499,7 +1491,7 @@ public:
     // This is the |jsPathPrefix|.  Each worker has exactly two compartments:
     // one for atoms, and one for everything else.
     extras->jsPathPrefix.Assign(mRtPath);
-    extras->jsPathPrefix += nsPrintfCString("zone(%p)/",
+    extras->jsPathPrefix += nsPrintfCString("zone(0x%p)/",
                                             (void *)js::GetCompartmentZone(aCompartment));
     extras->jsPathPrefix += js::IsAtomsCompartment(aCompartment)
                             ? NS_LITERAL_CSTRING("compartment(web-worker-atoms)/")
@@ -1766,12 +1758,14 @@ class WorkerPrivate::MemoryReporter MOZ_FINAL : public nsIMemoryMultiReporter
   SharedMutex mMutex;
   WorkerPrivate* mWorkerPrivate;
   nsCString mRtPath;
+  bool mAlreadyMappedToAddon;
 
 public:
   NS_DECL_ISUPPORTS
 
   MemoryReporter(WorkerPrivate* aWorkerPrivate)
-  : mMutex(aWorkerPrivate->mMutex), mWorkerPrivate(aWorkerPrivate)
+  : mMutex(aWorkerPrivate->mMutex), mWorkerPrivate(aWorkerPrivate),
+    mAlreadyMappedToAddon(false)
   {
     aWorkerPrivate->AssertIsOnWorkerThread();
 
@@ -1803,10 +1797,14 @@ public:
   {
     AssertIsOnMainThread();
 
+    // Assumes that WorkerJSRuntimeStats will hold a reference to mRtPath,
+    // and not a copy, as TryToMapAddon() may later modify the string again.
     WorkerJSRuntimeStats rtStats(mRtPath);
 
     {
       MutexAutoLock lock(mMutex);
+
+      TryToMapAddon();
 
       if (!mWorkerPrivate ||
           !mWorkerPrivate->BlockAndCollectRuntimeStats(&rtStats)) {
@@ -1831,6 +1829,42 @@ private:
 
     NS_ASSERTION(mWorkerPrivate, "Disabled more than once!");
     mWorkerPrivate = nullptr;
+  }
+
+  // Only call this from the main thread and under mMutex lock.
+  void
+  TryToMapAddon()
+  {
+    AssertIsOnMainThread();
+    mMutex.AssertCurrentThreadOwns();
+
+    if (mAlreadyMappedToAddon || !mWorkerPrivate) {
+      return;
+    }
+
+    nsCOMPtr<nsIURI> scriptURI;
+    if (NS_FAILED(NS_NewURI(getter_AddRefs(scriptURI),
+                            mWorkerPrivate->ScriptURL()))) {
+      return;
+    }
+
+    mAlreadyMappedToAddon = true;
+
+    nsAutoCString addonId;
+    bool ok;
+    nsCOMPtr<amIAddonManager> addonManager =
+      do_GetService("@mozilla.org/addons/integration;1");
+
+    if (!addonManager ||
+        NS_FAILED(addonManager->MapURIToAddonID(scriptURI, addonId, &ok)) ||
+        !ok) {
+      return;
+    }
+
+    static const size_t explicitLength = strlen("explicit/");
+    addonId.Insert(NS_LITERAL_CSTRING("add-ons/"), 0);
+    addonId += "/";
+    mRtPath.Insert(addonId, explicitLength);
   }
 };
 

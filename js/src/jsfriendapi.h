@@ -4,13 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsfriendapi_h___
-#define jsfriendapi_h___
-
-#include "mozilla/GuardObjects.h"
+#ifndef jsfriendapi_h
+#define jsfriendapi_h
 
 #include "jsclass.h"
-#include "jscpucfg.h"
 #include "jspubtd.h"
 #include "jsprvtd.h"
 
@@ -30,6 +27,11 @@
 #endif
 
 #define JS_CHECK_STACK_SIZE(limit, lval) JS_CHECK_STACK_SIZE_WITH_TOLERANCE(limit, lval, 0)
+
+namespace JS {
+template <class T>
+class Heap;
+} /* namespace JS */
 
 extern JS_FRIEND_API(void)
 JS_SetGrayGCRootsTracer(JSRuntime *rt, JSTraceDataOp traceOp, void *data);
@@ -123,7 +125,7 @@ extern JS_FRIEND_API(JSString *)
 JS_BasicObjectToString(JSContext *cx, JSHandleObject obj);
 
 extern JS_FRIEND_API(JSBool)
-js_GetterOnlyPropertyStub(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, JSMutableHandleValue vp);
+js_GetterOnlyPropertyStub(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, JS::MutableHandleValue vp);
 
 JS_FRIEND_API(void)
 js_ReportOverRecursed(JSContext *maybecx);
@@ -192,13 +194,13 @@ extern mozilla::ThreadLocal<PerThreadData *> TlsPerThreadData;
 inline JSRuntime *
 GetRuntime(const JSContext *cx)
 {
-    return ContextFriendFields::get(cx)->runtime;
+    return ContextFriendFields::get(cx)->runtime_;
 }
 
 inline JSCompartment *
 GetContextCompartment(const JSContext *cx)
 {
-    return ContextFriendFields::get(cx)->compartment;
+    return ContextFriendFields::get(cx)->compartment_;
 }
 
 inline JS::Zone *
@@ -376,9 +378,10 @@ struct Atom {
 
 } /* namespace shadow */
 
-extern JS_FRIEND_DATA(js::Class) CallClass;
-extern JS_FRIEND_DATA(js::Class) DeclEnvClass;
-extern JS_FRIEND_DATA(js::Class) FunctionClass;
+// This is equal to JSFunction::class_.  Use it in places where you don't want
+// to #include jsfun.h.
+extern JS_FRIEND_DATA(js::Class*) FunctionClassPtr;
+
 extern JS_FRIEND_DATA(js::Class) FunctionProxyClass;
 extern JS_FRIEND_DATA(js::Class) OuterWindowProxyClass;
 extern JS_FRIEND_DATA(js::Class) ObjectProxyClass;
@@ -407,7 +410,13 @@ IsOuterObject(JSObject *obj) {
 }
 
 JS_FRIEND_API(bool)
+IsFunctionObject(JSObject *obj);
+
+JS_FRIEND_API(bool)
 IsScopeObject(JSObject *obj);
+
+JS_FRIEND_API(bool)
+IsCallObject(JSObject *obj);
 
 inline JSObject *
 GetObjectParent(JSObject *obj)
@@ -889,7 +898,13 @@ struct ExpandoAndGeneration {
       generation(0)
   {}
 
-  Value expando;
+  void Unlink()
+  {
+      ++generation;
+      expando.setUndefined();
+  }
+
+  JS::Heap<JS::Value> expando;
   uint32_t generation;
 };
 
@@ -1562,7 +1577,7 @@ struct JSJitInfo {
 static JS_ALWAYS_INLINE const JSJitInfo *
 FUNCTION_VALUE_TO_JITINFO(const JS::Value& v)
 {
-    JS_ASSERT(js::GetObjectClass(&v.toObject()) == &js::FunctionClass);
+    JS_ASSERT(js::GetObjectClass(&v.toObject()) == js::FunctionClassPtr);
     return reinterpret_cast<js::shadow::Function *>(&v.toObject())->jitinfo;
 }
 
@@ -1748,4 +1763,4 @@ js_DefineOwnProperty(JSContext *cx, JSObject *objArg, jsid idArg,
 extern JS_FRIEND_API(JSBool)
 js_ReportIsNotFunction(JSContext *cx, const JS::Value& v);
 
-#endif /* jsfriendapi_h___ */
+#endif /* jsfriendapi_h */

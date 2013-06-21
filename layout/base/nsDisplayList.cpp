@@ -598,8 +598,10 @@ void nsDisplayListBuilder::MarkOutOfFlowFrameForDisplay(nsIFrame* aDirtyFrame,
 
   if (!dirty.IntersectRect(dirty, overflowRect))
     return;
-  aFrame->Properties().Set(nsDisplayListBuilder::OutOfFlowDisplayDataProperty(),
-    new OutOfFlowDisplayData(mClipState.GetClipForContainingBlockDescendants(), dirty));
+  const DisplayItemClip* clip = mClipState.GetClipForContainingBlockDescendants();
+  OutOfFlowDisplayData* data = clip ? new OutOfFlowDisplayData(*clip, dirty)
+    : new OutOfFlowDisplayData(dirty);
+  aFrame->Properties().Set(nsDisplayListBuilder::OutOfFlowDisplayDataProperty(), data);
 
   MarkFrameForDisplay(aFrame, aDirtyFrame);
 }
@@ -635,27 +637,12 @@ static void RecordFrameMetrics(nsIFrame* aForFrame,
   aRoot->SetVisibleRegion(nsIntRegion(visible));
 
   FrameMetrics metrics;
-
-  metrics.mViewport = mozilla::gfx::Rect(
-    NSAppUnitsToDoublePixels(aViewport.x, auPerDevPixel),
-    NSAppUnitsToDoublePixels(aViewport.y, auPerDevPixel),
-    NSAppUnitsToDoublePixels(aViewport.width, auPerDevPixel),
-    NSAppUnitsToDoublePixels(aViewport.height, auPerDevPixel));
-
+  metrics.mViewport = CSSRect::FromAppUnits(aViewport);
   if (aDisplayPort) {
-    metrics.mDisplayPort = mozilla::gfx::Rect(
-      NSAppUnitsToDoublePixels(aDisplayPort->x, auPerDevPixel),
-      NSAppUnitsToDoublePixels(aDisplayPort->y, auPerDevPixel),
-      NSAppUnitsToDoublePixels(aDisplayPort->width, auPerDevPixel),
-      NSAppUnitsToDoublePixels(aDisplayPort->height, auPerDevPixel));
-
-      if (aCriticalDisplayPort) {
-        metrics.mCriticalDisplayPort = mozilla::gfx::Rect(
-          NSAppUnitsToDoublePixels(aCriticalDisplayPort->x, auPerDevPixel),
-          NSAppUnitsToDoublePixels(aCriticalDisplayPort->y, auPerDevPixel),
-          NSAppUnitsToDoublePixels(aCriticalDisplayPort->width, auPerDevPixel),
-          NSAppUnitsToDoublePixels(aCriticalDisplayPort->height, auPerDevPixel));
-      }
+    metrics.mDisplayPort = CSSRect::FromAppUnits(*aDisplayPort);
+    if (aCriticalDisplayPort) {
+      metrics.mCriticalDisplayPort = CSSRect::FromAppUnits(*aCriticalDisplayPort);
+    }
   }
 
   nsIScrollableFrame* scrollableFrame = nullptr;
@@ -667,22 +654,12 @@ static void RecordFrameMetrics(nsIFrame* aForFrame,
     contentBounds.width += scrollableFrame->GetScrollPortRect().width;
     contentBounds.height += scrollableFrame->GetScrollPortRect().height;
     metrics.mScrollableRect = CSSRect::FromAppUnits(contentBounds);
-    nsIntRect contentRect = contentBounds.ScaleToNearestPixels(
-      aContainerParameters.mXScale, aContainerParameters.mYScale, auPerDevPixel);
-    // I'm not sure what units contentRect is really in, hence FromUnknownRect
-    metrics.mContentRect = LayerIntRect::FromUnknownRect(mozilla::gfx::IntRect(
-      contentRect.x, contentRect.y, contentRect.width, contentRect.height));
     nsPoint scrollPosition = scrollableFrame->GetScrollPosition();
     metrics.mScrollOffset = CSSPoint::FromAppUnits(scrollPosition);
   }
   else {
     nsRect contentBounds = aForFrame->GetRect();
     metrics.mScrollableRect = CSSRect::FromAppUnits(contentBounds);
-    nsIntRect contentRect = contentBounds.ScaleToNearestPixels(
-      aContainerParameters.mXScale, aContainerParameters.mYScale, auPerDevPixel);
-    // I'm not sure what units contentRect is really in, hence FromUnknownRect
-    metrics.mContentRect = LayerIntRect::FromUnknownRect(mozilla::gfx::IntRect(
-      contentRect.x, contentRect.y, contentRect.width, contentRect.height));
   }
 
   metrics.mScrollId = aScrollId;
@@ -701,8 +678,7 @@ static void RecordFrameMetrics(nsIFrame* aForFrame,
   if (nsIWidget* widget = aForFrame->GetNearestWidget()) {
     nsIntRect bounds;
     widget->GetBounds(bounds);
-    // I don't know what units bounds are in, hence FromUnknownRect
-    metrics.mCompositionBounds = LayerIntRect::FromUnknownRect(
+    metrics.mCompositionBounds = ScreenIntRect::FromUnknownRect(
       mozilla::gfx::IntRect(bounds.x, bounds.y, bounds.width, bounds.height));
   }
 
@@ -834,6 +810,13 @@ nsDisplayListBuilder::LeavePresShell(nsIFrame* aReferenceFrame,
     return;
   }
 
+  ResetMarkedFramesForDisplayList();
+  mPresShellStates.SetLength(mPresShellStates.Length() - 1);
+}
+
+void
+nsDisplayListBuilder::ResetMarkedFramesForDisplayList()
+{
   // Unmark and pop off the frames marked for display in this pres shell.
   uint32_t firstFrameForShell = CurrentPresShellState()->mFirstFrameMarkedForDisplay;
   for (uint32_t i = firstFrameForShell;
@@ -841,7 +824,6 @@ nsDisplayListBuilder::LeavePresShell(nsIFrame* aReferenceFrame,
     UnmarkFrameForDisplay(mFramesMarkedForDisplay[i]);
   }
   mFramesMarkedForDisplay.SetLength(firstFrameForShell);
-  mPresShellStates.SetLength(mPresShellStates.Length() - 1);
 }
 
 void
@@ -1225,6 +1207,7 @@ void nsDisplayList::PaintForFrame(nsDisplayListBuilder* aBuilder,
     LayerProperties::ClearInvalidations(root);
   }
 
+  bool shouldInvalidate = layerManager->NeedsWidgetInvalidation();
   if (view) {
     if (props) {
       if (!invalid.IsEmpty()) {
@@ -1233,10 +1216,12 @@ void nsDisplayList::PaintForFrame(nsDisplayListBuilder* aBuilder,
                     presContext->DevPixelsToAppUnits(bounds.y),
                     presContext->DevPixelsToAppUnits(bounds.width),
                     presContext->DevPixelsToAppUnits(bounds.height));
-        view->GetViewManager()->InvalidateViewNoSuppression(view, rect);
+        if (shouldInvalidate) {
+          view->GetViewManager()->InvalidateViewNoSuppression(view, rect);
+        }
         presContext->NotifyInvalidation(bounds, 0);
       }
-    } else {
+    } else if (shouldInvalidate) {
       view->GetViewManager()->InvalidateView(view);
     }
   }

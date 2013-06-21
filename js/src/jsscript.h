@@ -6,8 +6,8 @@
 
 /* JS script descriptor. */
 
-#ifndef jsscript_h___
-#define jsscript_h___
+#ifndef jsscript_h
+#define jsscript_h
 
 #include "mozilla/PodOperations.h"
 
@@ -205,13 +205,13 @@ class Bindings
     bool bindingIsAliased(unsigned bindingIndex);
 
     /* Return whether this scope has any aliased bindings. */
-    bool hasAnyAliasedBindings() const { return !callObjShape_->isEmptyShape(); }
+    bool hasAnyAliasedBindings() const { return callObjShape_ && !callObjShape_->isEmptyShape(); }
 
     void trace(JSTracer *trc);
 };
 
 template <>
-struct RootMethods<Bindings> {
+struct GCMethods<Bindings> {
     static Bindings initial();
     static ThingRootKind kind() { return THING_ROOT_BINDINGS; }
     static bool poisoned(const Bindings &bindings) {
@@ -386,8 +386,11 @@ class ScriptSourceHolder
     }
 };
 
-class ScriptSourceObject : public JSObject {
+class ScriptSourceObject : public JSObject
+{
   public:
+    static Class class_;
+
     static void finalize(FreeOp *fop, JSObject *obj);
     static ScriptSourceObject *create(JSContext *cx, ScriptSource *source);
 
@@ -522,8 +525,9 @@ class JSScript : public js::gc::Cell
     bool            explicitUseStrict:1; /* code has "use strict"; explicitly */
     bool            compileAndGo:1;   /* see Parser::compileAndGo */
     bool            selfHosted:1;     /* see Parser::selfHostingMode */
-    bool            bindingsAccessedDynamically:1; /* see ContextFlags' field of the same name */
-    bool            funHasExtensibleScope:1;       /* see ContextFlags' field of the same name */
+    bool            bindingsAccessedDynamically:1; /* see FunctionContextFlags */
+    bool            funHasExtensibleScope:1;       /* see FunctionContextFlags */
+    bool            funNeedsDeclEnvObject:1;       /* see FunctionContextFlags */
     bool            funHasAnyAliasedFormal:1;      /* true if any formalIsAliased(i) */
     bool            warnedAboutTwoArgumentEval:1; /* have warned about use of
                                                      obsolete eval(s, o) in
@@ -537,10 +541,12 @@ class JSScript : public js::gc::Cell
     bool            hasBeenCloned:1;  /* script has been reused for a clone. */
     bool            isActiveEval:1;   /* script came from eval(), and is still active */
     bool            isCachedEval:1;   /* script came from eval(), and is in eval cache */
-    bool            uninlineable:1;   /* script is considered uninlineable by analysis */
 
-    /* Set for functions defined at the top level within an 'eval' script. */
+    // Set for functions defined at the top level within an 'eval' script.
     bool directlyInsideEval:1;
+
+    // Both 'arguments' and f.apply() are used. This is likely to be a wrapper.
+    bool usesArgumentsAndApply:1;
 
     /* script is attempted to be cloned anew at each callsite. This is
        temporarily needed for ParallelArray selfhosted code until type
@@ -1100,19 +1106,20 @@ class AliasedFormalIter
 
 struct SourceCompressionToken;
 
-
 // Information about a script which may be (or has been) lazily compiled to
 // bytecode from its source.
 class LazyScript : public js::gc::Cell
 {
-    // Immediate parent in which the script is nested, or NULL if the parent
-    // has not been compiled yet. Lazy scripts are always functions within a
-    // global or eval script so there will be a parent.
-    JSScript *parent_;
-
     // If non-NULL, the script has been compiled and this is a forwarding
     // pointer to the result.
-    JSScript *script_;
+    HeapPtrScript script_;
+
+    // Function or block chain in which the script is nested, or NULL.
+    HeapPtrObject enclosingScope_;
+
+    // Source code object, or NULL if the script in which this is nested has
+    // not been compiled yet.
+    HeapPtrObject sourceObject_;
 
     // Heap allocated table with any free variables or inner functions.
     void *table_;
@@ -1121,14 +1128,20 @@ class LazyScript : public js::gc::Cell
     uint32_t padding;
 #endif
 
-    uint32_t numFreeVariables_;
+    // Assorted bits that should really be in ScriptSourceObject.
+    JSPrincipals *originPrincipals_;
+    uint32_t version_ : 8;
+
+    uint32_t numFreeVariables_ : 24;
     uint32_t numInnerFunctions_ : 26;
 
-    bool strict_ : 1;
-    bool bindingsAccessedDynamically_ : 1;
-    bool hasDebuggerStatement_ : 1;
-    bool directlyInsideEval_:1;
-    bool hasBeenCloned_:1;
+    // N.B. These are booleans but need to be uint32_t to pack correctly on MSVC.
+    uint32_t strict_ : 1;
+    uint32_t bindingsAccessedDynamically_ : 1;
+    uint32_t hasDebuggerStatement_ : 1;
+    uint32_t directlyInsideEval_:1;
+    uint32_t usesArgumentsAndApply_:1;
+    uint32_t hasBeenCloned_:1;
 
     // Source location for the script.
     uint32_t begin_;
@@ -1136,45 +1149,32 @@ class LazyScript : public js::gc::Cell
     uint32_t lineno_;
     uint32_t column_;
 
-    LazyScript(void *table, uint32_t numFreeVariables, uint32_t numInnerFunctions,
-               uint32_t begin, uint32_t end, uint32_t lineno, uint32_t column)
-      : parent_(NULL),
-        script_(NULL),
-        table_(table),
-        numFreeVariables_(numFreeVariables),
-        numInnerFunctions_(numInnerFunctions),
-        strict_(false),
-        bindingsAccessedDynamically_(false),
-        hasDebuggerStatement_(false),
-        directlyInsideEval_(false),
-        hasBeenCloned_(false),
-        begin_(begin),
-        end_(end),
-        lineno_(lineno),
-        column_(column)
-    {
-        JS_ASSERT(begin <= end);
-    }
+    LazyScript(void *table, uint32_t numFreeVariables, uint32_t numInnerFunctions, JSVersion version,
+               uint32_t begin, uint32_t end, uint32_t lineno, uint32_t column);
 
   public:
     static LazyScript *Create(JSContext *cx, uint32_t numFreeVariables, uint32_t numInnerFunctions,
-                              uint32_t begin, uint32_t end, uint32_t lineno, uint32_t column);
+                              JSVersion version, uint32_t begin, uint32_t end, uint32_t lineno, uint32_t column);
 
-    void initParent(JSScript *parent) {
-        JS_ASSERT(parent && !parent_);
-        parent_ = parent;
-    }
-    JSScript *parent() const {
-        return parent_;
-    }
-
-    void initScript(JSScript *script) {
-        JS_ASSERT(script && !script_);
-        script_ = script;
-    }
+    void initScript(JSScript *script);
     JSScript *maybeScript() {
         return script_;
     }
+
+    JSObject *enclosingScope() const {
+        return enclosingScope_;
+    }
+    ScriptSourceObject *sourceObject() const;
+    JSPrincipals *originPrincipals() const {
+        return originPrincipals_;
+    }
+    JSVersion version() const {
+        JS_STATIC_ASSERT(JSVERSION_UNKNOWN == -1);
+        return (version_ == JS_BIT(8) - 1) ? JSVERSION_UNKNOWN : JSVersion(version_);
+    }
+
+    void setParent(JSObject *enclosingScope, ScriptSourceObject *sourceObject,
+                   JSPrincipals *originPrincipals);
 
     uint32_t numFreeVariables() const {
         return numFreeVariables_;
@@ -1218,6 +1218,13 @@ class LazyScript : public js::gc::Cell
         directlyInsideEval_ = true;
     }
 
+    bool usesArgumentsAndApply() const {
+        return usesArgumentsAndApply_;
+    }
+    void setUsesArgumentsAndApply() {
+        usesArgumentsAndApply_ = true;
+    }
+
     bool hasBeenCloned() const {
         return hasBeenCloned_;
     }
@@ -1226,7 +1233,7 @@ class LazyScript : public js::gc::Cell
     }
 
     ScriptSource *source() const {
-        return parent()->scriptSource();
+        return sourceObject()->source();
     }
     uint32_t begin() const {
         return begin_;
@@ -1240,6 +1247,8 @@ class LazyScript : public js::gc::Cell
     uint32_t column() const {
         return column_;
     }
+
+    uint32_t staticLevel(JSContext *cx) const;
 
     Zone *zone() const {
         return Cell::tenuredZone();
@@ -1445,9 +1454,6 @@ extern unsigned
 PCToLineNumber(unsigned startLine, jssrcnote *notes, jsbytecode *code, jsbytecode *pc,
                unsigned *columnp = NULL);
 
-extern unsigned
-CurrentLine(JSContext *cx);
-
 /*
  * This function returns the file and line number of the script currently
  * executing on cx. If there is no current script executing on cx (e.g., a
@@ -1485,4 +1491,4 @@ XDRScript(XDRState<mode> *xdr, HandleObject enclosingScope, HandleScript enclosi
 
 } /* namespace js */
 
-#endif /* jsscript_h___ */
+#endif /* jsscript_h */

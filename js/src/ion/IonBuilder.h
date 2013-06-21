@@ -4,8 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#if !defined(jsion_bytecode_analyzer_h__) && defined(JS_ION)
-#define jsion_bytecode_analyzer_h__
+#ifndef ion_IonBuilder_h
+#define ion_IonBuilder_h
+
+#ifdef JS_ION
 
 // This file declares the data structures for building a MIRGraph from a
 // JSScript.
@@ -196,7 +198,7 @@ class IonBuilder : public MIRGenerator
 
   public:
     IonBuilder(JSContext *cx, TempAllocator *temp, MIRGraph *graph,
-               BaselineInspector *inspector, CompileInfo *info, AbstractFramePtr fp,
+               BaselineInspector *inspector, CompileInfo *info, BaselineFrame *baselineFrame,
                size_t inliningDepth = 0, uint32_t loopDepth = 0);
 
     bool build();
@@ -219,8 +221,10 @@ class IonBuilder : public MIRGenerator
 
     JSFunction *getSingleCallTarget(types::StackTypeSet *calleeTypes);
     bool getPolyCallTargets(types::StackTypeSet *calleeTypes,
-                            AutoObjectVector &targets, uint32_t maxTargets);
-    bool canInlineTarget(JSFunction *target, CallInfo &callInfo);
+                            AutoObjectVector &targets,
+                            uint32_t maxTargets,
+                            bool *gotLambda);
+    bool canInlineTarget(JSFunction *target);
 
     void popCfgStack();
     DeferredEdge *filterDeadDeferredEdges(DeferredEdge *edge);
@@ -311,7 +315,7 @@ class IonBuilder : public MIRGenerator
     bool initParameters();
     void rewriteParameter(uint32_t slotIdx, MDefinition *param, int32_t argIndex);
     void rewriteParameters();
-    bool initScopeChain();
+    bool initScopeChain(MDefinition *callee = NULL);
     bool initArgumentsObject();
     bool pushConstant(const Value &v);
 
@@ -480,14 +484,20 @@ class IonBuilder : public MIRGenerator
     // RegExp natives.
     InliningStatus inlineRegExpTest(CallInfo &callInfo);
 
-    // Parallel Array.
+    // Array intrinsics.
     InliningStatus inlineUnsafeSetElement(CallInfo &callInfo);
     bool inlineUnsafeSetDenseArrayElement(CallInfo &callInfo, uint32_t base);
     bool inlineUnsafeSetTypedArrayElement(CallInfo &callInfo, uint32_t base, int arrayType);
-    InliningStatus inlineForceSequentialOrInParallelSection(CallInfo &callInfo);
     InliningStatus inlineNewDenseArray(CallInfo &callInfo);
     InliningStatus inlineNewDenseArrayForSequentialExecution(CallInfo &callInfo);
     InliningStatus inlineNewDenseArrayForParallelExecution(CallInfo &callInfo);
+
+    // Slot intrinsics.
+    InliningStatus inlineUnsafeSetReservedSlot(CallInfo &callInfo);
+    InliningStatus inlineUnsafeGetReservedSlot(CallInfo &callInfo);
+
+    // Parallel intrinsics.
+    InliningStatus inlineForceSequentialOrInParallelSection(CallInfo &callInfo);
     InliningStatus inlineNewParallelArray(CallInfo &callInfo);
     InliningStatus inlineParallelArray(CallInfo &callInfo);
     InliningStatus inlineParallelArrayTail(CallInfo &callInfo,
@@ -496,8 +506,11 @@ class IonBuilder : public MIRGenerator
                                            types::StackTypeSet *ctorTypes,
                                            uint32_t discards);
 
+    // Utility intrinsics.
     InliningStatus inlineThrowError(CallInfo &callInfo);
     InliningStatus inlineIsCallable(CallInfo &callInfo);
+    InliningStatus inlineNewObjectWithClassPrototype(CallInfo &callInfo);
+    InliningStatus inlineHaveSameClass(CallInfo &callInfo);
     InliningStatus inlineToObject(CallInfo &callInfo);
     InliningStatus inlineDump(CallInfo &callInfo);
 
@@ -508,7 +521,7 @@ class IonBuilder : public MIRGenerator
 
     // Call functions
     InliningStatus inlineCallsite(AutoObjectVector &targets, AutoObjectVector &originals,
-                                  CallInfo &callInfo);
+                                  bool lambda, CallInfo &callInfo);
     bool inlineCalls(CallInfo &callInfo, AutoObjectVector &targets, AutoObjectVector &originals,
                      Vector<bool> &choiceSet, MGetPropertyCache *maybeCache);
 
@@ -582,7 +595,7 @@ class IonBuilder : public MIRGenerator
 
   private:
     JSContext *cx;
-    AbstractFramePtr fp;
+    BaselineFrame *baselineFrame_;
     AbortReason abortReason_;
 
     jsbytecode *pc;
@@ -604,7 +617,6 @@ class IonBuilder : public MIRGenerator
     BaselineInspector *inspector;
 
     size_t inliningDepth_;
-    Vector<MDefinition *, 0, IonAllocPolicy> inlinedArguments_;
 
     // Cutoff to disable compilation if excessive time is spent reanalyzing
     // loop bodies to compute a fixpoint of the types for loop variables.
@@ -625,6 +637,9 @@ class IonBuilder : public MIRGenerator
     // If this script can use a lazy arguments object, it will be pre-created
     // here.
     MInstruction *lazyArguments_;
+
+    // If this is an inline builder, the call info for the builder.
+    const CallInfo *inlineCallInfo_;
 };
 
 class CallInfo
@@ -634,6 +649,7 @@ class CallInfo
     Vector<MDefinition *> args_;
 
     bool constructing_;
+    bool lambda_;
 
   public:
     CallInfo(JSContext *cx, bool constructing)
@@ -700,6 +716,10 @@ class CallInfo
         return args_;
     }
 
+    const Vector<MDefinition *> &argv() const {
+        return args_;
+    }
+
     MDefinition *getArg(uint32_t i) {
         JS_ASSERT(i < argc());
         return args_[i];
@@ -721,6 +741,13 @@ class CallInfo
 
     bool constructing() {
         return constructing_;
+    }
+
+    bool isLambda() const {
+        return lambda_;
+    }
+    void setLambda(bool lambda) {
+        lambda_ = lambda;
     }
 
     void wrapArgs(MBasicBlock *current) {
@@ -782,4 +809,6 @@ bool NeedsPostBarrier(CompileInfo &info, MDefinition *value);
 } // namespace ion
 } // namespace js
 
-#endif // jsion_bytecode_analyzer_h__
+#endif // JS_ION
+
+#endif /* ion_IonBuilder_h */

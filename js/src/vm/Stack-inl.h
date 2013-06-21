@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef Stack_inl_h__
-#define Stack_inl_h__
+#ifndef vm_Stack_inl_h
+#define vm_Stack_inl_h
 
 #include "mozilla/PodOperations.h"
 
@@ -31,7 +31,7 @@ namespace js {
 static inline bool
 IsCacheableNonGlobalScope(JSObject *obj)
 {
-    bool cacheable = (obj->isCall() || obj->isBlock() || obj->isDeclEnv());
+    bool cacheable = (obj->is<CallObject>() || obj->is<BlockObject>() || obj->is<DeclEnvObject>());
 
     JS_ASSERT_IF(cacheable, !obj->getOps()->lookupProperty);
     return cacheable;
@@ -74,7 +74,7 @@ inline void
 StackFrame::initPrev(JSContext *cx)
 {
     JS_ASSERT(flags_ & HAS_PREVPC);
-    if (FrameRegs *regs = cx->maybeRegs()) {
+    if (FrameRegs *regs = cx->stack.maybeRegs()) {
         prev_ = regs->fp();
         prevpc_ = regs->pc;
         JS_ASSERT(uint32_t(prevpc_ - prev_->script()->code) < prev_->script()->length);
@@ -199,17 +199,17 @@ StackFrame::initArgsObj(ArgumentsObject &argsobj)
 inline ScopeObject &
 StackFrame::aliasedVarScope(ScopeCoordinate sc) const
 {
-    JSObject *scope = &scopeChain()->asScope();
+    JSObject *scope = &scopeChain()->as<ScopeObject>();
     for (unsigned i = sc.hops; i; i--)
-        scope = &scope->asScope().enclosingScope();
-    return scope->asScope();
+        scope = &scope->as<ScopeObject>().enclosingScope();
+    return scope->as<ScopeObject>();
 }
 
 inline void
 StackFrame::pushOnScopeChain(ScopeObject &scope)
 {
     JS_ASSERT(*scopeChain() == scope.enclosingScope() ||
-              *scopeChain() == scope.asCall().enclosingScope().asDeclEnv().enclosingScope());
+              *scopeChain() == scope.as<CallObject>().enclosingScope().as<DeclEnvObject>().enclosingScope());
     scopeChain_ = &scope;
     flags_ |= HAS_SCOPECHAIN;
 }
@@ -218,7 +218,7 @@ inline void
 StackFrame::popOffScopeChain()
 {
     JS_ASSERT(flags_ & HAS_SCOPECHAIN);
-    scopeChain_ = &scopeChain_->asScope().enclosingScope();
+    scopeChain_ = &scopeChain_->as<ScopeObject>().enclosingScope();
 }
 
 inline CallObject &
@@ -227,9 +227,9 @@ StackFrame::callObj() const
     JS_ASSERT(fun()->isHeavyweight());
 
     JSObject *pobj = scopeChain();
-    while (JS_UNLIKELY(!pobj->isCall()))
+    while (JS_UNLIKELY(!pobj->is<CallObject>()))
         pobj = pobj->enclosingScope();
-    return pobj->asCall();
+    return pobj->as<CallObject>();
 }
 
 /*****************************************************************************/
@@ -335,24 +335,32 @@ ContextStack::currentScript(jsbytecode **ppc,
     if (ppc)
         *ppc = NULL;
 
-    if (!hasfp())
+    Activation *act = cx_->mainThread().activation();
+    while (act && (act->cx() != cx_ || !act->isActive()))
+        act = act->prev();
+
+    if (!act)
         return NULL;
 
-    FrameRegs &regs = this->regs();
-    StackFrame *fp = regs.fp();
+    JS_ASSERT(act->cx() == cx_);
 
 #ifdef JS_ION
-    if (fp->beginsIonActivation()) {
+    if (act->isJit()) {
         JSScript *script = NULL;
         ion::GetPcScript(cx_, &script, ppc);
-        if (!allowCrossCompartment && script->compartment() != cx_->compartment)
+        if (!allowCrossCompartment && script->compartment() != cx_->compartment())
             return NULL;
         return script;
     }
 #endif
 
+    JS_ASSERT(act->isInterpreter());
+
+    StackFrame *fp = act->asInterpreter()->current();
+    JS_ASSERT(!fp->runningInJit());
+
     JSScript *script = fp->script();
-    if (!allowCrossCompartment && script->compartment() != cx_->compartment)
+    if (!allowCrossCompartment && script->compartment() != cx_->compartment())
         return NULL;
 
     if (ppc)
@@ -370,7 +378,7 @@ template <class Op>
 inline void
 ScriptFrameIter::ionForEachCanonicalActualArg(JSContext *cx, Op op)
 {
-    JS_ASSERT(isIon());
+    JS_ASSERT(isJit());
 #ifdef JS_ION
     if (data_.ionFrames_.isOptimizedJS()) {
         ionInlineFrames_.forEachCanonicalActualArg(cx, op, 0, -1);
@@ -433,19 +441,6 @@ AbstractFramePtr::setReturnValue(const Value &rval) const
 #endif
 }
 
-inline bool
-AbstractFramePtr::hasPushedSPSFrame() const
-{
-    if (isStackFrame())
-        return asStackFrame()->hasPushedSPSFrame();
-#ifdef JS_ION
-    return asBaselineFrame()->hasPushedSPSFrame();
-#else
-    JS_NOT_REACHED("Invalid frame");
-    return false;
-#endif
-}
-
 inline JSObject *
 AbstractFramePtr::scopeChain() const
 {
@@ -453,6 +448,20 @@ AbstractFramePtr::scopeChain() const
         return asStackFrame()->scopeChain();
 #ifdef JS_ION
     return asBaselineFrame()->scopeChain();
+#else
+    JS_NOT_REACHED("Invalid frame");
+#endif
+}
+
+inline void
+AbstractFramePtr::pushOnScopeChain(ScopeObject &scope)
+{
+    if (isStackFrame()) {
+        asStackFrame()->pushOnScopeChain(scope);
+        return;
+    }
+#ifdef JS_ION
+    asBaselineFrame()->pushOnScopeChain(scope);
 #else
     JS_NOT_REACHED("Invalid frame");
 #endif
@@ -868,5 +877,34 @@ AbstractFramePtr::popWith(JSContext *cx) const
         JS_NOT_REACHED("Invalid frame");
 }
 
+Activation::Activation(JSContext *cx, Kind kind, bool active)
+  : cx_(cx),
+    compartment_(cx->compartment()),
+    prev_(cx->mainThread().activation_),
+    active_(active),
+    savedFrameChain_(0),
+    kind_(kind)
+{
+    cx->mainThread().activation_ = this;
+}
+
+Activation::~Activation()
+{
+    JS_ASSERT(cx_->mainThread().activation_ == this);
+    cx_->mainThread().activation_ = prev_;
+}
+
+InterpreterActivation::InterpreterActivation(JSContext *cx, StackFrame *entry, FrameRegs &regs)
+  : Activation(cx, Interpreter),
+    entry_(entry),
+    current_(entry),
+    regs_(regs)
+{}
+
+// Define destructor explicitly to silence GCC used-but-never-defined warning.
+InterpreterActivation::~InterpreterActivation()
+{}
+
 } /* namespace js */
-#endif /* Stack_inl_h__ */
+
+#endif /* vm_Stack_inl_h */

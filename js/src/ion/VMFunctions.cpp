@@ -101,7 +101,7 @@ CheckOverRecursed(JSContext *cx)
     // CheckOverRecursed.
     JS_CHECK_RECURSION(cx, return false);
 
-    if (cx->runtime->interrupt)
+    if (cx->runtime()->interrupt)
         return InterruptCheck(cx);
 
     return true;
@@ -289,6 +289,23 @@ NewInitObject(JSContext *cx, HandleObject templateObject)
     return obj;
 }
 
+JSObject *
+NewInitObjectWithClassPrototype(JSContext *cx, HandleObject templateObject)
+{
+    JS_ASSERT(!templateObject->hasSingletonType());
+
+    JSObject *obj = NewObjectWithGivenProto(cx,
+                                            templateObject->getClass(),
+                                            templateObject->getProto(),
+                                            cx->global());
+    if (!obj)
+        return NULL;
+
+    obj->setType(templateObject->type());
+
+    return obj;
+}
+
 bool
 ArrayPopDense(JSContext *cx, HandleObject obj, MutableHandleValue rval)
 {
@@ -380,7 +397,7 @@ StringFromCharCode(JSContext *cx, int32_t code)
     jschar c = jschar(code);
 
     if (StaticStrings::hasUnit(c))
-        return cx->runtime->staticStrings.getUnit(c);
+        return cx->runtime()->staticStrings.getUnit(c);
 
     return js_NewStringCopyN<CanGC>(cx, &c, 1);
 }
@@ -448,13 +465,13 @@ NewStringObject(JSContext *cx, HandleString str)
 bool
 SPSEnter(JSContext *cx, HandleScript script)
 {
-    return cx->runtime->spsProfiler.enter(cx, script, script->function());
+    return cx->runtime()->spsProfiler.enter(cx, script, script->function());
 }
 
 bool
 SPSExit(JSContext *cx, HandleScript script)
 {
-    cx->runtime->spsProfiler.exit(cx, script, script->function());
+    cx->runtime()->spsProfiler.exit(cx, script, script->function());
     return true;
 }
 
@@ -502,8 +519,8 @@ CreateThis(JSContext *cx, HandleObject callee, MutableHandleValue rval)
 {
     rval.set(MagicValue(JS_IS_CONSTRUCTING));
 
-    if (callee->isFunction()) {
-        JSFunction *fun = callee->toFunction();
+    if (callee->is<JSFunction>()) {
+        JSFunction *fun = &callee->as<JSFunction>();
         if (fun->isInterpreted()) {
             JSScript *script = fun->getOrCreateScript(cx);
             if (!script || !script->ensureHasTypes(cx))
@@ -562,7 +579,7 @@ FilterArguments(JSContext *cx, JSString *str)
     if (!chars)
         return false;
 
-    static jschar arguments[] = {'a', 'r', 'g', 'u', 'm', 'e', 'n', 't', 's'};
+    static const jschar arguments[] = {'a', 'r', 'g', 'u', 'm', 'e', 'n', 't', 's'};
     return !StringHasPattern(chars, str->length(), arguments, mozilla::ArrayLength(arguments));
 }
 
@@ -571,7 +588,7 @@ void
 PostWriteBarrier(JSRuntime *rt, JSObject *obj)
 {
     JS_ASSERT(!IsInsideNursery(rt, obj));
-    rt->gcStoreBuffer.putWholeObject(obj);
+    rt->gcStoreBuffer.putWholeCell(obj);
 }
 #endif
 
@@ -634,13 +651,13 @@ DebugEpilogue(JSContext *cx, BaselineFrame *frame, JSBool ok)
         JS_ASSERT_IF(ok, frame->hasReturnValue());
         DebugScopes::onPopCall(frame, cx);
     } else if (frame->isStrictEvalFrame()) {
-        JS_ASSERT_IF(frame->hasCallObj(), frame->scopeChain()->asCall().isForEval());
+        JS_ASSERT_IF(frame->hasCallObj(), frame->scopeChain()->as<CallObject>().isForEval());
         DebugScopes::onPopStrictEvalScope(frame);
     }
 
     // If the frame has a pushed SPS frame, make sure to pop it.
     if (frame->hasPushedSPSFrame()) {
-        cx->runtime->spsProfiler.exit(cx, frame->script(), frame->maybeFun());
+        cx->runtime()->spsProfiler.exit(cx, frame->script(), frame->maybeFun());
         // Unset the pushedSPSFrame flag because DebugEpilogue may get called before
         // Probes::exitScript in baseline during exception handling, and we don't
         // want to double-pop SPS frames.
@@ -726,16 +743,16 @@ HandleDebugTrap(JSContext *cx, BaselineFrame *frame, uint8_t *retAddr, JSBool *m
     RootedScript script(cx, frame->script());
     jsbytecode *pc = script->baselineScript()->icEntryFromReturnAddress(retAddr).pc(script);
 
-    JS_ASSERT(cx->compartment->debugMode());
+    JS_ASSERT(cx->compartment()->debugMode());
     JS_ASSERT(script->stepModeEnabled() || script->hasBreakpointsAt(pc));
 
     RootedValue rval(cx);
     JSTrapStatus status = JSTRAP_CONTINUE;
-    JSInterruptHook hook = cx->runtime->debugHooks.interruptHook;
+    JSInterruptHook hook = cx->runtime()->debugHooks.interruptHook;
 
     if (hook || script->stepModeEnabled()) {
         if (hook)
-            status = hook(cx, script, pc, rval.address(), cx->runtime->debugHooks.interruptHookData);
+            status = hook(cx, script, pc, rval.address(), cx->runtime()->debugHooks.interruptHookData);
         if (status == JSTRAP_CONTINUE && script->stepModeEnabled())
             status = Debugger::onSingleStep(cx, &rval);
     }
@@ -775,8 +792,8 @@ OnDebuggerStatement(JSContext *cx, BaselineFrame *frame, jsbytecode *pc, JSBool 
     JSTrapStatus status = JSTRAP_CONTINUE;
     RootedValue rval(cx);
 
-    if (JSDebuggerHandler handler = cx->runtime->debugHooks.debuggerHandler)
-        status = handler(cx, script, pc, rval.address(), cx->runtime->debugHooks.debuggerHandlerData);
+    if (JSDebuggerHandler handler = cx->runtime()->debugHooks.debuggerHandler)
+        status = handler(cx, script, pc, rval.address(), cx->runtime()->debugHooks.debuggerHandlerData);
 
     if (status == JSTRAP_CONTINUE)
         status = Debugger::onDebuggerStatement(cx, &rval);

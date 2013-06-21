@@ -4,8 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ion/IonMacroAssembler.h"
+
 #include "jsinfer.h"
 
+#include "ion/AsmJS.h"
 #include "ion/Bailouts.h"
 #include "ion/BaselineIC.h"
 #include "ion/BaselineJIT.h"
@@ -83,6 +86,7 @@ MacroAssembler::guardTypeSet(const Source &address, const TypeSet *types,
     if (types->hasType(types::Type::AnyObjectType())) {
         branchTestObject(Equal, tag, matched);
     } else if (types->getObjectCount()) {
+        JS_ASSERT(scratch != InvalidReg);
         branchTestObject(NotEqual, tag, miss);
         Register obj = extractObject(address, scratch);
 
@@ -513,8 +517,8 @@ MacroAssembler::parNewGCThing(const Register &result,
     uint32_t thingSize = (uint32_t)gc::Arena::thingSize(allocKind);
 
     // Load the allocator:
-    // tempReg1 = (Allocator*) forkJoinSlice->allocator
-    loadPtr(Address(threadContextReg, offsetof(js::ForkJoinSlice, allocator)),
+    // tempReg1 = (Allocator*) forkJoinSlice->allocator()
+    loadPtr(Address(threadContextReg, ThreadSafeContext::offsetOfAllocator()),
             tempReg1);
 
     // Get a pointer to the relevant free list:
@@ -1094,6 +1098,77 @@ MacroAssembler::convertInt32ValueToDouble(const Address &address, Register scrat
     storeDouble(ScratchFloatReg, address);
 }
 
+static const double DoubleZero = 0.0;
+
+void
+MacroAssembler::convertValueToDouble(ValueOperand value, FloatRegister output, Label *fail)
+{
+    Register tag = splitTagForTest(value);
+
+    Label isDouble, isInt32, isBool, isNull, done;
+
+    branchTestDouble(Assembler::Equal, tag, &isDouble);
+    branchTestInt32(Assembler::Equal, tag, &isInt32);
+    branchTestBoolean(Assembler::Equal, tag, &isBool);
+    branchTestNull(Assembler::Equal, tag, &isNull);
+    branchTestUndefined(Assembler::NotEqual, tag, fail);
+
+    // fall-through: undefined
+    loadStaticDouble(&js_NaN, output);
+    jump(&done);
+
+    bind(&isNull);
+    loadStaticDouble(&DoubleZero, output);
+    jump(&done);
+
+    bind(&isBool);
+    boolValueToDouble(value, output);
+    jump(&done);
+
+    bind(&isInt32);
+    int32ValueToDouble(value, output);
+    jump(&done);
+
+    bind(&isDouble);
+    unboxDouble(value, output);
+    bind(&done);
+}
+
+void
+MacroAssembler::convertValueToInt32(ValueOperand value, FloatRegister temp,
+                                    Register output, Label *fail)
+{
+    Register tag = splitTagForTest(value);
+
+    Label done, simple, isInt32, isBool, isDouble;
+
+    branchTestInt32(Assembler::Equal, tag, &isInt32);
+    branchTestBoolean(Assembler::Equal, tag, &isBool);
+    branchTestDouble(Assembler::Equal, tag, &isDouble);
+    branchTestNull(Assembler::NotEqual, tag, fail);
+
+    // The value is null - just emit 0.
+    mov(Imm32(0), output);
+    jump(&done);
+
+    // Try converting double into integer
+    bind(&isDouble);
+    unboxDouble(value, temp);
+    convertDoubleToInt32(temp, output, fail, /* -0 check */ false);
+    jump(&done);
+
+    // Just unbox a bool, the result is 0 or 1.
+    bind(&isBool);
+    unboxBoolean(value, output);
+    jump(&done);
+
+    // Integers can be unboxed.
+    bind(&isInt32);
+    unboxInt32(value, output);
+
+    bind(&done);
+}
+
 void
 MacroAssembler::PushEmptyRooted(VMFunction::RootType rootType)
 {
@@ -1137,7 +1212,6 @@ MacroAssembler::popRooted(VMFunction::RootType rootType, Register cellReg,
     }
 }
 
-#ifdef JS_ASMJS
 ABIArgIter::ABIArgIter(const MIRTypeVector &types)
   : gen_(),
     types_(types),
@@ -1155,4 +1229,3 @@ ABIArgIter::operator++(int)
     if (!done())
         gen_.next(types_[i_]);
 }
-#endif

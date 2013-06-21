@@ -988,9 +988,9 @@ nsJSContext::JSOptionChangedCallback(const char *pref, void *data)
 
   bool strict = Preferences::GetBool(js_strict_option_str);
   if (strict)
-    newDefaultJSOptions |= JSOPTION_STRICT;
+    newDefaultJSOptions |= JSOPTION_EXTRA_WARNINGS;
   else
-    newDefaultJSOptions &= ~JSOPTION_STRICT;
+    newDefaultJSOptions &= ~JSOPTION_EXTRA_WARNINGS;
 
   // The vanilla GetGlobalObject returns null if a global isn't set up on
   // the context yet. We can sometimes be call midway through context init,
@@ -1056,9 +1056,9 @@ nsJSContext::JSOptionChangedCallback(const char *pref, void *data)
   // In debug builds, warnings are enabled in chrome context if
   // javascript.options.strict.debug is true
   bool strictDebug = Preferences::GetBool(js_strict_debug_option_str);
-  if (strictDebug && (newDefaultJSOptions & JSOPTION_STRICT) == 0) {
+  if (strictDebug && (newDefaultJSOptions & JSOPTION_EXTRA_WARNINGS) == 0) {
     if (chromeWindow || !contentWindow)
-      newDefaultJSOptions |= JSOPTION_STRICT;
+      newDefaultJSOptions |= JSOPTION_EXTRA_WARNINGS;
   }
 #endif
 
@@ -1364,6 +1364,7 @@ nsresult
 nsJSContext::ExecuteScript(JSScript* aScriptObject_,
                            JSObject* aScopeObject_)
 {
+  JSAutoRequest ar(mContext);
   JS::Rooted<JSObject*> aScopeObject(mContext, aScopeObject_);
   JS::Rooted<JSScript*> aScriptObject(mContext, aScriptObject_);
   NS_ENSURE_TRUE(mIsInitialized, NS_ERROR_NOT_INITIALIZED);
@@ -3429,6 +3430,11 @@ nsJSRuntime::Init()
   Preferences::RegisterCallbackAndCall(SetMemoryGCPrefChangedCallback,
                                        "javascript.options.mem.gc_allocation_threshold_mb",
                                        (void *)JSGC_ALLOCATION_THRESHOLD);
+
+  Preferences::RegisterCallbackAndCall(SetMemoryGCPrefChangedCallback,
+                                       "javascript.options.mem.gc_decommit_threshold_mb",
+                                       (void *)JSGC_DECOMMIT_THRESHOLD);
+
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (!obs)
     return NS_ERROR_FAILURE;
@@ -3523,7 +3529,7 @@ public:
 
 protected:
   JSContext *mContext;
-  JS::Value *mArgv;
+  JS::Heap<JS::Value> *mArgv;
   uint32_t mArgc;
 };
 
@@ -3534,9 +3540,10 @@ nsJSArgArray::nsJSArgArray(JSContext *aContext, uint32_t argc, JS::Value *argv,
     mArgc(argc)
 {
   // copy the array - we don't know its lifetime, and ours is tied to xpcom
-  // refcounting.  Alloc zero'd array so cleanup etc is safe.
+  // refcounting.
   if (argc) {
-    mArgv = (JS::Value *) PR_CALLOC(argc * sizeof(JS::Value));
+    static const fallible_t fallible = fallible_t();
+    mArgv = new (fallible) JS::Heap<JS::Value>[argc];
     if (!mArgv) {
       *prv = NS_ERROR_OUT_OF_MEMORY;
       return;
@@ -3566,7 +3573,7 @@ void
 nsJSArgArray::ReleaseJSObjects()
 {
   if (mArgv) {
-    PR_DELETE(mArgv);
+    delete [] mArgv;
   }
   if (mArgc > 0) {
     mArgc = 0;

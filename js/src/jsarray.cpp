@@ -8,9 +8,8 @@
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Util.h"
-
-#include <stdlib.h>
 
 #include "jsapi.h"
 #include "jsatom.h"
@@ -32,7 +31,6 @@
 
 #include "jsatominlines.h"
 #include "jscntxtinlines.h"
-#include "jsobjinlines.h"
 #include "jsstrinlines.h"
 
 #include "vm/ArgumentsObject-inl.h"
@@ -43,6 +41,7 @@ using namespace js;
 using namespace js::gc;
 using namespace js::types;
 
+using mozilla::Abs;
 using mozilla::ArrayLength;
 using mozilla::DebugOnly;
 using mozilla::IsNaN;
@@ -56,8 +55,8 @@ js::GetLengthProperty(JSContext *cx, HandleObject obj, uint32_t *lengthp)
         return true;
     }
 
-    if (obj->isArguments()) {
-        ArgumentsObject &argsobj = obj->asArguments();
+    if (obj->is<ArgumentsObject>()) {
+        ArgumentsObject &argsobj = obj->as<ArgumentsObject>();
         if (!argsobj.hasOverriddenLength()) {
             *lengthp = argsobj.initialLength();
             return true;
@@ -212,8 +211,8 @@ GetElement(JSContext *cx, HandleObject obj, IndexType index, JSBool *hole, Mutab
             return true;
         }
     }
-    if (obj->isArguments()) {
-        if (obj->asArguments().maybeGetElement(uint32_t(index), vp)) {
+    if (obj->is<ArgumentsObject>()) {
+        if (obj->as<ArgumentsObject>().maybeGetElement(uint32_t(index), vp)) {
             *hole = false;
             return true;
         }
@@ -248,8 +247,8 @@ js::GetElements(JSContext *cx, HandleObject aobj, uint32_t length, Value *vp)
         return true;
     }
 
-    if (aobj->isArguments()) {
-        ArgumentsObject &argsobj = aobj->asArguments();
+    if (aobj->is<ArgumentsObject>()) {
+        ArgumentsObject &argsobj = aobj->as<ArgumentsObject>();
         if (!argsobj.hasOverriddenLength()) {
             if (argsobj.maybeGetElements(0, length, vp))
                 return true;
@@ -675,7 +674,7 @@ js::WouldDefinePastNonwritableLength(JSContext *cx, HandleObject obj, uint32_t i
     }
 
     *definesPast = true;
-    if (!strict && !cx->hasStrictOption())
+    if (!strict && !cx->hasExtraWarningsOption())
         return true;
 
     // Error in strict mode code or warn with strict option.
@@ -824,7 +823,7 @@ array_toSource_impl(JSContext *cx, CallArgs args)
         /* Get element's character string. */
         JSString *str;
         if (hole) {
-            str = cx->runtime->emptyString;
+            str = cx->runtime()->emptyString;
         } else {
             str = ValueToSource(cx, elt);
             if (!str)
@@ -1291,19 +1290,6 @@ NumDigitsBase10(uint32_t n)
     return t - (n < powersOf10[t]) + 1;
 }
 
-static JS_ALWAYS_INLINE uint32_t
-NegateNegativeInt32(int32_t i)
-{
-    /*
-     * We cannot simply return '-i' because this is undefined for INT32_MIN.
-     * 2s complement does actually give us what we want, however.  That is,
-     * ~0x80000000 + 1 = 0x80000000 which is correct when interpreted as a
-     * uint32_t. To avoid undefined behavior, we write out 2s complement
-     * explicitly and rely on the peephole optimizer to generate 'neg'.
-     */
-    return ~uint32_t(i) + 1;
-}
-
 inline bool
 CompareLexicographicInt32(JSContext *cx, const Value &a, const Value &b, bool *lessOrEqualp)
 {
@@ -1324,14 +1310,8 @@ CompareLexicographicInt32(JSContext *cx, const Value &a, const Value &b, bool *l
     } else if ((aint >= 0) && (bint < 0)) {
         *lessOrEqualp = false;
     } else {
-        uint32_t auint, buint;
-        if (aint >= 0) {
-            auint = aint;
-            buint = bint;
-        } else {
-            auint = NegateNegativeInt32(aint);
-            buint = NegateNegativeInt32(bint);
-        }
+        uint32_t auint = Abs(aint);
+        uint32_t buint = Abs(bint);
 
         /*
          *  ... get number of digits of both integers.
@@ -1493,6 +1473,7 @@ typedef bool (*ComparatorNumeric)(const NumericElement &a, const NumericElement 
 
 ComparatorNumeric SortComparatorNumerics[] = {
     NULL,
+    NULL,
     ComparatorNumericLeftMinusRight,
     ComparatorNumericRightMinusLeft
 };
@@ -1515,12 +1496,16 @@ typedef bool (*ComparatorInt32)(const Value &a, const Value &b, bool *lessOrEqua
 
 ComparatorInt32 SortComparatorInt32s[] = {
     NULL,
+    NULL,
     ComparatorInt32LeftMinusRight,
     ComparatorInt32RightMinusLeft
 };
 
+// Note: Values for this enum must match up with SortComparatorNumerics
+// and SortComparatorInt32s.
 enum ComparatorMatchResult {
-    Match_None = 0,
+    Match_Failure = 0,
+    Match_None,
     Match_LeftMinusRight,
     Match_RightMinusLeft
 };
@@ -1530,20 +1515,23 @@ enum ComparatorMatchResult {
  * patterns: namely, |return x - y| and |return y - x|.
  */
 ComparatorMatchResult
-MatchNumericComparator(const Value &v)
+MatchNumericComparator(JSContext *cx, const Value &v)
 {
     if (!v.isObject())
         return Match_None;
 
     JSObject &obj = v.toObject();
-    if (!obj.isFunction())
+    if (!obj.is<JSFunction>())
         return Match_None;
 
-    JSFunction *fun = obj.toFunction();
-    if (!fun->hasScript())
+    JSFunction *fun = &obj.as<JSFunction>();
+    if (!fun->isInterpreted())
         return Match_None;
 
-    JSScript *script = fun->nonLazyScript();
+    JSScript *script = fun->getOrCreateScript(cx);
+    if (!script)
+        return Match_Failure;
+
     jsbytecode *pc = script->code;
 
     uint16_t arg0, arg1;
@@ -1820,7 +1808,9 @@ js::array_sort(JSContext *cx, unsigned argc, Value *vp)
                     return false;
             }
         } else {
-            ComparatorMatchResult comp = MatchNumericComparator(fval);
+            ComparatorMatchResult comp = MatchNumericComparator(cx, fval);
+            if (comp == Match_Failure)
+                return false;
 
             if (comp != Match_None) {
                 if (allInts) {
@@ -2728,6 +2718,7 @@ static const JSFunctionSpec array_methods[] = {
          {"some",               {NULL, NULL},       1,0, "ArraySome"},
          {"every",              {NULL, NULL},       1,0, "ArrayEvery"},
 
+    JS_FN("iterator",           JS_ArrayIterator,   0,0),
     JS_FS_END
 };
 
@@ -2802,7 +2793,7 @@ js_InitArrayClass(JSContext *cx, HandleObject obj)
 {
     JS_ASSERT(obj->isNative());
 
-    Rooted<GlobalObject*> global(cx, &obj->asGlobal());
+    Rooted<GlobalObject*> global(cx, &obj->as<GlobalObject>());
 
     RootedObject proto(cx, global->getOrCreateObjectPrototype(cx));
     if (!proto)
@@ -2846,14 +2837,6 @@ js_InitArrayClass(JSContext *cx, HandleObject obj)
     if (!DefineConstructorAndPrototype(cx, global, JSProto_Array, ctor, arrayProto))
         return NULL;
 
-    JSFunction *fun = JS_DefineFunction(cx, arrayProto, "values", JS_ArrayIterator, 0, 0);
-    if (!fun)
-        return NULL;
-
-    RootedValue funval(cx, ObjectValue(*fun));
-    if (!JS_DefineProperty(cx, arrayProto, "iterator", funval, NULL, NULL, 0))
-        return NULL;
-
     return arrayProto;
 }
 
@@ -2886,11 +2869,11 @@ NewArray(JSContext *cx, uint32_t length, JSObject *protoArg, NewObjectKind newKi
     JS_ASSERT(CanBeFinalizedInBackground(allocKind, &ArrayClass));
     allocKind = GetBackgroundAllocKind(allocKind);
 
-    NewObjectCache &cache = cx->runtime->newObjectCache;
+    NewObjectCache &cache = cx->runtime()->newObjectCache;
 
     NewObjectCache::EntryIndex entry = -1;
     if (newKind == GenericObject &&
-        !cx->compartment->objectMetadataCallback &&
+        !cx->compartment()->objectMetadataCallback &&
         cache.lookupGlobal(&ArrayClass, cx->global(), allocKind, &entry))
     {
         RootedObject obj(cx, cache.newObjectFromHit(cx, entry, GetInitialHeap(newKind, &ArrayClass)));

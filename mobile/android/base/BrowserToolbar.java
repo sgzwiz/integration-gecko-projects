@@ -20,6 +20,8 @@ import org.mozilla.gecko.util.UiAsyncTask;
 
 import org.mozilla.gecko.PrefsHelper;
 
+import org.json.JSONObject;
+
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
@@ -102,8 +104,6 @@ public class BrowserToolbar implements Tabs.OnTabsChangedListener,
     private boolean mShowSiteSecurity;
     private boolean mShowReader;
 
-    private static List<View> sActionItems;
-
     private boolean mAnimatingEntry;
 
     private AlphaAnimation mLockFadeIn;
@@ -135,7 +135,6 @@ public class BrowserToolbar implements Tabs.OnTabsChangedListener,
         // BrowserToolbar is attached to BrowserApp only.
         mActivity = activity;
 
-        sActionItems = new ArrayList<View>();
         Tabs.registerOnTabsChangedListener(this);
         mSwitchingTabs = true;
 
@@ -294,7 +293,14 @@ public class BrowserToolbar implements Tabs.OnTabsChangedListener,
                 if (mSiteSecurity.getVisibility() != View.VISIBLE)
                     return;
 
-                SiteIdentityPopup.getInstance().show(mSiteSecurity);
+                JSONObject identityData = Tabs.getInstance().getSelectedTab().getIdentityData();
+                if (identityData == null) {
+                    Log.e(LOGTAG, "Selected tab has no identity data");
+                    return;
+                }
+                SiteIdentityPopup siteIdentityPopup = mActivity.getSiteIdentityPopup();
+                siteIdentityPopup.updateIdentity(identityData);
+                siteIdentityPopup.show();
             }
         };
 
@@ -307,6 +313,7 @@ public class BrowserToolbar implements Tabs.OnTabsChangedListener,
         mSiteSecurity = (ImageButton) mLayout.findViewById(R.id.site_security);
         mSiteSecurity.setOnClickListener(faviconListener);
         mSiteSecurityVisible = (mSiteSecurity.getVisibility() == View.VISIBLE);
+        mActivity.getSiteIdentityPopup().setAnchor(mSiteSecurity);
 
         mProgressSpinner = (AnimationDrawable) mActivity.getResources().getDrawable(R.drawable.progress_spinner);
         
@@ -472,6 +479,8 @@ public class BrowserToolbar implements Tabs.OnTabsChangedListener,
                     updateTitle();
                 }
                 break;
+            case RESTORED:
+                // TabCount fixup after OOM
             case SELECTED:
                 updateTabCount(Tabs.getInstance().getDisplayCount());
                 mSwitchingTabs = true;
@@ -1112,20 +1121,11 @@ public class BrowserToolbar implements Tabs.OnTabsChangedListener,
     @Override
     public void addActionItem(View actionItem) {
         mActionItemBar.addView(actionItem);
-
-        if (!sActionItems.contains(actionItem))
-            sActionItems.add(actionItem);
     }
 
     @Override
-    public void removeActionItem(int index) {
-        mActionItemBar.removeViewAt(index);
-        sActionItems.remove(index);
-    }
-
-    @Override
-    public int getActionItemsCount() {
-        return sActionItems.size();
+    public void removeActionItem(View actionItem) {
+        mActionItemBar.removeView(actionItem);
     }
 
     public void show() {

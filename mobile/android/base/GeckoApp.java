@@ -58,6 +58,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.PowerManager;
 import android.os.StrictMode;
+import android.provider.ContactsContract;
 
 import android.telephony.CellLocation;
 import android.telephony.NeighboringCellInfo;
@@ -144,6 +145,7 @@ abstract public class GeckoApp
     public static final String ACTION_DEBUG         = "org.mozilla.gecko.DEBUG";
     public static final String ACTION_BOOKMARK      = "org.mozilla.gecko.BOOKMARK";
     public static final String ACTION_LOAD          = "org.mozilla.gecko.LOAD";
+    public static final String ACTION_LAUNCH_SETTINGS = "org.mozilla.gecko.SETTINGS";
     public static final String ACTION_INIT_PW       = "org.mozilla.gecko.INIT_PW";
     public static final String SAVED_STATE_IN_BACKGROUND = "inBackground";
     public static final String SAVED_STATE_PRIVATE_SESSION = "privateSession";
@@ -180,6 +182,9 @@ abstract public class GeckoApp
     protected DoorHangerPopup mDoorHangerPopup;
     protected FormAssistPopup mFormAssistPopup;
     protected TabsPanel mTabsPanel;
+
+    // Handles notification messages from javascript
+    protected NotificationHelper mNotificationHelper;
 
     protected LayerView mLayerView;
     private AbsoluteLayout mPluginContainer;
@@ -329,7 +334,7 @@ abstract public class GeckoApp
     @Override
     public MenuInflater getMenuInflater() {
         if (Build.VERSION.SDK_INT >= 11)
-            return new GeckoMenuInflater(sAppContext);
+            return new GeckoMenuInflater(this);
         else
             return super.getMenuInflater();
     }
@@ -602,7 +607,7 @@ abstract public class GeckoApp
                         ThreadUtils.postToBackgroundThread(new Runnable() {
                             @Override
                             public void run() {
-                                BrowserDB.addBookmark(GeckoApp.sAppContext.getContentResolver(), title, url);
+                                BrowserDB.addBookmark(getContentResolver(), title, url);
                             }
                         });
                     }
@@ -672,6 +677,19 @@ abstract public class GeckoApp
                 } else {
                     mPrivateBrowsingSession = message.getString("session");
                 }
+            } else if (event.equals("Contact:Add")) {                
+                if (!message.isNull("email")) {
+                    Uri contactUri = Uri.parse(message.getString("email"));       
+                    Intent i = new Intent(ContactsContract.Intents.SHOW_OR_CREATE_CONTACT, contactUri);
+                    startActivity(i);
+                } else if (!message.isNull("phone")) {
+                    Uri contactUri = Uri.parse(message.getString("phone"));       
+                    Intent i = new Intent(ContactsContract.Intents.SHOW_OR_CREATE_CONTACT, contactUri);
+                    startActivity(i);
+                } else {
+                    // something went wrong.
+                    Log.e(LOGTAG, "Received Contact:Add message with no email nor phone number");
+                }                
             }
         } catch (Exception e) {
             Log.e(LOGTAG, "Exception handling message \"" + event + "\":", e);
@@ -777,7 +795,7 @@ abstract public class GeckoApp
         ThreadUtils.postToUiThread(new Runnable() {
             @Override
             public void run() {
-                Toast.makeText(sAppContext, resId, duration).show();
+                Toast.makeText(GeckoApp.this, resId, duration).show();
             }
         });
     }
@@ -788,9 +806,9 @@ abstract public class GeckoApp
             public void run() {
                 Toast toast;
                 if (duration.equals("long"))
-                    toast = Toast.makeText(sAppContext, message, Toast.LENGTH_LONG);
+                    toast = Toast.makeText(GeckoApp.this, message, Toast.LENGTH_LONG);
                 else
-                    toast = Toast.makeText(sAppContext, message, Toast.LENGTH_SHORT);
+                    toast = Toast.makeText(GeckoApp.this, message, Toast.LENGTH_SHORT);
                 toast.show();
             }
         });
@@ -902,21 +920,21 @@ abstract public class GeckoApp
     }
 
     private void setImageAsWallpaper(final String aSrc) {
-        final String progText = sAppContext.getString(R.string.wallpaper_progress);
-        final String successText = sAppContext.getString(R.string.wallpaper_success);
-        final String failureText = sAppContext.getString(R.string.wallpaper_fail);
+        final String progText = getString(R.string.wallpaper_progress);
+        final String successText = getString(R.string.wallpaper_success);
+        final String failureText = getString(R.string.wallpaper_fail);
         final String fileName = aSrc.substring(aSrc.lastIndexOf("/") + 1);
-        final PendingIntent emptyIntent = PendingIntent.getActivity(sAppContext, 0, new Intent(), 0);
-        final AlertNotification notification = new AlertNotification(sAppContext, fileName.hashCode(), 
+        final PendingIntent emptyIntent = PendingIntent.getActivity(this, 0, new Intent(), 0);
+        final AlertNotification notification = new AlertNotification(this, fileName.hashCode(),
                                 R.drawable.alert_download, fileName, progText, System.currentTimeMillis(), null);
-        notification.setLatestEventInfo(sAppContext, fileName, progText, emptyIntent );
+        notification.setLatestEventInfo(this, fileName, progText, emptyIntent );
         notification.flags |= Notification.FLAG_ONGOING_EVENT;
         notification.show();
         new UiAsyncTask<Void, Void, Boolean>(ThreadUtils.getBackgroundHandler()) {
 
             @Override
             protected Boolean doInBackground(Void... params) {
-                WallpaperManager mgr = WallpaperManager.getInstance(sAppContext);
+                WallpaperManager mgr = WallpaperManager.getInstance(GeckoApp.this);
                 if (mgr == null) {
                     return false;
                 }
@@ -1034,10 +1052,10 @@ abstract public class GeckoApp
                 notification.flags |= Notification.FLAG_AUTO_CANCEL;
                 if(!success) {
                     notification.tickerText = failureText;
-                    notification.setLatestEventInfo(sAppContext, fileName, failureText, emptyIntent);
+                    notification.setLatestEventInfo(GeckoApp.this, fileName, failureText, emptyIntent);
                 } else {
                     notification.tickerText = successText;
-                    notification.setLatestEventInfo(sAppContext, fileName, successText, emptyIntent);
+                    notification.setLatestEventInfo(GeckoApp.this, fileName, successText, emptyIntent);
                 }
                 notification.show();
             }
@@ -1228,6 +1246,7 @@ abstract public class GeckoApp
 
         // Set up tabs panel.
         mTabsPanel = (TabsPanel) findViewById(R.id.tabs_panel);
+        mNotificationHelper = new NotificationHelper(this);
 
         // Check if the last run was exited due to a normal kill while
         // we were in the background, or a more harsh kill while we were
@@ -1272,7 +1291,7 @@ abstract public class GeckoApp
                 final String profilePath = getProfile().getDir().getAbsolutePath();
                 final EventDispatcher dispatcher = GeckoAppShell.getEventDispatcher();
                 Log.i(LOGTAG, "Creating BrowserHealthRecorder.");
-                mHealthRecorder = new BrowserHealthRecorder(sAppContext, profilePath, dispatcher,
+                mHealthRecorder = new BrowserHealthRecorder(GeckoApp.this, profilePath, dispatcher,
                                                             previousSession);
             }
         });
@@ -1416,11 +1435,20 @@ abstract public class GeckoApp
             }, 1000 * 5 /* 5 seconds */);
         }
 
+        // Check if launched from data reporting notification.
+        if (ACTION_LAUNCH_SETTINGS.equals(action)) {
+            Intent settingsIntent = new Intent(GeckoApp.this, GeckoPreferences.class);
+            // Copy extras.
+            settingsIntent.putExtras(intent);
+            startActivity(settingsIntent);
+        }
+
         //app state callbacks
         mAppStateListeners = new LinkedList<GeckoAppShell.AppStateListener>();
 
         //register for events
         registerEventListener("log");
+        registerEventListener("Reader:ListCountRequest");
         registerEventListener("Reader:Added");
         registerEventListener("Reader:Removed");
         registerEventListener("Reader:Share");
@@ -1457,6 +1485,7 @@ abstract public class GeckoApp
         registerEventListener("Update:Download");
         registerEventListener("Update:Install");
         registerEventListener("PrivateBrowsing:Data");
+        registerEventListener("Contact:Add");
 
         if (SmsManager.getInstance() != null) {
           SmsManager.getInstance().start();
@@ -1501,13 +1530,15 @@ abstract public class GeckoApp
 
                 // Record our launch time for the announcements service
                 // to use in assessing inactivity.
-                final Context context = GeckoApp.sAppContext;
+                final Context context = GeckoApp.this;
                 AnnouncementsBroadcastService.recordLastLaunch(context);
 
-                // Kick off our background service to fetch product announcements.
-                // We do this by invoking the broadcast receiver, which uses the
-                // system alarm infrastructure to perform tasks at intervals.
+                // Kick off our background services that fetch product
+                // announcements and upload health reports.  We do this by
+                // invoking the broadcast receiver, which uses the system alarm
+                // infrastructure to perform tasks at intervals.
                 GeckoPreferences.broadcastAnnouncementsPref(context);
+                GeckoPreferences.broadcastHealthReportUploadPref(context);
 
                 /*
                   XXXX see bug 635342
@@ -1718,6 +1749,11 @@ abstract public class GeckoApp
                 alertCookie = "";
         }
         handleNotification(ACTION_ALERT_CALLBACK, alertName, alertCookie);
+
+        if (intent.hasExtra(NotificationHelper.NOTIFICATION_ID)) {
+            String id = intent.getStringExtra(NotificationHelper.NOTIFICATION_ID);
+            mNotificationHelper.hideNotification(id);
+        }
     }
 
     @Override
@@ -1761,6 +1797,12 @@ abstract public class GeckoApp
             GeckoAppShell.sendEventToGecko(GeckoEvent.createURILoadEvent(uri));
         } else if (ACTION_ALERT_CALLBACK.equals(action)) {
             processAlertCallback(intent);
+        } if (ACTION_LAUNCH_SETTINGS.equals(action)) {
+            // Check if launched from data reporting notification.
+            Intent settingsIntent = new Intent(GeckoApp.this, GeckoPreferences.class);
+            // Copy extras.
+            settingsIntent.putExtras(intent);
+            startActivity(settingsIntent);
         }
     }
 
@@ -1792,8 +1834,6 @@ abstract public class GeckoApp
         // After an onPause, the activity is back in the foreground.
         // Undo whatever we did in onPause.
         super.onResume();
-
-        SiteIdentityPopup.getInstance().dismiss();
 
         int newOrientation = getResources().getConfiguration().orientation;
 
@@ -1902,6 +1942,7 @@ abstract public class GeckoApp
     public void onDestroy()
     {
         unregisterEventListener("log");
+        unregisterEventListener("Reader:ListCountRequest");
         unregisterEventListener("Reader:Added");
         unregisterEventListener("Reader:Removed");
         unregisterEventListener("Reader:Share");
@@ -1938,6 +1979,7 @@ abstract public class GeckoApp
         unregisterEventListener("Update:Download");
         unregisterEventListener("Update:Install");
         unregisterEventListener("PrivateBrowsing:Data");
+        unregisterEventListener("Contact:Add");
 
         deleteTempFiles();
 
@@ -1951,7 +1993,8 @@ abstract public class GeckoApp
             mPromptService.destroy();
         if (mTextSelection != null)
             mTextSelection.destroy();
-        SiteIdentityPopup.clearInstance();
+        if (mNotificationHelper != null)
+            mNotificationHelper.destroy();
 
         Tabs.getInstance().detachFromActivity(this);
 
@@ -2013,7 +2056,6 @@ abstract public class GeckoApp
             mOrientation = newConfig.orientation;
             if (mFormAssistPopup != null)
                 mFormAssistPopup.hide();
-            SiteIdentityPopup.getInstance().dismiss();
             refreshChrome();
         }
     }
@@ -2195,12 +2237,6 @@ abstract public class GeckoApp
         if (mFullScreenPluginView != null) {
             GeckoAppShell.onFullScreenPluginHidden(mFullScreenPluginView);
             removeFullScreenPluginView(mFullScreenPluginView);
-            return;
-        }
-
-        SiteIdentityPopup identityPopup = SiteIdentityPopup.getInstance();
-        if (identityPopup.isShowing()) {
-            identityPopup.dismiss();
             return;
         }
 

@@ -107,6 +107,10 @@
 #include "gfxWindowsPlatform.h"
 #endif
 
+#ifdef MOZ_WIDGET_GONK
+#include "mozilla/layers/ShadowLayers.h"
+#endif
+
 // windows.h (included by chromium code) defines this, in its infinite wisdom
 #undef DrawText
 
@@ -782,6 +786,13 @@ CanvasRenderingContext2D::EnsureTarget()
        if (gfxPlatform::GetPlatform()->UseAcceleratedSkiaCanvas()) {
          SurfaceCaps caps = SurfaceCaps::ForRGBA();
          caps.preserve = true;
+
+#ifdef MOZ_WIDGET_GONK
+         layers::ShadowLayerForwarder *forwarder = layerManager->AsShadowForwarder();
+         if (forwarder) {
+           caps.surfaceAllocator = static_cast<layers::ISurfaceAllocator*>(forwarder);
+         }
+#endif
 
          mGLContext = mozilla::gl::GLContextProvider::CreateOffscreen(gfxIntSize(size.width,
                                                                                  size.height),
@@ -3207,6 +3218,10 @@ CanvasRenderingContext2D::DrawWindow(nsIDOMWindow* window, double x,
     drawSurf =
       gfxPlatform::GetPlatform()->CreateOffscreenSurface(gfxIntSize(ceil(w), ceil(h)),
                                                          gfxASurface::CONTENT_COLOR_ALPHA);
+    if (!drawSurf) {
+      error.Throw(NS_ERROR_FAILURE);
+      return;
+    }
 
     drawSurf->SetDeviceOffset(gfxPoint(-floor(x), -floor(y)));
     thebes = new gfxContext(drawSurf);
@@ -3220,6 +3235,11 @@ CanvasRenderingContext2D::DrawWindow(nsIDOMWindow* window, double x,
 
     drawSurf->SetDeviceOffset(gfxPoint(0, 0));
     nsRefPtr<gfxImageSurface> img = drawSurf->GetAsReadableARGB32ImageSurface();
+    if (!img || !img->Data()) {
+      error.Throw(NS_ERROR_FAILURE);
+      return;
+    }
+
     RefPtr<SourceSurface> data =
       mTarget->CreateSourceSurfaceFromData(img->Data(),
                                            IntSize(size.width, size.height),

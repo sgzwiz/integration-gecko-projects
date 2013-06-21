@@ -1209,6 +1209,9 @@ InitSystemMetrics()
       case LookAndFeel::eWindowsTheme_Aero:
         sSystemMetrics->AppendElement(nsGkAtoms::windows_theme_aero);
         break;
+      case LookAndFeel::eWindowsTheme_AeroLite:
+        sSystemMetrics->AppendElement(nsGkAtoms::windows_theme_aero_lite);
+        break;
       case LookAndFeel::eWindowsTheme_LunaBlue:
         sSystemMetrics->AppendElement(nsGkAtoms::windows_theme_luna_blue);
         break;
@@ -2320,10 +2323,16 @@ static bool SelectorMatchesTree(Element* aPrevElement,
         // it tests from the top of the content tree, down.  This
         // doesn't matter much for performance since most selectors
         // don't match.  (If most did, it might be faster...)
+        Element* styleScope = aTreeMatchContext.mCurrentStyleScope;
         if (SelectorMatchesTree(element, selector, aTreeMatchContext,
                                 aLookForRelevantLink)) {
           return true;
         }
+        // We want to reset mCurrentStyleScope on aTreeMatchContext
+        // back to its state before the SelectorMatchesTree call, in
+        // case that call happens to traverse past the style scope element
+        // and sets it to null.
+        aTreeMatchContext.mCurrentStyleScope = styleScope;
       }
       selector = selector->mNext;
     }
@@ -2462,6 +2471,10 @@ static inline nsRestyleHint RestyleHintForOp(PRUnichar oper)
 nsRestyleHint
 nsCSSRuleProcessor::HasStateDependentStyle(StateRuleProcessorData* aData)
 {
+  MOZ_ASSERT(!aData->mTreeMatchContext.mForScopedStyle,
+             "mCurrentStyleScope will need to be saved and restored after the "
+             "SelectorMatchesTree call");
+
   RuleCascadeData* cascade = GetRuleCascade(aData->mPresContext);
 
   // Look up the content node in the state rule list, which points to
@@ -3333,6 +3346,10 @@ nsCSSRuleProcessor::SelectorListMatches(Element* aElement,
                                         TreeMatchContext& aTreeMatchContext,
                                         nsCSSSelectorList* aSelectorList)
 {
+  MOZ_ASSERT(!aTreeMatchContext.mForScopedStyle,
+             "mCurrentStyleScope will need to be saved and restored after the "
+             "SelectorMatchesTree call");
+
   while (aSelectorList) {
     nsCSSSelector* sel = aSelectorList->mSelectors;
     NS_ASSERTION(sel, "Should have *some* selectors");

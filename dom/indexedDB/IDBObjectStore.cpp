@@ -14,6 +14,7 @@
 #include "jsfriendapi.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/FileHandleBinding.h"
 #include "mozilla/dom/StructuredCloneTags.h"
 #include "mozilla/dom/ipc/Blob.h"
 #include "mozilla/dom/quota/FileStreams.h"
@@ -582,12 +583,12 @@ JSClass ThreadLocalJSRuntime::sGlobalClass = {
 
 inline
 already_AddRefed<IDBRequest>
-GenerateRequest(IDBObjectStore* aObjectStore, JSContext* aCx)
+GenerateRequest(IDBObjectStore* aObjectStore)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   IDBDatabase* database = aObjectStore->Transaction()->Database();
   return IDBRequest::Create(aObjectStore, database,
-                            aObjectStore->Transaction(), aCx);
+                            aObjectStore->Transaction());
 }
 
 struct MOZ_STACK_CLASS GetAddInfoClosure
@@ -1839,7 +1840,7 @@ IDBObjectStore::AddOrPut(const jsval& aValue,
     return rv;
   }
 
-  nsRefPtr<IDBRequest> request = GenerateRequest(this, aCx);
+  nsRefPtr<IDBRequest> request = GenerateRequest(this);
   NS_ENSURE_TRUE(request, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
   nsRefPtr<AddHelper> helper =
@@ -1896,7 +1897,7 @@ IDBObjectStore::AddOrPutInternal(
     return NS_ERROR_DOM_INDEXEDDB_READ_ONLY_ERR;
   }
 
-  nsRefPtr<IDBRequest> request = GenerateRequest(this, nullptr);
+  nsRefPtr<IDBRequest> request = GenerateRequest(this);
   NS_ENSURE_TRUE(request, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
   StructuredCloneWriteInfo cloneWriteInfo;
@@ -1997,7 +1998,7 @@ IDBObjectStore::GetInternal(IDBKeyRange* aKeyRange,
     return NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR;
   }
 
-  nsRefPtr<IDBRequest> request = GenerateRequest(this, aCx);
+  nsRefPtr<IDBRequest> request = GenerateRequest(this);
   NS_ENSURE_TRUE(request, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
   nsRefPtr<GetHelper> helper =
@@ -2030,7 +2031,7 @@ IDBObjectStore::GetAllInternal(IDBKeyRange* aKeyRange,
     return NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR;
   }
 
-  nsRefPtr<IDBRequest> request = GenerateRequest(this, aCx);
+  nsRefPtr<IDBRequest> request = GenerateRequest(this);
   NS_ENSURE_TRUE(request, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
   nsRefPtr<GetAllHelper> helper =
@@ -2069,7 +2070,7 @@ IDBObjectStore::DeleteInternal(IDBKeyRange* aKeyRange,
     return NS_ERROR_DOM_INDEXEDDB_READ_ONLY_ERR;
   }
 
-  nsRefPtr<IDBRequest> request = GenerateRequest(this, aCx);
+  nsRefPtr<IDBRequest> request = GenerateRequest(this);
   NS_ENSURE_TRUE(request, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
   nsRefPtr<DeleteHelper> helper =
@@ -2104,7 +2105,7 @@ IDBObjectStore::ClearInternal(JSContext* aCx,
     return NS_ERROR_DOM_INDEXEDDB_READ_ONLY_ERR;
   }
 
-  nsRefPtr<IDBRequest> request = GenerateRequest(this, aCx);
+  nsRefPtr<IDBRequest> request = GenerateRequest(this);
   NS_ENSURE_TRUE(request, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
   nsRefPtr<ClearHelper> helper(new ClearHelper(mTransaction, request, this));
@@ -2135,7 +2136,7 @@ IDBObjectStore::CountInternal(IDBKeyRange* aKeyRange,
     return NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR;
   }
 
-  nsRefPtr<IDBRequest> request = GenerateRequest(this, aCx);
+  nsRefPtr<IDBRequest> request = GenerateRequest(this);
   NS_ENSURE_TRUE(request, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
   nsRefPtr<CountHelper> helper =
@@ -2170,7 +2171,7 @@ IDBObjectStore::OpenCursorInternal(IDBKeyRange* aKeyRange,
   IDBCursor::Direction direction =
     static_cast<IDBCursor::Direction>(aDirection);
 
-  nsRefPtr<IDBRequest> request = GenerateRequest(this, aCx);
+  nsRefPtr<IDBRequest> request = GenerateRequest(this);
   NS_ENSURE_TRUE(request, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
   nsRefPtr<OpenCursorHelper> helper =
@@ -2386,7 +2387,7 @@ IDBObjectStore::GetKeyPath(JSContext* aCx,
     return NS_OK;
   }
 
-  nsresult rv = GetKeyPath().ToJSVal(aCx, &mCachedKeyPath);
+  nsresult rv = GetKeyPath().ToJSVal(aCx, mCachedKeyPath);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (JSVAL_IS_GCTHING(mCachedKeyPath)) {
@@ -3133,7 +3134,12 @@ AddHelper::GetSuccessResult(JSContext* aCx,
 
   mCloneWriteInfo.mCloneBuffer.clear();
 
-  return mKey.ToJSVal(aCx, aVal);
+  JS::Rooted<JS::Value> value(aCx);
+  nsresult rv = mKey.ToJSVal(aCx, &value);
+  if (NS_SUCCEEDED(rv)) {
+    *aVal = value;
+  }
+  return rv;
 }
 
 void

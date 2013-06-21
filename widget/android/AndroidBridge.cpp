@@ -2114,13 +2114,13 @@ AndroidBridge::IsTablet()
 }
 
 void
-AndroidBridge::SetFirstPaintViewport(const LayerIntPoint& aOffset, float aZoom, const LayerIntRect& aPageRect, const CSSRect& aCssPageRect)
+AndroidBridge::SetFirstPaintViewport(const LayerIntPoint& aOffset, float aZoom, const CSSRect& aCssPageRect)
 {
     AndroidGeckoLayerClient *client = mLayerClient;
     if (!client)
         return;
 
-    client->SetFirstPaintViewport(aOffset, aZoom, aPageRect, aCssPageRect);
+    client->SetFirstPaintViewport(aOffset, aZoom, aCssPageRect);
 }
 
 void
@@ -2147,8 +2147,8 @@ AndroidBridge::SyncViewportInfo(const LayerIntRect& aDisplayPort, float aDisplay
                              aOffset);
 }
 
-void AndroidBridge::SyncFrameMetrics(const gfx::Point& aScrollOffset, float aZoom, const CSSRect& aCssPageRect,
-                                     bool aLayersUpdated, const gfx::Rect& aDisplayPort, float aDisplayResolution,
+void AndroidBridge::SyncFrameMetrics(const ScreenPoint& aScrollOffset, float aZoom, const CSSRect& aCssPageRect,
+                                     bool aLayersUpdated, const CSSRect& aDisplayPort, float aDisplayResolution,
                                      bool aIsFirstPaint, gfx::Margin& aFixedLayerMargins, ScreenPoint& aOffset)
 {
     AndroidGeckoLayerClient *client = mLayerClient;
@@ -2734,7 +2734,7 @@ AndroidBridge::IsContentDocumentDisplayed()
 }
 
 bool
-AndroidBridge::ProgressiveUpdateCallback(bool aHasPendingNewThebesContent, const gfx::Rect& aDisplayPort, float aDisplayResolution, bool aDrawingCritical, gfx::Rect& aViewport, float& aScaleX, float& aScaleY)
+AndroidBridge::ProgressiveUpdateCallback(bool aHasPendingNewThebesContent, const LayerRect& aDisplayPort, float aDisplayResolution, bool aDrawingCritical, gfx::Rect& aViewport, float& aScaleX, float& aScaleY)
 {
     AndroidGeckoLayerClient *client = mLayerClient;
     if (!client)
@@ -2784,19 +2784,17 @@ AndroidBridge::RequestContentRepaint(const mozilla::layers::FrameMetrics& aFrame
         return;
     }
 
-    float resolution = mozilla::layers::AsyncPanZoomController::CalculateResolution(aFrameMetrics).width;
-    float dpX = (aFrameMetrics.mDisplayPort.x + aFrameMetrics.mScrollOffset.x) * resolution;
-    float dpY = (aFrameMetrics.mDisplayPort.y + aFrameMetrics.mScrollOffset.y) * resolution;
-    float dpW = aFrameMetrics.mDisplayPort.width * resolution;
-    float dpH = aFrameMetrics.mDisplayPort.height * resolution;
+    CSSToScreenScale resolution =
+      mozilla::layers::AsyncPanZoomController::CalculateResolution(aFrameMetrics);
+    ScreenRect dp = (aFrameMetrics.mDisplayPort + aFrameMetrics.mScrollOffset) * resolution;
 
     AutoLocalJNIFrame jniFrame(env, 0);
     env->CallVoidMethod(mNativePanZoomController, jRequestContentRepaint,
-        dpX, dpY, dpW, dpH, resolution);
+        dp.x, dp.y, dp.width, dp.height, resolution.scale);
 }
 
 void
-AndroidBridge::HandleDoubleTap(const nsIntPoint& aPoint)
+AndroidBridge::HandleDoubleTap(const CSSIntPoint& aPoint)
 {
     nsCString data = nsPrintfCString("{ \"x\": %d, \"y\": %d }", aPoint.x, aPoint.y);
     nsAppShell::gAppShell->PostEvent(AndroidGeckoEvent::MakeBroadcastEvent(
@@ -2804,7 +2802,7 @@ AndroidBridge::HandleDoubleTap(const nsIntPoint& aPoint)
 }
 
 void
-AndroidBridge::HandleSingleTap(const nsIntPoint& aPoint)
+AndroidBridge::HandleSingleTap(const CSSIntPoint& aPoint)
 {
     nsCString data = nsPrintfCString("{ \"x\": %d, \"y\": %d }", aPoint.x, aPoint.y);
     nsAppShell::gAppShell->PostEvent(AndroidGeckoEvent::MakeBroadcastEvent(
@@ -2812,7 +2810,7 @@ AndroidBridge::HandleSingleTap(const nsIntPoint& aPoint)
 }
 
 void
-AndroidBridge::HandleLongTap(const nsIntPoint& aPoint)
+AndroidBridge::HandleLongTap(const CSSIntPoint& aPoint)
 {
     nsCString data = nsPrintfCString("{ \"x\": %d, \"y\": %d }", aPoint.x, aPoint.y);
     nsAppShell::gAppShell->PostEvent(AndroidGeckoEvent::MakeBroadcastEvent(
@@ -2820,7 +2818,7 @@ AndroidBridge::HandleLongTap(const nsIntPoint& aPoint)
 }
 
 void
-AndroidBridge::SendAsyncScrollDOMEvent(const gfx::Rect& aContentRect, const gfx::Size& aScrollableSize)
+AndroidBridge::SendAsyncScrollDOMEvent(const CSSRect& aContentRect, const CSSSize& aScrollableSize)
 {
     // FIXME implement this
 }

@@ -9,7 +9,6 @@
  */
 #include "jsexn.h"
 
-#include <stdlib.h>
 #include <string.h>
 
 #include "mozilla/PodOperations.h"
@@ -19,7 +18,6 @@
 #include "jsutil.h"
 #include "jsapi.h"
 #include "jscntxt.h"
-#include "jsversion.h"
 #include "jsfun.h"
 #include "jsnum.h"
 #include "jsobj.h"
@@ -252,7 +250,7 @@ InitExnPrivate(JSContext *cx, HandleObject exnObject, HandleString message,
     JS_ASSERT(exnObject->isError());
     JS_ASSERT(!exnObject->getPrivate());
 
-    JSCheckAccessOp checkAccess = cx->runtime->securityCallbacks->checkObjectAccess;
+    JSCheckAccessOp checkAccess = cx->runtime()->securityCallbacks->checkObjectAccess;
 
     Vector<JSStackTraceStackElem> frames(cx);
     {
@@ -274,7 +272,7 @@ InitExnPrivate(JSContext *cx, HandleObject exnObject, HandleString message,
             if (i.isNonEvalFunctionFrame()) {
                 JSAtom *atom = i.callee()->displayAtom();
                 if (atom == NULL)
-                    atom = cx->runtime->emptyString;
+                    atom = cx->runtime()->emptyString;
                 frame.funName = atom;
             } else {
                 frame.funName = NULL;
@@ -579,7 +577,7 @@ Exception(JSContext *cx, unsigned argc, Value *vp)
             return false;
         args[1].setString(filename);
     } else {
-        filename = cx->runtime->emptyString;
+        filename = cx->runtime()->emptyString;
         if (!iter.done()) {
             if (const char *cfilename = script->filename()) {
                 filename = FilenameToString(cx, cfilename);
@@ -598,7 +596,7 @@ Exception(JSContext *cx, unsigned argc, Value *vp)
         lineno = iter.done() ? 0 : PCToLineNumber(script, iter.pc(), &column);
     }
 
-    int exnType = args.callee().toFunction()->getExtendedSlot(0).toInt32();
+    int exnType = args.callee().as<JSFunction>().getExtendedSlot(0).toInt32();
     if (!InitExnPrivate(cx, obj, message, filename, lineno, column, NULL, exnType))
         return false;
 
@@ -645,7 +643,7 @@ exn_toString(JSContext *cx, unsigned argc, Value *vp)
     /* Step 6. */
     RootedString message(cx);
     if (msgVal.isUndefined()) {
-        message = cx->runtime->emptyString;
+        message = cx->runtime()->emptyString;
     } else {
         message = ToString<CanGC>(cx, msgVal);
         if (!message)
@@ -791,7 +789,7 @@ InitErrorClass(JSContext *cx, Handle<GlobalObject*> global, int type, HandleObje
 
     RootedValue nameValue(cx, StringValue(name));
     RootedValue zeroValue(cx, Int32Value(0));
-    RootedValue empty(cx, StringValue(cx->runtime->emptyString));
+    RootedValue empty(cx, StringValue(cx->runtime()->emptyString));
     RootedId nameId(cx, NameToId(cx->names().name));
     RootedId messageId(cx, NameToId(cx->names().message));
     RootedId fileNameId(cx, NameToId(cx->names().fileName));
@@ -832,10 +830,10 @@ InitErrorClass(JSContext *cx, Handle<GlobalObject*> global, int type, HandleObje
 JSObject *
 js_InitExceptionClasses(JSContext *cx, HandleObject obj)
 {
-    JS_ASSERT(obj->isGlobal());
+    JS_ASSERT(obj->is<GlobalObject>());
     JS_ASSERT(obj->isNative());
 
-    Rooted<GlobalObject*> global(cx, &obj->asGlobal());
+    Rooted<GlobalObject*> global(cx, &obj->as<GlobalObject>());
 
     RootedObject objectProto(cx, global->getOrCreateObjectPrototype(cx));
     if (!objectProto)
@@ -865,9 +863,9 @@ js_GetLocalizedErrorMessage(JSContext* cx, void *userRef, const char *locale,
 {
     const JSErrorFormatString *errorString = NULL;
 
-    if (cx->runtime->localeCallbacks && cx->runtime->localeCallbacks->localeGetErrorMessage) {
-        errorString = cx->runtime->localeCallbacks
-                                 ->localeGetErrorMessage(userRef, locale, errorNumber);
+    if (cx->runtime()->localeCallbacks && cx->runtime()->localeCallbacks->localeGetErrorMessage) {
+        errorString = cx->runtime()->localeCallbacks
+                                   ->localeGetErrorMessage(userRef, locale, errorNumber);
     }
     if (!errorString)
         errorString = js_GetErrorMessage(userRef, locale, errorNumber);
@@ -892,7 +890,7 @@ js::GetErrorTypeName(JSContext* cx, int16_t exnType)
 
 #if defined ( DEBUG_mccabe ) && defined ( PRINTNAMES )
 /* For use below... get character strings for error name and exception name */
-static struct exnname { char *name; char *exception; } errortoexnname[] = {
+static const struct exnname { char *name; char *exception; } errortoexnname[] = {
 #define MSG_DEF(name, number, count, exception, format) \
     {#name, #exception},
 #include "js.msg"
@@ -1160,11 +1158,11 @@ js_CopyErrorObject(JSContext *cx, HandleObject errobj, HandleObject scope)
     ScopedJSFreePtr<JSErrorReport> autoFreeErrorReport(copy->errorReport);
 
     copy->message.init(priv->message);
-    if (!cx->compartment->wrap(cx, &copy->message))
+    if (!cx->compartment()->wrap(cx, &copy->message))
         return NULL;
     JS::Anchor<JSString *> messageAnchor(copy->message);
     copy->filename.init(priv->filename);
-    if (!cx->compartment->wrap(cx, &copy->filename))
+    if (!cx->compartment()->wrap(cx, &copy->filename))
         return NULL;
     JS::Anchor<JSString *> filenameAnchor(copy->filename);
     copy->lineno = priv->lineno;

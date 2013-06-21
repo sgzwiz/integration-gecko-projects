@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef TokenStream_h__
-#define TokenStream_h__
+#ifndef frontend_TokenStream_h
+#define frontend_TokenStream_h
 
 /*
  * JS lexical scanner interface.
@@ -832,14 +832,14 @@ class MOZ_STACK_CLASS TokenStream
             ptr--;
         }
 
-        const jschar *addressOfNextRawChar() const {
-            JS_ASSERT(ptr);     /* make sure haven't been poisoned */
+        const jschar *addressOfNextRawChar(bool allowPoisoned = false) const {
+            JS_ASSERT_IF(!allowPoisoned, ptr);     /* make sure haven't been poisoned */
             return ptr;
         }
 
         /* Use this with caution! */
-        void setAddressOfNextRawChar(const jschar *a) {
-            JS_ASSERT(a);
+        void setAddressOfNextRawChar(const jschar *a, bool allowPoisoned = false) {
+            JS_ASSERT_IF(!allowPoisoned, a);
             ptr = a;
         }
 
@@ -878,7 +878,7 @@ class MOZ_STACK_CLASS TokenStream
     bool matchUnicodeEscapeIdStart(int32_t *c);
     bool matchUnicodeEscapeIdent(int32_t *c);
     bool peekChars(int n, jschar *cp);
-    bool getAtSourceMappingURL(bool isMultiline);
+    bool getSourceMappingURL(bool isMultiline, bool shouldWarnDeprecated);
 
     // |expect| cannot be an EOL char.
     bool matchChar(int32_t expect) {
@@ -956,4 +956,4 @@ extern const char *
 TokenKindToString(js::frontend::TokenKind tt);
 #endif
 
-#endif /* TokenStream_h__ */
+#endif /* frontend_TokenStream_h */

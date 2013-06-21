@@ -4,8 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#if !defined(jsion_asmjsmodule_h__) && defined(JS_ION)
-#define jsion_asmjsmodule_h__
+#ifndef ion_AsmJSModule_h
+#define ion_AsmJSModule_h
+
+#ifdef JS_ION
 
 #include "gc/Marking.h"
 #include "ion/RegisterSets.h"
@@ -146,29 +148,44 @@ class AsmJSModule
     class Exit
     {
         unsigned ffiIndex_;
+
         union {
             unsigned codeOffset_;
             uint8_t *code_;
-        } u;
+        } interp;
+
+        union {
+            unsigned codeOffset_;
+            uint8_t *code_;
+        } ion;
 
       public:
         Exit(unsigned ffiIndex)
           : ffiIndex_(ffiIndex)
         {
-          u.codeOffset_ = 0;
+          interp.codeOffset_ = 0;
+          ion.codeOffset_ = 0;
         }
         unsigned ffiIndex() const {
             return ffiIndex_;
         }
-        void initCodeOffset(unsigned off) {
-            JS_ASSERT(!u.codeOffset_);
-            u.codeOffset_ = off;
+        void initInterpOffset(unsigned off) {
+            JS_ASSERT(!interp.codeOffset_);
+            interp.codeOffset_ = off;
+        }
+        void initIonOffset(unsigned off) {
+            JS_ASSERT(!ion.codeOffset_);
+            ion.codeOffset_ = off;
         }
         void patch(uint8_t *baseAddress) {
-            u.code_ = baseAddress + u.codeOffset_;
+            interp.code_ = baseAddress + interp.codeOffset_;
+            ion.code_ = baseAddress + ion.codeOffset_;
         }
-        uint8_t *code() const {
-            return u.code_;
+        uint8_t *interpCode() const {
+            return interp.code_;
+        }
+        uint8_t *ionCode() const {
+            return ion.code_;
         }
     };
 #ifdef JS_CPU_ARM
@@ -701,7 +718,19 @@ class AsmJSModule
     const PostLinkFailureInfo &postLinkFailureInfo() const {
         return postLinkFailureInfo_;
     }
+
+    size_t exitDatumToExitIndex(ExitDatum *exit) const {
+        ExitDatum *first = &exitIndexToGlobalDatum(0);
+        JS_ASSERT(exit >= first && exit < first + numExits());
+        return exit - first;
+    }
+
+    void detachIonCompilation(size_t exitIndex) const {
+        ExitDatum &exitDatum = exitIndexToGlobalDatum(exitIndex);
+        exitDatum.exit = exit(exitIndex).interpCode();
+    }
 };
+
 
 // The AsmJSModule C++ object is held by a JSObject that takes care of calling
 // 'trace' and the destructor on finalization.
@@ -719,5 +748,6 @@ SetAsmJSModuleObject(JSFunction *moduleFun, JSObject *moduleObj);
 
 }  // namespace js
 
-#endif  // jsion_asmjsmodule_h__
+#endif  // JS_ION
 
+#endif /* ion_AsmJSModule_h */

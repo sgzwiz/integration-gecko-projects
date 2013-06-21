@@ -238,6 +238,7 @@ static uint32_t gValidateOrigin = 0xffffffff;
 // Hint for native dispatch of events on how long to delay after 
 // all documents have loaded in milliseconds before favoring normal
 // native event dispatch priorites over performance
+// Can be overridden with docshell.event_starvation_delay_hint pref.
 #define NS_EVENT_STARVATION_DELAY_HINT 2000
 
 #ifdef PR_LOGGING
@@ -251,11 +252,14 @@ const char kBrandBundleURL[]      = "chrome://branding/locale/brand.properties";
 const char kAppstringsBundleURL[] = "chrome://global/locale/appstrings.properties";
 
 static void
-FavorPerformanceHint(bool perfOverStarvation, uint32_t starvationDelay)
+FavorPerformanceHint(bool perfOverStarvation)
 {
     nsCOMPtr<nsIAppShell> appShell = do_GetService(kAppShellCID);
-    if (appShell)
-        appShell->FavorPerformanceHint(perfOverStarvation, starvationDelay);
+    if (appShell) {
+        appShell->FavorPerformanceHint(perfOverStarvation,
+                                       Preferences::GetUint("docshell.event_starvation_delay_hint",
+                                                            NS_EVENT_STARVATION_DELAY_HINT));
+    }
 }
 
 //*****************************************************************************
@@ -753,6 +757,7 @@ nsDocShell::nsDocShell():
     mAllowJavascript(true),
     mAllowMetaRedirects(true),
     mAllowImages(true),
+    mAllowMedia(true),
     mAllowDNSPrefetch(true),
     mAllowWindowControl(true),
     mCreatingDocument(false),
@@ -900,7 +905,6 @@ NS_INTERFACE_MAP_BEGIN(nsDocShell)
     NS_INTERFACE_MAP_ENTRY(nsIDocShell)
     NS_INTERFACE_MAP_ENTRY(nsIDocShellTreeItem)
     NS_INTERFACE_MAP_ENTRY(nsIDocShellTreeNode)
-    NS_INTERFACE_MAP_ENTRY(nsIDocShellHistory)
     NS_INTERFACE_MAP_ENTRY(nsIWebNavigation)
     NS_INTERFACE_MAP_ENTRY(nsIBaseWindow)
     NS_INTERFACE_MAP_ENTRY(nsIScrollable)
@@ -1317,82 +1321,75 @@ nsDocShell::LoadURI(nsIURI * aURI,
             // Get the parent's load type
             parentDS->GetLoadType(&parentLoadType);            
 
-            nsCOMPtr<nsIDocShellHistory> parent(do_QueryInterface(parentAsItem));
-            if (parent) {
-                // Get the ShEntry for the child from the parent
-                nsCOMPtr<nsISHEntry> currentSH;
-                bool oshe = false;
-                parent->GetCurrentSHEntry(getter_AddRefs(currentSH), &oshe);
-                bool dynamicallyAddedChild = mDynamicallyCreated;
-                if (!dynamicallyAddedChild && !oshe && currentSH) {
-                    currentSH->HasDynamicallyAddedChild(&dynamicallyAddedChild);
-                }
-                if (!dynamicallyAddedChild) {
-                    // Only use the old SHEntry, if we're sure enough that
-                    // it wasn't originally for some other frame.
-                    parent->GetChildSHEntry(mChildOffset, getter_AddRefs(shEntry));
-                }
+            // Get the ShEntry for the child from the parent
+            nsCOMPtr<nsISHEntry> currentSH;
+            bool oshe = false;
+            parentDS->GetCurrentSHEntry(getter_AddRefs(currentSH), &oshe);
+            bool dynamicallyAddedChild = mDynamicallyCreated;
+            if (!dynamicallyAddedChild && !oshe && currentSH) {
+                currentSH->HasDynamicallyAddedChild(&dynamicallyAddedChild);
+            }
+            if (!dynamicallyAddedChild) {
+                // Only use the old SHEntry, if we're sure enough that
+                // it wasn't originally for some other frame.
+                parentDS->GetChildSHEntry(mChildOffset, getter_AddRefs(shEntry));
+            }
 
-                // Make some decisions on the child frame's loadType based on the 
-                // parent's loadType. 
-                if (mCurrentURI == nullptr) {
-                    // This is a newly created frame. Check for exception cases first. 
-                    // By default the subframe will inherit the parent's loadType.
-                    if (shEntry && (parentLoadType == LOAD_NORMAL ||
-                                    parentLoadType == LOAD_LINK   ||
-                                    parentLoadType == LOAD_NORMAL_EXTERNAL)) {
-                        // The parent was loaded normally. In this case, this *brand new* child really shouldn't
-                        // have a SHEntry. If it does, it could be because the parent is replacing an
-                        // existing frame with a new frame, in the onLoadHandler. We don't want this
-                        // url to get into session history. Clear off shEntry, and set load type to
-                        // LOAD_BYPASS_HISTORY. 
-                        bool inOnLoadHandler=false;
-                        parentDS->GetIsExecutingOnLoadHandler(&inOnLoadHandler);
-                        if (inOnLoadHandler) {
-                            loadType = LOAD_NORMAL_REPLACE;
-                            shEntry = nullptr;
-                        }
-                    }   
-                    else if (parentLoadType == LOAD_REFRESH) {
-                        // Clear shEntry. For refresh loads, we have to load
-                        // what comes thro' the pipe, not what's in history.
+            // Make some decisions on the child frame's loadType based on the 
+            // parent's loadType. 
+            if (mCurrentURI == nullptr) {
+                // This is a newly created frame. Check for exception cases first. 
+                // By default the subframe will inherit the parent's loadType.
+                if (shEntry && (parentLoadType == LOAD_NORMAL ||
+                            parentLoadType == LOAD_LINK   ||
+                            parentLoadType == LOAD_NORMAL_EXTERNAL)) {
+                    // The parent was loaded normally. In this case, this *brand new* child really shouldn't
+                    // have a SHEntry. If it does, it could be because the parent is replacing an
+                    // existing frame with a new frame, in the onLoadHandler. We don't want this
+                    // url to get into session history. Clear off shEntry, and set load type to
+                    // LOAD_BYPASS_HISTORY. 
+                    bool inOnLoadHandler=false;
+                    parentDS->GetIsExecutingOnLoadHandler(&inOnLoadHandler);
+                    if (inOnLoadHandler) {
+                        loadType = LOAD_NORMAL_REPLACE;
                         shEntry = nullptr;
                     }
-                    else if ((parentLoadType == LOAD_BYPASS_HISTORY) ||
-                              (shEntry && 
-                               ((parentLoadType & LOAD_CMD_HISTORY) || 
-                                (parentLoadType == LOAD_RELOAD_NORMAL) || 
-                                (parentLoadType == LOAD_RELOAD_CHARSET_CHANGE)))) {
-                        // If the parent url, bypassed history or was loaded from
-                        // history, pass on the parent's loadType to the new child 
-                        // frame too, so that the child frame will also
-                        // avoid getting into history. 
-                        loadType = parentLoadType;
-                    }
-                    else if (parentLoadType == LOAD_ERROR_PAGE) {
-                        // If the parent document is an error page, we don't
-                        // want to update global/session history. However,
-                        // this child frame is not an error page.
-                        loadType = LOAD_BYPASS_HISTORY;
-                    }
+                }   else if (parentLoadType == LOAD_REFRESH) {
+                    // Clear shEntry. For refresh loads, we have to load
+                    // what comes thro' the pipe, not what's in history.
+                    shEntry = nullptr;
+                } else if ((parentLoadType == LOAD_BYPASS_HISTORY) ||
+                        (shEntry && 
+                         ((parentLoadType & LOAD_CMD_HISTORY) || 
+                          (parentLoadType == LOAD_RELOAD_NORMAL) || 
+                          (parentLoadType == LOAD_RELOAD_CHARSET_CHANGE)))) {
+                    // If the parent url, bypassed history or was loaded from
+                    // history, pass on the parent's loadType to the new child 
+                    // frame too, so that the child frame will also
+                    // avoid getting into history. 
+                    loadType = parentLoadType;
+                } else if (parentLoadType == LOAD_ERROR_PAGE) {
+                    // If the parent document is an error page, we don't
+                    // want to update global/session history. However,
+                    // this child frame is not an error page.
+                    loadType = LOAD_BYPASS_HISTORY;
                 }
-                else {
-                    // This is a pre-existing subframe. If the load was not originally initiated
-                    // by session history, (if (!shEntry) condition succeeded) and mCurrentURI is not null,
-                    // it is possible that a parent's onLoadHandler or even self's onLoadHandler is loading 
-                    // a new page in this child. Check parent's and self's busy flag  and if it is set,
-                    // we don't want this onLoadHandler load to get in to session history.
-                    uint32_t parentBusy = BUSY_FLAGS_NONE;
-                    uint32_t selfBusy = BUSY_FLAGS_NONE;
-                    parentDS->GetBusyFlags(&parentBusy);                    
-                    GetBusyFlags(&selfBusy);
-                    if (parentBusy & BUSY_FLAGS_BUSY ||
+            } else {
+                // This is a pre-existing subframe. If the load was not originally initiated
+                // by session history, (if (!shEntry) condition succeeded) and mCurrentURI is not null,
+                // it is possible that a parent's onLoadHandler or even self's onLoadHandler is loading 
+                // a new page in this child. Check parent's and self's busy flag  and if it is set,
+                // we don't want this onLoadHandler load to get in to session history.
+                uint32_t parentBusy = BUSY_FLAGS_NONE;
+                uint32_t selfBusy = BUSY_FLAGS_NONE;
+                parentDS->GetBusyFlags(&parentBusy);                    
+                GetBusyFlags(&selfBusy);
+                if (parentBusy & BUSY_FLAGS_BUSY ||
                         selfBusy & BUSY_FLAGS_BUSY) {
-                        loadType = LOAD_NORMAL_REPLACE;
-                        shEntry = nullptr; 
-                    }
+                    loadType = LOAD_NORMAL_REPLACE;
+                    shEntry = nullptr; 
                 }
-            } // parent
+            }
         } //parentDS
         else {  
             // This is the root docshell. If we got here while  
@@ -2291,6 +2288,18 @@ NS_IMETHODIMP nsDocShell::SetAllowImages(bool aAllowImages)
     return NS_OK;
 }
 
+NS_IMETHODIMP nsDocShell::GetAllowMedia(bool * aAllowMedia)
+{
+    *aAllowMedia = mAllowMedia;
+    return NS_OK;
+}
+
+NS_IMETHODIMP nsDocShell::SetAllowMedia(bool aAllowMedia)
+{
+    mAllowMedia = aAllowMedia;
+    return NS_OK;
+}
+
 NS_IMETHODIMP nsDocShell::GetAllowDNSPrefetch(bool * aAllowDNSPrefetch)
 {
     *aAllowDNSPrefetch = mAllowDNSPrefetch;
@@ -2833,6 +2842,7 @@ nsDocShell::SetDocLoaderParent(nsDocLoader * aParent)
         {
             SetAllowImages(value);
         }
+        SetAllowMedia(parentAsDocShell->GetAllowMedia());
         if (NS_SUCCEEDED(parentAsDocShell->GetAllowWindowControl(&value)))
         {
             SetAllowWindowControl(value);
@@ -3081,14 +3091,18 @@ nsDocShell::FindItemWithName(const PRUnichar * aName,
     if (!*aName)
         return NS_OK;
 
-    if (!aRequestor)
-    {
-        nsCOMPtr<nsIDocShellTreeItem> foundItem;
+    if (aRequestor) {
+        // If aRequestor is not null we don't need to check special names, so
+        // just hand straight off to the search by actual name function.
+        return DoFindItemWithName(aName, aRequestor, aOriginalRequestor,
+                                  _retval);
+    } else {
 
         // This is the entry point into the target-finding algorithm.  Check
         // for special names.  This should only be done once, hence the check
         // for a null aRequestor.
 
+        nsCOMPtr<nsIDocShellTreeItem> foundItem;
         nsDependentString name(aName);
         if (name.LowerCaseEqualsLiteral("_self")) {
             foundItem = this;
@@ -3137,16 +3151,19 @@ nsDocShell::FindItemWithName(const PRUnichar * aName,
                 // a new window?
             }
 #endif
+        } else {
+            // Do the search for item by an actual name.
+            DoFindItemWithName(aName, aRequestor, aOriginalRequestor,
+                               getter_AddRefs(foundItem));
         }
 
         if (foundItem && !CanAccessItem(foundItem, aOriginalRequestor)) {
             foundItem = nullptr;
         }
 
+        // DoFindItemWithName only returns active items and we don't check if
+        // the item is active for the special cases.
         if (foundItem) {
-            // We return foundItem here even if it's not an active
-            // item since all the names we've dealt with so far are
-            // special cases that we won't bother looking for further.
 
             // If our document is sandboxed, we need to do some extra checks.
             uint32_t sandboxFlags = 0;
@@ -3168,17 +3185,14 @@ nsDocShell::FindItemWithName(const PRUnichar * aName,
                     bool isAncestor = false;
 
                     nsCOMPtr<nsIDocShellTreeItem> parentAsItem;
-                    GetSameTypeParent(getter_AddRefs(parentAsItem));
-
+                    foundItem->GetSameTypeParent(getter_AddRefs(parentAsItem));
                     while (parentAsItem) {
-                        nsCOMPtr<nsIDocShellTreeItem> tmp;
-                        parentAsItem->GetParent(getter_AddRefs(tmp));
-
-                        if (tmp && tmp == selfAsItem) {
+                        if (parentAsItem == selfAsItem) {
                             isAncestor = true;
                             break;
                         }
-                        parentAsItem = tmp;
+                        nsCOMPtr<nsIDocShellTreeItem> tmp = parentAsItem;
+                        tmp->GetSameTypeParent(getter_AddRefs(parentAsItem));
                     }
 
                     if (!isAncestor) {
@@ -3206,12 +3220,17 @@ nsDocShell::FindItemWithName(const PRUnichar * aName,
             }
 
             foundItem.swap(*_retval);
-            return NS_OK;
         }
+        return NS_OK;
     }
+}
 
-    // Keep looking
-        
+nsresult
+nsDocShell::DoFindItemWithName(const PRUnichar* aName,
+                               nsISupports* aRequestor,
+                               nsIDocShellTreeItem* aOriginalRequestor,
+                               nsIDocShellTreeItem** _retval)
+{
     // First we check our name.
     if (mName.Equals(aName) && ItemIsActive(this) &&
         CanAccessItem(this, aOriginalRequestor)) {
@@ -3461,9 +3480,9 @@ nsDocShell::AddChild(nsIDocShellTreeItem * aChild)
     NS_ASSERTION(!mChildList.IsEmpty(),
                  "child list must not be empty after a successful add");
 
-    nsCOMPtr<nsIDocShellHistory> docshellhistory = do_QueryInterface(aChild);
+    nsCOMPtr<nsIDocShell> childDocShell = do_QueryInterface(aChild);
     bool dynamic = false;
-    docshellhistory->GetCreatedDynamically(&dynamic);
+    childDocShell->GetCreatedDynamically(&dynamic);
     if (!dynamic) {
         nsCOMPtr<nsISHEntry> currentSH;
         bool oshe = false;
@@ -3472,15 +3491,11 @@ nsDocShell::AddChild(nsIDocShellTreeItem * aChild)
             currentSH->HasDynamicallyAddedChild(&dynamic);
         }
     }
-    nsCOMPtr<nsIDocShell> childDocShell = do_QueryInterface(aChild);
     childDocShell->SetChildOffset(dynamic ? -1 : mChildList.Length() - 1);
 
     /* Set the child's global history if the parent has one */
     if (mUseGlobalHistory) {
-        nsCOMPtr<nsIDocShellHistory>
-            dsHistoryChild(do_QueryInterface(aChild));
-        if (dsHistoryChild)
-            dsHistoryChild->SetUseGlobalHistory(true);
+            childDocShell->SetUseGlobalHistory(true);
     }
 
 
@@ -3643,9 +3658,6 @@ nsDocShell::FindChildWithName(const PRUnichar * aName,
     return NS_OK;
 }
 
-//*****************************************************************************
-// nsDocShell::nsIDocShellHistory
-//*****************************************************************************   
 NS_IMETHODIMP
 nsDocShell::GetChildSHEntry(int32_t aChildOffset, nsISHEntry ** aResult)
 {
@@ -3759,7 +3771,7 @@ nsDocShell::AddChildSHEntry(nsISHEntry * aCloneRef, nsISHEntry * aNewEntry,
     }
     else {
         /* Just pass this along */
-        nsCOMPtr<nsIDocShellHistory> parent =
+        nsCOMPtr<nsIDocShell> parent =
             do_QueryInterface(GetAsSupports(mParent), &rv);
         if (parent) {
             rv = parent->AddChildSHEntry(aCloneRef, aNewEntry, aChildOffset,
@@ -3789,7 +3801,7 @@ nsDocShell::DoAddChildSHEntry(nsISHEntry* aNewEntry, int32_t aChildOffset,
     }
 
     nsresult rv;
-    nsCOMPtr<nsIDocShellHistory> parent =
+    nsCOMPtr<nsIDocShell> parent =
         do_QueryInterface(GetAsSupports(mParent), &rv);
     if (parent) {
         rv = parent->AddChildSHEntry(mOSHE, aNewEntry, aChildOffset, mLoadType,
@@ -6388,7 +6400,7 @@ nsDocShell::OnStateChange(nsIWebProgress * aProgress, nsIRequest * aRequest,
                     // Need to clear the session history for all child
                     // docshells so that we can handle them like they would
                     // all be added dynamically.
-                    nsCOMPtr<nsIDocShellHistory> parent =
+                    nsCOMPtr<nsIDocShell> parent =
                         do_QueryInterface(parentAsItem);
                     if (parent) {
                         bool oshe = false;
@@ -6664,7 +6676,7 @@ nsDocShell::EndPageLoad(nsIWebProgress * aProgress,
         // over performance
         if (--gNumberOfDocumentsLoading == 0) {
           // Hint to use normal native event dispatch priorities 
-          FavorPerformanceHint(false, NS_EVENT_STARVATION_DELAY_HINT);
+          FavorPerformanceHint(false);
         }
     }
     /* Check if the httpChannel has any cache-control related response headers,
@@ -7671,7 +7683,7 @@ nsDocShell::RestoreFromHistory()
     // Tell the event loop to favor plevents over user events, see comments
     // in CreateContentViewer.
     if (++gNumberOfDocumentsLoading == 1)
-        FavorPerformanceHint(true, NS_EVENT_STARVATION_DELAY_HINT);
+        FavorPerformanceHint(true);
 
 
     if (oldMUDV && newMUDV) {
@@ -7743,6 +7755,8 @@ nsDocShell::RestoreFromHistory()
         bool allowImages;
         childShell->GetAllowImages(&allowImages);
 
+        bool allowMedia = childShell->GetAllowMedia();
+
         bool allowDNSPrefetch;
         childShell->GetAllowDNSPrefetch(&allowDNSPrefetch);
 
@@ -7757,6 +7771,7 @@ nsDocShell::RestoreFromHistory()
         childShell->SetAllowMetaRedirects(allowRedirects);
         childShell->SetAllowSubframes(allowSubframes);
         childShell->SetAllowImages(allowImages);
+        childShell->SetAllowMedia(allowMedia);
         childShell->SetAllowDNSPrefetch(allowDNSPrefetch);
 
         rv = childShell->BeginRestore(nullptr, false);
@@ -7879,17 +7894,6 @@ nsDocShell::RestoreFromHistory()
     // Restart plugins, and paint the content.
     if (shell) {
         shell->Thaw();
-
-        newVM = shell->GetViewManager();
-        if (newVM) {
-            // When we insert the root view above the resulting invalidate is
-            // dropped because painting is suppressed in the presshell until we
-            // call Thaw. So we issue the invalidate here.
-            newRootView = newVM->GetRootView();
-            if (newRootView) {
-                newVM->InvalidateView(newRootView);
-            }
-        }
     }
 
     return privWin->FireDelayedDOMEvents();
@@ -8077,7 +8081,7 @@ nsDocShell::CreateContentViewer(const char *aContentType,
       // Hint to favor performance for the plevent notification mechanism.
       // We want the pages to load as fast as possible even if its means 
       // native messages might be starved.
-      FavorPerformanceHint(true, NS_EVENT_STARVATION_DELAY_HINT);
+      FavorPerformanceHint(true);
     }
 
     if (onLocationChangeNeeded) {
@@ -12149,7 +12153,7 @@ nsDocShell::OnLinkClickSync(nsIContent *aContent,
 
   // XXX When the linking node was HTMLFormElement, it is synchronous event.
   //     That is, the caller of this method is not |OnLinkClickEvent::Run()|
-  //     but |nsHTMLFormElement::SubmitSubmission(...)|.
+  //     but |HTMLFormElement::SubmitSubmission(...)|.
   if (nsGkAtoms::form == aContent->Tag() && ShouldBlockLoadingForBackButton()) {
     return NS_OK;
   }
