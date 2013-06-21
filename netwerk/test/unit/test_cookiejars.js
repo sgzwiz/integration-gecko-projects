@@ -8,6 +8,11 @@
  *  are stored in separate namespaces ("cookie jars")
  */ 
 
+const Cc = Components.classes;
+const Ci = Components.interfaces;
+const Cu = Components.utils;
+const Cr = Components.results;
+
 Cu.import("resource://testing-common/httpd.js");
 Cu.import("resource://gre/modules/Services.jsm");
 var httpserver = new HttpServer();

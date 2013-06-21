@@ -1,3 +1,8 @@
+const Cc = Components.classes;
+const Ci = Components.interfaces;
+const Cu = Components.utils;
+const Cr = Components.results;
+
 Cu.import("resource://testing-common/httpd.js");
 
 var httpserv = null;
@@ -108,7 +113,9 @@ function test_nocache() {
 
 function test_partial() {
    asyncOpenCacheEntry("http://localhost:4444/bug482601/partial",
-                       "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+                       "HTTP",
+                       Ci.nsICache.STORE_ANYWHERE,
+                       Ci.nsICache.ACCESS_READ_WRITE,
                        test_partial2);
 }
 
@@ -132,7 +139,9 @@ function test_partial2(status, entry) {
 
 function test_cached() {
    asyncOpenCacheEntry("http://localhost:4444/bug482601/cached",
-                       "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+                       "HTTP",
+                       Ci.nsICache.STORE_ANYWHERE,
+                       Ci.nsICache.ACCESS_READ_WRITE,
                        test_cached2);
 }
 
@@ -157,7 +166,9 @@ function test_cached2(status, entry) {
 
 function test_only_from_cache() {
    asyncOpenCacheEntry("http://localhost:4444/bug482601/only_from_cache",
-                       "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+                       "HTTP",
+                       Ci.nsICache.STORE_ANYWHERE,
+                       Ci.nsICache.ACCESS_READ_WRITE,
                        test_only_from_cache2);
 }
 

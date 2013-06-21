@@ -1,3 +1,7 @@
+const Cc = Components.classes;
+const Ci = Components.interfaces;
+const Cr = Components.results;
+
 function gen_1MiB()
 {
   var i;
@@ -55,16 +59,16 @@ function write_big_metafile(status, entry)
   for (i=0 ; i<65 ; i++)
     entry.setMetaDataElement("metadata_"+i, data);
 
-  entry.metaDataReady();
-
   os.close();
   entry.close();
 
   // We don't check whether the cache is full while writing metadata. Also we
   // write the metadata when closing the entry, so we need to write some data
   // after closing this entry to invoke the cache cleanup.
-  asyncOpenCacheEntry("http://smalldata/",
-                      "disk", Ci.nsICacheStorage.OPEN_TRUNCATE, null,
+  asyncOpenCacheEntry("smalldata",
+                      "HTTP",
+                      Ci.nsICache.STORE_ON_DISK,
+                      Ci.nsICache.ACCESS_WRITE,
                       write_and_doom_small_datafile);
 }
 
@@ -77,16 +81,30 @@ function write_and_doom_small_datafile(status, entry)
   write_and_check(os, data, data.length);
 
   os.close();
-  entry.asyncDoom(null);
+  entry.doom();
   entry.close();
   syncWithCacheIOThread(run_test_3);
 }
 
-function check_cache_size(cont) {
-  get_device_entry_count("disk", function(count, consumption) {
-    do_check_eq(consumption, 0)
-    cont();
-  });
+function check_cache_size() {
+  var diskDeviceVisited;
+  var visitor = {
+    visitDevice: function (deviceID, deviceInfo) {
+      if (deviceID == "disk") {
+        diskDeviceVisited = true;
+        do_check_eq(deviceInfo.totalSize, 0)
+      }
+      return true;
+    },
+    visitEntry: function (deviceID, entryInfo) {
+      do_throw("unexpected call to visitEntry");
+    }
+  };
+
+  var cs = get_cache_service();
+  diskDeviceVisited = false;
+  cs.visitEntries(visitor);
+  do_check_true(diskDeviceVisited);
 }
 
 function run_test() {
@@ -106,8 +124,10 @@ function run_test() {
   evict_cache_entries();
 
   // write an entry with data > 64MiB
-  asyncOpenCacheEntry("http://bigdata/",
-                      "disk", Ci.nsICacheStorage.OPEN_TRUNCATE, null,
+  asyncOpenCacheEntry("bigdata",
+                      "HTTP",
+                      Ci.nsICache.STORE_ON_DISK,
+                      Ci.nsICache.ACCESS_WRITE,
                       write_big_datafile);
 
   do_test_pending();
@@ -115,11 +135,8 @@ function run_test() {
 
 function run_test_2()
 {
-  check_cache_size(run_test_2a);
-}
+  check_cache_size();
 
-function run_test_2a()
-{
   var prefBranch = Cc["@mozilla.org/preferences-service;1"].
                      getService(Ci.nsIPrefBranch);
 
@@ -128,12 +145,16 @@ function run_test_2a()
   prefBranch.setIntPref("browser.cache.disk.capacity", 64*1024);
 
   // write an entry with metadata > 64MiB
-  asyncOpenCacheEntry("http://bigmetadata/",
-                      "disk", Ci.nsICacheStorage.OPEN_TRUNCATE, null,
+  asyncOpenCacheEntry("bigmetadata",
+                      "HTTP",
+                      Ci.nsICache.STORE_ON_DISK,
+                      Ci.nsICache.ACCESS_WRITE,
                       write_big_metafile);
 }
 
 function run_test_3()
 {
-  check_cache_size(do_test_finished);
+  check_cache_size();
+
+  do_test_finished();
 }
