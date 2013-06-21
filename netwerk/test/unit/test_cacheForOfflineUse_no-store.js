@@ -1,11 +1,6 @@
 "use strict";
 // https://bugzilla.mozilla.org/show_bug.cgi?id=760955
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-const Cr = Components.results;
-
 Cu.import("resource://testing-common/httpd.js");
 
 var httpServer = null;
