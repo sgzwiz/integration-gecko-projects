@@ -24,16 +24,22 @@ public:
     , mRV(aResult)
     , mIsNew(aIsNew)
   {
+    LOG(("NotifyCacheFileListenerEvent::NotifyCacheFileListenerEvent() "
+         "[this=%p]", this));
     MOZ_COUNT_CTOR(NotifyCacheFileListenerEvent);
   }
 
   ~NotifyCacheFileListenerEvent()
   {
+    LOG(("NotifyCacheFileListenerEvent::~NotifyCacheFileListenerEvent() "
+         "[this=%p]", this));
     MOZ_COUNT_DTOR(NotifyCacheFileListenerEvent);
   }
 
   NS_IMETHOD Run()
   {
+    LOG(("NotifyCacheFileListenerEvent::Run() [this=%p]", this));
+
     mCallback->OnFileReady(mRV, mIsNew);
     return NS_OK;
   }
@@ -221,6 +227,10 @@ CacheFile::OnChunkRead(nsresult aResult, CacheFileChunk *aChunk)
     MOZ_ASSERT(aChunk->DataSize() != 0);
     // check that hash matches
     if (aChunk->Hash() != mMetadata->GetHash(index)) {
+      LOG(("CacheFile::OnChunkRead() - Hash mismatch! Hash of the data is %x, "
+           "hash in metadata is %x. [this=%p, idx=%d]", aChunk->Hash(),
+           mMetadata->GetHash(index), this, index));
+
       aResult = NS_ERROR_FILE_CORRUPTED;
       aChunk->mRemovingChunk = true;
       mChunks.Remove(index);
