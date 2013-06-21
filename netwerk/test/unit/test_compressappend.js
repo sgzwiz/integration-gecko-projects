@@ -2,9 +2,6 @@
 // Test that data can be appended to a cache entry even when the data is 
 // compressed by the cache compression feature - bug 648429.
 //
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cr = Components.results;
 
 function write_and_check(str, data, len)
 {

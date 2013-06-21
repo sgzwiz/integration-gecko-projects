@@ -6,10 +6,6 @@
  *   - an existent active entry
  */
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cr = Components.results;
-
 function doom(url, callback)
 {
   get_cache_service()

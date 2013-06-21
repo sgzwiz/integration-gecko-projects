@@ -627,7 +627,7 @@ CacheFileIOManager::OpenFileInternal(const SHA1Sum::Hash *aHash,
 
   if (!mTreeCreated) {
     rv = CreateCacheTree();
-    NS_ENSURE_SUCCESS(rv, rv);
+    if (NS_FAILED(rv)) return rv;
   }
 
   nsCOMPtr<nsIFile> file;
