@@ -1,7 +1,3 @@
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cr = Components.results;
-
 function gen_1MiB()
 {
   var i;

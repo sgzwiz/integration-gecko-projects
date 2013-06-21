@@ -238,12 +238,14 @@ NS_IMETHODIMP CacheEntry::OnFileReady(nsresult aResult, bool aIsNew)
   // could manipulate the entry state.
   MOZ_ASSERT(mState == LOADING);
 
-  mState = aIsNew ? EMPTY : READY;
-
-  if (NS_FAILED(aResult))
-    AsyncDoom(nullptr);
+  mState = (aIsNew || NS_FAILED(aResult))
+    ? EMPTY
+    : READY;
 
   mozilla::MutexAutoLock lock(mLock);
+
+  if (NS_FAILED(aResult))
+    mFile = nullptr;
 
   InvokeCallbacks();
   return NS_OK;
@@ -251,17 +253,9 @@ NS_IMETHODIMP CacheEntry::OnFileReady(nsresult aResult, bool aIsNew)
 
 NS_IMETHODIMP CacheEntry::OnFileDoomed(nsresult aResult)
 {
-  nsCOMPtr<nsICacheEntryDoomCallback> callback;
-  {
-    mozilla::MutexAutoLock lock(mLock);
-    mDoomCallback.swap(callback);
-  }
-
-  if (callback) {
-    nsRefPtr<DoomCallbackRunnable> event =
-      new DoomCallbackRunnable(callback, NS_OK);
-    NS_DispatchToMainThread(event);
-  }
+  nsRefPtr<DoomCallbackRunnable> event =
+    new DoomCallbackRunnable(this, NS_OK);
+  NS_DispatchToMainThread(event);
 
   return NS_OK;
 }
@@ -348,7 +342,7 @@ void CacheEntry::InvokeCallbacks()
 
   do {
     if (mPreventCallbacks) {
-      LOG(("CacheEntry::InvokeCallbacks END callbacks prevented!"));
+      LOG(("CacheEntry::InvokeCallbacks END [this=%p] callbacks prevented!", this));
       return;
     }
 
@@ -362,7 +356,7 @@ void CacheEntry::InvokeCallbacks()
 
     if (!InvokeCallback(callback, false)) {
       mCallbacks.InsertElementAt(0, callback);
-      LOG(("CacheEntry::InvokeCallbacks END callback bypassed"));
+      LOG(("CacheEntry::InvokeCallbacks END [this=%p] callback bypassed", this));
       return;
     }
   } while (true);
@@ -751,7 +745,7 @@ NS_IMETHODIMP CacheEntry::OpenOutputStream(uint32_t offset, nsIOutputStream * *_
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  MOZ_ASSERT(mState == HASMETADATA);
+  MOZ_ASSERT(mState > LOADING);
 
   nsRefPtr<CacheFile> file(File());
   if (!file)
@@ -811,14 +805,14 @@ NS_IMETHODIMP CacheEntry::OpenOutputStream(uint32_t offset, nsIOutputStream * *_
   rv = CallQueryInterface(pipeOut, _retval);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // Invoke any pending readers now.
+  mozilla::MutexAutoLock lock(mLock);
+
   // Since CacheFile logic is kept very simple, we can claim the entry is ready
   // and usable by waiting concurent readers only after output stream has been
   // opened.  Only when output stream exists for a CacheFile, concurent readers
   // are getting WOULD_BLOCK when reading after the end of the data.
   mState = READY;
-
-  // Invoke any pending readers now.
-  mozilla::MutexAutoLock lock(mLock);
 
   InvokeCallbacks();
   return NS_OK;
@@ -988,9 +982,11 @@ NS_IMETHODIMP CacheEntry::MetaDataReady()
 
   LOG(("CacheEntry::MetaDataReady [this=%p, state=%s]", this, StateString(mState)));
 
-  MOZ_ASSERT(mState == WRITING);
+  MOZ_ASSERT(mState > EMPTY);
 
-  mState = HASMETADATA;
+  if (mState == WRITING)
+    mState = HASMETADATA;
+
   BackgroundOp(Ops::REPORTUSAGE);
 
   return NS_OK;
@@ -1002,7 +998,7 @@ NS_IMETHODIMP CacheEntry::SetValid()
 
   LOG(("CacheEntry::SetValid [this=%p, state=%s]", this, StateString(mState)));
 
-  MOZ_ASSERT(mState == REVALIDATING);
+  MOZ_ASSERT(mState > EMPTY);
 
   mState = READY;
   BackgroundOp(Ops::REPORTUSAGE);
@@ -1215,6 +1211,7 @@ void CacheEntry::DoomAlreadyRemoved()
   CacheStorageService::Self()->OnMemoryConsumptionChange(this, 0);
 
   nsCOMPtr<nsICacheEntryDoomCallback> callback;
+  nsRefPtr<CacheFile> file;
   {
     mozilla::MutexAutoLock lock(mLock);
 
@@ -1225,13 +1222,21 @@ void CacheEntry::DoomAlreadyRemoved()
     }
 
     // Otherwise wait for the file to be doomed
-    if (!mFile || NS_FAILED(mFile->Doom(this)))
-      mDoomCallback.swap(callback);
+    file = mFile;
+    callback = mDoomCallback;
+  }
+
+  if (file) {
+    nsresult rv = file->Doom(callback ? this : nullptr);
+    if (NS_SUCCEEDED(rv)) {
+      LOG(("  file doomed"));
+      return;
+    }
   }
 
   if (callback) {
     nsRefPtr<DoomCallbackRunnable> event =
-      new DoomCallbackRunnable(callback, NS_OK);
+      new DoomCallbackRunnable(this, NS_OK);
     NS_DispatchToMainThread(event);
   }
 }
