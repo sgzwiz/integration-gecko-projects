@@ -160,6 +160,9 @@ OpenCallback.prototype =
       });
     }
   },
+  get mainThreadOnly() {
+    return true;
+  },
   selfCheck: function()
   {
     LOG_C2(this, "selfCheck");

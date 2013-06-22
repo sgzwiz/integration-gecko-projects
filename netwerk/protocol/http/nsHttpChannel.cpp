@@ -2884,6 +2884,16 @@ nsHttpChannel::OnOfflineCacheEntryForWritingAvailable(nsICacheEntry *aEntry,
     return aEntryStatus;
 }
 
+NS_IMETHODIMP
+nsHttpChannel::GetMainThreadOnly(bool *aMainThreadOnly)
+{
+    NS_ENSURE_ARG(aMainThreadOnly);
+
+    // This implementation accepts callbacks on any thread
+    *aMainThreadOnly = false;
+    return NS_OK;
+}
+
 // Generates the proper cache-key for this instance of nsHttpChannel
 nsresult
 nsHttpChannel::GenerateCacheKey(uint32_t postID, nsACString &cacheKey)
