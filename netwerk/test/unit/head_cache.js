@@ -99,6 +99,10 @@ function asyncOpenCacheEntry(key, where, flags, lci, callback, appcache)
         callback(status, entry, appCache);
     },
 
+    get mainThreadOnly() {
+      return true;
+    },
+
     run: function () {
       var storage = getCacheStorage(where, lci, appcache);
       storage.asyncOpenURI(key, "", flags, this);

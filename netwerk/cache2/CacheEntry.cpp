@@ -22,6 +22,7 @@
 #include "nsProxyRelease.h"
 #include "nsSerializationHelper.h"
 #include "nsStreamUtils.h"
+#include "nsThreadUtils.h"
 #include <math.h>
 #include <algorithm>
 
@@ -75,6 +76,7 @@ CacheEntry::CacheEntry(const nsACString& aStorageID,
 , mPreventCallbacks(false)
 , mIsRegistered(false)
 , mIsRegistrationAllowed(true)
+, mHasMainThreadOnlyCallback(false)
 , mState(NOTLOADED)
 , mPredictedDataSize(0)
 , mDataSize(0)
@@ -163,6 +165,10 @@ void CacheEntry::AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags
   bool readonly = aFlags & nsICacheStorage::OPEN_READONLY;
   bool truncate = aFlags & nsICacheStorage::OPEN_TRUNCATE;
 
+  bool mainThreadOnly;
+  if (aCallback && NS_FAILED(aCallback->GetMainThreadOnly(&mainThreadOnly)))
+    mainThreadOnly = true; // rather play safe...
+
   MOZ_ASSERT(!readonly || !truncate, "Bad flags combination");
   MOZ_ASSERT(!(truncate && mState > LOADING), "Must not call truncate on already loaded entry");
 
@@ -170,6 +176,11 @@ void CacheEntry::AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags
 
   if (Load(truncate) || !InvokeCallback(aCallback, readonly)) {
     // Load in progress or callback bypassed...
+    if (mainThreadOnly) {
+      LOG(("  callback is main-thread only"));
+      mHasMainThreadOnlyCallback = true;
+    }
+
     RememberCallback(aCallback, readonly);
   }
 }
@@ -299,22 +310,25 @@ already_AddRefed<CacheEntry> CacheEntry::ReopenTruncated(nsICacheEntryOpenCallba
   if (!newEntry)
     return nullptr;
 
-  newEntry->TransferCallbacks(mCallbacks, mReadOnlyCallbacks);
+  newEntry->TransferCallbacks(*this);
   mCallbacks.Clear();
   mReadOnlyCallbacks.Clear();
+  mHasMainThreadOnlyCallback = false;
+
   return newEntry.forget();
 }
 
-void CacheEntry::TransferCallbacks(nsCOMArray<nsICacheEntryOpenCallback> const &aCallbacks,
-                                   nsCOMArray<nsICacheEntryOpenCallback> const &aReadOnlyCallbacks)
+void CacheEntry::TransferCallbacks(CacheEntry const& aFromEntry)
 {
   mozilla::MutexAutoLock lock(mLock);
 
-  LOG(("CacheEntry::TransferCallbacks [entry=%p, %d, %d, %d, %d]",
-    this, mCallbacks.Length(), mReadOnlyCallbacks.Length(), aCallbacks.Length(), aReadOnlyCallbacks.Length()));
+  LOG(("CacheEntry::TransferCallbacks [entry=%p, from=%p]",
+    this, &aFromEntry));
 
-  mCallbacks.AppendObjects(aCallbacks);
-  mReadOnlyCallbacks.AppendObjects(aReadOnlyCallbacks);
+  mCallbacks.AppendObjects(aFromEntry.mCallbacks);
+  mReadOnlyCallbacks.AppendObjects(aFromEntry.mReadOnlyCallbacks);
+  if (aFromEntry.mHasMainThreadOnlyCallback)
+    mHasMainThreadOnlyCallback = true;
 
   if (mCallbacks.Length() || mReadOnlyCallbacks.Length())
     BackgroundOp(Ops::CALLBACKS, true);
@@ -337,6 +351,12 @@ void CacheEntry::RememberCallback(nsICacheEntryOpenCallback* aCallback,
     mReadOnlyCallbacks.AppendObject(aCallback);
 }
 
+void CacheEntry::InvokeCallbacksMainThread()
+{
+  mozilla::MutexAutoLock lock(mLock);
+  InvokeCallbacks();
+}
+
 void CacheEntry::InvokeCallbacks()
 {
   LOG(("CacheEntry::InvokeCallbacks BEGIN [this=%p]", this));
@@ -352,6 +372,14 @@ void CacheEntry::InvokeCallbacks()
     if (!mCallbacks.Count()) {
       LOG(("  no r/w callbacks"));
       break;
+    }
+
+    if (mHasMainThreadOnlyCallback && !NS_IsMainThread()) {
+      nsRefPtr<nsRunnableMethod<CacheEntry> > event =
+        NS_NewRunnableMethod(this, &CacheEntry::InvokeCallbacksMainThread);
+      NS_DispatchToMainThread(event);
+      LOG(("CacheEntry::InvokeCallbacks END [this=%p] dispatching to maintread", this));
+      return;
     }
 
     nsCOMPtr<nsICacheEntryOpenCallback> callback = mCallbacks[0];
@@ -374,6 +402,9 @@ void CacheEntry::InvokeCallbacks()
       break;
     }
   }
+
+  if (!mCallbacks.Count() && !mReadOnlyCallbacks.Count())
+    mHasMainThreadOnlyCallback = false;
 
   LOG(("CacheEntry::InvokeCallbacks END [this=%p]", this));
 }
