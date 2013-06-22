@@ -84,6 +84,7 @@ public:
 private:
   virtual ~CacheFileMetadata();
 
+  void     InitEmptyMetadata();
   nsresult ParseMetadata(uint32_t aMetaOffset, uint32_t aBufOffset);
   nsresult CheckElements(const char *aBuf, uint32_t aSize);
   void     EnsureBuffer(uint32_t aSize);
