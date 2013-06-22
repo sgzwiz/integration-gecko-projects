@@ -150,7 +150,7 @@ CacheFileOutputStream::CloseWithStatus(nsresult aStatus)
 {
   CacheFileAutoLock lock(mFile);
 
-  LOG(("CacheFileOutputStream::CloseWithStatus() [this=%p, aStatus=0x%08d]",
+  LOG(("CacheFileOutputStream::CloseWithStatus() [this=%p, aStatus=0x%08x]",
        this, aStatus));
 
   if (mClosed) {
@@ -217,7 +217,7 @@ CacheFileOutputStream::Seek(int32_t whence, int64_t offset)
 {
   CacheFileAutoLock lock(mFile);
 
-  LOG(("CacheFileOutputStream::Seek() [this=%p, whence=%d, offset=%d]",
+  LOG(("CacheFileOutputStream::Seek() [this=%p, whence=%d, offset=%lld]",
        this, whence, offset));
 
   if (mClosed) {
@@ -242,7 +242,7 @@ CacheFileOutputStream::Seek(int32_t whence, int64_t offset)
   mPos = newPos;
   EnsureCorrectChunk(true);
 
-  LOG(("CacheFileOutputStream::Seek() [this=%p, pos=%d]", this, mPos));
+  LOG(("CacheFileOutputStream::Seek() [this=%p, pos=%lld]", this, mPos));
   return NS_OK;
 }
 
@@ -258,7 +258,7 @@ CacheFileOutputStream::Tell(int64_t *_retval)
 
   *_retval = mPos;
 
-  LOG(("CacheFileOutputStream::Tell() [this=%p, retval=%d]", this, *_retval));
+  LOG(("CacheFileOutputStream::Tell() [this=%p, retval=%lld]", this, *_retval));
   return NS_OK;
 }
 
@@ -300,7 +300,7 @@ CacheFileOutputStream::OnChunkAvailable(nsresult aResult,
   if (mListeningForChunk != static_cast<int64_t>(aChunkIdx)) {
     // This is not a chunk that we're waiting for
     LOG(("CacheFileOutputStream::OnChunkAvailable() - Notification is for a "
-         "different chunk. [this=%p, listeningForChunk=%d]",
+         "different chunk. [this=%p, listeningForChunk=%lld]",
          this, mListeningForChunk));
 
     return NS_OK;
@@ -373,7 +373,7 @@ CacheFileOutputStream::EnsureCorrectChunk(bool aReleaseOnly)
   if (mListeningForChunk == static_cast<int64_t>(chunkIdx)) {
     // We're already waiting for this chunk
     LOG(("CacheFileOutputStream::EnsureCorrectChunk() - Already listening for "
-         "chunk %d [this=%p]", mListeningForChunk, this));
+         "chunk %lld [this=%p]", mListeningForChunk, this));
 
     return;
   }
@@ -385,7 +385,7 @@ CacheFileOutputStream::EnsureCorrectChunk(bool aReleaseOnly)
              "GetChunkLocked should always fail asynchronously");
   if (NS_FAILED(rv)) {
     LOG(("CacheFileOutputStream::EnsureCorrectChunk() - GetChunkLocked failed "
-         " synchronously! [this=%p, idx=%d, rv=0x%08d]", this, chunkIdx, rv));
+         " synchronously! [this=%p, idx=%d, rv=0x%08x]", this, chunkIdx, rv));
   }
 }
 
@@ -401,7 +401,7 @@ CacheFileOutputStream::CanWrite(int64_t *aCanWrite, char **aBuf)
   *aCanWrite = kChunkSize - chunkOffset;
   *aBuf = mChunk->Buf() + chunkOffset;
 
-  LOG(("CacheFileOutputStream::CanWrite() [this=%p, canWrite=%d]",
+  LOG(("CacheFileOutputStream::CanWrite() [this=%p, canWrite=%lld]",
        this, *aCanWrite));
 }
 
