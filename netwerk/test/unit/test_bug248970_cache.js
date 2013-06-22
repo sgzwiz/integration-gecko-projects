@@ -24,8 +24,8 @@ const entries = [
 // key       content       device          should exist after leaving PB
   [kCacheA,  kTestContent, kMemoryDevice,  true],
   [kCacheA2, kTestContent, kDiskDevice,    false],
-  [kCacheB,  kTestContent, kDiskDevice,    true],
-  [kCacheC,  kTestContent, kOfflineDevice, true]
+  [kCacheB,  kTestContent, kDiskDevice,    true]
+  // TODO [kCacheC,  kTestContent, kOfflineDevice, true]
 ]
 
 var store_idx;
@@ -45,7 +45,7 @@ function store_entries(cb)
   asyncOpenCacheEntry(entries[store_idx][0],
                       entries[store_idx][2],
                       Ci.nsICacheStorage.OPEN_NORMALLY,
-                      new loadContextInfo(!entries[store_idx][3]),
+                      new LoadContextInfo(!entries[store_idx][3]),
                       store_data);
 }
 
@@ -81,27 +81,31 @@ function check_entries(cb, pbExited)
     return;
   }
 
-  asyncOpenCacheEntry(entries[store_idx][0],
-                      entries[store_idx][2],
+  asyncOpenCacheEntry(entries[check_idx][0],
+                      entries[check_idx][2],
                       Ci.nsICacheStorage.OPEN_READONLY,
-                      new loadContextInfo(!entries[store_idx][3]),
+                      new LoadContextInfo(!entries[check_idx][3]),
                       check_data);
 }
 
-var check_data = function (staus, entry) {
-  if (!check_pb_exited || entries[check_idx][3]) {
-    do_check_eq(status, Cr.NS_OK);
-    var is = make_input_stream_scriptable(entry.openInputStream(0));
-    var read = is.read(is.available());
-    is.close();
-    entry.close();
-    do_check_eq(read, entries[check_idx][1]);
-  } else {
-    do_check_eq(status, Cr.NS_ERROR_CACHE_KEY_NOT_FOUND);
+var check_data = function (status, entry) {
+  var cont = function() {
+    check_idx++;
+    do_execute_soon(check_entries);
   }
 
-  check_idx++;
-  do_execute_soon(check_entries);
+  if (!check_pb_exited || entries[check_idx][3]) {
+    do_check_eq(status, Cr.NS_OK);
+    var is = entry.openInputStream(0);
+    pumpReadStream(is, function(read) {
+      entry.close();
+      do_check_eq(read, entries[check_idx][1]);
+      cont();
+    });
+  } else {
+    do_check_eq(status, Cr.NS_ERROR_CACHE_KEY_NOT_FOUND);
+    cont();
+  }
 };
 
 function run_test() {
