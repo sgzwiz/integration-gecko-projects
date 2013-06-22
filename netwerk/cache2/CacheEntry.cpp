@@ -193,7 +193,8 @@ bool CacheEntry::Load(bool aTruncate)
   MOZ_ASSERT(mState == NOTLOADED);
   MOZ_ASSERT(!mFile);
 
-  if (aTruncate || !mUseDisk) {
+  bool directLoad = aTruncate || !mUseDisk;
+  if (directLoad) {
     // Just fake the load has already been done as "new".
     mState = EMPTY;
   }
@@ -212,12 +213,12 @@ bool CacheEntry::Load(bool aTruncate)
   nsAutoCString fileKey;
   rv = HashingKeyWithStorage(fileKey);
 
-  LOG(("  performing load"));
+  LOG(("  performing load, file=%p", mFile.get()));
   if (NS_SUCCEEDED(rv))
     rv = mFile->Init(fileKey,
                      aTruncate,
                      !mUseDisk,
-                     (aTruncate || !mUseDisk) ? nullptr : this);
+                     directLoad ? nullptr : this);
 
   if (NS_FAILED(rv)) {
     AsyncDoom(nullptr);
@@ -253,9 +254,11 @@ NS_IMETHODIMP CacheEntry::OnFileReady(nsresult aResult, bool aIsNew)
 
 NS_IMETHODIMP CacheEntry::OnFileDoomed(nsresult aResult)
 {
-  nsRefPtr<DoomCallbackRunnable> event =
-    new DoomCallbackRunnable(this, NS_OK);
-  NS_DispatchToMainThread(event);
+  if (mDoomCallback) {
+    nsRefPtr<DoomCallbackRunnable> event =
+      new DoomCallbackRunnable(this, aResult);
+    NS_DispatchToMainThread(event);
+  }
 
   return NS_OK;
 }
@@ -1032,17 +1035,23 @@ NS_IMETHODIMP CacheEntry::SetDataSize(uint32_t size)
 
 NS_IMETHODIMP CacheEntry::GetDataSize(uint32_t *aDataSize)
 {
+  LOG(("CacheEntry::GetDataSize [this=%p]", this));
   *aDataSize = 0;
 
-  if (mState == WRITING)
+  if (mState == WRITING) {
+    LOG(("  write is in progress"));
     return NS_ERROR_IN_PROGRESS;
+  }
 
   nsRefPtr<CacheFile> file(File());
-  if (!file)
+  if (!file) {
+    LOG(("  no file"));
     return NS_OK; // really OK?
+  }
 
   // mayhemer: TODO Problem with compression
   *aDataSize = file->DataSize();
+  LOG(("  size=%u", *aDataSize));
   return NS_OK;
 }
 
@@ -1210,7 +1219,6 @@ void CacheEntry::DoomAlreadyRemoved()
   CacheStorageService::Self()->UnregisterEntry(this);
   CacheStorageService::Self()->OnMemoryConsumptionChange(this, 0);
 
-  nsCOMPtr<nsICacheEntryDoomCallback> callback;
   nsRefPtr<CacheFile> file;
   {
     mozilla::MutexAutoLock lock(mLock);
@@ -1223,22 +1231,17 @@ void CacheEntry::DoomAlreadyRemoved()
 
     // Otherwise wait for the file to be doomed
     file = mFile;
-    callback = mDoomCallback;
   }
 
   if (file) {
-    nsresult rv = file->Doom(callback ? this : nullptr);
+    nsresult rv = file->Doom(mDoomCallback ? this : nullptr);
     if (NS_SUCCEEDED(rv)) {
       LOG(("  file doomed"));
       return;
     }
   }
 
-  if (callback) {
-    nsRefPtr<DoomCallbackRunnable> event =
-      new DoomCallbackRunnable(this, NS_OK);
-    NS_DispatchToMainThread(event);
-  }
+  OnFileDoomed(NS_OK);
 }
 
 void CacheEntry::BackgroundOp(uint32_t aOperations, bool aForceAsync)
@@ -1297,7 +1300,7 @@ void CacheEntry::BackgroundOp(uint32_t aOperations, bool aForceAsync)
     {
       // TODO: The following line is wrong, need API on CacheFile to get
       // actual allocation consumption, best with file->Metadata()->ElementsSize() included
-      memorySize = (uint32_t)std::max(uint64_t(file->DataSize()), uint64_t(PR_UINT32_MAX));
+      memorySize = (uint32_t)std::min(uint64_t(file->DataSize()), uint64_t(PR_UINT32_MAX));
 
       CacheFileAutoLock lock(file);
 

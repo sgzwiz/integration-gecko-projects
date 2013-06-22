@@ -6,21 +6,23 @@ const Cr = Components.results;
 var callbacks = new Array();
 
 // Expect an existing entry
-const NORMAL =           0;
+const NORMAL =               0;
 // Expect a new entry
-const NEW =         1 << 0;
+const NEW =             1 << 0;
 // Return ENTRY_NOT_VALID from onCacheEntryCheck
-const NOTVALID =    1 << 1;
+const NOTVALID =        1 << 1;
 // Throw from onCacheEntryAvailable
-const THROWAVAIL =  1 << 2;
+const THROWAVAIL =      1 << 2;
 // Open entry for reading-only
-const READONLY =    1 << 3;
+const READONLY =        1 << 3;
 // Expect the entry to not be found
-const NOTFOUND =    1 << 4;
+const NOTFOUND =        1 << 4;
 // Return ENTRY_NEEDS_REVALIDATION from onCacheEntryCheck
-const REVAL =       1 << 5;
+const REVAL =           1 << 5;
 // Expect the entry is doomed, i.e. the output stream should not be possible to open
-const DOOMED =      1 << 6;
+const DOOMED =          1 << 6;
+// Expect the entry is doomed, i.e. the output stream should not be possible to open
+const WAITFORWRITE =    1 << 7;
 
 var log_c2 = true;
 function LOG_C2(o, m)
@@ -108,7 +110,8 @@ OpenCallback.prototype =
       if (this.behavior & THROWAVAIL)
         this.throwAndNotify(entry);
 
-      this.goon(entry);
+      if (!(this.behavior & WAITFORWRITE))
+        this.goon(entry);
 
       try {
         entry.getMetaDataElement("meto");
@@ -135,6 +138,8 @@ OpenCallback.prototype =
             do_check_eq(wrt, self.workingData.length);
             os.close();
           }
+          if (self.behavior & WAITFORWRITE)
+            self.goon(entry);
         })
       })
     }
