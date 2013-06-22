@@ -16,7 +16,7 @@ interface nsICacheListener;
 interface nsIFile;
 interface nsICacheMetaDataVisitor;
 
-[scriptable, uuid(11ce9c00-6691-4774-83d0-62095528b1c4)]
+[scriptable, uuid(74ccc007-722b-400f-9b2b-8a39b1195157)]
 interface nsICacheEntry : nsISupports
 {
   /**
@@ -148,10 +148,15 @@ interface nsICacheEntry : nsISupports
    */
   nsICacheEntry recreate();
 
+  /**
+   * Returns the length of data this entry holds.
+   * @throws
+   *    NS_ERROR_IN_PROGRESS when the write is still in progress.
+   */
+  readonly attribute unsigned long dataSize;
 
   // *************** GET RID OF THESE ??? ***************
   void setDataSize(in unsigned long size);
-  readonly attribute unsigned long  dataSize;
   void markValid();
   void close();
   attribute nsCacheStoragePolicy storagePolicy;
