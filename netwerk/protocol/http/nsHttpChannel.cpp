@@ -353,6 +353,7 @@ nsHttpChannel::ContinueConnect()
             // validated before we can reuse it.  since we are not allowed
             // to hit the net, there's nothing more to do.  the document
             // is effectively not in the cache.
+            LOG(("  !mCachedContentIsValid && mLoadFlags & LOAD_ONLY_FROM_CACHE"));
             return NS_ERROR_DOCUMENT_NOT_CACHED;
         }
     }
@@ -362,10 +363,12 @@ nsHttpChannel::ContinueConnect()
         if (!mFallbackChannel && !mFallbackKey.IsEmpty()) {
             return AsyncCall(&nsHttpChannel::HandleAsyncFallback);
         }
+        LOG(("  !mCachedEntry && mLoadFlags & LOAD_ONLY_FROM_CACHE"));
         return NS_ERROR_DOCUMENT_NOT_CACHED;
     }
 
     if (mLoadFlags & LOAD_NO_NETWORK_IO) {
+        LOG(("  mLoadFlags & LOAD_NO_NETWORK_IO"));
         return NS_ERROR_DOCUMENT_NOT_CACHED;
     }
 
@@ -2367,7 +2370,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
 
     nsresult rv = NS_OK;
 
-    LOG(("nsHttpChannel::CheckCache enter [channel=%p entry=%p]",
+    LOG(("nsHttpChannel::OnCacheEntryCheck enter [channel=%p entry=%p]",
         this, entry));
 
     // Remember the request is a custom conditional request so that we can
@@ -2553,6 +2556,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
         rv = entry->GetExpirationTime(&time);
         NS_ENSURE_SUCCESS(rv, rv);
 
+        LOG(("  NowInSeconds()=%u, time=%u", NowInSeconds(), time));
         if (NowInSeconds() <= time)
             doValidation = false;
         else if (mCachedResponseHead->MustValidateIfExpired())
@@ -2679,7 +2683,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
                 mRequestHead.ClearHeader(nsHttp::ETag);
                 mDidReval = false;
             }
-            *aResult = (mCachedContentIsValid = false);
+            mCachedContentIsValid = false;
         }
     }
 
@@ -2695,8 +2699,8 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
         MaybeMarkCacheEntryValid(this, entry, mCacheEntryIsWriteOnly);
     }
 
-    LOG(("nsHTTPChannel::CheckCache exit [this=%p doValidation=%d]\n",
-         this, doValidation));
+    LOG(("nsHTTPChannel::OnCacheEntryCheck exit [this=%p doValidation=%d result=%d]\n",
+         this, doValidation, *aResult));
     return rv;
 }
 
