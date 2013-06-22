@@ -93,7 +93,8 @@ CacheFileInputStream::Available(uint64_t *_retval)
       *_retval = canRead;
   }
 
-  LOG(("CacheFileInputStream::Available() [this=%p, retval=%d]", this, *_retval));
+  LOG(("CacheFileInputStream::Available() [this=%p, retval=%lld]",
+       this, *_retval));
 
   return NS_OK;
 }
@@ -150,7 +151,7 @@ CacheFileInputStream::Read(char *aBuf, uint32_t aCount, uint32_t *_retval)
     }
   }
 
-  LOG(("CacheFileInputStream::Read() [this=%p, rv=0x%08d, retval=%d",
+  LOG(("CacheFileInputStream::Read() [this=%p, rv=0x%08x, retval=%d",
        this, rv, *_retval));
 
   return rv;
@@ -214,7 +215,7 @@ CacheFileInputStream::ReadSegments(nsWriteSegmentFun aWriter, void *aClosure,
     }
   }
 
-  LOG(("CacheFileInputStream::ReadSegments() [this=%p, rv=0x%08d, retval=%d",
+  LOG(("CacheFileInputStream::ReadSegments() [this=%p, rv=0x%08x, retval=%d",
        this, rv, *_retval));
 
   return rv;
@@ -233,7 +234,7 @@ CacheFileInputStream::CloseWithStatus(nsresult aStatus)
 {
   CacheFileAutoLock lock(mFile);
 
-  LOG(("CacheFileInputStream::CloseWithStatus() [this=%p, aStatus=0x%08d]",
+  LOG(("CacheFileInputStream::CloseWithStatus() [this=%p, aStatus=0x%08x]",
        this, aStatus));
 
   if (mClosed) {
@@ -311,7 +312,7 @@ CacheFileInputStream::Seek(int32_t whence, int64_t offset)
 {
   CacheFileAutoLock lock(mFile);
 
-  LOG(("CacheFileInputStream::Seek() [this=%p, whence=%d, offset=%d]",
+  LOG(("CacheFileInputStream::Seek() [this=%p, whence=%d, offset=%lld]",
        this, whence, offset));
 
   if (mClosed) {
@@ -336,7 +337,7 @@ CacheFileInputStream::Seek(int32_t whence, int64_t offset)
   mPos = newPos;
   EnsureCorrectChunk(true);
 
-  LOG(("CacheFileInputStream::Seek() [this=%p, pos=%d]", this, mPos));
+  LOG(("CacheFileInputStream::Seek() [this=%p, pos=%lld]", this, mPos));
   return NS_OK;
 }
 
@@ -352,7 +353,7 @@ CacheFileInputStream::Tell(int64_t *_retval)
 
   *_retval = mPos;
 
-  LOG(("CacheFileInputStream::Tell() [this=%p, retval=%d]", this, *_retval));
+  LOG(("CacheFileInputStream::Tell() [this=%p, retval=%lld]", this, *_retval));
   return NS_OK;
 }
 
@@ -392,7 +393,7 @@ CacheFileInputStream::OnChunkAvailable(nsresult aResult, uint32_t aChunkIdx,
   if (mListeningForChunk != static_cast<int64_t>(aChunkIdx)) {
     // This is not a chunk that we're waiting for
     LOG(("CacheFileInputStream::OnChunkAvailable() - Notification is for a "
-         "different chunk. [this=%p, listeningForChunk=%d]",
+         "different chunk. [this=%p, listeningForChunk=%lld]",
          this, mListeningForChunk));
 
     return NS_OK;
@@ -497,7 +498,7 @@ CacheFileInputStream::EnsureCorrectChunk(bool aReleaseOnly)
   if (mListeningForChunk == static_cast<int64_t>(chunkIdx)) {
     // We're already waiting for this chunk
     LOG(("CacheFileInputStream::EnsureCorrectChunk() - Already listening for "
-         "chunk %d [this=%p]", mListeningForChunk, this));
+         "chunk %lld [this=%p]", mListeningForChunk, this));
 
     return;
   }
@@ -509,7 +510,7 @@ CacheFileInputStream::EnsureCorrectChunk(bool aReleaseOnly)
              "GetChunkLocked should always fail asynchronously");
   if (NS_FAILED(rv)) {
     LOG(("CacheFileInputStream::EnsureCorrectChunk() - GetChunkLocked failed "
-         " synchronously! [this=%p, idx=%d, rv=0x%08d]", this, chunkIdx, rv));
+         " synchronously! [this=%p, idx=%d, rv=0x%08x]", this, chunkIdx, rv));
   }
 }
 
@@ -525,7 +526,7 @@ CacheFileInputStream::CanRead(int64_t *aCanRead, const char **aBuf)
   *aCanRead = mChunk->DataSize() - chunkOffset;
   *aBuf = mChunk->Buf() + chunkOffset;
 
-  LOG(("CacheFileInputStream::CanRead() [this=%p, canRead=%d]",
+  LOG(("CacheFileInputStream::CanRead() [this=%p, canRead=%lld]",
        this, *aCanRead));
 }
 
