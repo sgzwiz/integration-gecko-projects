@@ -111,19 +111,18 @@ CacheFileMetadata::ReadMetadata(CacheFileMetadataListener *aListener)
     LOG(("CacheFileMetadata::ReadMetadata() - Filesize == 0, creating empty "
          "metadata. [this=%p]", this));
 
-    mOffset = 0;
-    mMetaHdr.mFetchCount++;
-    mMetaHdr.mKeySize = mKey.Length();
+    InitEmptyMetadata();
     aListener->OnMetadataRead(NS_OK);
     return NS_OK;
   }
 
   if (size < int64_t(sizeof(CacheFileMetadataHeader) + 2*sizeof(uint32_t))) {
     // there must be at least checksum, header and offset
-    LOG(("CacheFileMetadata::ReadMetadata() - File is corrupted. [this=%p, "
-         "filesize=%d]", this, size));
+    LOG(("CacheFileMetadata::ReadMetadata() - File is corrupted, creating "
+         "empty metadata. [this=%p, filesize=%lld]", this, size));
 
-    aListener->OnMetadataRead(NS_ERROR_FILE_CORRUPTED);
+    InitEmptyMetadata();
+    aListener->OnMetadataRead(NS_OK);
     return NS_OK;
   }
 
@@ -137,18 +136,19 @@ CacheFileMetadata::ReadMetadata(CacheFileMetadataListener *aListener)
   mBuf = static_cast<char *>(moz_xmalloc(mBufSize));
 
   LOG(("CacheFileMetadata::ReadMetadata() - Reading metadata from disk, trying "
-       "offset=%d, filesize=%d [this=%p]", offset, size, this));
+       "offset=%lld, filesize=%lld [this=%p]", offset, size, this));
 
   mListener = aListener;
   rv = CacheFileIOManager::Read(mHandle, offset, mBuf, mBufSize, this);
   if (NS_FAILED(rv)) {
     LOG(("CacheFileMetadata::ReadMetadata() - CacheFileIOManager::Read() failed"
-         " synchronously. [this=%p, rv=0x%08d]", this, rv));
+         " synchronously, creating empty metadata. [this=%p, rv=0x%08x]",
+         this, rv));
 
     mListener = nullptr;
-    free(mBuf);
-    mBuf = nullptr;
-    NS_ENSURE_SUCCESS(rv, rv);
+    InitEmptyMetadata();
+    aListener->OnMetadataRead(NS_OK);
+    return NS_OK;
   }
 
   return NS_OK;
@@ -198,7 +198,7 @@ CacheFileMetadata::WriteMetadata(uint32_t aOffset,
                                  this);
   if (NS_FAILED(rv)) {
     LOG(("CacheFileMetadata::WriteMetadata() - CacheFileIOManager::Write() "
-         "failed synchronously. [this=%p, rv=0x%08d]", this, rv));
+         "failed synchronously. [this=%p, rv=0x%08x]", this, rv));
 
     mListener = nullptr;
     free(mWriteBuf);
@@ -418,8 +418,12 @@ CacheFileMetadata::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
   nsCOMPtr<CacheFileMetadataListener> listener;
 
   if (NS_FAILED(aResult)) {
+    LOG(("CacheFileMetadata::OnDataRead() - CacheFileIOManager::Read() failed, "
+         "creating empty metadata. [this=%p, rv=0x%08x]", this, aResult));
+
+    InitEmptyMetadata();
     mListener.swap(listener);
-    listener->OnMetadataRead(aResult);
+    listener->OnMetadataRead(NS_OK);
     return NS_OK;
   }
 
@@ -431,11 +435,13 @@ CacheFileMetadata::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
   MOZ_ASSERT(size != -1);
 
   if (realOffset >= size) {
-    LOG(("CacheFileMetadata::OnDataRead() - Invalid real offset. [this=%p, "
-         "realOffset=%d, size=%d]", this, realOffset, size));
+    LOG(("CacheFileMetadata::OnDataRead() - Invalid realOffset, creating empty "
+         "metadata. [this=%p, realOffset=%d, size=%lld]", this, realOffset,
+         size));
 
+    InitEmptyMetadata();
     mListener.swap(listener);
-    listener->OnMetadataRead(NS_ERROR_FILE_CORRUPTED);
+    listener->OnMetadataRead(NS_OK);
     return NS_OK;
   }
 
@@ -454,11 +460,13 @@ CacheFileMetadata::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
     rv = CacheFileIOManager::Read(mHandle, realOffset, mBuf, missing, this);
     if (NS_FAILED(rv)) {
       LOG(("CacheFileMetadata::OnDataRead() - CacheFileIOManager::Read() failed"
-           " synchronously. [this=%p, rv=0x%08d]", this, rv));
+           " synchronously, creating empty metadata. [this=%p, rv=0x%08x]",
+           this, rv));
 
+      InitEmptyMetadata();
       mListener.swap(listener);
       listener->OnMetadataRead(rv);
-      NS_ENSURE_SUCCESS(rv, rv);
+      return NS_OK;
     }
 
     return NS_OK;
@@ -467,9 +475,14 @@ CacheFileMetadata::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
   // We have all data according to offset information at the end of the entry.
   // Try to parse it.
   rv = ParseMetadata(realOffset, realOffset - usedOffset);
+  if (NS_FAILED(rv)) {
+    LOG(("CacheFileMetadata::OnDataRead() - Error parsing metadata, creating "
+         "empty metadata. [this=%p]", this));
+    InitEmptyMetadata();
+  }
 
   mListener.swap(listener);
-  listener->OnMetadataRead(rv);
+  listener->OnMetadataRead(NS_OK);
 
   return NS_OK;
 }
@@ -479,6 +492,18 @@ CacheFileMetadata::OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult)
 {
   MOZ_NOT_REACHED("CacheFileMetadata::OnFileDoomed should not be called!");
   return NS_ERROR_UNEXPECTED;
+}
+
+void
+CacheFileMetadata::InitEmptyMetadata()
+{
+  if (mBuf) {
+    free(mBuf);
+    mBuf = nullptr;
+  }
+  mOffset = 0;
+  mMetaHdr.mFetchCount++;
+  mMetaHdr.mKeySize = mKey.Length();
 }
 
 nsresult
