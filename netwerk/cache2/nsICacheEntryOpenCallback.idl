@@ -7,7 +7,7 @@
 interface nsICacheEntry;
 interface nsIApplicationCache;
 
-[scriptable, uuid(da600c23-0750-4f49-9761-8a27635db419)]
+[scriptable, uuid(cdd8b9be-71f0-4b0a-a7f4-626fbb3d2e9b)]
 interface nsICacheEntryOpenCallback : nsISupports
 {
   /**
@@ -75,4 +75,10 @@ interface nsICacheEntryOpenCallback : nsISupports
                              in boolean aNew,
                              in nsIApplicationCache aApplicationCache,
                              in nsresult aResult);
+
+  /**
+   * Whether this callback can be invoked on any thread, or just on the main thread
+   * when the consumer is e.g. a JS.
+   */
+  readonly attribute boolean mainThreadOnly;
 };

@@ -189,14 +189,15 @@ private:
   void InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
   void OnWriterClosed(Handle const* aHandle);
 
+  void InvokeCallbacksMainThread();
+
   // Schedules a background operation on the management thread.
   // When executed on the management thread directly, the operation(s)
   // is (are) executed immediately.
   void BackgroundOp(uint32_t aOperation, bool aForceAsync = false);
 
   already_AddRefed<CacheEntry> ReopenTruncated(nsICacheEntryOpenCallback* aCallback);
-  void TransferCallbacks(nsCOMArray<nsICacheEntryOpenCallback> const &aCallbacks,
-                         nsCOMArray<nsICacheEntryOpenCallback> const &aReadOnlyCallbacks);
+  void TransferCallbacks(CacheEntry const& aFromEntry);
 
   already_AddRefed<CacheFile> File();
 
@@ -231,6 +232,8 @@ private:
   bool mIsRegistered : 1;
   // After deregistration entry is no allowed to register again
   bool mIsRegistrationAllowed : 1;
+  // Way around when having a callback that cannot be invoked on non-main thread
+  bool mHasMainThreadOnlyCallback : 1;
 
 #ifdef MOZ_LOGGING
   static char const * StateString(uint32_t aState);
