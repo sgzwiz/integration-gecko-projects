@@ -19,6 +19,8 @@ namespace net {
 #define kMinMetadataRead 1024  // TODO find optimal value from telemetry
 #define kAlignSize       4096
 
+#define NO_EXPIRATION_TIME 0xFFFFFFFF
+
 NS_IMPL_THREADSAFE_ISUPPORTS1(CacheFileMetadata, CacheFileIOListener)
 
 CacheFileMetadata::CacheFileMetadata(CacheFileHandle *aHandle, const nsACString &aKey)
@@ -38,6 +40,7 @@ CacheFileMetadata::CacheFileMetadata(CacheFileHandle *aHandle, const nsACString 
 
   MOZ_COUNT_CTOR(CacheFileMetadata);
   memset(&mMetaHdr, 0, sizeof(CacheFileMetadataHeader));
+  mMetaHdr.mExpirationTime = NO_EXPIRATION_TIME;
   mKey = aKey;
 }
 
@@ -76,8 +79,9 @@ CacheFileMetadata::CacheFileMetadata(const nsACString &aKey)
 
   MOZ_COUNT_CTOR(CacheFileMetadata);
   memset(&mMetaHdr, 0, sizeof(CacheFileMetadataHeader));
-  mKey = aKey;
+  mMetaHdr.mExpirationTime = NO_EXPIRATION_TIME;
   mMetaHdr.mFetchCount++;
+  mKey = aKey;
   mMetaHdr.mKeySize = mKey.Length();
 }
 
@@ -502,7 +506,8 @@ CacheFileMetadata::InitEmptyMetadata()
     mBuf = nullptr;
   }
   mOffset = 0;
-  mMetaHdr.mFetchCount++;
+  mMetaHdr.mFetchCount = 1;
+  mMetaHdr.mExpirationTime = NO_EXPIRATION_TIME;
   mMetaHdr.mKeySize = mKey.Length();
 }
 
