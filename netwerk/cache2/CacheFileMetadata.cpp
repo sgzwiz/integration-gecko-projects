@@ -59,6 +59,7 @@ CacheFileMetadata::~CacheFileMetadata()
   if (mBuf) {
     free(mBuf);
     mBuf = nullptr;
+    mBufSize = 0;
   }
 }
 
@@ -504,6 +505,7 @@ CacheFileMetadata::InitEmptyMetadata()
   if (mBuf) {
     free(mBuf);
     mBuf = nullptr;
+    mBufSize = 0;
   }
   mOffset = 0;
   mMetaHdr.mFetchCount = 1;
