@@ -24,12 +24,10 @@ CacheFileOutputStream::Release()
 
   if (0 == count) {
     mRefCnt = 1;
+    CacheFileAutoLock lock(mFile);
+    mFile->RemoveOutput(this);
     delete (this);
     return 0;
-  }
-
-  if (count == 1) {
-    mFile->RemoveOutput(this);
   }
 
   return count;
@@ -166,6 +164,8 @@ CacheFileOutputStream::CloseWithStatus(nsresult aStatus)
 
   if (mCallback)
     NotifyListener();
+
+  mFile->RemoveOutput(this);
 
   return NS_OK;
 }
