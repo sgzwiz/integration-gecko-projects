@@ -16,7 +16,7 @@ interface nsICacheListener;
 interface nsIFile;
 interface nsICacheMetaDataVisitor;
 
-[scriptable, uuid(74ccc007-722b-400f-9b2b-8a39b1195157)]
+[scriptable, uuid(8a70ccb1-5105-47a3-8b91-38db12e17998)]
 interface nsICacheEntry : nsISupports
 {
   /**
@@ -71,7 +71,7 @@ interface nsICacheEntry : nsISupports
    *
    * @return blocking, unbuffered input stream.
    */
-  nsIInputStream openInputStream(in unsigned long offset);
+  nsIInputStream openInputStream(in long long offset);
 
   /**
    * Open blocking output stream to cache data.  This will fail if the cache
@@ -88,7 +88,7 @@ interface nsICacheEntry : nsISupports
    *
    * @return blocking, unbuffered output stream.
    */
-  nsIOutputStream openOutputStream(in unsigned long offset);
+  nsIOutputStream openOutputStream(in long long offset);
 
   /**
     * Stores the Content-Length specified in the HTTP header for this
@@ -153,7 +153,7 @@ interface nsICacheEntry : nsISupports
    * @throws
    *    NS_ERROR_IN_PROGRESS when the write is still in progress.
    */
-  readonly attribute unsigned long dataSize;
+  readonly attribute long long dataSize;
 
   // *************** GET RID OF THESE ??? ***************
   void setDataSize(in unsigned long size);

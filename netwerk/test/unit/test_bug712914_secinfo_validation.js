@@ -1,13 +1,9 @@
-var Ci = Components.interfaces;
-var Cc = Components.classes;
-var Cr = Components.results;
-
 var _ios;
 
 var ACCESS_WRITE = Ci.nsICache.ACCESS_WRITE;
 var ACCESS_READ = Ci.nsICache.ACCESS_READ;
 
-var KEY_CORRUPT_SECINFO = "corruptSecurityInfo";
+var KEY_CORRUPT_SECINFO = "http://corruptSecurityInfo/";
 var ENTRY_DATA = "foobar";
 
 function create_scriptable_input(unscriptable_input) {
@@ -30,7 +26,7 @@ function continue_failure(status, entry) {
   do_check_eq(status, Cr.NS_ERROR_CACHE_KEY_NOT_FOUND);
 
   // Make sure the cache is empty
-  get_device_entry_count("disk", function(count, consumption) {
+  get_device_entry_count("disk", null, function(count, consumption) {
     do_check_eq(count, 0);
     do_check_eq(consumption, 0);
     run_next_test();
@@ -44,8 +40,8 @@ function try_read_corrupt_secinfo() {
 }
 
 function write_corrupt_secinfo(status, entry) {
-  write_data(entry);
   entry.setMetaDataElement("security-info", "blablabla");
+  write_data(entry);
   try {
     entry.close();
   } catch (e) {

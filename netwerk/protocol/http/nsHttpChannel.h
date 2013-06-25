@@ -136,12 +136,12 @@ public: /* internal necko use only */
     // is gone.  Needed for e10s (see HttpChannelParent::RecvDocumentChannelCleanup)
     class OfflineCacheEntryAsForeignMarker {
         nsCOMPtr<nsIApplicationCache> mApplicationCache;
-        nsCString mCacheKey;
+        nsCOMPtr<nsIURI> mCacheURI;
     public:
         OfflineCacheEntryAsForeignMarker(nsIApplicationCache* appCache,
-                                         const nsCSubstring& key)
+                                         nsIURI* aURI)
              : mApplicationCache(appCache)
-             , mCacheKey(key)
+             , mCacheURI(aURI)
         {}
 
         nsresult MarkAsForeign();
@@ -256,7 +256,7 @@ private:
     nsresult AddCacheEntryHeaders(nsICacheEntry *entry);
     nsresult StoreAuthorizationMetaData(nsICacheEntry *entry);
     nsresult FinalizeCacheEntry();
-    nsresult InstallCacheListener(uint32_t offset = 0);
+    nsresult InstallCacheListener(int64_t offset = 0);
     nsresult InstallOfflineCacheListener();
     void     MaybeInvalidateCacheEntryForSubsequentGet();
     nsCacheStoragePolicy DetermineStoragePolicy();
@@ -288,7 +288,7 @@ private:
     void InvalidateCacheEntryForLocation(const char *location);
     void AssembleCacheKey(const char *spec, uint32_t postID, nsACString &key);
     nsresult CreateNewURI(const char *loc, nsIURI **newURI);
-    void DoInvalidateCacheEntry(const nsCString &key);
+    void DoInvalidateCacheEntry(nsIURI* aURI);
 
     // Ref RFC2616 13.10: "invalidation... MUST only be performed if
     // the host part is the same as in the Request-URI"

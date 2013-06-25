@@ -133,7 +133,7 @@ function run_test3() {
   obsvc.notifyObservers(null, "last-pb-context-exited", null);
 
   // Make sure the memory device is not empty
-  get_device_entry_count(kMemoryDevice, function(count) {
+  get_device_entry_count(kMemoryDevice, null, function(count) {
     do_check_eq(count, 1);
     // Check if cache-A is gone, and cache-B and cache-C are still available
     check_entries(do_test_finished, true);

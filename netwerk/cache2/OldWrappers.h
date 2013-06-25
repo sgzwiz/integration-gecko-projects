@@ -32,6 +32,13 @@ public:
   NS_IMETHOD SetValid() { return NS_OK; }
   NS_IMETHOD MetaDataReady() { return NS_OK; }
   NS_IMETHOD Recreate(nsICacheEntry**) { return NS_ERROR_NOT_IMPLEMENTED; }
+  NS_IMETHOD GetDataSize(int64_t *size);
+  NS_IMETHOD OpenInputStream(int64_t offset, nsIInputStream * *_retval) {
+    return OpenInputStream(uint32_t(offset), _retval);
+  }
+  NS_IMETHOD OpenOutputStream(int64_t offset, nsIOutputStream * *_retval) {
+    return OpenOutputStream(uint32_t(offset), _retval);
+  }
 
   _OldDescriptorWrapper(nsICacheEntryDescriptor* desc) : mOldDesc(desc) {}
   virtual ~_OldDescriptorWrapper() {}
@@ -58,6 +65,7 @@ public:
     , mCallback(aCallback)
     , mStorage(aCacheStorage)
     , mTruncate(aTruncate)
+    , mMainThreadOnly(true)
     , mNew(true)
     , mStatus(NS_ERROR_UNEXPECTED)
     , mRunCount(0)
@@ -67,12 +75,15 @@ public:
   nsresult Start();
 
 protected:
+  void Check();
+
   nsCOMPtr<nsIEventTarget> mCacheThread;
 
   nsCOMPtr<nsIURI> mURI;
   nsCOMPtr<nsICacheEntryOpenCallback> mCallback;
   nsRefPtr<CacheStorage> mStorage;
   bool mTruncate;
+  bool mMainThreadOnly;
 
   bool mNew;
   nsCOMPtr<nsICacheEntry> mCacheEntry;

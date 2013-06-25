@@ -77,7 +77,7 @@ public:
   // TODO make these inline
   double GetFrecency() const;
   uint32_t GetExpirationTime() const;
-  uint32_t& ReportedMemorySize();
+  int64_t& ReportedMemorySize();
 
   bool IsRegistered() const;
   bool CanRegister() const;
@@ -102,7 +102,7 @@ public:
                              nsACString &aResult);
 
   // Accessed only on the service management thread
-  uint32_t mReportedMemorySize;
+  int64_t mReportedMemorySize;
   double mFrecency;
   uint32_t mSortingExpirationTime;
 
@@ -191,6 +191,10 @@ private:
 
   void InvokeCallbacksMainThread();
 
+  // When this entry is new and recreated w/o a callback, we need to wrap it
+  // with a handle to detect writing consumer is gone.
+  Handle* GetWriteHandler();
+
   // Schedules a background operation on the management thread.
   // When executed on the management thread directly, the operation(s)
   // is (are) executed immediately.
@@ -252,6 +256,11 @@ private:
   // State of this entry, atomic access prevents using of locks, except
   // decistion to load this entry.
   uint32_t mState;
+
+  // Weak reference to the current writter.  There can be more then one
+  // writer at a time and OnWriterClosed() must be processed only for the
+  // current one.
+  Handle* mWriter;
 
   // Background thread scheduled operation.  Set (under the lock) one
   // of this flags to tell the background thread what to do.

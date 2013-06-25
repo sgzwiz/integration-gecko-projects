@@ -42,9 +42,9 @@ function serverHandler(metadata, response) {
 }
 
 function checkRequest(request, data, context) {
-  get_device_entry_count("disk", function(count) {
+  get_device_entry_count("disk", null, function(count) {
     do_check_eq(count, 0)
-    get_device_entry_count("memory", function(count) {
+    get_device_entry_count("disk", new LoadContextInfo(true /*private*/), function(count) {
       do_check_eq(count, 1);
       httpserver.stop(do_test_finished);
     });

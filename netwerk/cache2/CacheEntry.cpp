@@ -29,9 +29,12 @@
 namespace mozilla {
 namespace net {
 
-static uint32_t const ENTRY_NOT_VALID = nsICacheEntryOpenCallback::ENTRY_NOT_VALID;
-static uint32_t const ENTRY_VALID = nsICacheEntryOpenCallback::ENTRY_VALID;
-static uint32_t const ENTRY_NEEDS_REVALIDATION = nsICacheEntryOpenCallback::ENTRY_NEEDS_REVALIDATION;
+static uint32_t const ENTRY_NOT_VALID =
+  nsICacheEntryOpenCallback::ENTRY_NOT_VALID;
+static uint32_t const ENTRY_VALID =
+  nsICacheEntryOpenCallback::ENTRY_VALID;
+static uint32_t const ENTRY_NEEDS_REVALIDATION =
+  nsICacheEntryOpenCallback::ENTRY_NEEDS_REVALIDATION;
 
 NS_IMPL_THREADSAFE_ISUPPORTS1(CacheEntry::Handle, nsICacheEntry)
 
@@ -78,6 +81,7 @@ CacheEntry::CacheEntry(const nsACString& aStorageID,
 , mIsRegistrationAllowed(true)
 , mHasMainThreadOnlyCallback(false)
 , mState(NOTLOADED)
+, mWriter(nullptr)
 , mPredictedDataSize(0)
 , mDataSize(0)
 , mMetadataMemoryOccupation(0)
@@ -201,7 +205,6 @@ bool CacheEntry::Load(bool aTruncate)
     return true;
   }
 
-  MOZ_ASSERT(mState == NOTLOADED);
   MOZ_ASSERT(!mFile);
 
   bool directLoad = aTruncate || !mUseDisk;
@@ -412,7 +415,8 @@ void CacheEntry::InvokeCallbacks()
 bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
                                 bool aReadOnly)
 {
-  LOG(("CacheEntry::InvokeCallback [this=%p, state=%s, cb=%p]", this, StateString(mState), aCallback));
+  LOG(("CacheEntry::InvokeCallback [this=%p, state=%s, cb=%p]",
+    this, StateString(mState), aCallback));
 
   mLock.AssertCurrentThreadOwns();
 
@@ -420,7 +424,9 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
     // When we are here, the entry must be loaded from disk
     MOZ_ASSERT(mState > LOADING);
 
-    if (mState == WRITING || mState == HASMETADATA || mState == REVALIDATING) {
+    if (mState == WRITING ||
+        mState == HASMETADATA ||
+        mState == REVALIDATING) {
       // Prevent invoking other callbacks since one of them is now writing
       // or revalidating this entry.  No consumers should get this entry
       // until metadata are filled with values downloaded from the server
@@ -449,6 +455,7 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
         // Metadata present, validate the entry
         uint32_t validityState;
         {
+          // mayhemer: TODO check and solve any potential races of concurent OnCacheEntryCheck
           mozilla::MutexAutoUnlock unlock(mLock);
 
           nsresult rv = aCallback->OnCacheEntryCheck(this, nullptr, &validityState);
@@ -459,6 +466,9 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
         }
 
         switch (validityState) {
+        /*
+        mayhemer - probably a dead code now, consumer is responsible to recreate
+                   an entry when found invalid and wants to write to it.
         case ENTRY_NOT_VALID:
         {
           // Entry found not valid, break callback execution.  This result
@@ -471,6 +481,7 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
           }
           break;
         }
+        */
 
         case ENTRY_NEEDS_REVALIDATION:
           LOG(("  will be holding callbacks until entry is revalidated"));
@@ -478,7 +489,7 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
           // state then REVALIDATING for which cocurrency is not an issue.  No need
           // to lock here.
           mState = REVALIDATING;
-          // NO BREAK
+          break;
 
         case ENTRY_VALID:
           // Nothing more to do here, proceed to callback...
@@ -547,12 +558,7 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
 
   // Consumer will be responsible to fill or validate the entry metadata and data.
 
-  {
-    mozilla::MutexAutoLock lock(mLock);
-    BackgroundOp(Ops::FRECENCYUPDATE);
-  }
-
-  nsRefPtr<Handle> handle = new Handle(this);
+  nsRefPtr<Handle> handle = GetWriteHandler();
   nsresult rv = aCallback->OnCacheEntryAvailable(handle, state == WRITING, nullptr, NS_OK);
 
   if (NS_FAILED(rv)) {
@@ -566,18 +572,39 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
   LOG(("  writing/revalidating"));
 }
 
+CacheEntry::Handle* CacheEntry::GetWriteHandler()
+{
+  mozilla::MutexAutoLock lock(mLock);
+
+  BackgroundOp(Ops::FRECENCYUPDATE);
+  return (mWriter = new Handle(this));
+}
+
 void CacheEntry::OnWriterClosed(Handle const* aHandle)
 {
   LOG(("CacheEntry::OnWriterClosed [this=%p, state=%s, handle=%p]", this, StateString(mState), aHandle));
 
-  // There can only be one writer at a time (i.e. only a single consumer that
-  // could manipulate with the state), so no need to lock here.
+  mozilla::MutexAutoLock lock(mLock);
+
+  if (mWriter != aHandle) {
+    LOG(("  not the current writer"));
+    return;
+  }
+
+  mWriter = nullptr;
+
   if (mState == WRITING) {
     LOG(("  reverting to state EMPTY - write failed"));
     mState = EMPTY;
   }
-
-  mozilla::MutexAutoLock lock(mLock);
+  else if (mState == HASMETADATA) {
+    LOG(("  advancing to state READY - write done w/o opening output stream"));
+    mState = READY;
+  }
+  else if (mState == REVALIDATING) {
+    LOG(("  reverting to state READY - reval failed"));
+    mState = READY;
+  }
 
   BackgroundOp(Ops::REPORTUSAGE);
   InvokeCallbacks();
@@ -615,7 +642,7 @@ uint32_t CacheEntry::GetMetadataMemoryOccupation() const
 
 uint32_t CacheEntry::GetDataMemoryOccupation() const
 {
-  uint32_t size;
+  int64_t size;
   CacheEntry* this_non_const = const_cast<CacheEntry*>(this);
 
   // TODO
@@ -623,7 +650,8 @@ uint32_t CacheEntry::GetDataMemoryOccupation() const
   if (NS_FAILED(rv))
     return 0;
 
-  return size;
+  // TODO 2x.. :)
+  return uint32_t(size);
 }
 
 // nsICacheEntry
@@ -700,7 +728,6 @@ NS_IMETHODIMP CacheEntry::GetLastModified(uint32_t *aLastModified)
   NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
 
   return metadata->GetLastModified(aLastModified);
-  return NS_OK;
 }
 
 NS_IMETHODIMP CacheEntry::GetExpirationTime(uint32_t *aExpirationTime)
@@ -740,7 +767,7 @@ NS_IMETHODIMP CacheEntry::SetExpirationTime(uint32_t aExpirationTime)
   return NS_OK;
 }
 
-NS_IMETHODIMP CacheEntry::OpenInputStream(uint32_t offset, nsIInputStream * *_retval)
+NS_IMETHODIMP CacheEntry::OpenInputStream(int64_t offset, nsIInputStream * *_retval)
 {
   LOG(("CacheEntry::OpenInputStream [this=%p]", this));
 
@@ -770,7 +797,7 @@ NS_IMETHODIMP CacheEntry::OpenInputStream(uint32_t offset, nsIInputStream * *_re
   return NS_OK;
 }
 
-NS_IMETHODIMP CacheEntry::OpenOutputStream(uint32_t offset, nsIOutputStream * *_retval)
+NS_IMETHODIMP CacheEntry::OpenOutputStream(int64_t offset, nsIOutputStream * *_retval)
 {
   LOG(("CacheEntry::OpenOutputStream [this=%p]", this));
 
@@ -1049,7 +1076,8 @@ NS_IMETHODIMP CacheEntry::Recreate(nsICacheEntry **_retval)
 
   nsRefPtr<CacheEntry> newEntry = ReopenTruncated(nullptr);
   if (newEntry) {
-    newEntry.forget(_retval);
+    nsRefPtr<Handle> handle = newEntry->GetWriteHandler();
+    handle.forget(_retval);
     return NS_OK;
   }
 
@@ -1064,15 +1092,10 @@ NS_IMETHODIMP CacheEntry::SetDataSize(uint32_t size)
   return NS_OK;
 }
 
-NS_IMETHODIMP CacheEntry::GetDataSize(uint32_t *aDataSize)
+NS_IMETHODIMP CacheEntry::GetDataSize(int64_t *aDataSize)
 {
   LOG(("CacheEntry::GetDataSize [this=%p]", this));
   *aDataSize = 0;
-
-  if (mState == WRITING) {
-    LOG(("  write is in progress"));
-    return NS_ERROR_IN_PROGRESS;
-  }
 
   nsRefPtr<CacheFile> file(File());
   if (!file) {
@@ -1080,9 +1103,13 @@ NS_IMETHODIMP CacheEntry::GetDataSize(uint32_t *aDataSize)
     return NS_OK; // really OK?
   }
 
-  // mayhemer: TODO Problem with compression
-  *aDataSize = file->DataSize();
-  LOG(("  size=%u", *aDataSize));
+  // mayhemer: TODO Problem with compression?
+  if (!file->DataSize(aDataSize)) {
+    LOG(("  write in progress"));
+    return NS_ERROR_IN_PROGRESS;
+  }
+
+  LOG(("  size=%lld", *aDataSize));
   return NS_OK;
 }
 
@@ -1135,7 +1162,7 @@ uint32_t CacheEntry::GetExpirationTime() const
   return mSortingExpirationTime;
 }
 
-uint32_t& CacheEntry::ReportedMemorySize()
+int64_t& CacheEntry::ReportedMemorySize()
 {
   MOZ_ASSERT(CacheStorageService::IsOnManagementThread());
   return mReportedMemorySize;
@@ -1327,11 +1354,12 @@ void CacheEntry::BackgroundOp(uint32_t aOperations, bool aForceAsync)
     if (!file)
       return;
 
-    uint32_t memorySize;
+    int64_t memorySize;
     {
       // TODO: The following line is wrong, need API on CacheFile to get
       // actual allocation consumption, best with file->Metadata()->ElementsSize() included
-      memorySize = (uint32_t)std::min(uint64_t(file->DataSize()), uint64_t(PR_UINT32_MAX));
+      if (!file->DataSize(&memorySize))
+        memorySize = 0;
 
       CacheFileAutoLock lock(file);
 

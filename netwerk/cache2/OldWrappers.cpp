@@ -47,6 +47,17 @@ NS_IMETHODIMP _OldDescriptorWrapper::AsyncDoom(nsICacheEntryDoomCallback* listen
   return AsyncDoom(cb);
 }
 
+NS_IMETHODIMP _OldDescriptorWrapper::GetDataSize(int64_t *aSize)
+{
+  uint32_t size;
+  nsresult rv = GetDataSize(&size);
+  if (NS_FAILED(rv))
+    return rv;
+
+  *aSize = size;
+  return NS_OK;
+}
+
 namespace {
 void
 GetCacheSessionNameForStoragePolicy(
@@ -93,6 +104,12 @@ _OldGenericCacheLoad::~_OldGenericCacheLoad()
 nsresult _OldGenericCacheLoad::Start()
 {
   MOZ_ASSERT(NS_IsMainThread());
+
+  bool mainThreadOnly;
+  if (mCallback && (
+      NS_SUCCEEDED(mCallback->GetMainThreadOnly(&mainThreadOnly)) &&
+      !mainThreadOnly))
+    mMainThreadOnly = false;
 
   nsresult rv;
 
@@ -175,6 +192,9 @@ _OldGenericCacheLoad::Run()
       rv = OnCacheEntryAvailable(nullptr, 0, rv);
     }
   } else {
+    if (mMainThreadOnly)
+      Check();
+
     // break cycles
     nsCOMPtr<nsICacheEntryOpenCallback> cb = mCallback.forget();
     mCacheThread = nullptr;
@@ -208,7 +228,16 @@ _OldGenericCacheLoad::OnCacheEntryAvailable(nsICacheEntryDescriptor *entry,
 
   mNew = !entry || !(access & nsICache::ACCESS_READ);
 
-  if (entry && !mNew) {
+  if (!mMainThreadOnly)
+    Check();
+
+  return NS_DispatchToMainThread(this);
+}
+
+void
+_OldGenericCacheLoad::Check()
+{
+  if (mCacheEntry && !mNew) {
     uint32_t valid;
     nsresult rv = mCallback->OnCacheEntryCheck(mCacheEntry, mAppCache, &valid);
     LOG(("OnCacheEntryCheck result ent=%p, cb=%p, appcache=%p, rv=0x%08x",
@@ -221,8 +250,6 @@ _OldGenericCacheLoad::OnCacheEntryAvailable(nsICacheEntryDescriptor *entry,
       NS_WARNING("not valid");
     }
   }
-
-  return NS_DispatchToMainThread(this);
 }
 
 NS_IMETHODIMP
