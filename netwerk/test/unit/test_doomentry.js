@@ -9,10 +9,12 @@
 function doom(url, callback)
 {
   get_cache_service()
-      .diskStorage(new LoadContextInfo(), false)
-      .asyncDoomURI(createURI(url));
-  // TODO mayhemer - actual callback needed !
-  callback(Cr.NS_OK);
+      .diskCacheStorage(new LoadContextInfo(), false)
+      .asyncDoomURI(createURI(url), "", {
+        onCacheEntryDoomed: function(result) {
+          callback(result);
+        }
+      });
 }
 
 function write_and_check(str, data, len)
@@ -29,7 +31,7 @@ function write_entry()
 {
   asyncOpenCacheEntry("http://testentry/", "disk", Ci.nsICacheStorage.OPEN_TRUNCATE, null, function(status, entry) {
     write_entry_cont(entry, entry.openOutputStream(0));
-  }
+  });
 }
 
 function write_entry_cont(entry, ostream)
@@ -52,7 +54,7 @@ function check_doom2(status)
   do_check_eq(status, Cr.NS_ERROR_NOT_AVAILABLE);
   asyncOpenCacheEntry("http://testentry/", "disk", Ci.nsICacheStorage.OPEN_TRUNCATE, null, function(status, entry) {
     write_entry2(entry, entry.openOutputStream(0));
-  }
+  });
 }
 
 var gEntry;

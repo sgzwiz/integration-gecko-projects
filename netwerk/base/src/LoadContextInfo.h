@@ -38,6 +38,9 @@ LoadContextInfo *
 GetLoadContextInfo(nsILoadContext * aLoadContext,
                    bool aAnonymous);
 
+LoadContextInfo *
+GetLoadContextInfo(nsILoadContextInfo* aInfo);
+
 } // net
 } // mozilla
 

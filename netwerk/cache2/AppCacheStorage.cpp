@@ -48,14 +48,20 @@ NS_IMETHODIMP AppCacheStorage::AsyncOpenURI(nsIURI *aURI,
   NS_ENSURE_ARG(aURI);
   NS_ENSURE_ARG(aCallback);
 
-  if (!mAppCache) {
-    // We could choose appcache here potentially... I don't see a use case right now.
+  nsresult rv;
+
+  nsCOMPtr<nsIApplicationCache> appCache = mAppCache;
+
+  if (!appCache) {
+    rv = ChooseApplicationCache(aURI, getter_AddRefs(appCache));
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  if (!appCache) {
     LOG(("AppCacheStorage::AsyncOpenURI entry not found in any appcache, giving up"));
     aCallback->OnCacheEntryAvailable(nullptr, false, nullptr, NS_ERROR_CACHE_KEY_NOT_FOUND);
     return NS_OK;
   }
-
-  nsresult rv;
 
   bool truncate = aFlags & nsICacheStorage::OPEN_TRUNCATE;
 
@@ -64,7 +70,7 @@ NS_IMETHODIMP AppCacheStorage::AsyncOpenURI(nsIURI *aURI,
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsRefPtr<_OldApplicationCacheLoad> appCacheLoad =
-    new _OldApplicationCacheLoad(noRefURI, aCallback, mAppCache, this, truncate);
+    new _OldApplicationCacheLoad(noRefURI, aCallback, appCache, this, truncate);
   rv = appCacheLoad->Start();
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -119,7 +125,9 @@ NS_IMETHODIMP AppCacheStorage::AsyncEvictStorage(nsICacheEntryDoomCallback* aCal
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  aCallback->OnCacheEntryDoomed(NS_OK);
+  if (aCallback)
+    aCallback->OnCacheEntryDoomed(NS_OK);
+
   return NS_OK;
 }
 

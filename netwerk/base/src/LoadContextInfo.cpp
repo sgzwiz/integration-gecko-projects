@@ -90,5 +90,14 @@ GetLoadContextInfo(nsILoadContext * aLoadContext, bool aIsAnonymous)
   return new LoadContextInfo(pb, appId, ib, aIsAnonymous);
 }
 
+LoadContextInfo *
+GetLoadContextInfo(nsILoadContextInfo* aInfo)
+{
+  return new LoadContextInfo(aInfo->IsPrivate(),
+                             aInfo->AppId(),
+                             aInfo->IsInBrowserElement(),
+                             aInfo->IsAnonymous());
+}
+
 } // net
 } // mozilla
