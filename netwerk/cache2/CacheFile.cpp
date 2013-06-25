@@ -874,7 +874,8 @@ CacheFile::GetChunkLocked(uint32_t aIndex, bool aWriter,
       LOG(("CacheFile::GetChunkLocked() - Created new GapFiller %p [this=%p]",
            mGapFiller.get(), this));
 
-      NS_DispatchToCurrentThread(mGapFiller);
+//      NS_DispatchToCurrentThread(mGapFiller); // tmp HACK
+      NS_DispatchToMainThread(mGapFiller);
 
       return NS_OK;
     }
@@ -1021,7 +1022,8 @@ CacheFile::NotifyChunkListener(CacheFileChunkListener *aCallback,
   if (aTarget)
     rv = aTarget->Dispatch(ev, NS_DISPATCH_NORMAL);
   else
-    rv = NS_DispatchToCurrentThread(ev);
+//    rv = NS_DispatchToCurrentThread(ev);  // temporary HACK (see below)
+    rv = NS_DispatchToMainThread(ev);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
