@@ -1100,11 +1100,16 @@ CacheFile::NotifyListenersAboutOutputRemoval()
   mChunks.Enumerate(&CacheFile::FailUpdateListeners, this);
 }
 
-int64_t
-CacheFile::DataSize()
+bool
+CacheFile::DataSize(int64_t* aSize)
 {
   CacheFileAutoLock lock(this);
-  return mDataSize;
+
+  if (mOutput)
+    return false;
+
+  *aSize = mDataSize;
+  return true;
 }
 
 void
