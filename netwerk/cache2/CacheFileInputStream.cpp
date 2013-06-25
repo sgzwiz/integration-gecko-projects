@@ -122,9 +122,6 @@ CacheFileInputStream::Read(char *aBuf, uint32_t aCount, uint32_t *_retval)
   EnsureCorrectChunk(false);
   if (!mChunk) {
     if (mListeningForChunk == -1) {
-      if (mCallback) // Is this needed?
-        NotifyListener();
-
       *_retval = 0;
       return NS_OK;
     }
@@ -192,9 +189,6 @@ CacheFileInputStream::ReadSegments(nsWriteSegmentFun aWriter, void *aClosure,
   EnsureCorrectChunk(false);
   if (!mChunk) {
     if (mListeningForChunk == -1) {
-      if (mCallback) // Is this needed?
-        NotifyListener();
-
       *_retval = 0;
       return NS_OK;
     }
@@ -529,6 +523,9 @@ CacheFileInputStream::EnsureCorrectChunk(bool aReleaseOnly)
     LOG(("CacheFileInputStream::EnsureCorrectChunk() - GetChunkLocked failed. "
          "[this=%p, idx=%d, rv=0x%08x]", this, chunkIdx, rv));
     mListeningForChunk = -1;
+
+    if (mCallback)
+      NotifyListener();
   }
 }
 
