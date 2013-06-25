@@ -79,6 +79,8 @@ function asyncOpenCacheEntry(key, where, flags, lci, callback, appcache)
 
   function CacheListener() { }
   CacheListener.prototype = {
+    _appCache: appcache,
+
     QueryInterface: function (iid) {
       if (iid.equals(Components.interfaces.nsICacheEntryOpenCallback) ||
           iid.equals(Components.interfaces.nsISupports))
@@ -104,7 +106,7 @@ function asyncOpenCacheEntry(key, where, flags, lci, callback, appcache)
     },
 
     run: function () {
-      var storage = getCacheStorage(where, lci, appcache);
+      var storage = getCacheStorage(where, lci, this._appCache);
       storage.asyncOpenURI(key, "", flags, this);
     }
   };
@@ -123,8 +125,8 @@ function syncWithCacheIOThread(callback)
 }
 
 // TODO - this has to be async...
-function get_device_entry_count(where, continuation) {
-  var storage = getCacheStorage(where);
+function get_device_entry_count(where, lci, continuation) {
+  var storage = getCacheStorage(where, lci);
   if (!storage) {
     continuation(-1, 0);
     return;
@@ -140,9 +142,9 @@ function get_device_entry_count(where, continuation) {
   storage.asyncVisitStorage(visitor, true);
 }
 
-function asyncCheckCacheEntryPresence(key, where, shouldExist, continuation)
+function asyncCheckCacheEntryPresence(key, where, shouldExist, continuation, appCache)
 {
-  asyncOpenCacheEntry(key, where, Ci.nsICacheStorage.OPEN_READONLY,
+  asyncOpenCacheEntry(key, where, Ci.nsICacheStorage.OPEN_READONLY, null,
     function(status, entry) {
       if (shouldExist) {
         dump("TEST-INFO | checking cache key " + key + " exists @ " + where);
@@ -154,5 +156,5 @@ function asyncCheckCacheEntryPresence(key, where, shouldExist, continuation)
         do_check_null(entry);
       }
       continuation();
-    });
+    }, appCache);
 }
