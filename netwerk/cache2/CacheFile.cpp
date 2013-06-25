@@ -1193,7 +1193,9 @@ CacheFile::FailUpdateListeners(
   nsRefPtr<CacheFileChunk>& aChunk,
   void* aClosure)
 {
+#ifdef PR_LOGGING
   CacheFile *file = static_cast<CacheFile*>(aClosure);
+#endif
 
   LOG(("CacheFile::FailUpdateListeners() [this=%p, idx=%d]",
        file, aIdx));
