@@ -24,8 +24,10 @@ CacheFileOutputStream::Release()
 
   if (0 == count) {
     mRefCnt = 1;
-    CacheFileAutoLock lock(mFile);
-    mFile->RemoveOutput(this);
+    {
+      CacheFileAutoLock lock(mFile);
+      mFile->RemoveOutput(this);
+    }
     delete (this);
     return 0;
   }
