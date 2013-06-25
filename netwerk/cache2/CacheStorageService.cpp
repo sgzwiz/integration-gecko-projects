@@ -73,7 +73,6 @@ CacheStorageService::CacheStorageService()
 : mLock("CacheStorageService")
 , mShutdown(false)
 , mMemorySize(0)
-, mMetadataSize(0)
 {
   MOZ_COUNT_CTOR(CacheStorageService);
 
@@ -291,7 +290,7 @@ private:
 
     walker->mSize += aEntry->GetMetadataMemoryOccupation();
 
-    uint32_t size;
+    int64_t size;
     if (NS_SUCCEEDED(aEntry->GetDataSize(&size)))
       walker->mSize += size;
 
@@ -600,21 +599,21 @@ CacheStorageService::RecordMemoryOnlyEntry(CacheEntry* aEntry,
 
 void
 CacheStorageService::OnMemoryConsumptionChange(CacheEntry* aEntry,
-                                               uint32_t aCurrentMemorySize)
+                                               int64_t aCurrentMemorySize)
 {
   LOG(("CacheStorageService::OnMemoryConsumptionChange [entry=%p, size=%u]",
     aEntry, aCurrentMemorySize));
 
   MOZ_ASSERT(IsOnManagementThread());
 
-  uint32_t savedMemorySize = aEntry->ReportedMemorySize();
+  int64_t savedMemorySize = aEntry->ReportedMemorySize();
   if (savedMemorySize == aCurrentMemorySize)
     return;
 
   mMemorySize -= savedMemorySize;
   mMemorySize += aCurrentMemorySize;
 
-  LOG(("  mMemorySize=%u (+%u,-%u)", mMemorySize, aCurrentMemorySize, savedMemorySize));
+  LOG(("  mMemorySize=%llu (+%llu,-%llu)", mMemorySize, aCurrentMemorySize, savedMemorySize));
 
   bool dataRaise = savedMemorySize < aCurrentMemorySize;
 
@@ -883,11 +882,15 @@ CacheStorageService::DoomStorageEntry(CacheStorage const* aStorage,
     //   existing file before anyone else would try to open it
 
     // HACK...
-    aCallback->OnCacheEntryDoomed(NS_ERROR_NOT_AVAILABLE);
+    if (aCallback)
+      aCallback->OnCacheEntryDoomed(NS_ERROR_NOT_AVAILABLE);
+
     return NS_OK;
   }
 
-  aCallback->OnCacheEntryDoomed(NS_ERROR_NOT_AVAILABLE);
+  if (aCallback)
+    aCallback->OnCacheEntryDoomed(NS_ERROR_NOT_AVAILABLE);
+
   return NS_OK;
 }
 

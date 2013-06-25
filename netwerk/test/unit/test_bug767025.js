@@ -253,10 +253,10 @@ function check_evict_cache(appcache) {
         do_check_eq(file.exists(), false);
 
         httpServer.stop(do_test_finished);
-      }
+      });
     },
-    null, // lci
-    appcache);
+    appcache
+  );
 }
 
 function run_test() {

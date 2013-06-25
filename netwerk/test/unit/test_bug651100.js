@@ -83,7 +83,7 @@ function write_and_doom_small_datafile(status, entry)
 }
 
 function check_cache_size(cont) {
-  get_device_entry_count("disk", function(count, consumption) {
+  get_device_entry_count("disk", null, function(count, consumption) {
     do_check_eq(consumption, 0)
     cont();
   });
