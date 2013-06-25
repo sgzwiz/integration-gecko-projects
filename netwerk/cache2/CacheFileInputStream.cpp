@@ -120,8 +120,18 @@ CacheFileInputStream::Read(char *aBuf, uint32_t aCount, uint32_t *_retval)
   }
 
   EnsureCorrectChunk(false);
-  if (!mChunk)
-    return NS_BASE_STREAM_WOULD_BLOCK;
+  if (!mChunk) {
+    if (mListeningForChunk == -1) {
+      if (mCallback) // Is this needed?
+        NotifyListener();
+
+      *_retval = 0;
+      return NS_OK;
+    }
+    else {
+      return NS_BASE_STREAM_WOULD_BLOCK;
+    }
+  }
 
   int64_t canRead;
   const char *buf;
@@ -180,8 +190,18 @@ CacheFileInputStream::ReadSegments(nsWriteSegmentFun aWriter, void *aClosure,
   }
 
   EnsureCorrectChunk(false);
-  if (!mChunk)
-    return NS_BASE_STREAM_WOULD_BLOCK;
+  if (!mChunk) {
+    if (mListeningForChunk == -1) {
+      if (mCallback) // Is this needed?
+        NotifyListener();
+
+      *_retval = 0;
+      return NS_OK;
+    }
+    else {
+      return NS_BASE_STREAM_WOULD_BLOCK;
+    }
+  }
 
   int64_t canRead;
   const char *buf;
@@ -385,8 +405,8 @@ CacheFileInputStream::OnChunkAvailable(nsresult aResult, uint32_t aChunkIdx,
 {
   CacheFileAutoLock lock(mFile);
 
-  LOG(("CacheFileInputStream::OnChunkAvailable() [this=%p, idx=%d, chunk=%p]",
-       this, aChunkIdx, aChunk));
+  LOG(("CacheFileInputStream::OnChunkAvailable() [this=%p, result=0x%08x, "
+       "idx=%d, chunk=%p]", this, aResult, aChunkIdx, aChunk));
 
   MOZ_ASSERT(mListeningForChunk != -1);
 
@@ -413,7 +433,6 @@ CacheFileInputStream::OnChunkAvailable(nsresult aResult, uint32_t aChunkIdx,
   }
 
   mChunk = aChunk;
-
   if (mCallback)
     NotifyListener();
 
@@ -506,11 +525,10 @@ CacheFileInputStream::EnsureCorrectChunk(bool aReleaseOnly)
   mListeningForChunk = static_cast<int64_t>(chunkIdx);
 
   rv = mFile->GetChunkLocked(chunkIdx, false, this);
-  MOZ_ASSERT(NS_SUCCEEDED(rv),
-             "GetChunkLocked should always fail asynchronously");
   if (NS_FAILED(rv)) {
-    LOG(("CacheFileInputStream::EnsureCorrectChunk() - GetChunkLocked failed "
-         " synchronously! [this=%p, idx=%d, rv=0x%08x]", this, chunkIdx, rv));
+    LOG(("CacheFileInputStream::EnsureCorrectChunk() - GetChunkLocked failed. "
+         "[this=%p, idx=%d, rv=0x%08x]", this, chunkIdx, rv));
+    mListeningForChunk = -1;
   }
 }
 

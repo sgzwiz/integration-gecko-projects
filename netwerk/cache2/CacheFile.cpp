@@ -102,6 +102,7 @@ CacheFile::CacheFile()
   , mWritingMetadata(false)
   , mDoomRequested(false)
   , mDataSize(-1)
+  , mOutput(nullptr)
 {
   LOG(("CacheFile::CacheFile() [this=%p]", this));
 
@@ -621,7 +622,7 @@ CacheFile::OpenOutputStream(nsIOutputStream **_retval)
 
   if (mOutput) {
     LOG(("CacheFile::OpenOutputStream() - We already have output stream %p "
-         "[this=%p]", mOutput.get(), this));
+         "[this=%p]", mOutput, this));
 
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -629,7 +630,7 @@ CacheFile::OpenOutputStream(nsIOutputStream **_retval)
   mOutput = new CacheFileOutputStream(this);
 
   LOG(("CacheFile::OpenOutputStream() - Creating new output stream %p "
-       "[this=%p]", mOutput.get(), this));
+       "[this=%p]", mOutput, this));
 
   mDataAccessed = true;
   NS_ADDREF(*_retval = mOutput);
@@ -882,19 +883,18 @@ CacheFile::GetChunkLocked(uint32_t aIndex, bool aWriter,
 
       NS_DispatchToCurrentThread(mGapFiller);
 
-
       return NS_OK;
     }
   }
 
-  if (mOutput)
+  if (mOutput) {
     // the chunk doesn't exist but mOutput may create it
     rv = QueueChunkListener(aIndex, aCallback);
-  else
-    // the chunk doesn't exist and nobody is going to create it
-    rv = NotifyChunkListener(aCallback, nullptr, NS_ERROR_NOT_AVAILABLE, aIndex,
-                             nullptr);
-  NS_ENSURE_SUCCESS(rv, rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+  else {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
   return NS_OK;
 }
@@ -990,18 +990,20 @@ CacheFile::RemoveInput(CacheFileInputStream *aInput)
 nsresult
 CacheFile::RemoveOutput(CacheFileOutputStream *aOutput)
 {
-  CacheFileAutoLock lock(this);
+  AssertOwnsLock();
 
   LOG(("CacheFile::RemoveOutput() [this=%p, output=%p]", this, aOutput));
 
-  // TODO cancel all queued chunk listeners that cannot be satisfied
+  if (mOutput != aOutput) {
+    LOG(("CacheFile::RemoveOutput() - This output was already removed, ignoring"
+         " call [this=%p]", this));
+    return NS_OK;
+  }
 
-  MOZ_ASSERT(mOutput == aOutput);
+  mOutput = nullptr;
 
-  if (mOutput != aOutput)
-    return NS_ERROR_FAILURE;
-
-  ReleaseOutsideLock(static_cast<nsIOutputStream*>(mOutput.forget().get()));
+  // Cancel all queued chunk and update listeners that cannot be satisfied
+  NotifyListenersAboutOutputRemoval();
 
   if (!mMemoryOnly)
     WriteMetadataIfNeeded();
@@ -1088,6 +1090,21 @@ CacheFile::NotifyChunkListeners(uint32_t aIndex, nsresult aResult,
   return rv;
 }
 
+void
+CacheFile::NotifyListenersAboutOutputRemoval()
+{
+  LOG(("CacheFile::NotifyListenersAboutOutputRemoval() [this=%p]", this));
+
+  AssertOwnsLock();
+
+  // First fail all chunk listeners that wait for non-existent chunk
+  mChunkListeners.Enumerate(&CacheFile::FailListenersIfNonExistentChunk,
+                            this);
+
+  // Fail all update listeners
+  mChunks.Enumerate(&CacheFile::FailUpdateListeners, this);
+}
+
 int64_t
 CacheFile::DataSize()
 {
@@ -1140,6 +1157,52 @@ CacheFile::WriteAllCachedChunks(const uint32_t& aIdx,
   file->ReleaseOutsideLock(aChunk);
 
   return PL_DHASH_REMOVE;
+}
+
+PLDHashOperator
+CacheFile::FailListenersIfNonExistentChunk(
+  const uint32_t& aIdx,
+  nsAutoPtr<ChunkListeners>& aListeners,
+  void* aClosure)
+{
+  CacheFile *file = static_cast<CacheFile*>(aClosure);
+
+  LOG(("CacheFile::FailListenersIfNonExistentChunk() [this=%p, idx=%d]",
+       file, aIdx));
+
+  nsRefPtr<CacheFileChunk> chunk;
+  file->mChunks.Get(aIdx, getter_AddRefs(chunk));
+  if (chunk) {
+    MOZ_ASSERT(!chunk->IsReady());
+    return PL_DHASH_NEXT;
+  }
+
+  for (uint32_t i = 0 ; i < aListeners->mItems.Length() ; i++) {
+    ChunkListenerItem *item = aListeners->mItems[i];
+    file->NotifyChunkListener(item->mCallback, item->mTarget,
+                              NS_ERROR_NOT_AVAILABLE, aIdx, nullptr);
+    delete item;
+  }
+
+  return PL_DHASH_REMOVE;
+}
+
+PLDHashOperator
+CacheFile::FailUpdateListeners(
+  const uint32_t& aIdx,
+  nsRefPtr<CacheFileChunk>& aChunk,
+  void* aClosure)
+{
+  CacheFile *file = static_cast<CacheFile*>(aClosure);
+
+  LOG(("CacheFile::FailUpdateListeners() [this=%p, idx=%d]",
+       file, aIdx));
+
+  if (aChunk->IsReady()) {
+    aChunk->NotifyUpdateListeners();
+  }
+
+  return PL_DHASH_NEXT;
 }
 
 } // net
