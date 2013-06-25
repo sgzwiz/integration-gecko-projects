@@ -113,12 +113,22 @@ private:
                               CacheFileChunkListener *aCallback);
   nsresult NotifyChunkListeners(uint32_t aIndex, nsresult aResult,
                                 CacheFileChunk *aChunk);
+  void     NotifyListenersAboutOutputRemoval();
 
   void WriteMetadataIfNeeded();
 
   static PLDHashOperator WriteAllCachedChunks(const uint32_t& aIdx,
                                               nsRefPtr<CacheFileChunk>& aChunk,
                                               void* aClosure);
+
+  static PLDHashOperator FailListenersIfNonExistentChunk(
+                           const uint32_t& aIdx,
+                           nsAutoPtr<mozilla::net::ChunkListeners>& aListeners,
+                           void* aClosure);
+
+  static PLDHashOperator FailUpdateListeners(const uint32_t& aIdx,
+                                             nsRefPtr<CacheFileChunk>& aChunk,
+                                             void* aClosure);
 
   mozilla::Mutex mLock;
   bool           mOpeningFile;
@@ -140,7 +150,7 @@ private:
   nsRefPtrHashtable<nsUint32HashKey, CacheFileChunk> mCachedChunks;
 
   nsTArray<CacheFileInputStream*> mInputs;
-  nsRefPtr<CacheFileOutputStream> mOutput;
+  CacheFileOutputStream          *mOutput;
 
   nsTArray<nsISupports*>          mObjsToRelease;
 };
