@@ -1973,11 +1973,18 @@ nsHttpChannel::OnDoneReadingPartialCacheEntry(bool *streamDone)
     *streamDone = true;
 
     // setup cache listener to append to cache entry
-    uint32_t size;
+    int64_t size;
     rv = mCacheEntry->GetDataSize(&size);
     if (NS_FAILED(rv)) return rv;
 
     rv = InstallCacheListener(size);
+    if (NS_FAILED(rv)) return rv;
+
+    // Entry is valid, do it now, after the output stream has been opened,
+    // otherwise when done earlier, pending readers would consider the cache
+    // entry still as partial (CacheEntry::GetDataSize would return the partial
+    // data size) and consumers would do the conditional request again.
+    rv = mCacheEntry->SetValid();
     if (NS_FAILED(rv)) return rv;
 
     // need to track the logical offset of the data being sent to our listener
@@ -2083,7 +2090,7 @@ nsHttpChannel::ProcessNotModified()
 
     mCachedContentIsValid = true;
 
-    // Tell the consumers the entry is OK to use
+    // Tell other consumers the entry is OK to use
     rv = mCacheEntry->SetValid();
     if (NS_FAILED(rv)) return rv;
 
@@ -2279,51 +2286,52 @@ nsHttpChannel::OpenCacheEntry(bool usingSSL)
     }
 
     nsCOMPtr<nsICacheStorageService> cacheStorageService =
-      do_GetService("@mozilla.org/netwerk/cache-storage-service;1", &rv);
+        do_GetService("@mozilla.org/netwerk/cache-storage-service;1", &rv);
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsRefPtr<LoadContextInfo> info = GetLoadContextInfo(this);
 
     nsCOMPtr<nsICacheStorage> cacheStorage;
     if (mApplicationCache) {
-      rv = cacheStorageService->AppCacheStorage(info, mApplicationCache,
-                                                getter_AddRefs(cacheStorage));
+        rv = cacheStorageService->AppCacheStorage(info, mApplicationCache,
+                                                  getter_AddRefs(cacheStorage));
     }
     else if (mLoadFlags & INHIBIT_PERSISTENT_CACHING) {
-      rv = cacheStorageService->MemoryCacheStorage(info, // ? choose app cache as well...
-        getter_AddRefs(cacheStorage));
+        rv = cacheStorageService->MemoryCacheStorage(info, // ? choose app cache as well...
+          getter_AddRefs(cacheStorage));
     }
     else {
-      rv = cacheStorageService->DiskCacheStorage(info,
-        mChooseApplicationCache || (mLoadFlags & LOAD_CHECK_OFFLINE_CACHE),
-        getter_AddRefs(cacheStorage));
+        rv = cacheStorageService->DiskCacheStorage(info,
+            mChooseApplicationCache || (mLoadFlags & LOAD_CHECK_OFFLINE_CACHE),
+            getter_AddRefs(cacheStorage));
     }
     NS_ENSURE_SUCCESS(rv, rv);
 
     uint32_t cacheEntryOpenFlags;
     if (BYPASS_LOCAL_CACHE(mLoadFlags))
-      cacheEntryOpenFlags = nsICacheStorage::OPEN_TRUNCATE;
+        cacheEntryOpenFlags = nsICacheStorage::OPEN_TRUNCATE;
     else
-      cacheEntryOpenFlags = nsICacheStorage::OPEN_NORMALLY;
+        cacheEntryOpenFlags = nsICacheStorage::OPEN_NORMALLY;
 
     nsCOMPtr<nsIURI> openURI;
     if (!mFallbackKey.IsEmpty() && mFallbackChannel) {
-      // This is a fallback channel, open fallback URI instead
-      rv = NS_NewURI(getter_AddRefs(openURI), mFallbackKey);
-      NS_ENSURE_SUCCESS(rv, rv);
+        // This is a fallback channel, open fallback URI instead
+        rv = NS_NewURI(getter_AddRefs(openURI), mFallbackKey);
+        NS_ENSURE_SUCCESS(rv, rv);
     }
     else {
-      openURI = mURI;
+        openURI = mURI;
     }
 
     rv = cacheStorage->AsyncOpenURI(
-      openURI, mPostID ? nsPrintfCString("%d", mPostID) : EmptyCString(), cacheEntryOpenFlags, this);
+        openURI, mPostID ? nsPrintfCString("%d", mPostID) : EmptyCString(),
+        cacheEntryOpenFlags, this);
     NS_ENSURE_SUCCESS(rv, rv);
 
     waitFlags.Keep(WAIT_FOR_CACHE_ENTRY);
 
     if (!mApplicationCacheForWrite)
-      return NS_OK;
+        return NS_OK;
 
     // If there is an app cache to write to, open the entry right now in parallel.
 
@@ -2454,14 +2462,14 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
         // always ignore a cached redirect's entity anyway. See bug 759043.
         int64_t contentLength = mCachedResponseHead->ContentLength();
         if (contentLength != int64_t(-1)) {
-            uint32_t size;
+            int64_t size;
             rv = entry->GetDataSize(&size);
-            /**/if (NS_ERROR_IN_PROGRESS != rv) {/**/
+            if (NS_ERROR_IN_PROGRESS != rv) {
                 NS_ENSURE_SUCCESS(rv, rv);
 
-                if (int64_t(size) != contentLength) {
+                if (size != contentLength) {
                     LOG(("Cached data size does not match the Content-Length header "
-                         "[content-length=%lld size=%u]\n", int64_t(contentLength), size));
+                         "[content-length=%lld size=%lld]\n", contentLength, size));
 
                     bool hasContentEncoding =
                         mCachedResponseHead->PeekHeader(nsHttp::Content_Encoding)
@@ -2485,13 +2493,12 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
                         }
 
                         if (mCachedContentIsPartial) {
-                          // Must report the content as valid to let it be used.
-                          *aResult = ENTRY_VALID;
+                            *aResult = ENTRY_NEEDS_REVALIDATION;
                         }
                     }
                     return rv;
                 }
-            /**/}
+            }
         }
     }
 
@@ -2685,11 +2692,11 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
     }
 
     if (mDidReval)
-      *aResult = ENTRY_NEEDS_REVALIDATION;
+        *aResult = ENTRY_NEEDS_REVALIDATION;
     else if (mCachedContentIsValid)
-      *aResult = ENTRY_VALID;
+        *aResult = ENTRY_VALID;
     else
-      *aResult = ENTRY_NOT_VALID;
+        *aResult = ENTRY_NOT_VALID;
 
     if (mCachedContentIsValid) {
         // XXX: Isn't the cache entry already valid?
@@ -3363,12 +3370,14 @@ nsHttpChannel::InitCacheEntry()
     LOG(("nsHttpChannel::InitCacheEntry [this=%p entry=%p]\n",
         this, mCacheEntry.get()));
 
-    if (mDidReval) {
-        LOG(("  revalidation with origin server failed, recreating cache entry\n"));
+    if (!mCacheEntryIsWriteOnly) {
+        LOG(("  we have a ready entry, but reading it again from the server -> recreating cache entry\n"));
         nsCOMPtr<nsICacheEntry> currentEntry;
         currentEntry.swap(mCacheEntry);
         rv = currentEntry->Recreate(getter_AddRefs(mCacheEntry));
         if (NS_FAILED(rv)) return rv;
+
+        mCacheEntryIsWriteOnly = true;
     }
 
     if (mLoadFlags & INHIBIT_PERSISTENT_CACHING) {
@@ -3576,13 +3585,14 @@ nsHttpChannel::FinalizeCacheEntry()
 // Open an output stream to the cache entry and insert a listener tee into
 // the chain of response listeners.
 nsresult
-nsHttpChannel::InstallCacheListener(uint32_t offset)
+nsHttpChannel::InstallCacheListener(int64_t offset)
 {
     nsresult rv;
 
     LOG(("Preparing to write data into the cache [uri=%s]\n", mSpec.get()));
 
     MOZ_ASSERT(mCacheEntry);
+    MOZ_ASSERT(mCacheEntryIsWriteOnly || mCachedContentIsPartial);
     MOZ_ASSERT(mListener);
 
     // If the content is compressible and the server has not compressed it,
@@ -5132,6 +5142,8 @@ nsresult nsHttpChannelCacheKey::SetData(uint32_t aPostID,
 NS_IMETHODIMP
 nsHttpChannel::GetCacheKey(nsISupports **key)
 {
+    // mayhemer: TODO - do we need this API?
+
     nsresult rv;
     NS_ENSURE_ARG_POINTER(key);
 
@@ -5332,19 +5344,23 @@ nsHttpChannel::GetOfflineCacheEntryAsForeignMarker()
     if (!mApplicationCache)
         return nullptr;
 
-    nsresult rv;
-
-    nsAutoCString cacheKey;
-    rv = GenerateCacheKey(mPostID, cacheKey);
-    NS_ENSURE_SUCCESS(rv, nullptr);
-
-    return new OfflineCacheEntryAsForeignMarker(mApplicationCache, cacheKey);
+    return new OfflineCacheEntryAsForeignMarker(mApplicationCache, mURI);
 }
 
 nsresult
 nsHttpChannel::OfflineCacheEntryAsForeignMarker::MarkAsForeign()
 {
-    return mApplicationCache->MarkEntry(mCacheKey,
+    nsresult rv;
+
+    nsCOMPtr<nsIURI> noRefURI;
+    rv = mCacheURI->CloneIgnoringRef(getter_AddRefs(noRefURI));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsAutoCString spec;
+    rv = noRefURI->GetAsciiSpec(spec);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    return mApplicationCache->MarkEntry(spec,
                                         nsIApplicationCache::ITEM_FOREIGN);
 }
 
@@ -5488,12 +5504,14 @@ nsHttpChannel::MaybeInvalidateCacheEntryForSubsequentGet()
 
 
     // Invalidate the request-uri.
-    // Pass 0 in first param to get the cache-key for a GET-request.
-    nsAutoCString tmpCacheKey;
-    GenerateCacheKey(0, tmpCacheKey);
+#ifdef PR_LOGGING
+    nsAutoCString key;
+    mURI->GetAsciiSpec(key);
     LOG(("MaybeInvalidateCacheEntryForSubsequentGet [this=%p uri=%s]\n",
-        this, tmpCacheKey.get()));
-    DoInvalidateCacheEntry(tmpCacheKey);
+        this, key.get()));
+#endif
+
+    DoInvalidateCacheEntry(mURI);
 
     // Invalidate Location-header if set
     const char *location = mResponseHead->PeekHeader(nsHttp::Location);
@@ -5517,61 +5535,43 @@ nsHttpChannel::InvalidateCacheEntryForLocation(const char *location)
     nsCOMPtr<nsIURI> resultingURI;
     nsresult rv = CreateNewURI(location, getter_AddRefs(resultingURI));
     if (NS_SUCCEEDED(rv) && HostPartIsTheSame(resultingURI)) {
-        if (NS_SUCCEEDED(resultingURI->GetAsciiSpec(tmpSpec))) {
-            location = tmpSpec.get();  //reusing |location|
-
-            // key for a GET-request to |location| with current load-flags
-            AssembleCacheKey(location, 0, tmpCacheKey);
-            DoInvalidateCacheEntry(tmpCacheKey);
-        } else
-            NS_WARNING(("  failed getting ascii-spec\n"));
+        DoInvalidateCacheEntry(resultingURI);
     } else {
         LOG(("  hosts not matching\n"));
     }
 }
 
 void
-nsHttpChannel::DoInvalidateCacheEntry(const nsCString &key)
+nsHttpChannel::DoInvalidateCacheEntry(nsIURI* aURI)
 {
-    // mayhemer TODO !!
-
     // NOTE:
     // Following comments 24,32 and 33 in bug #327765, we only care about
     // the cache in the protocol-handler, not the application cache.
     // The logic below deviates from the original logic in OpenCacheEntry on
     // one point by using only READ_ONLY access-policy. I think this is safe.
 
-    uint32_t appId = NECKO_NO_APP_ID;
-    bool isInBrowser = false;
-    NS_GetAppInfo(this, &appId, &isInBrowser);
-
-    // First, find session holding the cache-entry - use current storage-policy
-    nsCacheStoragePolicy storagePolicy = DetermineStoragePolicy();
-    nsAutoCString clientID;
-    nsHttpHandler::GetCacheSessionNameForStoragePolicy(storagePolicy, mPrivateBrowsing,
-                                                       appId, isInBrowser, clientID);
-
-    LOG(("DoInvalidateCacheEntry [channel=%p session=%s policy=%d key=%s]",
-         this, clientID.get(), int(storagePolicy), key.get()));
-
     nsresult rv;
-    nsCOMPtr<nsICacheService> serv =
-        do_GetService(NS_CACHESERVICE_CONTRACTID, &rv);
-    nsCOMPtr<nsICacheSession> session;
+
+#ifdef PR_LOGGING
+    nsAutoCString key;
+    aURI->GetAsciiSpec(key);
+    LOG(("DoInvalidateCacheEntry [channel=%p key=%s]", this, key.get()));
+#endif
+
+    nsCOMPtr<nsICacheStorageService> cacheStorageService =
+        do_GetService("@mozilla.org/netwerk/cache-storage-service;1", &rv);
+
+    nsCOMPtr<nsICacheStorage> cacheStorage;
     if (NS_SUCCEEDED(rv)) {
-        rv = serv->CreateSession(clientID.get(), storagePolicy,
-                                 nsICache::STREAM_BASED,
-                                 getter_AddRefs(session));
-    }
-    if (NS_SUCCEEDED(rv)) {
-        rv = session->SetIsPrivate(mPrivateBrowsing);
-    }
-    if (NS_SUCCEEDED(rv)) {
-        rv = session->DoomEntry(key, nullptr);
+        nsRefPtr<LoadContextInfo> info = GetLoadContextInfo(this);
+        rv = cacheStorageService->DiskCacheStorage(info, false, getter_AddRefs(cacheStorage));
     }
 
-    LOG(("DoInvalidateCacheEntry [channel=%p session=%s policy=%d key=%s rv=%d]",
-         this, clientID.get(), int(storagePolicy), key.get(), int(rv)));
+    if (NS_SUCCEEDED(rv)) {
+        rv = cacheStorage->AsyncDoomURI(aURI, EmptyCString(), nullptr);
+    }
+
+    LOG(("DoInvalidateCacheEntry [channel=%p key=%s rv=%d]", this, key.get(), int(rv)));
 }
 
 nsCacheStoragePolicy

@@ -89,7 +89,7 @@ private:
    * unspecified number of entries from memory (but not from disk).
    */
   void OnMemoryConsumptionChange(CacheEntry* aEntry,
-                                 uint32_t aMemorySizeIncreasedBy);
+                                 int64_t aMemorySizeIncreasedBy);
 
 private:
   // Following methods are thread safe to call.
@@ -158,8 +158,7 @@ private:
   // Accessible only on the service thread
   nsTArray<nsRefPtr<CacheEntry> > mFrecencyArray;
   nsTArray<nsRefPtr<CacheEntry> > mExpirationArray;
-  uint32_t mMemorySize;
-  uint32_t mMetadataSize;
+  uint64_t mMemorySize;
 };
 
 template<class T>
