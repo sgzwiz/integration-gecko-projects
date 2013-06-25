@@ -80,7 +80,7 @@ public:
   nsresult   ThrowMemoryCachedData();
 
   CacheFileMetadata* Metadata();
-  int64_t DataSize();
+  bool DataSize(int64_t* aSize);
 
 private:
   friend class CacheFileChunk;
