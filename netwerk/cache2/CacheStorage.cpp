@@ -25,7 +25,7 @@ NS_IMPL_THREADSAFE_ISUPPORTS1(CacheStorage, nsICacheStorage)
 CacheStorage::CacheStorage(nsILoadContextInfo* aInfo,
                            bool aAllowDisk,
                            bool aLookupAppCache)
-: mLoadContextInfo(aInfo)
+: mLoadContextInfo(GetLoadContextInfo(aInfo))
 , mWriteToDisk(aAllowDisk)
 , mLookupAppCache(aLookupAppCache)
 {
