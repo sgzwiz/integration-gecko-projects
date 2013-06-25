@@ -260,48 +260,41 @@ CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
 
   if (NS_FAILED(aResult)) {
     // TODO ??? doom entry
-    NotifyChunkListeners(aChunk->Index(), aResult, nullptr);
+    // TODO mark this chunk as memory only, since it wasn't written to disk and
+    // therefore cannot be released from memory
   }
-  else {
-    // update hash value in metadata
-    mMetadata->SetHash(aChunk->Index(), aChunk->Hash());
 
-    // notify listeners if there is any
-    ChunkListeners *listeners;
-    mChunkListeners.Get(aChunk->Index(), &listeners);
-    if (listeners) {
-      // don't release the chunk since there are some listeners queued
-      rv = NotifyChunkListeners(aChunk->Index(), NS_OK, aChunk);
-      if (NS_SUCCEEDED(rv)) {
-        MOZ_ASSERT(aChunk->mRefCnt != 2);
-        aChunk->SetReady(true);
-        return NS_OK;
-      }
+  // update hash value in metadata
+  mMetadata->SetHash(aChunk->Index(), aChunk->Hash());
 
-      NS_WARNING("NotifyChunkListeners failed???");
-      if (aChunk->mRefCnt != 2) {
-        // Some of the listeners didn't fail and got the reference
-        aChunk->SetReady(true);
-        return NS_OK;
-      }
+  // notify listeners if there is any
+  ChunkListeners *listeners;
+  mChunkListeners.Get(aChunk->Index(), &listeners);
+  if (listeners) {
+    // don't release the chunk since there are some listeners queued
+    rv = NotifyChunkListeners(aChunk->Index(), NS_OK, aChunk);
+    if (NS_SUCCEEDED(rv)) {
+      MOZ_ASSERT(aChunk->mRefCnt != 2);
+      aChunk->SetReady(true);
+      return NS_OK;
+    }
+
+    NS_WARNING("NotifyChunkListeners failed???");
+    if (aChunk->mRefCnt != 2) {
+      // Some of the listeners didn't fail and got the reference
+      aChunk->SetReady(true);
+      return NS_OK;
     }
   }
 
   MOZ_ASSERT(aChunk->mRefCnt == 2);
   aChunk->mRemovingChunk = true;
 
-  if (NS_SUCCEEDED(aResult)) {
-    LOG(("CacheFile::OnChunkWritten() - Caching unused chunk "
-         "[this=%p, chunk=%p]", this, aChunk));
+  LOG(("CacheFile::OnChunkWritten() - Caching unused chunk "
+       "[this=%p, chunk=%p]", this, aChunk));
 
-    aChunk->SetReady(true);
-    mCachedChunks.Put(aChunk->Index(), aChunk);
-  }
-  else {
-    LOG(("CacheFile::OnChunkWritten() - Removing unused chunk "
-         "[this=%p, chunk=%p]", this, aChunk));
-  }
-
+  aChunk->SetReady(true);
+  mCachedChunks.Put(aChunk->Index(), aChunk);
   mChunks.Remove(aChunk->Index());
   WriteMetadataIfNeeded();
 
