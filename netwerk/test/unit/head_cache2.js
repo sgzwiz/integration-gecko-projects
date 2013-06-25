@@ -19,10 +19,16 @@ const READONLY =        1 << 3;
 const NOTFOUND =        1 << 4;
 // Return ENTRY_NEEDS_REVALIDATION from onCacheEntryCheck
 const REVAL =           1 << 5;
+// Return ENTRY_PARTIAL from onCacheEntryCheck, in combo with NEW or RECREATE bypasses check for emptiness of the entry
+const PARTIAL =         1 << 6
 // Expect the entry is doomed, i.e. the output stream should not be possible to open
-const DOOMED =          1 << 6;
+const DOOMED =          1 << 7;
 // Expect the entry is doomed, i.e. the output stream should not be possible to open
-const WAITFORWRITE =    1 << 7;
+const WAITFORWRITE =    1 << 8;
+// Don't write data (i.e. don't open output stream)
+const METAONLY =        1 << 9;
+// Do recreation of an existing cache entry
+const RECREATE =        1 << 10;
 
 var log_c2 = true;
 function LOG_C2(o, m)
@@ -82,9 +88,17 @@ OpenCallback.prototype =
 
     do_check_eq(entry.getMetaDataElement("meto"), this.workingMetadata);
 
+    // check for sane flag combination
+    do_check_neq(this.behavior & (REVAL|PARTIAL), REVAL|PARTIAL);
+
     if (this.behavior & REVAL) {
       LOG_C2(this, "onCacheEntryCheck DONE, return REVAL");
       return Ci.nsICacheEntryOpenCallback.ENTRY_NEEDS_REVALIDATION;
+    }
+
+    if (this.behavior & PARTIAL) {
+      LOG_C2(this, "onCacheEntryCheck DONE, return PARTIAL");
+      return Ci.nsICacheEntryOpenCallback.ENTRY_PARTIAL;
     }
 
     LOG_C2(this, "onCacheEntryCheck DONE, return ENTRY_VALID");
@@ -105,24 +119,37 @@ OpenCallback.prototype =
         this.throwAndNotify(entry);
       this.goon(entry);
     }
-    else if (this.behavior & NEW) {
+    else if (this.behavior & (NEW|RECREATE)) {
       do_check_true(!!entry);
+
+      if (this.behavior & RECREATE) {
+        entry = entry.recreate();
+        do_check_true(!!entry);
+      }
+
       if (this.behavior & THROWAVAIL)
         this.throwAndNotify(entry);
 
       if (!(this.behavior & WAITFORWRITE))
         this.goon(entry);
 
-      try {
-        entry.getMetaDataElement("meto");
-        do_check_true(false);
+      if (!(this.behavior & PARTIAL)) {
+        try {
+          entry.getMetaDataElement("meto");
+          do_check_true(false);
+        }
+        catch (ex) {}
       }
-      catch (ex) {}
 
       var self = this;
       do_execute_soon(function() { // emulate network latency
         entry.setMetaDataElement("meto", self.workingMetadata);
         entry.metaDataReady();
+        if (self.behavior & METAONLY) {
+          // Since forcing GC/CC doesn't trigger OnWriteRClosed, we have to set the entry valid manually :(
+          entry.setValid();
+          return;
+        }
         do_execute_soon(function() { // emulate more network latency
           if (self.behavior & DOOMED) {
             try {
@@ -131,19 +158,26 @@ OpenCallback.prototype =
             } catch (ex) {
               do_check_true(true);
             }
+            if (self.behavior & WAITFORWRITE)
+              self.goon(entry);
+            return;
           }
-          else {
-            var os = entry.openOutputStream(0);
-            var wrt = os.write(self.workingData, self.workingData.length);
-            do_check_eq(wrt, self.workingData.length);
-            os.close();
-          }
+
+          var offset = (self.behavior & PARTIAL)
+            ? entry.dataSize
+            : 0;
+          LOG_C2(self, "openOutputStream @ " + offset);
+          var os = entry.openOutputStream(offset);
           if (self.behavior & WAITFORWRITE)
             self.goon(entry);
+          LOG_C2(self, "writing data");
+          var wrt = os.write(self.workingData, self.workingData.length);
+          do_check_eq(wrt, self.workingData.length);
+          os.close();
         })
       })
     }
-    else /* NORMAL */ {
+    else { // NORMAL
       do_check_true(!!entry);
       do_check_eq(entry.getMetaDataElement("meto"), this.workingMetadata);
       if (this.behavior & THROWAVAIL)
@@ -189,9 +223,9 @@ function OpenCallback(behavior, workingMetadata, workingData, goon)
   this.workingMetadata = workingMetadata;
   this.workingData = workingData;
   this.goon = goon;
-  this.onCheckPassed = (!!(behavior & NEW) || !workingMetadata) && !(behavior & NOTVALID);
+  this.onCheckPassed = (!!(behavior & (NEW|RECREATE)) || !workingMetadata) && !(behavior & NOTVALID);
   this.onAvailPassed = false;
-  this.onDataCheckPassed = !!(behavior & NEW) || !workingMetadata;
+  this.onDataCheckPassed = !!(behavior & (NEW|RECREATE)) || !workingMetadata;
   callbacks.push(this);
   this.order = callbacks.length;
 }

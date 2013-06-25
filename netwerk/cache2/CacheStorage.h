@@ -7,6 +7,7 @@
 
 #include "nsICacheStorage.h"
 #include "CacheEntry.h"
+#include "LoadContextInfo.h"
 
 #include "nsRefPtrHashtable.h"
 #include "nsThreadUtils.h"
@@ -41,7 +42,7 @@ protected:
 
   nsresult ChooseApplicationCache(nsIURI* aURI, nsIApplicationCache** aCache);
 
-  nsCOMPtr<nsILoadContextInfo> mLoadContextInfo;
+  nsRefPtr<LoadContextInfo> mLoadContextInfo;
   bool mWriteToDisk : 1;
   bool mLookupAppCache : 1;
 
