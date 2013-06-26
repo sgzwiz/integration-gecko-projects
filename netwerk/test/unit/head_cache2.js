@@ -91,14 +91,9 @@ OpenCallback.prototype =
     // check for sane flag combination
     do_check_neq(this.behavior & (REVAL|PARTIAL), REVAL|PARTIAL);
 
-    if (this.behavior & REVAL) {
+    if (this.behavior & (REVAL|PARTIAL)) {
       LOG_C2(this, "onCacheEntryCheck DONE, return REVAL");
       return Ci.nsICacheEntryOpenCallback.ENTRY_NEEDS_REVALIDATION;
-    }
-
-    if (this.behavior & PARTIAL) {
-      LOG_C2(this, "onCacheEntryCheck DONE, return PARTIAL");
-      return Ci.nsICacheEntryOpenCallback.ENTRY_PARTIAL;
     }
 
     LOG_C2(this, "onCacheEntryCheck DONE, return ENTRY_VALID");
@@ -168,12 +163,12 @@ OpenCallback.prototype =
             : 0;
           LOG_C2(self, "openOutputStream @ " + offset);
           var os = entry.openOutputStream(offset);
-          if (self.behavior & WAITFORWRITE)
-            self.goon(entry);
           LOG_C2(self, "writing data");
           var wrt = os.write(self.workingData, self.workingData.length);
           do_check_eq(wrt, self.workingData.length);
           os.close();
+          if (self.behavior & WAITFORWRITE)
+            self.goon(entry);
         })
       })
     }

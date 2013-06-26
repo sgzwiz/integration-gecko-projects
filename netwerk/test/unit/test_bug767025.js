@@ -170,10 +170,11 @@ function check_bug() {
       let storage = get_cache_service().appCacheStorage(new LoadContextInfo(), appcache);
 
       // Doom foo1 & foo2
-      storage.asyncDoomURI(kHttpLocation + "pages/foo1", "");
-      storage.asyncDoomURI(kHttpLocation + "pages/foo2", "");
-
-      syncWithCacheIOThread(function () { check_evict_cache(appcache); });
+      storage.asyncDoomURI(createURI(kHttpLocation + "pages/foo1"), "", { onCacheEntryDoomed: function() {
+        storage.asyncDoomURI(createURI(kHttpLocation + "pages/foo2"), "", { onCacheEntryDoomed: function() {
+          check_evict_cache(appcache);
+        }});
+      }});
 
       hold_entry_foo1 = entry;
     });
