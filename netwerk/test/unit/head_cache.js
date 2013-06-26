@@ -114,14 +114,10 @@ function asyncOpenCacheEntry(key, where, flags, lci, callback, appcache)
   (new CacheListener()).run();
 }
 
-// mayhemer: still needed?
 function syncWithCacheIOThread(callback)
 {
-  asyncOpenCacheEntry("http://nonexistent/entry", "disk", Ci.nsICacheStorage.OPEN_READONLY,
-    function(status, entry) {
-      do_check_eq(status, Components.results.NS_ERROR_CACHE_KEY_NOT_FOUND);
-      callback();
-    });
+  // remove this API
+  callback();
 }
 
 // TODO - this has to be async...
