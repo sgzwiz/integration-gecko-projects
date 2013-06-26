@@ -80,6 +80,7 @@ CacheEntry::CacheEntry(const nsACString& aStorageID,
 , mIsRegistered(false)
 , mIsRegistrationAllowed(true)
 , mHasMainThreadOnlyCallback(false)
+, mHasData(false)
 , mState(NOTLOADED)
 , mWriter(nullptr)
 , mPredictedDataSize(0)
@@ -259,6 +260,9 @@ NS_IMETHODIMP CacheEntry::OnFileReady(nsresult aResult, bool aIsNew)
 
   mozilla::MutexAutoLock lock(mLock);
 
+  if (mState == READY)
+    mHasData = true;
+
   if (NS_FAILED(aResult))
     mFile = nullptr;
 
@@ -425,7 +429,6 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
     MOZ_ASSERT(mState > LOADING);
 
     if (mState == WRITING ||
-        mState == HASMETADATA ||
         mState == REVALIDATING) {
       // Prevent invoking other callbacks since one of them is now writing
       // or revalidating this entry.  No consumers should get this entry
@@ -451,7 +454,7 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
         return true;
       }
 
-      if (mState == READY) {
+      if (mState >= HASMETADATA) {
         // Metadata present, validate the entry
         uint32_t validityState;
         {
@@ -534,8 +537,8 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
     return;
   }
 
-  if (state == READY) {
-    LOG(("  ready, notifying OCEA with entry and NS_OK"));
+  if (state == HASMETADATA || state == READY) {
+    LOG(("  ready/has-meta, notifying OCEA with entry and NS_OK"));
     {
       mozilla::MutexAutoLock lock(mLock);
       BackgroundOp(Ops::FRECENCYUPDATE);
@@ -558,7 +561,7 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
 
   // Consumer will be responsible to fill or validate the entry metadata and data.
 
-  nsRefPtr<Handle> handle = GetWriteHandler();
+  nsRefPtr<Handle> handle = NewWriteHandle();
   nsresult rv = aCallback->OnCacheEntryAvailable(handle, state == WRITING, nullptr, NS_OK);
 
   if (NS_FAILED(rv)) {
@@ -572,7 +575,7 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
   LOG(("  writing/revalidating"));
 }
 
-CacheEntry::Handle* CacheEntry::GetWriteHandler()
+CacheEntry::Handle* CacheEntry::NewWriteHandle()
 {
   mozilla::MutexAutoLock lock(mLock);
 
@@ -584,30 +587,47 @@ void CacheEntry::OnWriterClosed(Handle const* aHandle)
 {
   LOG(("CacheEntry::OnWriterClosed [this=%p, state=%s, handle=%p]", this, StateString(mState), aHandle));
 
-  mozilla::MutexAutoLock lock(mLock);
+  nsCOMPtr<nsIOutputStream> outputStream;
 
-  if (mWriter != aHandle) {
-    LOG(("  not the current writer"));
-    return;
+  {
+    mozilla::MutexAutoLock lock(mLock);
+
+    if (mWriter != aHandle) {
+      LOG(("  not the current writer"));
+      return;
+    }
+
+    if (mOutputStream) {
+      // No one took our internal output stream, so there are no data
+      // and output stream has to be open symultaneously with input stream
+      // on this entry again.
+      mHasData = false;
+    }
+
+    outputStream.swap(mOutputStream);
+    mWriter = nullptr;
+
+    if (mState == WRITING) {
+      LOG(("  reverting to state EMPTY - write failed"));
+      mState = EMPTY;
+    }
+    else if (mState == HASMETADATA) {
+      LOG(("  advancing to state READY - write done w/o opening output stream"));
+      mState = READY;
+    }
+    else if (mState == REVALIDATING) {
+      LOG(("  reverting to state READY - reval failed"));
+      mState = READY;
+    }
+
+    BackgroundOp(Ops::REPORTUSAGE);
+    InvokeCallbacks();
   }
 
-  mWriter = nullptr;
-
-  if (mState == WRITING) {
-    LOG(("  reverting to state EMPTY - write failed"));
-    mState = EMPTY;
+  if (outputStream) {
+    LOG(("  abandoning phantom output stream"));
+    outputStream->Close();
   }
-  else if (mState == HASMETADATA) {
-    LOG(("  advancing to state READY - write done w/o opening output stream"));
-    mState = READY;
-  }
-  else if (mState == REVALIDATING) {
-    LOG(("  reverting to state READY - reval failed"));
-    mState = READY;
-  }
-
-  BackgroundOp(Ops::REPORTUSAGE);
-  InvokeCallbacks();
 }
 
 already_AddRefed<CacheFile> CacheEntry::File()
@@ -793,6 +813,15 @@ NS_IMETHODIMP CacheEntry::OpenInputStream(int64_t offset, nsIInputStream * *_ret
   rv = seekable->Seek(nsISeekableStream::NS_SEEK_SET, offset);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  mozilla::MutexAutoLock lock(mLock);
+
+  if (!mHasData) {
+    // So far output stream on this new entry not opened, do it now.
+    LOG(("  creating phantom output stream"));
+    rv = OpenOutputStreamInternal(0, getter_AddRefs(mOutputStream));
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
   stream.forget(_retval);
   return NS_OK;
 }
@@ -801,15 +830,46 @@ NS_IMETHODIMP CacheEntry::OpenOutputStream(int64_t offset, nsIOutputStream * *_r
 {
   LOG(("CacheEntry::OpenOutputStream [this=%p]", this));
 
+  nsresult rv;
+
+  mozilla::MutexAutoLock lock(mLock);
+
+  MOZ_ASSERT(mState > EMPTY);
+
+  if (mOutputStream) {
+    LOG(("  giving phantom output stream"));
+    mOutputStream.forget(_retval);
+  }
+  else {
+    rv = OpenOutputStreamInternal(offset, _retval);
+    if (NS_FAILED(rv)) return rv;
+  }
+
+  // Entry considered ready when writer opens output stream.
+  if (mState < READY)
+    mState = READY;
+
+  // Invoke any pending readers now.
+  InvokeCallbacks();
+
+  return NS_OK;
+}
+
+nsresult CacheEntry::OpenOutputStreamInternal(int64_t offset, nsIOutputStream * *_retval)
+{
+  LOG(("CacheEntry::OpenOutputStreamInternal [this=%p]", this));
+
+  mLock.AssertCurrentThreadOwns();
+
   if (mIsDoomed) {
     LOG(("  doomed..."));
     return NS_ERROR_NOT_AVAILABLE;
   }
 
   MOZ_ASSERT(mState > LOADING);
+  MOZ_ASSERT(!mHasData || mState == REVALIDATING);
 
-  nsRefPtr<CacheFile> file(File());
-  if (!file)
+  if (!mFile)
     return NS_ERROR_NOT_AVAILABLE;
 
   nsresult rv;
@@ -817,12 +877,12 @@ NS_IMETHODIMP CacheEntry::OpenOutputStream(int64_t offset, nsIOutputStream * *_r
   // No need to sync on mUseDisk here, we don't need to be consistent
   // with content of the memory storage entries hash table.
   if (!mUseDisk) {
-    rv = file->SetMemoryOnly();
+    rv = mFile->SetMemoryOnly();
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
   nsCOMPtr<nsIOutputStream> stream;
-  rv = file->OpenOutputStream(getter_AddRefs(stream));
+  rv = mFile->OpenOutputStream(getter_AddRefs(stream));
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsISeekableStream> seekable =
@@ -866,16 +926,9 @@ NS_IMETHODIMP CacheEntry::OpenOutputStream(int64_t offset, nsIOutputStream * *_r
   rv = CallQueryInterface(pipeOut, _retval);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // Invoke any pending readers now.
-  mozilla::MutexAutoLock lock(mLock);
+  // Prevent opening output stream again.
+  mHasData = true;
 
-  // Since CacheFile logic is kept very simple, we can claim the entry is ready
-  // and usable by waiting concurent readers only after output stream has been
-  // opened.  Only when output stream exists for a CacheFile, concurent readers
-  // are getting WOULD_BLOCK when reading after the end of the data.
-  mState = READY;
-
-  InvokeCallbacks();
   return NS_OK;
 }
 
@@ -985,6 +1038,8 @@ NS_IMETHODIMP CacheEntry::GetStorageDataSize(uint32_t *aStorageDataSize)
 
 NS_IMETHODIMP CacheEntry::AsyncDoom(nsICacheEntryDoomCallback *aCallback)
 {
+  LOG(("CacheEntry::AsyncDoom [this=%p]", this));
+
   {
     mozilla::MutexAutoLock lock(mLock);
 
@@ -1049,6 +1104,7 @@ NS_IMETHODIMP CacheEntry::MetaDataReady()
     mState = HASMETADATA;
 
   BackgroundOp(Ops::REPORTUSAGE);
+  InvokeCallbacks();
 
   return NS_OK;
 }
@@ -1062,6 +1118,7 @@ NS_IMETHODIMP CacheEntry::SetValid()
   MOZ_ASSERT(mState > EMPTY);
 
   mState = READY;
+
   BackgroundOp(Ops::REPORTUSAGE);
   InvokeCallbacks();
 
@@ -1076,7 +1133,7 @@ NS_IMETHODIMP CacheEntry::Recreate(nsICacheEntry **_retval)
 
   nsRefPtr<CacheEntry> newEntry = ReopenTruncated(nullptr);
   if (newEntry) {
-    nsRefPtr<Handle> handle = newEntry->GetWriteHandler();
+    nsRefPtr<Handle> handle = newEntry->NewWriteHandle();
     handle.forget(_retval);
     return NS_OK;
   }
@@ -1097,15 +1154,26 @@ NS_IMETHODIMP CacheEntry::GetDataSize(int64_t *aDataSize)
   LOG(("CacheEntry::GetDataSize [this=%p]", this));
   *aDataSize = 0;
 
-  nsRefPtr<CacheFile> file(File());
-  if (!file) {
-    LOG(("  no file"));
-    return NS_OK; // really OK?
+  nsRefPtr<CacheFile> file;
+  {
+    mozilla::MutexAutoLock lock(mLock);
+
+    if (!mHasData) {
+      LOG(("  write in progress (no data)"));
+      return NS_ERROR_IN_PROGRESS;
+    }
+
+    if (!mFile) {
+      LOG(("  no file"));
+      return NS_OK; // really OK?
+    }
+
+    file = mFile;
   }
 
   // mayhemer: TODO Problem with compression?
   if (!file->DataSize(aDataSize)) {
-    LOG(("  write in progress"));
+    LOG(("  write in progress (stream active)"));
     return NS_ERROR_IN_PROGRESS;
   }
 
