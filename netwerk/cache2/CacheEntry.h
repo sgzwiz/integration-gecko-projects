@@ -187,13 +187,14 @@ private:
   void InvokeCallbacks();
   bool InvokeCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
   void InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
-  void OnWriterClosed(Handle const* aHandle);
-
   void InvokeCallbacksMainThread();
+
+  nsresult OpenOutputStreamInternal(int64_t offset, nsIOutputStream * *_retval);
 
   // When this entry is new and recreated w/o a callback, we need to wrap it
   // with a handle to detect writing consumer is gone.
-  Handle* GetWriteHandler();
+  Handle* NewWriteHandle();
+  void OnWriterClosed(Handle const* aHandle);
 
   // Schedules a background operation on the management thread.
   // When executed on the management thread directly, the operation(s)
@@ -221,16 +222,15 @@ private:
   bool mUseDisk;
 
   // Set when entry is doomed with AsyncDoom() or DoomAlreadyRemoved().
+  // Left as a standalone flag to not bother with locking (there is no need).
   bool mIsDoomed;
 
+  // Following flags are all synchronized with the cache entry lock.
+
   // Whether security info has already been looked up in metadata.
-  // Not synchronized (this is only an optimization flag).
-  bool mSecurityInfoLoaded;
-
+  bool mSecurityInfoLoaded : 1;
   // Prevents any callback invocation
-  // Synchronized by lock of this entry.
-  bool mPreventCallbacks;
-
+  bool mPreventCallbacks : 1;
   // Accessed only on the management thread.
   // Whether this entry is registered in the storage service helper arrays
   bool mIsRegistered : 1;
@@ -238,6 +238,13 @@ private:
   bool mIsRegistrationAllowed : 1;
   // Way around when having a callback that cannot be invoked on non-main thread
   bool mHasMainThreadOnlyCallback : 1;
+  // true: after load and an existing file, or after output stream has been opened.
+  //       note - when opening an input stream, and this flag is false, output stream
+  //       is open along ; this makes input streams on new entries behave correctly
+  //       when EOF is reached (WOULD_BLOCK is returned).
+  // false: after load and a new file, or dropped to back to false when a writer
+  //        fails to open an output stream.
+  bool mHasData : 1;
 
 #ifdef MOZ_LOGGING
   static char const * StateString(uint32_t aState);
@@ -253,9 +260,14 @@ private:
     REVALIDATING = 6 // -> READY
   };
 
-  // State of this entry, atomic access prevents using of locks, except
-  // decistion to load this entry.
+  // State of this entry.
   uint32_t mState;
+
+  // If a new (empty) entry is requested to open an input stream before
+  // output stream has been opened, we must open output stream internally
+  // on CacheFile and hold until writer releases the entry or opens the output
+  // stream for read (then we trade him mOutputStream).
+  nsCOMPtr<nsIOutputStream> mOutputStream;
 
   // Weak reference to the current writter.  There can be more then one
   // writer at a time and OnWriterClosed() must be processed only for the
