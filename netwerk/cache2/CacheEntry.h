@@ -254,14 +254,13 @@ private:
     NOTLOADED = 0,   // -> LOADING | EMPTY
     LOADING = 1,     // -> EMPTY | READY
     EMPTY = 2,       // -> WRITING
-    WRITING = 3,     // -> EMPTY | HASMETADATA
-    HASMETADATA = 4, // -> READY
-    READY = 5,       // -> REVALIDATING
-    REVALIDATING = 6 // -> READY
+    WRITING = 3,     // -> EMPTY | READY
+    READY = 4,       // -> REVALIDATING
+    REVALIDATING = 5 // -> READY
   };
 
   // State of this entry.
-  uint32_t mState;
+  EState mState;
 
   // If a new (empty) entry is requested to open an input stream before
   // output stream has been opened, we must open output stream internally
