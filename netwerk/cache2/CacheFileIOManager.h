@@ -29,6 +29,7 @@ public:
   const SHA1Sum::Hash *Hash() { return mHash; }
   int64_t FileSize() { return mFileSize; }
   bool FileExists() { return mFileExists; }
+  bool IsClosed() { return mClosed; }
 
 private:
   friend class CacheFileIOManager;
@@ -40,6 +41,8 @@ private:
   const SHA1Sum::Hash *mHash;
   bool                 mIsDoomed;
   bool                 mRemovingHandle;
+  bool                 mClosed;
+  bool                 mInvalid;
   bool                 mFileExists; // This means that the file should exists,
                                     // but it can be still deleted by OS/user
                                     // and then a subsequent OpenNSPRFileDesc()
@@ -60,6 +63,8 @@ public:
   nsresult GetHandle(const SHA1Sum::Hash *aHash, CacheFileHandle **_retval);
   nsresult NewHandle(const SHA1Sum::Hash *aHash, CacheFileHandle **_retval);
   void     RemoveHandle(CacheFileHandle *aHandlle);
+  void     GetAllHandles(nsTArray<nsRefPtr<CacheFileHandle> > *_retval);
+  uint32_t HandleCount();
 
 private:
   static PLDHashNumber HashKey(PLDHashTable *table, const void *key);
@@ -107,9 +112,11 @@ public:
 NS_DEFINE_STATIC_IID_ACCESSOR(CacheFileIOListener, CACHEFILEIOLISTENER_IID)
 
 
-class CacheFileIOManager
+class CacheFileIOManager : public nsISupports
 {
 public:
+  NS_DECL_ISUPPORTS
+
   enum {
     OPEN       = 0U,
     CREATE     = 1U,
@@ -119,8 +126,8 @@ public:
   CacheFileIOManager();
 
   static nsresult Init();
-  static nsresult OnProfile();
   static nsresult Shutdown();
+  static nsresult OnProfile();
 
   static nsresult OpenFile(const nsACString &aKey,
                            uint32_t aFlags,
@@ -129,7 +136,7 @@ public:
                        char *aBuf, int32_t aCount,
                        CacheFileIOListener *aCallback);
   static nsresult Write(CacheFileHandle *aHandle, int64_t aOffset,
-                        const char *aBuf, int32_t aCount,
+                        const char *aBuf, int32_t aCount, bool aValidate,
                         CacheFileIOListener *aCallback);
   static nsresult DoomFile(CacheFileHandle *aHandle,
                            CacheFileIOListener *aCallback);
@@ -137,6 +144,7 @@ public:
 
 private:
   friend class CacheFileHandle;
+  friend class ShutdownEvent;
   friend class OpenFileEvent;
   friend class CloseHandleEvent;
   friend class ReadEvent;
@@ -149,6 +157,7 @@ private:
   static nsresult CloseHandle(CacheFileHandle *aHandle);
 
   nsresult InitInternal();
+  nsresult ShutdownInternal();
 
   nsresult OpenFileInternal(const SHA1Sum::Hash *aHash,
                             uint32_t aFlags,
@@ -157,7 +166,7 @@ private:
   nsresult ReadInternal(CacheFileHandle *aHandle, int64_t aOffset,
                         char *aBuf, int32_t aCount);
   nsresult WriteInternal(CacheFileHandle *aHandle, int64_t aOffset,
-                         const char *aBuf, int32_t aCount);
+                         const char *aBuf, int32_t aCount, bool aValidate);
   nsresult DoomFileInternal(CacheFileHandle *aHandle);
   nsresult ReleaseNSPRHandleInternal(CacheFileHandle *aHandle);
 
@@ -172,6 +181,7 @@ private:
 
 
   static CacheFileIOManager  *gInstance;
+  bool                        mShuttingDown;
   nsCOMPtr<nsIThread>         mIOThread;
   nsCOMPtr<nsIFile>           mCacheDirectory;
   bool                        mTreeCreated;
