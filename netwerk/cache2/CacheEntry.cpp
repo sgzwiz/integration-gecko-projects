@@ -112,7 +112,6 @@ char const * CacheEntry::StateString(uint32_t aState)
   case LOADING:       return "LOADING";
   case EMPTY:         return "EMPTY";
   case WRITING:       return "WRITING";
-  case HASMETADATA:   return "HASMETADATA";
   case READY:         return "READY";
   case REVALIDATING:  return "REVALIDATING";
   }
@@ -454,7 +453,7 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
         return true;
       }
 
-      if (mState >= HASMETADATA) {
+      if (mState == READY) {
         // Metadata present, validate the entry
         uint32_t validityState;
         {
@@ -537,7 +536,7 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
     return;
   }
 
-  if (state == HASMETADATA || state == READY) {
+  if (state == READY) {
     LOG(("  ready/has-meta, notifying OCEA with entry and NS_OK"));
     {
       mozilla::MutexAutoLock lock(mLock);
@@ -610,10 +609,6 @@ void CacheEntry::OnWriterClosed(Handle const* aHandle)
     if (mState == WRITING) {
       LOG(("  reverting to state EMPTY - write failed"));
       mState = EMPTY;
-    }
-    else if (mState == HASMETADATA) {
-      LOG(("  advancing to state READY - write done w/o opening output stream"));
-      mState = READY;
     }
     else if (mState == REVALIDATING) {
       LOG(("  reverting to state READY - reval failed"));
@@ -1101,7 +1096,7 @@ NS_IMETHODIMP CacheEntry::MetaDataReady()
   MOZ_ASSERT(mState > EMPTY);
 
   if (mState == WRITING)
-    mState = HASMETADATA;
+    mState = READY;
 
   BackgroundOp(Ops::REPORTUSAGE);
   InvokeCallbacks();
