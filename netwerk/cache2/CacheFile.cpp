@@ -10,6 +10,7 @@
 #include "CacheFileOutputStream.h"
 #include "CacheFileUtils.h"
 #include "nsThreadUtils.h"
+#include "mozilla/DebugOnly.h"
 #include <algorithm>
 
 namespace mozilla {
@@ -133,11 +134,11 @@ CacheFile::Init(const nsACString &aKey,
   mKey = aKey;
   mMemoryOnly = aMemoryOnly;
 
+  LOG(("CacheFile::Init() [this=%p, key=%s, createNew=%d, memoryOnly=%d, "
+       "listener=%p]", this, mKey.get(), aCreateNew, aMemoryOnly, aCallback));
+
   if (mMemoryOnly) {
     MOZ_ASSERT(!aCallback);
-
-    LOG(("CacheFile::Init() [this=%p, key=%s, createNew=%d, memoryOnly=%d, "
-         "listener=%p]", this, mKey.get(), aCreateNew, aMemoryOnly, aCallback));
 
     mMetadata = new CacheFileMetadata(mKey);
     mReady = true;
@@ -145,15 +146,6 @@ CacheFile::Init(const nsACString &aKey,
     return NS_OK;
   }
   else {
-    SHA1Sum sum;
-    SHA1Sum::Hash hash;
-    sum.update(mKey.get(), mKey.Length());
-    sum.finish(hash);
-
-    LOG(("CacheFile::Init() [this=%p, key=%s, createNew=%d, memoryOnly=%d, "
-         "listener=%p, hash=%08x%08x%08x%08x%08x]", this, mKey.get(),
-         aCreateNew, aMemoryOnly, aCallback, LOGSHA1(&hash)));
-
     uint32_t flags;
     if (aCreateNew) {
       MOZ_ASSERT(!aCallback);
@@ -169,7 +161,7 @@ CacheFile::Init(const nsACString &aKey,
 
     mOpeningFile = true;
     mListener = aCallback;
-    rv = CacheFileIOManager::OpenFile(&hash, flags, this);
+    rv = CacheFileIOManager::OpenFile(mKey, flags, this);
     if (NS_FAILED(rv)) {
       mListener = nullptr;
       mOpeningFile = false;
@@ -542,12 +534,17 @@ CacheFile::OnMetadataWritten(nsresult aResult)
   mWritingMetadata = false;
 
   if (NS_FAILED(aResult)) {
-
     // TODO close streams with an error ???
   }
 
   if (!mMemoryOnly)
     WriteMetadataIfNeeded();
+
+  if (!mOutput && !mInputs.Length() && !mChunks.Count() && !mWritingMetadata) {
+    LOG(("CacheFile::OnMetadataWritten() - Releasing file handle [this=%p]",
+         this));
+    CacheFileIOManager::ReleaseNSPRHandle(mHandle);
+  }
 
   return NS_OK;
 }
@@ -967,10 +964,8 @@ CacheFile::RemoveInput(CacheFileInputStream *aInput)
 
   LOG(("CacheFile::RemoveInput() [this=%p, input=%p]", this, aInput));
 
-#ifdef DEBUG
-  bool found =
-#endif
-  mInputs.RemoveElement(aInput);
+  DebugOnly<bool> found;
+  found = mInputs.RemoveElement(aInput);
   MOZ_ASSERT(found);
 
   ReleaseOutsideLock(static_cast<nsIInputStream*>(aInput));
