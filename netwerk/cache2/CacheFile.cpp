@@ -254,6 +254,7 @@ CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
     // TODO ??? doom entry
     // TODO mark this chunk as memory only, since it wasn't written to disk and
     // therefore cannot be released from memory
+    // LOG
   }
 
   // update hash value in metadata
@@ -936,7 +937,10 @@ CacheFile::RemoveChunk(CacheFileChunk *aChunk)
       aChunk->SetReady(false);
       rv = chunk->Write(mHandle, this);
       if (NS_FAILED(rv)) {
-        MOZ_ASSERT(false, "Unexpected failure while writing chunk");
+        // TODO ??? doom entry
+        // TODO mark this chunk as memory only, since it wasn't written to disk
+        // and therefore cannot be released from memory
+        // LOG
       }
       else {
         // Chunk will be removed in OnChunkWritten if it is still unused
