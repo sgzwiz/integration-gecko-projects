@@ -226,6 +226,7 @@ CacheFile::OnChunkRead(nsresult aResult, CacheFileChunk *aChunk)
 
       aResult = NS_ERROR_FILE_CORRUPTED;
       aChunk->mRemovingChunk = true;
+      aChunk->mFile = nullptr;
       mChunks.Remove(index);
       aChunk = nullptr;
       // TODO notify other streams ???
@@ -281,12 +282,13 @@ CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
   }
 
   MOZ_ASSERT(aChunk->mRefCnt == 2);
-  aChunk->mRemovingChunk = true;
 
   LOG(("CacheFile::OnChunkWritten() - Caching unused chunk "
        "[this=%p, chunk=%p]", this, aChunk));
 
   aChunk->SetReady(true);
+  aChunk->mRemovingChunk = true;
+  aChunk->mFile = nullptr;
   mCachedChunks.Put(aChunk->Index(), aChunk);
   mChunks.Remove(aChunk->Index());
   WriteMetadataIfNeeded();
@@ -793,11 +795,12 @@ CacheFile::GetChunkLocked(uint32_t aIndex, bool aWriter,
     LOG(("CacheFile::GetChunkLocked() - Reusing cached chunk %p [this=%p]",
          chunk.get(), this));
 
-    MOZ_ASSERT(chunk->IsReady());
-
     mChunks.Put(aIndex, chunk);
     mCachedChunks.Remove(aIndex);
+    chunk->mFile = this;
     chunk->mRemovingChunk = false;
+
+    MOZ_ASSERT(chunk->IsReady());
 
     rv = NotifyChunkListener(aCallback, nullptr, NS_OK, aIndex, chunk);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -825,6 +828,7 @@ CacheFile::GetChunkLocked(uint32_t aIndex, bool aWriter,
                      static_cast<uint32_t>(kChunkSize)), this);
     if (NS_FAILED(rv)) {
       chunk->mRemovingChunk = true;
+      chunk->mFile = nullptr;
       mChunks.Remove(aIndex);
       NS_ENSURE_SUCCESS(rv, rv);
     }
@@ -952,6 +956,7 @@ CacheFile::RemoveChunk(CacheFileChunk *aChunk)
          this, chunk.get()));
 
     chunk->mRemovingChunk = true;
+    chunk->mFile = nullptr;
     mCachedChunks.Put(chunk->Index(), chunk);
     mChunks.Remove(chunk->Index());
     if (!mMemoryOnly)
@@ -1148,10 +1153,12 @@ CacheFile::WriteAllCachedChunks(const uint32_t& aIdx,
   LOG(("CacheFile::WriteAllCachedChunks() [this=%p, idx=%d, chunk=%p]",
        file, aIdx, aChunk.get()));
 
+  file->mChunks.Put(aIdx, aChunk);
+  aChunk->mFile = file;
+  aChunk->mRemovingChunk = false;
+
   MOZ_ASSERT(aChunk->IsReady());
 
-  file->mChunks.Put(aIdx, aChunk);
-  aChunk->mRemovingChunk = false;
   NS_ADDREF(aChunk);
   file->ReleaseOutsideLock(aChunk);
 
