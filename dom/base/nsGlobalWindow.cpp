@@ -8,6 +8,7 @@
 #include <algorithm>
 
 /* This must occur *after* base/basictypes.h to avoid typedefs conflicts. */
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/Util.h"
 
 // Local Includes
@@ -8074,11 +8075,7 @@ nsGlobalWindow::GetPrivateParent()
     if (!doc)
       return nullptr;             // This is ok, just means a null parent.
 
-    nsIScriptGlobalObject *globalObject = doc->GetScriptGlobalObject();
-    if (!globalObject)
-      return nullptr;             // This is ok, just means a null parent.
-
-    parent = do_QueryInterface(globalObject);
+    return doc->GetWindow();
   }
 
   if (parent) {
@@ -11228,7 +11225,7 @@ nsGlobalWindow::HasIndexedDBSupport()
 static size_t
 SizeOfEventTargetObjectsEntryExcludingThisFun(
   nsPtrHashKey<nsDOMEventTargetHelper> *aEntry,
-  nsMallocSizeOfFun aMallocSizeOf,
+  MallocSizeOf aMallocSizeOf,
   void *arg)
 {
   nsISupports *supports = aEntry->GetKey();

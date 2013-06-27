@@ -22,6 +22,8 @@
 #include "ion/SnapshotReader.h"
 #include "ion/VMFunctions.h"
 
+#include "jsfuninlines.h"
+
 #include "ion/IonFrameIterator-inl.h"
 #include "ion/IonFrames-inl.h"
 #include "ion/PcScriptCache-inl.h"
@@ -425,6 +427,17 @@ HandleException(JSContext *cx, const IonFrameIterator &frame, ResumeFromExceptio
                 rfe->kind = ResumeFromException::RESUME_CATCH;
                 jsbytecode *catchPC = script->main() + tn->start + tn->length;
                 rfe->target = script->baselineScript()->nativeCodeForPC(script, catchPC);
+                return;
+            }
+            break;
+
+          case JSTRY_FINALLY:
+            if (cx->isExceptionPending()) {
+                rfe->kind = ResumeFromException::RESUME_FINALLY;
+                jsbytecode *finallyPC = script->main() + tn->start + tn->length;
+                rfe->target = script->baselineScript()->nativeCodeForPC(script, finallyPC);
+                rfe->exception = cx->getPendingException();
+                cx->clearPendingException();
                 return;
             }
             break;

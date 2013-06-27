@@ -170,9 +170,21 @@ struct JS_PUBLIC_API(NullPtr)
 };
 
 /*
- * Encapsulated pointer class for use on the heap.
+ * An encapsulated pointer class for heap based GC thing pointers.
  *
- * Implements post barriers for heap-based GC thing pointers outside the engine.
+ * This implements post-barriers for GC thing pointers stored on the heap. It is
+ * designed to be used for all heap-based GC thing pointers outside the JS
+ * engine.
+ *
+ * The template parameter T must be a JS GC thing pointer, masked pointer or
+ * possible pointer, such as a JS::Value or jsid.
+ *
+ * The class must be used to declare data members of heap classes only.
+ * Stack-based GC thing pointers should used Rooted<T>.
+ *
+ * Write barriers are implemented by overloading the assingment operator.
+ * Assiging to a Heap<T> triggers the appropriate calls into the GC to notify it
+ * of the change.
  */
 template <typename T>
 class Heap : public js::HeapBase<T>
@@ -523,7 +535,7 @@ class MOZ_STACK_CLASS Rooted : public js::RootedBase<T>
 #ifdef JS_THREADSAFE
         MOZ_ASSERT(js::IsInRequest(cxArg));
 #endif
-#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
+#ifdef JSGC_TRACK_EXACT_ROOTS
         js::ContextFriendFields *cx = js::ContextFriendFields::get(cxArg);
         commonInit(cx->thingGCRooters);
 #endif
@@ -531,7 +543,7 @@ class MOZ_STACK_CLASS Rooted : public js::RootedBase<T>
 
     void init(js::PerThreadDataFriendFields *pt) {
         MOZ_ASSERT(pt);
-#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
+#ifdef JSGC_TRACK_EXACT_ROOTS
         commonInit(pt->thingGCRooters);
 #endif
     }
@@ -586,13 +598,13 @@ class MOZ_STACK_CLASS Rooted : public js::RootedBase<T>
     }
 
     ~Rooted() {
-#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
+#ifdef JSGC_TRACK_EXACT_ROOTS
         JS_ASSERT(*stack == reinterpret_cast<Rooted<void*>*>(this));
         *stack = prev;
 #endif
     }
 
-#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
+#ifdef JSGC_TRACK_EXACT_ROOTS
     Rooted<T> *previous() { return prev; }
 #endif
 
@@ -628,7 +640,10 @@ class MOZ_STACK_CLASS Rooted : public js::RootedBase<T>
 
   private:
     void commonInit(Rooted<void*> **thingGCRooters) {
-#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
+#if defined(DEBUG) && defined(JS_GC_ZEAL) && defined(JSGC_ROOT_ANALYSIS) && !defined(JS_THREADSAFE)
+        scanned = false;
+#endif
+#ifdef JSGC_TRACK_EXACT_ROOTS
         js::ThingRootKind kind = js::GCMethods<T>::kind();
         this->stack = &thingGCRooters[kind];
         this->prev = *stack;
@@ -638,13 +653,16 @@ class MOZ_STACK_CLASS Rooted : public js::RootedBase<T>
 #endif
     }
 
-#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
+#ifdef JSGC_TRACK_EXACT_ROOTS
     Rooted<void*> **stack, *prev;
 #endif
 
 #if defined(DEBUG) && defined(JS_GC_ZEAL) && defined(JSGC_ROOT_ANALYSIS) && !defined(JS_THREADSAFE)
     /* Has the rooting analysis ever scanned this Rooted's stack location? */
     friend void JS::CheckStackRoots(JSContext*);
+#endif
+
+#ifdef JSGC_ROOT_ANALYSIS
     bool scanned;
 #endif
 

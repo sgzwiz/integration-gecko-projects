@@ -356,9 +356,9 @@ ArrayBufferObject::uninlineData(JSContext *maybecx)
 //                            |            \                             /
 //                      obj->elements       required to be page boundaries
 //
-JS_STATIC_ASSERT(sizeof(ObjectElements) < PageSize);
-JS_STATIC_ASSERT(AsmJSAllocationGranularity == PageSize);
-static const size_t AsmJSMappedSize = PageSize + AsmJSBufferProtectedSize;
+JS_STATIC_ASSERT(sizeof(ObjectElements) < AsmJSPageSize);
+JS_STATIC_ASSERT(AsmJSAllocationGranularity == AsmJSPageSize);
+static const size_t AsmJSMappedSize = AsmJSPageSize + AsmJSBufferProtectedSize;
 
 bool
 ArrayBufferObject::prepareForAsmJS(JSContext *cx, Handle<ArrayBufferObject*> buffer)
@@ -381,19 +381,19 @@ ArrayBufferObject::prepareForAsmJS(JSContext *cx, Handle<ArrayBufferObject*> buf
     // Enable access to the valid region.
     JS_ASSERT(buffer->byteLength() % AsmJSAllocationGranularity == 0);
 # ifdef XP_WIN
-    if (!VirtualAlloc(p, PageSize + buffer->byteLength(), MEM_COMMIT, PAGE_READWRITE)) {
+    if (!VirtualAlloc(p, AsmJSPageSize + buffer->byteLength(), MEM_COMMIT, PAGE_READWRITE)) {
         VirtualFree(p, 0, MEM_RELEASE);
         return false;
     }
 # else
-    if (mprotect(p, PageSize + buffer->byteLength(), PROT_READ | PROT_WRITE)) {
+    if (mprotect(p, AsmJSPageSize + buffer->byteLength(), PROT_READ | PROT_WRITE)) {
         munmap(p, AsmJSMappedSize);
         return false;
     }
 # endif
 
     // Copy over the current contents of the typed array.
-    uint8_t *data = reinterpret_cast<uint8_t*>(p) + PageSize;
+    uint8_t *data = reinterpret_cast<uint8_t*>(p) + AsmJSPageSize;
     memcpy(data, buffer->dataPointer(), buffer->byteLength());
 
     // Swap the new elements into the ArrayBufferObject.
@@ -415,8 +415,8 @@ ArrayBufferObject::releaseAsmJSArrayBuffer(FreeOp *fop, JSObject *obj)
     ArrayBufferObject &buffer = obj->as<ArrayBufferObject>();
     JS_ASSERT(buffer.isAsmJSArrayBuffer());
 
-    uint8_t *p = buffer.dataPointer() - PageSize ;
-    JS_ASSERT(uintptr_t(p) % PageSize == 0);
+    uint8_t *p = buffer.dataPointer() - AsmJSPageSize ;
+    JS_ASSERT(uintptr_t(p) % AsmJSPageSize == 0);
 # ifdef XP_WIN
     VirtualFree(p, 0, MEM_RELEASE);
 # else
@@ -538,10 +538,6 @@ ArrayBufferObject::addView(JSObject *view)
     }
 
     *views = view;
-
-    // The view list is not stored in the private slot, but it needs the same
-    // post barrier implementation
-    privateWriteBarrierPost((void**)views);
 }
 
 JSObject *
@@ -1342,6 +1338,26 @@ js::ClampDoubleToUint8(const double x)
     return y;
 }
 
+/*
+ * This method is used to trace TypedArray and DataView objects. We need a
+ * custom tracer because some of an ArrayBufferView's reserved slots are weak
+ * references, and some need to be updated specially during moving GCs.
+ */
+static void
+TraceArrayBufferView(JSTracer *trc, JSObject *obj)
+{
+    HeapSlot &bufSlot = obj->getReservedSlotRef(BufferView::BUFFER_SLOT);
+    MarkSlot(trc, &bufSlot, "typedarray.buffer");
+
+    /* Update obj's data slot if the array buffer moved. */
+    ArrayBufferObject &buf = bufSlot.toObject().as<ArrayBufferObject>();
+    int32_t offset = obj->getReservedSlot(BufferView::BYTEOFFSET_SLOT).toInt32();
+    obj->initPrivate(buf.dataPointer() + offset);
+
+    /* Update NEXT_VEIW_SLOT, if the view moved. */
+    IsSlotMarked(&obj->getReservedSlotRef(BufferView::NEXT_VIEW_SLOT));
+}
+
 template<typename NativeType> static inline const int TypeIDOfType();
 template<> inline const int TypeIDOfType<int8_t>() { return TypedArray::TYPE_INT8; }
 template<> inline const int TypeIDOfType<uint8_t>() { return TypedArray::TYPE_UINT8; }
@@ -1390,12 +1406,6 @@ class TypedArrayTemplate
 
     static bool is(const Value &v) {
         return v.isObject() && v.toObject().hasClass(fastClass());
-    }
-
-    static void
-    obj_trace(JSTracer *trc, JSObject *obj)
-    {
-        MarkSlot(trc, &obj->getFixedSlotRef(BUFFER_SLOT), "typedarray.buffer");
     }
 
     static JSBool
@@ -1730,7 +1740,7 @@ class TypedArrayTemplate
             return NewBuiltinClassInstance(cx, fastClass(), SingletonObject);
 
         jsbytecode *pc;
-        RootedScript script(cx, cx->stack.currentScript(&pc));
+        RootedScript script(cx, cx->currentScript(&pc));
         NewObjectKind newKind = script
                                 ? UseNewTypeForInitializer(cx, script, pc, fastClass())
                                 : GenericObject;
@@ -2163,19 +2173,19 @@ class TypedArrayTemplate
                 if (!FindProto(cx, fastClass(), &proto))
                     return NULL;
 
-                InvokeArgsGuard ag;
-                if (!cx->stack.pushInvokeArgs(cx, 3, &ag))
+                InvokeArgs args(cx);
+                if (!args.init(3))
                     return NULL;
 
-                ag.setCallee(cx->compartment()->maybeGlobal()->createArrayFromBuffer<NativeType>());
-                ag.setThis(ObjectValue(*bufobj));
-                ag[0] = NumberValue(byteOffset);
-                ag[1] = Int32Value(lengthInt);
-                ag[2] = ObjectValue(*proto);
+                args.setCallee(cx->compartment()->maybeGlobal()->createArrayFromBuffer<NativeType>());
+                args.setThis(ObjectValue(*bufobj));
+                args[0] = NumberValue(byteOffset);
+                args[1] = Int32Value(lengthInt);
+                args[2] = ObjectValue(*proto);
 
-                if (!Invoke(cx, ag))
+                if (!Invoke(cx, args))
                     return NULL;
-                return &ag.rval().toObject();
+                return &args.rval().toObject();
             }
         }
 
@@ -2348,8 +2358,8 @@ class TypedArrayTemplate
         SkipRoot skipDest(cx, &dest);
         SkipRoot skipSrc(cx, &src);
 
-        if (ar->isArray() && !ar->isIndexed() && ar->getDenseInitializedLength() >= len) {
-            JS_ASSERT(ar->getArrayLength() == len);
+        if (ar->is<ArrayObject>() && !ar->isIndexed() && ar->getDenseInitializedLength() >= len) {
+            JS_ASSERT(ar->as<ArrayObject>().length() == len);
 
             src = ar->getDenseElements();
             for (uint32_t i = 0; i < len; ++i) {
@@ -2770,16 +2780,16 @@ DataViewObject::class_constructor(JSContext *cx, unsigned argc, Value *vp)
         if (!proto)
             return false;
 
-        InvokeArgsGuard ag;
-        if (!cx->stack.pushInvokeArgs(cx, args.length() + 1, &ag))
+        InvokeArgs args2(cx);
+        if (!args2.init(args.length() + 1))
             return false;
-        ag.setCallee(global->createDataViewForThis());
-        ag.setThis(ObjectValue(*bufobj));
-        PodCopy(ag.array(), args.array(), args.length());
-        ag[argc] = ObjectValue(*proto);
-        if (!Invoke(cx, ag))
+        args2.setCallee(global->createDataViewForThis());
+        args2.setThis(ObjectValue(*bufobj));
+        PodCopy(args2.array(), args.array(), args.length());
+        args2[argc] = ObjectValue(*proto);
+        if (!Invoke(cx, args2))
             return false;
-        args.rval().set(ag.rval());
+        args.rval().set(args2.rval());
         return true;
     }
 
@@ -2899,7 +2909,7 @@ DataViewObject::read(JSContext *cx, Handle<DataViewObject*> obj,
 
 template <typename NativeType>
 static inline bool
-WebIDLCast(JSContext *cx, const Value &value, NativeType *out)
+WebIDLCast(JSContext *cx, HandleValue value, NativeType *out)
 {
     int32_t temp;
     if (!ToInt32(cx, value, &temp))
@@ -2913,7 +2923,7 @@ WebIDLCast(JSContext *cx, const Value &value, NativeType *out)
 
 template <>
 inline bool
-WebIDLCast<float>(JSContext *cx, const Value &value, float *out)
+WebIDLCast<float>(JSContext *cx, HandleValue value, float *out)
 {
     double temp;
     if (!ToNumber(cx, value, &temp))
@@ -2924,7 +2934,7 @@ WebIDLCast<float>(JSContext *cx, const Value &value, float *out)
 
 template <>
 inline bool
-WebIDLCast<double>(JSContext *cx, const Value &value, double *out)
+WebIDLCast<double>(JSContext *cx, HandleValue value, double *out)
 {
     return ToNumber(cx, value, out);
 }
@@ -2946,7 +2956,7 @@ DataViewObject::write(JSContext *cx, Handle<DataViewObject*> obj,
         return false;
 
     NativeType value;
-    if (!WebIDLCast(cx, args[1], &value))
+    if (!WebIDLCast(cx, args.handleAt(1), &value))
         return false;
 
     bool toLittleEndian = args.length() >= 3 && ToBoolean(args[2]);
@@ -3487,7 +3497,7 @@ IMPL_TYPED_ARRAY_COMBINED_UNWRAPPERS(Float64, double, double)
     NULL,                    /* call        */                                 \
     NULL,                    /* construct   */                                 \
     NULL,                    /* hasInstance */                                 \
-    _typedArray::obj_trace,  /* trace       */                                 \
+    TraceArrayBufferView,    /* trace       */                                 \
     {                                                                          \
         NULL,       /* outerObject */                                          \
         NULL,       /* innerObject */                                          \
@@ -3688,6 +3698,7 @@ Class DataViewObject::class_ = {
     "DataView",
     JSCLASS_HAS_PRIVATE |
     JSCLASS_IMPLEMENTS_BARRIERS |
+    /* Bug 886622: Consider making this Class NON_NATIVE. */
     JSCLASS_HAS_RESERVED_SLOTS(DataViewObject::RESERVED_SLOTS) |
     JSCLASS_HAS_CACHED_PROTO(JSProto_DataView),
     JS_PropertyStub,         /* addProperty */
@@ -3697,12 +3708,12 @@ Class DataViewObject::class_ = {
     JS_EnumerateStub,
     JS_ResolveStub,
     JS_ConvertStub,
-    NULL,           /* finalize */
-    NULL,           /* checkAccess */
-    NULL,           /* call        */
-    NULL,           /* construct   */
-    NULL,           /* hasInstance */
-    NULL,           /* trace */
+    NULL,                    /* finalize */
+    NULL,                    /* checkAccess */
+    NULL,                    /* call        */
+    NULL,                    /* construct   */
+    NULL,                    /* hasInstance */
+    TraceArrayBufferView,    /* trace */
     JS_NULL_CLASS_EXT,
     JS_NULL_OBJECT_OPS
 };

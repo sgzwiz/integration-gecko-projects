@@ -11,10 +11,18 @@
 #include "gc/Marking.h"
 #include "gc/StoreBuffer.h"
 
-#include "vm/ObjectImpl-inl.h"
 #include "vm/String-inl.h"
 
 namespace js {
+
+JS_ALWAYS_INLINE JS::Zone *
+ZoneOfValue(const JS::Value &value)
+{
+    JS_ASSERT(value.isMarkable());
+    if (value.isObject())
+        return value.toObject().zone();
+    return static_cast<js::gc::Cell *>(value.toGCThing())->tenuredZone();
+}
 
 template <typename T, typename Unioned>
 void
@@ -46,20 +54,6 @@ inline
 EncapsulatedValue::~EncapsulatedValue()
 {
     pre();
-}
-
-inline void
-EncapsulatedValue::init(const Value &v)
-{
-    JS_ASSERT(!IsPoisonedValue(v));
-    value = v;
-}
-
-inline void
-EncapsulatedValue::init(JSRuntime *rt, const Value &v)
-{
-    JS_ASSERT(!IsPoisonedValue(v));
-    value = v;
 }
 
 inline EncapsulatedValue &

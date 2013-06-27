@@ -10,6 +10,7 @@
 
 #include "ion/AsmJS.h"
 #include "ion/Bailouts.h"
+#include "ion/BaselineFrame.h"
 #include "ion/BaselineIC.h"
 #include "ion/BaselineJIT.h"
 #include "ion/BaselineRegisters.h"
@@ -18,6 +19,7 @@
 #include "js/RootingAPI.h"
 #include "vm/ForkJoin.h"
 
+#include "jsgcinlines.h"
 #include "jsinferinlines.h"
 
 using namespace js;
@@ -218,6 +220,27 @@ MacroAssembler::PopRegsInMaskIgnore(RegisterSet set, RegisterSet ignore)
         freeStack(reservedG);
     }
     JS_ASSERT(diffG == 0);
+}
+
+void
+MacroAssembler::branchNurseryPtr(Condition cond, const Address &ptr1, const ImmMaybeNurseryPtr &ptr2,
+                                 Label *label)
+{
+#ifdef JSGC_GENERATIONAL
+    if (ptr2.value && gc::IsInsideNursery(GetIonContext()->cx->runtime(), (void *)ptr2.value))
+        embedsNurseryPointers_ = true;
+#endif
+    branchPtr(cond, ptr1, ptr2, label);
+}
+
+void
+MacroAssembler::moveNurseryPtr(const ImmMaybeNurseryPtr &ptr, const Register &reg)
+{
+#ifdef JSGC_GENERATIONAL
+    if (ptr.value && gc::IsInsideNursery(GetIonContext()->cx->runtime(), (void *)ptr.value))
+        embedsNurseryPointers_ = true;
+#endif
+    movePtr(ptr, reg);
 }
 
 template<typename T>
@@ -558,7 +581,7 @@ MacroAssembler::initGCThing(const Register &obj, JSObject *templateObject)
     storePtr(ImmGCPtr(templateObject->type()), Address(obj, JSObject::offsetOfType()));
     storePtr(ImmWord((void *)NULL), Address(obj, JSObject::offsetOfSlots()));
 
-    if (templateObject->isArray()) {
+    if (templateObject->is<ArrayObject>()) {
         JS_ASSERT(!templateObject->getDenseInitializedLength());
 
         int elementsOffset = JSObject::offsetOfFixedElements();
@@ -572,7 +595,7 @@ MacroAssembler::initGCThing(const Register &obj, JSObject *templateObject)
                 Address(obj, elementsOffset + ObjectElements::offsetOfCapacity()));
         store32(Imm32(templateObject->getDenseInitializedLength()),
                 Address(obj, elementsOffset + ObjectElements::offsetOfInitializedLength()));
-        store32(Imm32(templateObject->getArrayLength()),
+        store32(Imm32(templateObject->as<ArrayObject>().length()),
                 Address(obj, elementsOffset + ObjectElements::offsetOfLength()));
         store32(Imm32(templateObject->shouldConvertDoubleElements()
                       ? ObjectElements::CONVERT_DOUBLE_ELEMENTS
@@ -695,7 +718,10 @@ MacroAssembler::performOsr()
     bind(&isFunction);
     {
         // Function - create the callee token, then get the script.
-        orPtr(Imm32(CalleeToken_Function), calleeToken);
+
+        // Skip the or-ing of CalleeToken_Function into calleeToken since it is zero.
+        JS_ASSERT(CalleeToken_Function == 0);
+
         loadPtr(Address(script, JSFunction::offsetOfNativeOrScript()), script);
     }
 
@@ -1202,12 +1228,10 @@ MacroAssembler::popRooted(VMFunction::RootType rootType, Register cellReg,
       case VMFunction::RootPropertyName:
       case VMFunction::RootFunction:
       case VMFunction::RootCell:
-        loadPtr(Address(StackPointer, 0), cellReg);
-        freeStack(sizeof(void *));
+        Pop(cellReg);
         break;
       case VMFunction::RootValue:
-        loadValue(Address(StackPointer, 0), valueReg);
-        freeStack(sizeof(Value));
+        Pop(valueReg);
         break;
     }
 }

@@ -19,6 +19,7 @@
 
 #include "gc/Barrier-inl.h"
 #include "vm/ScopeObject-inl.h"
+#include "vm/Stack-inl.h"
 
 using namespace js;
 using namespace js::types;
@@ -910,6 +911,14 @@ js::CloneStaticBlockObject(JSContext *cx, HandleObject enclosingScope, Handle<St
 }
 
 /*****************************************************************************/
+
+// Any name atom for a function which will be added as a DeclEnv object to the
+// scope chain above call objects for fun.
+static inline JSAtom *
+CallObjectLambdaName(JSFunction &fun)
+{
+    return fun.isNamedLambda() ? fun.atom() : NULL;
+}
 
 ScopeIter::ScopeIter(JSContext *cx
                      MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)

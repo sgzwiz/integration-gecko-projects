@@ -25,7 +25,6 @@
 #include "nsIScriptGlobalObject.h"
 #include "nsIContent.h"
 #include "nsEventListenerManager.h"
-#include "nsIDOMNodeSelector.h"
 #include "nsIPrincipal.h"
 #include "nsIParser.h"
 #include "nsBindingManager.h"
@@ -62,6 +61,7 @@
 #include "nsISecurityEventSink.h"
 #include "nsIChannelEventSink.h"
 #include "imgIRequest.h"
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/DOMImplementation.h"
 #include "nsIDOMTouchEvent.h"
 #include "nsIInlineEventHandlers.h"
@@ -224,7 +224,7 @@ public:
   };
 
   static size_t SizeOfExcludingThis(nsIdentifierMapEntry* aEntry,
-                                    nsMallocSizeOfFun aMallocSizeOf,
+                                    mozilla::MallocSizeOf aMallocSizeOf,
                                     void* aArg);
 
 private:
@@ -640,12 +640,6 @@ public:
     return mChannel;
   }
 
-  /**
-   * Set the object from which a document can get a script context.
-   * This is the context within which all scripts (during document
-   * creation and during event handling) will run.
-   */
-  virtual nsIScriptGlobalObject* GetScriptGlobalObject() const MOZ_OVERRIDE;
   virtual void SetScriptGlobalObject(nsIScriptGlobalObject* aGlobalObject) MOZ_OVERRIDE;
 
   virtual void SetScriptHandlingObject(nsIScriptGlobalObject* aScriptObject) MOZ_OVERRIDE;

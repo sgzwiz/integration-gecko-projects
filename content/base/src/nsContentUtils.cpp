@@ -5773,83 +5773,6 @@ nsContentUtils::AllocClassMatchingInfo(nsINode* aRootNode,
   return info;
 }
 
-#ifdef DEBUG
-class DebugWrapperTraversalCallback : public nsCycleCollectionTraversalCallback
-{
-public:
-  DebugWrapperTraversalCallback(void* aWrapper) : mFound(false),
-                                                  mWrapper(aWrapper)
-  {
-    mFlags = WANT_ALL_TRACES;
-  }
-
-  NS_IMETHOD_(void) DescribeRefCountedNode(nsrefcnt refCount,
-                                           const char *objName)
-  {
-  }
-  NS_IMETHOD_(void) DescribeGCedNode(bool isMarked,
-                                     const char *objName)
-  {
-  }
-
-  NS_IMETHOD_(void) NoteJSChild(void* child)
-  {
-    if (child == mWrapper) {
-      mFound = true;
-    }
-  }
-  NS_IMETHOD_(void) NoteXPCOMChild(nsISupports *child)
-  {
-  }
-  NS_IMETHOD_(void) NoteNativeChild(void* child,
-                                    nsCycleCollectionParticipant* helper)
-  {
-  }
-
-  NS_IMETHOD_(void) NoteNextEdgeName(const char* name)
-  {
-  }
-
-  bool mFound;
-
-private:
-  void* mWrapper;
-};
-
-static void
-DebugWrapperTraceCallback(void *p, const char *name, void *closure)
-{
-  DebugWrapperTraversalCallback* callback =
-    static_cast<DebugWrapperTraversalCallback*>(closure);
-  callback->NoteJSChild(p);
-}
-
-// static
-void
-nsContentUtils::CheckCCWrapperTraversal(void* aScriptObjectHolder,
-                                        nsWrapperCache* aCache,
-                                        nsScriptObjectTracer* aTracer)
-{
-  JSObject* wrapper = aCache->GetWrapper();
-  if (!wrapper) {
-    return;
-  }
-
-  DebugWrapperTraversalCallback callback(wrapper);
-
-  aTracer->Traverse(aScriptObjectHolder, callback);
-  MOZ_ASSERT(callback.mFound,
-             "Cycle collection participant didn't traverse to preserved "
-             "wrapper! This will probably crash.");
-
-  callback.mFound = false;
-  aTracer->Trace(aScriptObjectHolder, TraceCallbackFunc(DebugWrapperTraceCallback), &callback);
-  MOZ_ASSERT(callback.mFound,
-             "Cycle collection participant didn't trace preserved wrapper! "
-             "This will probably crash.");
-}
-#endif
-
 // static
 bool
 nsContentUtils::IsFocusedContent(const nsIContent* aContent)
@@ -6100,10 +6023,10 @@ nsContentUtils::IsPatternMatching(nsAString& aValue, nsAString& aPattern,
                                   nsIDocument* aDocument)
 {
   NS_ASSERTION(aDocument, "aDocument should be a valid pointer (not null)");
-  NS_ENSURE_TRUE(aDocument->GetScriptGlobalObject(), true);
+  nsCOMPtr<nsIScriptGlobalObject> sgo = do_QueryInterface(aDocument->GetWindow());
+  NS_ENSURE_TRUE(sgo, true);
 
-  AutoPushJSContext cx(aDocument->GetScriptGlobalObject()->
-                       GetContext()->GetNativeContext());
+  AutoPushJSContext cx(sgo->GetContext()->GetNativeContext());
   NS_ENSURE_TRUE(cx, true);
 
   // The pattern has to match the entire value.

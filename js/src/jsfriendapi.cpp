@@ -20,6 +20,7 @@
 
 #include "builtin/TestingFunctions.h"
 
+#include "jsfuninlines.h"
 #include "jsobjinlines.h"
 
 using namespace js;
@@ -309,7 +310,7 @@ AutoSwitchCompartment::AutoSwitchCompartment(JSContext *cx, JSCompartment *newCo
     cx->setCompartment(newCompartment);
 }
 
-AutoSwitchCompartment::AutoSwitchCompartment(JSContext *cx, JSHandleObject target
+AutoSwitchCompartment::AutoSwitchCompartment(JSContext *cx, HandleObject target
                                              MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
   : cx(cx), oldCompartment(cx->compartment())
 {
@@ -800,7 +801,7 @@ js::SetActivityCallback(JSRuntime *rt, ActivityCallback cb, void *arg)
 JS_FRIEND_API(bool)
 js::IsContextRunningJS(JSContext *cx)
 {
-    return !cx->stack.empty();
+    return cx->currentlyRunning();
 }
 
 JS_FRIEND_API(JS::GCSliceCallback)
@@ -1081,7 +1082,7 @@ js::SetObjectMetadataCallback(JSContext *cx, ObjectMetadataCallback callback)
 }
 
 JS_FRIEND_API(bool)
-js::SetObjectMetadata(JSContext *cx, JSHandleObject obj, JSHandleObject metadata)
+js::SetObjectMetadata(JSContext *cx, HandleObject obj, HandleObject metadata)
 {
     return JSObject::setMetadata(cx, obj, metadata);
 }

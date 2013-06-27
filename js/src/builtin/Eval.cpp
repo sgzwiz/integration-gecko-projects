@@ -405,7 +405,7 @@ static inline bool
 WarnOnTooManyArgs(JSContext *cx, const CallArgs &args)
 {
     if (args.length() > 1) {
-        Rooted<JSScript*> script(cx, cx->stack.currentScript());
+        Rooted<JSScript*> script(cx, cx->currentScript());
         if (script && !script->warnedAboutTwoArgumentEval) {
             static const char TWO_ARGUMENT_WARNING[] =
                 "Support for eval(code, scopeObject) has been removed. "
@@ -469,7 +469,7 @@ js::PrincipalsForCompiledCode(const CallReceiver &call, JSContext *cx)
 {
     JSObject &callee = call.callee();
     JS_ASSERT(IsAnyBuiltinEval(&callee.as<JSFunction>()) ||
-              IsBuiltinFunctionConstructor(&callee.as<JSFunction>()));
+              callee.as<JSFunction>().isBuiltinFunctionConstructor());
 
     // To compute the principals of the compiled eval/Function code, we simply
     // use the callee's principals. To see why the caller's principals are

@@ -13,6 +13,8 @@
 #include "MIRGraph.h"
 #include "IonBuilder.h"
 
+#include "jsscriptinlines.h"
+
 #include "vm/StringObject-inl.h"
 
 namespace js {
@@ -284,7 +286,7 @@ IonBuilder::inlineArrayPopShift(CallInfo &callInfo, MArrayPopShift::Mode mode)
         types::OBJECT_FLAG_ITERATED;
 
     types::StackTypeSet *thisTypes = callInfo.thisArg()->resultTypeSet();
-    if (!thisTypes || thisTypes->getKnownClass() != &ArrayClass)
+    if (!thisTypes || thisTypes->getKnownClass() != &ArrayObject::class_)
         return InliningStatus_NotInlined;
     if (thisTypes->hasObjectFlags(cx, unhandledFlags))
         return InliningStatus_NotInlined;
@@ -335,7 +337,7 @@ IonBuilder::inlineArrayPush(CallInfo &callInfo)
         return InliningStatus_NotInlined;
 
     types::StackTypeSet *thisTypes = callInfo.thisArg()->resultTypeSet();
-    if (!thisTypes || thisTypes->getKnownClass() != &ArrayClass)
+    if (!thisTypes || thisTypes->getKnownClass() != &ArrayObject::class_)
         return InliningStatus_NotInlined;
     if (thisTypes->hasObjectFlags(cx, types::OBJECT_FLAG_SPARSE_INDEXES |
                                   types::OBJECT_FLAG_LENGTH_OVERFLOW))
@@ -393,7 +395,7 @@ IonBuilder::inlineArrayConcat(CallInfo &callInfo)
     if (!thisTypes || !argTypes)
         return InliningStatus_NotInlined;
 
-    if (thisTypes->getKnownClass() != &ArrayClass)
+    if (thisTypes->getKnownClass() != &ArrayObject::class_)
         return InliningStatus_NotInlined;
     if (thisTypes->hasObjectFlags(cx, types::OBJECT_FLAG_SPARSE_INDEXES |
                                   types::OBJECT_FLAG_LENGTH_OVERFLOW))
@@ -401,7 +403,7 @@ IonBuilder::inlineArrayConcat(CallInfo &callInfo)
         return InliningStatus_NotInlined;
     }
 
-    if (argTypes->getKnownClass() != &ArrayClass)
+    if (argTypes->getKnownClass() != &ArrayObject::class_)
         return InliningStatus_NotInlined;
     if (argTypes->hasObjectFlags(cx, types::OBJECT_FLAG_SPARSE_INDEXES |
                                  types::OBJECT_FLAG_LENGTH_OVERFLOW))
@@ -656,7 +658,8 @@ IonBuilder::inlineMathPow(CallInfo &callInfo)
     // Optimize some constant powers.
     if (callInfo.getArg(1)->isConstant()) {
         double pow;
-        if (!ToNumber(GetIonContext()->cx, callInfo.getArg(1)->toConstant()->value(), &pow))
+        RootedValue v(GetIonContext()->cx, callInfo.getArg(1)->toConstant()->value());
+        if (!ToNumber(GetIonContext()->cx, v, &pow))
             return InliningStatus_Error;
 
         // Math.pow(x, 0.5) is a sqrt with edge-case detection.

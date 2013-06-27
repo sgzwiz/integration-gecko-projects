@@ -17,7 +17,7 @@ namespace js {
 class ScriptSource;
 class SPSProfiler;
 class AsmJSModule;
-namespace frontend { struct TokenStream; struct ParseNode; }
+namespace frontend { class TokenStream; class ParseNode; }
 namespace ion { class MIRGenerator; class LIRGraph; }
 
 // Called after parsing a function 'fn' which contains the "use asm" directive.
@@ -88,6 +88,9 @@ class AsmJSActivation
     // Set from SIGSEGV handler:
     void setResumePC(void *pc) { resumePC_ = pc; }
 };
+
+// The assumed page size; dynamically checked in CompileAsmJS.
+const size_t AsmJSPageSize = 4096;
 
 // The asm.js spec requires that the ArrayBuffer's byteLength be a multiple of 4096.
 static const size_t AsmJSAllocationGranularity = 4096;

@@ -11,6 +11,7 @@
 #include "jsobj.h"
 #include "jstypedarray.h"
 
+#include "jscntxtinlines.h"
 #include "jsobjinlines.h"
 
 // Sentinel value used to initialize ArrayBufferViews' NEXT_BUFFER_SLOTs to
@@ -180,13 +181,8 @@ class ArrayBufferViewByteOffsetRef : public gc::BufferableRef
     explicit ArrayBufferViewByteOffsetRef(JSObject *obj) : obj(obj) {}
 
     void mark(JSTracer *trc) {
-        /* Update obj's private to point to the moved buffer's array data. */
         MarkObjectUnbarriered(trc, &obj, "TypedArray");
-        HeapSlot &bufSlot = obj->getReservedSlotRef(BufferView::BUFFER_SLOT);
-        gc::MarkSlot(trc, &bufSlot, "TypedArray::BUFFER_SLOT");
-        ArrayBufferObject &buf = bufSlot.toObject().as<ArrayBufferObject>();
-        int32_t offset = obj->getReservedSlot(BufferView::BYTEOFFSET_SLOT).toInt32();
-        obj->initPrivate(buf.dataPointer() + offset);
+        obj->getClass()->trace(trc, obj);
     }
 };
 #endif
@@ -212,7 +208,7 @@ DataViewNewObjectKind(JSContext *cx, uint32_t byteLength, JSObject *proto)
     if (!proto && byteLength >= TypedArray::SINGLETON_TYPE_BYTE_LENGTH)
         return SingletonObject;
     jsbytecode *pc;
-    JSScript *script = cx->stack.currentScript(&pc);
+    JSScript *script = cx->currentScript(&pc);
     if (!script)
         return GenericObject;
     return types::UseNewTypeForInitializer(cx, script, pc, &DataViewObject::class_);
@@ -243,7 +239,7 @@ DataViewObject::create(JSContext *cx, uint32_t byteOffset, uint32_t byteLength,
             JS_ASSERT(obj->hasSingletonType());
         } else {
             jsbytecode *pc;
-            RootedScript script(cx, cx->stack.currentScript(&pc));
+            RootedScript script(cx, cx->currentScript(&pc));
             if (script) {
                 if (!types::SetInitializerObjectType(cx, script, pc, obj, newKind))
                     return NULL;

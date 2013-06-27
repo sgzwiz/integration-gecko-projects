@@ -32,6 +32,7 @@
 #include "vm/Debugger.h"
 
 #include "jsatominlines.h"
+#include "jsfuninlines.h"
 #include "jsobjinlines.h"
 #include "jsscriptinlines.h"
 
@@ -2573,7 +2574,7 @@ frontend::EmitFunctionScript(JSContext *cx, BytecodeEmitter *bce, ParseNode *bod
         !funbox->isGenerator();
     if (runOnce) {
         bce->switchToProlog();
-        if (!Emit1(cx, bce, JSOP_RUNONCE) < 0)
+        if (Emit1(cx, bce, JSOP_RUNONCE) < 0)
             return false;
         bce->switchToMain();
     }
@@ -5489,7 +5490,6 @@ EmitArray(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
      * JSOP_SETELEM/JSOP_SETPROP would do.
      */
 
-#if JS_HAS_GENERATORS
     if (pn->isKind(PNK_ARRAYCOMP)) {
         if (!EmitNewInit(cx, bce, JSProto_Array, pn))
             return false;
@@ -5509,7 +5509,6 @@ EmitArray(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
         /* Emit the usual op needed for decompilation. */
         return Emit1(cx, bce, JSOP_ENDINIT) >= 0;
     }
-#endif /* JS_HAS_GENERATORS */
 
     if (!(pn->pn_xflags & PNX_NONCONST) && pn->pn_head && bce->checkSingletonContext())
         return EmitSingletonInitialiser(cx, bce, pn);
@@ -5795,7 +5794,6 @@ frontend::EmitTree(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
         ok = EmitReturn(cx, bce, pn);
         break;
 
-#if JS_HAS_GENERATORS
       case PNK_YIELD:
         JS_ASSERT(bce->sc->isFunctionBox());
         if (pn->pn_kid) {
@@ -5810,7 +5808,6 @@ frontend::EmitTree(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
         if (Emit1(cx, bce, JSOP_YIELD) < 0)
             return false;
         break;
-#endif
 
       case PNK_STATEMENTLIST:
         ok = EmitStatementList(cx, bce, pn, top);
@@ -5967,7 +5964,6 @@ frontend::EmitTree(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
              : EmitVariables(cx, bce, pn, InitializeVars);
         break;
 #endif /* JS_HAS_BLOCK_SCOPE */
-#if JS_HAS_GENERATORS
       case PNK_ARRAYPUSH: {
         int slot;
 
@@ -5986,12 +5982,9 @@ frontend::EmitTree(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
             return false;
         break;
       }
-#endif
 
       case PNK_ARRAY:
-#if JS_HAS_GENERATORS
       case PNK_ARRAYCOMP:
-#endif
         ok = EmitArray(cx, bce, pn);
         break;
 
@@ -6412,7 +6405,7 @@ CGConstList::finish(ConstArray *array)
  * We should try to get rid of offsetBias (always 0 or 1, where 1 is
  * JSOP_{NOP,POP}_LENGTH), which is used only by SRC_FOR.
  */
-JS_FRIEND_DATA(const JSSrcNoteSpec) js_SrcNoteSpec[] = {
+const JSSrcNoteSpec js_SrcNoteSpec[] = {
 /*  0 */ {"null",           0},
 
 /*  1 */ {"if",             0},

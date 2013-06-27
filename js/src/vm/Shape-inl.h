@@ -26,8 +26,6 @@
 #include "jscntxtinlines.h"
 #include "jsgcinlines.h"
 
-#include "vm/ScopeObject-inl.h"
-
 namespace js {
 
 static inline void
@@ -429,11 +427,6 @@ Shape::writeBarrierPre(Shape *shape)
 }
 
 inline void
-Shape::writeBarrierPost(Shape *shape, void *addr)
-{
-}
-
-inline void
 Shape::readBarrier(Shape *shape)
 {
 #ifdef JSGC_INCREMENTAL
@@ -469,11 +462,6 @@ BaseShape::writeBarrierPre(BaseShape *base)
         JS_ASSERT(tmp == base);
     }
 #endif
-}
-
-inline void
-BaseShape::writeBarrierPost(BaseShape *shape, void *addr)
-{
 }
 
 inline void

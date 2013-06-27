@@ -13,6 +13,8 @@
 #include "jsgc.h"
 #include "jsiter.h"
 
+#include "vm/ErrorObject.h"
+
 #include "jsobjinlines.h"
 
 #include "builtin/Iterator-inl.h"
@@ -138,7 +140,9 @@ ErrorCopier::~ErrorCopier()
     JSContext *cx = ac.ref().context();
     if (ac.ref().origin() != cx->compartment() && cx->isExceptionPending()) {
         RootedValue exc(cx, cx->getPendingException());
-        if (exc.isObject() && exc.toObject().isError() && exc.toObject().getPrivate()) {
+        if (exc.isObject() && exc.toObject().is<ErrorObject>() &&
+            exc.toObject().as<ErrorObject>().getExnPrivate())
+        {
             cx->clearPendingException();
             ac.destroy();
             Rooted<JSObject*> errObj(cx, &exc.toObject());
@@ -479,8 +483,8 @@ CrossCompartmentWrapper::nativeCall(JSContext *cx, IsAcceptableThis test, Native
     RootedObject wrapped(cx, wrappedObject(wrapper));
     {
         AutoCompartment call(cx, wrapped);
-        InvokeArgsGuard dstArgs;
-        if (!cx->stack.pushInvokeArgs(cx, srcArgs.length(), &dstArgs))
+        InvokeArgs dstArgs(cx);
+        if (!dstArgs.init(srcArgs.length()))
             return false;
 
         Value *src = srcArgs.base();
@@ -513,7 +517,6 @@ CrossCompartmentWrapper::nativeCall(JSContext *cx, IsAcceptableThis test, Native
             return false;
 
         srcArgs.rval().set(dstArgs.rval());
-        dstArgs.pop();
     }
     return cx->compartment()->wrap(cx, srcArgs.rval());
 }

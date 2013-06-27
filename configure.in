@@ -51,7 +51,7 @@ _SUBDIR_CONFIG_ARGS="$ac_configure_args"
 dnl Set the version number of the libs included with mozilla
 dnl ========================================================
 MOZJPEG=62
-MOZPNG=10513
+MOZPNG=10516
 NSPR_VERSION=4
 NSS_VERSION=3
 
@@ -714,7 +714,7 @@ case "$target" in
     AC_DEFINE_UNQUOTED(MOZ_WINSDK_TARGETVER,0x$MOZ_WINSDK_TARGETVER)
     # Definitions matching sdkddkver.h
     AC_DEFINE_UNQUOTED(MOZ_NTDDI_WIN7, 0x06010000)
-    AC_DEFINE_UNQUOTED(MOZ_WINSDK_MAXVER,0x$MOZ_WINSDK_MAXVER)
+    AC_DEFINE_UNQUOTED(MOZ_WINSDK_MAXVER,$MOZ_WINSDK_MAXVER)
     AC_SUBST(MOZ_WINSDK_MAXVER)
     ;;
 esac
@@ -4332,6 +4332,16 @@ fi
 AC_DEFINE_UNQUOTED(MOZ_UPDATE_CHANNEL, $MOZ_UPDATE_CHANNEL)
 AC_SUBST(MOZ_UPDATE_CHANNEL)
 
+# Allow to specify a Google API key file that contains the secret key to be
+# used for various Google API requests.
+MOZ_ARG_WITH_STRING(google-api-keyfile,
+[  --with-google-api-keyfile=file   Use the secret key contained in the given keyfile for Google API requests],
+  MOZ_GOOGLE_API_KEY=`cat $withval`)
+if test -z "$MOZ_GOOGLE_API_KEY"; then
+    MOZ_GOOGLE_API_KEY=no-google-api-key
+fi
+AC_DEFINE_UNQUOTED(MOZ_GOOGLE_API_KEY, $MOZ_GOOGLE_API_KEY)
+
 # Allow the application to influence configure with a confvars.sh script.
 AC_MSG_CHECKING([if app-specific confvars.sh exists])
 if test -f "${srcdir}/${MOZ_BUILD_APP}/confvars.sh" ; then
@@ -5756,6 +5766,10 @@ AC_SUBST(MOZ_PULSEAUDIO_LIBS)
 dnl ========================================================
 dnl = Enable GStreamer
 dnl ========================================================
+if test "$OS_TARGET" = "Linux"; then
+  MOZ_GSTREAMER=1
+fi
+
 MOZ_ARG_ENABLE_BOOL(gstreamer,
 [  --enable-gstreamer           Enable GStreamer support],
 MOZ_GSTREAMER=1,
@@ -5769,7 +5783,8 @@ if test "$MOZ_GSTREAMER"; then
     PKG_CHECK_MODULES(GSTREAMER,
                       gstreamer-$GST_API_VERSION >= $GST_VERSION
                       gstreamer-app-$GST_API_VERSION
-                      gstreamer-plugins-base-$GST_API_VERSION)
+                      gstreamer-plugins-base-$GST_API_VERSION, ,
+                      AC_MSG_ERROR([gstreamer and gstreamer-plugins-base development packages are needed to build gstreamer backend. Install them or disable gstreamer support with --disable-gstreamer]))
     if test -n "$GSTREAMER_LIBS"; then
        _SAVE_LDFLAGS=$LDFLAGS
        LDFLAGS="$LDFLAGS $GSTREAMER_LIBS -lgstvideo-$GST_API_VERSION"
@@ -5777,11 +5792,11 @@ if test "$MOZ_GSTREAMER"; then
        if test -n "$_HAVE_LIBGSTVIDEO" ; then
           GSTREAMER_LIBS="$GSTREAMER_LIBS -lgstvideo-$GST_API_VERSION"
        else
-          AC_MSG_ERROR([gstreamer video backend requires libgstvideo])
+          AC_MSG_ERROR([gstreamer-plugins-base found, but no libgstvideo. Something has gone terribly wrong. Try reinstalling gstreamer-plugins-base; failing that, disable the gstreamer backend with --disable-gstreamer.])
        fi
        LDFLAGS=$_SAVE_LDFLAGS
     else
-       AC_MSG_ERROR([gstreamer backend requires the gstreamer packages])
+       AC_MSG_ERROR([gstreamer and gstreamer-plugins-base development packages are needed to build gstreamer backend. Install them or disable gstreamer support with --disable-gstreamer])
     fi
 fi
 AC_SUBST(GSTREAMER_CFLAGS)
@@ -5857,11 +5872,28 @@ MOZ_PATH_PROG(JAVA, java, :, [$JAVA_PATH])
 MOZ_PATH_PROG(JAVAC, javac, :, [$JAVA_PATH])
 MOZ_PATH_PROG(JAVAH, javah, :, [$JAVA_PATH])
 MOZ_PATH_PROG(JAR, jar, :, [$JAVA_PATH])
+MOZ_PATH_PROG(JARSIGNER, jarsigner, :, [$JAVA_PATH])
+MOZ_PATH_PROG(KEYTOOL, keytool, :, [$JAVA_PATH])
 
 if test -n "${JAVA_BIN_PATH}" -o \
   \( "$OS_TARGET" = Android -a x"$MOZ_WIDGET_TOOLKIT" != x"gonk" \); then
-  if test -z "$JAVA" -o "$JAVA" = ":" -o -z "$JAVAC" -o "$JAVAC" = ":" -o -z "$JAVAH" -o "$JAVAH" = ":" -o -z "$JAR" -o "$JAR" = ":"; then
-    AC_MSG_ERROR([The programs java, javac, javah and jar were not found.  Set \$JAVA_HOME to your java sdk directory or use --with-java-bin-path={java-bin-dir}])
+  if test -z "$JAVA" -o "$JAVA" = ":"; then
+    AC_MSG_ERROR([The program java was not found.  Set \$JAVA_HOME to your Java SDK directory or use --with-java-bin-path={java-bin-dir}])
+  fi
+  if test -z "$JAVAC" -o "$JAVAC" = ":"; then
+    AC_MSG_ERROR([The program javac was not found.  Set \$JAVA_HOME to your Java SDK directory or use --with-java-bin-path={java-bin-dir}])
+  fi
+  if test -z "$JAVAH" -o "$JAVAH" = ":"; then
+    AC_MSG_ERROR([The program javah was not found.  Set \$JAVA_HOME to your Java SDK directory or use --with-java-bin-path={java-bin-dir}])
+  fi
+  if test -z "$JAR" -o "$JAR" = ":"; then
+    AC_MSG_ERROR([The program jar was not found.  Set \$JAVA_HOME to your Java SDK directory or use --with-java-bin-path={java-bin-dir}])
+  fi
+  if test -z "$JARSIGNER" -o "$JARSIGNER" = ":"; then
+    AC_MSG_ERROR([The program jarsigner was not found.  Set \$JAVA_HOME to your Java SDK directory or use --with-java-bin-path={java-bin-dir}])
+  fi
+  if test -z "$KEYTOOL" -o "$KEYTOOL" = ":"; then
+    AC_MSG_ERROR([The program keytool was not found.  Set \$JAVA_HOME to your Java SDK directory or use --with-java-bin-path={java-bin-dir}])
   fi
 fi
 
@@ -8600,6 +8632,8 @@ AC_SUBST(JAVA)
 AC_SUBST(JAVAC)
 AC_SUBST(JAVAH)
 AC_SUBST(JAR)
+AC_SUBST(JARSIGNER)
+AC_SUBST(KEYTOOL)
 
 AC_SUBST(MOZ_PROFILELOCKING)
 

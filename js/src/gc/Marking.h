@@ -182,9 +182,6 @@ MarkValueRootRange(JSTracer *trc, Value *begin, Value *end, const char *name)
 }
 
 void
-MarkValueRootRangeMaybeNullPayload(JSTracer *trc, size_t len, Value *vec, const char *name);
-
-void
 MarkTypeRoot(JSTracer *trc, types::Type *v, const char *name);
 
 bool
@@ -194,6 +191,9 @@ bool
 IsValueAboutToBeFinalized(Value *v);
 
 /*** Slot Marking ***/
+
+bool
+IsSlotMarked(HeapSlot *s);
 
 void
 MarkSlot(JSTracer *trc, HeapSlot *s, const char *name);

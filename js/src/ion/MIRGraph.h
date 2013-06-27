@@ -175,7 +175,7 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock>
 
     // Replaces an edge for a given block with a new block. This is
     // used for critical edge splitting and also for inserting
-    // bailouts during ParallelArrayAnalysis.
+    // bailouts during ParallelSafetyAnalysis.
     //
     // Note: If successorWithPhis is set, you must not be replacing it.
     void replacePredecessor(MBasicBlock *old, MBasicBlock *split);
@@ -384,6 +384,14 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock>
         return immediatelyDominated_[i];
     }
 
+    MBasicBlock **immediatelyDominatedBlocksBegin() {
+        return immediatelyDominated_.begin();
+    }
+
+    MBasicBlock **immediatelyDominatedBlocksEnd() {
+        return immediatelyDominated_.end();
+    }
+
     size_t numDominated() const {
         return numDominated_;
     }
@@ -459,6 +467,8 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock>
     }
 
     void dumpStack(FILE *fp);
+
+    void dump(FILE *fp);
 
     // Track bailouts by storing the current pc in MIR instruction added at this
     // cycle. This is also used for tracking calls when profiling.
@@ -658,6 +668,8 @@ class MIRGraph
     // lazilly insert an MParSlice instruction in the entry block and
     // return the definition.
     MDefinition *parSlice();
+
+    void dump(FILE *fp);
 };
 
 class MDefinitionIterator

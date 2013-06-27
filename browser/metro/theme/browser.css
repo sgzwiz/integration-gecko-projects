@@ -122,7 +122,7 @@
     opacity: 0;
     transform: scale(0, 0);
   }
-  
+
   100% {
     opacity: 1;
     transform: scale(1, 1);
@@ -168,7 +168,7 @@ documenttab[closing] > .documenttab-container {
   font-size: @metro_font_normal@;
   width: @thumbnail_width@;
   padding: 4px @metro_spacing_snormal@ 8px;
-  
+
   background: #000;
   opacity: 0.95;
   color: #fff;
@@ -223,7 +223,7 @@ documenttab[selected] .documenttab-selection {
 }
 
 .selection-overlay {
-  pointer-events: none;  
+  pointer-events: none;
 }
 
 .selection-overlay:-moz-focusring {
@@ -284,7 +284,7 @@ documenttab[selected] .documenttab-selection {
     list-style-image: url(chrome://browser/skin/images/appbar-forward@1.4x.png);
   }
 }
-+
+
 /* URL bar */
 #urlbar-container {
   border: @metro_border_thick@ solid @urlbar_border_color@;
@@ -394,17 +394,6 @@ appbar[visible] {
               bottom @appbar_keyboard_slideup_duration@ @metro_animation_easing@;
 }
 
-appbar > toolbar > toolbarbutton {
-  list-style-image: url(chrome://browser/skin/images/appbar-icons.png);
-  -moz-image-region: rect(0px, 200px, 40px, 160px); /* Gear icon is default. */
-}
-appbar > toolbar > toolbarbutton:hover {
-  -moz-image-region: rect(40px, 200px, 80px, 160px);
-}
-appbar > toolbar > toolbarbutton:active {
-  -moz-image-region: rect(80px, 200px, 120px, 160px);
-}
-
 #toolbar > .appbar-primary {
   -moz-image-region: rect(0 40px 40px 0);
 }
@@ -444,27 +433,6 @@ appbar > toolbar > toolbarbutton:active {
   }
 }
 
-/* Application-Specific */
-#download-button {
-  -moz-image-region: rect(0px, 40px, 40px, 0px) !important;
-}
-#download-button:hover {
-  -moz-image-region: rect(40px, 40px, 80px, 0px) !important;
-}
-#download-button:active {
-  -moz-image-region: rect(80px, 40px, 120px, 0px) !important;
-}
-
-#plugin-button {
-  -moz-image-region: rect(0px, 80px, 40px, 40px) !important;
-}
-#plugin-button:hover {
-  -moz-image-region: rect(40px, 80px, 80px, 40px) !important;
-}
-#plugin-button:active {
-  -moz-image-region: rect(80px, 80px, 120px, 40px) !important;
-}
-
 /* Page-Specific */
 
 #pin-button {
@@ -493,6 +461,21 @@ appbar > toolbar > toolbarbutton:active {
   }
 }
 
+/* Application-Specific */
+
+#download-button, #contextualactions-tray > toolbarbutton {
+  list-style-image: url(chrome://browser/skin/images/appbar-icons.png);
+}
+
+#download-button {
+  -moz-image-region: rect(0px, 40px, 40px, 0px) !important;
+}
+#download-button:hover {
+  -moz-image-region: rect(40px, 40px, 80px, 0px) !important;
+}
+#download-button:active {
+  -moz-image-region: rect(80px, 40px, 120px, 0px) !important;
+}
 
 #contextualactions-tray {
   background-color: @metro_orange@;
@@ -749,13 +732,15 @@ setting[type="radio"] > vbox {
   visibility: collapse;
 }
 
-/*tile content should be on same line in snapped view */
-#snapped-topsites-grid > richgriditem > .richgrid-item-content {
-  -moz-box-orient: horizontal;
+/* startUI sections, grids */
+#start-container .meta-section {
+  /* allot space for at least a single column */
+  min-width: @grid_double_column_width@;
 }
 
-[viewstate="snapped"] .canSnapTiles .richgrid-item-desc {
- -moz-margin-start: 8px;
+#start-topsites {
+  /* allot space for 3 tile columns for the topsites grid */
+  min-width: calc(3 * @grid_double_column_width@);
 }
 
 /* if snapped, hide the fullscreen awesome screen, if viewstate is anything
@@ -778,8 +763,8 @@ setting[type="radio"] > vbox {
 
 #start-container[viewstate="snapped"] .meta-section {
   margin: 0px;
+  min-width: @grid_double_column_width@;
 }
-
 
 /* Browser Content Areas ----------------------------------------------------- */
 

@@ -233,29 +233,37 @@ js::GetPrefixInteger(JSContext *cx, const jschar *start, const jschar *end, int 
 static JSBool
 num_isNaN(JSContext *cx, unsigned argc, Value *vp)
 {
-    if (argc == 0) {
-        vp->setBoolean(true);
-        return JS_TRUE;
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    if (args.length() == 0) {
+        args.rval().setBoolean(true);
+        return true;
     }
+
     double x;
-    if (!ToNumber(cx, vp[2], &x))
+    if (!ToNumber(cx, args.handleAt(0), &x))
         return false;
-    vp->setBoolean(mozilla::IsNaN(x));
-    return JS_TRUE;
+
+    args.rval().setBoolean(mozilla::IsNaN(x));
+    return true;
 }
 
 static JSBool
 num_isFinite(JSContext *cx, unsigned argc, Value *vp)
 {
-    if (argc == 0) {
-        vp->setBoolean(false);
-        return JS_TRUE;
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    if (args.length() == 0) {
+        args.rval().setBoolean(false);
+        return true;
     }
+
     double x;
-    if (!ToNumber(cx, vp[2], &x))
-        return JS_FALSE;
-    vp->setBoolean(mozilla::IsFinite(x));
-    return JS_TRUE;
+    if (!ToNumber(cx, args.handleAt(0), &x))
+        return false;
+
+    args.rval().setBoolean(mozilla::IsFinite(x));
+    return true;
 }
 
 static JSBool
@@ -423,24 +431,26 @@ Class NumberObject::class_ = {
 static JSBool
 Number(JSContext *cx, unsigned argc, Value *vp)
 {
-    /* Sample JS_CALLEE before clobbering. */
-    bool isConstructing = IsConstructing(vp);
+    CallArgs args = CallArgsFromVp(argc, vp);
 
-    if (argc > 0) {
-        if (!ToNumber(cx, &vp[2]))
+    /* Sample JS_CALLEE before clobbering. */
+    bool isConstructing = IsConstructing(args);
+
+    if (args.length() > 0) {
+        if (!ToNumber(cx, args.handleAt(0)))
             return false;
-        vp[0] = vp[2];
+        args.rval().set(args[0]);
     } else {
-        vp[0].setInt32(0);
+        args.rval().setInt32(0);
     }
 
     if (!isConstructing)
         return true;
 
-    JSObject *obj = NumberObject::create(cx, vp[0].toNumber());
+    JSObject *obj = NumberObject::create(cx, args.rval().toNumber());
     if (!obj)
         return false;
-    vp->setObject(*obj);
+    args.rval().setObject(*obj);
     return true;
 }
 
@@ -1341,8 +1351,8 @@ js::NumberValueToStringBuffer(JSContext *cx, const Value &v, StringBuffer &sb)
     return sb.appendInflated(cstr, cstrlen);
 }
 
-static bool
-StringToNumber(JSContext *cx, JSString *str, double *result)
+bool
+js::StringToNumber(JSContext *cx, JSString *str, double *result)
 {
     size_t length = str->length();
     const jschar *chars = str->getChars(NULL);

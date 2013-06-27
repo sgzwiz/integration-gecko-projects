@@ -13,9 +13,11 @@
 # error "Generational GC requires exact rooting."
 #endif
 
-#include "jsgc.h"
 #include "jsalloc.h"
+#include "jsgc.h"
 #include "jsobj.h"
+
+#include "gc/Nursery.h"
 
 namespace js {
 namespace gc {
@@ -215,7 +217,7 @@ class StoreBuffer
                 return;
 
             /* Check for overflow. */
-            if (top - pos < (unsigned)(sizeof(unsigned) + sizeof(T))) {
+            if (unsigned(top - pos) < unsigned(sizeof(unsigned) + sizeof(T))) {
                 owner->setOverflowed();
                 return;
             }

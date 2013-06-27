@@ -2201,7 +2201,7 @@ ASTSerializer::leftAssociate(ParseNode *pn, MutableHandleValue dst)
         if (!expression(next, &right))
             return false;
 
-        TokenPos subpos = {pn->pn_pos.begin, next->pn_pos.end};
+        TokenPos subpos(pn->pn_pos.begin, next->pn_pos.end);
 
         if (logop) {
             if (!builder.logicalExpression(lor, left, right, &subpos, &left))
@@ -2786,12 +2786,7 @@ ASTSerializer::function(ParseNode *pn, ASTType type, MutableHandleValue dst)
 {
     RootedFunction func(cx, pn->pn_funbox->function());
 
-    bool isGenerator =
-#if JS_HAS_GENERATORS
-        pn->pn_funbox->isGenerator();
-#else
-        false;
-#endif
+    bool isGenerator = pn->pn_funbox->isGenerator();
 
     bool isExpression =
 #if JS_HAS_EXPR_CLOSURES

@@ -817,8 +817,8 @@ js_fun_call(JSContext *cx, unsigned argc, Value *vp)
     }
 
     /* Allocate stack space for fval, obj, and the args. */
-    InvokeArgsGuard args;
-    if (!cx->stack.pushInvokeArgs(cx, argc, &args))
+    InvokeArgs args(cx);
+    if (!args.init(argc))
         return JS_FALSE;
 
     /* Push fval, thisv, and the args. */
@@ -833,13 +833,13 @@ js_fun_call(JSContext *cx, unsigned argc, Value *vp)
 
 #ifdef JS_ION
 static bool
-PushBaselineFunApplyArguments(JSContext *cx, ion::IonFrameIterator &frame, InvokeArgsGuard &args,
+PushBaselineFunApplyArguments(JSContext *cx, ion::IonFrameIterator &frame, InvokeArgs &args,
                               Value *vp)
 {
     unsigned length = frame.numActualArgs();
-    JS_ASSERT(length <= StackSpace::ARGS_LENGTH_MAX);
+    JS_ASSERT(length <= ARGS_LENGTH_MAX);
 
-    if (!cx->stack.pushInvokeArgs(cx, length, &args))
+    if (!args.init(length))
         return false;
 
     /* Push fval, obj, and aobj's elements as args. */
@@ -867,7 +867,7 @@ js_fun_apply(JSContext *cx, unsigned argc, Value *vp)
     if (argc < 2 || vp[3].isNullOrUndefined())
         return js_fun_call(cx, (argc > 0) ? 1 : 0, vp);
 
-    InvokeArgsGuard args;
+    InvokeArgs args(cx);
 
     /*
      * GuardFunApplyArgumentsOptimization already called IsOptimizedArguments,
@@ -895,9 +895,9 @@ js_fun_apply(JSContext *cx, unsigned argc, Value *vp)
                     ion::InlineFrameIterator iter(cx, &frame);
 
                     unsigned length = iter.numActualArgs();
-                    JS_ASSERT(length <= StackSpace::ARGS_LENGTH_MAX);
+                    JS_ASSERT(length <= ARGS_LENGTH_MAX);
 
-                    if (!cx->stack.pushInvokeArgs(cx, length, &args))
+                    if (!args.init(length))
                         return false;
 
                     /* Push fval, obj, and aobj's elements as args. */
@@ -932,9 +932,9 @@ js_fun_apply(JSContext *cx, unsigned argc, Value *vp)
         {
             StackFrame *fp = cx->interpreterFrame();
             unsigned length = fp->numActualArgs();
-            JS_ASSERT(length <= StackSpace::ARGS_LENGTH_MAX);
+            JS_ASSERT(length <= ARGS_LENGTH_MAX);
 
-            if (!cx->stack.pushInvokeArgs(cx, length, &args))
+            if (!args.init(length))
                 return false;
 
             /* Push fval, obj, and aobj's elements as args. */
@@ -961,12 +961,12 @@ js_fun_apply(JSContext *cx, unsigned argc, Value *vp)
             return false;
 
         /* Step 6. */
-        if (length > StackSpace::ARGS_LENGTH_MAX) {
+        if (length > ARGS_LENGTH_MAX) {
             JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_TOO_MANY_FUN_APPLY_ARGS);
             return false;
         }
 
-        if (!cx->stack.pushInvokeArgs(cx, length, &args))
+        if (!args.init(length))
             return false;
 
         /* Push fval, obj, and aobj's elements as args. */
@@ -1049,33 +1049,73 @@ JSFunction::createScriptForLazilyInterpretedFunction(JSContext *cx, HandleFuncti
 {
     JS_ASSERT(fun->isInterpretedLazy());
 
-    if (LazyScript *lazy = fun->lazyScriptOrNull()) {
-        /* Trigger a pre barrier on the lazy script being overwritten. */
+    LazyScript *lazy = fun->lazyScriptOrNull();
+    if (lazy) {
+        // Trigger a pre barrier on the lazy script being overwritten.
         if (cx->zone()->needsBarrier())
             LazyScript::writeBarrierPre(lazy);
+
+        // Suppress GC when lazily compiling functions, to preserve source
+        // character buffers.
+        AutoSuppressGC suppressGC(cx);
 
         fun->flags &= ~INTERPRETED_LAZY;
         fun->flags |= INTERPRETED;
 
-        if (JSScript *script = lazy->maybeScript()) {
+        JSScript *script = lazy->maybeScript();
+
+        if (script) {
             fun->initScript(script);
             return true;
         }
 
         fun->initScript(NULL);
 
+        // Lazy script caching is only supported for leaf functions. If a
+        // script with inner functions was returned by the cache, those inner
+        // functions would be delazified when deep cloning the script, even if
+        // they have never executed.
+        //
+        // Additionally, the lazy script cache is not used during incremental
+        // GCs, to avoid resurrecting dead scripts after incremental sweeping
+        // has started.
+        if (!lazy->numInnerFunctions() && !JS::IsIncrementalGCInProgress(cx->runtime())) {
+            LazyScriptCache::Lookup lookup(cx, lazy);
+            cx->runtime()->lazyScriptCache.lookup(lookup, &script);
+        }
+
+        if (script) {
+            RootedObject enclosingScope(cx, lazy->enclosingScope());
+            RootedScript scriptRoot(cx, script);
+            RootedScript clonedScript(cx, CloneScript(cx, enclosingScope, fun, scriptRoot));
+            if (!clonedScript) {
+                fun->initLazyScript(lazy);
+                return false;
+            }
+
+            // The cloned script will have reused the origin principals and
+            // filename from the original script, which may differ.
+            clonedScript->originPrincipals = lazy->originPrincipals();
+            clonedScript->setSourceObject(lazy->sourceObject());
+
+            fun->initAtom(script->function()->displayAtom());
+            fun->initScript(clonedScript);
+            clonedScript->setFunction(fun);
+
+            CallNewScriptHook(cx, clonedScript, fun);
+
+            lazy->initScript(clonedScript);
+            return true;
+        }
+
         JS_ASSERT(lazy->source()->hasSourceData());
 
-        /*
-         * GC must be suppressed for the remainder of the lazy parse, as any
-         * GC activity may destroy the characters.
-         */
-        AutoSuppressGC suppressGC(cx);
-
-        /* Lazily parsed script. */
+        // Parse and compile the script from source.
         const jschar *chars = lazy->source()->chars(cx);
-        if (!chars)
+        if (!chars) {
+            fun->initLazyScript(lazy);
             return false;
+        }
 
         const jschar *lazyStart = chars + lazy->begin();
         size_t lazyLength = lazy->end() - lazy->begin();
@@ -1085,7 +1125,22 @@ JSFunction::createScriptForLazilyInterpretedFunction(JSContext *cx, HandleFuncti
             return false;
         }
 
-        lazy->initScript(fun->nonLazyScript());
+        script = fun->nonLazyScript();
+
+        // Try to insert the newly compiled script into the lazy script cache.
+        if (!lazy->numInnerFunctions()) {
+            // A script's starting column isn't set by the bytecode emitter, so
+            // specify this from the lazy script so that if an identical lazy
+            // script is encountered later a match can be determined.
+            script->column = lazy->column();
+
+            LazyScriptCache::Lookup lookup(cx, lazy);
+            cx->runtime()->lazyScriptCache.insert(lookup, script);
+        }
+
+        // Remember the compiled script on the lazy script itself, in case
+        // there are clones of the function still pointing to the lazy script.
+        lazy->initScript(script);
         return true;
     }
 
@@ -1118,7 +1173,7 @@ js::CallOrConstructBoundFunction(JSContext *cx, unsigned argc, Value *vp)
     /* 15.3.4.5.1 step 1, 15.3.4.5.2 step 3. */
     unsigned argslen = fun->getBoundFunctionArgumentCount();
 
-    if (argc + argslen > StackSpace::ARGS_LENGTH_MAX) {
+    if (argc + argslen > ARGS_LENGTH_MAX) {
         js_ReportAllocationOverflow(cx);
         return false;
     }
@@ -1129,8 +1184,8 @@ js::CallOrConstructBoundFunction(JSContext *cx, unsigned argc, Value *vp)
     /* 15.3.4.5.1 step 2. */
     const Value &boundThis = fun->getBoundFunctionThis();
 
-    InvokeArgsGuard args;
-    if (!cx->stack.pushInvokeArgs(cx, argc + argslen, &args))
+    InvokeArgs args(cx);
+    if (!args.init(argc + argslen))
         return false;
 
     /* 15.3.4.5.1, 15.3.4.5.2 step 4. */
@@ -1151,7 +1206,6 @@ js::CallOrConstructBoundFunction(JSContext *cx, unsigned argc, Value *vp)
     return true;
 }
 
-#if JS_HAS_GENERATORS
 static JSBool
 fun_isGenerator(JSContext *cx, unsigned argc, Value *vp)
 {
@@ -1171,7 +1225,6 @@ fun_isGenerator(JSContext *cx, unsigned argc, Value *vp)
     JS_SET_RVAL(cx, vp, BooleanValue(result));
     return true;
 }
-#endif
 
 /* ES5 15.3.4.5. */
 static JSBool
@@ -1262,9 +1315,7 @@ const JSFunctionSpec js::function_methods[] = {
     JS_FN(js_apply_str,      js_fun_apply,   2,0),
     JS_FN(js_call_str,       js_fun_call,    1,0),
     JS_FN("bind",            fun_bind,       1,0),
-#if JS_HAS_GENERATORS
     JS_FN("isGenerator",     fun_isGenerator,0,0),
-#endif
     JS_FS_END
 };
 
@@ -1296,6 +1347,7 @@ js::Function(JSContext *cx, unsigned argc, Value *vp)
     options.setPrincipals(principals)
            .setOriginPrincipals(originPrincipals)
            .setFileAndLine(filename, lineno)
+           .setNoScriptRval(false)
            .setCompileAndGo(true);
 
     unsigned n = args.length() ? args.length() - 1 : 0;
@@ -1444,6 +1496,9 @@ js::Function(JSContext *cx, unsigned argc, Value *vp)
     const jschar *chars = linear->chars();
     size_t length = linear->length();
 
+    /* Protect inlined chars from root analysis poisoning. */
+    SkipRoot skip(cx, &chars);
+
     /*
      * NB: (new Function) is not lexically closed by its caller, it's just an
      * anonymous function in the top-level scope that its constructor inhabits.
@@ -1466,9 +1521,9 @@ js::Function(JSContext *cx, unsigned argc, Value *vp)
 }
 
 bool
-js::IsBuiltinFunctionConstructor(JSFunction *fun)
+JSFunction::isBuiltinFunctionConstructor()
 {
-    return fun->maybeNative() == Function;
+    return maybeNative() == Function;
 }
 
 JSFunction *

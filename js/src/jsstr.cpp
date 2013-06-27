@@ -1336,7 +1336,7 @@ str_lastIndexOf(JSContext *cx, unsigned argc, Value *vp)
                 i = j;
         } else {
             double d;
-            if (!ToNumber(cx, args[1], &d))
+            if (!ToNumber(cx, args.handleAt(1), &d))
                 return false;
             if (!IsNaN(d)) {
                 d = ToInteger(d);
@@ -2131,8 +2131,8 @@ FindReplaceLength(JSContext *cx, RegExpStatics *res, ReplaceData &rdata, size_t 
         unsigned p = res->getMatches().parenCount();
         unsigned argc = 1 + p + 2;
 
-        InvokeArgsGuard &args = rdata.fig.args();
-        if (!args.pushed() && !cx->stack.pushInvokeArgs(cx, argc, &args))
+        InvokeArgs &args = rdata.fig.args();
+        if (!args.init(argc))
             return false;
 
         args.setCallee(ObjectValue(*lambda));
@@ -2639,7 +2639,7 @@ str_replace_flat_lambda(JSContext *cx, CallArgs outerArgs, ReplaceData &rdata, c
 
     /* lambda(matchStr, matchStart, textstr) */
     static const uint32_t lambdaArgc = 3;
-    if (!cx->stack.pushInvokeArgs(cx, lambdaArgc, &rdata.fig.args()))
+    if (!rdata.fig.args().init(lambdaArgc))
         return false;
 
     CallArgs &args = rdata.fig.args();
@@ -2694,7 +2694,7 @@ LambdaIsGetElem(JSContext *cx, JSObject &lambda, MutableHandleObject pobj)
     if (!lambda.is<JSFunction>())
         return true;
 
-    JSFunction *fun = &lambda.as<JSFunction>();
+    RootedFunction fun(cx, &lambda.as<JSFunction>());
     if (!fun->isInterpreted())
         return true;
 
@@ -3059,7 +3059,7 @@ js::str_split(JSContext *cx, unsigned argc, Value *vp)
     uint32_t limit;
     if (args.hasDefined(1)) {
         double d;
-        if (!ToNumber(cx, args[1], &d))
+        if (!ToNumber(cx, args.handleAt(1), &d))
             return false;
         limit = ToUint32(d);
     } else {
@@ -3535,7 +3535,7 @@ js::str_fromCharCode(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
-    JS_ASSERT(args.length() <= StackSpace::ARGS_LENGTH_MAX);
+    JS_ASSERT(args.length() <= ARGS_LENGTH_MAX);
     if (args.length() == 1) {
         uint16_t code;
         if (!ToUint16(cx, args[0], &code))

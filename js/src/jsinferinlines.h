@@ -6,6 +6,9 @@
 
 /* Inline members for javascript type inference. */
 
+#ifndef jsinferinlines_h
+#define jsinferinlines_h
+
 #include "mozilla/PodOperations.h"
 
 #include "jsarray.h"
@@ -19,18 +22,16 @@
 #include "builtin/ParallelArray.h"
 #include "ion/IonFrames.h"
 #include "js/RootingAPI.h"
+#include "vm/ArrayObject.h"
 #include "vm/BooleanObject.h"
 #include "vm/GlobalObject.h"
 #include "vm/NumberObject.h"
 #include "vm/StringObject.h"
 
 #include "jsanalyzeinlines.h"
+#include "jscntxtinlines.h"
 
 #include "gc/Barrier-inl.h"
-#include "vm/Stack-inl.h"
-
-#ifndef jsinferinlines_h
-#define jsinferinlines_h
 
 inline bool
 js::TaggedProto::isObject() const
@@ -465,7 +466,7 @@ GetClassForProtoKey(JSProtoKey key)
       case JSProto_Object:
         return &ObjectClass;
       case JSProto_Array:
-        return &ArrayClass;
+        return &ArrayObject::class_;
 
       case JSProto_Number:
         return &NumberObject::class_;
@@ -521,7 +522,7 @@ GetTypeCallerInitObject(JSContext *cx, JSProtoKey key)
 {
     if (cx->typeInferenceEnabled()) {
         jsbytecode *pc;
-        RootedScript script(cx, cx->stack.currentScript(&pc));
+        RootedScript script(cx, cx->currentScript(&pc));
         if (script)
             return TypeScript::InitObject(cx, script, pc, key);
     }
@@ -703,7 +704,7 @@ UseNewTypeForClone(JSFunction *fun)
         return true;
 
     if (fun->isArrow())
-        return true;
+        return false;
 
     if (fun->hasSingletonType())
         return false;
@@ -924,7 +925,7 @@ SetInitializerObjectType(JSContext *cx, HandleScript script, jsbytecode *pc, Han
         types::TypeObject *type = TypeScript::InitObject(cx, script, pc, key);
         if (!type)
             return false;
-        obj->setType(type);
+        obj->uninlinedSetType(type);
     }
 
     return true;
@@ -961,7 +962,7 @@ TypeScript::MonitorUnknown(JSContext *cx, JSScript *script, jsbytecode *pc)
 /* static */ inline void
 TypeScript::GetPcScript(JSContext *cx, JSScript **script, jsbytecode **pc)
 {
-    *script = cx->stack.currentScript(pc);
+    *script = cx->currentScript(pc);
 }
 
 /* static */ inline void
@@ -1496,7 +1497,7 @@ TypeSet::getTypeOrSingleObject(JSContext *cx, unsigned i) const
         JSObject *singleton = getSingleObject(i);
         if (!singleton)
             return NULL;
-        type = singleton->getType(cx);
+        type = singleton->uninlinedGetType(cx);
         if (!type)
             cx->compartment()->types.setPendingNukeTypes(cx);
     }
@@ -1652,11 +1653,6 @@ TypeObject::writeBarrierPre(TypeObject *type)
 }
 
 inline void
-TypeObject::writeBarrierPost(TypeObject *type, void *addr)
-{
-}
-
-inline void
 TypeObject::readBarrier(TypeObject *type)
 {
 #ifdef JSGC_INCREMENTAL
@@ -1682,11 +1678,6 @@ TypeNewScript::writeBarrierPre(TypeNewScript *newScript)
         MarkShape(zone->barrierTracer(), &newScript->shape, "write barrier");
     }
 #endif
-}
-
-inline void
-TypeNewScript::writeBarrierPost(TypeNewScript *newScript, void *addr)
-{
 }
 
 inline

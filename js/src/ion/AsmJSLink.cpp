@@ -7,8 +7,6 @@
 #include "jsmath.h"
 #include "jscntxt.h"
 
-#include "jstypedarrayinlines.h"
-
 #include "AsmJS.h"
 #include "AsmJSModule.h"
 #include "frontend/BytecodeCompiler.h"
@@ -18,6 +16,9 @@
 #ifdef MOZ_VTUNE
 # include "jitprofiling.h"
 #endif
+
+#include "jsfuninlines.h"
+#include "jstypedarrayinlines.h"
 
 using namespace js;
 using namespace js::ion;
@@ -411,8 +412,8 @@ HandleDynamicLinkFailure(JSContext *cx, CallArgs args, AsmJSModule &module, Hand
 
     unsigned argc = args.length();
 
-    InvokeArgsGuard args2;
-    if (!cx->stack.pushInvokeArgs(cx, argc, &args2))
+    InvokeArgs args2(cx);
+    if (!args2.init(argc))
         return false;
 
     args2.setCallee(ObjectValue(*fun));

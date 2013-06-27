@@ -21,6 +21,7 @@
 #include "mozilla/ipc/FileDescriptorUtils.h"
 #include "mozilla/layers/AsyncPanZoomController.h"
 #include "mozilla/layers/CompositorChild.h"
+#include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/PLayerTransactionChild.h"
 #include "mozilla/layout/RenderFrameChild.h"
 #include "mozilla/StaticPtr.h"
@@ -346,15 +347,18 @@ TabChild::Observe(nsISupports *aSubject,
         // Calculate a really simple resolution that we probably won't
         // be keeping, as well as putting the scroll offset back to
         // the top-left of the page.
-        mLastMetrics.mZoom = gfxSize(1.0, 1.0);
+        mLastMetrics.mZoom = ScreenToScreenScale(1.0);
         mLastMetrics.mViewport = CSSRect(CSSPoint(), kDefaultViewportSize);
         mLastMetrics.mCompositionBounds = ScreenIntRect(ScreenIntPoint(), mInnerSize);
-        CSSToScreenScale resolution =
-          AsyncPanZoomController::CalculateResolution(mLastMetrics);
-        mLastMetrics.mResolution = gfxSize(resolution.scale, resolution.scale);
+        CSSToScreenScale resolution = mLastMetrics.CalculateResolution();
+        // We use ScreenToLayerScale(1) below in order to ask gecko to render
+        // what's currently visible on the screen. This is effectively turning
+        // the async zoom amount into the gecko zoom amount.
+        mLastMetrics.mResolution =
+          resolution / mLastMetrics.mDevPixelsPerCSSPixel * ScreenToLayerScale(1);
         mLastMetrics.mScrollOffset = CSSPoint(0, 0);
-        utils->SetResolution(mLastMetrics.mResolution.width,
-                             mLastMetrics.mResolution.height);
+        utils->SetResolution(mLastMetrics.mResolution.scale,
+                             mLastMetrics.mResolution.scale);
 
         HandlePossibleViewportChange();
       }
@@ -597,13 +601,12 @@ TabChild::HandlePossibleViewportChange()
   nsresult rv = utils->GetIsFirstPaint(&isFirstPaint);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
   if (NS_FAILED(rv) || isFirstPaint) {
-    gfxSize intrinsicScale =
-        AsyncPanZoomController::CalculateIntrinsicScale(metrics);
+    CSSToScreenScale intrinsicScale = metrics.CalculateIntrinsicScale();
     // FIXME/bug 799585(?): GetViewportInfo() returns a defaultZoom of
     // 0.0 to mean "did not calculate a zoom".  In that case, we default
     // it to the intrinsic scale.
     if (viewportInfo.GetDefaultZoom() < 0.01f) {
-      viewportInfo.SetDefaultZoom(intrinsicScale.width);
+      viewportInfo.SetDefaultZoom(intrinsicScale.scale);
     }
 
     double defaultZoom = viewportInfo.GetDefaultZoom();
@@ -611,8 +614,7 @@ TabChild::HandlePossibleViewportChange()
                defaultZoom <= viewportInfo.GetMaxZoom());
     // GetViewportInfo() returns a resolution-dependent scale factor.
     // Convert that to a resolution-indepedent zoom.
-    metrics.mZoom = gfxSize(defaultZoom / intrinsicScale.width,
-                            defaultZoom / intrinsicScale.height);
+    metrics.mZoom = ScreenToScreenScale(defaultZoom / intrinsicScale.scale);
   }
 
   metrics.mDisplayPort = AsyncPanZoomController::CalculatePendingDisplayPort(
@@ -620,14 +622,9 @@ TabChild::HandlePossibleViewportChange()
     // new CSS viewport, so we know that there's no velocity, acceleration, and
     // we have no idea how long painting will take.
     metrics, gfx::Point(0.0f, 0.0f), gfx::Point(0.0f, 0.0f), 0.0);
-  CSSToScreenScale resolution = AsyncPanZoomController::CalculateResolution(metrics);
-  // XXX is this actually hysteresis?  This calculation is not well
-  // understood.  It's taken from the previous JS implementation.
-  gfxFloat hysteresis/*?*/ =
-    gfxFloat(oldBrowserWidth) / gfxFloat(oldScreenWidth);
-  metrics.mResolution = gfxSize(resolution.scale * hysteresis,
-                                resolution.scale * hysteresis);
-  utils->SetResolution(metrics.mResolution.width, metrics.mResolution.height);
+  CSSToScreenScale resolution = metrics.CalculateResolution();
+  metrics.mResolution = resolution / metrics.mDevPixelsPerCSSPixel * ScreenToLayerScale(1);
+  utils->SetResolution(metrics.mResolution.scale, metrics.mResolution.scale);
 
   // Force a repaint with these metrics. This, among other things, sets the
   // displayport, so we start with async painting.
@@ -1492,8 +1489,7 @@ TabChild::ProcessUpdateFrame(const FrameMetrics& aFrameMetrics)
         return true;
     }
 
-    CSSRect cssCompositedRect =
-      AsyncPanZoomController::CalculateCompositedRectInCssPixels(aFrameMetrics);
+    CSSRect cssCompositedRect = aFrameMetrics.CalculateCompositedRectInCssPixels();
     // The BrowserElementScrolling helper must know about these updated metrics
     // for other functions it performs, such as double tap handling.
     nsCString data;
@@ -1535,8 +1531,7 @@ TabChild::ProcessUpdateFrame(const FrameMetrics& aFrameMetrics)
     utils->SetScrollPositionClampingScrollPortSize(
       cssCompositedRect.width, cssCompositedRect.height);
     ScrollWindowTo(window, aFrameMetrics.mScrollOffset);
-    CSSToScreenScale resolution = AsyncPanZoomController::CalculateResolution(
-      aFrameMetrics);
+    CSSToScreenScale resolution = aFrameMetrics.CalculateResolution();
     utils->SetResolution(resolution.scale, resolution.scale);
 
     nsCOMPtr<nsIDOMDocument> domDoc;
@@ -2178,6 +2173,7 @@ TabChild::InitRenderingState()
     NS_ABORT_IF_FALSE(lf && lf->HasShadowManager(),
                       "PuppetWidget should have shadow manager");
     lf->IdentifyTextureHost(mTextureFactoryIdentifier);
+    ImageBridgeChild::IdentifyCompositorTextureHost(mTextureFactoryIdentifier);
 
     mRemoteFrame = remoteFrame;
 

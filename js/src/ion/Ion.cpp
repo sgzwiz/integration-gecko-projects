@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/MemoryReporting.h"
+
 #include "BaselineJIT.h"
 #include "BaselineCompiler.h"
 #include "BaselineInspector.h"
@@ -19,7 +21,7 @@
 #include "EdgeCaseAnalysis.h"
 #include "RangeAnalysis.h"
 #include "LinearScan.h"
-#include "ParallelArrayAnalysis.h"
+#include "ParallelSafetyAnalysis.h"
 #include "jscompartment.h"
 #include "vm/ThreadPool.h"
 #include "vm/ForkJoin.h"
@@ -374,7 +376,10 @@ IonRuntime::Mark(JSTracer *trc)
 void
 IonCompartment::mark(JSTracer *trc, JSCompartment *compartment)
 {
-    // Cancel any active or pending off thread compilations.
+    // Cancel any active or pending off thread compilations. Note that the
+    // MIR graph does not hold any nursery pointers, so there's no need to
+    // do this for minor GCs.
+    JS_ASSERT(!trc->runtime->isHeapMinorCollecting());
     CancelOffThreadIonCompile(compartment, NULL);
     FinishAllOffThreadCompilations(this);
 
@@ -523,14 +528,6 @@ IonCode::writeBarrierPre(IonCode *code)
     Zone *zone = code->zone();
     if (zone->needsBarrier())
         MarkIonCodeUnbarriered(zone->barrierTracer(), &code, "ioncode write barrier");
-#endif
-}
-
-void
-IonCode::writeBarrierPost(IonCode *code, void *addr)
-{
-#ifdef JSGC_GENERATIONAL
-    // Nothing to do.
 #endif
 }
 
@@ -996,6 +993,12 @@ OptimizeMIR(MIRGenerator *mir)
     if (mir->shouldCancel("Apply types"))
         return false;
 
+    if (graph.entryBlock()->info().executionMode() == ParallelExecution) {
+        ParallelSafetyAnalysis analysis(mir, graph);
+        if (!analysis.analyze())
+            return false;
+    }
+
     // Alias analysis is required for LICM and GVN so that we don't move
     // loads across stores.
     if (js_IonOptions.licm || js_IonOptions.gvn) {
@@ -1133,12 +1136,6 @@ OptimizeMIR(MIRGenerator *mir)
         return false;
     IonSpewPass("Bounds Check Elimination");
     AssertGraphCoherency(graph);
-
-    if (graph.entryBlock()->info().executionMode() == ParallelExecution) {
-        ParallelArrayAnalysis analysis(mir, graph);
-        if (!analysis.analyze())
-            return false;
-    }
 
     return true;
 }
@@ -1696,19 +1693,19 @@ ion::CanEnter(JSContext *cx, RunState &state)
 
     // If --ion-eager is used, compile with Baseline first, so that we
     // can directly enter IonMonkey.
-    if (js_IonOptions.eagerCompilation && !script->hasBaselineScript()) {
+    RootedScript rscript(cx, script);
+    if (js_IonOptions.eagerCompilation && !rscript->hasBaselineScript()) {
         MethodStatus status = CanEnterBaselineMethod(cx, state);
         if (status != Method_Compiled)
             return status;
     }
 
     // Attempt compilation. Returns Method_Compiled if already compiled.
-    RootedScript rscript(cx, script);
     bool constructing = state.isInvoke() && state.asInvoke()->constructing();
     MethodStatus status = Compile(cx, rscript, NULL, NULL, constructing, SequentialExecution);
     if (status != Method_Compiled) {
         if (status == Method_CantCompile)
-            ForbidCompilation(cx, script);
+            ForbidCompilation(cx, rscript);
         return status;
     }
 
@@ -2402,7 +2399,7 @@ ion::PurgeCaches(JSScript *script, Zone *zone)
 }
 
 size_t
-ion::SizeOfIonData(JSScript *script, JSMallocSizeOfFun mallocSizeOf)
+ion::SizeOfIonData(JSScript *script, mozilla::MallocSizeOf mallocSizeOf)
 {
     size_t result = 0;
 

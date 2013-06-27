@@ -930,20 +930,20 @@ class CGAddPropertyHook(CGAbstractClassHook):
     A hook for addProperty, used to preserve our wrapper from GC.
     """
     def __init__(self, descriptor):
-        args = [Argument('JSContext*', 'cx'), Argument('JSHandleObject', 'obj'),
-                Argument('JSHandleId', 'id'), Argument('JS::MutableHandle<JS::Value>', 'vp')]
+        args = [Argument('JSContext*', 'cx'), Argument('JS::Handle<JSObject*>', 'obj'),
+                Argument('JS::Handle<jsid>', 'id'), Argument('JS::MutableHandle<JS::Value>', 'vp')]
         CGAbstractClassHook.__init__(self, descriptor, ADDPROPERTY_HOOK_NAME,
                                      'JSBool', args)
 
     def generate_code(self):
         assert not self.descriptor.workers and self.descriptor.wrapperCache
         if self.descriptor.nativeOwnership == 'nsisupports':
-            preserveArgs = "reinterpret_cast<nsISupports*>(self), self"
+            preserveArgs = "reinterpret_cast<nsISupports*>(self)"
         else:
-            preserveArgs = "self, self, NS_CYCLE_COLLECTION_PARTICIPANT(%s)" % self.descriptor.nativeType
+            preserveArgs = "self, NS_CYCLE_COLLECTION_PARTICIPANT(%s)" % self.descriptor.nativeType
         return ("  // We don't want to preserve if we don't have a wrapper.\n"
                 "  if (self->GetWrapperPreserveColor()) {\n"
-                "    nsContentUtils::PreserveWrapper(%s);\n"
+                "    self->PreserveWrapper(%s);\n"
                 "  }\n"
                 "  return true;" % preserveArgs)
 
@@ -1187,7 +1187,7 @@ class CGNamedConstructors(CGThing):
 
 class CGClassHasInstanceHook(CGAbstractStaticMethod):
     def __init__(self, descriptor):
-        args = [Argument('JSContext*', 'cx'), Argument('JSHandleObject', 'obj'),
+        args = [Argument('JSContext*', 'cx'), Argument('JS::Handle<JSObject*>', 'obj'),
                 Argument('JS::MutableHandle<JS::Value>', 'vp'), Argument('JSBool*', 'bp')]
         CGAbstractStaticMethod.__init__(self, descriptor, HASINSTANCE_HOOK_NAME,
                                         'JSBool', args)
@@ -5206,7 +5206,7 @@ class CGSpecializedMethod(CGAbstractStaticMethod):
     def __init__(self, descriptor, method):
         self.method = method
         name = CppKeywords.checkMethodName(method.identifier.name)
-        args = [Argument('JSContext*', 'cx'), Argument('JSHandleObject', 'obj'),
+        args = [Argument('JSContext*', 'cx'), Argument('JS::Handle<JSObject*>', 'obj'),
                 Argument('%s*' % descriptor.nativeType, 'self'),
                 Argument('const JSJitMethodCallArgs&', 'args')]
         CGAbstractStaticMethod.__init__(self, descriptor, name, 'bool', args)
@@ -5252,8 +5252,8 @@ class CGNewResolveHook(CGAbstractBindingMethod):
     """
     def __init__(self, descriptor):
         self._needNewResolve = descriptor.interface.getExtendedAttribute("NeedNewResolve")
-        args = [Argument('JSContext*', 'cx'), Argument('JSHandleObject', 'obj_'),
-                Argument('JSHandleId', 'id'), Argument('unsigned', 'flags'),
+        args = [Argument('JSContext*', 'cx'), Argument('JS::Handle<JSObject*>', 'obj_'),
+                Argument('JS::Handle<jsid>', 'id'), Argument('unsigned', 'flags'),
                 Argument('JS::MutableHandle<JSObject*>', 'objp')]
         # Our "self" is actually the callee in this case, not the thisval.
         CGAbstractBindingMethod.__init__(
@@ -5343,7 +5343,7 @@ class CGSpecializedGetter(CGAbstractStaticMethod):
         self.attr = attr
         name = 'get_' + attr.identifier.name
         args = [ Argument('JSContext*', 'cx'),
-                 Argument('JSHandleObject', 'obj'),
+                 Argument('JS::Handle<JSObject*>', 'obj'),
                  Argument('%s*' % descriptor.nativeType, 'self'),
                  Argument('JSJitGetterCallArgs', 'args') ]
         CGAbstractStaticMethod.__init__(self, descriptor, name, "bool", args)
@@ -5431,7 +5431,7 @@ class CGSpecializedSetter(CGAbstractStaticMethod):
         self.attr = attr
         name = 'set_' + attr.identifier.name
         args = [ Argument('JSContext*', 'cx'),
-                 Argument('JSHandleObject', 'obj'),
+                 Argument('JS::Handle<JSObject*>', 'obj'),
                  Argument('%s*' % descriptor.nativeType, 'self'),
                  Argument('JSJitSetterCallArgs', 'args')]
         CGAbstractStaticMethod.__init__(self, descriptor, name, "bool", args)
@@ -8362,11 +8362,7 @@ class CGBindingRoot(CGThing):
             return any(m.getExtendedAttribute("Pref") for m in iface.members + [iface]);
         requiresPreferences = any(descriptorRequiresPreferences(d) for d in descriptors)
         hasOwnedDescriptors = any(d.nativeOwnership == 'owned' for d in descriptors)
-        def descriptorRequiresContentUtils(desc):
-            return ((desc.concrete and not desc.proxy and
-                     not desc.workers and desc.wrapperCache) or
-                    desc.interface.hasInterfaceObject())
-        requiresContentUtils = any(descriptorRequiresContentUtils(d) for d in descriptors)
+        requiresContentUtils = any(d.interface.hasInterfaceObject() for d in descriptors)
         def descriptorHasChromeOnlyMembers(desc):
             return any(isChromeOnly(a) for a in desc.interface.members)
         hasChromeOnlyMembers = any(descriptorHasChromeOnlyMembers(d) for d in descriptors)
@@ -8485,7 +8481,7 @@ class CGBindingRoot(CGThing):
                             + (['mozilla/Preferences.h'] if requiresPreferences else [])
                             + (['mozilla/dom/NonRefcountedDOMObject.h'] if hasOwnedDescriptors else [])
                             + (['nsContentUtils.h'] if requiresContentUtils else [])
-                            + (['nsCxPusher.h'] if requiresContentUtils else [])
+                            + (['nsCxPusher.h'] if mainDictionaries else [])
                             + (['AccessCheck.h'] if hasChromeOnlyMembers else [])
                             + (['xpcprivate.h'] if isEventTarget else []),
                          curr,

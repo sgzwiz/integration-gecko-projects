@@ -9,6 +9,7 @@
  */
 
 #include "mozilla/DebugOnly.h"
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/Util.h"
 #include "mozilla/Likely.h"
 #include <algorithm>
@@ -452,7 +453,7 @@ nsIdentifierMapEntry::HasIdElementExposedAsHTMLDocumentProperty()
 // static
 size_t
 nsIdentifierMapEntry::SizeOfExcludingThis(nsIdentifierMapEntry* aEntry,
-                                          nsMallocSizeOfFun aMallocSizeOf,
+                                          MallocSizeOf aMallocSizeOf,
                                           void*)
 {
   return aEntry->GetKey().SizeOfExcludingThisIfUnshared(aMallocSizeOf);
@@ -1542,8 +1543,6 @@ NS_INTERFACE_TABLE_HEAD(nsDocument)
   NS_INTERFACE_TABLE_TO_MAP_SEGUE_CYCLE_COLLECTION(nsDocument)
   NS_INTERFACE_MAP_ENTRY_TEAROFF(nsIDOMXPathNSResolver,
                                  new nsNode3Tearoff(this))
-  NS_INTERFACE_MAP_ENTRY_TEAROFF(nsIDOMNodeSelector,
-                                 new nsNodeSelectorTearoff(this))
   if (aIID.Equals(NS_GET_IID(nsIDOMXPathEvaluator)) ||
       aIID.Equals(NS_GET_IID(nsIXPathEvaluatorInternal))) {
     if (!mXPathEvaluatorTearoff) {
@@ -4078,28 +4077,6 @@ nsDocument::FirstAdditionalAuthorSheet()
   return mAdditionalSheets[eAuthorSheet].SafeObjectAt(0);
 }
 
-nsIScriptGlobalObject*
-nsDocument::GetScriptGlobalObject() const
-{
-   // If we're going away, we've already released the reference to our
-   // ScriptGlobalObject.  We can, however, try to obtain it for the
-   // caller through our docshell.
-
-   // We actually need to start returning the docshell's script global
-   // object as soon as nsDocumentViewer::Close has called
-   // RemovedFromDocShell on us.
-   if (mRemovedFromDocShell) {
-     nsCOMPtr<nsIInterfaceRequestor> requestor =
-       do_QueryReferent(mDocumentContainer);
-     if (requestor) {
-       nsCOMPtr<nsIScriptGlobalObject> globalObject = do_GetInterface(requestor);
-       return globalObject;
-     }
-   }
-
-   return mScriptGlobalObject;
-}
-
 nsIGlobalObject*
 nsDocument::GetScopeObject() const
 {
@@ -4270,14 +4247,25 @@ nsPIDOMWindow *
 nsDocument::GetWindowInternal() const
 {
   MOZ_ASSERT(!mWindow, "This should not be called when mWindow is not null!");
-
-  nsCOMPtr<nsPIDOMWindow> win(do_QueryInterface(GetScriptGlobalObject()));
-
-  if (!win) {
-    return nullptr;
+  // Let's use mScriptGlobalObject. Even if the document is already removed from
+  // the docshell, the outer window might be still obtainable from the it.
+  nsCOMPtr<nsPIDOMWindow> win;
+  if (mRemovedFromDocShell) {
+    nsCOMPtr<nsIInterfaceRequestor> requestor =
+      do_QueryReferent(mDocumentContainer);
+    if (requestor) {
+      // The docshell returns the outer window we are done.
+      win = do_GetInterface(requestor);
+    }
+  } else {
+    win = do_QueryInterface(mScriptGlobalObject);
+    if (win) {
+      // mScriptGlobalObject is always the inner window, let's get the outer.
+      win = win->GetOuterWindow();
+    }
   }
 
-  return win->GetOuterWindow();
+  return win;
 }
 
 nsScriptLoader*
@@ -7111,7 +7099,7 @@ nsDocument::IsScriptEnabled()
   nsCOMPtr<nsIScriptSecurityManager> sm(do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID));
   NS_ENSURE_TRUE(sm, false);
 
-  nsIScriptGlobalObject* globalObject = GetScriptGlobalObject();
+  nsCOMPtr<nsIScriptGlobalObject> globalObject = do_QueryInterface(GetWindow());
   NS_ENSURE_TRUE(globalObject, false);
 
   nsIScriptContext *scriptContext = globalObject->GetContext();
@@ -8123,7 +8111,7 @@ nsDocument::MutationEventDispatched(nsINode* aTarget)
     }
 
     nsCOMPtr<nsPIDOMWindow> window;
-    window = do_QueryInterface(GetScriptGlobalObject());
+    window = do_QueryInterface(GetWindow());
     if (window &&
         !window->HasMutationListeners(NS_EVENT_BITS_MUTATION_SUBTREEMODIFIED)) {
       mSubtreeModifiedTargets.Clear();
@@ -11077,14 +11065,14 @@ nsIDocument::DocSizeOfIncludingThis(nsWindowSizes* aWindowSizes) const
 
 static size_t
 SizeOfStyleSheetsElementIncludingThis(nsIStyleSheet* aStyleSheet,
-                                      nsMallocSizeOfFun aMallocSizeOf,
+                                      MallocSizeOf aMallocSizeOf,
                                       void* aData)
 {
   return aStyleSheet->SizeOfIncludingThis(aMallocSizeOf);
 }
 
 size_t
-nsDocument::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+nsDocument::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
 {
   // This SizeOfExcludingThis() overrides the one from nsINode.  But
   // nsDocuments can only appear at the top of the DOM tree, and we use the
@@ -11275,7 +11263,7 @@ nsIDocument::WrapObject(JSContext *aCx, JS::Handle<JSObject*> aScope)
     return nullptr;
   }
 
-  nsCOMPtr<nsPIDOMWindow> win = do_QueryInterface(GetScriptGlobalObject());
+  nsCOMPtr<nsPIDOMWindow> win = do_QueryInterface(GetInnerWindow());
   if (!win) {
     // No window, nothing else to do here
     return obj;

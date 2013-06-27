@@ -1238,8 +1238,6 @@ JSObject *
 JSAbstractFramePtr::scopeChain(JSContext *cx)
 {
     AbstractFramePtr frame = Valueify(*this);
-    JS_ASSERT_IF(frame.isStackFrame(),
-                 cx->stack.space().containsSlow(frame.asStackFrame()));
     RootedObject scopeChain(cx, frame.scopeChain());
     AutoCompartment ac(cx, scopeChain);
     return GetDebugScopeForFrame(cx, frame);
@@ -1249,9 +1247,6 @@ JSObject *
 JSAbstractFramePtr::callObject(JSContext *cx)
 {
     AbstractFramePtr frame = Valueify(*this);
-    JS_ASSERT_IF(frame.isStackFrame(),
-                 cx->stack.space().containsSlow(frame.asStackFrame()));
-
     if (!frame.isFunctionFrame())
         return NULL;
 
@@ -1336,6 +1331,9 @@ JSAbstractFramePtr::evaluateUCInStackFrame(JSContext *cx,
                                            const char *filename, unsigned lineno,
                                            MutableHandleValue rval)
 {
+    /* Protect inlined chars from root analysis poisoning. */
+    SkipRoot skipChars(cx, &chars);
+
     if (!CheckDebugMode(cx))
         return false;
 

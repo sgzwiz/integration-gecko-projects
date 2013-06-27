@@ -1309,8 +1309,7 @@ nsXPConnect::GetPrincipal(JSObject* obj, bool allowShortCircuit) const
 {
     NS_ASSERTION(IS_WN_REFLECTOR(obj), "What kind of wrapper is this?");
 
-    XPCWrappedNative *xpcWrapper =
-        (XPCWrappedNative *)xpc_GetJSPrivate(obj);
+    XPCWrappedNative *xpcWrapper = XPCWrappedNative::Get(obj);
     if (xpcWrapper) {
         if (allowShortCircuit) {
             nsIPrincipal *result = xpcWrapper->GetObjectPrincipal();
@@ -1620,7 +1619,7 @@ nsXPConnect::ReadFunction(nsIObjectInputStream *stream, JSContext *cx, JSObject 
 }
 
 /* These are here to be callable from a debugger */
-JS_BEGIN_EXTERN_C
+extern "C" {
 JS_EXPORT_API(void) DumpJSStack()
 {
     nsresult rv;
@@ -1669,5 +1668,4 @@ JS_EXPORT_API(void) DumpCompleteHeap()
     nsJSContext::CycleCollectNow(alltracesListener);
 }
 
-JS_END_EXTERN_C
-
+} // extern "C"

@@ -444,6 +444,9 @@ pref("browser.ui.show-margins-threshold", 20);
 pref("plugin.disable", false);
 pref("dom.ipc.plugins.enabled", false);
 
+// This pref isn't actually used anymore, but we're leaving this here to avoid changing
+// the default so that we can migrate a user-set pref. See bug 885357.
+pref("plugins.click_to_play", true);
 // The default value for nsIPluginTag.enabledState (STATE_CLICKTOPLAY = 1)
 pref("plugin.default.state", 1);
 
@@ -453,7 +456,7 @@ pref("breakpad.reportURL", "https://crash-stats.mozilla.com/report/index/");
 pref("app.support.baseURL", "http://support.mozilla.org/1/mobile/%VERSION%/%OS%/%LOCALE%/");
 // Used to submit data to input from about:feedback
 pref("app.feedback.postURL", "https://input.mozilla.org/%LOCALE%/feedback");
-pref("app.privacyURL", "http://www.mozilla.org/%LOCALE%/privacy/");
+pref("app.privacyURL", "https://www.mozilla.org/legal/privacy/firefox.html");
 pref("app.creditsURL", "http://www.mozilla.org/credits/");
 pref("app.channelURL", "http://www.mozilla.org/%LOCALE%/firefox/channel/");
 #if MOZ_UPDATE_CHANNEL == aurora
@@ -472,6 +475,11 @@ pref("app.marketplaceURL", "https://marketplace.mozilla.org/");
 pref("security.alternate_certificate_error_page", "certerror");
 
 pref("security.warn_viewing_mixed", false); // Warning is disabled.  See Bug 616712.
+
+#ifdef NIGHTLY_BUILD
+// Block insecure active content on https pages
+pref("security.mixed_content.block_active_content", true);
+#endif
 
 // Override some named colors to avoid inverse OS themes
 pref("ui.-moz-dialog", "#efebe7");
@@ -743,3 +751,6 @@ pref("dom.payment.provider.0.requestMethod", "GET");
 
 // Make <audio> and <video> talk to the AudioChannelService.
 pref("media.useAudioChannelService", true);
+
+// Turn on the CSP 1.0 parser for Content Security Policy headers
+pref("security.csp.speccompliant", true);

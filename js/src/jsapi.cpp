@@ -64,7 +64,9 @@
 #include "ion/AsmJS.h"
 #include "ion/PcScriptCache.h"
 #include "js/CharacterEncoding.h"
+#include "vm/DateObject.h"
 #include "vm/Debugger.h"
+#include "vm/ErrorObject.h"
 #include "vm/Interpreter.h"
 #include "vm/NumericConversions.h"
 #include "vm/Shape.h"
@@ -662,7 +664,7 @@ JS_IsBuiltinEvalFunction(JSFunction *fun)
 JS_PUBLIC_API(JSBool)
 JS_IsBuiltinFunctionConstructor(JSFunction *fun)
 {
-    return IsBuiltinFunctionConstructor(fun);
+    return fun->isBuiltinFunctionConstructor();
 }
 
 /************************************************************************/
@@ -963,9 +965,6 @@ JSRuntime::init(uint32_t maxbytes)
 
     dateTimeInfo.updateTimeZoneAdjustment();
 
-    if (!stackSpace.init())
-        return false;
-
     if (!scriptDataTable.init())
         return false;
 
@@ -1142,8 +1141,6 @@ JS_NewRuntime(uint32_t maxbytes, JSUseHelperThreads useHelperThreads)
 #include "js.msg"
 #undef MSG_DEF
 #endif /* DEBUG */
-
-        InitMemorySubsystem();
 
         if (!js::TlsPerThreadData.init())
             return NULL;
@@ -1808,17 +1805,15 @@ StdNameToPropertyName(JSContext *cx, const JSStdName *stdn)
 static const JSStdName standard_class_atoms[] = {
     {js_InitFunctionClass,              EAGER_CLASS_ATOM(Function), &JSFunction::class_},
     {js_InitObjectClass,                EAGER_ATOM_AND_CLASP(Object)},
-    {js_InitArrayClass,                 EAGER_ATOM_AND_CLASP(Array)},
+    {js_InitArrayClass,                 EAGER_ATOM_AND_OCLASP(Array)},
     {js_InitBooleanClass,               EAGER_ATOM_AND_OCLASP(Boolean)},
-    {js_InitDateClass,                  EAGER_ATOM_AND_CLASP(Date)},
+    {js_InitDateClass,                  EAGER_ATOM_AND_OCLASP(Date)},
     {js_InitMathClass,                  EAGER_ATOM_AND_CLASP(Math)},
     {js_InitNumberClass,                EAGER_ATOM_AND_OCLASP(Number)},
     {js_InitStringClass,                EAGER_ATOM_AND_OCLASP(String)},
-    {js_InitExceptionClasses,           EAGER_ATOM_AND_CLASP(Error)},
+    {js_InitExceptionClasses,           EAGER_ATOM_AND_OCLASP(Error)},
     {js_InitRegExpClass,                EAGER_ATOM_AND_OCLASP(RegExp)},
-#if JS_HAS_GENERATORS
     {js_InitIteratorClasses,            EAGER_ATOM_AND_OCLASP(StopIteration)},
-#endif
     {js_InitJSONClass,                  EAGER_ATOM_AND_CLASP(JSON)},
     {js_InitTypedArrayClasses,          EAGER_CLASS_ATOM(ArrayBuffer), &js::ArrayBufferObject::protoClass},
     {js_InitWeakMapClass,               EAGER_ATOM_AND_OCLASP(WeakMap)},
@@ -1862,14 +1857,14 @@ static const JSStdName standard_class_names[] = {
 #endif
 
     /* Exception constructors. */
-    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(Error), CLASP(Error)},
-    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(InternalError), CLASP(Error)},
-    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(EvalError), CLASP(Error)},
-    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(RangeError), CLASP(Error)},
-    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(ReferenceError), CLASP(Error)},
-    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(SyntaxError), CLASP(Error)},
-    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(TypeError), CLASP(Error)},
-    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(URIError), CLASP(Error)},
+    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(Error), OCLASP(Error)},
+    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(InternalError), OCLASP(Error)},
+    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(EvalError), OCLASP(Error)},
+    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(RangeError), OCLASP(Error)},
+    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(ReferenceError), OCLASP(Error)},
+    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(SyntaxError), OCLASP(Error)},
+    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(TypeError), OCLASP(Error)},
+    {js_InitExceptionClasses,   EAGER_CLASS_ATOM(URIError), OCLASP(Error)},
 
     {js_InitIteratorClasses,    EAGER_CLASS_ATOM(Iterator), &PropertyIteratorObject::class_},
 
@@ -3031,7 +3026,7 @@ JS_IdArrayGet(JSContext *cx, JSIdArray *ida, int index)
 JS_PUBLIC_API(void)
 JS_DestroyIdArray(JSContext *cx, JSIdArray *ida)
 {
-    DestroyIdArray(cx->runtime()->defaultFreeOp(), ida);
+    cx->runtime()->defaultFreeOp()->free_(ida);
 }
 
 JS_PUBLIC_API(JSBool)
@@ -3078,38 +3073,38 @@ JS_DefaultValue(JSContext *cx, JSObject *objArg, JSType hint, jsval *vp)
 }
 
 JS_PUBLIC_API(JSBool)
-JS_PropertyStub(JSContext *cx, JSHandleObject obj, JSHandleId id, MutableHandleValue vp)
+JS_PropertyStub(JSContext *cx, HandleObject obj, HandleId id, MutableHandleValue vp)
 {
     return JS_TRUE;
 }
 
 JS_PUBLIC_API(JSBool)
-JS_StrictPropertyStub(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, MutableHandleValue vp)
+JS_StrictPropertyStub(JSContext *cx, HandleObject obj, HandleId id, JSBool strict, MutableHandleValue vp)
 {
     return JS_TRUE;
 }
 
 JS_PUBLIC_API(JSBool)
-JS_DeletePropertyStub(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool *succeeded)
+JS_DeletePropertyStub(JSContext *cx, HandleObject obj, HandleId id, JSBool *succeeded)
 {
     *succeeded = true;
     return true;
 }
 
 JS_PUBLIC_API(JSBool)
-JS_EnumerateStub(JSContext *cx, JSHandleObject obj)
+JS_EnumerateStub(JSContext *cx, HandleObject obj)
 {
     return JS_TRUE;
 }
 
 JS_PUBLIC_API(JSBool)
-JS_ResolveStub(JSContext *cx, JSHandleObject obj, JSHandleId id)
+JS_ResolveStub(JSContext *cx, HandleObject obj, HandleId id)
 {
     return JS_TRUE;
 }
 
 JS_PUBLIC_API(JSBool)
-JS_ConvertStub(JSContext *cx, JSHandleObject obj, JSType type, MutableHandleValue vp)
+JS_ConvertStub(JSContext *cx, HandleObject obj, JSType type, MutableHandleValue vp)
 {
     JS_ASSERT(type != JSTYPE_OBJECT && type != JSTYPE_FUNCTION);
     JS_ASSERT(obj);
@@ -3801,7 +3796,7 @@ JS_DefineElement(JSContext *cx, JSObject *objArg, uint32_t index, jsval valueArg
 }
 
 static JSBool
-DefineProperty(JSContext *cx, JSHandleObject obj, const char *name, const Value &value_,
+DefineProperty(JSContext *cx, HandleObject obj, const char *name, const Value &value_,
                const JSPropertyOpWrapper &getter, const JSStrictPropertyOpWrapper &setter,
                unsigned attrs, unsigned flags, int tinyid)
 {
@@ -3844,7 +3839,7 @@ JS_DefinePropertyWithTinyId(JSContext *cx, JSObject *objArg, const char *name, i
 }
 
 static JSBool
-DefineUCProperty(JSContext *cx, JSHandleObject obj, const jschar *name, size_t namelen,
+DefineUCProperty(JSContext *cx, HandleObject obj, const jschar *name, size_t namelen,
                  const Value &value_, PropertyOp getter, StrictPropertyOp setter, unsigned attrs,
                  unsigned flags, int tinyid)
 {
@@ -4498,7 +4493,7 @@ prop_iter_finalize(FreeOp *fop, JSObject *obj)
     if (obj->getSlot(JSSLOT_ITER_INDEX).toInt32() >= 0) {
         /* Non-native case: destroy the ida enumerated when obj was created. */
         JSIdArray *ida = (JSIdArray *) pdata;
-        DestroyIdArray(fop, ida);
+        fop->free_(ida);
     }
 }
 
@@ -5784,8 +5779,8 @@ JS_New(JSContext *cx, JSObject *ctorArg, unsigned argc, jsval *argv)
     // is not a simple variation of JSOP_CALL. We have to determine what class
     // of object to create, create it, and clamp the return value to an object,
     // among other details. InvokeConstructor does the hard work.
-    InvokeArgsGuard args;
-    if (!cx->stack.pushInvokeArgs(cx, argc, &args))
+    InvokeArgs args(cx);
+    if (!args.init(argc))
         return NULL;
 
     args.setCallee(ObjectValue(*ctor));
@@ -6995,6 +6990,33 @@ JS_SetParallelCompilationEnabled(JSContext *cx, bool enabled)
 {
 #ifdef JS_ION
     ion::js_IonOptions.parallelCompilation = enabled;
+#endif
+}
+
+JS_PUBLIC_API(void)
+JS_SetGlobalCompilerOption(JSContext *cx, JSCompilerOption opt, uint32_t value)
+{
+#ifdef JS_ION
+    ion::IonOptions defaultValues;
+
+    switch (opt) {
+      case JSCOMPILER_BASELINE_USECOUNT_TRIGGER:
+        if (value == uint32_t(-1))
+            value = defaultValues.baselineUsesBeforeCompile;
+        ion::js_IonOptions.baselineUsesBeforeCompile = value;
+        break;
+      case JSCOMPILER_ION_USECOUNT_TRIGGER:
+        if (value == uint32_t(-1))
+            value = defaultValues.usesBeforeCompile;
+        ion::js_IonOptions.usesBeforeCompile = value;
+        ion::js_IonOptions.eagerCompilation = (value == 0);
+        break;
+      case JSCOMPILER_PJS_ENABLE:
+        if (value == uint32_t(-1))
+            value = uint32_t(defaultValues.parallelCompilation);
+        ion::js_IonOptions.parallelCompilation = bool(value);
+        break;
+    }
 #endif
 }
 

@@ -449,6 +449,12 @@ AutoGCRooter::trace(JSTracer *trc)
         return;
       }
 
+      case FUNVECTOR: {
+        AutoFunctionVector::VectorImpl &vector = static_cast<AutoFunctionVector *>(this)->vector;
+        MarkObjectRootRange(trc, vector.length(), vector.begin(), "js::AutoFunctionVector.vector");
+        return;
+      }
+
       case STRINGVECTOR: {
         AutoStringVector::VectorImpl &vector = static_cast<AutoStringVector *>(this)->vector;
         MarkStringRootRange(trc, vector.length(), vector.begin(), "js::AutoStringVector.vector");
@@ -737,14 +743,21 @@ js::gc::MarkRuntime(JSTracer *trc, bool useSavedRoots)
             c->debugScopes->mark(trc);
     }
 
-    rt->stackSpace.mark(trc);
+    MarkInterpreterActivations(rt, trc);
 
 #ifdef JS_ION
     ion::MarkJitActivations(rt, trc);
 #endif
 
-    for (CompartmentsIter c(rt); !c.done(); c.next())
-        c->mark(trc);
+    if (!rt->isHeapMinorCollecting()) {
+        /*
+         * All JSCompartment::mark does is mark the globals for compartements
+         * which have been entered. Globals aren't nursery allocated so there's
+         * no need to do this for minor GCs.
+         */
+        for (CompartmentsIter c(rt); !c.done(); c.next())
+            c->mark(trc);
+    }
 
     /* The embedding can register additional roots here. */
     if (JSTraceDataOp op = rt->gcBlackRootsTraceOp)

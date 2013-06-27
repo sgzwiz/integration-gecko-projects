@@ -7,6 +7,7 @@
 #include "jsinfer.h"
 
 #include "mozilla/DebugOnly.h"
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/PodOperations.h"
 
 #include "jsapi.h"
@@ -2086,7 +2087,7 @@ StackTypeSet::convertDoubleElements(JSContext *cx)
         // double in their element types (as the conversion may render the type
         // information incorrect), nor for non-array objects (as their elements
         // may point to emptyObjectElements, which cannot be converted).
-        if (!types->hasType(Type::DoubleType()) || type->clasp != &ArrayClass) {
+        if (!types->hasType(Type::DoubleType()) || type->clasp != &ArrayObject::class_) {
             dontConvert = true;
             alwaysConvert = false;
             continue;
@@ -3153,7 +3154,7 @@ TypeCompartment::fixArrayType(JSContext *cx, JSObject *obj)
      * If the array is heterogenous, keep the existing type object, which has
      * unknown properties.
      */
-    JS_ASSERT(obj->isArray());
+    JS_ASSERT(obj->is<ArrayObject>());
 
     unsigned len = obj->getDenseInitializedLength();
     if (len == 0)
@@ -3182,7 +3183,7 @@ TypeCompartment::fixArrayType(JSContext *cx, JSObject *obj)
         Rooted<Type> origType(cx, type);
         /* Make a new type to use for future arrays with the same elements. */
         RootedObject objProto(cx, obj->getProto());
-        Rooted<TypeObject*> objType(cx, newTypeObject(cx, &ArrayClass, objProto));
+        Rooted<TypeObject*> objType(cx, newTypeObject(cx, &ArrayObject::class_, objProto));
         if (!objType) {
             cx->compartment()->types.setPendingNukeTypes(cx);
             return;
@@ -5426,7 +5427,7 @@ types::MarkIteratorUnknownSlow(JSContext *cx)
     /* Check whether we are actually at an ITER opcode. */
 
     jsbytecode *pc;
-    RootedScript script(cx, cx->stack.currentScript(&pc));
+    RootedScript script(cx, cx->currentScript(&pc));
     if (!script || !pc)
         return;
 
@@ -5982,7 +5983,7 @@ JSObject::makeLazyType(JSContext *cx, HandleObject obj)
     if (obj->isIndexed())
         type->flags |= OBJECT_FLAG_SPARSE_INDEXES;
 
-    if (obj->isArray() && obj->getArrayLength() > INT32_MAX)
+    if (obj->is<ArrayObject>() && obj->as<ArrayObject>().length() > INT32_MAX)
         type->flags |= OBJECT_FLAG_LENGTH_OVERFLOW;
 
     obj->type_ = type;
@@ -6693,7 +6694,7 @@ TypeCompartment::maybePurgeAnalysis(JSContext *cx, bool force)
 
 static void
 SizeOfScriptTypeInferenceData(JSScript *script, JS::TypeInferenceSizes *sizes,
-                              JSMallocSizeOfFun mallocSizeOf)
+                              mozilla::MallocSizeOf mallocSizeOf)
 {
     TypeScript *typeScript = script->types;
     if (!typeScript)
@@ -6715,13 +6716,13 @@ SizeOfScriptTypeInferenceData(JSScript *script, JS::TypeInferenceSizes *sizes,
 }
 
 void
-Zone::sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf, size_t *typePool)
+Zone::sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf, size_t *typePool)
 {
     *typePool += types.typeLifoAlloc.sizeOfExcludingThis(mallocSizeOf);
 }
 
 void
-JSCompartment::sizeOfTypeInferenceData(JS::TypeInferenceSizes *sizes, JSMallocSizeOfFun mallocSizeOf)
+JSCompartment::sizeOfTypeInferenceData(JS::TypeInferenceSizes *sizes, mozilla::MallocSizeOf mallocSizeOf)
 {
     sizes->analysisPool += analysisLifoAlloc.sizeOfExcludingThis(mallocSizeOf);
 
@@ -6760,7 +6761,7 @@ JSCompartment::sizeOfTypeInferenceData(JS::TypeInferenceSizes *sizes, JSMallocSi
 }
 
 size_t
-TypeObject::sizeOfExcludingThis(JSMallocSizeOfFun mallocSizeOf)
+TypeObject::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf)
 {
     if (singleton) {
         /*

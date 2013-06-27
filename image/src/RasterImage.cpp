@@ -38,6 +38,7 @@
 
 #include "gfxContext.h"
 
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/Services.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StandardInteger.h"
@@ -1182,7 +1183,7 @@ RasterImage::UpdateImageContainer()
 }
 
 size_t
-RasterImage::HeapSizeOfSourceWithComputedFallback(nsMallocSizeOfFun aMallocSizeOf) const
+RasterImage::HeapSizeOfSourceWithComputedFallback(MallocSizeOf aMallocSizeOf) const
 {
   // n == 0 is possible for two reasons.
   // - This is a zero-length image.
@@ -1197,7 +1198,7 @@ RasterImage::HeapSizeOfSourceWithComputedFallback(nsMallocSizeOfFun aMallocSizeO
 
 size_t
 RasterImage::SizeOfDecodedWithComputedFallbackIfHeap(gfxASurface::MemoryLocation aLocation,
-                                                     nsMallocSizeOfFun aMallocSizeOf) const
+                                                     MallocSizeOf aMallocSizeOf) const
 {
   size_t n = mFrameBlender.SizeOfDecodedWithComputedFallbackIfHeap(aLocation, aMallocSizeOf);
 
@@ -1209,7 +1210,7 @@ RasterImage::SizeOfDecodedWithComputedFallbackIfHeap(gfxASurface::MemoryLocation
 }
 
 size_t
-RasterImage::HeapSizeOfDecodedWithComputedFallback(nsMallocSizeOfFun aMallocSizeOf) const
+RasterImage::HeapSizeOfDecodedWithComputedFallback(MallocSizeOf aMallocSizeOf) const
 {
   return SizeOfDecodedWithComputedFallbackIfHeap(gfxASurface::MEMORY_IN_PROCESS_HEAP,
                                                  aMallocSizeOf);
@@ -2316,9 +2317,17 @@ RasterImage::RequestDecode()
 NS_IMETHODIMP
 RasterImage::StartDecoding()
 {
-  return RequestDecodeCore(SYNCHRONOUS_NOTIFY_AND_SOME_DECODE);
+  // Here we are explicitly trading off flashing for responsiveness in the case
+  // that we're redecoding an image (see bug 845147).
+  return RequestDecodeCore(mHasBeenDecoded ?
+    SYNCHRONOUS_NOTIFY : SYNCHRONOUS_NOTIFY_AND_SOME_DECODE);
 }
 
+bool
+RasterImage::IsDecoded()
+{
+  return mDecoded || mError;
+}
 
 NS_IMETHODIMP
 RasterImage::RequestDecodeCore(RequestDecodeType aDecodeType)

@@ -200,9 +200,8 @@ GetLengthProperty(const Value &lval, MutableHandleValue vp)
     }
     if (lval.isObject()) {
         JSObject *obj = &lval.toObject();
-        if (obj->isArray()) {
-            uint32_t length = obj->getArrayLength();
-            vp.setNumber(length);
+        if (obj->is<ArrayObject>()) {
+            vp.setNumber(obj->as<ArrayObject>().length());
             return true;
         }
 
@@ -268,7 +267,7 @@ FetchNameNoGC(JSObject *pobj, Shape *shape, MutableHandleValue vp)
 inline bool
 GetIntrinsicOperation(JSContext *cx, jsbytecode *pc, MutableHandleValue vp)
 {
-    RootedPropertyName name(cx, cx->stack.currentScript()->getName(pc));
+    RootedPropertyName name(cx, cx->currentScript()->getName(pc));
     return cx->global()->getIntrinsicValue(cx, name, vp);
 }
 
@@ -277,45 +276,6 @@ SetIntrinsicOperation(JSContext *cx, JSScript *script, jsbytecode *pc, HandleVal
 {
     RootedPropertyName name(cx, script->getName(pc));
     return cx->global()->setIntrinsicValue(cx, name, val);
-}
-
-inline bool
-NameOperation(JSContext *cx, jsbytecode *pc, MutableHandleValue vp)
-{
-    JSObject *obj = cx->stack.currentScriptedScopeChain();
-    PropertyName *name = cx->stack.currentScript()->getName(pc);
-
-    /*
-     * Skip along the scope chain to the enclosing global object. This is
-     * used for GNAME opcodes where the bytecode emitter has determined a
-     * name access must be on the global. It also insulates us from bugs
-     * in the emitter: type inference will assume that GNAME opcodes are
-     * accessing the global object, and the inferred behavior should match
-     * the actual behavior even if the id could be found on the scope chain
-     * before the global object.
-     */
-    if (IsGlobalOp(JSOp(*pc)))
-        obj = &obj->global();
-
-    Shape *shape = NULL;
-    JSObject *scope = NULL, *pobj = NULL;
-    if (LookupNameNoGC(cx, name, obj, &scope, &pobj, &shape)) {
-        if (FetchNameNoGC(pobj, shape, vp))
-            return true;
-    }
-
-    RootedObject objRoot(cx, obj), scopeRoot(cx), pobjRoot(cx);
-    RootedPropertyName nameRoot(cx, name);
-    RootedShape shapeRoot(cx);
-
-    if (!LookupName(cx, nameRoot, objRoot, &scopeRoot, &pobjRoot, &shapeRoot))
-        return false;
-
-    /* Kludge to allow (typeof foo == "undefined") tests. */
-    JSOp op2 = JSOp(pc[JSOP_NAME_LENGTH]);
-    if (op2 == JSOP_TYPEOF)
-        return FetchName<true>(cx, scopeRoot, pobjRoot, nameRoot, shapeRoot, vp);
-    return FetchName<false>(cx, scopeRoot, pobjRoot, nameRoot, shapeRoot, vp);
 }
 
 inline bool
@@ -619,7 +579,7 @@ GetObjectElementOperation(JSContext *cx, JSOp op, JSObject *objArg, bool wasObje
             if (script->hasAnalysis()) {
                 script->analysis()->getCode(pc).getStringElement = true;
 
-                if (!objArg->isArray() && !objArg->isNative() && !objArg->isTypedArray())
+                if (!objArg->is<ArrayObject>() && !objArg->isNative() && !objArg->isTypedArray())
                     script->analysis()->getCode(pc).nonNativeGetElement = true;
             }
         }
@@ -786,7 +746,7 @@ InitArrayElemOperation(JSContext *cx, jsbytecode *pc, HandleObject obj, uint32_t
     JSOp op = JSOp(*pc);
     JS_ASSERT(op == JSOP_INITELEM_ARRAY || op == JSOP_INITELEM_INC);
 
-    JS_ASSERT(obj->isArray());
+    JS_ASSERT(obj->is<ArrayObject>());
 
     /*
      * If val is a hole, do not call JSObject::defineElement. In this case,
@@ -955,7 +915,7 @@ ReportIfNotFunction(JSContext *cx, const Value &v, MaybeConstruct construct = NO
  */
 class FastInvokeGuard
 {
-    InvokeArgsGuard args_;
+    InvokeArgs args_;
     RootedFunction fun_;
     RootedScript script_;
 #ifdef JS_ION
@@ -967,7 +927,8 @@ class FastInvokeGuard
 
   public:
     FastInvokeGuard(JSContext *cx, const Value &fval)
-      : fun_(cx)
+      : args_(cx)
+      , fun_(cx)
       , script_(cx)
 #ifdef JS_ION
       , useIon_(ion::IsEnabled(cx))
@@ -985,7 +946,7 @@ class FastInvokeGuard
         }
     }
 
-    InvokeArgsGuard &args() {
+    InvokeArgs &args() {
         return args_;
     }
 

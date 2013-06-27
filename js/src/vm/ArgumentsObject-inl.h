@@ -9,7 +9,10 @@
 
 #include "vm/ArgumentsObject.h"
 
+#include "mozilla/MemoryReporting.h"
+
 #include "vm/ScopeObject.h"
+#include "vm/ScopeObject-inl.h"
 
 namespace js {
 
@@ -17,7 +20,7 @@ inline uint32_t
 ArgumentsObject::initialLength() const
 {
     uint32_t argc = uint32_t(getFixedSlot(INITIAL_LENGTH_SLOT).toInt32()) >> PACKED_BITS_COUNT;
-    JS_ASSERT(argc <= StackSpace::ARGS_LENGTH_MAX);
+    JS_ASSERT(argc <= ARGS_LENGTH_MAX);
     return argc;
 }
 
@@ -142,7 +145,7 @@ ArgumentsObject::maybeGetElements(uint32_t start, uint32_t count, Value *vp)
 }
 
 inline size_t
-ArgumentsObject::sizeOfMisc(JSMallocSizeOfFun mallocSizeOf) const
+ArgumentsObject::sizeOfMisc(mozilla::MallocSizeOf mallocSizeOf) const
 {
     return mallocSizeOf(data());
 }

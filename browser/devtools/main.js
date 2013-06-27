@@ -107,12 +107,13 @@ Tools.inspector = {
 
 Tools.jsdebugger = {
   id: "jsdebugger",
-  key: l10n("open.commandkey", debuggerStrings),
+  key: l10n("debuggerMenu.commandkey", debuggerStrings),
   accesskey: l10n("debuggerMenu.accesskey", debuggerStrings),
   modifiers: osString == "Darwin" ? "accel,alt" : "accel,shift",
   ordinal: 3,
   visibilityswitch: "devtools.debugger.enabled",
   icon: "chrome://browser/skin/devtools/tool-debugger.png",
+  highlightedicon: "chrome://browser/skin/devtools/tool-debugger-paused.png",
   url: "chrome://browser/content/devtools/debugger.xul",
   label: l10n("ToolboxDebugger.label", debuggerStrings),
   tooltip: l10n("ToolboxDebugger.tooltip", debuggerStrings),

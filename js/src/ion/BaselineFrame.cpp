@@ -5,14 +5,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BaselineFrame.h"
-#include "BaselineFrame-inl.h"
 #include "BaselineIC.h"
 #include "BaselineJIT.h"
 #include "Ion.h"
-#include "IonFrames-inl.h"
 
 #include "vm/Debugger.h"
 #include "vm/ScopeObject.h"
+
+#include "ion/BaselineFrame-inl.h"
+#include "ion/IonFrames-inl.h"
+#include "vm/Stack-inl.h"
 
 using namespace js;
 using namespace js::ion;
@@ -131,6 +133,9 @@ BaselineFrame::initForOsr(StackFrame *fp, uint32_t numStackValues)
         flags_ |= BaselineFrame::HAS_HOOK_DATA;
         hookData_ = fp->hookData();
     }
+
+    if (fp->hasReturnValue())
+        setReturnValue(fp->returnValue());
 
     if (fp->hasPushedSPSFrame())
         flags_ |= BaselineFrame::HAS_PUSHED_SPS_FRAME;

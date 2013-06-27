@@ -195,6 +195,14 @@ public class GeckoAppShell
                     Log.e(LOGTAG, ">>> REPORTING UNCAUGHT EXCEPTION FROM THREAD "
                                   + thread.getId() + " (\"" + thread.getName() + "\")", e);
 
+                    Thread mainThread = ThreadUtils.getUiThread();
+                    if (mainThread != null && thread != mainThread) {
+                        Log.e(LOGTAG, "Main thread stack:");
+                        for (StackTraceElement ste : mainThread.getStackTrace()) {
+                            Log.e(LOGTAG, ste.toString());
+                        }
+                    }
+
                     if (e instanceof OutOfMemoryError) {
                         SharedPreferences prefs =
                             getContext().getSharedPreferences(GeckoApp.PREFS_NAME, 0);
@@ -387,7 +395,7 @@ public class GeckoAppShell
             sWaitingForEventAck = true;
             while (true) {
                 try {
-                    sEventAckLock.wait(100);
+                    sEventAckLock.wait(1000);
                 } catch (InterruptedException ie) {
                 }
                 if (!sWaitingForEventAck) {
@@ -396,11 +404,6 @@ public class GeckoAppShell
                 }
                 long waited = SystemClock.uptimeMillis() - time;
                 Log.d(LOGTAG, "Gecko event sync taking too long: " + waited + "ms");
-                if (isUiThread && waited >= 4000) {
-                    Log.w(LOGTAG, "Gecko event sync took too long, aborting!", new Exception());
-                    sWaitingForEventAck = false;
-                    break;
-                }
             }
         }
     }

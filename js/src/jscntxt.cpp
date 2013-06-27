@@ -22,6 +22,7 @@
 # include <string>
 #endif  // ANDROID
 
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/Util.h"
 
 #include "jstypes.h"
@@ -52,6 +53,8 @@
 
 #include "jscntxtinlines.h"
 #include "jsobjinlines.h"
+
+#include "vm/Stack-inl.h"
 
 using namespace js;
 using namespace js::gc;
@@ -106,7 +109,7 @@ NewObjectCache::clearNurseryObjects(JSRuntime *rt)
 }
 
 void
-JSRuntime::sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf, JS::RuntimeSizes *rtSizes)
+JSRuntime::sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf, JS::RuntimeSizes *rtSizes)
 {
     rtSizes->object = mallocSizeOf(this);
 
@@ -126,7 +129,7 @@ JSRuntime::sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf, JS::RuntimeSizes 
 
     rtSizes->regexpData = bumpAlloc_ ? bumpAlloc_->sizeOfNonHeapData() : 0;
 
-    rtSizes->stack = stackSpace.sizeOf();
+    rtSizes->interpreterStack = interpreterStack_.sizeOfExcludingThis(mallocSizeOf);
 
     rtSizes->gcMarker = gcMarker.sizeOfExcludingThis(mallocSizeOf);
 
@@ -560,7 +563,7 @@ checkReportFlags(JSContext *cx, unsigned *flags)
          * otherwise.  We assume that if the top frame is a native, then it is
          * strict if the nearest scripted frame is strict, see bug 536306.
          */
-        JSScript *script = cx->stack.currentScript();
+        JSScript *script = cx->currentScript();
         if (script && script->strict)
             *flags &= ~JSREPORT_WARNING;
         else if (cx->hasExtraWarningsOption())
@@ -1179,8 +1182,7 @@ JSContext::JSContext(JSRuntime *rt)
     enterCompartmentDepth_(0),
     savedFrameChains_(),
     defaultCompartmentObject_(NULL),
-    stack(thisDuringConstruction()),
-    cycleDetectorSet(thisDuringConstruction()),
+    cycleDetectorSet(MOZ_THIS_IN_INITIALIZER_LIST()),
     errorReporter(NULL),
     operationCallback(NULL),
     data(NULL),
@@ -1203,7 +1205,7 @@ JSContext::JSContext(JSRuntime *rt)
     JS_ASSERT(static_cast<ContextFriendFields*>(this) ==
               ContextFriendFields::get(this));
 
-#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
+#ifdef JSGC_TRACK_EXACT_ROOTS
     PodArrayZero(thingGCRooters);
 #endif
 #if defined(DEBUG) && defined(JS_GC_ZEAL) && defined(JSGC_ROOT_ANALYSIS) && !defined(JS_THREADSAFE)
@@ -1302,13 +1304,8 @@ JSContext::runningWithTrustedPrincipals() const
 bool
 JSContext::saveFrameChain()
 {
-    if (!stack.saveFrameChain())
+    if (!savedFrameChains_.append(SavedFrameChain(compartment(), enterCompartmentDepth_)))
         return false;
-
-    if (!savedFrameChains_.append(SavedFrameChain(compartment(), enterCompartmentDepth_))) {
-        stack.restoreFrameChain();
-        return false;
-    }
 
     if (Activation *act = mainThread().activation())
         act->saveFrameChain();
@@ -1330,8 +1327,6 @@ JSContext::restoreFrameChain()
     SavedFrameChain sfc = savedFrameChains_.popCopy();
     setCompartment(sfc.compartment);
     enterCompartmentDepth_ = sfc.enterCompartmentCount;
-
-    stack.restoreFrameChain();
 
     if (Activation *act = mainThread().activation())
         act->restoreFrameChain();
@@ -1500,7 +1495,7 @@ JSContext::updateJITEnabled()
 }
 
 size_t
-JSContext::sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf) const
+JSContext::sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const
 {
     /*
      * There are other JSContext members that could be measured; the following
@@ -1532,7 +1527,7 @@ JSContext::findVersion() const
     if (hasVersionOverride)
         return versionOverride;
 
-    if (JSScript *script = stack.currentScript(NULL, js::ContextStack::ALLOW_CROSS_COMPARTMENT))
+    if (JSScript *script = currentScript(NULL, ALLOW_CROSS_COMPARTMENT))
         return script->getVersion();
 
     return defaultVersion;
