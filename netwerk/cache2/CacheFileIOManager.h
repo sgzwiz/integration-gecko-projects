@@ -8,6 +8,7 @@
 #include "nsIThread.h"
 #include "nsCOMPtr.h"
 #include "mozilla/SHA1.h"
+#include "nsTArray.h"
 #include "pldhash.h"
 #include "prclist.h"
 #include "prio.h"
@@ -27,17 +28,22 @@ public:
   bool IsDoomed() { return mIsDoomed; }
   const SHA1Sum::Hash *Hash() { return mHash; }
   int64_t FileSize() { return mFileSize; }
-  bool Exists() { return mFD != nullptr; }
+  bool FileExists() { return mFileExists; }
 
 private:
   friend class CacheFileIOManager;
   friend class CacheFileHandles;
+  friend class ReleaseNSPRHandleEvent;
 
   virtual ~CacheFileHandle();
 
   const SHA1Sum::Hash *mHash;
   bool                 mIsDoomed;
   bool                 mRemovingHandle;
+  bool                 mFileExists; // This means that the file should exists,
+                                    // but it can be still deleted by OS/user
+                                    // and then a subsequent OpenNSPRFileDesc()
+                                    // will fail.
   nsCOMPtr<nsIFile>    mFile;
   int64_t              mFileSize;
   PRFileDesc          *mFD;  // if null then the file doesn't exists on the disk
@@ -116,7 +122,7 @@ public:
   static nsresult OnProfile();
   static nsresult Shutdown();
 
-  static nsresult OpenFile(const SHA1Sum::Hash *aHash,
+  static nsresult OpenFile(const nsACString &aKey,
                            uint32_t aFlags,
                            CacheFileIOListener *aCallback);
   static nsresult Read(CacheFileHandle *aHandle, int64_t aOffset,
@@ -127,6 +133,7 @@ public:
                         CacheFileIOListener *aCallback);
   static nsresult DoomFile(CacheFileHandle *aHandle,
                            CacheFileIOListener *aCallback);
+  static nsresult ReleaseNSPRHandle(CacheFileHandle *aHandle);
 
 private:
   friend class CacheFileHandle;
@@ -135,6 +142,7 @@ private:
   friend class ReadEvent;
   friend class WriteEvent;
   friend class DoomFileEvent;
+  friend class ReleaseNSPRHandleEvent;
 
   virtual ~CacheFileIOManager();
 
@@ -151,6 +159,7 @@ private:
   nsresult WriteInternal(CacheFileHandle *aHandle, int64_t aOffset,
                          const char *aBuf, int32_t aCount);
   nsresult DoomFileInternal(CacheFileHandle *aHandle);
+  nsresult ReleaseNSPRHandleInternal(CacheFileHandle *aHandle);
 
   nsresult CreateFile(CacheFileHandle *aHandle);
   static void GetHashStr(const SHA1Sum::Hash *aHash, nsACString &_retval);
@@ -158,12 +167,17 @@ private:
   nsresult GetDoomedFile(nsIFile **_retval);
   nsresult CheckAndCreateDir(nsIFile *aFile, const char *aDir);
   nsresult CreateCacheTree();
+  nsresult OpenNSPRHandle(CacheFileHandle *aHandle, bool aCreate = false);
+  void     NSPRHandleUsed(CacheFileHandle *aHandle);
 
-  static CacheFileIOManager *gInstance;
-  nsCOMPtr<nsIThread>  mIOThread;
-  nsCOMPtr<nsIFile>    mCacheDirectory;
-  bool                 mTreeCreated;
-  CacheFileHandles     mHandles;
+
+  static CacheFileIOManager  *gInstance;
+  nsCOMPtr<nsIThread>         mIOThread;
+  nsCOMPtr<nsIFile>           mCacheDirectory;
+  bool                        mTreeCreated;
+  CacheFileHandles            mHandles;
+  nsTArray<CacheFileHandle *> mHandlesByLastUsed;
+
 };
 
 
