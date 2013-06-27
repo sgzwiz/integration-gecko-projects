@@ -17,6 +17,8 @@
 namespace mozilla {
 namespace net {
 
+#define kOpenHandlesLimit   64
+
 
 NS_IMPL_THREADSAFE_ADDREF(CacheFileHandle)
 NS_IMETHODIMP_(nsrefcnt)
@@ -48,6 +50,7 @@ CacheFileHandle::CacheFileHandle(const SHA1Sum::Hash *aHash)
   : mHash(aHash)
   , mIsDoomed(false)
   , mRemovingHandle(false)
+  , mFileExists(false)
   , mFileSize(-1)
   , mFD(nullptr)
 {
@@ -231,7 +234,7 @@ CacheFileHandles::NewHandle(const SHA1Sum::Hash *aHash,
          "created new entry %p, list %p", LOGSHA1(aHash), entry,
          entry->mHandles));
   }
-#if DEBUG
+#ifdef DEBUG
   else {
     MOZ_ASSERT(!PR_CLIST_IS_EMPTY(entry->mHandles));
     CacheFileHandle *handle = (CacheFileHandle *)PR_LIST_HEAD(entry->mHandles);
@@ -263,7 +266,7 @@ CacheFileHandles::RemoveHandle(CacheFileHandle *aHandle)
 
   MOZ_ASSERT(PL_DHASH_ENTRY_IS_BUSY(entry));
 
-#if DEBUG
+#ifdef DEBUG
   {
     CacheFileHandle *handle = (CacheFileHandle *)PR_LIST_HEAD(entry->mHandles);
     bool handleFound = false;
@@ -296,7 +299,7 @@ CacheFileHandles::RemoveHandle(CacheFileHandle *aHandle)
 
 class OpenFileEvent : public nsRunnable {
 public:
-  OpenFileEvent(const SHA1Sum::Hash *aHash,
+  OpenFileEvent(const nsACString &aKey,
                 uint32_t aFlags,
                 CacheFileIOListener *aCallback)
     : mFlags(aFlags)
@@ -304,7 +307,11 @@ public:
     , mRV(NS_ERROR_FAILURE)
   {
     MOZ_COUNT_CTOR(OpenFileEvent);
-    memcpy(&mHash, aHash, sizeof(SHA1Sum::Hash));
+
+    SHA1Sum sum;
+    sum.update(aKey.BeginReading(), aKey.Length());
+    sum.finish(mHash);
+
 //    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
     nsCOMPtr<nsIThread> mainThread;               // temporary HACK
     NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
@@ -512,6 +519,31 @@ protected:
   nsresult                      mRV;
 };
 
+class ReleaseNSPRHandleEvent : public nsRunnable {
+public:
+  ReleaseNSPRHandleEvent(CacheFileHandle *aHandle)
+    : mHandle(aHandle)
+  {
+    MOZ_COUNT_CTOR(ReleaseNSPRHandleEvent);
+  }
+
+  ~ReleaseNSPRHandleEvent()
+  {
+    MOZ_COUNT_DTOR(ReleaseNSPRHandleEvent);
+  }
+
+  NS_IMETHOD Run()
+  {
+    if (mHandle->mFD)
+      CacheFileIOManager::gInstance->ReleaseNSPRHandleInternal(mHandle);
+
+    return NS_OK;
+  }
+
+protected:
+  nsRefPtr<CacheFileHandle>     mHandle;
+};
+
 
 CacheFileIOManager * CacheFileIOManager::gInstance = nullptr;
 
@@ -602,7 +634,7 @@ CacheFileIOManager::Shutdown()
 }
 
 nsresult
-CacheFileIOManager::OpenFile(const SHA1Sum::Hash *aHash,
+CacheFileIOManager::OpenFile(const nsACString &aKey,
                              uint32_t aFlags,
                              CacheFileIOListener *aCallback)
 {
@@ -611,7 +643,7 @@ CacheFileIOManager::OpenFile(const SHA1Sum::Hash *aHash,
 
   DebugOnly<nsresult> rv;
   rv = gInstance->mIOThread->Dispatch(
-    new OpenFileEvent(aHash, aFlags, aCallback),
+    new OpenFileEvent(aKey, aFlags, aCallback),
     nsIEventTarget::DISPATCH_NORMAL);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
@@ -682,8 +714,7 @@ CacheFileIOManager::OpenFileInternal(const SHA1Sum::Hash *aHash,
     rv = file->GetFileSize(&handle->mFileSize);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    rv = file->OpenNSPRFileDesc(PR_RDWR, 0600, &handle->mFD);
-    NS_ENSURE_SUCCESS(rv, rv);
+    handle->mFileExists = true;
   }
   else {
     handle->mFileSize = 0;
@@ -725,7 +756,7 @@ CacheFileIOManager::CloseHandleInternal(CacheFileHandle *aHandle)
 
   // Close file handle
   if (aHandle->mFD) {
-    PR_Close(aHandle->mFD);
+    ReleaseNSPRHandleInternal(aHandle);
   }
 
   // If the entry was doomed delete the file
@@ -759,9 +790,19 @@ nsresult
 CacheFileIOManager::ReadInternal(CacheFileHandle *aHandle, int64_t aOffset,
                                  char *aBuf, int32_t aCount)
 {
-  if (!aHandle->mFD) {
+  nsresult rv;
+
+  if (!aHandle->mFileExists) {
     NS_WARNING("Trying to read from non-existent file");
     return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  if (!aHandle->mFD) {
+    rv = OpenNSPRHandle(aHandle);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+  else {
+    NSPRHandleUsed(aHandle);
   }
 
   int64_t offset = PR_Seek64(aHandle->mFD, aOffset, PR_SEEK_SET);
@@ -797,9 +838,17 @@ CacheFileIOManager::WriteInternal(CacheFileHandle *aHandle, int64_t aOffset,
 {
   nsresult rv;
 
-  if (!aHandle->mFD) {
+  if (!aHandle->mFileExists) {
     rv = CreateFile(aHandle);
     NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  if (!aHandle->mFD) {
+    rv = OpenNSPRHandle(aHandle);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+  else {
+    NSPRHandleUsed(aHandle);
   }
 
   int64_t offset = PR_Seek64(aHandle->mFD, aOffset, PR_SEEK_SET);
@@ -840,10 +889,10 @@ CacheFileIOManager::DoomFileInternal(CacheFileHandle *aHandle)
   if (aHandle->IsDoomed())
     return NS_OK;
 
-  if (aHandle->mFD) {
+  if (aHandle->mFileExists) {
     // we need to move the current file to the doomed directory
-    PR_Close(aHandle->mFD);
-    aHandle->mFD = nullptr;
+    if (aHandle->mFD)
+      ReleaseNSPRHandleInternal(aHandle);
 
     // find unused filename
     nsCOMPtr<nsIFile> file;
@@ -862,12 +911,38 @@ CacheFileIOManager::DoomFileInternal(CacheFileHandle *aHandle)
     NS_ENSURE_SUCCESS(rv, rv);
 
     aHandle->mFile.swap(file);
-
-    rv = aHandle->mFile->OpenNSPRFileDesc(PR_RDWR, 0600, &aHandle->mFD);
-    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   aHandle->mIsDoomed = true;
+  return NS_OK;
+}
+
+nsresult
+CacheFileIOManager::ReleaseNSPRHandle(CacheFileHandle *aHandle)
+{
+  MOZ_ASSERT(gInstance);
+
+  DebugOnly<nsresult> rv;
+  rv = gInstance->mIOThread->Dispatch(
+    new ReleaseNSPRHandleEvent(aHandle),
+    nsIEventTarget::DISPATCH_NORMAL);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+
+  return NS_OK;
+}
+
+nsresult
+CacheFileIOManager::ReleaseNSPRHandleInternal(CacheFileHandle *aHandle)
+{
+  MOZ_ASSERT(aHandle->mFD);
+
+  DebugOnly<bool> found;
+  found = mHandlesByLastUsed.RemoveElement(aHandle);
+  MOZ_ASSERT(found);
+
+  PR_Close(aHandle->mFD);
+  aHandle->mFD = nullptr;
+
   return NS_OK;
 }
 
@@ -892,9 +967,7 @@ CacheFileIOManager::CreateFile(CacheFileHandle *aHandle)
     }
   }
 
-  // TODO log
-  rv = file->OpenNSPRFileDesc(PR_RDWR | PR_CREATE_FILE | PR_TRUNCATE, 0600,
-                              &aHandle->mFD);
+  rv = OpenNSPRHandle(aHandle, true);
   NS_ENSURE_SUCCESS(rv, rv);
 
   aHandle->mFileSize = 0;
@@ -1029,6 +1102,49 @@ CacheFileIOManager::CreateCacheTree()
 
   mTreeCreated = true;
   return NS_OK;
+}
+
+nsresult
+CacheFileIOManager::OpenNSPRHandle(CacheFileHandle *aHandle, bool aCreate)
+{
+  MOZ_ASSERT(!aHandle->mFD);
+  MOZ_ASSERT(mHandlesByLastUsed.IndexOf(aHandle) == mHandlesByLastUsed.NoIndex);
+  MOZ_ASSERT(mHandlesByLastUsed.Length() <= kOpenHandlesLimit);
+
+  nsresult rv;
+
+  if (mHandlesByLastUsed.Length() == kOpenHandlesLimit) {
+    // close handle that hasn't been used for the longest time
+    rv = ReleaseNSPRHandleInternal(mHandlesByLastUsed[0]);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  if (aCreate) {
+    rv = aHandle->mFile->OpenNSPRFileDesc(
+           PR_RDWR | PR_CREATE_FILE | PR_TRUNCATE, 0600, &aHandle->mFD);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    aHandle->mFileExists = true;
+  }
+  else {
+    rv = aHandle->mFile->OpenNSPRFileDesc(PR_RDWR, 0600, &aHandle->mFD);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  mHandlesByLastUsed.AppendElement(aHandle);
+  return NS_OK;
+}
+
+void
+CacheFileIOManager::NSPRHandleUsed(CacheFileHandle *aHandle)
+{
+  MOZ_ASSERT(aHandle->mFD);
+
+  DebugOnly<bool> found;
+  found = mHandlesByLastUsed.RemoveElement(aHandle);
+  MOZ_ASSERT(found);
+
+  mHandlesByLastUsed.AppendElement(aHandle);
 }
 
 } // net
