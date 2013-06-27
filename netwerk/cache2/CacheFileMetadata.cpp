@@ -200,7 +200,7 @@ CacheFileMetadata::WriteMetadata(uint32_t aOffset,
 
   mListener = aListener;
   rv = CacheFileIOManager::Write(mHandle, aOffset, mWriteBuf, p - mWriteBuf,
-                                 this);
+                                 true, this);
   if (NS_FAILED(rv)) {
     LOG(("CacheFileMetadata::WriteMetadata() - CacheFileIOManager::Write() "
          "failed synchronously. [this=%p, rv=0x%08x]", this, rv));
