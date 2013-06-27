@@ -24,6 +24,7 @@ NS_IMPL_THREADSAFE_ADDREF(CacheFileHandle)
 NS_IMETHODIMP_(nsrefcnt)
 CacheFileHandle::Release()
 {
+  LOG(("CacheFileHandle::Release() [this=%p, refcnt=%d]", this, mRefCnt));
   nsrefcnt count;
   NS_PRECONDITION(0 != mRefCnt, "dup release");
   count = NS_AtomicDecrementRefcnt(mRefCnt);
@@ -35,7 +36,7 @@ CacheFileHandle::Release()
     return 0;
   }
 
-  if (!mRemovingHandle && count == 1) {
+  if (!mRemovingHandle && count == 1 && !mClosed) {
     CacheFileIOManager::gInstance->CloseHandle(this);
   }
 
@@ -50,16 +51,20 @@ CacheFileHandle::CacheFileHandle(const SHA1Sum::Hash *aHash)
   : mHash(aHash)
   , mIsDoomed(false)
   , mRemovingHandle(false)
+  , mClosed(false)
+  , mInvalid(false)
   , mFileExists(false)
   , mFileSize(-1)
   , mFD(nullptr)
 {
+  LOG(("CacheFileHandle::CloseFileHandle() [this=%p]", this));
   MOZ_COUNT_CTOR(CacheFileHandle);
   PR_INIT_CLIST(this);
 }
 
 CacheFileHandle::~CacheFileHandle()
 {
+  LOG(("CacheFileHandle::~CloseFileHandle() [this=%p]", this));
   MOZ_COUNT_DTOR(CacheFileHandle);
 }
 
@@ -89,12 +94,15 @@ PLDHashTableOps CacheFileHandles::mOps =
 CacheFileHandles::CacheFileHandles()
   : mInitialized(false)
 {
+  LOG(("CacheFileHandles::CacheFileHandles() [this=%p]", this));
   MOZ_COUNT_CTOR(CacheFileHandles);
 }
 
 CacheFileHandles::~CacheFileHandles()
 {
+  LOG(("CacheFileHandles::~CacheFileHandles() [this=%p]", this));
   MOZ_COUNT_DTOR(CacheFileHandles);
+
   if (mInitialized)
     Shutdown();
 }
@@ -295,7 +303,73 @@ CacheFileHandles::RemoveHandle(CacheFileHandle *aHandle)
   }
 }
 
+PLDHashOperator
+GetHandles(PLDHashTable    *table,
+           PLDHashEntryHdr *hdr,
+           uint32_t         number,
+           void *           arg)
+{
+  const CacheFileHandlesEntry *entry;
+  nsTArray<nsRefPtr<CacheFileHandle> > *handles;
+
+  entry = static_cast<const CacheFileHandlesEntry *>(hdr);
+  handles = reinterpret_cast<nsTArray<nsRefPtr<CacheFileHandle> > *>(arg);
+
+  CacheFileHandle *handle = (CacheFileHandle *)PR_LIST_HEAD(entry->mHandles);
+  while (handle != entry->mHandles) {
+    handles->AppendElement(handle);
+    handle = (CacheFileHandle *)PR_NEXT_LINK(handle);
+  }
+
+  return PL_DHASH_NEXT;
+}
+
+void
+CacheFileHandles::GetAllHandles(nsTArray<nsRefPtr<CacheFileHandle> > *_retval)
+{
+  MOZ_ASSERT(mInitialized);
+
+  PL_DHashTableEnumerate(&mTable, GetHandles, _retval);
+}
+
+uint32_t
+CacheFileHandles::HandleCount()
+{
+  MOZ_ASSERT(mInitialized);
+
+  return mTable.entryCount;
+}
+
 // Events
+
+class ShutdownEvent : public nsRunnable {
+public:
+  ShutdownEvent(mozilla::Mutex *aLock, mozilla::CondVar *aCondVar)
+    : mLock(aLock)
+    , mCondVar(aCondVar)
+  {
+    MOZ_COUNT_CTOR(ShutdownEvent);
+  }
+
+  ~ShutdownEvent()
+  {
+    MOZ_COUNT_DTOR(ShutdownEvent);
+  }
+
+  NS_IMETHOD Run()
+  {
+    MutexAutoLock lock(*mLock);
+
+    CacheFileIOManager::gInstance->ShutdownInternal();
+
+    mCondVar->Notify();
+    return NS_OK;
+  }
+
+protected:
+  mozilla::Mutex   *mLock;
+  mozilla::CondVar *mCondVar;
+};
 
 class OpenFileEvent : public nsRunnable {
 public:
@@ -316,6 +390,7 @@ public:
     nsCOMPtr<nsIThread> mainThread;               // temporary HACK
     NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
     mTarget = mainThread;                         // using streamcopier's thread
+    mIOMan = CacheFileIOManager::gInstance;
     MOZ_ASSERT(mTarget);
   }
 
@@ -327,8 +402,10 @@ public:
   NS_IMETHOD Run()
   {
     if (mTarget) {
-      mRV = CacheFileIOManager::gInstance->OpenFileInternal(
-        &mHash, mFlags, getter_AddRefs(mHandle));
+      if (!mIOMan)
+        mRV = NS_ERROR_NOT_INITIALIZED;
+      else
+        mRV = mIOMan->OpenFileInternal(&mHash, mFlags, getter_AddRefs(mHandle));
 
       nsCOMPtr<nsIEventTarget> target;
       mTarget.swap(target);
@@ -345,6 +422,7 @@ protected:
   bool                          mFlags;
   nsCOMPtr<CacheFileIOListener> mCallback;
   nsCOMPtr<nsIEventTarget>      mTarget;
+  nsRefPtr<CacheFileIOManager>  mIOMan;
   nsRefPtr<CacheFileHandle>     mHandle;
   nsresult                      mRV;
 };
@@ -364,7 +442,8 @@ public:
 
   NS_IMETHOD Run()
   {
-    CacheFileIOManager::gInstance->CloseHandleInternal(mHandle);
+    if (!mHandle->IsClosed())
+      CacheFileIOManager::gInstance->CloseHandleInternal(mHandle);
     return NS_OK;
   }
 
@@ -399,8 +478,11 @@ public:
   NS_IMETHOD Run()
   {
     if (mTarget) {
-      mRV = CacheFileIOManager::gInstance->ReadInternal(
-        mHandle, mOffset, mBuf, mCount);
+      if (mHandle->IsClosed())
+        mRV = NS_ERROR_NOT_INITIALIZED;
+      else
+        mRV = CacheFileIOManager::gInstance->ReadInternal(
+          mHandle, mOffset, mBuf, mCount);
 
       nsCOMPtr<nsIEventTarget> target;
       mTarget.swap(target);
@@ -426,11 +508,12 @@ protected:
 class WriteEvent : public nsRunnable {
 public:
   WriteEvent(CacheFileHandle *aHandle, int64_t aOffset, const char *aBuf,
-             int32_t aCount, CacheFileIOListener *aCallback)
+             int32_t aCount, bool aValidate, CacheFileIOListener *aCallback)
     : mHandle(aHandle)
     , mOffset(aOffset)
     , mBuf(aBuf)
     , mCount(aCount)
+    , mValidate(aValidate)
     , mCallback(aCallback)
     , mRV(NS_ERROR_FAILURE)
   {
@@ -450,8 +533,11 @@ public:
   NS_IMETHOD Run()
   {
     if (mTarget) {
-      mRV = CacheFileIOManager::gInstance->WriteInternal(
-        mHandle, mOffset, mBuf, mCount);
+      if (mHandle->IsClosed())
+        mRV = NS_ERROR_NOT_INITIALIZED;
+      else
+        mRV = CacheFileIOManager::gInstance->WriteInternal(
+          mHandle, mOffset, mBuf, mCount, mValidate);
 
       nsCOMPtr<nsIEventTarget> target;
       mTarget.swap(target);
@@ -469,6 +555,7 @@ protected:
   int64_t                       mOffset;
   const char                   *mBuf;
   int32_t                       mCount;
+  bool                          mValidate;
   nsCOMPtr<CacheFileIOListener> mCallback;
   nsCOMPtr<nsIEventTarget>      mTarget;
   nsresult                      mRV;
@@ -498,7 +585,10 @@ public:
   NS_IMETHOD Run()
   {
     if (mTarget) {
-      mRV = CacheFileIOManager::gInstance->DoomFileInternal(mHandle);
+      if (mHandle->IsClosed())
+        mRV = NS_ERROR_NOT_INITIALIZED;
+      else
+        mRV = CacheFileIOManager::gInstance->DoomFileInternal(mHandle);
 
       nsCOMPtr<nsIEventTarget> target;
       mTarget.swap(target);
@@ -534,7 +624,7 @@ public:
 
   NS_IMETHOD Run()
   {
-    if (mHandle->mFD)
+    if (mHandle->mFD && !mHandle->IsClosed())
       CacheFileIOManager::gInstance->ReleaseNSPRHandleInternal(mHandle);
 
     return NS_OK;
@@ -547,31 +637,121 @@ protected:
 
 CacheFileIOManager * CacheFileIOManager::gInstance = nullptr;
 
+NS_IMPL_THREADSAFE_ISUPPORTS0(CacheFileIOManager)
+
 CacheFileIOManager::CacheFileIOManager()
-  : mTreeCreated(false)
+  : mShuttingDown(false)
+  , mTreeCreated(false)
 {
+  LOG(("CacheFileIOManager::CacheFileIOManager [this=%p]", this));
   MOZ_COUNT_CTOR(CacheFileIOManager);
-  NS_ASSERTION(gInstance==nullptr, "multiple CacheFileIOManager instances!");
+  MOZ_ASSERT(!gInstance, "multiple CacheFileIOManager instances!");
 }
 
 CacheFileIOManager::~CacheFileIOManager()
 {
+  LOG(("CacheFileIOManager::~CacheFileIOManager [this=%p]", this));
   MOZ_COUNT_DTOR(CacheFileIOManager);
-  gInstance = nullptr;
 }
 
 nsresult
 CacheFileIOManager::Init()
 {
+  LOG(("CacheFileIOManager::Init()"));
+
+  MOZ_ASSERT(NS_IsMainThread());
+
   if (gInstance)
     return NS_ERROR_ALREADY_INITIALIZED;
 
-  gInstance = new CacheFileIOManager();
+  nsRefPtr<CacheFileIOManager> ioMan = new CacheFileIOManager();
 
-  nsresult rv = gInstance->InitInternal();
+  nsresult rv = ioMan->InitInternal();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  ioMan.swap(gInstance);
+  return NS_OK;
+}
+
+nsresult
+CacheFileIOManager::InitInternal()
+{
+  nsresult rv;
+  rv = NS_NewNamedThread("Cache IO thread",
+                         getter_AddRefs(mIOThread));
+  MOZ_ASSERT(NS_SUCCEEDED(rv), "Can't create background thread");
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = mHandles.Init();
   if (NS_FAILED(rv)) {
-    delete gInstance;
-    return rv;
+    nsShutdownThread::BlockingShutdown(mIOThread);
+
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  return NS_OK;
+}
+
+nsresult
+CacheFileIOManager::Shutdown()
+{
+  LOG(("CacheFileIOManager::Shutdown() [gInstance=%p]", gInstance));
+
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (!gInstance)
+    return NS_ERROR_NOT_INITIALIZED;
+
+  {
+    mozilla::Mutex lock("CacheFileIOManager::Shutdown() lock");
+    mozilla::CondVar condVar(lock, "CacheFileIOManager::Shutdown() condVar");
+
+    MutexAutoLock autoLock(lock);
+    nsRefPtr<ShutdownEvent> ev = new ShutdownEvent(&lock, &condVar);
+    DebugOnly<nsresult> rv;
+    rv = gInstance->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    condVar.Wait();
+  }
+
+  MOZ_ASSERT(gInstance->mHandles.HandleCount() == 0);
+  MOZ_ASSERT(gInstance->mHandlesByLastUsed.Length() == 0);
+
+  nsRefPtr<CacheFileIOManager> ioMan;
+  ioMan.swap(gInstance);
+
+  if (ioMan->mIOThread)
+    nsShutdownThread::BlockingShutdown(ioMan->mIOThread);
+
+  return NS_OK;
+}
+
+nsresult
+CacheFileIOManager::ShutdownInternal()
+{
+  mShuttingDown = true;
+
+  // close all handles and delete all associated files
+  nsTArray<nsRefPtr<CacheFileHandle> > handles;
+  mHandles.GetAllHandles(&handles);
+
+  for (uint32_t i=0 ; i<handles.Length() ; i++) {
+    CacheFileHandle *h = handles[i];
+    h->mRemovingHandle = true;
+    h->mClosed = true;
+
+    // Close file handle
+    if (h->mFD) {
+      ReleaseNSPRHandleInternal(h);
+    }
+
+    // Remove file if entry is doomed or invalid
+    if (h->mFileExists && (h->mIsDoomed || h->mInvalid)) {
+      h->mFile->Remove(false);
+    }
+
+    // Remove the handle from hashtable
+    mHandles.RemoveHandle(h);
   }
 
   return NS_OK;
@@ -580,6 +760,8 @@ CacheFileIOManager::Init()
 nsresult
 CacheFileIOManager::OnProfile()
 {
+  LOG(("CacheFileIOManager::OnProfile() [gInstance=%p]", gInstance));
+
   MOZ_ASSERT(gInstance);
 
   nsresult rv;
@@ -604,48 +786,22 @@ CacheFileIOManager::OnProfile()
 }
 
 nsresult
-CacheFileIOManager::InitInternal()
-{
-  nsresult rv;
-  rv = NS_NewNamedThread("Cache IO thread",
-                         getter_AddRefs(gInstance->mIOThread));
-  MOZ_ASSERT(NS_SUCCEEDED(rv), "Can't create background thread");
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = mHandles.Init();
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
-}
-
-nsresult
-CacheFileIOManager::Shutdown()
-{
-  if (!gInstance)
-    return NS_ERROR_NOT_INITIALIZED;
-
-  if (gInstance->mIOThread)
-    nsShutdownThread::BlockingShutdown(gInstance->mIOThread);
-  gInstance->mIOThread = nullptr;
-
-  delete gInstance;
-
-  return NS_OK;
-}
-
-nsresult
 CacheFileIOManager::OpenFile(const nsACString &aKey,
                              uint32_t aFlags,
                              CacheFileIOListener *aCallback)
 {
-  if (!gInstance)
+  LOG(("CacheFileIOManager::OpenFile() [key=%s, flags=%d, listener=%p]",
+       PromiseFlatCString(aKey).get(), aFlags, aCallback));
+
+  nsresult rv;
+  CacheFileIOManager *ioMan = gInstance;
+
+  if (!ioMan)
     return NS_ERROR_NOT_INITIALIZED;
 
-  DebugOnly<nsresult> rv;
-  rv = gInstance->mIOThread->Dispatch(
-    new OpenFileEvent(aKey, aFlags, aCallback),
-    nsIEventTarget::DISPATCH_NORMAL);
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  nsRefPtr<OpenFileEvent> ev = new OpenFileEvent(aKey, aFlags, aCallback);
+  rv = ioMan->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
 }
@@ -656,6 +812,9 @@ CacheFileIOManager::OpenFileInternal(const SHA1Sum::Hash *aHash,
                                      CacheFileHandle **_retval)
 {
   nsresult rv;
+
+  if (mShuttingDown)
+    return NS_ERROR_NOT_INITIALIZED;
 
   if (!mTreeCreated) {
     rv = CreateCacheTree();
@@ -728,12 +887,17 @@ CacheFileIOManager::OpenFileInternal(const SHA1Sum::Hash *aHash,
 nsresult
 CacheFileIOManager::CloseHandle(CacheFileHandle *aHandle)
 {
-  MOZ_ASSERT(gInstance);
+  LOG(("CacheFileIOManager::CloseHandle() [handle=%p]", aHandle));
 
-  DebugOnly<nsresult> rv;
-  rv = gInstance->mIOThread->Dispatch(new CloseHandleEvent(aHandle),
-                                      nsIEventTarget::DISPATCH_NORMAL);
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  nsresult rv;
+  CacheFileIOManager *ioMan = gInstance;
+
+  if (aHandle->IsClosed() || !ioMan)
+    return NS_ERROR_NOT_INITIALIZED;
+
+  nsRefPtr<CloseHandleEvent> ev = new CloseHandleEvent(aHandle);
+  rv = ioMan->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
 }
@@ -775,13 +939,19 @@ CacheFileIOManager::Read(CacheFileHandle *aHandle, int64_t aOffset,
                          char *aBuf, int32_t aCount,
                          CacheFileIOListener *aCallback)
 {
-  MOZ_ASSERT(gInstance);
+  LOG(("CacheFileIOManager::Read() [handle=%p, offset=%lld, count=%d, "
+       "listener=%p]", aHandle, aOffset, aCount, aCallback));
 
-  DebugOnly<nsresult> rv;
-  rv = gInstance->mIOThread->Dispatch(
-    new ReadEvent(aHandle, aOffset, aBuf, aCount, aCallback),
-    nsIEventTarget::DISPATCH_NORMAL);
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  nsresult rv;
+  CacheFileIOManager *ioMan = gInstance;
+
+  if (aHandle->IsClosed() || !ioMan)
+    return NS_ERROR_NOT_INITIALIZED;
+
+  nsRefPtr<ReadEvent> ev = new ReadEvent(aHandle, aOffset, aBuf, aCount,
+                                         aCallback);
+  rv = ioMan->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
 }
@@ -818,23 +988,31 @@ CacheFileIOManager::ReadInternal(CacheFileHandle *aHandle, int64_t aOffset,
 
 nsresult
 CacheFileIOManager::Write(CacheFileHandle *aHandle, int64_t aOffset,
-                          const char *aBuf, int32_t aCount,
+                          const char *aBuf, int32_t aCount, bool aValidate,
                           CacheFileIOListener *aCallback)
 {
-  MOZ_ASSERT(gInstance);
+  LOG(("CacheFileIOManager::Write() [handle=%p, offset=%lld, count=%d, "
+       "validate=%d, listener=%p]", aHandle, aOffset, aCount, aValidate,
+       aCallback));
 
-  DebugOnly<nsresult> rv;
-  rv = gInstance->mIOThread->Dispatch(
-    new WriteEvent(aHandle, aOffset, aBuf, aCount, aCallback),
-    nsIEventTarget::DISPATCH_NORMAL);
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  nsresult rv;
+  CacheFileIOManager *ioMan = gInstance;
+
+  if (aHandle->IsClosed() || !ioMan)
+    return NS_ERROR_NOT_INITIALIZED;
+
+  nsRefPtr<WriteEvent> ev = new WriteEvent(aHandle, aOffset, aBuf, aCount,
+                                           aValidate, aCallback);
+  rv = ioMan->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
 }
 
 nsresult
 CacheFileIOManager::WriteInternal(CacheFileHandle *aHandle, int64_t aOffset,
-                                  const char *aBuf, int32_t aCount)
+                                  const char *aBuf, int32_t aCount,
+                                  bool aValidate)
 {
   nsresult rv;
 
@@ -851,6 +1029,9 @@ CacheFileIOManager::WriteInternal(CacheFileHandle *aHandle, int64_t aOffset,
     NSPRHandleUsed(aHandle);
   }
 
+  // Write invalidates the entry by default
+  aHandle->mInvalid = true;
+
   int64_t offset = PR_Seek64(aHandle->mFD, aOffset, PR_SEEK_SET);
   if (offset == -1)
     return NS_ERROR_FAILURE;
@@ -863,6 +1044,10 @@ CacheFileIOManager::WriteInternal(CacheFileHandle *aHandle, int64_t aOffset,
   if (bytesWritten != aCount)
     return NS_ERROR_FAILURE;
 
+  // Write was successful and this write validates the entry (i.e. metadata)
+  if (aValidate)
+    aHandle->mInvalid = false;
+
   return NS_OK;
 }
 
@@ -870,13 +1055,18 @@ nsresult
 CacheFileIOManager::DoomFile(CacheFileHandle *aHandle,
                              CacheFileIOListener *aCallback)
 {
-  MOZ_ASSERT(gInstance);
+  LOG(("CacheFileIOManager::DoomFile() [handle=%p, listener=%p]",
+       aHandle, aCallback));
 
-  DebugOnly<nsresult> rv;
-  rv = gInstance->mIOThread->Dispatch(
-    new DoomFileEvent(aHandle, aCallback),
-    nsIEventTarget::DISPATCH_NORMAL);
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  nsresult rv;
+  CacheFileIOManager *ioMan = gInstance;
+
+  if (aHandle->IsClosed() || !ioMan)
+    return NS_ERROR_NOT_INITIALIZED;
+
+  nsRefPtr<DoomFileEvent> ev = new DoomFileEvent(aHandle, aCallback);
+  rv = ioMan->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
 }
@@ -920,13 +1110,17 @@ CacheFileIOManager::DoomFileInternal(CacheFileHandle *aHandle)
 nsresult
 CacheFileIOManager::ReleaseNSPRHandle(CacheFileHandle *aHandle)
 {
-  MOZ_ASSERT(gInstance);
+  LOG(("CacheFileIOManager::ReleaseNSPRHandle() [handle=%p]", aHandle));
 
-  DebugOnly<nsresult> rv;
-  rv = gInstance->mIOThread->Dispatch(
-    new ReleaseNSPRHandleEvent(aHandle),
-    nsIEventTarget::DISPATCH_NORMAL);
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  nsresult rv;
+  CacheFileIOManager *ioMan = gInstance;
+
+  if (aHandle->IsClosed() || !ioMan)
+    return NS_ERROR_NOT_INITIALIZED;
+
+  nsRefPtr<ReleaseNSPRHandleEvent> ev = new ReleaseNSPRHandleEvent(aHandle);
+  rv = ioMan->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
 }
