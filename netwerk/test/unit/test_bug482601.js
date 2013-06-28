@@ -32,6 +32,7 @@ var listener = {
   },
 
   onStopRequest: function (request, ctx, status) {
+    do_check_eq(status, Cr.NS_OK);
     do_check_eq(buffer, "0123456789");
     do_check_eq(observers_called, results[test_nr]);
     test_nr++;

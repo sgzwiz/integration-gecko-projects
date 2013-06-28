@@ -245,7 +245,7 @@ private:
                                       nsresult status);
     nsresult GenerateCacheKey(uint32_t postID, nsACString &key);
     nsresult UpdateExpirationTime();
-    nsresult CheckCache();
+    nsresult CheckPartial(nsICacheEntry* aEntry, int64_t *aSize, int64_t *aContentLength);
     bool ShouldUpdateOfflineCacheEntry();
     nsresult ReadFromCache(bool alreadyMarkedValid);
     void     CloseCacheEntry(bool doomOnFailure);
@@ -386,6 +386,11 @@ private:
     // see WAIT_FOR_* constants above
     uint32_t                          mCacheEntriesToWaitFor : 2;
     uint32_t                          mHasQueryString : 1;
+    // whether cache entry data write was in progress during cache entry check
+    // when true, after we finish read from cache we must check all data
+    // had been loaded from cache. If not, then an error has to be propagated
+    // to the consumer.
+    uint32_t                          mPerformCacheCompletenessCheck : 1;
 
     nsTArray<nsContinueRedirectionFunc> mRedirectFuncStack;
 
