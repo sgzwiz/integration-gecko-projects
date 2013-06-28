@@ -42,6 +42,9 @@ let win = wm.getMostRecentWindow('');
 setDefaultPrefs();
 setPermissions(args[0], args[1]);
 
-// Start the reftests
+// Loading this into the global namespace causes intermittent failures.
+// See bug 882888 for more details.
 let reftest = {}; Components.utils.import("chrome://reftest/content/reftest.jsm", reftest);
+
+// Start the reftests
 reftest.OnRefTestLoad(win);
