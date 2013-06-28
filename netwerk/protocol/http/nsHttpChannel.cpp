@@ -208,6 +208,7 @@ nsHttpChannel::nsHttpChannel()
     , mCacheEntryIsWriteOnly(false)
     , mCacheEntriesToWaitFor(0)
     , mHasQueryString(0)
+    , mPerformCacheCompletenessCheck(0)
     , mDidReval(false)
 {
     LOG(("Creating nsHttpChannel [this=%p]\n", this));
@@ -2240,6 +2241,9 @@ nsHttpChannel::OpenCacheEntry(bool usingSSL)
     // Handle correctly mCacheEntriesToWaitFor
     AutoCacheWaitFlags waitFlags(this);
 
+    // Drop this flag here
+    mPerformCacheCompletenessCheck = 0;
+
     nsresult rv;
 
     mLoadedFromApplicationCache = false;
@@ -2369,6 +2373,32 @@ nsHttpChannel::OpenCacheEntry(bool usingSSL)
     return NS_OK;
 }
 
+nsresult
+nsHttpChannel::CheckPartial(nsICacheEntry* aEntry, int64_t *aSize, int64_t *aContentLength)
+{
+    nsresult rv;
+
+    rv = aEntry->GetDataSize(aSize);
+
+    if (NS_ERROR_IN_PROGRESS == rv) {
+        *aSize = -1;
+        rv = NS_OK;
+    }
+
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsHttpResponseHead* responseHead = mCachedResponseHead
+        ? mCachedResponseHead
+        : mResponseHead;
+
+    if (!responseHead)
+      return NS_ERROR_UNEXPECTED;
+
+    *aContentLength = responseHead->ContentLength();
+
+    return NS_OK;
+}
+
 NS_IMETHODIMP
 nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appCache,
                                  uint32_t* aResult)
@@ -2462,45 +2492,44 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
         // We exclude redirects from this check because we (usually) strip the
         // entity when we store the cache entry, and even if we didn't, we
         // always ignore a cached redirect's entity anyway. See bug 759043.
-        int64_t contentLength = mCachedResponseHead->ContentLength();
-        if (contentLength != int64_t(-1)) {
-            int64_t size;
-            rv = entry->GetDataSize(&size);
-            if (NS_ERROR_IN_PROGRESS != rv) {
-                NS_ENSURE_SUCCESS(rv, rv);
+        int64_t size, contentLength;
+        rv = CheckPartial(entry, &size, &contentLength);
+        NS_ENSURE_SUCCESS(rv,rv);
 
-                if (size != contentLength) {
-                    LOG(("Cached data size does not match the Content-Length header "
-                         "[content-length=%lld size=%lld]\n", contentLength, size));
+        if (size == int64_t(-1)) {
+            LOG(("  write is in progress"));
+            mPerformCacheCompletenessCheck = 1;
+        }
+        else if (contentLength != int64_t(-1) && contentLength != size) {
+            LOG(("Cached data size does not match the Content-Length header "
+                 "[content-length=%lld size=%lld]\n", contentLength, size));
 
-                    bool hasContentEncoding =
-                        mCachedResponseHead->PeekHeader(nsHttp::Content_Encoding)
-                        != nullptr;
-                    if ((int64_t(size) < contentLength) &&
-                         size > 0 &&
-                         !hasContentEncoding &&
-                         mCachedResponseHead->IsResumable() &&
-                         !mCustomConditionalRequest &&
-                         !mCachedResponseHead->NoStore()) {
-                        // looks like a partial entry we can reuse; add If-Range
-                        // and Range headers.
-                        rv = SetupByteRangeRequest(size);
-                        mCachedContentIsPartial = NS_SUCCEEDED(rv);
-                        if (mCachedContentIsPartial) {
-                            rv = OpenCacheInputStream(entry, false);
-                        } else {
-                            // Make the request unconditional again.
-                            mRequestHead.ClearHeader(nsHttp::Range);
-                            mRequestHead.ClearHeader(nsHttp::If_Range);
-                        }
+            bool hasContentEncoding =
+                mCachedResponseHead->PeekHeader(nsHttp::Content_Encoding)
+                != nullptr;
+            if ((int64_t(size) < contentLength) &&
+                 size > 0 &&
+                 !hasContentEncoding &&
+                 mCachedResponseHead->IsResumable() &&
+                 !mCustomConditionalRequest &&
+                 !mCachedResponseHead->NoStore()) {
+                // looks like a partial entry we can reuse; add If-Range
+                // and Range headers.
+                rv = SetupByteRangeRequest(size);
+                mCachedContentIsPartial = NS_SUCCEEDED(rv);
+                if (mCachedContentIsPartial) {
+                    rv = OpenCacheInputStream(entry, false);
+                } else {
+                    // Make the request unconditional again.
+                    mRequestHead.ClearHeader(nsHttp::Range);
+                    mRequestHead.ClearHeader(nsHttp::If_Range);
+                }
 
-                        if (mCachedContentIsPartial) {
-                            *aResult = ENTRY_NEEDS_REVALIDATION;
-                        }
-                    }
-                    return rv;
+                if (mCachedContentIsPartial) {
+                    *aResult = ENTRY_NEEDS_REVALIDATION;
                 }
             }
+            return rv;
         }
     }
 
@@ -3395,6 +3424,10 @@ nsHttpChannel::InitCacheEntry()
     if (NS_FAILED(rv)) return rv;
 
     mInitedCacheEntry = true;
+
+    // Don't perform the check when writing (doesn't make sense)
+    mPerformCacheCompletenessCheck = 0;
+
     return NS_OK;
 }
 
@@ -4733,8 +4766,8 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
         mCacheReadEnd = TimeStamp::Now();
     }
 
-     // allow content to be cached if it was loaded successfully (bug #482935)
-     bool contentComplete = NS_SUCCEEDED(status);
+    // allow content to be cached if it was loaded successfully (bug #482935)
+    bool contentComplete = NS_SUCCEEDED(status);
 
     // honor the cancelation status even if the underlying transaction completed.
     if (mCanceled || NS_FAILED(mStatus))
@@ -4831,6 +4864,25 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
     }
 
     mIsPending = false;
+
+    // if needed, check cache entry has all data we expect
+    if (mCacheEntry && mPerformCacheCompletenessCheck && contentComplete) {
+        int64_t size, contentLength;
+        nsresult rv = CheckPartial(mCacheEntry, &size, &contentLength);
+        if (NS_SUCCEEDED(rv)) {
+            if (size == int64_t(-1)) {
+                MOZ_ASSERT(false);
+                LOG(("  cache entry write is still in progress, but we just "
+                     "finished reading the cache entry, a bit strange"));
+            }
+            else if (contentLength != int64_t(-1) && contentLength != size) {
+                status = NS_ERROR_NET_INTERRUPT;
+                LOG(("  concurrent cache entry write has been interrupted, "
+                     "failing this load too"));
+            }
+        }
+    }
+
     mStatus = status;
 
     // perform any final cache operations before we close the cache entry.
