@@ -183,9 +183,6 @@
 #include "nsIDOMXPathResult.h"
 #include "nsIDOMMozBrowserFrame.h"
 
-#include "nsIDOMSVGAnimatedEnum.h"
-#include "nsIDOMSVGAnimatedInteger.h"
-#include "nsIDOMSVGAnimatedNumber.h"
 #include "nsIDOMSVGLength.h"
 #include "nsIDOMSVGNumber.h"
 
@@ -222,7 +219,6 @@
 #include "HTMLLegendElement.h"
 
 #include "mozilla/dom/indexedDB/IDBWrapperCache.h"
-#include "mozilla/dom/indexedDB/IDBFileHandle.h"
 #include "mozilla/dom/indexedDB/IDBRequest.h"
 #include "mozilla/dom/indexedDB/IDBDatabase.h"
 #include "mozilla/dom/indexedDB/IDBEvents.h"
@@ -312,11 +308,6 @@ static const char kDOMStringBundleURL[] =
   nsIXPCScriptable::DONT_ENUM_QUERY_INTERFACE |                               \
   nsIXPCScriptable::IS_GLOBAL_OBJECT |                                        \
   nsIXPCScriptable::WANT_OUTER_OBJECT)
-
-// We need to let JavaScript QI elements to interfaces that are not in
-// the classinfo since XBL can be used to dynamically implement new
-// unknown interfaces on elements, accessibility relies on this being
-// possible.
 
 #define ARRAY_SCRIPTABLE_FLAGS                                                \
   (DOM_DEFAULT_SCRIPTABLE_FLAGS       |                                       \
@@ -577,12 +568,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
   // other SVG classes
-  NS_DEFINE_CLASSINFO_DATA(SVGAnimatedEnumeration, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(SVGAnimatedInteger, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(SVGAnimatedNumber, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(SVGLength, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(SVGNumber, nsDOMGenericSH,
@@ -686,8 +671,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
   NS_DEFINE_CHROME_ONLY_CLASSINFO_DATA(ChromeMessageSender, nsDOMGenericSH,
                                        DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
-  NS_DEFINE_CLASSINFO_DATA_WITH_NAME(IDBFileHandle, FileHandle, nsEventTargetSH,
-                           EVENTTARGET_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(IDBRequest, IDBEventTargetSH,
                            IDBEVENTTARGET_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(IDBDatabase, IDBEventTargetSH,
@@ -1519,18 +1502,6 @@ nsDOMClassInfo::Init()
   // The SVG document
 
   // other SVG classes
-  DOM_CLASSINFO_MAP_BEGIN(SVGAnimatedEnumeration, nsIDOMSVGAnimatedEnumeration)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMSVGAnimatedEnumeration)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(SVGAnimatedInteger, nsIDOMSVGAnimatedInteger)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMSVGAnimatedInteger)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(SVGAnimatedNumber, nsIDOMSVGAnimatedNumber)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMSVGAnimatedNumber)
-  DOM_CLASSINFO_MAP_END
-
   DOM_CLASSINFO_MAP_BEGIN(SVGLength, nsIDOMSVGLength)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMSVGLength)
   DOM_CLASSINFO_MAP_END
@@ -1672,11 +1643,6 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_MAP_ENTRY(nsIMessageSender)
   DOM_CLASSINFO_MAP_END
 
-  DOM_CLASSINFO_MAP_BEGIN(IDBFileHandle, nsIDOMFileHandle)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMFileHandle)
-    DOM_CLASSINFO_MAP_ENTRY(nsIIDBFileHandle)
-  DOM_CLASSINFO_MAP_END
-
   DOM_CLASSINFO_MAP_BEGIN(IDBRequest, nsIIDBRequest)
     DOM_CLASSINFO_MAP_ENTRY(nsIIDBRequest)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
@@ -1816,19 +1782,16 @@ nsDOMClassInfo::Init()
   for (size_t i = 0; i < eDOMClassInfoIDCount; i++) {
     if (!sClassInfoData[i].u.mConstructorFptr ||
         sClassInfoData[i].mDebugID != i) {
-      MOZ_NOT_REACHED("Class info data out of sync, you forgot to update "
-                      "nsDOMClassInfo.h and nsDOMClassInfo.cpp! Fix this, "
-                      "mozilla will not work without this fixed!");
-      return NS_ERROR_NOT_INITIALIZED;
+      MOZ_CRASH("Class info data out of sync, you forgot to update "
+                "nsDOMClassInfo.h and nsDOMClassInfo.cpp! Fix this, "
+                "mozilla will not work without this fixed!");
     }
   }
 
   for (size_t i = 0; i < eDOMClassInfoIDCount; i++) {
     if (!sClassInfoData[i].mInterfaces) {
-      MOZ_NOT_REACHED("Class info data without an interface list! Fix this, "
-                      "mozilla will not work without this fixed!");
-
-      return NS_ERROR_NOT_INITIALIZED;
+      MOZ_CRASH("Class info data without an interface list! Fix this, "
+                "mozilla will not work without this fixed!");
      }
    }
 #endif
@@ -2027,8 +1990,7 @@ NS_IMETHODIMP
 nsDOMClassInfo::PostTransplant(nsIXPConnectWrappedNative *wrapper,
                                JSContext *cx, JSObject *obj)
 {
-  MOZ_NOT_REACHED("nsDOMClassInfo::PostTransplant Don't call me!");
-  return NS_OK;
+  MOZ_CRASH("nsDOMClassInfo::PostTransplant Don't call me!");
 }
 
 NS_IMETHODIMP
@@ -3147,7 +3109,7 @@ DefineIDBInterfaceConstants(JSContext *cx, JS::Handle<JSObject*> obj, const nsII
     interface = IDBConstant::IDBTransaction;
   }
   else {
-    MOZ_NOT_REACHED("unexpected IID");
+    MOZ_CRASH("unexpected IID");
   }
 
   for (int8_t i = 0; i < (int8_t)mozilla::ArrayLength(sIDBConstants); ++i) {

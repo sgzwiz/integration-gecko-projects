@@ -69,6 +69,7 @@ import android.view.ContextThemeWrapper;
 import android.view.HapticFeedbackConstants;
 import android.view.Surface;
 import android.view.SurfaceView;
+import android.view.TextureView;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.MimeTypeMap;
@@ -632,26 +633,26 @@ public class GeckoAppShell
         gRestartScheduled = true;
     }
 
-    public static File preInstallWebApp(String aTitle, String aURI, String aUniqueURI) {
-        int index = WebAppAllocator.getInstance(getContext()).findAndAllocateIndex(aUniqueURI, aTitle, (String) null);
+    public static File preInstallWebApp(String aTitle, String aURI, String aOrigin) {
+        int index = WebAppAllocator.getInstance(getContext()).findAndAllocateIndex(aOrigin, aTitle, (String) null);
         GeckoProfile profile = GeckoProfile.get(getContext(), "webapp" + index);
         return profile.getDir();
     }
 
-    public static void postInstallWebApp(String aTitle, String aURI, String aUniqueURI, String aIconURL) {
+    public static void postInstallWebApp(String aTitle, String aURI, String aOrigin, String aIconURL, String aOriginalOrigin) {
     	WebAppAllocator allocator = WebAppAllocator.getInstance(getContext());
-		int index = allocator.getIndexForApp(aUniqueURI);
+		int index = allocator.getIndexForApp(aOriginalOrigin);
     	assert index != -1 && aIconURL != null;
-    	allocator.updateAppAllocation(aUniqueURI, index, BitmapUtils.getBitmapFromDataURI(aIconURL));
-    	createShortcut(aTitle, aURI, aUniqueURI, aIconURL, "webapp");
+    	allocator.updateAppAllocation(aOrigin, index, BitmapUtils.getBitmapFromDataURI(aIconURL));
+    	createShortcut(aTitle, aURI, aOrigin, aIconURL, "webapp");
     }
 
-    public static Intent getWebAppIntent(String aURI, String aUniqueURI, String aTitle, Bitmap aIcon) {
+    public static Intent getWebAppIntent(String aURI, String aOrigin, String aTitle, Bitmap aIcon) {
         int index;
         if (aIcon != null && !TextUtils.isEmpty(aTitle))
-            index = WebAppAllocator.getInstance(getContext()).findAndAllocateIndex(aUniqueURI, aTitle, aIcon);
+            index = WebAppAllocator.getInstance(getContext()).findAndAllocateIndex(aOrigin, aTitle, aIcon);
         else
-            index = WebAppAllocator.getInstance(getContext()).getIndexForApp(aUniqueURI);
+            index = WebAppAllocator.getInstance(getContext()).getIndexForApp(aOrigin);
 
         if (index == -1)
             return null;
@@ -1964,6 +1965,7 @@ public class GeckoAppShell
     public interface AppStateListener {
         public void onPause();
         public void onResume();
+        public void onConfigurationChanged();
     }
 
     public interface GeckoInterface {
@@ -1981,7 +1983,7 @@ public class GeckoAppShell
         public void disableCameraView();
         public void addAppStateListener(AppStateListener listener);
         public void removeAppStateListener(AppStateListener listener);
-        public SurfaceView getCameraView();
+        public View getCameraView();
         public void notifyWakeLockChanged(String topic, String state);
         public FormAssistPopup getFormAssistPopup();
         public boolean areTabsShown();
@@ -2070,12 +2072,18 @@ public class GeckoAppShell
             }
 
             try {
-                if (getGeckoInterface() != null)
-                    sCamera.setPreviewDisplay(getGeckoInterface().getCameraView().getHolder());
+                if (getGeckoInterface() != null) {
+                    View cameraView = getGeckoInterface().getCameraView();
+                    if (cameraView instanceof SurfaceView) {
+                        sCamera.setPreviewDisplay(((SurfaceView)cameraView).getHolder());
+                    } else if (cameraView instanceof TextureView) {
+                        sCamera.setPreviewTexture(((TextureView)cameraView).getSurfaceTexture());
+                    }
+                }
             } catch(IOException e) {
-                Log.w(LOGTAG, "Error setPreviewDisplay:", e);
+                Log.w(LOGTAG, "Error setPreviewXXX:", e);
             } catch(RuntimeException e) {
-                Log.w(LOGTAG, "Error setPreviewDisplay:", e);
+                Log.w(LOGTAG, "Error setPreviewXXX:", e);
             }
 
             sCamera.setParameters(params);

@@ -76,7 +76,13 @@ InvokeFunction(JSContext *cx, HandleFunction fun0, uint32_t argc, Value *argv, V
     // we use InvokeConstructor that creates it at the callee side.
     if (thisv.isMagic(JS_IS_CONSTRUCTING))
         return InvokeConstructor(cx, ObjectValue(*fun), argc, argvWithoutThis, rval);
-    return Invoke(cx, thisv, ObjectValue(*fun), argc, argvWithoutThis, rval);
+
+    RootedValue rv(cx);
+    if (!Invoke(cx, thisv, ObjectValue(*fun), argc, argvWithoutThis, &rv))
+        return false;
+
+    *rval = rv;
+    return true;
 }
 
 JSObject *
@@ -633,7 +639,7 @@ DebugPrologue(JSContext *cx, BaselineFrame *frame, JSBool *mustReturn)
         return false;
 
       default:
-        JS_NOT_REACHED("Invalid trap status");
+        MOZ_ASSUME_UNREACHABLE("Invalid trap status");
     }
 }
 
@@ -767,7 +773,7 @@ HandleDebugTrap(JSContext *cx, BaselineFrame *frame, uint8_t *retAddr, JSBool *m
         return false;
 
       default:
-        JS_NOT_REACHED("Invalid trap status");
+        MOZ_ASSUME_UNREACHABLE("Invalid trap status");
     }
 
     return true;
@@ -805,7 +811,7 @@ OnDebuggerStatement(JSContext *cx, BaselineFrame *frame, jsbytecode *pc, JSBool 
         return false;
 
       default:
-        JS_NOT_REACHED("Invalid trap status");
+        MOZ_ASSUME_UNREACHABLE("Invalid trap status");
     }
 }
 

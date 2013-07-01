@@ -717,9 +717,6 @@ public:
         IDX_PROTO                   ,
         IDX_ITERATOR                ,
         IDX_EXPOSEDPROPS            ,
-        IDX_BASEURIOBJECT           ,
-        IDX_NODEPRINCIPAL           ,
-        IDX_MOZMATCHESSELECTOR      ,
         IDX_TOTAL_COUNT // just a count of the above
     };
 
@@ -2418,7 +2415,7 @@ public:
     static nsresult
     WrapNewGlobal(xpcObjectHelper &nativeHelper,
                   nsIPrincipal *principal, bool initStandardClasses,
-                  JS::ZoneSpecifier zoneSpec,
+                  JS::CompartmentOptions& aOptions,
                   XPCWrappedNative **wrappedGlobal);
 
     static nsresult
@@ -3726,7 +3723,7 @@ struct SandboxOptions {
 
 JSObject *
 CreateGlobalObject(JSContext *cx, JSClass *clasp, nsIPrincipal *principal,
-                   JS::ZoneSpecifier zoneSpec);
+                   JS::CompartmentOptions& aOptions);
 }
 
 // Helper for creating a sandbox object to use for evaluating

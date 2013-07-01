@@ -490,7 +490,7 @@ GCState(JSContext *cx, unsigned argc, jsval *vp)
     else if (globalState == gc::SWEEP)
         state = "sweep";
     else
-        JS_NOT_REACHED("Unobserveable global GC state");
+        MOZ_ASSUME_UNREACHABLE("Unobserveable global GC state");
 
     JSString *str = JS_NewStringCopyZ(cx, state);
     if (!str)
@@ -914,7 +914,7 @@ ShellObjectMetadataCallback(JSContext *cx, JSObject **pmetadata)
     Value thisv = UndefinedValue();
 
     RootedValue rval(cx);
-    if (!Invoke(cx, thisv, ObjectValue(*objectMetadataFunction), 0, NULL, rval.address()))
+    if (!Invoke(cx, thisv, ObjectValue(*objectMetadataFunction), 0, NULL, &rval))
         return false;
 
     if (rval.isObject())
