@@ -136,7 +136,7 @@ CacheFileInputStream::Read(char *aBuf, uint32_t aCount, uint32_t *_retval)
 
   if (canRead < 0) {
     // file was truncated ???
-    // TODO what to return?
+    MOZ_ASSERT(false, "SetEOF is currenty not implemented?!");
     *_retval = 0;
     rv = NS_OK;
   }
@@ -203,7 +203,7 @@ CacheFileInputStream::ReadSegments(nsWriteSegmentFun aWriter, void *aClosure,
 
   if (canRead < 0) {
     // file was truncated ???
-    // TODO what to return?
+    MOZ_ASSERT(false, "SetEOF is currenty not implemented?!");
     *_retval = 0;
     rv = NS_OK;
   }
@@ -264,8 +264,7 @@ CacheFileInputStream::CloseWithStatus(nsresult aStatus)
 
   // TODO propagate error from input stream to other streams ???
 
-  if (mCallback)
-    NotifyListener();
+  MaybeNotifyListener();
 
   return NS_OK;
 }
@@ -300,22 +299,7 @@ CacheFileInputStream::AsyncWait(nsIInputStreamCallback *aCallback,
 
   EnsureCorrectChunk(false);
 
-  if (!mChunk || mWaitingForUpdate) {
-    // wait for OnChunkAvailable or OnChunkUpdated
-    return NS_OK;
-  }
-
-  int64_t canRead;
-  const char *buf;
-  CanRead(&canRead, &buf);
-
-  if (canRead != 0 || !mFile->mOutput) {
-    NotifyListener();
-    return NS_OK;
-  }
-
-  mChunk->WaitForUpdate(this);
-  mWaitingForUpdate = true;
+  MaybeNotifyListener();
 
   return NS_OK;
 }
@@ -427,8 +411,7 @@ CacheFileInputStream::OnChunkAvailable(nsresult aResult, uint32_t aChunkIdx,
   }
 
   mChunk = aChunk;
-  if (mCallback)
-    NotifyListener();
+  MaybeNotifyListener();
 
   return NS_OK;
 }
@@ -453,8 +436,7 @@ CacheFileInputStream::OnChunkUpdated(CacheFileChunk *aChunk)
 
   MOZ_ASSERT(mChunk == aChunk);
 
-  if (mCallback)
-    NotifyListener();
+  MaybeNotifyListener();
 
   return NS_OK;
 }
@@ -524,8 +506,7 @@ CacheFileInputStream::EnsureCorrectChunk(bool aReleaseOnly)
          "[this=%p, idx=%d, rv=0x%08x]", this, chunkIdx, rv));
     mListeningForChunk = -1;
 
-    if (mCallback)
-      NotifyListener();
+    MaybeNotifyListener();
   }
 }
 
@@ -564,6 +545,62 @@ CacheFileInputStream::NotifyListener()
   mCallbackTarget = nullptr;
 
   asyncCallback->OnInputStreamReady(this);
+}
+
+void
+CacheFileInputStream::MaybeNotifyListener()
+{
+  mFile->AssertOwnsLock();
+
+  LOG(("CacheFileInputStream::MaybeNotifyListener() [this=%p, mCallback=%p, "
+       "mClosed=%d, mStatus=0x%08x, mChunk=%p, mListeningForChunk=%d, "
+       "mWaitingForUpdate=%d]", this, mCallback.get(), mClosed, mStatus,
+       mChunk.get(), mListeningForChunk, mWaitingForUpdate));
+
+  if (!mCallback)
+    return;
+
+  if (mClosed) {
+    NotifyListener();
+    return;
+  }
+
+  if (!mChunk) {
+    if (mListeningForChunk == -1) {
+      // EOF, should we notify even if mCallbackFlags == WAIT_CLOSURE_ONLY ??
+      NotifyListener();
+    }
+    return;
+  }
+
+  MOZ_ASSERT(mPos / kChunkSize == mChunk->Index());
+
+  if (mWaitingForUpdate)
+    return;
+
+  int64_t canRead;
+  const char *buf;
+  CanRead(&canRead, &buf);
+
+  if (canRead > 0) {
+    if (!(mCallbackFlags & WAIT_CLOSURE_ONLY))
+      NotifyListener();
+  }
+  else if (canRead == 0) {
+    if (!mFile->mOutput) {
+      // EOF
+      NotifyListener();
+    }
+    else {
+      mChunk->WaitForUpdate(this);
+      mWaitingForUpdate = true;
+    }
+  }
+  else {
+    // Output have set EOF before mPos?
+    MOZ_ASSERT(false, "SetEOF is currenty not implemented?!");
+    NotifyListener();
+  }
 }
 
 } // net
