@@ -42,6 +42,7 @@ private:
   void EnsureCorrectChunk(bool aReleaseOnly);
   void CanRead(int64_t *aCanRead, const char **aBuf);
   void NotifyListener();
+  void MaybeNotifyListener();
 
   nsRefPtr<CacheFile>      mFile;
   nsRefPtr<CacheFileChunk> mChunk;
