@@ -44,22 +44,25 @@ function write_datafile(status, entry)
 
 function test_read_after_doom(status, entry)
 {
+try{
   do_check_eq(status, Cr.NS_OK);
   var os = entry.openOutputStream(entry.dataSize);
   var data = gen_1MiB();
 
-  entry.doom();
+  entry.asyncDoom(null);
   write_and_check(os, data, data.length);
 
   os.close();
 
-  var is = make_input_stream_scriptable(entry.openInputStream(0));
-  var read = is.read(is.available());
-  do_check_eq(read.length, 2*1024*1024);
-  is.close();
+  var is = entry.openInputStream(0);
+  pumpReadStream(is, function(read) {
+    do_check_eq(read.length, 2*1024*1024);
+    is.close();
 
-  entry.close();
-  do_test_finished();
+    entry.close();
+    do_test_finished();
+  });
+}catch(ex){LOG_C2(ex)}
 }
 
 function run_test() {
