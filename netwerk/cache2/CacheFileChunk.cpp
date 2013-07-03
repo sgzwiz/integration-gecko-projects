@@ -7,7 +7,8 @@
 #include "CacheLog.h"
 #include "CacheFile.h"
 #include "nsThreadUtils.h"
-
+#include "nsAlgorithm.h"
+#include <algorithm>
 
 namespace mozilla {
 namespace net {
@@ -45,6 +46,55 @@ protected:
 };
 
 
+class ValidityPair {
+public:
+  ValidityPair(uint32_t aOffset, uint32_t aLen)
+    : mOffset(aOffset), mLen(aLen)
+  {}
+
+  ValidityPair& operator=(const ValidityPair& aOther) {
+    mOffset = aOther.mOffset;
+    mLen = aOther.mLen;
+    return *this;
+  }
+
+  bool Overlaps(const ValidityPair& aOther) const {
+    if ((mOffset <= aOther.mOffset && mOffset + mLen >= aOther.mOffset) ||
+        (aOther.mOffset <= mOffset && aOther.mOffset + mLen >= mOffset))
+      return true;
+
+    return false;
+  }
+
+  bool LessThan(const ValidityPair& aOther) const {
+    if (mOffset < aOther.mOffset)
+      return true;
+
+    if (mOffset == aOther.mOffset && mLen < aOther.mLen)
+      return true;
+
+    return false;
+  }
+
+  void Merge(const ValidityPair& aOther) {
+    MOZ_ASSERT(Overlaps(aOther));
+
+    uint32_t offset = std::min(mOffset, aOther.mOffset);
+    uint32_t end = std::max(mOffset + mLen, aOther.mOffset + aOther.mLen);
+
+    mOffset = offset;
+    mLen = end - offset;
+  }
+
+  uint32_t Offset() { return mOffset; }
+  uint32_t Len()    { return mLen; }
+
+private:
+  uint32_t mOffset;
+  uint32_t mLen;
+};
+
+
 NS_IMPL_THREADSAFE_ADDREF(CacheFileChunk)
 NS_IMETHODIMP_(nsrefcnt)
 CacheFileChunk::Release()
@@ -79,6 +129,10 @@ CacheFileChunk::CacheFileChunk(CacheFile *aFile, uint32_t aIndex)
   , mRemovingChunk(false)
   , mDataSize(0)
   , mBuf(nullptr)
+  , mBufSize(0)
+  , mReadBuf(nullptr)
+  , mReadBufSize(0)
+  , mReadHash(0)
   , mFile(aFile)
 {
   LOG(("CacheFileChunk::CacheFileChunk() [this=%p]", this));
@@ -93,6 +147,13 @@ CacheFileChunk::~CacheFileChunk()
   if (mBuf) {
     free(mBuf);
     mBuf = nullptr;
+    mBufSize = 0;
+  }
+
+  if (mReadBuf) {
+    free(mReadBuf);
+    mReadBuf = nullptr;
+    mReadBufSize = 0;
   }
 }
 
@@ -106,11 +167,13 @@ CacheFileChunk::InitNew(CacheFileChunkListener *aCallback)
   MOZ_ASSERT(!mBuf);
 
   mBuf = static_cast<char *>(moz_xmalloc(kChunkSize));
+  mBufSize = kChunkSize;
   mDataSize = 0;
 }
 
 nsresult
 CacheFileChunk::Read(CacheFileHandle *aHandle, uint32_t aLen,
+                     CacheHashUtils::Hash16_t aHash,
                      CacheFileChunkListener *aCallback)
 {
   mFile->AssertOwnsLock();
@@ -119,16 +182,22 @@ CacheFileChunk::Read(CacheFileHandle *aHandle, uint32_t aLen,
        this, aHandle, aLen, aCallback));
 
   MOZ_ASSERT(!mBuf);
+  MOZ_ASSERT(!mReadBuf);
   MOZ_ASSERT(!mIsReady);
+  MOZ_ASSERT(aLen);
 
   nsresult rv;
 
-  mBuf = static_cast<char *>(moz_xmalloc(kChunkSize));
-  rv = CacheFileIOManager::Read(aHandle, mIndex * kChunkSize, mBuf, aLen, this);
+  mReadBuf = static_cast<char *>(moz_xmalloc(aLen));
+  mReadBufSize = aLen;
+
+  rv = CacheFileIOManager::Read(aHandle, mIndex * kChunkSize, mReadBuf, aLen,
+                                this);
   NS_ENSURE_SUCCESS(rv, rv);
 
   mListener = aCallback;
   mDataSize = aLen;
+  mReadHash = aHash;
   return NS_OK;
 }
 
@@ -263,23 +332,83 @@ CacheFileChunk::DataSize()
 }
 
 void
-CacheFileChunk::UpdateDataSize(uint32_t aDataSize, bool aEOF)
+CacheFileChunk::UpdateDataSize(uint32_t aOffset, uint32_t aLen, bool aEOF)
 {
   mFile->AssertOwnsLock();
 
-  LOG(("CacheFileChunk::UpdateDataSize() [this=%p, dataSize=%d, EOF=%d]",
-       this, aDataSize, aEOF));
+  MOZ_ASSERT(!aEOF, "Implement me! What to do with opened streams?");
+
+  LOG(("CacheFileChunk::UpdateDataSize() [this=%p, offset=%d, len=%d, EOF=%d]",
+       this, aOffset, aLen, aEOF));
 
   mIsDirty = true;
 
-  int64_t fileSize = kChunkSize * mIndex + aDataSize;
-  if (aEOF || fileSize > mFile->mDataSize) {
-    mFile->mDataSize = fileSize;
+  if (mIsReady) {
+    MOZ_ASSERT(mValidityMap.Length() == 0);
+
+    int64_t fileSize = kChunkSize * mIndex + aOffset + aLen;
+    if (aEOF || fileSize > mFile->mDataSize) {
+      mFile->mDataSize = fileSize;
+    }
+
+    if (aEOF || aOffset + aLen > mDataSize) {
+      mDataSize = aOffset + aLen;
+      NotifyUpdateListeners();
+    }
+
+    return;
   }
 
-  if (aEOF || aDataSize > mDataSize) {
-    mDataSize = aDataSize;
-    NotifyUpdateListeners();
+
+  // We're still waiting for data from the disk. This chunk cannot be used by
+  // input stream, so there must be no update listener. We also need to keep
+  // track of where the data is written so that we can correctly merge the new
+  // data with the old one.
+
+  MOZ_ASSERT(mUpdateListeners.Length() == 0);
+
+  ValidityPair pair(aOffset, aLen);
+
+  if (mValidityMap.Length() == 0) {
+    mValidityMap.AppendElement(pair);
+    return;
+  }
+
+
+  // Find out where to place this pair into the map, it can overlap with
+  // one preceding pair and all subsequent pairs.
+  uint32_t pos = 0;
+  for (pos = mValidityMap.Length() ; pos > 0 ; pos--) {
+    if (mValidityMap[pos-1].LessThan(pair)) {
+      if (mValidityMap[pos-1].Overlaps(pair)) {
+        // Merge with the preceding pair
+        mValidityMap[pos-1].Merge(pair);
+        pos--; // Point to the updated pair
+      }
+      else {
+        if (pos == mValidityMap.Length())
+          mValidityMap.AppendElement(pair);
+        else
+          mValidityMap.InsertElementAt(pos, pair);
+      }
+
+      break;
+    }
+  }
+
+  if (!pos)
+    mValidityMap.InsertElementAt(0, pair);
+
+  // Now pos points to merged or inserted pair, check whether it overlaps with
+  // subsequent pairs.
+  while (pos + 1 < mValidityMap.Length()) {
+    if (mValidityMap[pos].Overlaps(mValidityMap[pos + 1])) {
+      mValidityMap[pos].Merge(mValidityMap[pos + 1]);
+      mValidityMap.RemoveElementAt(pos + 1);
+    }
+    else {
+      break;
+    }
   }
 }
 
@@ -326,8 +455,47 @@ CacheFileChunk::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
 
     MOZ_ASSERT(mListener);
 
-    if (NS_FAILED(aResult))
+    if (NS_SUCCEEDED(aResult)) {
+      CacheHashUtils::Hash16_t hash = CacheHashUtils::Hash16(mReadBuf,
+                                                             mReadBufSize);
+      if (hash != mReadHash) {
+        LOG(("CacheFileChunk::OnDataRead() - Hash mismatch! Hash of the data is"
+             " %hx, hash in metadata is %hx. [this=%p, idx=%d]",
+             hash, mReadHash, this, mIndex));
+        aResult = NS_ERROR_FILE_CORRUPTED;
+      }
+      else {
+        if (!mBuf) {
+          // Just swap the buffers if we don't have mBuf yet
+          MOZ_ASSERT(mDataSize == mReadBufSize);
+          mBuf = mReadBuf;
+          mBufSize = mReadBufSize;
+          mReadBuf = nullptr;
+          mReadBufSize = 0;
+        } else {
+          // Merge data with write buffer
+          if (mReadBufSize < mBufSize) {
+            mReadBuf = static_cast<char *>(moz_xrealloc(mReadBuf, mBufSize));
+            mReadBufSize = mBufSize;
+          }
+
+          for (uint32_t i = 0 ; i < mValidityMap.Length() ; i++) {
+            memcpy(mReadBuf + mValidityMap[i].Offset(),
+                   mBuf + mValidityMap[i].Offset(), mValidityMap[i].Len());
+          }
+
+          free(mBuf);
+          mBuf = mReadBuf;
+          mBufSize = mReadBufSize;
+          mReadBuf = nullptr;
+          mReadBufSize = 0;
+        }
+      }
+    }
+
+    if (NS_FAILED(aResult)) {
       mDataSize = 0;
+    }
 
     mListener.swap(listener);
   }
@@ -341,6 +509,13 @@ nsresult
 CacheFileChunk::OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult)
 {
   MOZ_NOT_REACHED("CacheFileChunk::OnFileDoomed should not be called!");
+  return NS_ERROR_UNEXPECTED;
+}
+
+nsresult
+CacheFileChunk::OnEOFSet(CacheFileHandle *aHandle, nsresult aResult)
+{
+  MOZ_NOT_REACHED("CacheFileChunk::OnEOFSet should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
 
@@ -376,6 +551,29 @@ CacheFileChunk::Buf()
   mFile->AssertOwnsLock();
 
   return mBuf;
+}
+
+void
+CacheFileChunk::EnsureBufSize(uint32_t aBufSize)
+{
+  if (mBufSize >= aBufSize)
+    return;
+
+  // find smallest power of 2 greater than or equal to aBufSize
+  aBufSize--;
+  aBufSize |= aBufSize >> 1;
+  aBufSize |= aBufSize >> 2;
+  aBufSize |= aBufSize >> 4;
+  aBufSize |= aBufSize >> 8;
+  aBufSize |= aBufSize >> 16;
+  aBufSize++;
+
+  const uint32_t minBufSize = 512;
+  const uint32_t maxBufSize = kChunkSize;
+  aBufSize = clamped(aBufSize, minBufSize, maxBufSize);
+
+  mBuf = static_cast<char *>(moz_xrealloc(mBuf, aBufSize));
+  mBufSize = aBufSize;
 }
 
 } // net

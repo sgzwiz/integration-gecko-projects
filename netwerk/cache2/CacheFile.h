@@ -8,7 +8,6 @@
 #include "CacheFileChunk.h"
 #include "CacheFileIOManager.h"
 #include "CacheFileMetadata.h"
-#include "nsTArray.h"
 #include "nsRefPtrHashtable.h"
 #include "nsClassHashtable.h"
 #include "mozilla/Mutex.h"
@@ -21,7 +20,6 @@ namespace net {
 
 class CacheFileInputStream;
 class CacheFileOutputStream;
-class GapFiller;
 
 #define CACHEFILELISTENER_IID \
 { /* 95e7f284-84ba-48f9-b1fc-3a7336b4c33c */       \
@@ -68,6 +66,7 @@ public:
                            nsresult aResult);
   NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, char *aBuf, nsresult aResult);
   NS_IMETHOD OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult);
+  NS_IMETHOD OnEOFSet(CacheFileHandle *aHandle, nsresult aResult);
 
   NS_IMETHOD OnMetadataRead(nsresult aResult);
   NS_IMETHOD OnMetadataWritten(nsresult aResult);
@@ -86,7 +85,6 @@ private:
   friend class CacheFileChunk;
   friend class CacheFileInputStream;
   friend class CacheFileOutputStream;
-  friend class GapFiller;
   friend class CacheFileAutoLock;
 
   virtual ~CacheFile();
@@ -97,9 +95,11 @@ private:
   void     ReleaseOutsideLock(nsISupports *aObject);
 
   nsresult GetChunk(uint32_t aIndex, bool aWriter,
-                    CacheFileChunkListener *aCallback);
+                    CacheFileChunkListener *aCallback,
+                    CacheFileChunk **_retval);
   nsresult GetChunkLocked(uint32_t aIndex, bool aWriter,
-                          CacheFileChunkListener *aCallback);
+                          CacheFileChunkListener *aCallback,
+                          CacheFileChunk **_retval);
   nsresult RemoveChunk(CacheFileChunk *aChunk);
 
   nsresult RemoveInput(CacheFileInputStream *aInput);
@@ -113,6 +113,7 @@ private:
                               CacheFileChunkListener *aCallback);
   nsresult NotifyChunkListeners(uint32_t aIndex, nsresult aResult,
                                 CacheFileChunk *aChunk);
+  bool     HaveChunkListeners(uint32_t aIndex);
   void     NotifyListenersAboutOutputRemoval();
 
   void WriteMetadataIfNeeded();
@@ -130,6 +131,8 @@ private:
                                              nsRefPtr<CacheFileChunk>& aChunk,
                                              void* aClosure);
 
+  nsresult PadChunkWithZeroes(uint32_t aChunkIdx);
+
   mozilla::Mutex mLock;
   bool           mOpeningFile;
   bool           mReady;
@@ -143,7 +146,6 @@ private:
   nsRefPtr<CacheFileHandle>   mHandle;
   nsRefPtr<CacheFileMetadata> mMetadata;
   nsCOMPtr<CacheFileListener> mListener;
-  nsRefPtr<GapFiller>         mGapFiller;
 
   nsRefPtrHashtable<nsUint32HashKey, CacheFileChunk> mChunks;
   nsClassHashtable<nsUint32HashKey, ChunkListeners> mChunkListeners;

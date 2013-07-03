@@ -7,17 +7,18 @@
 
 #include "CacheFileIOManager.h"
 #include "CacheHashUtils.h"
-#include "nsTArray.h"
 #include "nsAutoPtr.h"
 #include "mozilla/Mutex.h"
 
 namespace mozilla {
 namespace net {
 
-#define kChunkSize   4096
+#define kChunkSize        4096
+#define kEmptyChunkHash   0xA8CA
 
 class CacheFileChunk;
 class CacheFile;
+class ValidityPair;
 
 
 #define CACHEFILECHUNKLISTENER_IID \
@@ -70,6 +71,7 @@ public:
 
   void     InitNew(CacheFileChunkListener *aCallback);
   nsresult Read(CacheFileHandle *aHandle, uint32_t aLen,
+                CacheHashUtils::Hash16_t aHash,
                 CacheFileChunkListener *aCallback);
   nsresult Write(CacheFileHandle *aHandle, CacheFileChunkListener *aCallback);
   void     WaitForUpdate(CacheFileChunkListener *aCallback);
@@ -79,38 +81,47 @@ public:
   uint32_t                 Index();
   CacheHashUtils::Hash16_t Hash();
   uint32_t                 DataSize();
-  void                     UpdateDataSize(uint32_t aDataSize, bool aEOF);
+  void                     UpdateDataSize(uint32_t aOffset, uint32_t aLen,
+                                          bool aEOF);
 
   NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult);
   NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
                            nsresult aResult);
   NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, char *aBuf, nsresult aResult);
   NS_IMETHOD OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult);
+  NS_IMETHOD OnEOFSet(CacheFileHandle *aHandle, nsresult aResult);
 
   bool   IsReady();
   void   SetReady(bool aReady);
   bool   IsDirty();
   char * Buf();
+  void   EnsureBufSize(uint32_t aBufSize);
 
 private:
-  friend class GapFiller;
   friend class CacheFileInputStream;
   friend class CacheFileOutputStream;
   friend class CacheFile;
 
   virtual ~CacheFileChunk();
 
-  uint32_t        mIndex;
-  bool            mIsReady;
-  bool            mIsDirty;
-  bool            mRemovingChunk;
-  uint32_t        mDataSize;
-  char           *mBuf;
+  uint32_t mIndex;
+  bool     mIsReady;
+  bool     mIsDirty;
+  bool     mRemovingChunk;
+  uint32_t mDataSize;
+
+  char    *mBuf;
+  uint32_t mBufSize;
+
+  char                    *mReadBuf;
+  uint32_t                 mReadBufSize;
+  CacheHashUtils::Hash16_t mReadHash;
 
   nsRefPtr<CacheFile>              mFile; // is null if chunk is cached to
                                           // prevent reference cycles
   nsCOMPtr<CacheFileChunkListener> mListener;
   nsTArray<ChunkListenerItem *>    mUpdateListeners;
+  nsTArray<ValidityPair>           mValidityMap;
 };
 
 
