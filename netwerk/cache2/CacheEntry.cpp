@@ -784,11 +784,6 @@ NS_IMETHODIMP CacheEntry::OpenInputStream(int64_t offset, nsIInputStream * *_ret
 {
   LOG(("CacheEntry::OpenInputStream [this=%p]", this));
 
-  if (mIsDoomed) {
-    LOG(("  doomed..."));
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-
   nsRefPtr<CacheFile> file(File());
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
@@ -1070,17 +1065,28 @@ NS_IMETHODIMP CacheEntry::MetaDataReady()
 
 NS_IMETHODIMP CacheEntry::SetValid()
 {
-  mozilla::MutexAutoLock lock(mLock);
-
   LOG(("CacheEntry::SetValid [this=%p, state=%s]", this, StateString(mState)));
 
-  MOZ_ASSERT(mState > EMPTY);
+  nsCOMPtr<nsIOutputStream> outputStream;
 
-  mState = READY;
-  mHasData = true;
+  {
+    mozilla::MutexAutoLock lock(mLock);
 
-  BackgroundOp(Ops::REPORTUSAGE);
-  InvokeCallbacks();
+    MOZ_ASSERT(mState > EMPTY);
+
+    mState = READY;
+    mHasData = true;
+
+    BackgroundOp(Ops::REPORTUSAGE);
+    InvokeCallbacks();
+
+    outputStream.swap(mOutputStream);
+  }
+
+  if (outputStream) {
+    LOG(("  abandoning phantom output stream"));
+    outputStream->Close();
+  }
 
   return NS_OK;
 }
