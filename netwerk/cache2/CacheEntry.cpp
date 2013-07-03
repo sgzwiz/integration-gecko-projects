@@ -14,14 +14,12 @@
 #include "nsICacheStorage.h"
 #include "nsISerializable.h"
 #include "nsIStreamTransportService.h"
-#include "nsIPipe.h"
 
 #include "nsComponentManagerUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
 #include "nsProxyRelease.h"
 #include "nsSerializationHelper.h"
-#include "nsStreamUtils.h"
 #include "nsThreadUtils.h"
 #include <math.h>
 #include <algorithm>
@@ -862,7 +860,6 @@ nsresult CacheEntry::OpenOutputStreamInternal(int64_t offset, nsIOutputStream * 
   }
 
   MOZ_ASSERT(mState > LOADING);
-  MOZ_ASSERT(!mHasData || mState == REVALIDATING);
 
   if (!mFile)
     return NS_ERROR_NOT_AVAILABLE;
@@ -887,43 +884,10 @@ nsresult CacheEntry::OpenOutputStreamInternal(int64_t offset, nsIOutputStream * 
   rv = seekable->Seek(nsISeekableStream::NS_SEEK_SET, offset);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // MEMORY COPYING !
-  // Unfortunatelly, our consumer here is nsStreamTee, that requires
-  // blocking stream as its sink.  The stream we get from CacheFile
-  // is non-blocking, so we need to buffer :(
-
-  // Speed vs memory consumption based on predicted data size
-  uint32_t segment;
-  if (mPredictedDataSize > 1024 * 1024)
-    segment = 256 * 1024; // use 256k segments for 1MB+ content
-  else if (mPredictedDataSize > 10 * 1024)
-    segment = 64 * 1024;  // use 64k segments for 10kB+ content
-  else
-    segment = 4 * 1024;   // use 4k segments for smaller then 10kB or unknown (chunked)
-
-  nsCOMPtr<nsIAsyncOutputStream> pipeOut;
-  nsCOMPtr<nsIAsyncInputStream> pipeIn;
-  rv = NS_NewPipe2(getter_AddRefs(pipeIn),
-                   getter_AddRefs(pipeOut),
-                   true, // non-blocking input
-                   false, // blocking output
-                   segment, (uint32_t)-1);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsIEventTarget> streamTransportThread =
-    do_GetService("@mozilla.org/network/stream-transport-service;1", &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = NS_AsyncCopy(pipeIn, stream, streamTransportThread,
-                    NS_ASYNCCOPY_VIA_READSEGMENTS, segment);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = CallQueryInterface(pipeOut, _retval);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   // Prevent opening output stream again.
   mHasData = true;
 
+  stream.swap(*_retval);
   return NS_OK;
 }
 
