@@ -15,6 +15,11 @@
 #include "nsAppDirectoryServiceDefs.h"
 #include "private/pprio.h"
 
+#if defined(XP_WIN)
+#include <windows.h>
+#undef CreateFile
+#endif
+
 namespace mozilla {
 namespace net {
 

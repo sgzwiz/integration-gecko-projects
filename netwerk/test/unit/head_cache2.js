@@ -54,7 +54,7 @@ function pumpReadStream(inputStream, goon)
                     createInstance(Ci.nsIScriptableInputStream);
       wrapper.init(aInputStream);
       var str = wrapper.read(wrapper.available());
-      LOG_C2("reading data '" + str + "'");
+      LOG_C2("reading data '" + str.substring(0,5) + "'");
       data += str;
     },
     onStopRequest: function (aRequest, aContext, aStatusCode)
