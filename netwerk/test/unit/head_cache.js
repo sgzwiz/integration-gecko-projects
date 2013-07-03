@@ -95,8 +95,11 @@ function asyncOpenCacheEntry(key, where, flags, lci, callback, appcache)
     },
 
     onCacheEntryAvailable: function (entry, isnew, appCache, status) {
-      if (typeof callback === "object")
+      if (typeof callback === "object") {
+        // Root us at the callback
+        callback.__cache_listener_root = this;
         callback.onCacheEntryAvailable(entry, isnew, appCache, status);
+      }
       else
         callback(status, entry, appCache);
     },
