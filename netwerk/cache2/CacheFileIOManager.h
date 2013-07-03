@@ -107,6 +107,7 @@ public:
   NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, char *aBuf,
                         nsresult aResult) = 0;
   NS_IMETHOD OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult) = 0;
+  NS_IMETHOD OnEOFSet(CacheFileHandle *aHandle, nsresult aResult) = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(CacheFileIOListener, CACHEFILEIOLISTENER_IID)
@@ -141,6 +142,9 @@ public:
   static nsresult DoomFile(CacheFileHandle *aHandle,
                            CacheFileIOListener *aCallback);
   static nsresult ReleaseNSPRHandle(CacheFileHandle *aHandle);
+  static nsresult TruncateSeekSetEOF(CacheFileHandle *aHandle,
+                                     int64_t aTruncatePos, int64_t aEOFPos,
+                                     CacheFileIOListener *aCallback);
 
 private:
   friend class CacheFileHandle;
@@ -151,6 +155,7 @@ private:
   friend class WriteEvent;
   friend class DoomFileEvent;
   friend class ReleaseNSPRHandleEvent;
+  friend class TruncateSeekSetEOFEvent;
 
   virtual ~CacheFileIOManager();
 
@@ -169,6 +174,8 @@ private:
                          const char *aBuf, int32_t aCount, bool aValidate);
   nsresult DoomFileInternal(CacheFileHandle *aHandle);
   nsresult ReleaseNSPRHandleInternal(CacheFileHandle *aHandle);
+  nsresult TruncateSeekSetEOFInternal(CacheFileHandle *aHandle,
+                                      int64_t aTruncatePos, int64_t aEOFPos);
 
   nsresult CreateFile(CacheFileHandle *aHandle);
   static void GetHashStr(const SHA1Sum::Hash *aHash, nsACString &_retval);
@@ -187,7 +194,6 @@ private:
   bool                        mTreeCreated;
   CacheFileHandles            mHandles;
   nsTArray<CacheFileHandle *> mHandlesByLastUsed;
-
 };
 
 
