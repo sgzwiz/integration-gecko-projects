@@ -31,7 +31,6 @@ CPP_SOURCES += [
     'CacheFileInputStream.cpp',
     'CacheFileIOManager.cpp',
     'CacheFileOutputStream.cpp',
-    'CacheFileUtils.cpp',
     'CacheHashUtils.cpp',
     'CacheLog.cpp',
     'CacheObserver.cpp',

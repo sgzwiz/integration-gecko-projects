@@ -8,6 +8,7 @@
 #include "CacheFile.h"
 #include "nsStreamUtils.h"
 #include "nsThreadUtils.h"
+#include "mozilla/DebugOnly.h"
 #include <algorithm>
 
 namespace mozilla {
@@ -48,7 +49,6 @@ CacheFileOutputStream::CacheFileOutputStream(CacheFile *aFile)
   , mPos(0)
   , mClosed(false)
   , mStatus(NS_OK)
-  , mListeningForChunk(-1)
   , mCallbackFlags(0)
 {
   LOG(("CacheFileOutputStream::CacheFileOutputStream() [this=%p]", this));
@@ -92,24 +92,27 @@ CacheFileOutputStream::Write(const char * aBuf, uint32_t aCount,
     return NS_FAILED(mStatus) ? mStatus : NS_BASE_STREAM_CLOSED;
   }
 
-  EnsureCorrectChunk(false);
-  if (!mChunk)
-    return NS_BASE_STREAM_WOULD_BLOCK;
+  *_retval = aCount;
 
-  FillHole();
+  while (aCount) {
+    EnsureCorrectChunk(false);
 
-  int64_t canWrite;
-  char *buf;
-  CanWrite(&canWrite, &buf);
-  MOZ_ASSERT(canWrite > 0);
+    FillHole();
 
-  *_retval = std::min(static_cast<uint32_t>(canWrite), aCount);
-  memcpy(buf, aBuf, *_retval);
-  mPos += *_retval;
+    uint32_t chunkOffset = mPos - (mPos / kChunkSize) * kChunkSize;
+    uint32_t canWrite = kChunkSize - chunkOffset;
+    uint32_t thisWrite = std::min(static_cast<uint32_t>(canWrite), aCount);
+    mChunk->EnsureBufSize(chunkOffset + thisWrite);
+    memcpy(mChunk->Buf() + chunkOffset, aBuf, thisWrite);
 
-  mChunk->UpdateDataSize(mPos - mChunk->Index() * kChunkSize, false);
+    mPos += thisWrite;
+    aBuf += thisWrite;
+    aCount -= thisWrite;
 
-  EnsureCorrectChunk(!(canWrite < aCount && mPos % kChunkSize == 0));
+    mChunk->UpdateDataSize(chunkOffset, thisWrite, false);
+  }
+
+  EnsureCorrectChunk(true);
 
   LOG(("CacheFileOutputStream::Write() - Wrote %d bytes [this=%p]",
        *_retval, this));
@@ -140,7 +143,7 @@ CacheFileOutputStream::WriteSegments(nsReadSegmentFun aReader, void *aClosure,
 NS_IMETHODIMP
 CacheFileOutputStream::IsNonBlocking(bool *_retval)
 {
-  *_retval = true;
+  *_retval = false;
   return NS_OK;
 }
 
@@ -190,26 +193,10 @@ CacheFileOutputStream::AsyncWait(nsIOutputStreamCallback *aCallback,
   if (!mCallback)
     return NS_OK;
 
-  if (mClosed) {
+  // The stream is blocking so it is writable at any time
+  if (mClosed || !(aFlags & WAIT_CLOSURE_ONLY))
     NotifyListener();
-    return NS_OK;
-  }
 
-  EnsureCorrectChunk(false);
-
-  if (!mChunk) {
-    // wait for OnChunkAvailable
-    return NS_OK;
-  }
-
-#ifdef DEBUG
-  int64_t canWrite;
-  char *buf;
-  CanWrite(&canWrite, &buf);
-  MOZ_ASSERT(canWrite > 0);
-#endif
-
-  NotifyListener();
   return NS_OK;
 }
 
@@ -267,7 +254,10 @@ CacheFileOutputStream::Tell(int64_t *_retval)
 NS_IMETHODIMP
 CacheFileOutputStream::SetEOF()
 {
-  MOZ_ASSERT(false, "Will be implemented later...");
+  MOZ_ASSERT(false, "CacheFileOutputStream::SetEOF() not implemented");
+  // Right now we don't use SetEOF(). If we ever need this method, we need
+  // to think about what to do with input streams that already points beyond
+  // new EOF.
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -292,39 +282,9 @@ CacheFileOutputStream::OnChunkAvailable(nsresult aResult,
                                         uint32_t aChunkIdx,
                                         CacheFileChunk *aChunk)
 {
-  CacheFileAutoLock lock(mFile);
-
-  LOG(("CacheFileOutputStream::OnChunkAvailable() [this=%p, idx=%d, chunk=%p]",
-       this, aChunkIdx, aChunk));
-
-  MOZ_ASSERT(mListeningForChunk != -1);
-
-  if (mListeningForChunk != static_cast<int64_t>(aChunkIdx)) {
-    // This is not a chunk that we're waiting for
-    LOG(("CacheFileOutputStream::OnChunkAvailable() - Notification is for a "
-         "different chunk. [this=%p, listeningForChunk=%lld]",
-         this, mListeningForChunk));
-
-    return NS_OK;
-  }
-
-  MOZ_ASSERT(!mChunk);
-  mListeningForChunk = -1;
-
-  if (mClosed) {
-    MOZ_ASSERT(!mCallback);
-
-    LOG(("CacheFileOutputStream::OnChunkAvailable() - Stream is closed, "
-         "ignoring notification. [this=%p]", this));
-
-    return NS_OK;
-  }
-
-  mChunk = aChunk;
-  if (mCallback)
-    NotifyListener();
-
-  return NS_OK;
+  MOZ_NOT_REACHED(
+    "CacheFileOutputStream::OnChunkAvailable should not be called!");
+  return NS_ERROR_UNEXPECTED;
 }
 
 nsresult
@@ -352,8 +312,6 @@ CacheFileOutputStream::EnsureCorrectChunk(bool aReleaseOnly)
   LOG(("CacheFileOutputStream::EnsureCorrectChunk() [this=%p, releaseOnly=%d]",
        this, aReleaseOnly));
 
-  nsresult rv;
-
   uint32_t chunkIdx = mPos / kChunkSize;
 
   if (mChunk) {
@@ -372,39 +330,10 @@ CacheFileOutputStream::EnsureCorrectChunk(bool aReleaseOnly)
   if (aReleaseOnly)
     return;
 
-  if (mListeningForChunk == static_cast<int64_t>(chunkIdx)) {
-    // We're already waiting for this chunk
-    LOG(("CacheFileOutputStream::EnsureCorrectChunk() - Already listening for "
-         "chunk %lld [this=%p]", mListeningForChunk, this));
-
-    return;
-  }
-
-  mListeningForChunk = static_cast<int64_t>(chunkIdx);
-
-  rv = mFile->GetChunkLocked(chunkIdx, true, this);
+  DebugOnly<nsresult> rv;
+  rv = mFile->GetChunkLocked(chunkIdx, true, nullptr, getter_AddRefs(mChunk));
   MOZ_ASSERT(NS_SUCCEEDED(rv),
-             "GetChunkLocked should always fail asynchronously");
-  if (NS_FAILED(rv)) {
-    LOG(("CacheFileOutputStream::EnsureCorrectChunk() - GetChunkLocked failed "
-         " synchronously! [this=%p, idx=%d, rv=0x%08x]", this, chunkIdx, rv));
-  }
-}
-
-void
-CacheFileOutputStream::CanWrite(int64_t *aCanWrite, char **aBuf)
-{
-  mFile->AssertOwnsLock();
-
-  MOZ_ASSERT(mChunk);
-  MOZ_ASSERT(mPos / kChunkSize == mChunk->Index());
-
-  uint32_t chunkOffset = mPos - (mPos / kChunkSize) * kChunkSize;
-  *aCanWrite = kChunkSize - chunkOffset;
-  *aBuf = mChunk->Buf() + chunkOffset;
-
-  LOG(("CacheFileOutputStream::CanWrite() [this=%p, canWrite=%lld]",
-       this, *aCanWrite));
+             "CacheFile::GetChunkLocked() should always succeed for writer");
 }
 
 void
@@ -420,11 +349,12 @@ CacheFileOutputStream::FillHole()
     return;
 
   LOG(("CacheFileOutputStream::FillHole() - Zeroing hole in chunk %d, range "
-       "%d-%d [this=%p]", mChunk->Index(), mChunk->DataSize(), pos, this));
+       "%d-%d [this=%p]", mChunk->Index(), mChunk->DataSize(), pos - 1, this));
 
+  mChunk->EnsureBufSize(pos);
   memset(mChunk->Buf() + mChunk->DataSize(), 0, pos - mChunk->DataSize());
 
-  mChunk->UpdateDataSize(pos, false);
+  mChunk->UpdateDataSize(mChunk->DataSize(), pos - mChunk->DataSize(), false);
 }
 
 void
