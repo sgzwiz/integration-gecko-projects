@@ -141,7 +141,7 @@ OpenCallback.prototype =
         entry.setMetaDataElement("meto", self.workingMetadata);
         entry.metaDataReady();
         if (self.behavior & METAONLY) {
-          // Since forcing GC/CC doesn't trigger OnWriteRClosed, we have to set the entry valid manually :(
+          // Since forcing GC/CC doesn't trigger OnWriterClosed, we have to set the entry valid manually :(
           entry.setValid();
           return;
         }
