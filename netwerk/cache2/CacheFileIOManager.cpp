@@ -13,6 +13,7 @@
 #include "mozilla/DebugOnly.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsAppDirectoryServiceDefs.h"
+#include "private/pprio.h"
 
 namespace mozilla {
 namespace net {
@@ -634,6 +635,58 @@ protected:
   nsRefPtr<CacheFileHandle>     mHandle;
 };
 
+class TruncateSeekSetEOFEvent : public nsRunnable {
+public:
+  TruncateSeekSetEOFEvent(CacheFileHandle *aHandle, int64_t aTruncatePos,
+                          int64_t aEOFPos, CacheFileIOListener *aCallback)
+    : mHandle(aHandle)
+    , mTruncatePos(aTruncatePos)
+    , mEOFPos(aEOFPos)
+    , mCallback(aCallback)
+    , mRV(NS_ERROR_FAILURE)
+  {
+    MOZ_COUNT_CTOR(TruncateSeekSetEOFEvent);
+//    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+    nsCOMPtr<nsIThread> mainThread;               // temporary HACK
+    NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
+    mTarget = mainThread;                         // using streamcopier's thread
+    MOZ_ASSERT(mTarget);
+  }
+
+  ~TruncateSeekSetEOFEvent()
+  {
+    MOZ_COUNT_DTOR(TruncateSeekSetEOFEvent);
+  }
+
+  NS_IMETHOD Run()
+  {
+    if (mTarget) {
+      if (mHandle->IsClosed())
+        mRV = NS_ERROR_NOT_INITIALIZED;
+      else
+        mRV = CacheFileIOManager::gInstance->TruncateSeekSetEOFInternal(
+          mHandle, mTruncatePos, mEOFPos);
+
+      nsCOMPtr<nsIEventTarget> target;
+      mTarget.swap(target);
+      target->Dispatch(this, nsIEventTarget::DISPATCH_NORMAL);
+    }
+    else {
+      if (mCallback)
+        mCallback->OnEOFSet(mHandle, mRV);
+    }
+    return NS_OK;
+  }
+
+protected:
+  nsRefPtr<CacheFileHandle>     mHandle;
+  int64_t                       mTruncatePos;
+  int64_t                       mEOFPos;
+  nsCOMPtr<CacheFileIOListener> mCallback;
+  nsCOMPtr<nsIEventTarget>      mTarget;
+  nsresult                      mRV;
+};
+
 
 CacheFileIOManager * CacheFileIOManager::gInstance = nullptr;
 
@@ -1136,6 +1189,89 @@ CacheFileIOManager::ReleaseNSPRHandleInternal(CacheFileHandle *aHandle)
 
   PR_Close(aHandle->mFD);
   aHandle->mFD = nullptr;
+
+  return NS_OK;
+}
+
+nsresult
+CacheFileIOManager::TruncateSeekSetEOF(CacheFileHandle *aHandle,
+                                       int64_t aTruncatePos, int64_t aEOFPos,
+                                       CacheFileIOListener *aCallback)
+{
+  LOG(("CacheFileIOManager::TruncateSeekSetEOF() [handle=%p, truncatePos=%lld, "
+       "EOFPos=%lld, listener=%p]", aHandle, aTruncatePos, aEOFPos, aCallback));
+
+  nsresult rv;
+  CacheFileIOManager *ioMan = gInstance;
+
+  if (aHandle->IsClosed() || !ioMan)
+    return NS_ERROR_NOT_INITIALIZED;
+
+  nsRefPtr<TruncateSeekSetEOFEvent> ev = new TruncateSeekSetEOFEvent(
+                                           aHandle, aTruncatePos, aEOFPos,
+                                           aCallback);
+  rv = ioMan->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+static nsresult
+TruncFile(PRFileDesc *aFD, uint32_t aEOF)
+{
+#if defined(XP_UNIX)
+  if (ftruncate(PR_FileDesc2NativeHandle(aFD), aEOF) != 0) {
+    NS_ERROR("ftruncate failed");
+    return NS_ERROR_FAILURE;
+  }
+#elif defined(XP_WIN)
+  int32_t cnt = PR_Seek(aFD, aEOF, PR_SEEK_SET);
+  if (cnt == -1)
+    return NS_ERROR_FAILURE;
+  if (!SetEndOfFile((HANDLE) PR_FileDesc2NativeHandle(aFD))) {
+    NS_ERROR("SetEndOfFile failed");
+    return NS_ERROR_FAILURE;
+  }
+#elif defined(XP_OS2)
+  if (DosSetFileSize((HFILE) PR_FileDesc2NativeHandle(aFD), aEOF) != NO_ERROR) {
+    NS_ERROR("DosSetFileSize failed");
+    return NS_ERROR_FAILURE;
+  }
+#else
+  MOZ_ASSERT(false, "Not implemented!");
+#endif
+
+  return NS_OK;
+}
+
+nsresult
+CacheFileIOManager::TruncateSeekSetEOFInternal(CacheFileHandle *aHandle,
+                                               int64_t aTruncatePos,
+                                               int64_t aEOFPos)
+{
+  nsresult rv;
+
+  if (!aHandle->mFileExists) {
+    rv = CreateFile(aHandle);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  if (!aHandle->mFD) {
+    rv = OpenNSPRHandle(aHandle);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+  else {
+    NSPRHandleUsed(aHandle);
+  }
+
+  // This operation always invalidates the entry
+  aHandle->mInvalid = true;
+
+  rv = TruncFile(aHandle->mFD, static_cast<uint32_t>(aTruncatePos));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = TruncFile(aHandle->mFD, static_cast<uint32_t>(aEOFPos));
+  NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
 }
