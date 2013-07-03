@@ -661,7 +661,6 @@ CacheStorageService::OnMemoryConsumptionChange(CacheEntry* aEntry,
 #ifdef MOZ_LOGGING
   if (wasOverLimit) {
     LOG(("  purging took %1.2fms", (TimeStamp::Now() - start).ToMilliseconds()));
-    printf("\a"); // BEEP ! :)
   }
 #endif
 }
