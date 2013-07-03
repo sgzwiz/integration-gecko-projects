@@ -556,9 +556,13 @@ abstract public class GeckoApp
                 geckoConnected();
 
                 // This method is already running on the background thread, so we
-                // know that mHealthRecorder will exist. This method is cheap, so
-                // don't spawn a new runnable.
-                mHealthRecorder.recordGeckoStartupTime(mGeckoReadyStartupTimer.getElapsed());
+                // know that mHealthRecorder will exist. That doesn't stop us being
+                // paranoid.
+                // This method is cheap, so don't spawn a new runnable.
+                final BrowserHealthRecorder rec = mHealthRecorder;
+                if (rec != null) {
+                  rec.recordGeckoStartupTime(mGeckoReadyStartupTimer.getElapsed());
+                }
             } else if (event.equals("ToggleChrome:Hide")) {
                 toggleChrome(false);
             } else if (event.equals("ToggleChrome:Show")) {
@@ -1203,9 +1207,12 @@ abstract public class GeckoApp
         Tabs.getInstance().attachToActivity(this);
         Favicons.getInstance().attachToContext(this);
 
-        // Check to see if the activity is restarted after configuration change.
-        if (getLastCustomNonConfigurationInstance() != null) {
-            // Restart the application as a safe way to handle the configuration change.
+        // When we detect a locale change, we need to restart Gecko, which
+        // actually means restarting the entire application. This logic should
+        // actually be handled elsewhere since GeckoApp may not be alive to
+        // handle this event if "Don't keep activities" is enabled (filed as
+        // bug 889082).
+        if (((GeckoApplication)getApplication()).needsRestart()) {
             doRestart();
             System.exit(0);
             return;
@@ -1529,7 +1536,10 @@ abstract public class GeckoApp
         ThreadUtils.getBackgroundHandler().postDelayed(new Runnable() {
             @Override
             public void run() {
-                mHealthRecorder.recordJavaStartupTime(javaDuration);
+                final BrowserHealthRecorder rec = mHealthRecorder;
+                if (rec != null) {
+                    rec.recordJavaStartupTime(javaDuration);
+                }
 
                 // Sync settings need Gecko to be loaded, so
                 // no hurry in starting this.
@@ -1876,7 +1886,6 @@ abstract public class GeckoApp
         // track the duration of the session.
         final long now = System.currentTimeMillis();
         final long realTime = android.os.SystemClock.elapsedRealtime();
-        final BrowserHealthRecorder rec = mHealthRecorder;
 
         ThreadUtils.postToBackgroundThread(new Runnable() {
             @Override
@@ -1891,8 +1900,11 @@ abstract public class GeckoApp
                 currentSession.recordBegin(editor);
                 editor.commit();
 
+                final BrowserHealthRecorder rec = mHealthRecorder;
                 if (rec != null) {
                     rec.setCurrentSession(currentSession);
+                } else {
+                    Log.w(LOGTAG, "Can't record session: rec is null.");
                 }
             }
          });
@@ -2083,13 +2095,6 @@ abstract public class GeckoApp
             }
         }
     }
-
-    @Override
-    public Object onRetainCustomNonConfigurationInstance() {
-        // Send a non-null value so that we can restart the application, 
-        // when activity restarts due to configuration change.
-        return Boolean.TRUE;
-    } 
 
     public String getContentProcessName() {
         return AppConstants.MOZ_CHILD_PROCESS_NAME;
