@@ -1113,6 +1113,7 @@ NS_IMETHODIMP CacheEntry::SetValid()
   MOZ_ASSERT(mState > EMPTY);
 
   mState = READY;
+  mHasData = true;
 
   BackgroundOp(Ops::REPORTUSAGE);
   InvokeCallbacks();
