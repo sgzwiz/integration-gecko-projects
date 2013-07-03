@@ -78,8 +78,9 @@ function loadImage(isPrivate, callback) {
 }
 
 function run_loadImage_tests() {
-  let cs = Cc["@mozilla.org/network/cache-service;1"].getService(Ci.nsICacheService);
-  cs.evictEntries(Ci.nsICache.STORE_ANYWHERE);
+  let cs = Cc["@mozilla.org/netwerk/cache-storage-service;1"]
+             .getService(Ci.nsICacheStorageService);
+  cs.clear();
 
   gHits = 0;
   loadImage(false, function() {
