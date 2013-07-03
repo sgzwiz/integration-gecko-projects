@@ -499,6 +499,13 @@ CacheFileMetadata::OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult)
   return NS_ERROR_UNEXPECTED;
 }
 
+nsresult
+CacheFileMetadata::OnEOFSet(CacheFileHandle *aHandle, nsresult aResult)
+{
+  MOZ_NOT_REACHED("CacheFileMetadata::OnEOFSet should not be called!");
+  return NS_ERROR_UNEXPECTED;
+}
+
 void
 CacheFileMetadata::InitEmptyMetadata()
 {
