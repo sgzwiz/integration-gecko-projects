@@ -337,28 +337,32 @@ CacheFileChunk::UpdateDataSize(uint32_t aOffset, uint32_t aLen, bool aEOF)
   mFile->AssertOwnsLock();
 
   MOZ_ASSERT(!aEOF, "Implement me! What to do with opened streams?");
+  MOZ_ASSERT(aOffset <= mDataSize);
 
   LOG(("CacheFileChunk::UpdateDataSize() [this=%p, offset=%d, len=%d, EOF=%d]",
        this, aOffset, aLen, aEOF));
 
   mIsDirty = true;
 
+  int64_t fileSize = kChunkSize * mIndex + aOffset + aLen;
+  bool notify = false;
+
+  if (fileSize > mFile->mDataSize)
+    mFile->mDataSize = fileSize;
+
+  if (aOffset + aLen > mDataSize) {
+    mDataSize = aOffset + aLen;
+    notify = true;
+  }
+
   if (mIsReady) {
     MOZ_ASSERT(mValidityMap.Length() == 0);
 
-    int64_t fileSize = kChunkSize * mIndex + aOffset + aLen;
-    if (aEOF || fileSize > mFile->mDataSize) {
-      mFile->mDataSize = fileSize;
-    }
-
-    if (aEOF || aOffset + aLen > mDataSize) {
-      mDataSize = aOffset + aLen;
+    if (notify)
       NotifyUpdateListeners();
-    }
 
     return;
   }
-
 
   // We're still waiting for data from the disk. This chunk cannot be used by
   // input stream, so there must be no update listener. We also need to keep
