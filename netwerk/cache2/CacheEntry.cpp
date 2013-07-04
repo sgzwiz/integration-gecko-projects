@@ -984,9 +984,15 @@ NS_IMETHODIMP CacheEntry::SetSecurityInfo(nsISupports *aSecurityInfo)
 
 NS_IMETHODIMP CacheEntry::GetStorageDataSize(uint32_t *aStorageDataSize)
 {
-  mozilla::MutexAutoLock lock(mLock);
+  NS_ENSURE_ARG(aStorageDataSize);
 
-  *aStorageDataSize = 0; // will be reported in callback from file or a getter on file will be exposed
+  int64_t dataSize;
+  nsresult rv = GetDataSize(&dataSize);
+  if (NS_FAILED(rv))
+    return rv;
+
+  *aStorageDataSize = (uint32_t)std::min(int64_t(uint32_t(-1)), dataSize);
+
   return NS_OK;
 }
 
