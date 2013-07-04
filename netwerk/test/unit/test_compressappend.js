@@ -58,17 +58,14 @@ TestAppend.prototype = {
 
   checkData: function(status, entry) {
     do_check_eq(status, Cr.NS_OK);
-    var wrapper = Cc["@mozilla.org/scriptableinputstream;1"].
-                  createInstance(Ci.nsIScriptableInputStream);
-    wrapper.init(entry.openInputStream(0));
-    var str = wrapper.read(wrapper.available());
-    do_check_eq(str.length, 10);
-    do_check_eq(str, "12345abcde");
+    var self = this;
+    pumpReadStream(entry.openInputStream(0), function(str) {
+      do_check_eq(str.length, 10);
+      do_check_eq(str, "12345abcde");
+      entry.close();
 
-    wrapper.close();
-    entry.close();
-
-    do_execute_soon(this._callback);
+      do_execute_soon(self._callback);
+    });    
   }
 };
 
