@@ -1,10 +1,11 @@
 {
     "talos.zip": {
-        "url": "http://build.mozilla.org/talos/zips/talos.8cf5b862d113.zip",
+        "url": "http://build.mozilla.org/talos/zips/talos.dfe08f329e2c.zip",
         "path": ""
     },
     "global": {
-        "talos_url": "http://puppetagain.pub.build.mozilla.org/data/python/packages/talos-4a0e7514c66c.tar.gz"
+        "talos_url": "http://puppetagain.pub.build.mozilla.org/data/python/packages/talos-7d4ae29b7d1f.tar.gz",
+        "talos_revision": "7d4ae29b7d1f"
     },
     "suites": {
         "chromez": {
@@ -89,25 +90,44 @@
                 "3600"
             ]
         },
-        "xperf": {
-            "tests": ["tp5n"],
+        "tp5o": {
+            "tests": ["tp5o"],
             "pagesets_url": "http://build.mozilla.org/talos/zips/tp5n.zip",
             "pagesets_parent_dir_path": "talos/page_load_test/",
-            "pagesets_manifest_path": "talos/page_load_test/tp5n/tp5n.manifest",
+            "pagesets_manifest_path": "talos/page_load_test/tp5n/tp5o.manifest",
             "plugins": {
                 "32": "http://build.mozilla.org/talos/zips/flash32_10_3_183_5.zip",
                 "64": "http://build.mozilla.org/talos/zips/flash64_11_0_d1_98.zip"
             },
             "talos_options": [
-                "--sampleConfig",
-                "xperf.config",
+                "--mozAfterPaint",
+                "--responsiveness",
+                "--filter",
+                "ignore_first:5",
+                "--filter",
+                "median",
+                "--test_timeout",
+                "3600"
+            ]
+        },
+        "xperf": {
+            "tests": ["tp5o"],
+            "pagesets_url": "http://build.mozilla.org/talos/zips/tp5n.zip",
+            "pagesets_parent_dir_path": "talos/page_load_test/",
+            "pagesets_manifest_path": "talos/page_load_test/tp5n/tp5o.manifest",
+            "plugins": {
+                "32": "http://build.mozilla.org/talos/zips/flash32_10_3_183_5.zip",
+                "64": "http://build.mozilla.org/talos/zips/flash64_11_0_d1_98.zip"
+            },
+            "talos_options": [
                 "--mozAfterPaint",
                 "--xperf_path",
                 "\"c:/Program Files/Microsoft Windows Performance Toolkit/xperf.exe\"",
                 "--filter",
                 "ignore_first:5",
                 "--filter",
-                "median"
+                "median",
+                "C:/slave/talos-data/talos/xperf.config"
             ]
         }
     }
