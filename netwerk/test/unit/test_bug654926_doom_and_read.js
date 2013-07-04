@@ -44,7 +44,6 @@ function write_datafile(status, entry)
 
 function test_read_after_doom(status, entry)
 {
-try{
   do_check_eq(status, Cr.NS_OK);
   var os = entry.openOutputStream(entry.dataSize);
   var data = gen_1MiB();
@@ -62,7 +61,6 @@ try{
     entry.close();
     do_test_finished();
   });
-}catch(ex){LOG_C2(ex)}
 }
 
 function run_test() {
