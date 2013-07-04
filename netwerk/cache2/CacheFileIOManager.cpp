@@ -18,6 +18,7 @@
 #if defined(XP_WIN)
 #include <windows.h>
 #undef CreateFile
+#undef CREATE_NEW
 #endif
 
 namespace mozilla {
@@ -63,14 +64,14 @@ CacheFileHandle::CacheFileHandle(const SHA1Sum::Hash *aHash)
   , mFileSize(-1)
   , mFD(nullptr)
 {
-  LOG(("CacheFileHandle::CloseFileHandle() [this=%p]", this));
+  LOG(("CacheFileHandle::CacheFileHandle() [this=%p]", this));
   MOZ_COUNT_CTOR(CacheFileHandle);
   PR_INIT_CLIST(this);
 }
 
 CacheFileHandle::~CacheFileHandle()
 {
-  LOG(("CacheFileHandle::~CloseFileHandle() [this=%p]", this));
+  LOG(("CacheFileHandle::~CacheFileHandle() [this=%p]", this));
   MOZ_COUNT_DTOR(CacheFileHandle);
 }
 
@@ -425,7 +426,7 @@ public:
 
 protected:
   SHA1Sum::Hash                 mHash;
-  bool                          mFlags;
+  uint32_t                      mFlags;
   nsCOMPtr<CacheFileIOListener> mCallback;
   nsCOMPtr<nsIEventTarget>      mTarget;
   nsRefPtr<CacheFileIOManager>  mIOMan;
