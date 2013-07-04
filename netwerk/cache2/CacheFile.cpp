@@ -885,12 +885,14 @@ CacheFile::GetChunkLocked(uint32_t aIndex, bool aWriter,
         // We don't need to create CacheFileChunk for other empty chunks unless
         // there is some input stream waiting for this chunk.
 
-        // Make sure the file contains zeroes at the end of the file
-        rv = CacheFileIOManager::TruncateSeekSetEOF(mHandle,
-                                                    startChunk * kChunkSize,
-                                                    aIndex * kChunkSize,
-                                                    nullptr);
-        NS_ENSURE_SUCCESS(rv, rv);
+        if (startChunk != aIndex) {
+          // Make sure the file contains zeroes at the end of the file
+          rv = CacheFileIOManager::TruncateSeekSetEOF(mHandle,
+                                                      startChunk * kChunkSize,
+                                                      aIndex * kChunkSize,
+                                                      nullptr);
+          NS_ENSURE_SUCCESS(rv, rv);
+        }
 
         for (uint32_t i = startChunk ; i < aIndex ; i++) {
           if (HaveChunkListeners(i)) {
