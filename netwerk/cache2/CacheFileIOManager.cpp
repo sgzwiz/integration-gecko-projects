@@ -15,10 +15,20 @@
 #include "nsAppDirectoryServiceDefs.h"
 #include "private/pprio.h"
 
-#if defined(XP_WIN)
+// include files for ftruncate (or equivalent)
+#if defined(XP_UNIX)
+#include <unistd.h>
+#elif defined(XP_WIN)
 #include <windows.h>
+#elif defined(XP_OS2)
+#define INCL_DOSERRORS
+#include <os2.h>
+#else
+// XXX add necessary include file for ftruncate (or equivalent)
+#endif
+
+#if defined(XP_WIN)
 #undef CreateFile
-#undef CREATE_NEW
 #endif
 
 namespace mozilla {
@@ -887,7 +897,7 @@ CacheFileIOManager::OpenFileInternal(const SHA1Sum::Hash *aHash,
   nsRefPtr<CacheFileHandle> handle;
   mHandles.GetHandle(aHash, getter_AddRefs(handle));
 
-  if (aFlags == CREATE_NEW) {
+  if (aFlags == mozilla::net::CacheFileIOManager::CREATE_NEW) {
     if (handle) {
       rv = DoomFileInternal(handle);
       NS_ENSURE_SUCCESS(rv, rv);
