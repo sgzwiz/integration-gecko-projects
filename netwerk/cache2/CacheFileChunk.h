@@ -92,7 +92,6 @@ public:
   NS_IMETHOD OnEOFSet(CacheFileHandle *aHandle, nsresult aResult);
 
   bool   IsReady();
-  void   SetReady(bool aReady);
   bool   IsDirty();
   char * Buf();
   void   EnsureBufSize(uint32_t aBufSize);
@@ -104,8 +103,16 @@ private:
 
   virtual ~CacheFileChunk();
 
+  enum EState {
+    INITIAL = 0,
+    READING = 1,
+    WRITING = 2,
+    READY   = 3,
+    ERROR   = 4
+  };
+
   uint32_t mIndex;
-  bool     mIsReady;
+  EState mState;
   bool     mIsDirty;
   bool     mRemovingChunk;
   uint32_t mDataSize;
@@ -113,8 +120,8 @@ private:
   char    *mBuf;
   uint32_t mBufSize;
 
-  char                    *mReadBuf;
-  uint32_t                 mReadBufSize;
+  char                    *mRWBuf;
+  uint32_t                 mRWBufSize;
   CacheHashUtils::Hash16_t mReadHash;
 
   nsRefPtr<CacheFile>              mFile; // is null if chunk is cached to
