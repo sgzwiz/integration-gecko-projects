@@ -833,9 +833,21 @@ CacheFileIOManager::OnProfile()
   MOZ_ASSERT(gInstance);
 
   nsresult rv;
+
   nsCOMPtr<nsIFile> directory;
-  rv = NS_GetSpecialDirectory(NS_APP_CACHE_PARENT_DIR,
-                              getter_AddRefs(directory));
+
+#if defined(MOZ_WIDGET_ANDROID)
+  char* cachePath = getenv("CACHE_DIRECTORY");
+  if (cachePath && *cachePath) {
+    rv = NS_NewNativeLocalFile(nsDependentCString(cachePath),
+                               true, getter_AddRefs(directory));
+  }
+#endif
+
+  if (!directory) {
+    rv = NS_GetSpecialDirectory(NS_APP_CACHE_PARENT_DIR,
+                                getter_AddRefs(directory));
+  }
 
   if (!directory) {
     rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_LOCAL_50_DIR,
