@@ -217,9 +217,6 @@ CacheFile::OnChunkRead(nsresult aResult, CacheFileChunk *aChunk)
   LOG(("CacheFile::OnChunkRead() [this=%p, rv=0x%08x, chunk=%p, idx=%d]",
        this, aResult, index));
 
-  if (NS_SUCCEEDED(aResult))
-    aChunk->SetReady(true);
-
   if (HaveChunkListeners(index)) {
     rv = NotifyChunkListeners(index, aResult, aChunk);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -247,8 +244,10 @@ CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
     // LOG
   }
 
-  // update hash value in metadata
-  mMetadata->SetHash(aChunk->Index(), aChunk->Hash());
+  if (NS_SUCCEEDED(aResult) && !aChunk->IsDirty()) {
+    // update hash value in metadata
+    mMetadata->SetHash(aChunk->Index(), aChunk->Hash());
+  }
 
   // notify listeners if there is any
   if (HaveChunkListeners(aChunk->Index())) {
@@ -256,14 +255,12 @@ CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
     rv = NotifyChunkListeners(aChunk->Index(), NS_OK, aChunk);
     if (NS_SUCCEEDED(rv)) {
       MOZ_ASSERT(aChunk->mRefCnt != 2);
-      aChunk->SetReady(true);
       return NS_OK;
     }
 
     NS_WARNING("NotifyChunkListeners failed???");
     if (aChunk->mRefCnt != 2) {
       // Some of the listeners didn't fail and got the reference
-      aChunk->SetReady(true);
       return NS_OK;
     }
   }
@@ -273,7 +270,6 @@ CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
   LOG(("CacheFile::OnChunkWritten() - Caching unused chunk "
        "[this=%p, chunk=%p]", this, aChunk));
 
-  aChunk->SetReady(true);
   aChunk->mRemovingChunk = true;
   aChunk->mFile = nullptr;
   mCachedChunks.Put(aChunk->Index(), aChunk);
@@ -847,7 +843,6 @@ CacheFile::GetChunkLocked(uint32_t aIndex, bool aWriter,
            chunk.get(), this));
 
       chunk->InitNew(this);
-      chunk->SetReady(true);
       mMetadata->SetHash(aIndex, chunk->Hash());
 
       if (HaveChunkListeners(aIndex)) {
@@ -970,7 +965,6 @@ CacheFile::RemoveChunk(CacheFileChunk *aChunk)
       LOG(("CacheFile::RemoveChunk() - Writing dirty chunk to the disk "
            "[this=%p]", this));
 
-      aChunk->SetReady(false);
       rv = chunk->Write(mHandle, this);
       if (NS_FAILED(rv)) {
         // TODO ??? doom entry
