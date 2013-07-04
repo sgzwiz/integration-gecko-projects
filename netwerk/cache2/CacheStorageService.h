@@ -43,6 +43,7 @@ public:
   static CacheStorageService* Self() { return sSelf; }
   nsresult Dispatch(nsIRunnable* aEvent);
   static bool IsOnManagementThread() { return sSelf && NS_GetCurrentThread() == sSelf->mThread; }
+  static bool IsRunning() { return sSelf && !sSelf->mShutdown; }
   nsIEventTarget* Thread() const { return mThread; }
   mozilla::Mutex& Lock() { return mLock; }
 

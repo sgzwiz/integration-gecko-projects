@@ -78,6 +78,8 @@ CacheStorageService::CacheStorageService()
 
   CacheFileIOManager::Init();
 
+  MOZ_ASSERT(!sSelf);
+
   sSelf = this;
   sGlobalEntryTables = new GlobalEntryTables();
   sGlobalEntryTables->Init();
@@ -239,6 +241,9 @@ public:
 
       mozilla::MutexAutoLock lock(CacheStorageService::Self()->Lock());
 
+      if (!CacheStorageService::IsRunning())
+        return NS_ERROR_NOT_INITIALIZED;
+
       CacheEntryTable* entries;
       if (sGlobalEntryTables->Get(mContextKey, &entries))
         entries->EnumerateRead(&WalkRunnable::WalkStorage, this);
@@ -337,6 +342,9 @@ void CacheStorageService::DropPrivateBrowsingEntries()
 {
   mozilla::MutexAutoLock lock(mLock);
 
+  if (mShutdown)
+    return;
+
   nsTArray<nsCString> keys;
   sGlobalEntryTables->EnumerateRead(&CollectPrivateContexts, &keys);
 
@@ -403,9 +411,9 @@ NS_IMETHODIMP CacheStorageService::AppCacheStorage(nsILoadContextInfo *aLoadCont
 
 NS_IMETHODIMP CacheStorageService::Clear()
 {
-  NS_ENSURE_TRUE(!mShutdown, NS_ERROR_NOT_INITIALIZED);
-
   mozilla::MutexAutoLock lock(mLock);
+
+  NS_ENSURE_TRUE(!mShutdown, NS_ERROR_NOT_INITIALIZED);
 
   // TODO
   // - tell the file manager to doom the current cache (all files)
@@ -538,6 +546,11 @@ CacheStorageService::RemoveEntry(CacheEntry* aEntry)
 
   mozilla::MutexAutoLock lock(mLock);
 
+  if (mShutdown) {
+    LOG(("  after shutdown"));
+    return;
+  }
+
   CacheEntryTable* entries;
   if (sGlobalEntryTables->Get(aEntry->GetStorageID(), &entries))
     RemoveExactEntry(entries, entryKey, aEntry, false /* don't overwrite */);
@@ -563,6 +576,11 @@ CacheStorageService::RecordMemoryOnlyEntry(CacheEntry* aEntry,
   // CacheEntry.StorageID().
 
   mLock.AssertCurrentThreadOwns();
+
+  if (mShutdown) {
+    LOG(("  after shutdown"));
+    return;
+  }
 
   nsresult rv;
 
@@ -745,8 +763,6 @@ CacheStorageService::AddStorageEntry(nsCSubstring const& aContextKey,
                                      bool aReplace,
                                      CacheEntry** aResult)
 {
-  NS_ENSURE_FALSE(mShutdown, NS_ERROR_NOT_INITIALIZED);
-
   NS_ENSURE_ARG(aURI);
 
   nsresult rv;
@@ -762,6 +778,8 @@ CacheStorageService::AddStorageEntry(nsCSubstring const& aContextKey,
 
   {
     mozilla::MutexAutoLock lock(mLock);
+
+    NS_ENSURE_FALSE(mShutdown, NS_ERROR_NOT_INITIALIZED);
 
     // Ensure storage table
     CacheEntryTable* entries;
@@ -830,8 +848,6 @@ CacheStorageService::DoomStorageEntry(CacheStorage const* aStorage,
 {
   LOG(("CacheStorageService::DoomStorageEntry"));
 
-  NS_ENSURE_FALSE(mShutdown, NS_ERROR_NOT_INITIALIZED);
-
   NS_ENSURE_ARG(aStorage);
   NS_ENSURE_ARG(aURI);
 
@@ -845,6 +861,8 @@ CacheStorageService::DoomStorageEntry(CacheStorage const* aStorage,
   nsRefPtr<CacheEntry> entry;
   {
     mozilla::MutexAutoLock lock(mLock);
+
+    NS_ENSURE_FALSE(mShutdown, NS_ERROR_NOT_INITIALIZED);
 
     CacheEntryTable* entries;
     if (sGlobalEntryTables->Get(contextKey, &entries)) {
@@ -916,6 +934,8 @@ CacheStorageService::DoomStorageEntries(nsCSubstring const& aContextKey,
                                         nsICacheEntryDoomCallback* aCallback)
 {
   mLock.AssertCurrentThreadOwns();
+
+  NS_ENSURE_TRUE(!mShutdown, NS_ERROR_NOT_INITIALIZED);
 
   nsAutoCString memoryStorageID(aContextKey);
   AppendMemoryStorageID(memoryStorageID);
