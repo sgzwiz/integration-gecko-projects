@@ -456,7 +456,8 @@ nsresult
 CacheFileChunk::OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
                               nsresult aResult)
 {
-  LOG(("CacheFileChunk::OnDataWritten() [this=%p, handle=%p]", this, aHandle));
+  LOG(("CacheFileChunk::OnDataWritten() [this=%p, handle=%p, result=0x%08x]",
+       this, aHandle, aResult));
 
   nsCOMPtr<CacheFileChunkListener> listener;
 
@@ -466,11 +467,11 @@ CacheFileChunk::OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
     MOZ_ASSERT(mState == WRITING);
     MOZ_ASSERT(mListener);
 
-    if (NS_FAILED(aResult)) {
-      mState = READY;   // TODO: properly handle error states
+//    if (NS_FAILED(aResult)) {
+//      mState = READY;   // TODO: properly handle error states
 //      mState = ERROR;
-    }
-    else {
+//    }
+//    else {
       mState = READY;
 
       if (!mBuf) {
@@ -483,7 +484,7 @@ CacheFileChunk::OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
 
       mRWBuf = nullptr;
       mRWBufSize = 0;
-    }
+//    }
 
     mListener.swap(listener);
   }
