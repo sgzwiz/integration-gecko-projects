@@ -719,17 +719,22 @@ HyperTextAccessible::GetRelativeOffset(nsIPresShell* aPresShell,
                          aWordMovementType);
   rv = aFromFrame->PeekOffset(&pos);
   if (NS_FAILED(rv)) {
+    pos.mResultContent = aFromFrame->GetContent();
     if (aDirection == eDirPrevious) {
       // Use passed-in frame as starting point in failure case for now,
       // this is a hack to deal with starting on a list bullet frame,
       // which fails in PeekOffset() because the line iterator doesn't see it.
       // XXX Need to look at our overall handling of list bullets, which are an odd case
-      pos.mResultContent = aFromFrame->GetContent();
       int32_t endOffsetUnused;
       aFromFrame->GetOffsets(pos.mContentOffset, endOffsetUnused);
     }
     else {
-      return -1;
+      // XXX: PeekOffset fails on a last frame in the document for
+      // eSelectLine/eDirNext. DOM selection (up/down arrowing processing) has
+      // similar code to handle this case. One day it should be incorporated
+      // into PeekOffset.
+      int32_t startOffsetUnused;
+      aFromFrame->GetOffsets(startOffsetUnused, pos.mContentOffset);
     }
   }
 
@@ -1082,6 +1087,18 @@ HyperTextAccessible::GetTextAtOffset(int32_t aOffset,
       return GetText(*aStartOffset, *aEndOffset, aText);
 
     case BOUNDARY_LINE_START: {
+      // Empty last line doesn't have own frame (a previous line contains '\n'
+      // character instead) thus we can't operate on last line separately
+      // from previous line.
+      if (offset == CharacterCount()) {
+        nsAutoString lastChar;
+        GetText(offset -1, -1, lastChar);
+        if (lastChar.EqualsLiteral("\n")) {
+          *aStartOffset = *aEndOffset = offset;
+          return NS_OK;
+        }
+      }
+
       // Home key, arrow down and if not on last line then home key.
       *aStartOffset = FindLineBoundary(offset, eDirPrevious, eSelectBeginLine);
       *aEndOffset = FindLineBoundary(offset, eDirNext, eSelectLine);
