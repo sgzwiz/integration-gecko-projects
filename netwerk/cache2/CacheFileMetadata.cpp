@@ -586,7 +586,7 @@ CacheFileMetadata::ParseMetadata(uint32_t aMetaOffset, uint32_t aBufOffset)
 
   if (hash != PR_ntohl(*(reinterpret_cast<uint32_t *>(mBuf + aBufOffset)))) {
     LOG(("CacheFileMetadata::ParseMetadata() - Metadata hash mismatch! Hash of "
-         "the metadata is %x, hash in file is %s [this=%p]", hash,
+         "the metadata is %x, hash in file is %x [this=%p]", hash,
          PR_ntohl(*(reinterpret_cast<uint32_t *>(mBuf + aBufOffset))), this));
     return NS_ERROR_FILE_CORRUPTED;
   }
