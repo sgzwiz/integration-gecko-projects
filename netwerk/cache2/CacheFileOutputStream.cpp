@@ -265,14 +265,14 @@ CacheFileOutputStream::SetEOF()
 nsresult
 CacheFileOutputStream::OnChunkRead(nsresult aResult, CacheFileChunk *aChunk)
 {
-  MOZ_NOT_REACHED("CacheFileOutputStream::OnChunkRead should not be called!");
+  MOZ_CRASH("CacheFileOutputStream::OnChunkRead should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
 
 nsresult
 CacheFileOutputStream::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
 {
-  MOZ_NOT_REACHED(
+  MOZ_CRASH(
     "CacheFileOutputStream::OnChunkWritten should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
@@ -282,7 +282,7 @@ CacheFileOutputStream::OnChunkAvailable(nsresult aResult,
                                         uint32_t aChunkIdx,
                                         CacheFileChunk *aChunk)
 {
-  MOZ_NOT_REACHED(
+  MOZ_CRASH(
     "CacheFileOutputStream::OnChunkAvailable should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
@@ -290,7 +290,7 @@ CacheFileOutputStream::OnChunkAvailable(nsresult aResult,
 nsresult
 CacheFileOutputStream::OnChunkUpdated(CacheFileChunk *aChunk)
 {
-  MOZ_NOT_REACHED(
+  MOZ_CRASH(
     "CacheFileOutputStream::OnChunkUpdated should not be called!");
   return NS_ERROR_UNEXPECTED;
 }

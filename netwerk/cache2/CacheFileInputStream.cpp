@@ -366,14 +366,14 @@ CacheFileInputStream::SetEOF()
 nsresult
 CacheFileInputStream::OnChunkRead(nsresult aResult, CacheFileChunk *aChunk)
 {
-  MOZ_NOT_REACHED("CacheFileInputStream::OnChunkRead should not be called!");
+  MOZ_CRASH("CacheFileInputStream::OnChunkRead should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
 
 nsresult
 CacheFileInputStream::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
 {
-  MOZ_NOT_REACHED("CacheFileInputStream::OnChunkWritten should not be called!");
+  MOZ_CRASH("CacheFileInputStream::OnChunkWritten should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
 
