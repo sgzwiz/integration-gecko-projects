@@ -33,7 +33,7 @@
 #include "mozilla/dom/StructuredCloneUtils.h"
 #include "JavaScriptChild.h"
 #include "JavaScriptParent.h"
-#include "nsDOMLists.h"
+#include "DOMStringList.h"
 #include <algorithm>
 
 #ifdef ANDROID
@@ -391,7 +391,7 @@ nsFrameMessageManager::GetDelayedFrameScripts(nsIDOMDOMStringList** aList)
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
-  nsRefPtr<nsDOMStringList> scripts = new nsDOMStringList();
+  nsRefPtr<DOMStringList> scripts = new DOMStringList();
 
   for (uint32_t i = 0; i < mPendingScripts.Length(); ++i) {
     scripts->Add(mPendingScripts[i]);

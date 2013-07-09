@@ -13,7 +13,7 @@
 #include "nsISupportsPrimitives.h"
 #include "nsDOMClassInfoID.h"
 #include "nsIScriptSecurityManager.h"
-#include "nsDOMLists.h"
+#include "mozilla/dom/DOMStringList.h"
 #include "nsError.h"
 #include "nsIDragService.h"
 #include "nsIClipboard.h"
@@ -312,7 +312,7 @@ DataTransfer::GetFiles(nsIDOMFileList** aFileList)
 already_AddRefed<nsIDOMDOMStringList>
 DataTransfer::Types()
 {
-  nsRefPtr<nsDOMStringList> types = new nsDOMStringList();
+  nsRefPtr<DOMStringList> types = new DOMStringList();
   if (mItems.Length()) {
     const nsTArray<TransferItem>& item = mItems[0];
     for (uint32_t i = 0; i < item.Length(); i++)
@@ -511,7 +511,7 @@ DataTransfer::MozTypesAt(uint32_t aIndex, ErrorResult& aRv)
     return nullptr;
   }
 
-  nsRefPtr<nsDOMStringList> types = new nsDOMStringList();
+  nsRefPtr<DOMStringList> types = new DOMStringList();
   if (aIndex < mItems.Length()) {
     // note that you can retrieve the types regardless of their principal
     nsTArray<TransferItem>& item = mItems[aIndex];

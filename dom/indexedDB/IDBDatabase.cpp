@@ -12,10 +12,10 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/storage.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/IDBDatabaseBinding.h"
 #include "mozilla/dom/quota/Client.h"
 #include "mozilla/dom/quota/QuotaManager.h"
-#include "nsDOMLists.h"
 //#include "nsJSUtils.h"
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
@@ -506,7 +506,7 @@ IDBDatabase::GetObjectStoreNames(ErrorResult& aRv) const
     return nullptr;
   }
 
-  nsRefPtr<nsDOMStringList> list(new nsDOMStringList());
+  nsRefPtr<DOMStringList> list(new DOMStringList());
   uint32_t count = objectStoreNames.Length();
   for (uint32_t index = 0; index < count; index++) {
     if (!list->Add(objectStoreNames[index])) {

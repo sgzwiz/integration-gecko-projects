@@ -515,7 +515,7 @@ PropertyNodeList::EnsureFresh()
 }
 
 PropertyStringList::PropertyStringList(HTMLPropertiesCollection* aCollection)
-  : nsDOMStringList()
+  : DOMStringList()
   , mCollection(aCollection)
 { }
 
@@ -534,21 +534,21 @@ NS_IMETHODIMP
 PropertyStringList::Item(uint32_t aIndex, nsAString& aResult)
 {
   mCollection->EnsureFresh();
-  return nsDOMStringList::Item(aIndex, aResult);
+  return DOMStringList::Item(aIndex, aResult);
 }
 
 NS_IMETHODIMP
 PropertyStringList::GetLength(uint32_t* aLength)
 {
   mCollection->EnsureFresh();
-  return nsDOMStringList::GetLength(aLength);
+  return DOMStringList::GetLength(aLength);
 }
 
 NS_IMETHODIMP
 PropertyStringList::Contains(const nsAString& aString, bool* aResult)
 {
   mCollection->EnsureFresh();
-  return nsDOMStringList::Contains(aString, aResult);
+  return DOMStringList::Contains(aString, aResult);
 }
 
 bool
@@ -556,7 +556,7 @@ PropertyStringList::ContainsInternal(const nsAString& aString)
 {
   // This method should not call EnsureFresh, otherwise we may become stuck in an infinite loop.
   bool result;
-  nsDOMStringList::Contains(aString, &result);
+  DOMStringList::Contains(aString, &result);
   return result;
 }
 
