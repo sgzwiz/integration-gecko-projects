@@ -1,3 +1,8 @@
+const Cc = Components.classes;
+const Ci = Components.interfaces;
+const Cu = Components.utils;
+const Cr = Components.results;
+
 Cu.import("resource://testing-common/httpd.js");
 
 /*
@@ -48,8 +53,8 @@ function check_response(path, request, buffer, expectedExpiration, continuation)
 {
   do_check_eq(buffer, responseBody);
   // Check the redirect response has been cached only in memory and not on disk
-  asyncCheckCacheEntryPresence(path, "disk", false, function() {
-  asyncCheckCacheEntryPresence(path, "memory", !expectedExpiration, continuation);
+  asyncCheckCacheEntryPresence(path, "HTTP", Ci.nsICache.STORE_ON_DISK, false, expectedExpiration, function() {
+  asyncCheckCacheEntryPresence(path, "HTTP", Ci.nsICache.STORE_IN_MEMORY, !expectedExpiration, expectedExpiration, continuation);
   });
 }
 
