@@ -233,7 +233,7 @@ public:
   IMPL_EVENT_HANDLER(complete)
   IMPL_EVENT_HANDLER(error)
 
-  already_AddRefed<nsIDOMDOMStringList>
+  already_AddRefed<DOMStringList>
   GetObjectStoreNames(ErrorResult& aRv);
 
 private:

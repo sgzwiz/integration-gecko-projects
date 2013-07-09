@@ -1033,7 +1033,7 @@ public:
   virtual nsIDOMStyleSheetList* StyleSheets() MOZ_OVERRIDE;
   virtual void SetSelectedStyleSheetSet(const nsAString& aSheetSet) MOZ_OVERRIDE;
   virtual void GetLastStyleSheetSet(nsString& aSheetSet) MOZ_OVERRIDE;
-  virtual nsIDOMDOMStringList* StyleSheetSets() MOZ_OVERRIDE;
+  virtual mozilla::dom::DOMStringList* StyleSheetSets() MOZ_OVERRIDE;
   virtual void EnableStyleSheetsForSet(const nsAString& aSheetSet) MOZ_OVERRIDE;
 
 protected:

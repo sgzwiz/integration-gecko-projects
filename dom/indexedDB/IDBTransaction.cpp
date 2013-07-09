@@ -636,32 +636,18 @@ IDBTransaction::GetError(ErrorResult& aRv)
   return mError;
 }
 
-already_AddRefed<nsIDOMDOMStringList>
+already_AddRefed<DOMStringList>
 IDBTransaction::GetObjectStoreNames(ErrorResult& aRv)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
   nsRefPtr<DOMStringList> list(new DOMStringList());
 
-  nsAutoTArray<nsString, 10> stackArray;
-  nsTArray<nsString>* arrayOfNames;
-
   if (mMode == IDBTransaction::VERSION_CHANGE) {
-    mDatabaseInfo->GetObjectStoreNames(stackArray);
-
-    arrayOfNames = &stackArray;
+    mDatabaseInfo->GetObjectStoreNames(list->Names());
   }
   else {
-    arrayOfNames = &mObjectStoreNames;
-  }
-
-  uint32_t count = arrayOfNames->Length();
-  for (uint32_t index = 0; index < count; index++) {
-    if (!list->Add(arrayOfNames->ElementAt(index))) {
-      NS_WARNING("Failed to add element!");
-      aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
-      return nullptr;
-    }
+    list->Names() = mObjectStoreNames;
   }
 
   return list.forget();

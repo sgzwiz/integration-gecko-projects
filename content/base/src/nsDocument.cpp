@@ -45,7 +45,6 @@
 
 #include "nsIDOMStyleSheet.h"
 #include "mozilla/dom/Attr.h"
-#include "nsIDOMDOMStringList.h"
 #include "nsIDOMDOMImplementation.h"
 #include "nsIDOMDocumentXBL.h"
 #include "mozilla/dom/Element.h"
@@ -213,6 +212,7 @@
 #include "nsISecurityConsoleMessage.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "mozilla/dom/XPathEvaluator.h"
+#include "mozilla/dom/DOMStringList.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -1213,15 +1213,11 @@ nsExternalResourceMap::ExternalResource::~ExternalResource()
 // ==================================================================
 
 // If we ever have an nsIDocumentObserver notification for stylesheet title
-// changes, we could make this inherit from DOMStringList instead of
-// reimplementing nsIDOMDOMStringList.
-class nsDOMStyleSheetSetList MOZ_FINAL : public nsIDOMDOMStringList
+// changes we should update the list from that instead of overriding
+// EnsureFresh.
+class nsDOMStyleSheetSetList MOZ_FINAL : public DOMStringList
 {
 public:
-  NS_DECL_ISUPPORTS
-
-  NS_DECL_NSIDOMDOMSTRINGLIST
-
   nsDOMStyleSheetSetList(nsIDocument* aDocument);
 
   void Disconnect()
@@ -1229,21 +1225,12 @@ public:
     mDocument = nullptr;
   }
 
-protected:
-  // Rebuild our list of style sets
-  nsresult GetSets(nsTArray<nsString>& aStyleSets);
+  virtual void EnsureFresh();
 
+protected:
   nsIDocument* mDocument;  // Our document; weak ref.  It'll let us know if it
                            // dies.
 };
-
-NS_IMPL_ADDREF(nsDOMStyleSheetSetList)
-NS_IMPL_RELEASE(nsDOMStyleSheetSetList)
-NS_INTERFACE_TABLE_HEAD(nsDOMStyleSheetSetList)
-  NS_INTERFACE_TABLE1(nsDOMStyleSheetSetList, nsIDOMDOMStringList)
-  NS_INTERFACE_TABLE_TO_MAP_SEGUE
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(DOMStringList)
-NS_INTERFACE_MAP_END
 
 nsDOMStyleSheetSetList::nsDOMStyleSheetSetList(nsIDocument* aDocument)
   : mDocument(aDocument)
@@ -1251,52 +1238,12 @@ nsDOMStyleSheetSetList::nsDOMStyleSheetSetList(nsIDocument* aDocument)
   NS_ASSERTION(mDocument, "Must have document!");
 }
 
-NS_IMETHODIMP
-nsDOMStyleSheetSetList::Item(uint32_t aIndex, nsAString& aResult)
-{
-  nsTArray<nsString> styleSets;
-  nsresult rv = GetSets(styleSets);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (aIndex >= styleSets.Length()) {
-    SetDOMStringToNull(aResult);
-  } else {
-    aResult = styleSets[aIndex];
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMStyleSheetSetList::GetLength(uint32_t *aLength)
-{
-  nsTArray<nsString> styleSets;
-  nsresult rv = GetSets(styleSets);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  *aLength = styleSets.Length();
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMStyleSheetSetList::Contains(const nsAString& aString, bool *aResult)
-{
-  nsTArray<nsString> styleSets;
-  nsresult rv = GetSets(styleSets);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  *aResult = styleSets.Contains(aString);
-
-  return NS_OK;
-}
-
-nsresult
-nsDOMStyleSheetSetList::GetSets(nsTArray<nsString>& aStyleSets)
+void
+nsDOMStyleSheetSetList::EnsureFresh()
 {
   if (!mDocument) {
-    return NS_OK; // Spec says "no exceptions", and we have no style sets if we
-                  // have no document, for sure
+    return; // Spec says "no exceptions", and we have no style sets if we have
+            // no document, for sure
   }
 
   int32_t count = mDocument->GetNumberOfStyleSheets();
@@ -1305,13 +1252,10 @@ nsDOMStyleSheetSetList::GetSets(nsTArray<nsString>& aStyleSets)
     nsIStyleSheet* sheet = mDocument->GetStyleSheetAt(index);
     NS_ASSERTION(sheet, "Null sheet in sheet list!");
     sheet->GetTitle(title);
-    if (!title.IsEmpty() && !aStyleSets.Contains(title) &&
-        !aStyleSets.AppendElement(title)) {
-      return NS_ERROR_OUT_OF_MEMORY;
+    if (!title.IsEmpty() && !mNames.Contains(title) && !Add(title)) {
+      return;
     }
   }
-
-  return NS_OK;
 }
 
 // ==================================================================
@@ -5449,13 +5393,13 @@ nsIDocument::GetPreferredStyleSheetSet(nsAString& aSheetSet)
 }
 
 NS_IMETHODIMP
-nsDocument::GetStyleSheetSets(nsIDOMDOMStringList** aList)
+nsDocument::GetStyleSheetSets(nsISupports** aList)
 {
   NS_ADDREF(*aList = StyleSheetSets());
   return NS_OK;
 }
 
-nsIDOMDOMStringList*
+DOMStringList*
 nsDocument::StyleSheetSets()
 {
   if (!mStyleSheetSetList) {

@@ -2535,27 +2535,19 @@ IDBObjectStore::GetKeyPath(JSContext* aCx, ErrorResult& aRv)
   return mCachedKeyPath;
 }
 
-already_AddRefed<nsIDOMDOMStringList>
+already_AddRefed<DOMStringList>
 IDBObjectStore::GetIndexNames(ErrorResult& aRv)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
   nsRefPtr<DOMStringList> list(new DOMStringList());
 
-  nsAutoTArray<nsString, 10> names;
+  nsTArray<nsString>& names = list->Names();
   uint32_t count = mInfo->indexes.Length();
   names.SetCapacity(count);
 
   for (uint32_t index = 0; index < count; index++) {
     names.InsertElementSorted(mInfo->indexes[index].name);
-  }
-
-  for (uint32_t index = 0; index < count; index++) {
-    if (!list->Add(names[index])) {
-      NS_WARNING("Failed to add element!");
-      aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
-      return nullptr;
-    }
   }
 
   return list.forget();

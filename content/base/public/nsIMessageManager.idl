@@ -5,7 +5,6 @@
 
 #include "nsISupports.idl"
 
-interface nsIDOMDOMStringList;
 interface nsIDOMWindow;
 interface nsIDocShell;
 interface nsIContent;
@@ -375,7 +374,7 @@ interface nsIFrameScriptLoader : nsISupports
    * Returns a list of all delayed scripts that will be loaded once
    * a (remote) frame becomes available.
    */
-  nsIDOMDOMStringList getDelayedFrameScripts();
+  nsISupports getDelayedFrameScripts();
 };
 
 [scriptable, builtinclass, uuid(b37821ff-df79-44d4-821c-6d6ec4dfe1e9)]

@@ -381,7 +381,7 @@ nsFrameMessageManager::RemoveDelayedFrameScript(const nsAString& aURL)
 }
 
 NS_IMETHODIMP
-nsFrameMessageManager::GetDelayedFrameScripts(nsIDOMDOMStringList** aList)
+nsFrameMessageManager::GetDelayedFrameScripts(nsISupports** aList)
 {
   // Frame message managers may return an incomplete list because scripts
   // that were loaded after it was connected are not added to the list.

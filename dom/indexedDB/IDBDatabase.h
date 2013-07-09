@@ -180,7 +180,7 @@ public:
   uint64_t
   Version() const;
 
-  already_AddRefed<nsIDOMDOMStringList>
+  already_AddRefed<mozilla::dom::DOMStringList>
   GetObjectStoreNames(ErrorResult& aRv) const;
 
   already_AddRefed<IDBObjectStore>

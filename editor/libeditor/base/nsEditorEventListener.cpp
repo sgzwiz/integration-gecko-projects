@@ -17,7 +17,7 @@
 #include "nsIClipboard.h"               // for nsIClipboard, etc
 #include "nsIContent.h"                 // for nsIContent
 #include "nsID.h"
-#include "nsIDOMDOMStringList.h"        // for nsIDOMDOMStringList
+#include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "nsIDOMDocument.h"             // for nsIDOMDocument
 #include "nsIDOMDragEvent.h"            // for nsIDOMDragEvent
@@ -55,6 +55,7 @@
 class nsPresContext;
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 nsEditorEventListener::nsEditorEventListener() :
   mEditor(nullptr), mCommitText(false),
@@ -725,25 +726,21 @@ nsEditorEventListener::CanDrop(nsIDOMDragEvent* aEvent)
   aEvent->GetDataTransfer(getter_AddRefs(dataTransfer));
   NS_ENSURE_TRUE(dataTransfer, false);
 
-  nsCOMPtr<nsIDOMDOMStringList> types;
-  dataTransfer->GetTypes(getter_AddRefs(types));
-  NS_ENSURE_TRUE(types, false);
+  nsCOMPtr<nsISupports> typesList;
+  dataTransfer->GetTypes(getter_AddRefs(typesList));
+  NS_ENSURE_TRUE(typesList, false);
+
+  DOMStringList* types = DOMStringList::FromSupports(typesList);
 
   // Plaintext editors only support dropping text. Otherwise, HTML and files
   // can be dropped as well.
-  bool typeSupported;
-  types->Contains(NS_LITERAL_STRING(kTextMime), &typeSupported);
-  if (!typeSupported) {
-    types->Contains(NS_LITERAL_STRING(kMozTextInternal), &typeSupported);
-    if (!typeSupported && !mEditor->IsPlaintextEditor()) {
-      types->Contains(NS_LITERAL_STRING(kHTMLMime), &typeSupported);
-      if (!typeSupported) {
-        types->Contains(NS_LITERAL_STRING(kFileMime), &typeSupported);
-      }
-    }
+  if (!types->Contains(NS_LITERAL_STRING(kTextMime)) &&
+      !types->Contains(NS_LITERAL_STRING(kMozTextInternal)) &&
+      (mEditor->IsPlaintextEditor() ||
+       (!types->Contains(NS_LITERAL_STRING(kHTMLMime)) &&
+        !types->Contains(NS_LITERAL_STRING(kFileMime))))) {
+    return false;
   }
-
-  NS_ENSURE_TRUE(typeSupported, false);
 
   // If there is no source node, this is probably an external drag and the
   // drop is allowed. The later checks rely on checking if the drag target

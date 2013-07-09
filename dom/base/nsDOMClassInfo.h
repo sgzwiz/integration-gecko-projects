@@ -499,32 +499,6 @@ public:
   }
 };
 
-// StringList scriptable helper
-
-class nsStringListSH : public nsStringArraySH
-{
-protected:
-  nsStringListSH(nsDOMClassInfoData* aData) : nsStringArraySH(aData)
-  {
-  }
-
-  virtual ~nsStringListSH()
-  {
-  }
-
-  virtual nsresult GetStringAt(nsISupports *aNative, int32_t aIndex,
-                               nsAString& aResult) MOZ_OVERRIDE;
-
-public:
-  // Inherit GetProperty, Enumerate from nsStringArraySH
-  
-  static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
-  {
-    return new nsStringListSH(aData);
-  }
-};
-
-
 // MediaList helper
 
 class nsMediaListSH : public nsStringArraySH

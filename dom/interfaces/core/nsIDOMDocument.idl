@@ -223,7 +223,7 @@ interface nsIDOMDocument : nsIDOMNode
    *
    * @see <http://dev.w3.org/csswg/cssom/#dom-document-styleSheetSets>
    */
-  readonly attribute nsIDOMDOMStringList styleSheetSets;
+  readonly attribute nsISupports styleSheetSets;
 
   /**
    * Calling this method must change the disabled attribute on each StyleSheet

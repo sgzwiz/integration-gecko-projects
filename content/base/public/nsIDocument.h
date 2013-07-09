@@ -96,6 +96,7 @@ class Comment;
 class DocumentFragment;
 class DocumentType;
 class DOMImplementation;
+class DOMStringList;
 class Element;
 struct ElementRegistrationOptions;
 class EventTarget;
@@ -2061,7 +2062,7 @@ public:
   virtual void SetSelectedStyleSheetSet(const nsAString& aSheetSet) = 0;
   virtual void GetLastStyleSheetSet(nsString& aSheetSet) = 0;
   void GetPreferredStyleSheetSet(nsAString& aSheetSet);
-  virtual nsIDOMDOMStringList* StyleSheetSets() = 0;
+  virtual mozilla::dom::DOMStringList* StyleSheetSets() = 0;
   virtual void EnableStyleSheetsForSet(const nsAString& aSheetSet) = 0;
   Element* ElementFromPoint(float aX, float aY);
 

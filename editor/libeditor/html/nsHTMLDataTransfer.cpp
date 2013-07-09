@@ -33,7 +33,7 @@
 #include "nsIContent.h"
 #include "nsIContentFilter.h"
 #include "nsIDOMComment.h"
-#include "nsIDOMDOMStringList.h"
+#include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "nsIDOMDocument.h"
 #include "nsIDOMDocumentFragment.h"
@@ -1237,17 +1237,17 @@ nsresult nsHTMLEditor::InsertFromDataTransfer(nsIDOMDataTransfer *aDataTransfer,
                                               int32_t aDestOffset,
                                               bool aDoDeleteSelection)
 {
-  nsCOMPtr<nsIDOMDOMStringList> types;
-  aDataTransfer->MozTypesAt(aIndex, getter_AddRefs(types));
+  nsCOMPtr<nsISupports> typesList;
+  aDataTransfer->MozTypesAt(aIndex, getter_AddRefs(typesList));
 
-  bool hasPrivateHTMLFlavor;
-  types->Contains(NS_LITERAL_STRING(kHTMLContext), &hasPrivateHTMLFlavor);
+  DOMStringList* types = DOMStringList::FromSupports(typesList);
+
+  bool hasPrivateHTMLFlavor = types->Contains(NS_LITERAL_STRING(kHTMLContext));
 
   bool isText = IsPlaintextEditor();
   bool isSafe = IsSafeToInsertData(aSourceDoc);
 
-  uint32_t length;
-  types->GetLength(&length);
+  uint32_t length = types->Length();
   for (uint32_t t = 0; t < length; t++) {
     nsAutoString type;
     types->Item(t, type);

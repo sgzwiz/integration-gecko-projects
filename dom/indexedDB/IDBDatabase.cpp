@@ -13,6 +13,7 @@
 #include "mozilla/storage.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/DOMStringList.h"
+#include "mozilla/dom/DOMStringListBinding.h"
 #include "mozilla/dom/IDBDatabaseBinding.h"
 #include "mozilla/dom/quota/Client.h"
 #include "mozilla/dom/quota/QuotaManager.h"
@@ -492,28 +493,18 @@ IDBDatabase::Version() const
   return info->version;
 }
 
-already_AddRefed<nsIDOMDOMStringList>
+already_AddRefed<DOMStringList>
 IDBDatabase::GetObjectStoreNames(ErrorResult& aRv) const
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
   DatabaseInfo* info = Info();
 
-  nsAutoTArray<nsString, 10> objectStoreNames;
-  if (!info->GetObjectStoreNames(objectStoreNames)) {
+  nsRefPtr<DOMStringList> list(new DOMStringList());
+  if (!info->GetObjectStoreNames(list->Names())) {
     NS_WARNING("Couldn't get names!");
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
     return nullptr;
-  }
-
-  nsRefPtr<DOMStringList> list(new DOMStringList());
-  uint32_t count = objectStoreNames.Length();
-  for (uint32_t index = 0; index < count; index++) {
-    if (!list->Add(objectStoreNames[index])) {
-      NS_WARNING("Failed to add element");
-      aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
-      return nullptr;
-    }
   }
 
   return list.forget();
