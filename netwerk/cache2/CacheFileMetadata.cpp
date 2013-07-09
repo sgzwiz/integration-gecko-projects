@@ -385,7 +385,7 @@ CacheFileMetadata::GetFetchCount(uint32_t *_retval)
 nsresult
 CacheFileMetadata::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
 {
-  MOZ_NOT_REACHED("CacheFileMetadata::OnFileOpened should not be called!");
+  MOZ_CRASH("CacheFileMetadata::OnFileOpened should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
 
@@ -495,14 +495,14 @@ CacheFileMetadata::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
 nsresult
 CacheFileMetadata::OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult)
 {
-  MOZ_NOT_REACHED("CacheFileMetadata::OnFileDoomed should not be called!");
+  MOZ_CRASH("CacheFileMetadata::OnFileDoomed should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
 
 nsresult
 CacheFileMetadata::OnEOFSet(CacheFileHandle *aHandle, nsresult aResult)
 {
-  MOZ_NOT_REACHED("CacheFileMetadata::OnEOFSet should not be called!");
+  MOZ_CRASH("CacheFileMetadata::OnEOFSet should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
 
