@@ -448,7 +448,7 @@ CacheFileChunk::UpdateDataSize(uint32_t aOffset, uint32_t aLen, bool aEOF)
 nsresult
 CacheFileChunk::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
 {
-  MOZ_NOT_REACHED("CacheFileChunk::OnFileOpened should not be called!");
+  MOZ_CRASH("CacheFileChunk::OnFileOpened should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
 
@@ -566,14 +566,14 @@ CacheFileChunk::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
 nsresult
 CacheFileChunk::OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult)
 {
-  MOZ_NOT_REACHED("CacheFileChunk::OnFileDoomed should not be called!");
+  MOZ_CRASH("CacheFileChunk::OnFileDoomed should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
 
 nsresult
 CacheFileChunk::OnEOFSet(CacheFileHandle *aHandle, nsresult aResult)
 {
-  MOZ_NOT_REACHED("CacheFileChunk::OnEOFSet should not be called!");
+  MOZ_CRASH("CacheFileChunk::OnEOFSet should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
 

@@ -283,14 +283,14 @@ nsresult
 CacheFile::OnChunkAvailable(nsresult aResult, uint32_t aChunkIdx,
                             CacheFileChunk *aChunk)
 {
-  MOZ_NOT_REACHED("CacheFile::OnChunkAvailable should not be called!");
+  MOZ_CRASH("CacheFile::OnChunkAvailable should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
 
 nsresult
 CacheFile::OnChunkUpdated(CacheFileChunk *aChunk)
 {
-  MOZ_NOT_REACHED("CacheFile::OnChunkUpdated should not be called!");
+  MOZ_CRASH("CacheFile::OnChunkUpdated should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
 
@@ -475,14 +475,14 @@ nsresult
 CacheFile::OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
                          nsresult aResult)
 {
-  MOZ_NOT_REACHED("CacheFile::OnDataWritten should not be called!");
+  MOZ_CRASH("CacheFile::OnDataWritten should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
 
 nsresult
 CacheFile::OnDataRead(CacheFileHandle *aHandle, char *aBuf, nsresult aResult)
 {
-  MOZ_NOT_REACHED("CacheFile::OnDataRead should not be called!");
+  MOZ_CRASH("CacheFile::OnDataRead should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
 
@@ -558,7 +558,7 @@ CacheFile::OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult)
 nsresult
 CacheFile::OnEOFSet(CacheFileHandle *aHandle, nsresult aResult)
 {
-  MOZ_NOT_REACHED("CacheFile::OnEOFSet should not be called!");
+  MOZ_CRASH("CacheFile::OnEOFSet should not be called!");
   return NS_ERROR_UNEXPECTED;
 }
 
