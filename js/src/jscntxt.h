@@ -319,7 +319,11 @@ class NewObjectCache
 {
     /* Statically asserted to be equal to sizeof(JSObject_Slots16) */
     static const unsigned MAX_OBJ_SIZE = 4 * sizeof(void*) + 16 * sizeof(Value);
-    static inline void staticAsserts();
+
+    static void staticAsserts() {
+        JS_STATIC_ASSERT(NewObjectCache::MAX_OBJ_SIZE == sizeof(JSObject_Slots16));
+        JS_STATIC_ASSERT(gc::FINALIZE_OBJECT_LAST == gc::FINALIZE_OBJECT16_BACKGROUND);
+    }
 
     struct Entry
     {
@@ -371,8 +375,14 @@ class NewObjectCache
      * on an existing entry.
      */
     inline bool lookupProto(Class *clasp, JSObject *proto, gc::AllocKind kind, EntryIndex *pentry);
-    inline bool lookupGlobal(Class *clasp, js::GlobalObject *global, gc::AllocKind kind, EntryIndex *pentry);
-    inline bool lookupType(Class *clasp, js::types::TypeObject *type, gc::AllocKind kind, EntryIndex *pentry);
+    inline bool lookupGlobal(Class *clasp, js::GlobalObject *global, gc::AllocKind kind,
+                             EntryIndex *pentry);
+
+    bool lookupType(Class *clasp, js::types::TypeObject *type, gc::AllocKind kind,
+                    EntryIndex *pentry)
+    {
+        return lookup(clasp, type, kind, pentry);
+    }
 
     /*
      * Return a new object from a cache hit produced by a lookup method, or
@@ -383,15 +393,45 @@ class NewObjectCache
 
     /* Fill an entry after a cache miss. */
     void fillProto(EntryIndex entry, Class *clasp, js::TaggedProto proto, gc::AllocKind kind, JSObject *obj);
-    inline void fillGlobal(EntryIndex entry, Class *clasp, js::GlobalObject *global, gc::AllocKind kind, JSObject *obj);
-    inline void fillType(EntryIndex entry, Class *clasp, js::types::TypeObject *type, gc::AllocKind kind, JSObject *obj);
+
+    inline void fillGlobal(EntryIndex entry, Class *clasp, js::GlobalObject *global,
+                           gc::AllocKind kind, JSObject *obj);
+
+    void fillType(EntryIndex entry, Class *clasp, js::types::TypeObject *type, gc::AllocKind kind,
+                  JSObject *obj)
+    {
+        JS_ASSERT(obj->type() == type);
+        return fill(entry, clasp, type, kind, obj);
+    }
 
     /* Invalidate any entries which might produce an object with shape/proto. */
     void invalidateEntriesForShape(JSContext *cx, HandleShape shape, HandleObject proto);
 
   private:
-    inline bool lookup(Class *clasp, gc::Cell *key, gc::AllocKind kind, EntryIndex *pentry);
-    inline void fill(EntryIndex entry, Class *clasp, gc::Cell *key, gc::AllocKind kind, JSObject *obj);
+    bool lookup(Class *clasp, gc::Cell *key, gc::AllocKind kind, EntryIndex *pentry) {
+        uintptr_t hash = (uintptr_t(clasp) ^ uintptr_t(key)) + kind;
+        *pentry = hash % mozilla::ArrayLength(entries);
+
+        Entry *entry = &entries[*pentry];
+
+        /* N.B. Lookups with the same clasp/key but different kinds map to different entries. */
+        return (entry->clasp == clasp && entry->key == key);
+    }
+
+    void fill(EntryIndex entry_, Class *clasp, gc::Cell *key, gc::AllocKind kind, JSObject *obj) {
+        JS_ASSERT(unsigned(entry_) < mozilla::ArrayLength(entries));
+        Entry *entry = &entries[entry_];
+
+        JS_ASSERT(!obj->hasDynamicSlots() && !obj->hasDynamicElements());
+
+        entry->clasp = clasp;
+        entry->key = key;
+        entry->kind = kind;
+
+        entry->nbytes = gc::Arena::thingSize(kind);
+        js_memcpy(&entry->templateObject, obj, entry->nbytes);
+    }
+
     static inline void copyCachedToObject(JSObject *dst, JSObject *src, gc::AllocKind kind);
 };
 
@@ -519,6 +559,7 @@ class PerThreadData : public js::PerThreadDataFriendFields
   private:
     friend class js::Activation;
     friend class js::ActivationIterator;
+    friend class js::ion::JitActivation;
     friend class js::AsmJSActivation;
 
     /*
@@ -549,6 +590,9 @@ class PerThreadData : public js::PerThreadDataFriendFields
         return activation_;
     }
 
+    /* State used by jsdtoa.cpp. */
+    DtoaState           *dtoaState;
+
     /*
      * When this flag is non-zero, any attempt to GC will be skipped. It is used
      * to suppress GC when reporting an OOM (see js_ReportOutOfMemory) and in
@@ -560,6 +604,9 @@ class PerThreadData : public js::PerThreadDataFriendFields
     int32_t             suppressGC;
 
     PerThreadData(JSRuntime *runtime);
+    ~PerThreadData();
+
+    bool init();
 
     bool associatedWith(const JSRuntime *rt) { return runtime_ == rt; }
 };
@@ -734,6 +781,9 @@ struct JSRuntime : public JS::shadow::Runtime,
     /* Default locale for Internationalization API */
     char *defaultLocale;
 
+    /* Default JSVersion. */
+    JSVersion defaultVersion_;
+
     /* See comment for JS_AbortIfWrongThread in jsapi.h. */
 #ifdef JS_THREADSAFE
   public:
@@ -845,6 +895,9 @@ struct JSRuntime : public JS::shadow::Runtime,
 
     /* Gets current default locale. String remains owned by context. */
     const char *getDefaultLocale();
+
+    JSVersion defaultVersion() { return defaultVersion_; }
+    void setDefaultVersion(JSVersion v) { defaultVersion_ = v; }
 
     /* Base address of the native stack for the current thread. */
     uintptr_t           nativeStackBase;
@@ -1153,16 +1206,27 @@ struct JSRuntime : public JS::shadow::Runtime,
         return needsBarrier_;
     }
 
+    struct ExtraTracer {
+        JSTraceDataOp op;
+        void *data;
+
+        ExtraTracer()
+          : op(NULL), data(NULL)
+        {}
+        ExtraTracer(JSTraceDataOp op, void *data)
+          : op(op), data(data)
+        {}
+    };
+
     /*
      * The trace operations to trace embedding-specific GC roots. One is for
      * tracing through black roots and the other is for tracing through gray
      * roots. The black/gray distinction is only relevant to the cycle
      * collector.
      */
-    JSTraceDataOp       gcBlackRootsTraceOp;
-    void                *gcBlackRootsData;
-    JSTraceDataOp       gcGrayRootsTraceOp;
-    void                *gcGrayRootsData;
+    typedef js::Vector<ExtraTracer, 4, js::SystemAllocPolicy> ExtraTracerVector;
+    ExtraTracerVector   gcBlackRootTracers;
+    ExtraTracer         gcGrayRootTracer;
 
     /* Stack of thread-stack-allocated GC roots. */
     js::AutoGCRooter   *autoGCRooters;
@@ -1290,9 +1354,6 @@ struct JSRuntime : public JS::shadow::Runtime,
     js::SourceDataCache sourceDataCache;
     js::EvalCache       evalCache;
     js::LazyScriptCache lazyScriptCache;
-
-    /* State used by jsdtoa.cpp. */
-    DtoaState           *dtoaState;
 
     js::DateTimeInfo    dateTimeInfo;
 
@@ -1593,6 +1654,10 @@ struct ThreadSafeContext : js::ContextFriendFields,
     }
 #endif
 
+    /* Cut outs for string operations. */
+    StaticStrings &staticStrings() { return runtime_->staticStrings; }
+    JSAtomState &names() { return runtime_->atomState; }
+
     /*
      * Allocator used when allocating GCThings on this context. If we are a
      * JSContext, this is the Zone allocator of the JSContext's zone. If we
@@ -1613,10 +1678,22 @@ struct ThreadSafeContext : js::ContextFriendFields,
     inline Allocator *const allocator();
 
     /* GC support. */
-    inline AllowGC allowGC() const;
+    AllowGC allowGC() const {
+        switch (contextKind_) {
+          case Context_JS:
+            return CanGC;
+          case Context_ForkJoin:
+            return NoGC;
+          default:
+            /* Silence warnings. */
+            MOZ_ASSUME_UNREACHABLE("Bad context kind");
+        }
+    }
 
     template <typename T>
-    inline bool isInsideCurrentZone(T thing) const;
+    bool isInsideCurrentZone(T thing) const {
+        return thing->isInsideZone(zone_);
+    }
 
     void *onOutOfMemory(void *p, size_t nbytes) {
         return runtime_->onOutOfMemory(p, nbytes, isJSContext() ? asJSContext() : NULL);
@@ -1649,11 +1726,6 @@ struct JSContext : js::ThreadSafeContext,
     js::PerThreadData &mainThread() const { return runtime()->mainThread; }
 
   private:
-    /* See JSContext::findVersion. */
-    JSVersion           defaultVersion;      /* script compilation version */
-    JSVersion           versionOverride;     /* supercedes defaultVersion when valid */
-    bool                hasVersionOverride;
-
     /* Exception state -- the exception member is a GC root by definition. */
     bool                throwing;            /* is there a pending exception? */
     js::Value           exception;           /* most-recently-thrown exception */
@@ -1752,50 +1824,11 @@ struct JSContext : js::ThreadSafeContext,
     inline js::RegExpStatics *regExpStatics();
 
   public:
-    /*
-     * The default script compilation version can be set iff there is no code running.
-     * This typically occurs via the JSAPI right after a context is constructed.
-     */
-    inline bool canSetDefaultVersion() const;
-
-    /* Force a version for future script compilation. */
-    inline void overrideVersion(JSVersion newVersion);
-
-    /* Set the default script compilation version. */
-    void setDefaultVersion(JSVersion version) {
-        defaultVersion = version;
-    }
-
-    void clearVersionOverride() { hasVersionOverride = false; }
-    JSVersion getDefaultVersion() const { return defaultVersion; }
-    bool isVersionOverridden() const { return hasVersionOverride; }
-
-    JSVersion getVersionOverride() const {
-        JS_ASSERT(isVersionOverridden());
-        return versionOverride;
-    }
-
-    /*
-     * Set the default version if possible; otherwise, force the version.
-     * Return whether an override occurred.
-     */
-    inline bool maybeOverrideVersion(JSVersion newVersion);
-
-    /*
-     * If there is no code on the stack, turn the override version into the
-     * default version.
-     */
-    void maybeMigrateVersionOverride() {
-        if (JS_UNLIKELY(isVersionOverridden()) && !currentlyRunning()) {
-            defaultVersion = versionOverride;
-            clearVersionOverride();
-        }
-    }
 
     /*
      * Return:
-     * - The override version, if there is an override version.
      * - The newest scripted frame's version, if there is such a frame.
+     * - The version from the compartment.
      * - The default version.
      *
      * Note: if this ever shows up in a profile, just add caching!
@@ -1916,8 +1949,6 @@ struct JSContext : js::ThreadSafeContext,
         throwing = false;
         exception.setUndefined();
     }
-
-    JSAtomState & names() { return runtime()->atomState; }
 
 #ifdef DEBUG
     /*
@@ -2501,7 +2532,7 @@ JSBool intrinsic_IsCallable(JSContext *cx, unsigned argc, Value *vp);
 JSBool intrinsic_ThrowError(JSContext *cx, unsigned argc, Value *vp);
 JSBool intrinsic_NewDenseArray(JSContext *cx, unsigned argc, Value *vp);
 
-JSBool intrinsic_UnsafeSetElement(JSContext *cx, unsigned argc, Value *vp);
+JSBool intrinsic_UnsafePutElements(JSContext *cx, unsigned argc, Value *vp);
 JSBool intrinsic_UnsafeSetReservedSlot(JSContext *cx, unsigned argc, Value *vp);
 JSBool intrinsic_UnsafeGetReservedSlot(JSContext *cx, unsigned argc, Value *vp);
 JSBool intrinsic_NewObjectWithClassPrototype(JSContext *cx, unsigned argc, Value *vp);

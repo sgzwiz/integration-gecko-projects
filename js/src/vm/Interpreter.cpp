@@ -8,7 +8,7 @@
  * JavaScript bytecode interpreter.
  */
 
-#include "Interpreter.h"
+#include "vm/Interpreter.h"
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/FloatingPoint.h"
@@ -212,9 +212,7 @@ js::OnUnknownMethod(JSContext *cx, HandleObject obj, Value idval_, MutableHandle
 
     TypeScript::MonitorUnknown(cx);
 
-    if (value.get().isPrimitive()) {
-        vp.set(value);
-    } else {
+    if (value.isObject()) {
         JSObject *obj = NewObjectWithClassProto(cx, &js_NoSuchMethodClass, NULL, NULL);
         if (!obj)
             return false;
@@ -505,7 +503,7 @@ js::Invoke(JSContext *cx, CallArgs args, MaybeConstruct construct)
 
 bool
 js::Invoke(JSContext *cx, const Value &thisv, const Value &fval, unsigned argc, Value *argv,
-           Value *rval)
+           MutableHandleValue rval)
 {
     InvokeArgs args(cx);
     if (!args.init(argc))
@@ -531,7 +529,7 @@ js::Invoke(JSContext *cx, const Value &thisv, const Value &fval, unsigned argc, 
     if (!Invoke(cx, args))
         return false;
 
-    *rval = args.rval();
+    rval.set(args.rval());
     return true;
 }
 
@@ -572,7 +570,7 @@ js::InvokeConstructor(JSContext *cx, CallArgs args)
 }
 
 bool
-js::InvokeConstructor(JSContext *cx, const Value &fval, unsigned argc, Value *argv, Value *rval)
+js::InvokeConstructor(JSContext *cx, Value fval, unsigned argc, Value *argv, Value *rval)
 {
     InvokeArgs args(cx);
     if (!args.init(argc))
@@ -590,8 +588,8 @@ js::InvokeConstructor(JSContext *cx, const Value &fval, unsigned argc, Value *ar
 }
 
 bool
-js::InvokeGetterOrSetter(JSContext *cx, JSObject *obj, const Value &fval, unsigned argc, Value *argv,
-                         Value *rval)
+js::InvokeGetterOrSetter(JSContext *cx, JSObject *obj, Value fval, unsigned argc,
+                         Value *argv, MutableHandleValue rval)
 {
     /*
      * Invoke could result in another try to get or set the same id again, see
@@ -1230,7 +1228,7 @@ Interpret(JSContext *cx, RunState &state)
           case JSTRAP_ERROR:
             goto error;
           default:
-            JS_NOT_REACHED("bad ScriptDebugPrologue status");
+            MOZ_ASSUME_UNREACHABLE("bad ScriptDebugPrologue status");
         }
     }
 
@@ -2362,7 +2360,7 @@ BEGIN_CASE(JSOP_FUNCALL)
           case JSTRAP_ERROR:
             goto error;
           default:
-            JS_NOT_REACHED("bad ScriptDebugPrologue status");
+            MOZ_ASSUME_UNREACHABLE("bad ScriptDebugPrologue status");
         }
     }
 
@@ -3124,7 +3122,7 @@ END_CASE(JSOP_ARRAYPUSH)
                 goto forced_return;
 
               default:
-                JS_NOT_REACHED("Invalid trap status");
+                MOZ_ASSUME_UNREACHABLE("Invalid trap status");
             }
         }
 

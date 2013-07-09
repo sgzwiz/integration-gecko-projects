@@ -402,12 +402,16 @@ appbar[visible] {
   -moz-image-region: rect(0 80px 40px 40px);
 }
 
-#toolbar > .appbar-primary:not([checked]):active {
+#toolbar > .appbar-primary[checked] {
   -moz-image-region: rect(0 120px 40px 80px);
 }
 
 #toolbar > .appbar-primary[checked]:hover:not(:active) {
   -moz-image-region: rect(0 160px 40px 120px);
+}
+
+#toolbar > .appbar-primary:active {
+  -moz-image-region: rect(0 120px 40px 80px);
 }
 
 @media (min-resolution: 130dpi) {
@@ -424,12 +428,16 @@ appbar[visible] {
     -moz-image-region: rect(0 112px 56px 56px);
   }
 
-  #toolbar > .appbar-primary:not([checked]):active {
-    -moz-image-region: rect(0 168px 56px 112px);
+  #toolbar > .appbar-primary[checked] {
+    -moz-image-region: rect(0 224px 56px 168px);
   }
 
   #toolbar > .appbar-primary[checked]:hover:not(:active) {
     -moz-image-region: rect(0 224px 56px 168px);
+  }
+
+  #toolbar > .appbar-primary:active {
+    -moz-image-region: rect(0 168px 56px 112px);
   }
 }
 
@@ -553,26 +561,21 @@ flyoutpanel > settings:first-child {
   width: 400px;
 }
 
+#sync-disconnectpanel {
+  margin-top: 25px;
+}
+
 #sync-disconnectwarntitle {
   font-weight: bold;
 }
 
-#sync-disconnectthrobber {
-  margin-top: 25px;
-}
-
-#disconnectthrobber {
-  width: 25px;
-  height: 25px;
-}
-
-#syncdisconnectthrobber .progressContainer {
+#sync-disconnectthrobber .progressContainer {
   width: 25px;
   height: 25px;
   margin-right: 10px;
 }
 
-#syncdisconnectthrobber .progressBall {
+#sync-disconnectthrobber .progressBall {
   margin: 2px;
   width: 22px;
   height: 22px;
@@ -702,6 +705,21 @@ setting[type="radio"] > vbox {
   vertical-align: middle;
   margin: 0;
   width: 50%;
+}
+
+#clear-notification {
+  max-height: 25px;
+}
+
+#clearprivacythrobber .progressContainer {
+  width: 25px;
+  height: 25px;
+}
+
+#clearprivacythrobber .progressBall {
+  margin: 2px;
+  width: 22px;
+  height: 22px;
 }
 
 #clear-notification-done {

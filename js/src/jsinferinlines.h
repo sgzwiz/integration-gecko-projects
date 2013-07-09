@@ -17,7 +17,6 @@
 #include "jsinfer.h"
 #include "jsprf.h"
 #include "jsproxy.h"
-#include "jstypedarray.h"
 
 #include "builtin/ParallelArray.h"
 #include "ion/IonFrames.h"
@@ -27,6 +26,7 @@
 #include "vm/GlobalObject.h"
 #include "vm/NumberObject.h"
 #include "vm/StringObject.h"
+#include "vm/TypedArrayObject.h"
 
 #include "jsanalyzeinlines.h"
 #include "jscntxtinlines.h"
@@ -113,8 +113,7 @@ CompilerOutput::ion() const
       case ParallelIon: return script->parallelIonScript();
     }
 #endif
-    JS_NOT_REACHED("Invalid kind of CompilerOutput");
-    return NULL;
+    MOZ_ASSUME_UNREACHABLE("Invalid kind of CompilerOutput");
 }
 
 inline bool
@@ -223,8 +222,7 @@ PrimitiveTypeFlag(JSValueType type)
       case JSVAL_TYPE_MAGIC:
         return TYPE_FLAG_LAZYARGS;
       default:
-        JS_NOT_REACHED("Bad type");
-        return 0;
+        MOZ_ASSUME_UNREACHABLE("Bad type");
     }
 }
 
@@ -247,8 +245,7 @@ TypeFlagPrimitive(TypeFlags flags)
       case TYPE_FLAG_LAZYARGS:
         return JSVAL_TYPE_MAGIC;
       default:
-        JS_NOT_REACHED("Bad type");
-        return (JSValueType) 0;
+        MOZ_ASSUME_UNREACHABLE("Bad type");
     }
 }
 
@@ -486,7 +483,7 @@ GetClassForProtoKey(JSProtoKey key)
       case JSProto_Float32Array:
       case JSProto_Float64Array:
       case JSProto_Uint8ClampedArray:
-        return &TypedArray::classes[key - JSProto_Int8Array];
+        return &TypedArrayObject::classes[key - JSProto_Int8Array];
 
       case JSProto_ArrayBuffer:
         return &ArrayBufferObject::class_;
@@ -498,8 +495,7 @@ GetClassForProtoKey(JSProtoKey key)
         return &ParallelArrayObject::class_;
 
       default:
-        JS_NOT_REACHED("Bad proto key");
-        return NULL;
+        MOZ_ASSUME_UNREACHABLE("Bad proto key");
     }
 }
 
@@ -693,61 +689,6 @@ extern void TypeMonitorResult(JSContext *cx, JSScript *script, jsbytecode *pc,
                               const js::Value &rval);
 extern void TypeDynamicResult(JSContext *cx, JSScript *script, jsbytecode *pc,
                               js::types::Type type);
-
-inline bool
-UseNewTypeForClone(JSFunction *fun)
-{
-    if (!fun->isInterpreted())
-        return false;
-
-    if (fun->hasScript() && fun->nonLazyScript()->shouldCloneAtCallsite)
-        return true;
-
-    if (fun->isArrow())
-        return false;
-
-    if (fun->hasSingletonType())
-        return false;
-
-    /*
-     * When a function is being used as a wrapper for another function, it
-     * improves precision greatly to distinguish between different instances of
-     * the wrapper; otherwise we will conflate much of the information about
-     * the wrapped functions.
-     *
-     * An important example is the Class.create function at the core of the
-     * Prototype.js library, which looks like:
-     *
-     * var Class = {
-     *   create: function() {
-     *     return function() {
-     *       this.initialize.apply(this, arguments);
-     *     }
-     *   }
-     * };
-     *
-     * Each instance of the innermost function will have a different wrapped
-     * initialize method. We capture this, along with similar cases, by looking
-     * for short scripts which use both .apply and arguments. For such scripts,
-     * whenever creating a new instance of the function we both give that
-     * instance a singleton type and clone the underlying script.
-     */
-
-    uint32_t begin, end;
-    if (fun->hasScript()) {
-        if (!fun->nonLazyScript()->usesArgumentsAndApply)
-            return false;
-        begin = fun->nonLazyScript()->sourceStart;
-        end = fun->nonLazyScript()->sourceEnd;
-    } else {
-        if (!fun->lazyScript()->usesArgumentsAndApply())
-            return false;
-        begin = fun->lazyScript()->begin();
-        end = fun->lazyScript()->end();
-    }
-
-    return end - begin <= 100;
-}
 
 /////////////////////////////////////////////////////////////////////
 // Script interface functions
@@ -1591,8 +1532,7 @@ TypeObject::getProperty(JSContext *cx, jsid id, bool own)
                     return &prop->types;
             }
 
-            JS_NOT_REACHED("Missing property");
-            return NULL;
+            MOZ_ASSUME_UNREACHABLE("Missing property");
         }
     }
 

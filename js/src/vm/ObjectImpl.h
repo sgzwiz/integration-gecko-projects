@@ -20,6 +20,8 @@
 #include "vm/NumericConversions.h"
 #include "vm/String.h"
 
+#define JSSLOT_FREE(clasp)  JSCLASS_RESERVED_SLOTS(clasp)
+
 namespace js {
 
 class Debugger;
@@ -690,7 +692,7 @@ class TypedElementsHeader : public ElementsHeader
 template<typename T> inline void
 TypedElementsHeader<T>::assign(uint32_t index, double d)
 {
-    MOZ_NOT_REACHED("didn't specialize for this element type");
+    MOZ_ASSUME_UNREACHABLE("didn't specialize for this element type");
 }
 
 template<> inline void
@@ -1239,7 +1241,14 @@ class ObjectImpl : public gc::Cell
         return type_->clasp;
     }
 
-    inline bool isExtensible() const;
+    static inline bool
+    isExtensible(JSContext *cx, Handle<ObjectImpl*> obj, bool *extensible);
+
+    // Indicates whether a non-proxy is extensible.  Don't call on proxies!
+    // This method really shouldn't exist -- but there are a few internal
+    // places that want it (JITs and the like), and it'd be a pain to mark them
+    // all as friends.
+    inline bool nonProxyIsExtensible() const;
 
     // Attempt to change the [[Extensible]] bit on |obj| to false.  Callers
     // must ensure that |obj| is currently extensible before calling this!
@@ -1270,9 +1279,7 @@ class ObjectImpl : public gc::Cell
 
     bool makeElementsSparse(JSContext *cx) {
         NEW_OBJECT_REPRESENTATION_ONLY();
-
-        MOZ_NOT_REACHED("NYI");
-        return false;
+        MOZ_ASSUME_UNREACHABLE("NYI");
     }
 
     inline bool isProxy() const;
@@ -1399,9 +1406,7 @@ class ObjectImpl : public gc::Cell
                                                        uint32_t extra)
     {
         NEW_OBJECT_REPRESENTATION_ONLY();
-
-        MOZ_NOT_REACHED("NYI");
-        return Failure;
+        MOZ_ASSUME_UNREACHABLE("NYI");
     }
 
     /*

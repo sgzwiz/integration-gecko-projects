@@ -1145,10 +1145,8 @@ TabChild::~TabChild()
     if (webBrowser) {
       webBrowser->SetContainerWindow(nullptr);
     }
-    if (mCx) {
-      DestroyCx();
-    }
-    
+    mGlobal = nullptr;
+
     if (mTabChildGlobal) {
       nsEventListenerManager* elm = mTabChildGlobal->GetListenerManager(false);
       if (elm) {
@@ -1445,7 +1443,7 @@ TabChild::DispatchMessageManagerMessage(const nsAString& aMessageName,
         cloneData.mDataLength = buffer.nbytes();
     }
 
-    nsFrameScriptCx frameScriptCx(static_cast<nsIWebBrowserChrome*>(this), this);
+    nsCOMPtr<nsIXPConnectJSObjectHolder> kungFuDeathGrip(GetGlobal());
     // Let the BrowserElementScrolling helper (if it exists) for this
     // content manipulate the frame state.
     nsRefPtr<nsFrameMessageManager> mm =
@@ -1485,7 +1483,7 @@ TabChild::RecvUpdateFrame(const FrameMetrics& aFrameMetrics)
 bool
 TabChild::ProcessUpdateFrame(const FrameMetrics& aFrameMetrics)
   {
-    if (!mCx || !mTabChildGlobal) {
+    if (!mGlobal || !mTabChildGlobal) {
         return true;
     }
 
@@ -1531,7 +1529,10 @@ TabChild::ProcessUpdateFrame(const FrameMetrics& aFrameMetrics)
     utils->SetScrollPositionClampingScrollPortSize(
       cssCompositedRect.width, cssCompositedRect.height);
     ScrollWindowTo(window, aFrameMetrics.mScrollOffset);
-    CSSToScreenScale resolution = aFrameMetrics.CalculateResolution();
+    LayoutDeviceToLayerScale resolution =
+      aFrameMetrics.CalculateResolution()
+      / aFrameMetrics.mDevPixelsPerCSSPixel
+      * ScreenToLayerScale(1);
     utils->SetResolution(resolution.scale, resolution.scale);
 
     nsCOMPtr<nsIDOMDocument> domDoc;
@@ -1555,7 +1556,7 @@ TabChild::ProcessUpdateFrame(const FrameMetrics& aFrameMetrics)
 bool
 TabChild::RecvHandleDoubleTap(const CSSIntPoint& aPoint)
 {
-    if (!mCx || !mTabChildGlobal) {
+    if (!mGlobal || !mTabChildGlobal) {
         return true;
     }
 
@@ -1572,7 +1573,7 @@ TabChild::RecvHandleDoubleTap(const CSSIntPoint& aPoint)
 bool
 TabChild::RecvHandleSingleTap(const CSSIntPoint& aPoint)
 {
-  if (!mCx || !mTabChildGlobal) {
+  if (!mGlobal || !mTabChildGlobal) {
     return true;
   }
 
@@ -1586,7 +1587,7 @@ TabChild::RecvHandleSingleTap(const CSSIntPoint& aPoint)
 bool
 TabChild::RecvHandleLongTap(const CSSIntPoint& aPoint)
 {
-  if (!mCx || !mTabChildGlobal) {
+  if (!mGlobal || !mTabChildGlobal) {
     return true;
   }
 
@@ -1876,18 +1877,18 @@ TabChild::DispatchWidgetEvent(nsGUIEvent& event)
 }
 
 PDocumentRendererChild*
-TabChild::AllocPDocumentRenderer(const nsRect& documentRect,
-                                 const gfxMatrix& transform,
-                                 const nsString& bgcolor,
-                                 const uint32_t& renderFlags,
-                                 const bool& flushLayout,
-                                 const nsIntSize& renderSize)
+TabChild::AllocPDocumentRendererChild(const nsRect& documentRect,
+                                      const gfxMatrix& transform,
+                                      const nsString& bgcolor,
+                                      const uint32_t& renderFlags,
+                                      const bool& flushLayout,
+                                      const nsIntSize& renderSize)
 {
     return new DocumentRendererChild();
 }
 
 bool
-TabChild::DeallocPDocumentRenderer(PDocumentRendererChild* actor)
+TabChild::DeallocPDocumentRendererChild(PDocumentRendererChild* actor)
 {
     delete actor;
     return true;
@@ -1927,31 +1928,31 @@ TabChild::RecvPDocumentRendererConstructor(PDocumentRendererChild* actor,
 }
 
 PContentDialogChild*
-TabChild::AllocPContentDialog(const uint32_t&,
-                              const nsCString&,
-                              const nsCString&,
-                              const InfallibleTArray<int>&,
-                              const InfallibleTArray<nsString>&)
+TabChild::AllocPContentDialogChild(const uint32_t&,
+                                   const nsCString&,
+                                   const nsCString&,
+                                   const InfallibleTArray<int>&,
+                                   const InfallibleTArray<nsString>&)
 {
   return new ContentDialogChild();
 }
 
 bool
-TabChild::DeallocPContentDialog(PContentDialogChild* aDialog)
+TabChild::DeallocPContentDialogChild(PContentDialogChild* aDialog)
 {
   delete aDialog;
   return true;
 }
 
 PContentPermissionRequestChild*
-TabChild::AllocPContentPermissionRequest(const nsCString& aType, const nsCString& aAccess, const IPC::Principal&)
+TabChild::AllocPContentPermissionRequestChild(const nsCString& aType, const nsCString& aAccess, const IPC::Principal&)
 {
   NS_RUNTIMEABORT("unused");
   return nullptr;
 }
 
 bool
-TabChild::DeallocPContentPermissionRequest(PContentPermissionRequestChild* actor)
+TabChild::DeallocPContentPermissionRequestChild(PContentPermissionRequestChild* actor)
 {
     PCOMContentPermissionRequestChild* child =
         static_cast<PCOMContentPermissionRequestChild*>(actor);
@@ -1976,16 +1977,16 @@ TabChild::RecvActivateFrameEvent(const nsString& aType, const bool& capture)
 }
 
 POfflineCacheUpdateChild*
-TabChild::AllocPOfflineCacheUpdate(const URIParams& manifestURI,
-                                   const URIParams& documentURI,
-                                   const bool& stickDocument)
+TabChild::AllocPOfflineCacheUpdateChild(const URIParams& manifestURI,
+                                        const URIParams& documentURI,
+                                        const bool& stickDocument)
 {
   NS_RUNTIMEABORT("unused");
   return nullptr;
 }
 
 bool
-TabChild::DeallocPOfflineCacheUpdate(POfflineCacheUpdateChild* actor)
+TabChild::DeallocPOfflineCacheUpdateChild(POfflineCacheUpdateChild* actor)
 {
   OfflineCacheUpdateChild* offlineCacheUpdate = static_cast<OfflineCacheUpdateChild*>(actor);
   delete offlineCacheUpdate;
@@ -1995,7 +1996,7 @@ TabChild::DeallocPOfflineCacheUpdate(POfflineCacheUpdateChild* actor)
 bool
 TabChild::RecvLoadRemoteScript(const nsString& aURL)
 {
-  if (!mCx && !InitTabChildGlobal())
+  if (!mGlobal && !InitTabChildGlobal())
     // This can happen if we're half-destroyed.  It's not a fatal
     // error.
     return true;
@@ -2009,7 +2010,7 @@ TabChild::RecvAsyncMessage(const nsString& aMessage,
                            const ClonedMessageData& aData)
 {
   if (mTabChildGlobal) {
-    nsFrameScriptCx cx(static_cast<nsIWebBrowserChrome*>(this), this);
+    nsCOMPtr<nsIXPConnectJSObjectHolder> kungFuDeathGrip(GetGlobal());
     StructuredCloneData cloneData = UnpackClonedMessageDataForChild(aData);
     nsRefPtr<nsFrameMessageManager> mm =
       static_cast<nsFrameMessageManager*>(mTabChildGlobal->mMessageManager.get());
@@ -2076,7 +2077,7 @@ TabChild::RecvDestroy()
 }
 
 PRenderFrameChild*
-TabChild::AllocPRenderFrame(ScrollingBehavior* aScrolling,
+TabChild::AllocPRenderFrameChild(ScrollingBehavior* aScrolling,
                             TextureFactoryIdentifier* aTextureFactoryIdentifier,
                             uint64_t* aLayersId)
 {
@@ -2084,7 +2085,7 @@ TabChild::AllocPRenderFrame(ScrollingBehavior* aScrolling,
 }
 
 bool
-TabChild::DeallocPRenderFrame(PRenderFrameChild* aFrame)
+TabChild::DeallocPRenderFrameChild(PRenderFrameChild* aFrame)
 {
     delete aFrame;
     return true;
@@ -2093,7 +2094,7 @@ TabChild::DeallocPRenderFrame(PRenderFrameChild* aFrame)
 bool
 TabChild::InitTabChildGlobal(FrameScriptLoading aScriptLoading)
 {
-  if (!mCx && !mTabChildGlobal) {
+  if (!mGlobal && !mTabChildGlobal) {
     nsCOMPtr<nsPIDOMWindow> window = do_GetInterface(mWebNav);
     NS_ENSURE_TRUE(window, false);
     nsCOMPtr<EventTarget> chromeHandler =
@@ -2294,14 +2295,14 @@ TabChild::GetMessageManager(nsIContentFrameMessageManager** aResult)
 }
 
 PIndexedDBChild*
-TabChild::AllocPIndexedDB(const nsCString& aASCIIOrigin, bool* /* aAllowed */)
+TabChild::AllocPIndexedDBChild(const nsCString& aASCIIOrigin, bool* /* aAllowed */)
 {
   NS_NOTREACHED("Should never get here!");
   return NULL;
 }
 
 bool
-TabChild::DeallocPIndexedDB(PIndexedDBChild* aActor)
+TabChild::DeallocPIndexedDBChild(PIndexedDBChild* aActor)
 {
   delete aActor;
   return true;
@@ -2344,7 +2345,6 @@ TabChildGlobal::Init()
   NS_ASSERTION(!mMessageManager, "Re-initializing?!?");
   mMessageManager = new nsFrameMessageManager(mTabChild,
                                               nullptr,
-                                              mTabChild->GetJSContext(),
                                               MM_CHILD);
 }
 
@@ -2418,9 +2418,7 @@ TabChildGlobal::Atob(const nsAString& aAsciiString,
 JSContext*
 TabChildGlobal::GetJSContextForEventHandlers()
 {
-  if (!mTabChild)
-    return nullptr;
-  return mTabChild->GetJSContext();
+  return nsContentUtils::GetSafeJSContext();
 }
 
 nsIPrincipal* 

@@ -61,6 +61,7 @@ webidl_files = \
   DOMCursor.webidl \
   DOMError.webidl \
   DOMImplementation.webidl \
+  DOMMMIError.webidl \
   DOMParser.webidl \
   DOMRequest.webidl \
   DOMSettableTokenList.webidl \
@@ -162,6 +163,7 @@ webidl_files = \
   HTMLVideoElement.webidl \
   IDBDatabase.webidl \
   IDBFactory.webidl \
+  IDBFileHandle.webidl \
   IDBVersionChangeEvent.webidl \
   ImageData.webidl \
   ImageDocument.webidl \
@@ -172,6 +174,8 @@ webidl_files = \
   LocalMediaStream.webidl \
   Location.webidl \
   MediaError.webidl \
+  MediaRecorder.webidl \
+  MediaSource.webidl \
   MediaStream.webidl \
   MediaStreamAudioDestinationNode.webidl \
   MediaStreamEvent.webidl \
@@ -220,14 +224,19 @@ webidl_files = \
   ScriptProcessorNode.webidl \
   ScrollAreaEvent.webidl \
   SimpleGestureEvent.webidl \
+  SourceBufferList.webidl \
+  SourceBuffer.webidl \
   StyleSheet.webidl \
   SVGAElement.webidl \
   SVGAltGlyphElement.webidl \
   SVGAngle.webidl \
   SVGAnimatedAngle.webidl \
   SVGAnimatedBoolean.webidl \
+  SVGAnimatedEnumeration.webidl \
+  SVGAnimatedInteger.webidl \
   SVGAnimatedLength.webidl \
   SVGAnimatedLengthList.webidl \
+  SVGAnimatedNumber.webidl \
   SVGAnimatedNumberList.webidl \
   SVGAnimatedPathData.webidl \
   SVGAnimatedPoints.webidl \
@@ -345,6 +354,7 @@ webidl_files = \
   WheelEvent.webidl \
   UndoManager.webidl \
   URLUtils.webidl \
+  VideoPlaybackQuality.webidl \
   VideoStreamTrack.webidl \
   WaveShaperNode.webidl \
   Window.webidl \
@@ -432,6 +442,7 @@ webidl_files += \
   DeviceStorageChangeEvent.webidl \
   PopupBlockedEvent.webidl \
   BlobEvent.webidl \
+  RecordErrorEvent.webidl \
   $(NULL)
 
 ifdef MOZ_B2G_BT

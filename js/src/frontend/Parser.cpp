@@ -188,8 +188,7 @@ ParseContext<FullParseHandler>::define(JSContext *cx, HandlePropertyName name,
         break;
 
       default:
-        JS_NOT_REACHED("unexpected kind");
-        break;
+        MOZ_ASSUME_UNREACHABLE("unexpected kind");
     }
 
     return true;
@@ -279,7 +278,7 @@ AppendPackedBindings(const ParseContext<ParseHandler> *pc, const DeclVector &vec
             kind = ARGUMENT;
             break;
           default:
-            JS_NOT_REACHED("unexpected dn->kind");
+            MOZ_ASSUME_UNREACHABLE("unexpected dn->kind");
         }
 
         /*
@@ -866,8 +865,15 @@ Parser<FullParseHandler>::standaloneFunctionBody(HandleFunction fun, const AutoN
     if (!FoldConstants(context, &pn, this))
         return null();
 
-    InternalHandle<Bindings*> bindings(script, &script->bindings);
-    if (!funpc.generateFunctionBindings(context, bindings))
+    InternalHandle<Bindings*> scriptBindings(script, &script->bindings);
+    if (!funpc.generateFunctionBindings(context, scriptBindings))
+        return null();
+
+    // Also populate the internal bindings of the function box, so that
+    // heavyweight tests while emitting bytecode work.
+    InternalHandle<Bindings*> funboxBindings =
+        InternalHandle<Bindings*>::fromMarkedLocation(&(*funbox)->bindings);
+    if (!funpc.generateFunctionBindings(context, funboxBindings))
         return null();
 
     return pn;
@@ -3975,8 +3981,7 @@ Parser<FullParseHandler>::forStatement()
 
 #if JS_HAS_DESTRUCTURING
           case PNK_ASSIGN:
-            JS_NOT_REACHED("forStatement TOK_ASSIGN");
-            break;
+            MOZ_ASSUME_UNREACHABLE("forStatement TOK_ASSIGN");
 
           case PNK_ARRAY:
           case PNK_OBJECT:
@@ -6619,6 +6624,8 @@ Parser<ParseHandler>::primaryExpr(TokenKind tt)
                  * Support, e.g., |var {x, y} = o| as destructuring shorthand
                  * for |var {x: x, y: y} = o|, per proposed JS2/ES4 for JS1.8.
                  */
+                if (!abortIfSyntaxParser())
+                    return null();
                 tokenStream.ungetToken();
                 if (!tokenStream.checkForKeyword(atom->charsZ(), atom->length(), NULL, NULL))
                     return null();
@@ -6656,8 +6663,7 @@ Parser<ParseHandler>::primaryExpr(TokenKind tt)
             } else if (op == JSOP_INITPROP_SETTER) {
                 assignType = SET;
             } else {
-                JS_NOT_REACHED("bad opcode in object initializer");
-                assignType = VALUE; /* try to error early */
+                MOZ_ASSUME_UNREACHABLE("bad opcode in object initializer");
             }
 
             AtomIndexAddPtr p = seen.lookupForAdd(atom);

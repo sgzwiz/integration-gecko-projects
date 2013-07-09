@@ -9,10 +9,10 @@
 #include "jscompartment.h"
 #include "jsiter.h"
 
-#include "GlobalObject.h"
-#include "ScopeObject.h"
-#include "Shape.h"
-#include "Xdr.h"
+#include "vm/GlobalObject.h"
+#include "vm/ScopeObject.h"
+#include "vm/Shape.h"
+#include "vm/Xdr.h"
 
 #include "jsatominlines.h"
 #include "jsobjinlines.h"
@@ -1358,10 +1358,11 @@ class DebugScopeProxy : public BaseProxyHandler
 
     DebugScopeProxy() : BaseProxyHandler(&family) {}
 
-    bool isExtensible(JSObject *proxy) MOZ_OVERRIDE
+    bool isExtensible(JSContext *cx, HandleObject proxy, bool *extensible) MOZ_OVERRIDE
     {
         // always [[Extensible]], can't be made non-[[Extensible]], like most
         // proxies
+        *extensible = true;
         return true;
     }
 
@@ -2114,7 +2115,7 @@ GetDebugScopeForMissing(JSContext *cx, const ScopeIter &si)
       }
       case ScopeIter::With:
       case ScopeIter::StrictEvalScope:
-        JS_NOT_REACHED("should already have a scope");
+        MOZ_ASSUME_UNREACHABLE("should already have a scope");
     }
     if (!debugScope)
         return NULL;

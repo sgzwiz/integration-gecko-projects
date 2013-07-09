@@ -626,7 +626,7 @@ class StackTypeSet : public TypeSet
     /* Get the prototype shared by all objects in this set, or NULL. */
     JSObject *getCommonPrototype();
 
-    /* Get the typed array type of all objects in this set, or TypedArray::TYPE_MAX. */
+    /* Get the typed array type of all objects in this set, or TypedArrayObject::TYPE_MAX. */
     int getTypedArrayType();
 
     /* Whether all objects have JSCLASS_IS_DOMJSCLASS set. */
@@ -1135,6 +1135,9 @@ typedef HashSet<ReadBarriered<TypeObject>, TypeObjectEntry, SystemAllocPolicy> T
 /* Whether to use a new type object when calling 'new' at script/pc. */
 bool
 UseNewType(JSContext *cx, JSScript *script, jsbytecode *pc);
+
+bool
+UseNewTypeForClone(JSFunction *fun);
 
 /*
  * Whether Array.prototype, or an object on its proto chain, has an

@@ -49,13 +49,13 @@ class JSString;
  */
 template <js::AllowGC allowGC>
 extern JSString *
-js_NumberToString(JSContext *cx, double d);
+js_NumberToString(js::ThreadSafeContext *cx, double d);
 
 namespace js {
 
 template <AllowGC allowGC>
 extern JSFlatString *
-Int32ToString(JSContext *cx, int32_t i);
+Int32ToString(ThreadSafeContext *tcx, int32_t i);
 
 /*
  * Convert an integer or double (contained in the given value) to a string and
@@ -215,7 +215,7 @@ IsDefinitelyIndex(const Value &v, uint32_t *indexp)
 
 /* ES5 9.4 ToInteger. */
 static inline bool
-ToInteger(JSContext *cx, const js::Value &v, double *dp)
+ToInteger(JSContext *cx, HandleValue v, double *dp)
 {
 #ifdef DEBUG
     {

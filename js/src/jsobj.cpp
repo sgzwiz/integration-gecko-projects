@@ -44,7 +44,6 @@
 #include "jsboolinlines.h"
 #include "jscntxtinlines.h"
 #include "jscompartmentinlines.h"
-#include "jstypedarrayinlines.h"
 #include "builtin/Iterator-inl.h"
 #include "vm/ArrayObject-inl.h"
 #include "vm/ArgumentsObject-inl.h"
@@ -566,7 +565,7 @@ js::CheckDefineProperty(JSContext *cx, HandleObject obj, HandleId id, HandleValu
     if (!GetOwnPropertyDescriptor(cx, obj, id, &desc))
         return false;
 
-    // This does not have to check obj->isExtensible() when !desc.obj (steps
+    // This does not have to check obj's extensibility when !desc.obj (steps
     // 2-3) because the low-level methods JSObject::{add,put}Property check
     // for that.
     if (desc.obj && (desc.attrs & JSPROP_PERMANENT)) {
@@ -608,7 +607,10 @@ DefinePropertyOnObject(JSContext *cx, HandleObject obj, HandleId id, const PropD
 
     /* 8.12.9 steps 2-4. */
     if (!shape) {
-        if (!obj->isExtensible())
+        bool extensible;
+        if (!JSObject::isExtensible(cx, obj, &extensible))
+            return false;
+        if (!extensible)
             return Reject(cx, obj, JSMSG_OBJECT_NOT_EXTENSIBLE, throwError, rval);
 
         *rval = true;
@@ -1131,7 +1133,10 @@ JSObject::sealOrFreeze(JSContext *cx, HandleObject obj, ImmutabilityType it)
     assertSameCompartment(cx, obj);
     JS_ASSERT(it == SEAL || it == FREEZE);
 
-    if (obj->isExtensible() && !JSObject::preventExtensions(cx, obj))
+    bool extensible;
+    if (!JSObject::isExtensible(cx, obj, &extensible))
+        return false;
+    if (extensible && !JSObject::preventExtensions(cx, obj))
         return false;
 
     AutoIdVector props(cx);
@@ -1220,7 +1225,10 @@ JSObject::sealOrFreeze(JSContext *cx, HandleObject obj, ImmutabilityType it)
 /* static */ bool
 JSObject::isSealedOrFrozen(JSContext *cx, HandleObject obj, ImmutabilityType it, bool *resultp)
 {
-    if (obj->isExtensible()) {
+    bool extensible;
+    if (!JSObject::isExtensible(cx, obj, &extensible))
+        return false;
+    if (extensible) {
         *resultp = false;
         return true;
     }
@@ -1440,9 +1448,13 @@ js::NewObjectWithClassProtoCommon(JSContext *cx, js::Class *clasp, JSObject *pro
     return obj;
 }
 
-JSObject *
-js::NewObjectWithType(JSContext *cx, HandleTypeObject type, JSObject *parent, gc::AllocKind allocKind,
-                      NewObjectKind newKind /* = GenericObject */)
+/*
+ * Create a plain object with the specified type. This bypasses getNewType to
+ * avoid losing creation site information for objects made by scripted 'new'.
+ */
+static JSObject *
+NewObjectWithType(JSContext *cx, HandleTypeObject type, JSObject *parent, gc::AllocKind allocKind,
+                  NewObjectKind newKind = GenericObject)
 {
     JS_ASSERT(type->proto->hasNewType(&ObjectClass, type));
     JS_ASSERT(parent);
@@ -2402,6 +2414,15 @@ js_InitClass(JSContext *cx, HandleObject obj, JSObject *protoProto_,
 {
     RootedObject protoProto(cx, protoProto_);
 
+    /* Assert mandatory function pointer members. */
+    JS_ASSERT(clasp->addProperty);
+    JS_ASSERT(clasp->delProperty);
+    JS_ASSERT(clasp->getProperty);
+    JS_ASSERT(clasp->setProperty);
+    JS_ASSERT(clasp->enumerate);
+    JS_ASSERT(clasp->resolve);
+    JS_ASSERT(clasp->convert);
+
     RootedAtom atom(cx, Atomize(cx, clasp->name, strlen(clasp->name)));
     if (!atom)
         return NULL;
@@ -2593,15 +2614,6 @@ JSObject::shrinkSlots(JSContext *cx, HandleObject obj, uint32_t oldCount, uint32
 {
     JS_ASSERT(newCount < oldCount);
 
-    /*
-     * Refuse to shrink slots for call objects. This only happens in a very
-     * obscure situation (deleting names introduced by a direct 'eval') and
-     * allowing the slots pointer to change may require updating pointers in
-     * the function's active args/vars information.
-     */
-    if (obj->is<CallObject>())
-        return;
-
     if (newCount == 0) {
         FreeSlots(cx, obj->slots);
         obj->slots = NULL;
@@ -2721,7 +2733,7 @@ JSObject::maybeDensifySparseElements(JSContext *cx, HandleObject obj)
         return ED_SPARSE;
 
     /* Watch for conditions under which an object's elements cannot be dense. */
-    if (!obj->isExtensible() || obj->watched())
+    if (!obj->nonProxyIsExtensible() || obj->watched())
         return ED_SPARSE;
 
     /*
@@ -2844,7 +2856,7 @@ ReallocateElements(ThreadSafeContext *tcx, JSObject *obj, ObjectElements *oldHea
 bool
 JSObject::growElements(ThreadSafeContext *tcx, uint32_t newcap)
 {
-    JS_ASSERT(isExtensible());
+    JS_ASSERT(nonProxyIsExtensible());
 
     /*
      * When an object with CAPACITY_DOUBLING_MAX or fewer elements needs to
@@ -3228,8 +3240,8 @@ PurgeProtoChain(JSContext *cx, JSObject *objArg, HandleId id)
     return true;
 }
 
-bool
-js_PurgeScopeChainHelper(JSContext *cx, HandleObject objArg, HandleId id)
+static bool
+PurgeScopeChainHelper(JSContext *cx, HandleObject objArg, HandleId id)
 {
     /* Re-root locally so we can re-assign. */
     RootedObject obj(cx, objArg);
@@ -3259,6 +3271,21 @@ js_PurgeScopeChainHelper(JSContext *cx, HandleObject objArg, HandleId id)
     return true;
 }
 
+/*
+ * PurgeScopeChain does nothing if obj is not itself a prototype or parent
+ * scope, else it reshapes the scope and prototype chains it links. It calls
+ * PurgeScopeChainHelper, which asserts that obj is flagged as a delegate
+ * (i.e., obj has ever been on a prototype or parent chain).
+ */
+static inline bool
+PurgeScopeChain(JSContext *cx, JS::HandleObject obj, JS::HandleId id)
+{
+    if (obj->isDelegate())
+        return PurgeScopeChainHelper(cx, obj, id);
+    return true;
+}
+
+
 Shape *
 js_AddNativeProperty(JSContext *cx, HandleObject obj, HandleId id,
                      PropertyOp getter, StrictPropertyOp setter, uint32_t slot,
@@ -3269,7 +3296,7 @@ js_AddNativeProperty(JSContext *cx, HandleObject obj, HandleId id,
      * this optimistically (assuming no failure below) before locking obj, so
      * we can lock the shadowed scope.
      */
-    if (!js_PurgeScopeChain(cx, obj, id))
+    if (!PurgeScopeChain(cx, obj, id))
         return NULL;
 
     Shape *shape =
@@ -3504,7 +3531,7 @@ js::DefineNativeProperty(JSContext *cx, HandleObject obj, HandleId id, HandleVal
      * is not possible.
      */
     if (!(defineHow & DNP_DONT_PURGE)) {
-        if (!js_PurgeScopeChain(cx, obj, id))
+        if (!PurgeScopeChain(cx, obj, id))
             return false;
     }
 
@@ -4134,6 +4161,12 @@ js::LookupPropertyPure(JSObject *obj, jsid id, JSObject **objp, Shape **propp)
     return LookupPropertyPureInline(obj, id, objp, propp);
 }
 
+static inline bool
+IdIsLength(ThreadSafeContext *tcx, jsid id)
+{
+    return JSID_IS_ATOM(id) && tcx->names().length == JSID_TO_ATOM(id);
+}
+
 /*
  * A pure version of GetPropertyHelper that can be called from parallel code
  * without locking. This code path cannot GC. This variant returns false
@@ -4142,25 +4175,48 @@ js::LookupPropertyPure(JSObject *obj, jsid id, JSObject **objp, Shape **propp)
  *
  *  - Any object in the lookup chain has a non-stub resolve hook.
  *  - Any object in the lookup chain is non-native.
- *  - Hashification of a shape tree into a shape table.
  *  - The property has a getter.
  */
 bool
-js::GetPropertyPure(JSObject *obj, jsid id, Value *vp)
+js::GetPropertyPure(ThreadSafeContext *tcx, JSObject *obj, jsid id, Value *vp)
 {
+    /* Typed arrays are not native, so we fast-path them here. */
+    if (obj->is<TypedArrayObject>()) {
+        TypedArrayObject *tarr = &obj->as<TypedArrayObject>();
+
+        if (JSID_IS_INT(id)) {
+            uint32_t index = JSID_TO_INT(id);
+            if (index < tarr->length()) {
+                MutableHandleValue vpHandle = MutableHandleValue::fromMarkedLocation(vp);
+                tarr->copyTypedArrayElement(index, vpHandle);
+                return true;
+            }
+            return false;
+        }
+
+        if (IdIsLength(tcx, id)) {
+            vp->setNumber(tarr->length());
+            return true;
+        }
+
+        return false;
+    }
+
+    /* Deal with native objects. */
     JSObject *obj2;
     Shape *shape;
     if (!LookupPropertyPureInline(obj, id, &obj2, &shape))
         return false;
 
-    /*
-     * If we couldn't find the property, fail if any of the following edge
-     * cases appear.
-     */
     if (!shape) {
-        /* Do we have a non-stub class op hook? */
+        /* Fail if we have a non-stub class op hooks. */
         if (obj->getClass()->getProperty && obj->getClass()->getProperty != JS_PropertyStub)
             return false;
+
+        if (obj->getOps()->getElement)
+            return false;
+
+        /* Vanilla native object, return undefined. */
         vp->setUndefined();
         return true;
     }
@@ -4170,7 +4226,48 @@ js::GetPropertyPure(JSObject *obj, jsid id, Value *vp)
         return true;
     }
 
+    /* Special case 'length' on Array. */
+    if (obj->is<ArrayObject>() && IdIsLength(tcx, id)) {
+        vp->setNumber(obj->as<ArrayObject>().length());
+        return true;
+    }
+
     return NativeGetPureInline(obj2, shape, vp);
+}
+
+static bool
+JS_ALWAYS_INLINE
+GetElementPure(ThreadSafeContext *tcx, JSObject *obj, uint32_t index, Value *vp)
+{
+    jsid id;
+    if (!IndexToIdPure(index, &id))
+        return false;
+
+    return GetPropertyPure(tcx, obj, id, vp);
+}
+
+/*
+ * A pure version of GetObjectElementOperation that can be called from
+ * parallel code without locking. This variant returns false whenever a
+ * side-effect might have occurred.
+ */
+bool
+js::GetObjectElementOperationPure(ThreadSafeContext *tcx, JSObject *obj, const Value &prop,
+                                  Value *vp)
+{
+    uint32_t index;
+    if (IsDefinitelyIndex(prop, &index))
+        return GetElementPure(tcx, obj, index, vp);
+
+    /* Atomizing the property value is effectful and not threadsafe. */
+    if (!prop.isString() || !prop.toString()->isAtom())
+        return false;
+
+    JSAtom *name = &prop.toString()->asAtom();
+    if (name->isIndex(&index))
+        return GetElementPure(tcx, obj, index, vp);
+
+    return GetPropertyPure(tcx, obj, NameToId(name->asPropertyName()), vp);
 }
 
 JSBool
@@ -4302,7 +4399,7 @@ JSObject::callMethod(JSContext *cx, HandleId id, unsigned argc, Value *argv, Mut
     RootedObject obj(cx, this);
     if (!JSObject::getGeneric(cx, obj, obj, id, &fval))
         return false;
-    return Invoke(cx, ObjectValue(*obj), fval, argc, argv, vp.address());
+    return Invoke(cx, ObjectValue(*obj), fval, argc, argv, vp);
 }
 
 JSBool
@@ -4457,7 +4554,10 @@ baseops::SetPropertyHelper(JSContext *cx, HandleObject obj, HandleObject receive
     }
 
     if (!shape) {
-        if (!obj->isExtensible()) {
+        bool extensible;
+        if (!JSObject::isExtensible(cx, obj, &extensible))
+            return false;
+        if (!extensible) {
             /* Error in strict mode code, warn with extra warnings option, otherwise do nothing. */
             if (strict)
                 return obj->reportNotExtensible(cx);
@@ -4467,7 +4567,7 @@ baseops::SetPropertyHelper(JSContext *cx, HandleObject obj, HandleObject receive
         }
 
         /* Purge the property cache of now-shadowed id in obj's scope chain. */
-        if (!js_PurgeScopeChain(cx, obj, id))
+        if (!PurgeScopeChain(cx, obj, id))
             return false;
 
         if (getter == JS_PropertyStub)
@@ -4668,7 +4768,7 @@ MaybeCallMethod(JSContext *cx, HandleObject obj, HandleId id, MutableHandleValue
         vp.setObject(*obj);
         return true;
     }
-    return Invoke(cx, ObjectValue(*obj), vp, 0, NULL, vp.address());
+    return Invoke(cx, ObjectValue(*obj), vp, 0, NULL, vp);
 }
 
 JS_FRIEND_API(JSBool)
@@ -5183,7 +5283,7 @@ JSObject::dump()
 
     fprintf(stderr, "flags:");
     if (obj->isDelegate()) fprintf(stderr, " delegate");
-    if (!obj->isExtensible()) fprintf(stderr, " not_extensible");
+    if (!obj->isProxy() && !obj->nonProxyIsExtensible()) fprintf(stderr, " not_extensible");
     if (obj->isIndexed()) fprintf(stderr, " indexed");
 
     if (obj->isNative()) {

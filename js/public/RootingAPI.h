@@ -203,8 +203,11 @@ class Heap : public js::HeapBase<T>
             relocate();
     }
 
-    bool operator!=(const T &other) const { return ptr != other; }
+    bool operator==(const Heap<T> &other) { return ptr == other.ptr; }
+    bool operator!=(const Heap<T> &other) { return ptr != other.ptr; }
+
     bool operator==(const T &other) const { return ptr == other; }
+    bool operator!=(const T &other) const { return ptr != other; }
 
     operator T() const { return ptr; }
     T operator->() const { return ptr; }
@@ -888,13 +891,11 @@ template <typename T> class MaybeRooted<T, NoGC>
     typedef FakeMutableHandle<T> MutableHandleType;
 
     static inline JS::Handle<T> toHandle(HandleType v) {
-        JS_NOT_REACHED("Bad conversion");
-        return JS::Handle<T>::fromMarkedLocation(NULL);
+        MOZ_ASSUME_UNREACHABLE("Bad conversion");
     }
 
     static inline JS::MutableHandle<T> toMutableHandle(MutableHandleType v) {
-        JS_NOT_REACHED("Bad conversion");
-        return JS::MutableHandle<T>::fromMarkedLocation(NULL);
+        MOZ_ASSUME_UNREACHABLE("Bad conversion");
     }
 };
 

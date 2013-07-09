@@ -392,7 +392,7 @@ abstract public class BrowserApp extends GeckoApp
 
         super.onCreate(savedInstanceState);
 
-        RelativeLayout actionBar = (RelativeLayout) findViewById(R.id.browser_toolbar);
+        mBrowserToolbar = (BrowserToolbar) findViewById(R.id.browser_toolbar);
 
         mToast = new ButtonToast(findViewById(R.id.toast), new ButtonToast.ToastListener() {
             @Override
@@ -433,11 +433,8 @@ abstract public class BrowserApp extends GeckoApp
             mAboutHome.setUserVisibleHint(false);
         }
 
-        mBrowserToolbar = new BrowserToolbar(this);
-        mBrowserToolbar.from(actionBar);
-
         // Intercept key events for gamepad shortcuts
-        actionBar.setOnKeyListener(this);
+        mBrowserToolbar.setOnKeyListener(this);
 
         if (mTabsPanel != null) {
             mTabsPanel.setTabsLayoutChangeListener(this);
@@ -554,7 +551,7 @@ abstract public class BrowserApp extends GeckoApp
                 mLayerView.getLayerClient().setOnMetricsChangedListener(this);
             }
             setToolbarMargin(0);
-            mAboutHome.setTopPadding(mBrowserToolbar.getLayout().getHeight());
+            mAboutHome.setTopPadding(mBrowserToolbar.getHeight());
         } else {
             // Immediately show the toolbar when disabling the dynamic
             // toolbar.
@@ -563,7 +560,7 @@ abstract public class BrowserApp extends GeckoApp
             }
             mAboutHome.setTopPadding(0);
             if (mBrowserToolbar != null) {
-                mBrowserToolbar.getLayout().scrollTo(0, 0);
+                mBrowserToolbar.scrollTo(0, 0);
             }
         }
 
@@ -634,12 +631,20 @@ abstract public class BrowserApp extends GeckoApp
             case R.id.add_to_launcher: {
                 Tab tab = Tabs.getInstance().getSelectedTab();
                 if (tab != null) {
-                    String url = tab.getURL();
-                    String title = tab.getDisplayTitle();
-                    Bitmap favicon = tab.getFavicon();
-                    if (url != null && title != null) {
-                        GeckoAppShell.createShortcut(title, url, url, favicon == null ? null : favicon, "");
+                    final String url = tab.getURL();
+                    final String title = tab.getDisplayTitle();
+                    if (url == null || title == null) {
+                        return true;
                     }
+
+                    Favicons favicons = Favicons.getInstance();
+                    favicons.loadFavicon(url, tab.getFaviconURL(), 0,
+                    new Favicons.OnFaviconLoadedListener() {
+                        @Override
+                        public void onFaviconLoaded(String url, Bitmap favicon) {
+                            GeckoAppShell.createShortcut(title, url, url, favicon == null ? null : favicon, "");
+                        }
+                    });
                 }
                 return true;
             }
@@ -824,7 +829,7 @@ abstract public class BrowserApp extends GeckoApp
             mDynamicToolbarCanScroll = true;
         }
 
-        final View toolbarLayout = mBrowserToolbar.getLayout();
+        final View toolbarLayout = mBrowserToolbar;
         final int marginTop = Math.round(aMetrics.marginTop);
         ThreadUtils.postToUiThread(new Runnable() {
             public void run() {
@@ -857,7 +862,7 @@ abstract public class BrowserApp extends GeckoApp
     public void refreshToolbarHeight() {
         int height = 0;
         if (mBrowserToolbar != null) {
-            height = mBrowserToolbar.getLayout().getHeight();
+            height = mBrowserToolbar.getHeight();
         }
 
         if (!isDynamicToolbarEnabled()) {
@@ -1252,7 +1257,8 @@ abstract public class BrowserApp extends GeckoApp
     private void loadFavicon(final Tab tab) {
         maybeCancelFaviconLoad(tab);
 
-        long id = Favicons.getInstance().loadFavicon(tab.getURL(), tab.getFaviconURL(), !tab.isPrivate(),
+        int flags = Favicons.FLAG_SCALE | (tab.isPrivate() ? 0 : Favicons.FLAG_PERSIST);
+        long id = Favicons.getInstance().loadFavicon(tab.getURL(), tab.getFaviconURL(), flags,
                         new Favicons.OnFaviconLoadedListener() {
 
             @Override

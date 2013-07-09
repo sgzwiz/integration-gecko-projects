@@ -6,6 +6,7 @@
 #include "BasicCompositor.h"
 #include "ipc/AutoOpenSurface.h"
 #include "mozilla/layers/Effects.h"
+#include "mozilla/layers/YCbCrImageDataSerializer.h"
 #include "nsIWidget.h"
 #include "gfx2DGlue.h"
 #include "gfxUtils.h"
@@ -16,7 +17,21 @@ using namespace mozilla::gfx;
 
 namespace layers {
 
-class TextureSourceBasic : public TextureHost
+/**
+ * A texture source interface that can be used by the software Compositor.
+ */
+class TextureSourceBasic
+{
+public:
+  virtual ~TextureSourceBasic() {}
+  virtual gfx::SourceSurface* GetSurface() = 0;
+};
+
+/**
+ * Texture source and host implementaion for software compositing.
+ */
+class TextureHostBasic : public TextureHost
+                             , public TextureSourceBasic
 {
 public:
   virtual IntSize GetSize() const MOZ_OVERRIDE { return mSize; }
@@ -30,7 +45,7 @@ public:
     mCompositor = static_cast<BasicCompositor*>(aCompositor);
   }
 
-  virtual const char *Name() { return "TextureSourceBasic"; }
+  virtual const char *Name() { return "TextureHostBasic"; }
 
 protected:
   virtual void UpdateImpl(const SurfaceDescriptor& aImage,
@@ -48,8 +63,11 @@ protected:
     mSize = IntSize(mThebesImage->Width(), mThebesImage->Height());
   }
 
+  virtual void EnsureSurface() { }
+
   virtual bool Lock() MOZ_OVERRIDE
   {
+    EnsureSurface();
     if (!mSurface) {
       mSurface = mCompositor->GetDrawTarget()->CreateSourceSurfaceFromData(mThebesImage->Data(),
                                                                            mSize,
@@ -74,15 +92,89 @@ protected:
   IntSize mSize;
 };
 
+void
+DeserializerToPlanarYCbCrImageData(YCbCrImageDataDeserializer& aDeserializer, PlanarYCbCrImage::Data& aData)
+{
+  aData.mYChannel = aDeserializer.GetYData();
+  aData.mYStride = aDeserializer.GetYStride();
+  aData.mYSize = aDeserializer.GetYSize();
+  aData.mCbChannel = aDeserializer.GetCbData();
+  aData.mCrChannel = aDeserializer.GetCrData();
+  aData.mCbCrStride = aDeserializer.GetCbCrStride();
+  aData.mCbCrSize = aDeserializer.GetCbCrSize();
+  aData.mPicSize = aDeserializer.GetYSize();
+}
+
+class YCbCrTextureHostBasic : public TextureHostBasic
+{
+public:
+  virtual void UpdateImpl(const SurfaceDescriptor& aImage,
+                          nsIntRegion *aRegion,
+                          nsIntPoint*) MOZ_OVERRIDE
+  {
+    MOZ_ASSERT(aImage.type() == SurfaceDescriptor::TYCbCrImage);
+    mSurface = nullptr;
+    ConvertImageToRGB(aImage);
+  }
+
+  virtual void SwapTexturesImpl(const SurfaceDescriptor& aImage,
+                                nsIntRegion* aRegion) MOZ_OVERRIDE
+  {
+    MOZ_ASSERT(aImage.type() == SurfaceDescriptor::TYCbCrImage);
+    mSurface = nullptr;
+  }
+
+  virtual void EnsureSurface() MOZ_OVERRIDE
+  {
+    if (!mBuffer) {
+      return;
+    }
+    ConvertImageToRGB(*mBuffer);
+  }
+
+  void ConvertImageToRGB(const SurfaceDescriptor& aImage)
+  {
+    YCbCrImageDataDeserializer deserializer(aImage.get_YCbCrImage().data().get<uint8_t>());
+    PlanarYCbCrImage::Data data;
+    DeserializerToPlanarYCbCrImageData(deserializer, data);
+
+    gfxASurface::gfxImageFormat format = gfxASurface::ImageFormatRGB24;
+    gfxIntSize size;
+    gfxUtils::GetYCbCrToRGBDestFormatAndSize(data, format, size);
+    if (size.width > PlanarYCbCrImage::MAX_DIMENSION ||
+        size.height > PlanarYCbCrImage::MAX_DIMENSION) {
+      NS_ERROR("Illegal image dest width or height");
+      return;
+    }
+
+    mThebesSurface = mThebesImage =
+      new gfxImageSurface(size, format);
+
+    gfxUtils::ConvertYCbCrToRGB(data, format, size,
+                                mThebesImage->Data(),
+                                mThebesImage->Stride());
+
+    mSize = IntSize(size.width, size.height);
+    mFormat =
+      (format == gfxASurface::ImageFormatARGB32) ? FORMAT_B8G8R8A8 :
+                                                   FORMAT_B8G8R8X8;
+  }
+
+};
+
 TemporaryRef<TextureHost>
 CreateBasicTextureHost(SurfaceDescriptorType aDescriptorType,
                        uint32_t aTextureHostFlags,
                        uint32_t aTextureFlags)
 {
+  if (aDescriptorType == SurfaceDescriptor::TYCbCrImage) {
+    return new YCbCrTextureHostBasic();
+  }
+
   MOZ_ASSERT(aDescriptorType == SurfaceDescriptor::TShmem ||
              aDescriptorType == SurfaceDescriptor::TMemoryImage,
              "We can only support Shmem currently");
-  return new TextureSourceBasic();
+  return new TextureHostBasic();
 }
 
 BasicCompositor::BasicCompositor(nsIWidget *aWidget)

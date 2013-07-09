@@ -326,7 +326,8 @@ nsHttpConnectionMgr::DoShiftReloadConnectionCleanup(nsHttpConnectionInfo *aCI)
 
 nsresult
 nsHttpConnectionMgr::SpeculativeConnect(nsHttpConnectionInfo *ci,
-                                        nsIInterfaceRequestor *callbacks)
+                                        nsIInterfaceRequestor *callbacks,
+                                        uint32_t caps)
 {
     LOG(("nsHttpConnectionMgr::SpeculativeConnect [ci=%s]\n",
          ci->HashKey().get()));
@@ -336,7 +337,7 @@ nsHttpConnectionMgr::SpeculativeConnect(nsHttpConnectionInfo *ci,
     nsCOMPtr<nsIInterfaceRequestor> wrappedCallbacks;
     NS_NewInterfaceRequestorAggregation(callbacks, nullptr, getter_AddRefs(wrappedCallbacks));
 
-    uint32_t caps = ci->GetAnonymous() ? NS_HTTP_LOAD_ANONYMOUS : 0;
+    caps |= ci->GetAnonymous() ? NS_HTTP_LOAD_ANONYMOUS : 0;
     nsRefPtr<NullHttpTransaction> trans =
         new NullHttpTransaction(ci, wrappedCallbacks, caps);
 
@@ -2415,9 +2416,9 @@ nsHttpConnectionMgr::TimeoutTickCB(const nsACString &key,
                 LOG(("Force timeout of half open to %s after %.2fms.\n",
                      ent->mConnInfo->HashKey().get(), delta));
                 if (half->SocketTransport())
-                    half->SocketTransport()->Close(NS_ERROR_NET_TIMEOUT);
+                    half->SocketTransport()->Close(NS_ERROR_ABORT);
                 if (half->BackupTransport())
-                    half->BackupTransport()->Close(NS_ERROR_NET_TIMEOUT);
+                    half->BackupTransport()->Close(NS_ERROR_ABORT);
             }
 
             // If this half open hangs around for 5 seconds after we've closed() it
@@ -2813,6 +2814,10 @@ nsHalfOpenSocket::OnOutputStreamReady(nsIAsyncOutputStream *out)
     nsRefPtr<nsHttpConnection> conn = new nsHttpConnection();
     LOG(("nsHalfOpenSocket::OnOutputStreamReady "
          "Created new nshttpconnection %p\n", conn.get()));
+
+    // Some capabilities are needed before a transaciton actually gets
+    // scheduled (e.g. how to negotiate false start)
+    conn->SetTransactionCaps(mTransaction->Caps());
 
     NetAddr peeraddr;
     nsCOMPtr<nsIInterfaceRequestor> callbacks;
@@ -3316,13 +3321,19 @@ nsHttpConnectionMgr::ReadConnectionEntry(const nsACString &key,
         HttpConnInfo info;
         info.ttl = ent->mActiveConns[i]->TimeToLive();
         info.rtt = ent->mActiveConns[i]->Rtt();
+        if (ent->mActiveConns[i]->UsingSpdy())
+            info.SetHTTP2ProtocolVersion(ent->mActiveConns[i]->GetSpdyVersion());
+        else
+            info.SetHTTP1ProtocolVersion(ent->mActiveConns[i]->GetLastHttpResponseVersion());
+
         data.active.AppendElement(info);
     }
     for (uint32_t i = 0; i < ent->mIdleConns.Length(); i++) {
         HttpConnInfo info;
         info.ttl = ent->mIdleConns[i]->TimeToLive();
         info.rtt = ent->mIdleConns[i]->Rtt();
-        data.active.AppendElement(info);
+        info.SetHTTP1ProtocolVersion(ent->mIdleConns[i]->GetLastHttpResponseVersion());
+        data.idle.AppendElement(info);
     }
     data.spdy = ent->mUsingSpdy;
     data.ssl = ent->mConnInfo->UsingSSL();

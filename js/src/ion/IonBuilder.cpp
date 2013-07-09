@@ -21,15 +21,10 @@
 
 #include "jsanalyzeinlines.h"
 #include "jsscriptinlines.h"
-#include "jstypedarrayinlines.h"
 
 #include "ion/CompileInfo-inl.h"
 #include "ion/ExecutionModeInlines.h"
 #include "vm/ScopeObject-inl.h"
-
-#ifdef JS_THREADSAFE
-# include "prthread.h"
-#endif
 
 using namespace js;
 using namespace js::ion;
@@ -1108,8 +1103,7 @@ IonBuilder::snoopControlFlow(JSOp op)
 
           default:
             // Hard assert for now - make an error later.
-            JS_NOT_REACHED("unknown goto case");
-            break;
+            MOZ_ASSUME_UNREACHABLE("unknown goto case");
         }
         break;
       }
@@ -1120,8 +1114,7 @@ IonBuilder::snoopControlFlow(JSOp op)
       case JSOP_IFNE:
         // We should never reach an IFNE, it's a stopAt point, which will
         // trigger closing the loop.
-        JS_NOT_REACHED("we should never reach an ifne!");
-        return ControlStatus_Error;
+        MOZ_ASSUME_UNREACHABLE("we should never reach an ifne!");
 
       default:
         break;
@@ -1409,8 +1402,7 @@ IonBuilder::inspectOpcode(JSOp op)
 
       case JSOP_LOOPHEAD:
         // JSOP_LOOPHEAD is handled when processing the loop header.
-        JS_NOT_REACHED("JSOP_LOOPHEAD outside loop");
-        return true;
+        MOZ_ASSUME_UNREACHABLE("JSOP_LOOPHEAD outside loop");
 
       case JSOP_GETELEM:
       case JSOP_CALLELEM:
@@ -1610,9 +1602,8 @@ IonBuilder::processCfgEntry(CFGState &state)
         return processLabelEnd(state);
 
       default:
-        JS_NOT_REACHED("unknown cfgstate");
+        MOZ_ASSUME_UNREACHABLE("unknown cfgstate");
     }
-    return ControlStatus_Error;
 }
 
 IonBuilder::ControlStatus
@@ -2259,8 +2250,7 @@ IonBuilder::processSwitchBreak(JSOp op)
         breaks = &state.condswitch.breaks;
         break;
       default:
-        JS_NOT_REACHED("Unexpected switch state.");
-        return ControlStatus_Error;
+        MOZ_ASSUME_UNREACHABLE("Unexpected switch state.");
     }
 
     *breaks = new DeferredEdge(current, *breaks);
@@ -2336,8 +2326,7 @@ IonBuilder::maybeLoop(JSOp op, jssrcnote *sn)
         break;
 
       default:
-        JS_NOT_REACHED("unexpected opcode");
-        return ControlStatus_Error;
+        MOZ_ASSUME_UNREACHABLE("unexpected opcode");
     }
 
     return ControlStatus_None;
@@ -2367,8 +2356,7 @@ IonBuilder::assertValidLoopHeadOp(jsbytecode *pc)
             break;
 
           default:
-            JS_NOT_REACHED("JSOP_LOOPHEAD unexpected source note");
-            return;
+            MOZ_ASSUME_UNREACHABLE("JSOP_LOOPHEAD unexpected source note");
         }
 
         // Make sure this loop goes to the same ifne as the loop header's
@@ -3150,8 +3138,7 @@ IonBuilder::jsop_ifeq(JSOp op)
       }
 
       default:
-        JS_NOT_REACHED("unexpected source note type");
-        break;
+        MOZ_ASSUME_UNREACHABLE("unexpected source note type");
     }
 
     // Switch to parsing the true branch. Note that no PC update is needed,
@@ -3180,8 +3167,7 @@ IonBuilder::processReturn(JSOp op)
 
       default:
         def = NULL;
-        JS_NOT_REACHED("unknown return op");
-        break;
+        MOZ_ASSUME_UNREACHABLE("unknown return op");
     }
 
     if (instrumentedProfiling())
@@ -3270,8 +3256,7 @@ IonBuilder::jsop_bitop(JSOp op)
         break;
 
       default:
-        JS_NOT_REACHED("unexpected bitop");
-        return false;
+        MOZ_ASSUME_UNREACHABLE("unexpected bitop");
     }
 
     current->add(ins);
@@ -3290,9 +3275,14 @@ IonBuilder::jsop_binary(JSOp op, MDefinition *left, MDefinition *right)
     // Do a string concatenation if adding two inputs that are int or string
     // and at least one is a string.
     if (op == JSOP_ADD &&
-        (left->type() == MIRType_String || right->type() == MIRType_String) &&
-        (left->type() == MIRType_String || left->type() == MIRType_Int32) &&
-        (right->type() == MIRType_String || right->type() == MIRType_Int32))
+        ((left->type() == MIRType_String &&
+          (right->type() == MIRType_String ||
+           right->type() == MIRType_Int32 ||
+           right->type() == MIRType_Double)) ||
+         (left->type() == MIRType_Int32 &&
+          right->type() == MIRType_String) ||
+         (left->type() == MIRType_Double &&
+          right->type() == MIRType_String)))
     {
         MConcat *ins = MConcat::New(left, right);
         current->add(ins);
@@ -3323,8 +3313,7 @@ IonBuilder::jsop_binary(JSOp op, MDefinition *left, MDefinition *right)
         break;
 
       default:
-        JS_NOT_REACHED("unexpected binary opcode");
-        return false;
+        MOZ_ASSUME_UNREACHABLE("unexpected binary opcode");
     }
 
     bool overflowed = types::HasOperationOverflowed(script(), pc);
@@ -3721,7 +3710,7 @@ IonBuilder::getInlineableGetPropertyCache(CallInfo &callInfo)
     // MGetPropertyCache with no uses may be optimized away.
     if (funcDef->isGetPropertyCache()) {
         MGetPropertyCache *cache = funcDef->toGetPropertyCache();
-        if (cache->useCount() > 0)
+        if (cache->hasUses())
             return NULL;
         if (!CanInlineGetPropertyCache(cache, thisDef))
             return NULL;
@@ -3734,7 +3723,7 @@ IonBuilder::getInlineableGetPropertyCache(CallInfo &callInfo)
         MUnbox *unbox = funcDef->toUnbox();
         if (unbox->mode() != MUnbox::Infallible)
             return NULL;
-        if (unbox->useCount() > 0)
+        if (unbox->hasUses())
             return NULL;
         if (!unbox->input()->isTypeBarrier())
             return NULL;
@@ -3977,7 +3966,7 @@ IonBuilder::inlineTypeObjectFallback(CallInfo &callInfo, MBasicBlock *dispatchBl
 
     // 3. The MGetPropertyCache (and, if applicable, MTypeBarrier and MUnbox) only
     //    have at most a single use.
-    JS_ASSERT_IF(callInfo.fun()->isGetPropertyCache(), cache->useCount() == 0);
+    JS_ASSERT_IF(callInfo.fun()->isGetPropertyCache(), !cache->hasUses());
     JS_ASSERT_IF(callInfo.fun()->isUnbox(), cache->useCount() == 1);
 
     // This means that no resume points yet capture the MGetPropertyCache,
@@ -6086,8 +6075,7 @@ ion::TypeSetIncludes(types::TypeSet *types, MIRType input, types::TypeSet *input
         return types->unknown() || (inputTypes && inputTypes->isSubset(types));
 
       default:
-        JS_NOT_REACHED("Bad input type");
-        return false;
+        MOZ_ASSUME_UNREACHABLE("Bad input type");
     }
 }
 
@@ -6283,7 +6271,7 @@ IonBuilder::jsop_getelem()
             return jsop_getelem_dense();
     }
 
-    int arrayType = TypedArray::TYPE_MAX;
+    int arrayType = TypedArrayObject::TYPE_MAX;
     if (ElementAccessIsTypedArray(obj, index, &arrayType))
         return jsop_getelem_typed(arrayType);
 
@@ -6382,6 +6370,12 @@ IonBuilder::jsop_getelem_dense()
     MInstruction *elements = MElements::New(obj);
     current->add(elements);
 
+    // Note: to help GVN, use the original MElements instruction and not
+    // MConvertElementsToDoubles as operand. This is fine because converting
+    // elements to double does not change the initialized length.
+    MInitializedLength *initLength = MInitializedLength::New(elements);
+    current->add(initLength);
+
     // If we can load the element as a definite double, make sure to check that
     // the array has been converted to homogenous doubles first.
     //
@@ -6401,9 +6395,6 @@ IonBuilder::jsop_getelem_dense()
         objTypes->convertDoubleElements(cx) == types::StackTypeSet::AlwaysConvertToDoubles;
     if (loadDouble)
         elements = addConvertElementsToDoubles(elements);
-
-    MInitializedLength *initLength = MInitializedLength::New(elements);
-    current->add(initLength);
 
     MInstruction *load;
 
@@ -6440,8 +6431,8 @@ MInstruction *
 IonBuilder::getTypedArrayLength(MDefinition *obj)
 {
     if (obj->isConstant() && obj->toConstant()->value().isObject()) {
-        JSObject *array = &obj->toConstant()->value().toObject();
-        int32_t length = (int32_t) TypedArray::length(array);
+        TypedArrayObject *tarr = &obj->toConstant()->value().toObject().as<TypedArrayObject>();
+        int32_t length = (int32_t) tarr->length();
         obj->setFoldedUnchecked();
         return MConstant::New(Int32Value(length));
     }
@@ -6452,12 +6443,12 @@ MInstruction *
 IonBuilder::getTypedArrayElements(MDefinition *obj)
 {
     if (obj->isConstant() && obj->toConstant()->value().isObject()) {
-        JSObject *array = &obj->toConstant()->value().toObject();
-        void *data = TypedArray::viewData(array);
+        TypedArrayObject *tarr = &obj->toConstant()->value().toObject().as<TypedArrayObject>();
+        void *data = tarr->viewData();
 
         // The 'data' pointer can change in rare circumstances
         // (ArrayBufferObject::changeContents).
-        types::HeapTypeSet::WatchObjectStateChange(cx, array->getType(cx));
+        types::HeapTypeSet::WatchObjectStateChange(cx, tarr->getType(cx));
 
         obj->setFoldedUnchecked();
         return MConstantElements::New(data);
@@ -6505,12 +6496,12 @@ IonBuilder::jsop_getelem_typed_static(bool *psucceeded)
 
     if (!obj->resultTypeSet())
         return true;
-    JSObject *typedArray = obj->resultTypeSet()->getSingleton();
-    if (!typedArray)
+    JSObject *tarrObj = obj->resultTypeSet()->getSingleton();
+    if (!tarrObj)
         return true;
-    JS_ASSERT(typedArray->isTypedArray());
+    TypedArrayObject *tarr = &tarrObj->as<TypedArrayObject>();
 
-    ArrayBufferView::ViewType viewType = JS_GetArrayBufferViewType(typedArray);
+    ArrayBufferView::ViewType viewType = JS_GetArrayBufferViewType(tarr);
 
     MDefinition *ptr = convertShiftToMaskForStaticTypedArray(id, viewType);
     if (!ptr)
@@ -6518,7 +6509,7 @@ IonBuilder::jsop_getelem_typed_static(bool *psucceeded)
 
     obj->setFoldedUnchecked();
 
-    MLoadTypedArrayElementStatic *load = MLoadTypedArrayElementStatic::New(typedArray, ptr);
+    MLoadTypedArrayElementStatic *load = MLoadTypedArrayElementStatic::New(tarr, ptr);
     current->add(load);
 
     // The load is infallible if an undefined result will be coerced to the
@@ -6579,24 +6570,23 @@ IonBuilder::jsop_getelem_typed(int arrayType)
         // uint32 reads that may produce either doubles or integers.
         MIRType knownType;
         switch (arrayType) {
-          case TypedArray::TYPE_INT8:
-          case TypedArray::TYPE_UINT8:
-          case TypedArray::TYPE_UINT8_CLAMPED:
-          case TypedArray::TYPE_INT16:
-          case TypedArray::TYPE_UINT16:
-          case TypedArray::TYPE_INT32:
+          case TypedArrayObject::TYPE_INT8:
+          case TypedArrayObject::TYPE_UINT8:
+          case TypedArrayObject::TYPE_UINT8_CLAMPED:
+          case TypedArrayObject::TYPE_INT16:
+          case TypedArrayObject::TYPE_UINT16:
+          case TypedArrayObject::TYPE_INT32:
             knownType = MIRType_Int32;
             break;
-          case TypedArray::TYPE_UINT32:
+          case TypedArrayObject::TYPE_UINT32:
             knownType = allowDouble ? MIRType_Double : MIRType_Int32;
             break;
-          case TypedArray::TYPE_FLOAT32:
-          case TypedArray::TYPE_FLOAT64:
+          case TypedArrayObject::TYPE_FLOAT32:
+          case TypedArrayObject::TYPE_FLOAT64:
             knownType = MIRType_Double;
             break;
           default:
-            JS_NOT_REACHED("Unknown typed array type");
-            return false;
+            MOZ_ASSUME_UNREACHABLE("Unknown typed array type");
         }
 
         // Get the length.
@@ -6626,24 +6616,23 @@ IonBuilder::jsop_getelem_typed(int arrayType)
         // will bailout when we read a double.
         bool needsBarrier = true;
         switch (arrayType) {
-          case TypedArray::TYPE_INT8:
-          case TypedArray::TYPE_UINT8:
-          case TypedArray::TYPE_UINT8_CLAMPED:
-          case TypedArray::TYPE_INT16:
-          case TypedArray::TYPE_UINT16:
-          case TypedArray::TYPE_INT32:
-          case TypedArray::TYPE_UINT32:
+          case TypedArrayObject::TYPE_INT8:
+          case TypedArrayObject::TYPE_UINT8:
+          case TypedArrayObject::TYPE_UINT8_CLAMPED:
+          case TypedArrayObject::TYPE_INT16:
+          case TypedArrayObject::TYPE_UINT16:
+          case TypedArrayObject::TYPE_INT32:
+          case TypedArrayObject::TYPE_UINT32:
             if (types->hasType(types::Type::Int32Type()))
                 needsBarrier = false;
             break;
-          case TypedArray::TYPE_FLOAT32:
-          case TypedArray::TYPE_FLOAT64:
+          case TypedArrayObject::TYPE_FLOAT32:
+          case TypedArrayObject::TYPE_FLOAT64:
             if (allowDouble)
                 needsBarrier = false;
             break;
           default:
-            JS_NOT_REACHED("Unknown typed array type");
-            return false;
+            MOZ_ASSUME_UNREACHABLE("Unknown typed array type");
         }
 
         // Assume we will read out-of-bound values. In this case the
@@ -6689,7 +6678,7 @@ IonBuilder::jsop_setelem()
     MDefinition *index = current->pop();
     MDefinition *object = current->pop();
 
-    int arrayType = TypedArray::TYPE_MAX;
+    int arrayType = TypedArrayObject::TYPE_MAX;
     if (ElementAccessIsTypedArray(object, index, &arrayType))
         return jsop_setelem_typed(arrayType, SetElem_Normal,
                                   object, index, value);
@@ -6698,9 +6687,13 @@ IonBuilder::jsop_setelem()
         if (ElementAccessIsDenseNative(object, index)) {
             types::StackTypeSet::DoubleConversion conversion =
                 object->resultTypeSet()->convertDoubleElements(cx);
-            if (conversion != types::StackTypeSet::AmbiguousDoubleConversion)
-                return jsop_setelem_dense(conversion, SetElem_Normal,
-                                          object, index, value);
+
+            // If AmbiguousDoubleConversion, only handle int32 values for now.
+            if (conversion != types::StackTypeSet::AmbiguousDoubleConversion ||
+                value->type() == MIRType_Int32)
+            {
+                return jsop_setelem_dense(conversion, SetElem_Normal, object, index, value);
+            }
         }
     }
 
@@ -6765,19 +6758,35 @@ IonBuilder::jsop_setelem_dense(types::StackTypeSet::DoubleConversion conversion,
     current->add(idInt32);
     id = idInt32;
 
-    // Ensure the value is a double, if double conversion might be needed.
-    MDefinition *newValue = value;
-    if (conversion == types::StackTypeSet::AlwaysConvertToDoubles ||
-        conversion == types::StackTypeSet::MaybeConvertToDoubles)
-    {
-        MInstruction *valueDouble = MToDouble::New(value);
-        current->add(valueDouble);
-        newValue = valueDouble;
-    }
-
     // Get the elements vector.
     MElements *elements = MElements::New(obj);
     current->add(elements);
+
+    // Ensure the value is a double, if double conversion might be needed.
+    MDefinition *newValue = value;
+    switch (conversion) {
+      case types::StackTypeSet::AlwaysConvertToDoubles:
+      case types::StackTypeSet::MaybeConvertToDoubles: {
+        MInstruction *valueDouble = MToDouble::New(value);
+        current->add(valueDouble);
+        newValue = valueDouble;
+        break;
+      }
+
+      case types::StackTypeSet::AmbiguousDoubleConversion: {
+        JS_ASSERT(value->type() == MIRType_Int32);
+        MInstruction *maybeDouble = MMaybeToDoubleElement::New(elements, value);
+        current->add(maybeDouble);
+        newValue = maybeDouble;
+        break;
+      }
+
+      case types::StackTypeSet::DontConvertToDoubles:
+        break;
+
+      default:
+        MOZ_ASSUME_UNREACHABLE("Unknown double conversion");
+    }
 
     bool writeHole;
     if (safety == SetElem_Normal) {
@@ -6852,12 +6861,12 @@ IonBuilder::jsop_setelem_typed_static(MDefinition *obj, MDefinition *id, MDefini
 
     if (!obj->resultTypeSet())
         return true;
-    JSObject *typedArray = obj->resultTypeSet()->getSingleton();
-    if (!typedArray)
+    JSObject *tarrObj = obj->resultTypeSet()->getSingleton();
+    if (!tarrObj)
         return true;
-    JS_ASSERT(typedArray->isTypedArray());
+    TypedArrayObject *tarr = &tarrObj->as<TypedArrayObject>();
 
-    ArrayBufferView::ViewType viewType = JS_GetArrayBufferViewType(typedArray);
+    ArrayBufferView::ViewType viewType = JS_GetArrayBufferViewType(tarr);
 
     MDefinition *ptr = convertShiftToMaskForStaticTypedArray(id, viewType);
     if (!ptr)
@@ -6872,7 +6881,7 @@ IonBuilder::jsop_setelem_typed_static(MDefinition *obj, MDefinition *id, MDefini
         current->add(toWrite->toInstruction());
     }
 
-    MInstruction *store = MStoreTypedArrayElementStatic::New(typedArray, ptr, toWrite);
+    MInstruction *store = MStoreTypedArrayElementStatic::New(tarr, ptr, toWrite);
     current->add(store);
     current->push(value);
 
@@ -6922,7 +6931,7 @@ IonBuilder::jsop_setelem_typed(int arrayType,
 
     // Clamp value to [0, 255] for Uint8ClampedArray.
     MDefinition *toWrite = value;
-    if (arrayType == TypedArray::TYPE_UINT8_CLAMPED) {
+    if (arrayType == TypedArrayObject::TYPE_UINT8_CLAMPED) {
         toWrite = MClampToUint8::New(value);
         current->add(toWrite->toInstruction());
     }
@@ -6995,7 +7004,7 @@ IonBuilder::jsop_length_fastPath()
             return true;
         }
 
-        if (objTypes && objTypes->getTypedArrayType() != TypedArray::TYPE_MAX) {
+        if (objTypes && objTypes->getTypedArrayType() != TypedArrayObject::TYPE_MAX) {
             current->pop();
             MInstruction *length = getTypedArrayLength(obj);
             current->add(length);
@@ -7861,7 +7870,14 @@ IonBuilder::getPropTryCache(bool *emitted, HandlePropertyName name, HandleId id,
     // Try to mark the cache as idempotent. We only do this if JM is enabled
     // (its ICs are used to mark property reads as likely non-idempotent) or
     // if we are compiling eagerly (to improve test coverage).
-    if (obj->type() == MIRType_Object && !invalidatedIdempotentCache()) {
+    //
+    // In parallel execution, idempotency of caches is ignored, since we
+    // repeat the entire ForkJoin workload if we bail out. Note that it's
+    // overly restrictive to mark everything as idempotent, because we can
+    // treat non-idempotent caches in parallel as repeatable.
+    if (obj->type() == MIRType_Object && !invalidatedIdempotentCache() &&
+        info().executionMode() != ParallelExecution)
+    {
         if (PropertyReadIsIdempotent(cx, obj, name))
             load->setIdempotent();
     }
