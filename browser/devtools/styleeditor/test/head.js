@@ -84,25 +84,36 @@ function addTabAndLaunchStyleEditorChromeWhenLoaded(aCallback, aSheet, aLine, aC
 }
 */
 
-function checkDiskCacheFor(host)
+function checkDiskCacheFor(host, done)
 {
   let foundPrivateData = false;
 
-  let visitor = {
-    visitDevice: function(deviceID, deviceInfo) {
-      if (deviceID == "disk")
-        info("disk device contains " + deviceInfo.entryCount + " entries");
-      return deviceID == "disk";
+  visitor = {
+    onCacheStorageInfo: function(num, consumption)
+    {
+      info("disk storage contains " + num + " entries");
     },
-
-    visitEntry: function(deviceID, entryInfo) {
-      info(entryInfo.key);
-      foundPrivateData |= entryInfo.key.contains(host);
+    onCacheEntryInfo: function(entry)
+    {
+      info(entry.key);
+      foundPrivateData |= entry.key.contains(host);
+    },
+    onCacheEntryVisitCompleted: function()
+    {
       is(foundPrivateData, false, "web content present in disk cache");
+      done();
     }
   };
-  cache.visitEntries(visitor);
-  is(foundPrivateData, false, "private data present in disk cache");
+
+  loadContextInfo = {
+    isPrivate : false,
+    isAnonymous : false,
+    isInBrowserElement : false,
+    appId : 0
+  };
+
+  var storage = cache.diskCacheStorage(loadContextInfo, false);
+  storage.asyncVisitStorage(visitor, true /* Do walk entries */);
 }
 
 registerCleanupFunction(cleanup);

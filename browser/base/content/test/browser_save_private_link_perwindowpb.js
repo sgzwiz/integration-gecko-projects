@@ -8,27 +8,39 @@ function test() {
   let testURI = "http://mochi.test:8888/browser/browser/base/content/test/bug792517.html";
   let fileName;
   let MockFilePicker = SpecialPowers.MockFilePicker;
-  let cache = Cc["@mozilla.org/network/cache-service;1"]
-              .getService(Ci.nsICacheService);
+  let cache = Cc["@mozilla.org/netwerk/cache-storage-service;1"]
+              .getService(Ci.nsICacheStorageService);
 
-  function checkDiskCacheFor(filename) {
-    let visitor = {
-      visitDevice: function(deviceID, deviceInfo) {
-        if (deviceID == "disk")
-          info(deviceID + " device contains " + deviceInfo.entryCount + " entries");
-        return deviceID == "disk";
+  function checkDiskCacheFor(filename, goon) {
+    visitor = {
+      onCacheStorageInfo: function(num, consumption)
+      {
+        info("disk storage contains " + num + " entries");
       },
-
-      visitEntry: function(deviceID, entryInfo) {
-        info(entryInfo.key);
-        is(entryInfo.key.contains(filename), false, "web content present in disk cache");
+      onCacheEntryInfo: function(entry)
+      {
+        info(entry.key);
+        is(entry.key.contains(filename), false, "web content present in disk cache");
+      },
+      onCacheEntryVisitCompleted: function()
+      {
+        goon();
       }
     };
-    cache.visitEntries(visitor);
+
+    loadContextInfo = {
+      isPrivate : false,
+      isAnonymous : false,
+      isInBrowserElement : false,
+      appId : 0
+    };
+
+    var storage = cache.diskCacheStorage(loadContextInfo, false);
+    storage.asyncVisitStorage(visitor, true /* Do walk entries */);
   }
 
   function contextMenuOpened(aWindow, event) {
-    cache.evictEntries(Ci.nsICache.STORE_ANYWHERE);
+    cache.clear();
 
     event.currentTarget.removeEventListener("popupshown", contextMenuOpened);
 
@@ -65,8 +77,7 @@ function test() {
 
     // Give the request a chance to finish and create a cache entry
     executeSoon(function() {
-      checkDiskCacheFor(fileName);
-      finish();
+      checkDiskCacheFor(fileName, finish);
     });
   }
 
