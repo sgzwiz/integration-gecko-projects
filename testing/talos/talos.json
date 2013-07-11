@@ -111,10 +111,10 @@
             ]
         },
         "xperf": {
-            "tests": ["tp5o"],
+            "tests": ["tp5n"],
             "pagesets_url": "http://build.mozilla.org/talos/zips/tp5n.zip",
             "pagesets_parent_dir_path": "talos/page_load_test/",
-            "pagesets_manifest_path": "talos/page_load_test/tp5n/tp5o.manifest",
+            "pagesets_manifest_path": "talos/page_load_test/tp5n/tp5n.manifest",
             "plugins": {
                 "32": "http://build.mozilla.org/talos/zips/flash32_10_3_183_5.zip",
                 "64": "http://build.mozilla.org/talos/zips/flash64_11_0_d1_98.zip"
