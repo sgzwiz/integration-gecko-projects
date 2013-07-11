@@ -264,8 +264,10 @@ public:
       else {
         LOG(("  entry [left=%d]", mEntryArray.Length()));
         // Third, notify each entry until depleted.
-        if (!mEntryArray.Length())
+        if (!mEntryArray.Length()) {
+          mCallback->OnCacheEntryVisitCompleted();
           return NS_OK; // done
+        }
 
         mCallback->OnCacheEntryInfo(mEntryArray[0]);
         mEntryArray.RemoveElementAt(0);
