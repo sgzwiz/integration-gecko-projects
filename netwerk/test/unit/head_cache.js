@@ -138,7 +138,7 @@ function get_device_entry_count(where, lci, continuation) {
   };
 
   // get the device entry count
-  storage.asyncVisitStorage(visitor, true);
+  storage.asyncVisitStorage(visitor, false);
 }
 
 function asyncCheckCacheEntryPresence(key, where, shouldExist, continuation, appCache)
