@@ -8,11 +8,14 @@
 
 #include "jsgc.h"
 
-#include "prmjtime.h"
-
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/Move.h"
 #include "mozilla/Util.h"
+
+#include "prmjtime.h"
+
+using mozilla::Swap;
 
 /*
  * This code implements a mark-and-sweep garbage collector. The mark phase is
@@ -73,7 +76,6 @@
 #include "jsgcinlines.h"
 #include "jsobjinlines.h"
 
-#include "gc/FindSCCs-inl.h"
 #include "vm/String-inl.h"
 #include "vm/Stack-inl.h"
 
@@ -1489,21 +1491,21 @@ RunLastDitchGC(JSContext *cx, JS::Zone *zone, AllocKind thingKind)
 
 template <AllowGC allowGC>
 /* static */ void *
-ArenaLists::refillFreeList(ThreadSafeContext *tcx, AllocKind thingKind)
+ArenaLists::refillFreeList(ThreadSafeContext *cx, AllocKind thingKind)
 {
-    JS_ASSERT(tcx->allocator()->arenas.freeLists[thingKind].isEmpty());
+    JS_ASSERT(cx->allocator()->arenas.freeLists[thingKind].isEmpty());
 
-    Zone *zone = tcx->allocator()->zone_;
+    Zone *zone = cx->allocator()->zone_;
     JSRuntime *rt = zone->rt;
     JS_ASSERT(!rt->isHeapBusy());
 
     bool runGC = rt->gcIncrementalState != NO_INCREMENTAL &&
                  zone->gcBytes > zone->gcTriggerBytes &&
-                 tcx->allowGC() && allowGC;
+                 cx->allowGC() && allowGC;
 
     for (;;) {
         if (JS_UNLIKELY(runGC)) {
-            if (void *thing = RunLastDitchGC(tcx->asJSContext(), zone, thingKind))
+            if (void *thing = RunLastDitchGC(cx->asJSContext(), zone, thingKind))
                 return thing;
         }
 
@@ -1519,8 +1521,8 @@ ArenaLists::refillFreeList(ThreadSafeContext *tcx, AllocKind thingKind)
          * value we get.
          */
         for (bool secondAttempt = false; ; secondAttempt = true) {
-            void *thing = tcx->allocator()->arenas.allocateFromArenaInline(zone, thingKind);
-            if (JS_LIKELY(!!thing) || tcx->isForkJoinSlice())
+            void *thing = cx->allocator()->arenas.allocateFromArenaInline(zone, thingKind);
+            if (JS_LIKELY(!!thing) || cx->isForkJoinSlice())
                 return thing;
             if (secondAttempt)
                 break;
@@ -1541,7 +1543,7 @@ ArenaLists::refillFreeList(ThreadSafeContext *tcx, AllocKind thingKind)
     }
 
     JS_ASSERT(allowGC);
-    js_ReportOutOfMemory(tcx->asJSContext());
+    js_ReportOutOfMemory(cx);
     return NULL;
 }
 
@@ -3081,7 +3083,7 @@ js::gc::MarkingValidator::nonIncrementalMark()
         Chunk *chunk = r.front();
         ChunkBitmap *bitmap = &chunk->bitmap;
         ChunkBitmap *entry = map.lookup(chunk)->value;
-        js::Swap(*entry, *bitmap);
+        Swap(*entry, *bitmap);
     }
 
     /* Restore the weak map and array buffer lists. */
@@ -4553,7 +4555,7 @@ Collect(JSRuntime *rt, bool incremental, int64_t budget,
         if (rt->gcIncrementalState == NO_INCREMENTAL) {
             gcstats::AutoPhase ap(rt->gcStats, gcstats::PHASE_GC_BEGIN);
             if (JSGCCallback callback = rt->gcCallback)
-                callback(rt, JSGC_BEGIN);
+                callback(rt, JSGC_BEGIN, rt->gcCallbackData);
         }
 
         rt->gcPoke = false;
@@ -4562,7 +4564,7 @@ Collect(JSRuntime *rt, bool incremental, int64_t budget,
         if (rt->gcIncrementalState == NO_INCREMENTAL) {
             gcstats::AutoPhase ap(rt->gcStats, gcstats::PHASE_GC_END);
             if (JSGCCallback callback = rt->gcCallback)
-                callback(rt, JSGC_END);
+                callback(rt, JSGC_END, rt->gcCallbackData);
         }
 
         /* Need to re-schedule all zones for GC. */

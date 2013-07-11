@@ -104,7 +104,13 @@ MIRGraph::removeBlock(MBasicBlock *block)
     }
 
     block->discardAllInstructions();
-    block->discardAllPhis();
+
+    // Note: phis are disconnected from the rest of the graph, but are not
+    // removed entirely. If the block being removed is a loop header then
+    // IonBuilder may need to access these phis to more quickly converge on the
+    // possible types in the graph. See IonBuilder::analyzeNewLoopTypes.
+    block->discardAllPhiOperands();
+
     block->markAsDead();
     blocks_.remove(block);
     numBlocks_--;
@@ -614,7 +620,7 @@ void
 MBasicBlock::discard(MInstruction *ins)
 {
     AssertSafelyDiscardable(ins);
-    for (size_t i = 0; i < ins->numOperands(); i++)
+    for (size_t i = 0, e = ins->numOperands(); i < e; i++)
         ins->discardOperand(i);
 
     instructions_.remove(ins);
@@ -624,7 +630,7 @@ MInstructionIterator
 MBasicBlock::discardAt(MInstructionIterator &iter)
 {
     AssertSafelyDiscardable(*iter);
-    for (size_t i = 0; i < iter->numOperands(); i++)
+    for (size_t i = 0, e = iter->numOperands(); i < e; i++)
         iter->discardOperand(i);
 
     return instructions_.removeAt(iter);
@@ -634,7 +640,7 @@ MInstructionReverseIterator
 MBasicBlock::discardAt(MInstructionReverseIterator &iter)
 {
     AssertSafelyDiscardable(*iter);
-    for (size_t i = 0; i < iter->numOperands(); i++)
+    for (size_t i = 0, e = iter->numOperands(); i < e; i++)
         iter->discardOperand(i);
 
     return instructions_.removeAt(iter);
@@ -657,7 +663,7 @@ void
 MBasicBlock::discardAllInstructions()
 {
     for (MInstructionIterator iter = begin(); iter != end(); ) {
-        for (size_t i = 0; i < iter->numOperands(); i++)
+        for (size_t i = 0, e = iter->numOperands(); i < e; i++)
             iter->discardOperand(i);
         iter = instructions_.removeAt(iter);
     }
@@ -665,17 +671,23 @@ MBasicBlock::discardAllInstructions()
 }
 
 void
-MBasicBlock::discardAllPhis()
+MBasicBlock::discardAllPhiOperands()
 {
-    for (MPhiIterator iter = phisBegin(); iter != phisEnd(); ) {
+    for (MPhiIterator iter = phisBegin(); iter != phisEnd(); iter++) {
         MPhi *phi = *iter;
-        for (size_t i = 0; i < phi->numOperands(); i++)
+        for (size_t i = 0, e = phi->numOperands(); i < e; i++)
             phi->discardOperand(i);
-        iter = phis_.removeAt(iter);
     }
 
     for (MBasicBlock **pred = predecessors_.begin(); pred != predecessors_.end(); pred++)
         (*pred)->setSuccessorWithPhis(NULL, 0);
+}
+
+void
+MBasicBlock::discardAllPhis()
+{
+    discardAllPhiOperands();
+    phis_.clear();
 }
 
 void
@@ -742,7 +754,7 @@ MBasicBlock::discardPhiAt(MPhiIterator &at)
 {
     JS_ASSERT(!phis_.empty());
 
-    for (size_t i = 0; i < at->numOperands(); i++)
+    for (size_t i = 0, e = at->numOperands(); i < e; i++)
         at->discardOperand(i);
 
     MPhiIterator result = phis_.removeAt(at);
@@ -1076,7 +1088,9 @@ MIRGraph::dump(FILE *fp)
 {
 #ifdef DEBUG
     for (MBasicBlockIterator iter(begin()); iter != end(); iter++) {
+        fprintf(fp, "block%d:\n", iter->id());
         iter->dump(fp);
+        fprintf(fp, "\n");
     }
 #endif
 }
@@ -1086,12 +1100,10 @@ MBasicBlock::dump(FILE *fp)
 {
 #ifdef DEBUG
     for (MPhiIterator iter(phisBegin()); iter != phisEnd(); iter++) {
-        iter->printOpcode(fp);
-        fprintf(fp, "\n");
+        iter->dump(fp);
     }
     for (MInstructionIterator iter(begin()); iter != end(); iter++) {
-        iter->printOpcode(fp);
-        fprintf(fp, "\n");
+        iter->dump(fp);
     }
 #endif
 }
