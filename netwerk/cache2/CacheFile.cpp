@@ -8,12 +8,17 @@
 #include "CacheFileChunk.h"
 #include "CacheFileInputStream.h"
 #include "CacheFileOutputStream.h"
+#include "nsITimer.h"
 #include "nsThreadUtils.h"
 #include "mozilla/DebugOnly.h"
 #include <algorithm>
+#include "nsComponentManagerUtils.h"
+#include "nsProxyRelease.h"
 
 namespace mozilla {
 namespace net {
+
+#define kMetadataWriteDelay        5000
 
 class NotifyCacheFileListenerEvent : public nsRunnable {
 public:
@@ -88,10 +93,180 @@ protected:
   nsRefPtr<CacheFileChunk>         mChunk;
 };
 
-NS_IMPL_THREADSAFE_ISUPPORTS3(CacheFile,
-                              CacheFileChunkListener,
-                              CacheFileIOListener,
-                              CacheFileMetadataListener)
+class MetadataWriteTimer : public nsITimerCallback
+{
+public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSITIMERCALLBACK
+
+  MetadataWriteTimer(CacheFile *aFile);
+  nsresult Fire();
+  nsresult Cancel();
+  bool     ShouldFireNew();
+
+protected:
+  virtual ~MetadataWriteTimer();
+
+  nsCOMPtr<nsIWeakReference> mFile;
+  nsCOMPtr<nsITimer>         mTimer;
+  nsCOMPtr<nsIEventTarget>   mTarget;
+  PRIntervalTime             mFireTime;
+};
+
+NS_IMPL_THREADSAFE_ADDREF(MetadataWriteTimer)
+NS_IMPL_THREADSAFE_RELEASE(MetadataWriteTimer)
+
+NS_INTERFACE_MAP_BEGIN(MetadataWriteTimer)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsITimerCallback)
+  NS_INTERFACE_MAP_ENTRY(nsITimerCallback)
+NS_INTERFACE_MAP_END_THREADSAFE
+
+MetadataWriteTimer::MetadataWriteTimer(CacheFile *aFile)
+  : mFireTime(0)
+{
+  LOG(("MetadataWriteTimer::MetadataWriteTimer() [this=%p, file=%p]",
+       this, aFile));
+  MOZ_COUNT_CTOR(MetadataWriteTimer);
+
+  mFile = do_GetWeakReference(static_cast<CacheFileChunkListener *>(aFile));
+  mTarget = NS_GetCurrentThread();
+}
+
+MetadataWriteTimer::~MetadataWriteTimer()
+{
+  LOG(("MetadataWriteTimer::~MetadataWriteTimer() [this=%p]", this));
+  MOZ_COUNT_DTOR(MetadataWriteTimer);
+
+  NS_ProxyRelease(mTarget, mTimer.forget().get());
+  NS_ProxyRelease(mTarget, mFile.forget().get());
+}
+
+NS_IMETHODIMP
+MetadataWriteTimer::Notify(nsITimer *aTimer)
+{
+  LOG(("MetadataWriteTimer::Notify() [this=%p, timer=%p]", this, aTimer));
+
+  MOZ_ASSERT(aTimer == mTimer);
+
+  nsCOMPtr<nsISupports> supp = do_QueryReferent(mFile);
+  if (!supp)
+    return NS_OK;
+
+  CacheFile *file = static_cast<CacheFile *>(
+                      static_cast<CacheFileChunkListener *>(supp.get()));
+
+  CacheFileAutoLock lock(file);
+
+  if (file->mTimer != this)
+    return NS_OK;
+
+  if (file->mMemoryOnly)
+    return NS_OK;
+
+  file->WriteMetadataIfNeeded();
+  file->mTimer = nullptr;
+
+  return NS_OK;
+}
+
+nsresult
+MetadataWriteTimer::Fire()
+{
+  LOG(("MetadataWriteTimer::Fire() [this=%p]", this));
+
+  nsresult rv;
+
+#ifdef DEBUG
+  bool onCurrentThread = false;
+  rv = mTarget->IsOnCurrentThread(&onCurrentThread);
+  MOZ_ASSERT(NS_SUCCEEDED(rv) && onCurrentThread);
+#endif
+
+  mTimer = do_CreateInstance("@mozilla.org/timer;1", &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = mTimer->InitWithCallback(this, kMetadataWriteDelay,
+                                nsITimer::TYPE_ONE_SHOT);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  mFireTime = PR_IntervalNow();
+
+  return NS_OK;
+}
+
+nsresult
+MetadataWriteTimer::Cancel()
+{
+  LOG(("MetadataWriteTimer::Cancel() [this=%p]", this));
+  return mTimer->Cancel();
+}
+
+bool
+MetadataWriteTimer::ShouldFireNew()
+{
+  uint32_t delta = PR_IntervalToMilliseconds(PR_IntervalNow() - mFireTime);
+
+  if (delta > kMetadataWriteDelay / 2) {
+    LOG(("MetadataWriteTimer::ShouldFireNew() - returning true [this=%p]",
+         this));
+    return true;
+  }
+
+  LOG(("MetadataWriteTimer::ShouldFireNew() - returning false [this=%p]",
+       this));
+  return false;
+}
+
+
+NS_IMPL_THREADSAFE_ADDREF(CacheFile)
+NS_IMETHODIMP_(nsrefcnt)
+CacheFile::Release()
+{
+  nsrefcnt count;
+  NS_PRECONDITION(0 != mRefCnt, "dup release");
+  count = NS_AtomicDecrementRefcnt(mRefCnt);
+  NS_LOG_RELEASE(this, count, "CacheFile");
+
+  MOZ_ASSERT(count != 0, "Unexpected");
+
+  if (count == 1) {
+    bool deleteFile = false;
+
+    Lock();
+
+    if (mMemoryOnly) {
+      deleteFile = true;
+    }
+    else {
+      WriteMetadataIfNeeded();
+      if (mWritingMetadata) {
+        MOZ_ASSERT(mRefCnt > 1);
+      } else {
+        MOZ_ASSERT(mRefCnt == 1);
+        deleteFile = true;
+      }
+    }
+
+    Unlock();
+
+    if (deleteFile) {
+      NS_LOG_RELEASE(this, 0, "CacheFile");
+      delete (this);
+      return 0;
+    }
+  }
+
+  return count;
+}
+
+NS_INTERFACE_MAP_BEGIN(CacheFile)
+  NS_INTERFACE_MAP_ENTRY(mozilla::net::CacheFileChunkListener)
+  NS_INTERFACE_MAP_ENTRY(mozilla::net::CacheFileIOListener)
+  NS_INTERFACE_MAP_ENTRY(mozilla::net::CacheFileMetadataListener)
+  NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports,
+                                   mozilla::net::CacheFileChunkListener)
+NS_INTERFACE_MAP_END_THREADSAFE
 
 CacheFile::CacheFile()
   : mLock("CacheFile.mLock")
@@ -99,6 +274,7 @@ CacheFile::CacheFile()
   , mReady(false)
   , mMemoryOnly(false)
   , mDataAccessed(false)
+  , mDataIsDirty(false)
   , mWritingMetadata(false)
   , mDoomRequested(false)
   , mDataSize(-1)
@@ -106,6 +282,7 @@ CacheFile::CacheFile()
 {
   LOG(("CacheFile::CacheFile() [this=%p]", this));
 
+  NS_ADDREF(this);
   MOZ_COUNT_CTOR(CacheFile);
   mChunks.Init();
   mCachedChunks.Init();
@@ -198,13 +375,6 @@ CacheFile::Init(const nsACString &aKey,
   return NS_OK;
 }
 
-CacheFileMetadata*
-CacheFile::Metadata()
-{
-  AssertOwnsLock();
-  return mMetadata;
-}
-
 nsresult
 CacheFile::OnChunkRead(nsresult aResult, CacheFileChunk *aChunk)
 {
@@ -271,7 +441,8 @@ CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
        "[this=%p, chunk=%p]", this, aChunk));
 
   aChunk->mRemovingChunk = true;
-  aChunk->mFile = nullptr;
+  ReleaseOutsideLock(static_cast<CacheFileChunkListener *>(
+                       aChunk->mFile.forget().get()));
   mCachedChunks.Put(aChunk->Index(), aChunk);
   mChunks.Remove(aChunk->Index());
   WriteMetadataIfNeeded();
@@ -519,14 +690,20 @@ CacheFile::OnMetadataWritten(nsresult aResult)
   MOZ_ASSERT(mWritingMetadata);
   mWritingMetadata = false;
 
+  MOZ_ASSERT(!mMemoryOnly);
+  MOZ_ASSERT(!mOpeningFile);
+
   if (NS_FAILED(aResult)) {
     // TODO close streams with an error ???
   }
 
-  if (!mMemoryOnly)
+  if (mOutput || mInputs.Length() || mChunks.Count())
+    return NS_OK;
+
+  if (IsDirty())
     WriteMetadataIfNeeded();
 
-  if (!mOutput && !mInputs.Length() && !mChunks.Count() && !mWritingMetadata) {
+  if (!mWritingMetadata) {
     LOG(("CacheFile::OnMetadataWritten() - Releasing file handle [this=%p]",
          this));
     CacheFileIOManager::ReleaseNSPRHandle(mHandle);
@@ -713,6 +890,102 @@ CacheFile::ThrowMemoryCachedData()
   return NS_OK;
 }
 
+nsresult
+CacheFile::GetElement(const char *aKey, const char **_retval)
+{
+  CacheFileAutoLock lock(this);
+  MOZ_ASSERT(mMetadata);
+  NS_ENSURE_TRUE(mMetadata, NS_ERROR_UNEXPECTED);
+
+  *_retval = mMetadata->GetElement(aKey);
+  return NS_OK;
+}
+
+nsresult
+CacheFile::SetElement(const char *aKey, const char *aValue)
+{
+  CacheFileAutoLock lock(this);
+  MOZ_ASSERT(mMetadata);
+  NS_ENSURE_TRUE(mMetadata, NS_ERROR_UNEXPECTED);
+
+  PostWriteTimer();
+  return mMetadata->SetElement(aKey, aValue);
+}
+
+nsresult
+CacheFile::ElementsSize(uint32_t *_retval)
+{
+  CacheFileAutoLock lock(this);
+
+  if (!mMetadata)
+    return NS_ERROR_NOT_AVAILABLE;
+
+  *_retval = mMetadata->ElementsSize();
+  return NS_OK;
+}
+
+nsresult
+CacheFile::SetExpirationTime(uint32_t aExpirationTime)
+{
+  CacheFileAutoLock lock(this);
+  MOZ_ASSERT(mMetadata);
+  NS_ENSURE_TRUE(mMetadata, NS_ERROR_UNEXPECTED);
+
+  PostWriteTimer();
+  return mMetadata->SetExpirationTime(aExpirationTime);
+}
+
+nsresult
+CacheFile::GetExpirationTime(uint32_t *_retval)
+{
+  CacheFileAutoLock lock(this);
+  MOZ_ASSERT(mMetadata);
+  NS_ENSURE_TRUE(mMetadata, NS_ERROR_UNEXPECTED);
+
+  return mMetadata->GetExpirationTime(_retval);
+}
+
+nsresult
+CacheFile::SetLastModified(uint32_t aLastModified)
+{
+  CacheFileAutoLock lock(this);
+  MOZ_ASSERT(mMetadata);
+  NS_ENSURE_TRUE(mMetadata, NS_ERROR_UNEXPECTED);
+
+  PostWriteTimer();
+  return mMetadata->SetLastModified(aLastModified);
+}
+
+nsresult
+CacheFile::GetLastModified(uint32_t *_retval)
+{
+  CacheFileAutoLock lock(this);
+  MOZ_ASSERT(mMetadata);
+  NS_ENSURE_TRUE(mMetadata, NS_ERROR_UNEXPECTED);
+
+  return mMetadata->GetLastModified(_retval);
+}
+
+nsresult
+CacheFile::GetLastFetched(uint32_t *_retval)
+{
+  CacheFileAutoLock lock(this);
+  MOZ_ASSERT(mMetadata);
+  NS_ENSURE_TRUE(mMetadata, NS_ERROR_UNEXPECTED);
+
+  return mMetadata->GetLastFetched(_retval);
+}
+
+nsresult
+CacheFile::GetFetchCount(uint32_t *_retval)
+{
+  CacheFileAutoLock lock(this);
+  MOZ_ASSERT(mMetadata);
+  NS_ENSURE_TRUE(mMetadata, NS_ERROR_UNEXPECTED);
+
+  return mMetadata->GetFetchCount(_retval);
+}
+
 void
 CacheFile::Lock()
 {
@@ -818,7 +1091,8 @@ CacheFile::GetChunkLocked(uint32_t aIndex, bool aWriter,
                      mMetadata->GetHash(aIndex), this);
     if (NS_FAILED(rv)) {
       chunk->mRemovingChunk = true;
-      chunk->mFile = nullptr;
+      ReleaseOutsideLock(static_cast<CacheFileChunkListener *>(
+                           chunk->mFile.forget().get()));
       mChunks.Remove(aIndex);
       NS_ENSURE_SUCCESS(rv, rv);
     }
@@ -965,6 +1239,8 @@ CacheFile::RemoveChunk(CacheFileChunk *aChunk)
       LOG(("CacheFile::RemoveChunk() - Writing dirty chunk to the disk "
            "[this=%p]", this));
 
+      mDataIsDirty = true;
+
       rv = chunk->Write(mHandle, this);
       if (NS_FAILED(rv)) {
         // TODO ??? doom entry
@@ -982,7 +1258,8 @@ CacheFile::RemoveChunk(CacheFileChunk *aChunk)
          this, chunk.get()));
 
     chunk->mRemovingChunk = true;
-    chunk->mFile = nullptr;
+    ReleaseOutsideLock(static_cast<CacheFileChunkListener *>(
+                         chunk->mFile.forget().get()));
     mCachedChunks.Put(chunk->Index(), chunk);
     mChunks.Remove(chunk->Index());
     if (!mMemoryOnly)
@@ -1152,30 +1429,74 @@ CacheFile::DataSize(int64_t* aSize)
   return true;
 }
 
+bool
+CacheFile::IsDirty()
+{
+  return mDataIsDirty || mMetadata->IsDirty();
+}
+
 void
 CacheFile::WriteMetadataIfNeeded()
 {
   LOG(("CacheFile::WriteMetadataIfNeeded() [this=%p]", this));
 
+  nsresult rv;
+
   AssertOwnsLock();
   MOZ_ASSERT(!mMemoryOnly);
 
+  if (mTimer) {
+    mTimer->Cancel();
+    mTimer = nullptr;
+  }
+
+  if (!IsDirty() || mOutput || mInputs.Length() || mChunks.Count() ||
+      mWritingMetadata || mOpeningFile)
+    return;
+
+  LOG(("CacheFile::WriteMetadataIfNeeded() - Writing metadata [this=%p]",
+       this));
+
+  rv = mMetadata->WriteMetadata(mDataSize, this);
+  if (NS_SUCCEEDED(rv)) {
+    mWritingMetadata = true;
+    mDataIsDirty = false;
+  }
+  else {
+    LOG(("CacheFile::WriteMetadataIfNeeded() - Writing synchronously failed "
+         "[this=%p]", this));
+    // TODO: close streams with error
+  }
+}
+
+void
+CacheFile::PostWriteTimer()
+{
+  LOG(("CacheFile::PostWriteTimer() [this=%p]", this));
+
   nsresult rv;
 
-  if (!mOutput && !mInputs.Length() && !mChunks.Count() && mMetadata->IsDirty() &&
-      !mWritingMetadata && !mOpeningFile) {
-    LOG(("CacheFile::WriteMetadataIfNeeded() - Writing metadata [this=%p]",
-         this));
+  AssertOwnsLock();
 
-    rv = mMetadata->WriteMetadata(mDataSize, this);
-    if (NS_SUCCEEDED(rv)) {
-      mWritingMetadata = true;
+  if (mTimer) {
+    if (mTimer->ShouldFireNew()) {
+      LOG(("CacheFile::PostWriteTimer() - Canceling old timer [this=%p]",
+           this));
+      mTimer->Cancel();
+      mTimer = nullptr;
     }
     else {
-      LOG(("CacheFile::WriteMetadataIfNeeded() - Writing synchronously failed "
-           "[this=%p]", this));
-      // TODO: close streams with error
+      LOG(("CacheFile::PostWriteTimer() - Keeping old timer [this=%p]", this));
+      return;
     }
+  }
+
+  mTimer = new MetadataWriteTimer(this);
+
+  rv = mTimer->Fire();
+  if (NS_FAILED(rv)) {
+    LOG(("CacheFile::PostWriteTimer() - Firing timer failed with error 0x%08x "
+         "[this=%p]", rv, this));
   }
 }
 

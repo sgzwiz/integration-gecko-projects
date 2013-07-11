@@ -6,6 +6,7 @@
 #define CacheFile__h__
 
 #include "CacheFileChunk.h"
+#include "nsWeakReference.h"
 #include "CacheFileIOManager.h"
 #include "CacheFileMetadata.h"
 #include "nsRefPtrHashtable.h"
@@ -20,6 +21,7 @@ namespace net {
 
 class CacheFileInputStream;
 class CacheFileOutputStream;
+class MetadataWriteTimer;
 
 #define CACHEFILELISTENER_IID \
 { /* 95e7f284-84ba-48f9-b1fc-3a7336b4c33c */       \
@@ -44,6 +46,7 @@ NS_DEFINE_STATIC_IID_ACCESSOR(CacheFileListener, CACHEFILELISTENER_IID)
 class CacheFile : public CacheFileChunkListener
                 , public CacheFileIOListener
                 , public CacheFileMetadataListener
+                , public nsSupportsWeakReference
 {
 public:
   NS_DECL_ISUPPORTS
@@ -78,7 +81,17 @@ public:
 
   nsresult   ThrowMemoryCachedData();
 
-  CacheFileMetadata* Metadata();
+  // metadata forwarders
+  nsresult GetElement(const char *aKey, const char **_retval);
+  nsresult SetElement(const char *aKey, const char *aValue);
+  nsresult ElementsSize(uint32_t *_retval);
+  nsresult SetExpirationTime(uint32_t aExpirationTime);
+  nsresult GetExpirationTime(uint32_t *_retval);
+  nsresult SetLastModified(uint32_t aLastModified);
+  nsresult GetLastModified(uint32_t *_retval);
+  nsresult GetLastFetched(uint32_t *_retval);
+  nsresult GetFetchCount(uint32_t *_retval);
+
   bool DataSize(int64_t* aSize);
 
 private:
@@ -86,6 +99,7 @@ private:
   friend class CacheFileInputStream;
   friend class CacheFileOutputStream;
   friend class CacheFileAutoLock;
+  friend class MetadataWriteTimer;
 
   virtual ~CacheFile();
 
@@ -116,7 +130,9 @@ private:
   bool     HaveChunkListeners(uint32_t aIndex);
   void     NotifyListenersAboutOutputRemoval();
 
+  bool IsDirty();
   void WriteMetadataIfNeeded();
+  void PostWriteTimer();
 
   static PLDHashOperator WriteAllCachedChunks(const uint32_t& aIdx,
                                               nsRefPtr<CacheFileChunk>& aChunk,
@@ -138,14 +154,16 @@ private:
   bool           mReady;
   bool           mMemoryOnly;
   bool           mDataAccessed;
+  bool           mDataIsDirty;
   bool           mWritingMetadata;
   bool           mDoomRequested;
   int64_t        mDataSize;
   nsCString      mKey;
 
-  nsRefPtr<CacheFileHandle>   mHandle;
-  nsRefPtr<CacheFileMetadata> mMetadata;
-  nsCOMPtr<CacheFileListener> mListener;
+  nsRefPtr<CacheFileHandle>    mHandle;
+  nsRefPtr<CacheFileMetadata>  mMetadata;
+  nsCOMPtr<CacheFileListener>  mListener;
+  nsRefPtr<MetadataWriteTimer> mTimer;
 
   nsRefPtrHashtable<nsUint32HashKey, CacheFileChunk> mChunks;
   nsClassHashtable<nsUint32HashKey, ChunkListeners> mChunkListeners;
