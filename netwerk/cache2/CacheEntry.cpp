@@ -704,13 +704,7 @@ NS_IMETHODIMP CacheEntry::GetFetchCount(int32_t *aFetchCount)
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  CacheFileAutoLock lock(mFile);
-
-  CacheFileMetadata* metadata = file->Metadata();
-  MOZ_ASSERT(metadata);
-  NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
-
-  return metadata->GetFetchCount(reinterpret_cast<uint32_t*>(aFetchCount));
+  return file->GetFetchCount(reinterpret_cast<uint32_t*>(aFetchCount));
 }
 
 NS_IMETHODIMP CacheEntry::GetLastFetched(uint32_t *aLastFetched)
@@ -719,13 +713,7 @@ NS_IMETHODIMP CacheEntry::GetLastFetched(uint32_t *aLastFetched)
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  CacheFileAutoLock lock(mFile);
-
-  CacheFileMetadata* metadata = file->Metadata();
-  MOZ_ASSERT(metadata);
-  NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
-
-  return metadata->GetLastFetched(aLastFetched);
+  return file->GetLastFetched(aLastFetched);
 }
 
 NS_IMETHODIMP CacheEntry::GetLastModified(uint32_t *aLastModified)
@@ -734,13 +722,7 @@ NS_IMETHODIMP CacheEntry::GetLastModified(uint32_t *aLastModified)
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  CacheFileAutoLock lock(mFile);
-
-  CacheFileMetadata* metadata = file->Metadata();
-  MOZ_ASSERT(metadata);
-  NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
-
-  return metadata->GetLastModified(aLastModified);
+  return file->GetLastModified(aLastModified);
 }
 
 NS_IMETHODIMP CacheEntry::GetExpirationTime(uint32_t *aExpirationTime)
@@ -749,13 +731,7 @@ NS_IMETHODIMP CacheEntry::GetExpirationTime(uint32_t *aExpirationTime)
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  CacheFileAutoLock lock(mFile);
-
-  CacheFileMetadata* metadata = file->Metadata();
-  MOZ_ASSERT(metadata);
-  NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
-
-  return metadata->GetExpirationTime(aExpirationTime);
+  return file->GetExpirationTime(aExpirationTime);
 }
 
 NS_IMETHODIMP CacheEntry::SetExpirationTime(uint32_t aExpirationTime)
@@ -764,16 +740,8 @@ NS_IMETHODIMP CacheEntry::SetExpirationTime(uint32_t aExpirationTime)
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  {
-    CacheFileAutoLock lock(mFile);
-
-    CacheFileMetadata* metadata = file->Metadata();
-    MOZ_ASSERT(metadata);
-    NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
-
-    nsresult rv = metadata->SetExpirationTime(aExpirationTime);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
+  nsresult rv = file->SetExpirationTime(aExpirationTime);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   // Aligned assignment, thus atomic.
   mSortingExpirationTime = aExpirationTime;
@@ -913,19 +881,14 @@ NS_IMETHODIMP CacheEntry::GetSecurityInfo(nsISupports * *aSecurityInfo)
 
   char const* info;
   nsCOMPtr<nsISupports> secInfo;
-  {
-    CacheFileAutoLock lock(mFile);
+  nsresult rv;
 
-    CacheFileMetadata* metadata = file->Metadata();
-    MOZ_ASSERT(metadata);
-    NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
-
-    info = metadata->GetElement("security-info");
-  }
+  rv = file->GetElement("security-info", &info);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   if (info) {
-    nsresult rv = NS_DeserializeObject(nsDependentCString(info),
-                                       getter_AddRefs(secInfo));
+    rv = NS_DeserializeObject(nsDependentCString(info),
+                              getter_AddRefs(secInfo));
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -968,16 +931,8 @@ NS_IMETHODIMP CacheEntry::SetSecurityInfo(nsISupports *aSecurityInfo)
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  {
-    CacheFileAutoLock lock(mFile);
-
-    CacheFileMetadata* metadata = file->Metadata();
-    MOZ_ASSERT(metadata);
-    NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
-
-    rv = metadata->SetElement("security-info", info.Length() ? info.get() : nullptr);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
+  rv = file->SetElement("security-info", info.Length() ? info.get() : nullptr);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
 }
@@ -1023,13 +978,10 @@ NS_IMETHODIMP CacheEntry::GetMetaDataElement(const char * aKey, char * *aRetval)
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  CacheFileAutoLock lock(file);
+  const char *value;
+  nsresult rv = file->GetElement(aKey, &value);
+  NS_ENSURE_SUCCESS(rv, rv);
 
-  CacheFileMetadata* metadata = file->Metadata();
-  MOZ_ASSERT(metadata);
-  NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
-
-  char const *value = metadata->GetElement(aKey);
   if (!value)
     return NS_ERROR_NOT_AVAILABLE;
 
@@ -1043,13 +995,7 @@ NS_IMETHODIMP CacheEntry::SetMetaDataElement(const char * aKey, const char * aVa
   if (!file)
     return NS_ERROR_NOT_AVAILABLE;
 
-  CacheFileAutoLock lock(file);
-
-  CacheFileMetadata* metadata = file->Metadata();
-  MOZ_ASSERT(metadata);
-  NS_ENSURE_TRUE(metadata, NS_ERROR_UNEXPECTED);
-
-  return metadata->SetElement(aKey, aValue);
+  return file->SetElement(aKey, aValue);
 }
 
 NS_IMETHODIMP CacheEntry::MetaDataReady()
@@ -1401,11 +1347,10 @@ void CacheEntry::BackgroundOp(uint32_t aOperations, bool aForceAsync)
       if (!file->DataSize(&memorySize))
         memorySize = 0;
 
-      CacheFileAutoLock lock(file);
-
-      CacheFileMetadata* metadata = file->Metadata();
-      if (metadata) {
-        mMetadataMemoryOccupation = metadata->ElementsSize();
+      uint32_t elementsSize;
+      nsresult rv = file->ElementsSize(&elementsSize);
+      if (NS_SUCCEEDED(rv)) {
+        mMetadataMemoryOccupation = elementsSize;
         memorySize += mMetadataMemoryOccupation;
       }
     }
