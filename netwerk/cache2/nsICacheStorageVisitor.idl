@@ -6,7 +6,7 @@
 
 interface nsICacheEntry;
 
-[scriptable, uuid(81ef7fb0-ac72-4182-988a-05bec9094120)]
+[scriptable, uuid(692dda47-3b21-4d0d-853a-f4d27cc324d0)]
 interface nsICacheStorageVisitor : nsISupports
 {
   /**
@@ -16,4 +16,8 @@ interface nsICacheStorageVisitor : nsISupports
   /**
    */
   void onCacheEntryInfo(in nsICacheEntry aEntry);
+
+  /**
+   */
+  void onCacheEntryVisitCompleted();
 };
