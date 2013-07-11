@@ -146,6 +146,13 @@ const COPYCOL_NONE = -1;
 const COPYCOL_META_CONTENT = 1;
 const COPYCOL_IMAGE = COL_IMAGE_ADDRESS;
 
+function createURI(urispec)
+{
+  var ioServ = Components.classes["@mozilla.org/network/io-service;1"]
+                         .getService(Components.interfaces.nsIIOService);
+  return ioServ.newURI(urispec, null, null);
+}
+
 // one nsITreeView for each tree in the window
 var gMetaView = new pageInfoTreeView('metatree', COPYCOL_META_CONTENT);
 var gImageView = new pageInfoTreeView('imagetree', COPYCOL_IMAGE);
@@ -216,13 +223,24 @@ const ATOM_CONTRACTID           = "@mozilla.org/atom-service;1";
 
 // a number of services I'll need later
 // the cache services
-const nsICacheService = Components.interfaces.nsICacheService;
-const ACCESS_READ     = Components.interfaces.nsICache.ACCESS_READ;
-const cacheService = Components.classes["@mozilla.org/network/cache-service;1"].getService(nsICacheService);
-var httpCacheSession = cacheService.createSession("HTTP", 0, true);
-httpCacheSession.doomEntriesIfExpired = false;
-var ftpCacheSession = cacheService.createSession("FTP", 0, true);
-ftpCacheSession.doomEntriesIfExpired = false;
+const nsICacheStorageService = Components.interfaces.nsICacheStorageService;
+const nsICacheStorage = Components.interfaces.nsICacheStorage;
+const cacheService = Components.classes["@mozilla.org/netwerk/cache-storage-service;1"].getService(nsICacheStorageService);
+
+function LoadContextInfo()
+{
+  this._loadContext = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
+                            .getInterface(Components.interfaces.nsIWebNavigation)
+                            .QueryInterface(Components.interfaces.nsILoadContext)
+}
+LoadContextInfo.prototype = {
+  isPrivate : function() { return this._loadContext.isPrivate },
+  isAnonymous : function() { return this._loadContext.isAnonymous },
+  isInBrowserElement : function() { return this._loadContext.isInBrowserElement },
+  appId : function() { return this._loadContext.appId }
+};
+
+var diskStorage = cacheService.diskCacheStorage(new LoadContextInfo(), false);
 
 const nsICookiePermission  = Components.interfaces.nsICookiePermission;
 const nsIPermissionManager = Components.interfaces.nsIPermissionManager;
@@ -318,6 +336,8 @@ function onLoadPageInfo()
 
   if (!args || !args.doc) {
     gWindow = window.opener.content;
+    /*for (__key in window)
+      dump(__key + " = " + window[__key] + "\n");*/
     gDocument = gWindow.document;
   }
 
@@ -463,19 +483,15 @@ function toggleGroupbox(id)
 
 function openCacheEntry(key, cb)
 {
-  var tries = 0;
   var checkCacheListener = {
-    onCacheEntryAvailable: function(entry, access, status) {
-      if (entry || tries == 1) {
-        cb(entry);
-      }
-      else {
-        tries++;
-        ftpCacheSession.asyncOpenCacheEntry(key, ACCESS_READ, this, true);
-      }
+    onCacheEntryCheck: function(entry, appCache) {
+      return nsICacheEntryOpenCallback.ENTRY_VALID;
+    },
+    onCacheEntryAvailable: function(entry, isNew, appCache, status) {
+      cb(entry);
     }
   };
-  httpCacheSession.asyncOpenCacheEntry(key, ACCESS_READ, checkCacheListener, true);
+  diskStorage.asyncOpenURI(createURI(key), "", nsICacheStorage.OPEN_READONLY, checkCacheListener);
 }
 
 function makeGeneralTab()
