@@ -387,6 +387,11 @@ CacheFile::OnChunkRead(nsresult aResult, CacheFileChunk *aChunk)
   LOG(("CacheFile::OnChunkRead() [this=%p, rv=0x%08x, chunk=%p, idx=%d]",
        this, aResult, index));
 
+  // TODO handle ERROR state
+  MOZ_ASSERT(aChunk->mState == CacheFileChunk::READING);
+  aChunk->mState = CacheFileChunk::READY;
+
+
   if (HaveChunkListeners(index)) {
     rv = NotifyChunkListeners(index, aResult, aChunk);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -400,12 +405,16 @@ CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
 {
   CacheFileAutoLock lock(this);
 
-  MOZ_ASSERT(!mMemoryOnly);
+  nsresult rv;
 
   LOG(("CacheFile::OnChunkWritten() [this=%p, rv=0x%08x, chunk=%p, idx=%d]",
        this, aResult, aChunk, aChunk->Index()));
 
-  nsresult rv;
+  MOZ_ASSERT(!mMemoryOnly);
+
+  // TODO handle ERROR state
+  MOZ_ASSERT(aChunk->mState == CacheFileChunk::WRITING);
+  aChunk->mState = CacheFileChunk::READY;
 
   if (NS_FAILED(aResult)) {
     // TODO ??? doom entry
@@ -1250,6 +1259,10 @@ CacheFile::RemoveChunk(CacheFileChunk *aChunk)
       }
       else {
         // Chunk will be removed in OnChunkWritten if it is still unused
+
+        // chunk needs to be released under the lock to be able to rely on
+        // CacheFileChunk::mRefCnt in CacheFile::OnChunkWritten()
+        chunk = nullptr;
         return NS_OK;
       }
     }
