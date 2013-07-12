@@ -112,7 +112,7 @@ private:
   };
 
   uint32_t mIndex;
-  EState mState;
+  EState   mState;
   bool     mIsDirty;
   bool     mRemovingChunk;
   uint32_t mDataSize;
