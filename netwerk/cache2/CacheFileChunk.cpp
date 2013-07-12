@@ -467,13 +467,16 @@ CacheFileChunk::OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
     MOZ_ASSERT(mState == WRITING);
     MOZ_ASSERT(mListener);
 
-//    if (NS_FAILED(aResult)) {
-//      mState = READY;   // TODO: properly handle error states
-//      mState = ERROR;
-//    }
-//    else {
-      mState = READY;
-
+#if 0
+    // TODO: properly handle error states
+    if (NS_FAILED(aResult)) {
+      mState = ERROR;
+    }
+    else {
+#endif
+      // Set the READY state in listener instead of here so that the chunk
+      // cannot be used by someone after releasing the lock here and acquiring
+      // the lock in CacheFile::OnChunkWritten().
       if (!mBuf) {
         mBuf = mRWBuf;
         mBufSize = mRWBufSize;
@@ -484,7 +487,9 @@ CacheFileChunk::OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
 
       mRWBuf = nullptr;
       mRWBufSize = 0;
-//    }
+#if 0
+    }
+#endif
 
     mListener.swap(listener);
   }
@@ -548,11 +553,11 @@ CacheFileChunk::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
     }
 
     if (NS_FAILED(aResult)) {
-      mState = READY;   // TODO: properly handle error states
-//      mState = ERROR;
+#if 0
+      // TODO: properly handle error states
+      mState = ERROR;
+#endif
       mDataSize = 0;
-    } else {
-      mState = READY;
     }
 
     mListener.swap(listener);
