@@ -156,7 +156,6 @@ private:
   bool           mDataAccessed;
   bool           mDataIsDirty;
   bool           mWritingMetadata;
-  bool           mDoomRequested;
   int64_t        mDataSize;
   nsCString      mKey;
 
