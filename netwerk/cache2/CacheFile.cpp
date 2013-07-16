@@ -228,10 +228,6 @@ public:
     MOZ_COUNT_CTOR(DoomFileHelper);
   }
 
-  ~DoomFileHelper()
-  {
-    MOZ_COUNT_DTOR(DoomFileHelper);
-  }
 
   NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
   {
@@ -265,6 +261,11 @@ public:
   }
 
 private:
+  virtual ~DoomFileHelper()
+  {
+    MOZ_COUNT_DTOR(DoomFileHelper);
+  }
+
   nsCOMPtr<CacheFileListener>  mListener;
 };
 
