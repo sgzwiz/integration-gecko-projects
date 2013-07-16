@@ -420,8 +420,10 @@ public:
     if (mTarget) {
       if (!mIOMan)
         mRV = NS_ERROR_NOT_INITIALIZED;
-      else
+      else {
         mRV = mIOMan->OpenFileInternal(&mHash, mFlags, getter_AddRefs(mHandle));
+        mIOMan = nullptr;
+      }
 
       nsCOMPtr<nsIEventTarget> target;
       mTarget.swap(target);
@@ -618,10 +620,64 @@ public:
   }
 
 protected:
-  bool                          mFlags;
   nsCOMPtr<CacheFileIOListener> mCallback;
   nsCOMPtr<nsIEventTarget>      mTarget;
   nsRefPtr<CacheFileHandle>     mHandle;
+  nsresult                      mRV;
+};
+
+class DoomFileByKeyEvent : public nsRunnable {
+public:
+  DoomFileByKeyEvent(const nsACString &aKey,
+                     CacheFileIOListener *aCallback)
+    : mCallback(aCallback)
+    , mRV(NS_ERROR_FAILURE)
+  {
+    MOZ_COUNT_CTOR(DoomFileByKeyEvent);
+
+    SHA1Sum sum;
+    sum.update(aKey.BeginReading(), aKey.Length());
+    sum.finish(mHash);
+
+//    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+    nsCOMPtr<nsIThread> mainThread;               // temporary HACK
+    NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
+    mTarget = mainThread;                         // using streamcopier's thread
+    mIOMan = CacheFileIOManager::gInstance;
+    MOZ_ASSERT(mTarget);
+  }
+
+  ~DoomFileByKeyEvent()
+  {
+    MOZ_COUNT_DTOR(DoomFileByKeyEvent);
+  }
+
+  NS_IMETHOD Run()
+  {
+    if (mTarget) {
+      if (!mIOMan)
+        mRV = NS_ERROR_NOT_INITIALIZED;
+      else {
+        mRV = mIOMan->DoomFileByKeyInternal(&mHash);
+        mIOMan = nullptr;
+      }
+
+      nsCOMPtr<nsIEventTarget> target;
+      mTarget.swap(target);
+      target->Dispatch(this, nsIEventTarget::DISPATCH_NORMAL);
+    }
+    else {
+      if (mCallback)
+        mCallback->OnFileDoomed(nullptr, mRV);
+    }
+    return NS_OK;
+  }
+
+protected:
+  SHA1Sum::Hash                 mHash;
+  nsCOMPtr<CacheFileIOListener> mCallback;
+  nsCOMPtr<nsIEventTarget>      mTarget;
+  nsRefPtr<CacheFileIOManager>  mIOMan;
   nsresult                      mRV;
 };
 
@@ -1184,6 +1240,69 @@ CacheFileIOManager::DoomFileInternal(CacheFileHandle *aHandle)
   }
 
   aHandle->mIsDoomed = true;
+  return NS_OK;
+}
+
+nsresult
+CacheFileIOManager::DoomFileByKey(const nsACString &aKey,
+                                  CacheFileIOListener *aCallback)
+{
+  LOG(("CacheFileIOManager::DoomFileByKey() [key=%s, listener=%p]",
+       PromiseFlatCString(aKey).get(), aCallback));
+
+  nsresult rv;
+  CacheFileIOManager *ioMan = gInstance;
+
+  if (!ioMan)
+    return NS_ERROR_NOT_INITIALIZED;
+
+  nsRefPtr<DoomFileByKeyEvent> ev = new DoomFileByKeyEvent(aKey, aCallback);
+  rv = ioMan->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+nsresult
+CacheFileIOManager::DoomFileByKeyInternal(const SHA1Sum::Hash *aHash)
+{
+  nsresult rv;
+
+  if (mShuttingDown)
+    return NS_ERROR_NOT_INITIALIZED;
+
+  if (!mCacheDirectory)
+    return NS_ERROR_FILE_INVALID_PATH;
+
+  // Find active handle
+  nsRefPtr<CacheFileHandle> handle;
+  mHandles.GetHandle(aHash, getter_AddRefs(handle));
+
+  if (handle) {
+    if (handle->IsDoomed())
+      return NS_OK;
+
+    return DoomFileInternal(handle);
+  }
+
+  // There is no handle for this file, delete the file if exists
+  nsCOMPtr<nsIFile> file;
+  rv = GetFile(aHash, getter_AddRefs(file));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  bool exists;
+  rv = file->Exists(&exists);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (!exists)
+    return NS_ERROR_NOT_AVAILABLE;
+
+  rv = file->Remove(false);
+  if (NS_FAILED(rv)) {
+    NS_WARNING("Cannot remove old entry from the disk");
+    // TODO log
+  }
+
   return NS_OK;
 }
 
