@@ -141,6 +141,8 @@ public:
                         CacheFileIOListener *aCallback);
   static nsresult DoomFile(CacheFileHandle *aHandle,
                            CacheFileIOListener *aCallback);
+  static nsresult DoomFileByKey(const nsACString &aKey,
+                                CacheFileIOListener *aCallback);
   static nsresult ReleaseNSPRHandle(CacheFileHandle *aHandle);
   static nsresult TruncateSeekSetEOF(CacheFileHandle *aHandle,
                                      int64_t aTruncatePos, int64_t aEOFPos,
@@ -154,6 +156,7 @@ private:
   friend class ReadEvent;
   friend class WriteEvent;
   friend class DoomFileEvent;
+  friend class DoomFileByKeyEvent;
   friend class ReleaseNSPRHandleEvent;
   friend class TruncateSeekSetEOFEvent;
 
@@ -173,6 +176,7 @@ private:
   nsresult WriteInternal(CacheFileHandle *aHandle, int64_t aOffset,
                          const char *aBuf, int32_t aCount, bool aValidate);
   nsresult DoomFileInternal(CacheFileHandle *aHandle);
+  nsresult DoomFileByKeyInternal(const SHA1Sum::Hash *aHash);
   nsresult ReleaseNSPRHandleInternal(CacheFileHandle *aHandle);
   nsresult TruncateSeekSetEOFInternal(CacheFileHandle *aHandle,
                                       int64_t aTruncatePos, int64_t aEOFPos);
