@@ -90,20 +90,19 @@ private:
   nsresult CheckElements(const char *aBuf, uint32_t aSize);
   void     EnsureBuffer(uint32_t aSize);
 
-  nsRefPtr<CacheFileHandle>           mHandle;
-  nsCString                           mKey;
-  CacheHashUtils::Hash16_t           *mHashArray;
-  uint32_t                            mHashArraySize;
-  uint32_t                            mHashCount;
-  int64_t                             mOffset;
-  char                               *mBuf; // used for parsing, then points
-                                            // to elements
-  uint32_t                            mBufSize;
-  char                               *mWriteBuf;
-  CacheFileMetadataHeader             mMetaHdr;
-  uint32_t                            mElementsSize;
-  bool                                mIsDirty;
-  nsCOMPtr<CacheFileMetadataListener> mListener;
+  nsRefPtr<CacheFileHandle>  mHandle;
+  nsCString                  mKey;
+  CacheHashUtils::Hash16_t  *mHashArray;
+  uint32_t                   mHashArraySize;
+  uint32_t                   mHashCount;
+  int64_t                    mOffset;
+  char                      *mBuf; // used for parsing, then points to elements
+  uint32_t                   mBufSize;
+  char                      *mWriteBuf;
+  CacheFileMetadataHeader    mMetaHdr;
+  uint32_t                   mElementsSize;
+  bool                       mIsDirty;
+  CacheFileMetadataListener *mListener;
 };
 
 
