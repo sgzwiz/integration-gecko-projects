@@ -265,10 +265,8 @@ CacheFileChunk::WaitForUpdate(CacheFileChunkListener *aCallback)
 #endif
 
   ChunkListenerItem *item = new ChunkListenerItem();
-//  item->mTarget = NS_GetCurrentThread();
-  nsCOMPtr<nsIThread> mainThread;               // temporary HACK
-  NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
-  item->mTarget = mainThread;                   // using streamcopier's thread
+  item->mTarget = NS_GetCurrentThread();
+  MOZ_ASSERT(!CacheFileIOManager::gInstance->mIOThread->IsCurrentThread());
   item->mCallback = aCallback;
 
   mUpdateListeners.AppendElement(item);
