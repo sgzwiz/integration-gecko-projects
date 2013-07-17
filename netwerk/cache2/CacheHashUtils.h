@@ -7,6 +7,7 @@
 
 #include "mozilla/Types.h"
 #include "prnetdb.h"
+#include "nsPrintfCString.h"
 
 #define LOGSHA1(x) \
     PR_htonl((reinterpret_cast<const uint32_t *>(x))[0]), \
@@ -14,6 +15,9 @@
     PR_htonl((reinterpret_cast<const uint32_t *>(x))[2]), \
     PR_htonl((reinterpret_cast<const uint32_t *>(x))[3]), \
     PR_htonl((reinterpret_cast<const uint32_t *>(x))[4])
+
+#define SHA1STRING(x) \
+    (nsPrintfCString("%08x%08x%08x%08x%08x", LOGSHA1(x)).get())
 
 namespace mozilla {
 namespace net {
