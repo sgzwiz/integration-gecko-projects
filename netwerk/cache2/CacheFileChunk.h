@@ -13,7 +13,7 @@
 namespace mozilla {
 namespace net {
 
-#define kChunkSize        4096
+#define kChunkSize        16384
 #define kEmptyChunkHash   0xA8CA
 
 class CacheFileChunk;
