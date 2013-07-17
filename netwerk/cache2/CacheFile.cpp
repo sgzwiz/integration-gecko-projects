@@ -353,6 +353,7 @@ nsresult
 CacheFile::Init(const nsACString &aKey,
                 bool aCreateNew,
                 bool aMemoryOnly,
+                bool aPriority,
                 CacheFileListener *aCallback)
 {
   MOZ_ASSERT(!mListener);
@@ -387,6 +388,9 @@ CacheFile::Init(const nsACString &aKey,
     }
     else
       flags = CacheFileIOManager::CREATE;
+
+    if (aPriority)
+      flags |= CacheFileIOManager::PRIORITY;
 
     mOpeningFile = true;
     mListener = aCallback;
@@ -1323,10 +1327,8 @@ CacheFile::QueueChunkListener(uint32_t aIndex,
   MOZ_ASSERT(aCallback);
 
   ChunkListenerItem *item = new ChunkListenerItem();
-//  item->mTarget = NS_GetCurrentThread();
-  nsCOMPtr<nsIThread> mainThread;               // temporary HACK
-  NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
-  item->mTarget = mainThread;                   // using streamcopier's thread
+  item->mTarget = NS_GetCurrentThread();
+  MOZ_ASSERT(!CacheFileIOManager::gInstance->mIOThread->IsCurrentThread());
   item->mCallback = aCallback;
 
   ChunkListeners *listeners;
