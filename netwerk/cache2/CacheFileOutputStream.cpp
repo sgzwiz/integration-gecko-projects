@@ -103,7 +103,7 @@ CacheFileOutputStream::Write(const char * aBuf, uint32_t aCount,
     uint32_t canWrite = kChunkSize - chunkOffset;
     uint32_t thisWrite = std::min(static_cast<uint32_t>(canWrite), aCount);
     mChunk->EnsureBufSize(chunkOffset + thisWrite);
-    memcpy(mChunk->Buf() + chunkOffset, aBuf, thisWrite);
+    memcpy(mChunk->BufForWriting() + chunkOffset, aBuf, thisWrite);
 
     mPos += thisWrite;
     aBuf += thisWrite;
@@ -352,7 +352,8 @@ CacheFileOutputStream::FillHole()
        "%d-%d [this=%p]", mChunk->Index(), mChunk->DataSize(), pos - 1, this));
 
   mChunk->EnsureBufSize(pos);
-  memset(mChunk->Buf() + mChunk->DataSize(), 0, pos - mChunk->DataSize());
+  memset(mChunk->BufForWriting() + mChunk->DataSize(), 0,
+         pos - mChunk->DataSize());
 
   mChunk->UpdateDataSize(mChunk->DataSize(), pos - mChunk->DataSize(), false);
 }
