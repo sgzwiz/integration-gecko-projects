@@ -37,8 +37,6 @@
 #include "jsobjinlines.h"
 #include "jsscriptinlines.h"
 
-#include "vm/Stack-inl.h"
-
 #ifdef __SUNPRO_CC
 #include <alloca.h>
 #endif
@@ -6290,12 +6288,6 @@ TypeObject::clearProperties()
 inline void
 TypeObject::sweep(FreeOp *fop)
 {
-    /*
-     * We may be regenerating existing type sets containing this object,
-     * so reset contributions on each GC to avoid tripping the limit.
-     */
-    contribution = 0;
-
     if (singleton) {
         JS_ASSERT(!newScript);
 
