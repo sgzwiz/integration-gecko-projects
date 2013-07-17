@@ -34,6 +34,7 @@ CacheFileMetadata::CacheFileMetadata(CacheFileHandle *aHandle, const nsACString 
   , mWriteBuf(nullptr)
   , mElementsSize(0)
   , mIsDirty(false)
+  , mListener(nullptr)
 {
   LOG(("CacheFileMetadata::CacheFileMetadata() [this=%p, handle=%p, key=%s]",
        this, aHandle, PromiseFlatCString(aKey).get()));
@@ -74,6 +75,7 @@ CacheFileMetadata::CacheFileMetadata(const nsACString &aKey)
   , mWriteBuf(nullptr)
   , mElementsSize(0)
   , mIsDirty(true)
+  , mListener(nullptr)
 {
   LOG(("CacheFileMetadata::CacheFileMetadata() [this=%p, key=%s]",
        this, PromiseFlatCString(aKey).get()));
@@ -145,7 +147,10 @@ CacheFileMetadata::ReadMetadata(CacheFileMetadataListener *aListener)
 
   mListener = aListener;
   rv = CacheFileIOManager::Read(mHandle, offset, mBuf, mBufSize, this);
-  if (NS_FAILED(rv)) {
+  if (NS_SUCCEEDED(rv)) {
+    NS_ADDREF(aListener);
+  }
+  else {
     LOG(("CacheFileMetadata::ReadMetadata() - CacheFileIOManager::Read() failed"
          " synchronously, creating empty metadata. [this=%p, rv=0x%08x]",
          this, rv));
@@ -201,7 +206,10 @@ CacheFileMetadata::WriteMetadata(uint32_t aOffset,
   mListener = aListener;
   rv = CacheFileIOManager::Write(mHandle, aOffset, mWriteBuf, p - mWriteBuf,
                                  true, this);
-  if (NS_FAILED(rv)) {
+  if (NS_SUCCEEDED(rv)) {
+    NS_ADDREF(aListener);
+  }
+  else {
     LOG(("CacheFileMetadata::WriteMetadata() - CacheFileIOManager::Write() "
          "failed synchronously. [this=%p, rv=0x%08x]", this, rv));
 
@@ -404,7 +412,7 @@ CacheFileMetadata::OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
 
   nsCOMPtr<CacheFileMetadataListener> listener;
 
-  mListener.swap(listener);
+  listener.swap(mListener);
   listener->OnMetadataWritten(aResult);
 
   return NS_OK;
@@ -427,7 +435,7 @@ CacheFileMetadata::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
          "creating empty metadata. [this=%p, rv=0x%08x]", this, aResult));
 
     InitEmptyMetadata();
-    mListener.swap(listener);
+    listener.swap(mListener);
     listener->OnMetadataRead(NS_OK);
     return NS_OK;
   }
@@ -445,7 +453,7 @@ CacheFileMetadata::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
          size));
 
     InitEmptyMetadata();
-    mListener.swap(listener);
+    listener.swap(mListener);
     listener->OnMetadataRead(NS_OK);
     return NS_OK;
   }
@@ -469,7 +477,7 @@ CacheFileMetadata::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
            this, rv));
 
       InitEmptyMetadata();
-      mListener.swap(listener);
+      listener.swap(mListener);
       listener->OnMetadataRead(rv);
       return NS_OK;
     }
@@ -486,7 +494,7 @@ CacheFileMetadata::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
     InitEmptyMetadata();
   }
 
-  mListener.swap(listener);
+  listener.swap(mListener);
   listener->OnMetadataRead(NS_OK);
 
   return NS_OK;

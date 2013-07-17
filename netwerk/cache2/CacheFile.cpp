@@ -441,9 +441,6 @@ CacheFile::OnChunkRead(nsresult aResult, CacheFileChunk *aChunk)
        this, aResult, index));
 
   // TODO handle ERROR state
-  MOZ_ASSERT(aChunk->mState == CacheFileChunk::READING);
-  aChunk->mState = CacheFileChunk::READY;
-
 
   if (HaveChunkListeners(index)) {
     rv = NotifyChunkListeners(index, aResult, aChunk);
@@ -466,8 +463,6 @@ CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
   MOZ_ASSERT(!mMemoryOnly);
 
   // TODO handle ERROR state
-  MOZ_ASSERT(aChunk->mState == CacheFileChunk::WRITING);
-  aChunk->mState = CacheFileChunk::READY;
 
   if (NS_FAILED(aResult)) {
     // TODO ??? doom entry
@@ -489,18 +484,17 @@ CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
       MOZ_ASSERT(aChunk->mRefCnt != 2);
       return NS_OK;
     }
-
-    NS_WARNING("NotifyChunkListeners failed???");
-    if (aChunk->mRefCnt != 2) {
-      // Some of the listeners didn't fail and got the reference
-      return NS_OK;
-    }
   }
 
-  MOZ_ASSERT(aChunk->mRefCnt == 2);
+  if (aChunk->mRefCnt != 2) {
+    LOG(("CacheFile::OnChunkWritten() - Chunk is still used [this=%p, chunk=%p,"
+         " refcnt=%d]", this, aChunk, aChunk->mRefCnt));
 
-  LOG(("CacheFile::OnChunkWritten() - Caching unused chunk "
-       "[this=%p, chunk=%p]", this, aChunk));
+    return NS_OK;
+  }
+
+  LOG(("CacheFile::OnChunkWritten() - Caching unused chunk [this=%p, chunk=%p]",
+       this, aChunk));
 
   aChunk->mRemovingChunk = true;
   ReleaseOutsideLock(static_cast<CacheFileChunkListener *>(
@@ -1569,7 +1563,7 @@ CacheFile::PadChunkWithZeroes(uint32_t aChunkIdx)
        " [this=%p]", aChunkIdx, chunk->DataSize(), kChunkSize - 1, this));
 
   chunk->EnsureBufSize(kChunkSize);
-  memset(chunk->Buf() + chunk->DataSize(), 0, kChunkSize - chunk->DataSize());
+  memset(chunk->BufForWriting() + chunk->DataSize(), 0, kChunkSize - chunk->DataSize());
 
   chunk->UpdateDataSize(chunk->DataSize(), kChunkSize - chunk->DataSize(),
                         false);
