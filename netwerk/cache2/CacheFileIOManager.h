@@ -5,10 +5,12 @@
 #ifndef CacheFileIOManager__h__
 #define CacheFileIOManager__h__
 
-#include "nsIThread.h"
+#include "CacheIOThread.h"
+#include "nsIEventTarget.h"
 #include "nsCOMPtr.h"
 #include "mozilla/SHA1.h"
 #include "nsTArray.h"
+#include "nsString.h"
 #include "pldhash.h"
 #include "prclist.h"
 #include "prio.h"
@@ -24,10 +26,11 @@ class CacheFileHandle : public nsISupports
 public:
   NS_DECL_ISUPPORTS
 
-  CacheFileHandle(const SHA1Sum::Hash *aHash);
+  CacheFileHandle(const SHA1Sum::Hash *aHash, bool aPriority);
   bool IsDoomed() { return mIsDoomed; }
   const SHA1Sum::Hash *Hash() { return mHash; }
   int64_t FileSize() { return mFileSize; }
+  bool IsPriority() { return mPriority; }
   bool FileExists() { return mFileExists; }
   bool IsClosed() { return mClosed; }
 
@@ -41,6 +44,7 @@ private:
   const SHA1Sum::Hash *mHash;
   bool                 mIsDoomed;
   bool                 mRemovingHandle;
+  bool                 mPriority;
   bool                 mClosed;
   bool                 mInvalid;
   bool                 mFileExists; // This means that the file should exists,
@@ -61,7 +65,7 @@ public:
   void     Shutdown();
 
   nsresult GetHandle(const SHA1Sum::Hash *aHash, CacheFileHandle **_retval);
-  nsresult NewHandle(const SHA1Sum::Hash *aHash, CacheFileHandle **_retval);
+  nsresult NewHandle(const SHA1Sum::Hash *aHash, bool aPriority, CacheFileHandle **_retval);
   void     RemoveHandle(CacheFileHandle *aHandlle);
   void     GetAllHandles(nsTArray<nsRefPtr<CacheFileHandle> > *_retval);
   uint32_t HandleCount();
@@ -121,7 +125,8 @@ public:
   enum {
     OPEN       = 0U,
     CREATE     = 1U,
-    CREATE_NEW = 2U
+    CREATE_NEW = 2U,
+    PRIORITY   = 4U
   };
 
   CacheFileIOManager();
@@ -150,6 +155,8 @@ public:
 
 private:
   friend class CacheFileHandle;
+  friend class CacheFileChunk;
+  friend class CacheFile;
   friend class ShutdownEvent;
   friend class OpenFileEvent;
   friend class CloseHandleEvent;
@@ -193,13 +200,12 @@ private:
 
   static CacheFileIOManager  *gInstance;
   bool                        mShuttingDown;
-  nsCOMPtr<nsIThread>         mIOThread;
+  nsRefPtr<CacheIOThread>     mIOThread;
   nsCOMPtr<nsIFile>           mCacheDirectory;
   bool                        mTreeCreated;
   CacheFileHandles            mHandles;
   nsTArray<CacheFileHandle *> mHandlesByLastUsed;
 };
-
 
 } // net
 } // mozilla

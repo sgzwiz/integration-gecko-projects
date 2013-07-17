@@ -180,7 +180,7 @@ private:
   };
 
   // Loads from disk asynchronously
-  bool Load(bool aTruncate);
+  bool Load(bool aTruncate, bool aPriority);
   void OnLoaded();
 
   void RememberCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
