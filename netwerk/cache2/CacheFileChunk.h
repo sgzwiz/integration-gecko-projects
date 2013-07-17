@@ -93,8 +93,10 @@ public:
 
   bool   IsReady();
   bool   IsDirty();
-  char * Buf();
-  void   EnsureBufSize(uint32_t aBufSize);
+
+  char *       BufForWriting();
+  const char * BufForReading();
+  void         EnsureBufSize(uint32_t aBufSize);
 
 private:
   friend class CacheFileInputStream;
