@@ -184,6 +184,7 @@ private:
   void OnLoaded();
 
   void RememberCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
+  bool PendingCallbacks();
   void InvokeCallbacks();
   bool InvokeCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
   void InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
