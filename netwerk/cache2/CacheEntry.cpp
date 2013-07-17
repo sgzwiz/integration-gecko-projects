@@ -166,6 +166,7 @@ void CacheEntry::AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags
 
   bool readonly = aFlags & nsICacheStorage::OPEN_READONLY;
   bool truncate = aFlags & nsICacheStorage::OPEN_TRUNCATE;
+  bool priority = aFlags & nsICacheStorage::OPEN_PRIORITY;
 
   bool mainThreadOnly;
   if (aCallback && NS_FAILED(aCallback->GetMainThreadOnly(&mainThreadOnly)))
@@ -176,7 +177,7 @@ void CacheEntry::AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags
 
   mozilla::MutexAutoLock lock(mLock);
 
-  if (Load(truncate) || !InvokeCallback(aCallback, readonly)) {
+  if (Load(truncate, priority) || !InvokeCallback(aCallback, readonly)) {
     // Load in progress or callback bypassed...
     if (mainThreadOnly) {
       LOG(("  callback is main-thread only"));
@@ -187,7 +188,7 @@ void CacheEntry::AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags
   }
 }
 
-bool CacheEntry::Load(bool aTruncate)
+bool CacheEntry::Load(bool aTruncate, bool aPriority)
 {
   LOG(("CacheEntry::Load [this=%p, trunc=%d]", this, aTruncate));
 
@@ -230,6 +231,7 @@ bool CacheEntry::Load(bool aTruncate)
     rv = mFile->Init(fileKey,
                      aTruncate,
                      !mUseDisk,
+                     aPriority,
                      directLoad ? nullptr : this);
 
   if (NS_FAILED(rv)) {
