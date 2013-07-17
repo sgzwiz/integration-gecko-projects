@@ -177,7 +177,9 @@ void CacheEntry::AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags
 
   mozilla::MutexAutoLock lock(mLock);
 
-  if (Load(truncate, priority) || !InvokeCallback(aCallback, readonly)) {
+  if (Load(truncate, priority) ||
+      PendingCallbacks() ||
+      !InvokeCallback(aCallback, readonly)) {
     // Load in progress or callback bypassed...
     if (mainThreadOnly) {
       LOG(("  callback is main-thread only"));
@@ -357,6 +359,12 @@ void CacheEntry::RememberCallback(nsICacheEntryOpenCallback* aCallback,
     mReadOnlyCallbacks.AppendObject(aCallback);
 }
 
+bool CacheEntry::PendingCallbacks()
+{
+  mLock.AssertCurrentThreadOwns();
+  return mCallbacks.Length() || mReadOnlyCallbacks.Length();
+}
+
 void CacheEntry::InvokeCallbacksMainThread()
 {
   mozilla::MutexAutoLock lock(mLock);
@@ -399,6 +407,14 @@ void CacheEntry::InvokeCallbacks()
   } while (true);
 
   while (mReadOnlyCallbacks.Count()) {
+    if (mHasMainThreadOnlyCallback && !NS_IsMainThread()) {
+      nsRefPtr<nsRunnableMethod<CacheEntry> > event =
+        NS_NewRunnableMethod(this, &CacheEntry::InvokeCallbacksMainThread);
+      NS_DispatchToMainThread(event);
+      LOG(("CacheEntry::InvokeCallbacks END [this=%p] dispatching to maintread", this));
+      return;
+    }
+
     nsCOMPtr<nsICacheEntryOpenCallback> callback = mReadOnlyCallbacks[0];
     mReadOnlyCallbacks.RemoveElementAt(0);
 
