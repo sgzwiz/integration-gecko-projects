@@ -2459,6 +2459,11 @@ nsHttpChannel::OpenCacheEntry(bool usingSSL)
     else
         cacheEntryOpenFlags = nsICacheStorage::OPEN_NORMALLY;
 
+    if (mLoadAsBlocking || mLoadUnblocked ||
+        (mLoadFlags & LOAD_INITIAL_DOCUMENT_URI)) {
+        cacheEntryOpenFlags |= nsICacheStorage::OPEN_PRIORITY;
+    }
+
     nsCOMPtr<nsIURI> openURI;
     if (!mFallbackKey.IsEmpty() && mFallbackChannel) {
         // This is a fallback channel, open fallback URI instead
