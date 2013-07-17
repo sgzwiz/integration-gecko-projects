@@ -91,6 +91,8 @@ CacheFileInputStream::Available(uint64_t *_retval)
 
     if (canRead > 0)
       *_retval = canRead;
+    else if (canRead == 0 && !mFile->mOutput)
+      return NS_BASE_STREAM_CLOSED;
   }
 
   LOG(("CacheFileInputStream::Available() [this=%p, retval=%lld]",
