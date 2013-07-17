@@ -256,7 +256,7 @@ CacheFileChunk::WaitForUpdate(CacheFileChunkListener *aCallback)
        this, aCallback));
 
   MOZ_ASSERT(mFile->mOutput);
-  MOZ_ASSERT(mState == READY);
+  MOZ_ASSERT(IsReady());
 
 #ifdef DEBUG
   for (uint32_t i = 0 ; i < mUpdateListeners.Length() ; i++) {
@@ -281,7 +281,7 @@ CacheFileChunk::CancelWait(CacheFileChunkListener *aCallback)
 
   LOG(("CacheFileChunk::CancelWait() [this=%p, listener=%p]", this, aCallback));
 
-  MOZ_ASSERT(mState == READY);
+  MOZ_ASSERT(IsReady());
 
   uint32_t i;
   for (i = 0 ; i < mUpdateListeners.Length() ; i++) {
@@ -310,7 +310,7 @@ CacheFileChunk::NotifyUpdateListeners()
 
   LOG(("CacheFileChunk::NotifyUpdateListeners() [this=%p]", this));
 
-  MOZ_ASSERT(mState == READY);
+  MOZ_ASSERT(IsReady());
 
   nsresult rv, rv2;
 
@@ -347,9 +347,9 @@ CacheFileChunk::Hash()
 
   MOZ_ASSERT(mBuf);
   MOZ_ASSERT(!mListener);
-  MOZ_ASSERT(mState == READY);
+  MOZ_ASSERT(IsReady());
 
-  return CacheHashUtils::Hash16(mBuf, mDataSize);
+  return CacheHashUtils::Hash16(BufForReading(), mDataSize);
 }
 
 uint32_t
@@ -386,7 +386,7 @@ CacheFileChunk::UpdateDataSize(uint32_t aOffset, uint32_t aLen, bool aEOF)
   if (mState == READY || mState == WRITING) {
     MOZ_ASSERT(mValidityMap.Length() == 0);
 
-    if (notify && mState == READY)
+    if (notify)
       NotifyUpdateListeners();
 
     return;
@@ -474,9 +474,7 @@ CacheFileChunk::OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
     }
     else {
 #endif
-      // Set the READY state in listener instead of here so that the chunk
-      // cannot be used by someone after releasing the lock here and acquiring
-      // the lock in CacheFile::OnChunkWritten().
+      mState = READY;
       if (!mBuf) {
         mBuf = mRWBuf;
         mBufSize = mRWBufSize;
@@ -557,7 +555,11 @@ CacheFileChunk::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
       // TODO: properly handle error states
       mState = ERROR;
 #endif
+      mState = READY;
       mDataSize = 0;
+    }
+    else {
+      mState = READY;
     }
 
     mListener.swap(listener);
@@ -587,7 +589,7 @@ CacheFileChunk::IsReady()
 {
   mFile->AssertOwnsLock();
 
-  return (mState == READY);
+  return (mState == READY || mState == WRITING);
 }
 
 bool
@@ -599,11 +601,28 @@ CacheFileChunk::IsDirty()
 }
 
 char *
-CacheFileChunk::Buf()
+CacheFileChunk::BufForWriting()
 {
   mFile->AssertOwnsLock();
 
+  MOZ_ASSERT(mBuf); // Writer should always first call EnsureBufSize()
+
+  MOZ_ASSERT((mState == READY && !mRWBuf) ||
+             (mState == WRITING && mRWBuf) ||
+             (mState == READING && mRWBuf));
+
   return mBuf;
+}
+
+const char *
+CacheFileChunk::BufForReading()
+{
+  mFile->AssertOwnsLock();
+
+  MOZ_ASSERT((mState == READY && mBuf && !mRWBuf) ||
+             (mState == WRITING && mRWBuf));
+
+  return mBuf ? mBuf : mRWBuf;
 }
 
 void
