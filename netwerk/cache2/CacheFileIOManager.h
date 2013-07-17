@@ -34,6 +34,10 @@ public:
   bool FileExists() { return mFileExists; }
   bool IsClosed() { return mClosed; }
 
+#ifdef MOZ_VISUAL_EVENT_TRACER
+  nsCString            mKey;
+#endif
+
 private:
   friend class CacheFileIOManager;
   friend class CacheFileHandles;
