@@ -7,6 +7,7 @@
 #include "CacheLog.h"
 #include "../cache/nsCacheUtils.h"
 #include "CacheHashUtils.h"
+#include "CacheStorageService.h"
 #include "nsThreadUtils.h"
 #include "nsIFile.h"
 #include "mozilla/Telemetry.h"
@@ -63,10 +64,12 @@ NS_INTERFACE_MAP_BEGIN(CacheFileHandle)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END_THREADSAFE
 
-CacheFileHandle::CacheFileHandle(const SHA1Sum::Hash *aHash)
+CacheFileHandle::CacheFileHandle(const SHA1Sum::Hash *aHash,
+                                 bool aPriority)
   : mHash(aHash)
   , mIsDoomed(false)
   , mRemovingHandle(false)
+  , mPriority(aPriority)
   , mClosed(false)
   , mInvalid(false)
   , mFileExists(false)
@@ -236,6 +239,7 @@ CacheFileHandles::GetHandle(const SHA1Sum::Hash *aHash,
 
 nsresult
 CacheFileHandles::NewHandle(const SHA1Sum::Hash *aHash,
+                            bool aPriority,
                             CacheFileHandle **_retval)
 {
   MOZ_ASSERT(mInitialized);
@@ -266,7 +270,7 @@ CacheFileHandles::NewHandle(const SHA1Sum::Hash *aHash,
   }
 #endif
 
-  nsRefPtr<CacheFileHandle> handle = new CacheFileHandle(&entry->mHash);
+  nsRefPtr<CacheFileHandle> handle = new CacheFileHandle(&entry->mHash, aPriority);
   PR_APPEND_LINK(handle, entry->mHandles);
 
   LOG(("CacheFileHandles::NewHandle() hash=%08x%08x%08x%08x%08x "
@@ -402,10 +406,7 @@ public:
     sum.update(aKey.BeginReading(), aKey.Length());
     sum.finish(mHash);
 
-//    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
-    nsCOMPtr<nsIThread> mainThread;               // temporary HACK
-    NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
-    mTarget = mainThread;                         // using streamcopier's thread
+    mTarget = CacheStorageService::Self()->Thread();
     mIOMan = CacheFileIOManager::gInstance;
     MOZ_ASSERT(mTarget);
   }
@@ -481,11 +482,8 @@ public:
     , mRV(NS_ERROR_FAILURE)
   {
     MOZ_COUNT_CTOR(ReadEvent);
-//    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
-    nsCOMPtr<nsIThread> mainThread;               // temporary HACK
-    NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
-    mTarget = mainThread;                         // using streamcopier's thread
-    MOZ_ASSERT(mTarget);
+    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+    MOZ_ASSERT(!CacheFileIOManager::gInstance->mIOThread->IsCurrentThread());
   }
 
   ~ReadEvent()
@@ -536,11 +534,8 @@ public:
     , mRV(NS_ERROR_FAILURE)
   {
     MOZ_COUNT_CTOR(WriteEvent);
-//    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
-    nsCOMPtr<nsIThread> mainThread;               // temporary HACK
-    NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
-    mTarget = mainThread;                         // using streamcopier's thread
-    MOZ_ASSERT(mTarget);
+    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+    MOZ_ASSERT(!CacheFileIOManager::gInstance->mIOThread->IsCurrentThread());
   }
 
   ~WriteEvent()
@@ -588,11 +583,8 @@ public:
     , mRV(NS_ERROR_FAILURE)
   {
     MOZ_COUNT_CTOR(DoomFileEvent);
-//    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
-    nsCOMPtr<nsIThread> mainThread;               // temporary HACK
-    NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
-    mTarget = mainThread;                         // using streamcopier's thread
-    MOZ_ASSERT(mTarget);
+    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+    MOZ_ASSERT(!CacheFileIOManager::gInstance->mIOThread->IsCurrentThread());
   }
 
   ~DoomFileEvent()
@@ -639,11 +631,9 @@ public:
     sum.update(aKey.BeginReading(), aKey.Length());
     sum.finish(mHash);
 
-//    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
-    nsCOMPtr<nsIThread> mainThread;               // temporary HACK
-    NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
-    mTarget = mainThread;                         // using streamcopier's thread
+    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
     mIOMan = CacheFileIOManager::gInstance;
+    MOZ_ASSERT(!CacheFileIOManager::gInstance->mIOThread->IsCurrentThread());
     MOZ_ASSERT(mTarget);
   }
 
@@ -717,11 +707,8 @@ public:
     , mRV(NS_ERROR_FAILURE)
   {
     MOZ_COUNT_CTOR(TruncateSeekSetEOFEvent);
-//    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
-    nsCOMPtr<nsIThread> mainThread;               // temporary HACK
-    NS_GetMainThread(getter_AddRefs(mainThread)); // there are long delays when
-    mTarget = mainThread;                         // using streamcopier's thread
-    MOZ_ASSERT(mTarget);
+    mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+    MOZ_ASSERT(!CacheFileIOManager::gInstance->mIOThread->IsCurrentThread());
   }
 
   ~TruncateSeekSetEOFEvent()
@@ -801,14 +788,16 @@ nsresult
 CacheFileIOManager::InitInternal()
 {
   nsresult rv;
-  rv = NS_NewNamedThread("Cache IO thread",
-                         getter_AddRefs(mIOThread));
+
+  mIOThread = new CacheIOThread();
+
+  rv = mIOThread->Init();
   MOZ_ASSERT(NS_SUCCEEDED(rv), "Can't create background thread");
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = mHandles.Init();
   if (NS_FAILED(rv)) {
-    nsShutdownThread::BlockingShutdown(mIOThread);
+    mIOThread->Shutdown();
 
     NS_ENSURE_SUCCESS(rv, rv);
   }
@@ -833,7 +822,7 @@ CacheFileIOManager::Shutdown()
     MutexAutoLock autoLock(lock);
     nsRefPtr<ShutdownEvent> ev = new ShutdownEvent(&lock, &condVar);
     DebugOnly<nsresult> rv;
-    rv = gInstance->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+    rv = gInstance->mIOThread->Dispatch(ev, CacheIOThread::CLOSE);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
     condVar.Wait();
   }
@@ -845,7 +834,7 @@ CacheFileIOManager::Shutdown()
   ioMan.swap(gInstance);
 
   if (ioMan->mIOThread)
-    nsShutdownThread::BlockingShutdown(ioMan->mIOThread);
+    ioMan->mIOThread->Shutdown();
 
   return NS_OK;
 }
@@ -935,8 +924,11 @@ CacheFileIOManager::OpenFile(const nsACString &aKey,
   if (!ioMan)
     return NS_ERROR_NOT_INITIALIZED;
 
+  bool priority = aFlags & CacheFileIOManager::PRIORITY;
   nsRefPtr<OpenFileEvent> ev = new OpenFileEvent(aKey, aFlags, aCallback);
-  rv = ioMan->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+  rv = ioMan->mIOThread->Dispatch(ev, priority
+    ? CacheIOThread::OPEN_PRIORITY
+    : CacheIOThread::OPEN);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -971,7 +963,7 @@ CacheFileIOManager::OpenFileInternal(const SHA1Sum::Hash *aHash,
       handle = nullptr;
     }
 
-    rv = mHandles.NewHandle(aHash, getter_AddRefs(handle));
+    rv = mHandles.NewHandle(aHash, aFlags & PRIORITY, getter_AddRefs(handle));
     NS_ENSURE_SUCCESS(rv, rv);
 
     bool exists;
@@ -1002,7 +994,7 @@ CacheFileIOManager::OpenFileInternal(const SHA1Sum::Hash *aHash,
   if (!exists && aFlags == OPEN)
     return NS_ERROR_NOT_AVAILABLE;
 
-  rv = mHandles.NewHandle(aHash, getter_AddRefs(handle));
+  rv = mHandles.NewHandle(aHash, aFlags & PRIORITY, getter_AddRefs(handle));
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (exists) {
@@ -1032,7 +1024,7 @@ CacheFileIOManager::CloseHandle(CacheFileHandle *aHandle)
     return NS_ERROR_NOT_INITIALIZED;
 
   nsRefPtr<CloseHandleEvent> ev = new CloseHandleEvent(aHandle);
-  rv = ioMan->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+  rv = ioMan->mIOThread->Dispatch(ev, CacheIOThread::CLOSE);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1086,7 +1078,9 @@ CacheFileIOManager::Read(CacheFileHandle *aHandle, int64_t aOffset,
 
   nsRefPtr<ReadEvent> ev = new ReadEvent(aHandle, aOffset, aBuf, aCount,
                                          aCallback);
-  rv = ioMan->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+  rv = ioMan->mIOThread->Dispatch(ev, aHandle->IsPriority()
+    ? CacheIOThread::READ_PRIORITY
+    : CacheIOThread::READ);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1139,7 +1133,7 @@ CacheFileIOManager::Write(CacheFileHandle *aHandle, int64_t aOffset,
 
   nsRefPtr<WriteEvent> ev = new WriteEvent(aHandle, aOffset, aBuf, aCount,
                                            aValidate, aCallback);
-  rv = ioMan->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+  rv = ioMan->mIOThread->Dispatch(ev, CacheIOThread::WRITE);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1201,7 +1195,9 @@ CacheFileIOManager::DoomFile(CacheFileHandle *aHandle,
     return NS_ERROR_NOT_INITIALIZED;
 
   nsRefPtr<DoomFileEvent> ev = new DoomFileEvent(aHandle, aCallback);
-  rv = ioMan->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+  rv = ioMan->mIOThread->Dispatch(ev, aHandle->IsPriority()
+    ? CacheIOThread::DOOM_PRIORITY
+    : CacheIOThread::DOOM);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1318,7 +1314,7 @@ CacheFileIOManager::ReleaseNSPRHandle(CacheFileHandle *aHandle)
     return NS_ERROR_NOT_INITIALIZED;
 
   nsRefPtr<ReleaseNSPRHandleEvent> ev = new ReleaseNSPRHandleEvent(aHandle);
-  rv = ioMan->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+  rv = ioMan->mIOThread->Dispatch(ev, CacheIOThread::CLOSE);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1356,7 +1352,7 @@ CacheFileIOManager::TruncateSeekSetEOF(CacheFileHandle *aHandle,
   nsRefPtr<TruncateSeekSetEOFEvent> ev = new TruncateSeekSetEOFEvent(
                                            aHandle, aTruncatePos, aEOFPos,
                                            aCallback);
-  rv = ioMan->mIOThread->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
+  rv = ioMan->mIOThread->Dispatch(ev, CacheIOThread::WRITE);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;

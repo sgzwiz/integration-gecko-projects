@@ -33,6 +33,11 @@ interface nsICacheStorage : nsISupports
   const uint32_t OPEN_READONLY = 1 << 1;
 
   /**
+   * Use for first-paint blocking loads.
+   */
+  const uint32_t OPEN_PRIORITY = 1 << 2;
+
+  /**
    * Asynchronously opens a cache entry for the specified URI.
    * Result is fetched asynchronously via the callback.
    *
