@@ -521,7 +521,7 @@ CacheFileInputStream::CanRead(int64_t *aCanRead, const char **aBuf)
 
   uint32_t chunkOffset = mPos - (mPos / kChunkSize) * kChunkSize;
   *aCanRead = mChunk->DataSize() - chunkOffset;
-  *aBuf = mChunk->Buf() + chunkOffset;
+  *aBuf = mChunk->BufForReading() + chunkOffset;
 
   LOG(("CacheFileInputStream::CanRead() [this=%p, canRead=%lld]",
        this, *aCanRead));
