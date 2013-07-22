@@ -272,6 +272,51 @@ private:
 NS_IMPL_THREADSAFE_ISUPPORTS1(DoomFileHelper, CacheFileIOListener)
 
 
+// We try to write metadata when the last reference to CacheFile is released.
+// We call WriteMetadataIfNeeded() under the lock from CacheFile::Release() and
+// if writing fails synchronously the listener is released and lock in
+// CacheFile::Release() is re-entered. This helper class ensures that the
+// listener is released outside the lock in case of synchronous failure.
+class MetadataListenerHelper : public CacheFileMetadataListener
+{
+public:
+  NS_DECL_ISUPPORTS
+
+  MetadataListenerHelper(CacheFile *aFile)
+    : mFile(aFile)
+  {
+    MOZ_COUNT_CTOR(MetadataListenerHelper);
+    mListener = static_cast<CacheFileMetadataListener *>(aFile);
+  }
+
+  NS_IMETHOD OnMetadataRead(nsresult aResult)
+  {
+    MOZ_CRASH("MetadataListenerHelper::OnMetadataRead should not be called!");
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  NS_IMETHOD OnMetadataWritten(nsresult aResult)
+  {
+    mFile = nullptr;
+    return mListener->OnMetadataWritten(aResult);
+  }
+
+private:
+  virtual ~MetadataListenerHelper()
+  {
+    MOZ_COUNT_DTOR(MetadataListenerHelper);
+    if (mFile) {
+      mFile->ReleaseOutsideLock(mListener.forget().get());
+    }
+  }
+
+  CacheFile*                           mFile;
+  nsCOMPtr<CacheFileMetadataListener>  mListener;
+};
+
+NS_IMPL_THREADSAFE_ISUPPORTS1(MetadataListenerHelper, CacheFileMetadataListener)
+
+
 NS_IMPL_THREADSAFE_ADDREF(CacheFile)
 NS_IMETHODIMP_(nsrefcnt)
 CacheFile::Release()
@@ -296,14 +341,16 @@ CacheFile::Release()
       if (mWritingMetadata) {
         MOZ_ASSERT(mRefCnt > 1);
       } else {
-        MOZ_ASSERT(mRefCnt == 1);
-        deleteFile = true;
+        if (mRefCnt == 1)
+          deleteFile = true;
       }
     }
 
-    Unlock();
-
-    if (deleteFile) {
+    if (!deleteFile) {
+      Unlock();
+      return count;
+    } else {
+      Unlock();
       NS_LOG_RELEASE(this, 0, "CacheFile");
       delete (this);
       return 0;
@@ -330,6 +377,7 @@ CacheFile::CacheFile()
   , mDataAccessed(false)
   , mDataIsDirty(false)
   , mWritingMetadata(false)
+  , mStatus(NS_OK)
   , mDataSize(-1)
   , mOutput(nullptr)
 {
@@ -1427,6 +1475,9 @@ CacheFile::WriteMetadataIfNeeded()
     mTimer = nullptr;
   }
 
+  if (NS_FAILED(mStatus))
+    return;
+
   if (!IsDirty() || mOutput || mInputs.Length() || mChunks.Count() ||
       mWritingMetadata || mOpeningFile)
     return;
@@ -1434,7 +1485,9 @@ CacheFile::WriteMetadataIfNeeded()
   LOG(("CacheFile::WriteMetadataIfNeeded() - Writing metadata [this=%p]",
        this));
 
-  rv = mMetadata->WriteMetadata(mDataSize, this);
+  nsRefPtr<MetadataListenerHelper> mlh = new MetadataListenerHelper(this);
+
+  rv = mMetadata->WriteMetadata(mDataSize, mlh);
   if (NS_SUCCEEDED(rv)) {
     mWritingMetadata = true;
     mDataIsDirty = false;
@@ -1443,6 +1496,8 @@ CacheFile::WriteMetadataIfNeeded()
     LOG(("CacheFile::WriteMetadataIfNeeded() - Writing synchronously failed "
          "[this=%p]", this));
     // TODO: close streams with error
+    if (NS_SUCCEEDED(mStatus))
+      mStatus = rv;
   }
 }
 
