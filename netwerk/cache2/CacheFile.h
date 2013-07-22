@@ -101,6 +101,7 @@ private:
   friend class CacheFileOutputStream;
   friend class CacheFileAutoLock;
   friend class MetadataWriteTimer;
+  friend class MetadataListenerHelper;
 
   virtual ~CacheFile();
 
@@ -157,6 +158,7 @@ private:
   bool           mDataAccessed;
   bool           mDataIsDirty;
   bool           mWritingMetadata;
+  nsresult       mStatus;
   int64_t        mDataSize;
   nsCString      mKey;
 
