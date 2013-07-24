@@ -21,13 +21,15 @@
 
 this.EXPORTED_SYMBOLS = ["OS"];
 
-Components.utils.import("resource://gre/modules/osfile/osfile_shared_allthreads.jsm", this);
+let SharedAll = {};
+Components.utils.import("resource://gre/modules/osfile/osfile_shared_allthreads.jsm", SharedAll);
+
+// Boilerplate, to simplify the transition to require()
+let OS = SharedAll.OS;
 
 let LOG = OS.Shared.LOG.bind(OS.Shared, "Controller");
-let isTypedArray = OS.Shared.isTypedArray;
 
-// A simple flag used to control debugging messages.
-let DEBUG = OS.Shared.DEBUG;
+let isTypedArray = OS.Shared.isTypedArray;
 
 // The constructor for file errors.
 let OSError;
@@ -52,20 +54,42 @@ Components.utils.import("resource://gre/modules/osfile/_PromiseWorker.jsm", this
 
 Components.utils.import("resource://gre/modules/Services.jsm", this);
 
+LOG("Checking profileDir", OS.Constants.Path);
+
 // If profileDir is not available, osfile.jsm has been imported before the
-// profile is setup. In this case, we need to observe "profile-do-change"
-// and set OS.Constants.Path.profileDir as soon as it becomes available.
-if (!("profileDir" in OS.Constants.Path) || !("localProfileDir" in OS.Constants.Path)) {
-  let observer = function observer() {
-    Services.obs.removeObserver(observer, "profile-do-change");
+// profile is setup. In this case, make this a lazy getter.
+if (!("profileDir" in OS.Constants.Path)) {
+  Object.defineProperty(OS.Constants.Path, "profileDir", {
+    get: function() {
+      let path = undefined;
+      try {
+        path = Services.dirsvc.get("ProfD", Components.interfaces.nsIFile).path;
+        delete OS.Constants.Path.profileDir;
+        OS.Constants.Path.profileDir = path;
+      } catch (ex) {
+        // Ignore errors: profileDir is still not available
+      }
+      return path;
+    }
+  });
+}
 
-    let profileDir = Services.dirsvc.get("ProfD", Components.interfaces.nsIFile).path;
-    OS.Constants.Path.profileDir = profileDir;
+LOG("Checking localProfileDir");
 
-    let localProfileDir = Services.dirsvc.get("ProfLD", Components.interfaces.nsIFile).path;
-    OS.Constants.Path.localProfileDir = localProfileDir;
-  };
-  Services.obs.addObserver(observer, "profile-do-change", false);
+if (!("localProfileDir" in OS.Constants.Path)) {
+  Object.defineProperty(OS.Constants.Path, "localProfileDir", {
+    get: function() {
+      let path = undefined;
+      try {
+        path = Services.dirsvc.get("ProfLD", Components.interfaces.nsIFile).path;
+        delete OS.Constants.Path.localProfileDir;
+        OS.Constants.Path.localProfileDir = path;
+      } catch (ex) {
+        // Ignore errors: localProfileDir is still not available
+      }
+      return path;
+    }
+  });
 }
 
 /**
@@ -155,23 +179,48 @@ let Scheduler = {
   }
 };
 
-// Update worker's DEBUG flag if it's true.
-if (DEBUG === true) {
-  Scheduler.post("SET_DEBUG", [DEBUG]);
-}
+const PREF_OSFILE_LOG = "toolkit.osfile.log";
+const PREF_OSFILE_LOG_REDIRECT = "toolkit.osfile.log.redirect";
 
-// Define a new getter and setter for OS.Shared.DEBUG to be able to watch
-// for changes to it and update worker's DEBUG accordingly.
-Object.defineProperty(OS.Shared, "DEBUG", {
-    configurable: true,
-    get: function () {
-        return DEBUG;
-    },
-    set: function (newVal) {
-        Scheduler.post("SET_DEBUG", [newVal]);
-        DEBUG = newVal;
-    }
-});
+/**
+ * Safely read a PREF_OSFILE_LOG preference.
+ * Returns a value read or, in case of an error, oldPref or false.
+ *
+ * @param bool oldPref
+ *        An optional value that the DEBUG flag was set to previously.
+ */
+let readDebugPref = function readDebugPref(prefName, oldPref = false) {
+  let pref = oldPref;
+  try {
+    pref = Services.prefs.getBoolPref(prefName);
+  } catch (x) {
+    // In case of an error when reading a pref keep it as is.
+  }
+  // If neither pref nor oldPref were set, default it to false.
+  return pref;
+};
+
+/**
+ * Listen to PREF_OSFILE_LOG changes and update gShouldLog flag
+ * appropriately.
+ */
+Services.prefs.addObserver(PREF_OSFILE_LOG,
+  function prefObserver(aSubject, aTopic, aData) {
+    OS.Shared.DEBUG = readDebugPref(PREF_OSFILE_LOG, OS.Shared.DEBUG);
+    Scheduler.post("SET_DEBUG", [OS.Shared.DEBUG]);
+  }, false);
+OS.Shared.DEBUG = readDebugPref(PREF_OSFILE_LOG, false);
+
+Services.prefs.addObserver(PREF_OSFILE_LOG_REDIRECT,
+  function prefObserver(aSubject, aTopic, aData) {
+    OS.Shared.TEST = readDebugPref(PREF_OSFILE_LOG_REDIRECT, OS.Shared.TEST);
+  }, false);
+OS.Shared.TEST = readDebugPref(PREF_OSFILE_LOG_REDIRECT, false);
+
+// Update worker's DEBUG flag if it's true.
+if (OS.Shared.DEBUG === true) {
+  Scheduler.post("SET_DEBUG", [true]);
+}
 
 // Observer topics used for monitoring shutdown
 const WEB_WORKERS_SHUTDOWN_TOPIC = "web-workers-shutdown";
@@ -619,14 +668,10 @@ File.exists = function exists(path) {
  * Limitation: In a few extreme cases (hardware failure during the
  * write, user unplugging disk during the write, etc.), data may be
  * corrupted. If your data is user-critical (e.g. preferences,
- * application data, etc.), you may ish to pass option |flush: true|
- * to decrease the vulnerability to such extreme cases. Note, however,
- * that activating |flush| is expensive in terms of performance and
- * battery usage and is not sufficient to totally eliminate this
- * vulnarability.
- *
- * Important note: In the current implementation, option |tmpPath|
- * is required.
+ * application data, etc.), you may wish to consider adding options
+ * |tmpPath| and/or |flush| to reduce the likelihood of corruption, as
+ * detailed below. Note that no combination of options can be
+ * guaranteed to totally eliminate the risk of corruption.
  *
  * @param {string} path The path of the file to modify.
  * @param {Typed Array | C pointer} buffer A buffer containing the bytes to write.
@@ -634,14 +679,20 @@ File.exists = function exists(path) {
  * of this function. This object may contain the following fields:
  * - {number} bytes The number of bytes to write. If unspecified,
  * |buffer.byteLength|. Required if |buffer| is a C pointer.
- * - {string} tmpPath The path at which to write the temporary file.
+ * - {string} tmpPath If |null| or unspecified, write all data directly
+ * to |path|. If specified, write all data to a temporary file called
+ * |tmpPath| and, once this write is complete, rename the file to
+ * replace |path|. Performing this additional operation is a little
+ * slower but also a little safer.
  * - {bool} noOverwrite - If set, this function will fail if a file already
- * exists at |path|. The |tmpPath| is not overwritten if |path| exist.
- * - {bool} flush - If set to |true|, the function will flush the
- * file. This is considerably slower but slightly safer: if
- * the system shuts down improperly (typically due to a kernel freeze
+ * exists at |path|.
+ * - {bool} flush - If |false| or unspecified, return immediately once the
+ * write is complete. If |true|, before writing, force the operating system
+ * to write its internal disk buffers to the disk. This is considerably slower
+ * (not just for the application but for the whole system) but also safer:
+ * if the system shuts down improperly (typically due to a kernel freeze
  * or a power failure) or if the device is disconnected before the buffer
- * is flushed, the file has more changes of not being corrupted.
+ * is flushed, the file has more chances of not being corrupted.
  *
  * @return {promise}
  * @resolves {number} The number of bytes actually written.

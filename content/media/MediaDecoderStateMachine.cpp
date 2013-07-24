@@ -2044,8 +2044,11 @@ void MediaDecoderStateMachine::DecodeSeek()
     }
   }
   mDecoder->StartProgressUpdates();
-  if (mState == DECODER_STATE_DORMANT || mState == DECODER_STATE_SHUTDOWN)
+  if (mState == DECODER_STATE_DECODING_METADATA ||
+      mState == DECODER_STATE_DORMANT ||
+      mState == DECODER_STATE_SHUTDOWN) {
     return;
+  }
 
   // Try to decode another frame to detect if we're at the end...
   LOG(PR_LOG_DEBUG, ("%p Seek completed, mCurrentFrameTime=%lld\n",
@@ -2537,10 +2540,10 @@ void MediaDecoderStateMachine::AdvanceFrame()
     }
     MediaDecoder::FrameStatistics& frameStats = mDecoder->GetFrameStatistics();
     frameStats.NotifyPresentedFrame();
+    double frameDelay = double(clock_time - currentFrame->mTime) / USECS_PER_S;
+    NS_ASSERTION(frameDelay >= 0.0, "Frame should never be displayed early.");
+    frameStats.NotifyFrameDelay(frameDelay);
     remainingTime = currentFrame->mEndTime - clock_time;
-    int64_t frameDuration = currentFrame->mEndTime - currentFrame->mTime;
-    double displayError = fabs(double(frameDuration - remainingTime) / USECS_PER_S);
-    frameStats.NotifyPlaybackJitter(displayError);
     currentFrame = nullptr;
   }
 

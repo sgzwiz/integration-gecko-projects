@@ -7,14 +7,14 @@
 /*
  * JS function support.
  */
-#include "jsfun.h"
 
-#include <string.h>
+#include "jsfuninlines.h"
 
 #include "mozilla/PodOperations.h"
 #include "mozilla/Util.h"
 
-#include "jstypes.h"
+#include <string.h>
+
 #include "jsapi.h"
 #include "jsarray.h"
 #include "jsatom.h"
@@ -23,28 +23,27 @@
 #include "jsproxy.h"
 #include "jsscript.h"
 #include "jsstr.h"
+#include "jstypes.h"
+#include "jswrapper.h"
 
 #include "builtin/Eval.h"
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/TokenStream.h"
 #include "gc/Marking.h"
+#ifdef JS_ION
+#include "ion/Ion.h"
+#include "ion/IonFrameIterator.h"
+#endif
 #include "vm/Interpreter.h"
 #include "vm/Shape.h"
 #include "vm/StringBuffer.h"
+#include "vm/WrapperObject.h"
 #include "vm/Xdr.h"
 
-#include "jsfuninlines.h"
-#include "jsinferinlines.h"
 #include "jsscriptinlines.h"
 
 #include "vm/Interpreter-inl.h"
 #include "vm/Stack-inl.h"
-
-#ifdef JS_ION
-#include "ion/Ion.h"
-#include "ion/IonFrameIterator.h"
-#include "ion/IonFrameIterator-inl.h"
-#endif
 
 using namespace js;
 using namespace js::gc;
@@ -129,7 +128,7 @@ fun_getProperty(JSContext *cx, HandleObject obj_, HandleId id, MutableHandleValu
          * Censor the caller if we don't have full access to it.
          */
         RootedObject caller(cx, &vp.toObject());
-        if (caller->isWrapper() && !Wrapper::wrapperHandler(caller)->isSafeToUnwrap()) {
+        if (caller->is<WrapperObject>() && !Wrapper::wrapperHandler(caller)->isSafeToUnwrap()) {
             vp.setNull();
         } else if (caller->is<JSFunction>()) {
             JSFunction *callerFun = &caller->as<JSFunction>();
@@ -211,7 +210,7 @@ ResolveInterpretedFunctionPrototype(JSContext *cx, HandleObject obj)
     JSObject *objProto = obj->global().getOrCreateObjectPrototype(cx);
     if (!objProto)
         return NULL;
-    RootedObject proto(cx, NewObjectWithGivenProto(cx, &ObjectClass, objProto, NULL, SingletonObject));
+    RootedObject proto(cx, NewObjectWithGivenProto(cx, &JSObject::class_, objProto, NULL, SingletonObject));
     if (!proto)
         return NULL;
 
@@ -235,9 +234,9 @@ ResolveInterpretedFunctionPrototype(JSContext *cx, HandleObject obj)
     return proto;
 }
 
-static JSBool
-fun_resolve(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
-            MutableHandleObject objp)
+JSBool
+js::fun_resolve(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
+                MutableHandleObject objp)
 {
     if (!JSID_IS_ATOM(id))
         return true;
@@ -498,7 +497,7 @@ Class JSFunction::class_ = {
     JS_PropertyStub,         /* getProperty */
     JS_StrictPropertyStub,   /* setProperty */
     fun_enumerate,
-    (JSResolveOp)fun_resolve,
+    (JSResolveOp)js::fun_resolve,
     JS_ConvertStub,
     NULL,                    /* finalize    */
     NULL,                    /* checkAccess */
@@ -519,7 +518,7 @@ FindBody(JSContext *cx, HandleFunction fun, StableCharPtr chars, size_t length,
     CompileOptions options(cx);
     options.setFileAndLine("internal-findBody", 0)
            .setVersion(fun->nonLazyScript()->getVersion());
-    AutoKeepAtoms keepAtoms(cx->runtime());
+    AutoKeepAtoms keepAtoms(cx->perThreadData);
     TokenStream ts(cx, options, chars.get(), length, NULL, keepAtoms);
     int nest = 0;
     bool onward = true;
@@ -628,12 +627,19 @@ js::FunctionToString(JSContext *cx, HandleFunction fun, bool bodyOnly, bool lamb
 
         StableCharPtr chars = src->chars();
         bool exprBody = fun->isExprClosure();
-        // The source data for functions created by calling the Function
-        // constructor is only the function's body.
-        bool funCon = script->sourceStart == 0 && script->scriptSource()->argumentsNotIncluded();
 
-        // Functions created with the constructor should not be using the
-        // expression body extension.
+        // The source data for functions created by calling the Function
+        // constructor is only the function's body.  This depends on the fact,
+        // asserted below, that in Function("function f() {}"), the inner
+        // function's sourceStart points to the '(', not the 'f'.
+        bool funCon = !fun->isArrow() &&
+                      script->sourceStart == 0 &&
+                      script->sourceEnd == script->scriptSource()->length() &&
+                      script->scriptSource()->argumentsNotIncluded();
+
+        // Functions created with the constructor can't be arrow functions or
+        // expression closures.
+        JS_ASSERT_IF(funCon, !fun->isArrow());
         JS_ASSERT_IF(funCon, !exprBody);
         JS_ASSERT_IF(!funCon && !fun->isArrow(), src->length() > 0 && chars[0] == '(');
 
@@ -740,7 +746,7 @@ JSString *
 fun_toStringHelper(JSContext *cx, HandleObject obj, unsigned indent)
 {
     if (!obj->is<JSFunction>()) {
-        if (IsFunctionProxy(obj))
+        if (obj->is<FunctionProxyObject>())
             return Proxy::fun_toString(cx, obj, indent);
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
                              JSMSG_INCOMPATIBLE_PROTO,
@@ -1070,6 +1076,16 @@ JSFunction::createScriptForLazilyInterpretedFunction(JSContext *cx, HandleFuncti
 
         fun->initScript(NULL);
 
+        if (fun != lazy->function()) {
+            script = lazy->function()->getOrCreateScript(cx);
+            if (!script) {
+                fun->initLazyScript(lazy);
+                return false;
+            }
+            fun->initScript(script);
+            return true;
+        }
+
         // Lazy script caching is only supported for leaf functions. If a
         // script with inner functions was returned by the cache, those inner
         // functions would be delazified when deep cloning the script, even if
@@ -1119,7 +1135,7 @@ JSFunction::createScriptForLazilyInterpretedFunction(JSContext *cx, HandleFuncti
         const jschar *lazyStart = chars + lazy->begin();
         size_t lazyLength = lazy->end() - lazy->begin();
 
-        if (!frontend::CompileLazyFunction(cx, fun, lazy, lazyStart, lazyLength)) {
+        if (!frontend::CompileLazyFunction(cx, lazy, lazyStart, lazyLength)) {
             fun->initLazyScript(lazy);
             return false;
         }
@@ -1332,7 +1348,7 @@ js::Function(JSContext *cx, unsigned argc, Value *vp)
         return false;
     }
 
-    AutoKeepAtoms keepAtoms(cx->runtime());
+    AutoKeepAtoms keepAtoms(cx->perThreadData);
     AutoNameVector formals(cx);
 
     bool hasRest = false;
@@ -1527,7 +1543,7 @@ JSFunction::isBuiltinFunctionConstructor()
 }
 
 JSFunction *
-js::NewFunction(JSContext *cx, HandleObject funobjArg, Native native, unsigned nargs,
+js::NewFunction(ExclusiveContext *cx, HandleObject funobjArg, Native native, unsigned nargs,
                 JSFunction::Flags flags, HandleObject parent, HandleAtom atom,
                 gc::AllocKind allocKind /* = JSFunction::FinalizeKind */,
                 NewObjectKind newKind /* = GenericObject */)
@@ -1686,6 +1702,23 @@ js::DefineFunction(JSContext *cx, HandleObject obj, HandleId id, Native native,
     return fun;
 }
 
+bool
+js::IsConstructor(const Value &v)
+{
+    // Step 2.
+    if (!v.isObject())
+        return false;
+
+    // Step 3-4, a bit complex for us, since we have several flavors of
+    // [[Construct]] internal method.
+    JSObject &obj = v.toObject();
+    if (obj.is<JSFunction>()) {
+        JSFunction &fun = obj.as<JSFunction>();
+        return fun.isNativeConstructor() || fun.isInterpretedConstructor();
+    }
+    return obj.getClass()->construct != NULL;
+}
+
 void
 js::ReportIncompatibleMethod(JSContext *cx, CallReceiver call, Class *clasp)
 {
@@ -1740,7 +1773,7 @@ JSObject::hasIdempotentProtoChain() const
             return false;
 
         JSResolveOp resolve = obj->getClass()->resolve;
-        if (resolve != JS_ResolveStub && resolve != (JSResolveOp) fun_resolve)
+        if (resolve != JS_ResolveStub && resolve != (JSResolveOp) js::fun_resolve)
             return false;
 
         if (obj->getOps()->lookupProperty || obj->getOps()->lookupGeneric || obj->getOps()->lookupElement)

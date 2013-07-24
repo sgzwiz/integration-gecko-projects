@@ -75,7 +75,6 @@ NS_IMETHODIMP HTMLVideoElement::GetVideoHeight(uint32_t *aVideoHeight)
 HTMLVideoElement::HTMLVideoElement(already_AddRefed<nsINodeInfo> aNodeInfo)
   : HTMLMediaElement(aNodeInfo)
 {
-  SetIsDOMBinding();
 }
 
 HTMLVideoElement::~HTMLVideoElement()
@@ -262,29 +261,32 @@ already_AddRefed<VideoPlaybackQuality>
 HTMLVideoElement::GetVideoPlaybackQuality()
 {
   DOMHighResTimeStamp creationTime = 0;
-  nsPIDOMWindow* window = OwnerDoc()->GetInnerWindow();
-  if (window) {
-    nsPerformance* perf = window->GetPerformance();
-    if (perf) {
-      creationTime = perf->GetDOMTiming()->TimeStampToDOMHighRes(TimeStamp::Now());
-    }
-  }
-
   uint64_t totalFrames = 0;
   uint64_t droppedFrames = 0;
   uint64_t corruptedFrames = 0;
-  double playbackJitter = 0.0;
-  if (mDecoder && sVideoStatsEnabled) {
-    MediaDecoder::FrameStatistics& stats = mDecoder->GetFrameStatistics();
-    totalFrames = stats.GetParsedFrames();
-    droppedFrames = totalFrames - stats.GetPresentedFrames();
-    corruptedFrames = totalFrames - stats.GetDecodedFrames();
-    playbackJitter = stats.GetPlaybackJitter();
+  double totalFrameDelay = 0.0;
+
+  if (sVideoStatsEnabled) {
+    nsPIDOMWindow* window = OwnerDoc()->GetInnerWindow();
+    if (window) {
+      nsPerformance* perf = window->GetPerformance();
+      if (perf) {
+        creationTime = perf->GetDOMTiming()->TimeStampToDOMHighRes(TimeStamp::Now());
+      }
+    }
+
+    if (mDecoder) {
+      MediaDecoder::FrameStatistics& stats = mDecoder->GetFrameStatistics();
+      totalFrames = stats.GetParsedFrames();
+      droppedFrames = totalFrames - stats.GetPresentedFrames();
+      corruptedFrames = totalFrames - stats.GetDecodedFrames();
+      totalFrameDelay = stats.GetTotalFrameDelay();
+    }
   }
 
   nsRefPtr<VideoPlaybackQuality> playbackQuality =
     new VideoPlaybackQuality(this, creationTime, totalFrames, droppedFrames,
-                             corruptedFrames, playbackJitter);
+                             corruptedFrames, totalFrameDelay);
   return playbackQuality.forget();
 }
 

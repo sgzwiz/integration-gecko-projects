@@ -4,44 +4,41 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "jsinfer.h"
+#include "jsinferinlines.h"
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/PodOperations.h"
 
+#ifdef __SUNPRO_CC
+#include <alloca.h>
+#endif
+
 #include "jsapi.h"
+#include "jscntxt.h"
 #include "jsfriendapi.h"
 #include "jsgc.h"
 #include "jsobj.h"
 #include "jsscript.h"
-#include "jscntxt.h"
 #include "jsstr.h"
 #include "jsworkers.h"
 #include "prmjtime.h"
 
+#include "gc/Marking.h"
 #ifdef JS_ION
 #include "ion/BaselineJIT.h"
 #include "ion/Ion.h"
 #include "ion/IonCompartment.h"
 #endif
-#include "gc/Marking.h"
 #include "js/MemoryMetrics.h"
 #include "vm/Shape.h"
 
 #include "jsanalyzeinlines.h"
 #include "jsatominlines.h"
 #include "jsgcinlines.h"
-#include "jsinferinlines.h"
-#include "jsopcodeinlines.h"
 #include "jsobjinlines.h"
+#include "jsopcodeinlines.h"
 #include "jsscriptinlines.h"
-
-#include "vm/Stack-inl.h"
-
-#ifdef __SUNPRO_CC
-#include <alloca.h>
-#endif
 
 using namespace js;
 using namespace js::gc;
@@ -2338,9 +2335,9 @@ TypeZone::init(JSContext *cx)
 }
 
 TypeObject *
-TypeCompartment::newTypeObject(JSContext *cx, Class *clasp, Handle<TaggedProto> proto, bool unknown)
+TypeCompartment::newTypeObject(ExclusiveContext *cx, Class *clasp, Handle<TaggedProto> proto, bool unknown)
 {
-    JS_ASSERT_IF(proto.isObject(), cx->compartment() == proto.toObject()->compartment());
+    JS_ASSERT_IF(proto.isObject(), cx->isInsideCurrentCompartment(proto.toObject()));
 
     TypeObject *object = gc::NewGCThing<TypeObject, CanGC>(cx, gc::FINALIZE_TYPE_OBJECT,
                                                            sizeof(TypeObject), gc::TenuredHeap);
@@ -3300,7 +3297,7 @@ TypeCompartment::fixObjectType(JSContext *cx, JSObject *obj)
      * Use the same type object for all singleton/JSON objects with the same
      * base shape, i.e. the same fields written in the same order.
      */
-    JS_ASSERT(obj->isObject());
+    JS_ASSERT(obj->is<JSObject>());
 
     if (obj->slotSpan() == 0 || obj->inDictionaryMode() || !obj->hasEmptyElements())
         return;
@@ -3333,7 +3330,7 @@ TypeCompartment::fixObjectType(JSContext *cx, JSObject *obj)
 
     /* Make a new type to use for the object and similar future ones. */
     Rooted<TaggedProto> objProto(cx, obj->getTaggedProto());
-    TypeObject *objType = newTypeObject(cx, &ObjectClass, objProto);
+    TypeObject *objType = newTypeObject(cx, &JSObject::class_, objProto);
     if (!objType || !objType->addDefiniteProperties(cx, obj)) {
         cx->compartment()->types.setPendingNukeTypes(cx);
         return;
@@ -3413,7 +3410,7 @@ TypeCompartment::newTypedObject(JSContext *cx, IdValuePair *properties, size_t n
         return NULL;
 
     gc::AllocKind allocKind = gc::GetGCObjectKind(nproperties);
-    size_t nfixed = gc::GetGCKindSlots(allocKind, &ObjectClass);
+    size_t nfixed = gc::GetGCKindSlots(allocKind, &JSObject::class_);
 
     ObjectTableKey::Lookup lookup(properties, nproperties, nfixed);
     ObjectTypeTable::AddPtr p = objectTypeTable->lookupForAdd(lookup);
@@ -3421,7 +3418,7 @@ TypeCompartment::newTypedObject(JSContext *cx, IdValuePair *properties, size_t n
     if (!p)
         return NULL;
 
-    RootedObject obj(cx, NewBuiltinClassInstance(cx, &ObjectClass, allocKind));
+    RootedObject obj(cx, NewBuiltinClassInstance(cx, &JSObject::class_, allocKind));
     if (!obj) {
         cx->clearPendingException();
         return NULL;
@@ -5213,7 +5210,7 @@ CheckNewScriptProperties(JSContext *cx, HandleTypeObject type, HandleFunction fu
     state.thisFunction = fun;
 
     /* Strawman object to add properties to and watch for duplicates. */
-    state.baseobj = NewBuiltinClassInstance(cx, &ObjectClass, gc::FINALIZE_OBJECT16);
+    state.baseobj = NewBuiltinClassInstance(cx, &JSObject::class_, gc::FINALIZE_OBJECT16);
     if (!state.baseobj) {
         if (type->newScript)
             type->clearNewScript(cx);
@@ -5879,10 +5876,13 @@ JSScript::makeAnalysis(JSContext *cx)
 }
 
 /* static */ bool
-JSFunction::setTypeForScriptedFunction(JSContext *cx, HandleFunction fun, bool singleton /* = false */)
+JSFunction::setTypeForScriptedFunction(ExclusiveContext *cxArg, HandleFunction fun,
+                                       bool singleton /* = false */)
 {
-    if (!cx->typeInferenceEnabled())
+    if (!cxArg->typeInferenceEnabled())
         return true;
+
+    JSContext *cx = cxArg->asJSContext();
 
     if (singleton) {
         if (!setSingletonType(cx, fun))
@@ -5954,7 +5954,7 @@ JSObject::splicePrototype(JSContext *cx, Class *clasp, Handle<TaggedProto> proto
     }
 
     if (!cx->typeInferenceEnabled()) {
-        TypeObject *type = cx->compartment()->getNewType(cx, clasp, proto);
+        TypeObject *type = cx->getNewType(clasp, proto);
         if (!type)
             return false;
         self->type_ = type;
@@ -6092,10 +6092,12 @@ JSObject::setNewTypeUnknown(JSContext *cx, Class *clasp, HandleObject obj)
 }
 
 TypeObject *
-JSCompartment::getNewType(JSContext *cx, Class *clasp, TaggedProto proto_, JSFunction *fun_)
+ExclusiveContext::getNewType(Class *clasp, TaggedProto proto_, JSFunction *fun_)
 {
     JS_ASSERT_IF(fun_, proto_.isObject());
-    JS_ASSERT_IF(proto_.isObject(), cx->compartment() == proto_.toObject()->compartment());
+    JS_ASSERT_IF(proto_.isObject(), isInsideCurrentCompartment(proto_.toObject()));
+
+    TypeObjectSet &newTypeObjects = compartment_->newTypeObjects;
 
     if (!newTypeObjects.initialized() && !newTypeObjects.init())
         return NULL;
@@ -6116,15 +6118,15 @@ JSCompartment::getNewType(JSContext *cx, Class *clasp, TaggedProto proto_, JSFun
          * 'prototype' property of some scripted function.
          */
         if (type->newScript && type->newScript->fun != fun_)
-            type->clearNewScript(cx);
+            type->clearNewScript(asJSContext());
 
         return type;
     }
 
-    Rooted<TaggedProto> proto(cx, proto_);
-    RootedFunction fun(cx, fun_);
+    Rooted<TaggedProto> proto(this, proto_);
+    RootedFunction fun(this, fun_);
 
-    if (proto.isObject() && !proto.toObject()->setDelegate(cx))
+    if (proto.isObject() && !proto.toObject()->setDelegate(this))
         return NULL;
 
     bool markUnknown =
@@ -6132,16 +6134,17 @@ JSCompartment::getNewType(JSContext *cx, Class *clasp, TaggedProto proto_, JSFun
         ? proto.toObject()->lastProperty()->hasObjectFlag(BaseShape::NEW_TYPE_UNKNOWN)
         : true;
 
-    RootedTypeObject type(cx, types.newTypeObject(cx, clasp, proto, markUnknown));
+    RootedTypeObject type(this, compartment_->types.newTypeObject(this, clasp, proto, markUnknown));
     if (!type)
         return NULL;
 
     if (!newTypeObjects.relookupOrAdd(p, TypeObjectSet::Lookup(clasp, proto), type.get()))
         return NULL;
 
-    if (!cx->typeInferenceEnabled())
+    if (!typeInferenceEnabled())
         return type;
 
+    JSContext *cx = asJSContext();
     AutoEnterAnalysis enter(cx);
 
     /*
@@ -6180,12 +6183,6 @@ JSCompartment::getNewType(JSContext *cx, Class *clasp, TaggedProto proto_, JSFun
         type->flags |= OBJECT_FLAG_SETS_MARKED_UNKNOWN;
 
     return type;
-}
-
-TypeObject *
-JSObject::getNewType(JSContext *cx, Class *clasp, JSFunction *fun)
-{
-    return cx->compartment()->getNewType(cx, clasp, this, fun);
 }
 
 TypeObject *
@@ -6290,12 +6287,6 @@ TypeObject::clearProperties()
 inline void
 TypeObject::sweep(FreeOp *fop)
 {
-    /*
-     * We may be regenerating existing type sets containing this object,
-     * so reset contributions on each GC to avoid tripping the limit.
-     */
-    contribution = 0;
-
     if (singleton) {
         JS_ASSERT(!newScript);
 

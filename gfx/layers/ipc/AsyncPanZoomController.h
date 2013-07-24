@@ -11,7 +11,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/TimeStamp.h"
 #include "InputData.h"
 #include "Axis.h"
 #include "TaskThrottler.h"
@@ -85,7 +84,7 @@ public:
 
   /**
    * General handler for incoming input events. Manipulates the frame metrics
-   * basde on what type of input it is. For example, a PinchGestureEvent will
+   * based on what type of input it is. For example, a PinchGestureEvent will
    * cause scaling. This should only be called externally to this class.
    * HandleInputEvent() should be used internally.
    */
@@ -132,9 +131,9 @@ public:
   /**
    * Kicks an animation to zoom to a rect. This may be either a zoom out or zoom
    * in. The actual animation is done on the compositor thread after being set
-   * up. |aRect| must be given in CSS pixels, relative to the document.
+   * up.
    */
-  void ZoomToRect(const gfxRect& aRect);
+  void ZoomToRect(CSSRect aRect);
 
   /**
    * If we have touch listeners, this should always be called when we know
@@ -253,6 +252,20 @@ public:
                              AsyncPanZoomController** aApzcOut,
                              LayerIntPoint* aRelativePointOut);
 
+  /**
+   * Update mFrameMetrics.mScrollOffset to the given offset.
+   * This is necessary in cases where a scroll is not caused by user
+   * input (for example, a content scrollTo()).
+   */
+  void UpdateScrollOffset(CSSPoint aScrollOffset);
+
+  /**
+   * Cancels any currently running animation. Note that all this does is set the
+   * state of the AsyncPanZoomController back to NOTHING, but it is the
+   * animation's responsibility to check this before advancing.
+   */
+  void CancelAnimation();
+
 protected:
   /**
    * Helper method for touches beginning. Sets everything up for panning and any
@@ -351,15 +364,6 @@ protected:
    * CompositorParent::ScheduleRenderOnCompositorThread().
    */
   void ScheduleComposite();
-
-  /**
-   * Cancels any currently running animation. Note that all this does is set the
-   * state of the AsyncPanZoomController back to NOTHING, but it is the
-   * animation's responsibility to check this before advancing.
-   *
-   * *** The monitor must be held while calling this.
-   */
-  void CancelAnimation();
 
   /**
    * Gets the displacement of the current touch since it began. That is, it is
@@ -554,13 +558,6 @@ private:
   // |mMonitor|; that is, it should be held whenever this is updated.
   PanZoomState mState;
 
-  // How long it took in the past to paint after a series of previous requests.
-  nsTArray<TimeDuration> mPreviousPaintDurations;
-
-  // When the last paint request started. Used to determine the duration of
-  // previous paints.
-  TimeStamp mPreviousPaintStartTime;
-
   // The last time and offset we fire the mozbrowserasyncscroll event when
   // compositor has sampled the content transform for this frame.
   TimeStamp mLastAsyncScrollTime;
@@ -583,12 +580,6 @@ private:
   uint32_t mAsyncScrollTimeout;
 
   int mDPI;
-
-  // Stores the current paint status of the frame that we're managing. Repaints
-  // may be triggered by other things (like content doing things), in which case
-  // this status will not be updated. It is only changed when this class
-  // requests a repaint.
-  bool mWaitingForContentToPaint;
 
   // Flag used to determine whether or not we should disable handling of the
   // next batch of touch events. This is used for sync scrolling of subframes.

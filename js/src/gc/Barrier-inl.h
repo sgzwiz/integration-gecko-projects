@@ -8,6 +8,7 @@
 #define gc_Barrier_inl_h
 
 #include "gc/Barrier.h"
+
 #include "gc/Marking.h"
 #include "gc/StoreBuffer.h"
 
@@ -37,7 +38,7 @@ RelocatablePtr<T>::post()
 {
 #ifdef JSGC_GENERATIONAL
     JS_ASSERT(this->value);
-    this->value->runtime()->gcStoreBuffer.putRelocatableCell((gc::Cell **)&this->value);
+    T::writeBarrierPostRelocate(this->value, &this->value);
 #endif
 }
 
@@ -46,7 +47,7 @@ inline void
 RelocatablePtr<T>::relocate(JSRuntime *rt)
 {
 #ifdef JSGC_GENERATIONAL
-    rt->gcStoreBuffer.removeRelocatableCell((gc::Cell **)&this->value);
+    T::writeBarrierPostRemove(this->value, &this->value);
 #endif
 }
 
@@ -427,7 +428,9 @@ DenseRangeWriteBarrierPost(JSRuntime *rt, JSObject *obj, uint32_t start, uint32_
 }
 
 /*
- * This is a post barrier for HashTables whose key can be moved during a GC.
+ * This is a post barrier for HashTables whose key is a GC pointer. Any
+ * insertion into a HashTable not marked as part of the runtime, with a GC
+ * pointer as a key, must call this immediately after each insertion.
  */
 template <class Map, class Key>
 inline void
@@ -438,6 +441,7 @@ HashTableWriteBarrierPost(JSRuntime *rt, Map *map, const Key &key)
         rt->gcStoreBuffer.putGeneric(gc::HashKeyRef<Map, Key>(map, key));
 #endif
 }
+
 
 inline
 EncapsulatedId::~EncapsulatedId()

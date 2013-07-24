@@ -726,7 +726,6 @@ GetBrowserRoot(nsIContent* aContent)
   return nullptr;
 }
 
-
 NS_IMETHODIMP
 nsHTMLScrollFrame::Reflow(nsPresContext*           aPresContext,
                           nsHTMLReflowMetrics&     aDesiredSize,
@@ -735,6 +734,8 @@ nsHTMLScrollFrame::Reflow(nsPresContext*           aPresContext,
 {
   DO_GLOBAL_REFLOW_COUNT("nsHTMLScrollFrame");
   DISPLAY_REFLOW(aPresContext, this, aReflowState, aDesiredSize, aStatus);
+
+  mInner.HandleScrollbarStyleSwitching();
 
   ScrollReflowState state(this, aReflowState);
   // sanity check: ensure that if we have no scrollbar, we treat it
@@ -774,10 +775,6 @@ nsHTMLScrollFrame::Reflow(nsPresContext*           aPresContext,
   nsRect oldScrollAreaBounds = mInner.mScrollPort;
   nsRect oldScrolledAreaBounds =
     mInner.mScrolledFrame->GetScrollableOverflowRectRelativeToParent();
-  // Adjust to a multiple of device pixels to restore the invariant that
-  // oldScrollPosition is a multiple of device pixels. This could have been
-  // thrown out by a zoom change.
-  nsIntPoint ptDevPx;
   nsPoint oldScrollPosition = mInner.GetScrollPosition();
 
   state.mComputedBorder = aReflowState.mComputedBorderPadding -
@@ -969,6 +966,23 @@ nsGfxScrollFrameInner::GetNondisappearingScrollbarWidth(nsBoxLayoutState* aState
   }
 
   return GetDesiredScrollbarSizes(aState).LeftRight();
+}
+
+void
+nsGfxScrollFrameInner::HandleScrollbarStyleSwitching()
+{
+  // Check if we switched between scrollbar styles.
+  if (mScrollbarActivity &&
+      LookAndFeel::GetInt(LookAndFeel::eIntID_UseOverlayScrollbars) == 0) {
+    mScrollbarActivity->Destroy();
+    mScrollbarActivity = nullptr;
+    mOuter->PresContext()->ThemeChanged();
+  }
+  else if (!mScrollbarActivity &&
+           LookAndFeel::GetInt(LookAndFeel::eIntID_UseOverlayScrollbars) != 0) {
+    mScrollbarActivity = new ScrollbarActivity(do_QueryFrame(mOuter));
+    mOuter->PresContext()->ThemeChanged();
+  }
 }
 
 nsresult
@@ -1580,7 +1594,7 @@ void
 nsGfxScrollFrameInner::ScrollToCSSPixels(const CSSIntPoint& aScrollPosition)
 {
   nsPoint current = GetScrollPosition();
-  nsIntPoint currentCSSPixels = GetScrollPositionCSSPixels();
+  CSSIntPoint currentCSSPixels = GetScrollPositionCSSPixels();
   nsPoint pt = CSSPoint::ToAppUnits(aScrollPosition);
   nscoord halfPixel = nsPresContext::CSSPixelsToAppUnits(0.5f);
   nsRect range(pt.x - halfPixel, pt.y - halfPixel, 2*halfPixel - 1, 2*halfPixel - 1);
@@ -1609,12 +1623,10 @@ nsGfxScrollFrameInner::ScrollToCSSPixelsApproximate(const CSSPoint& aScrollPosit
   ScrollTo(pt, nsIScrollableFrame::INSTANT, &range);
 }
 
-nsIntPoint
+CSSIntPoint
 nsGfxScrollFrameInner::GetScrollPositionCSSPixels()
 {
-  nsPoint pt = GetScrollPosition();
-  return nsIntPoint(nsPresContext::AppUnitsToIntCSSPixels(pt.x),
-                    nsPresContext::AppUnitsToIntCSSPixels(pt.y));
+  return CSSIntPoint::FromAppUnitsRounded(GetScrollPosition());
 }
 
 /*
@@ -2020,6 +2032,24 @@ AppendToTop(nsDisplayListBuilder* aBuilder, nsDisplayList* aDest,
   }
 }
 
+struct HoveredStateComparator
+{
+  bool Equals(nsIFrame* A, nsIFrame* B) const {
+    bool aHovered = A->GetContent()->HasAttr(kNameSpaceID_None,
+                                             nsGkAtoms::hover);
+    bool bHovered = B->GetContent()->HasAttr(kNameSpaceID_None,
+                                             nsGkAtoms::hover);
+    return aHovered == bHovered;
+  }
+  bool LessThan(nsIFrame* A, nsIFrame* B) const {
+    bool aHovered = A->GetContent()->HasAttr(kNameSpaceID_None,
+                                             nsGkAtoms::hover);
+    bool bHovered = B->GetContent()->HasAttr(kNameSpaceID_None,
+                                             nsGkAtoms::hover);
+    return !aHovered && bHovered;
+  }
+};
+
 void
 nsGfxScrollFrameInner::AppendScrollPartsTo(nsDisplayListBuilder*   aBuilder,
                                            const nsRect&           aDirtyRect,
@@ -2027,18 +2057,30 @@ nsGfxScrollFrameInner::AppendScrollPartsTo(nsDisplayListBuilder*   aBuilder,
                                            bool&                   aCreateLayer,
                                            bool                    aPositioned)
 {
+  bool overlayScrollbars =
+    LookAndFeel::GetInt(LookAndFeel::eIntID_UseOverlayScrollbars) != 0;
+
+  nsAutoTArray<nsIFrame*, 3> scrollParts;
   for (nsIFrame* kid = mOuter->GetFirstPrincipalChild(); kid; kid = kid->GetNextSibling()) {
     if (kid == mScrolledFrame ||
-        (kid->IsPositioned() != aPositioned))
+        (kid->IsPositioned() || overlayScrollbars) != aPositioned)
       continue;
 
+    scrollParts.AppendElement(kid);
+  }
+
+  scrollParts.Sort(HoveredStateComparator());
+
+  for (uint32_t i = 0; i < scrollParts.Length(); ++i) {
     nsDisplayListCollection partList;
-    mOuter->BuildDisplayListForChild(aBuilder, kid, aDirtyRect, partList,
-                                     nsIFrame::DISPLAY_CHILD_FORCE_STACKING_CONTEXT);
+    mOuter->BuildDisplayListForChild(
+      aBuilder, scrollParts[i], aDirtyRect, partList,
+      nsIFrame::DISPLAY_CHILD_FORCE_STACKING_CONTEXT);
 
     // Don't append textarea resizers to the positioned descendants because
     // we don't want them to float on top of overlapping elements.
-    bool appendToPositioned = aPositioned && !(kid == mResizerBox && !mIsRoot);
+    bool appendToPositioned = aPositioned &&
+                              !(scrollParts[i] == mResizerBox && !mIsRoot);
 
     nsDisplayList* dest = appendToPositioned ?
       aLists.PositionedDescendants() : aLists.BorderBackground();
@@ -2046,7 +2088,7 @@ nsGfxScrollFrameInner::AppendScrollPartsTo(nsDisplayListBuilder*   aBuilder,
     // DISPLAY_CHILD_FORCE_STACKING_CONTEXT put everything into
     // partList.PositionedDescendants().
     ::AppendToTop(aBuilder, dest,
-                  partList.PositionedDescendants(), kid,
+                  partList.PositionedDescendants(), scrollParts[i],
                   aCreateLayer);
   }
 }
@@ -2238,12 +2280,16 @@ nsGfxScrollFrameInner::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
   } else {
     nsRect scrollRange = GetScrollRange();
     ScrollbarStyles styles = GetScrollbarStylesFromFrame();
+    bool hasScrollableOverflow =
+      (scrollRange.width > 0 || scrollRange.height > 0) &&
+      ((styles.mHorizontal != NS_STYLE_OVERFLOW_HIDDEN && mHScrollbarBox) ||
+       (styles.mVertical   != NS_STYLE_OVERFLOW_HIDDEN && mVScrollbarBox));
+    // TODO Turn this on for inprocess OMTC
+    bool wantSubAPZC = (XRE_GetProcessType() == GeckoProcessType_Content);
     mShouldBuildLayer =
-       ((styles.mHorizontal != NS_STYLE_OVERFLOW_HIDDEN && mHScrollbarBox) ||
-        (styles.mVertical   != NS_STYLE_OVERFLOW_HIDDEN && mVScrollbarBox)) &&
-       (XRE_GetProcessType() == GeckoProcessType_Content &&
-        (scrollRange.width > 0 || scrollRange.height > 0) &&
-        (!mIsRoot || !mOuter->PresContext()->IsRootContentDocument()));
+      wantSubAPZC &&
+      hasScrollableOverflow &&
+      (!mIsRoot || !mOuter->PresContext()->IsRootContentDocument());
   }
 
   if (ShouldBuildLayer()) {
@@ -2932,10 +2978,6 @@ void nsGfxScrollFrameInner::CurPosAttributeChanged(nsIContent* aContent)
                (mVScrollbarBox && mVScrollbarBox->GetContent() == aContent),
                "unexpected child");
 
-  if (mScrollbarActivity) {
-    mScrollbarActivity->ActivityOccurred();
-  }
-
   // Attribute changes on the scrollbars happen in one of three ways:
   // 1) The scrollbar changed the attribute in response to some user event
   // 2) We changed the attribute in response to a ScrollPositionDidChange
@@ -2966,6 +3008,10 @@ void nsGfxScrollFrameInner::CurPosAttributeChanged(nsIContent* aContent)
   // on the bottom or right edge of the rectangle.
   if (allowedRange.ClampPoint(current) == current) {
     return;
+  }
+
+  if (mScrollbarActivity) {
+    mScrollbarActivity->ActivityOccurred();
   }
 
   bool isSmooth = aContent->HasAttr(kNameSpaceID_None, nsGkAtoms::smooth);

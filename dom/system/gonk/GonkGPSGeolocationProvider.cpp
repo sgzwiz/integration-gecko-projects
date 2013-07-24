@@ -24,6 +24,7 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsINetworkManager.h"
 #include "nsIRadioInterfaceLayer.h"
+#include "nsIDOMIccInfo.h"
 #include "nsIDOMMobileConnection.h"
 #include "nsJSUtils.h"
 #include "nsServiceManagerUtils.h"
@@ -43,10 +44,10 @@ static const int kDefaultPeriod = 1000; // ms
 // While most methods of GonkGPSGeolocationProvider should only be
 // called from main thread, we deliberately put the Init and ShutdownGPS
 // methods off main thread to avoid blocking.
-NS_IMPL_THREADSAFE_ISUPPORTS3(GonkGPSGeolocationProvider,
-                              nsIGeolocationProvider,
-                              nsIRILDataCallback,
-                              nsISettingsServiceCallback)
+NS_IMPL_ISUPPORTS3(GonkGPSGeolocationProvider,
+                   nsIGeolocationProvider,
+                   nsIRILDataCallback,
+                   nsISettingsServiceCallback)
 
 /* static */ GonkGPSGeolocationProvider* GonkGPSGeolocationProvider::sSingleton = nullptr;
 GpsCallbacks GonkGPSGeolocationProvider::mCallbacks = {
@@ -422,7 +423,7 @@ GonkGPSGeolocationProvider::RequestSetID(uint32_t flags)
     }
 
     if (flags & AGPS_RIL_REQUEST_SETID_MSISDN) {
-      nsCOMPtr<nsIDOMMozMobileICCInfo> iccInfo;
+      nsCOMPtr<nsIDOMMozIccInfo> iccInfo;
       rilCtx->GetIccInfo(getter_AddRefs(iccInfo));
       if (iccInfo) {
         type = AGPS_SETID_TYPE_MSISDN;
@@ -453,7 +454,7 @@ GonkGPSGeolocationProvider::SetReferenceLocation()
   location.type = AGPS_REF_LOCATION_TYPE_UMTS_CELLID;
 
   if (rilCtx) {
-    nsCOMPtr<nsIDOMMozMobileICCInfo> iccInfo;
+    nsCOMPtr<nsIDOMMozIccInfo> iccInfo;
     rilCtx->GetIccInfo(getter_AddRefs(iccInfo));
     if (iccInfo) {
       nsresult result;

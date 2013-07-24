@@ -238,8 +238,13 @@ class MacroAssemblerARM : public Assembler
     // implicitly assumes that we can overwrite dest at the beginning of the sequence
     void ma_mod_mask(Register src, Register dest, Register hold, int32_t shift);
 
-    // division
+    // mod, depends on integer divide instructions being supported
+    void ma_smod(Register num, Register div, Register dest);
+    void ma_umod(Register num, Register div, Register dest);
+
+    // division, depends on integer divide instructions being supported
     void ma_sdiv(Register num, Register div, Register dest, Condition cond = Always);
+    void ma_udiv(Register num, Register div, Register dest, Condition cond = Always);
 
     // memory
     // shortcut for when we know we're transferring 32 bits of data
@@ -1021,6 +1026,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void linkExitFrame();
     void linkParallelExitFrame(const Register &pt);
     void handleFailureWithHandler(void *handler);
+    void handleFailureWithHandlerTail();
 
     /////////////////////////////////////////////////////////////////
     // Common interface.

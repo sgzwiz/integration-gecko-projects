@@ -51,7 +51,7 @@ class TiledLayerComposer;
 class Transaction;
 class SurfaceDescriptor;
 class CanvasSurface;
-class TextureClientShmem;
+class DeprecatedTextureClientShmem;
 class ContentClientRemote;
 class CompositableChild;
 class ImageClient;
@@ -135,7 +135,7 @@ class ContentClient;
 class ShadowLayerForwarder : public CompositableForwarder
 {
   friend class AutoOpenSurface;
-  friend class TextureClientShmem;
+  friend class DeprecatedTextureClientShmem;
   friend class ContentClientIncremental;
 
 public:
@@ -228,17 +228,17 @@ public:
   void SetRoot(ShadowableLayer* aRoot);
   /**
    * Insert |aChild| after |aAfter| in |aContainer|.  |aAfter| can be
-   * NULL to indicated that |aChild| should be appended to the end of
+   * nullptr to indicated that |aChild| should be appended to the end of
    * |aContainer|'s child list.
    */
   void InsertAfter(ShadowableLayer* aContainer,
                    ShadowableLayer* aChild,
-                   ShadowableLayer* aAfter=NULL);
+                   ShadowableLayer* aAfter = nullptr);
   void RemoveChild(ShadowableLayer* aContainer,
                    ShadowableLayer* aChild);
   void RepositionChild(ShadowableLayer* aContainer,
                        ShadowableLayer* aChild,
-                       ShadowableLayer* aAfter=NULL);
+                       ShadowableLayer* aAfter = nullptr);
 
   /**
    * Set aMaskLayer as the mask on aLayer.
@@ -472,13 +472,13 @@ public:
 
   /**
    * Return the IPC handle to a Shadow*Layer referring to this if one
-   * exists, NULL if not.
+   * exists, nullptr if not.
    */
   PLayerChild* GetShadow() { return mShadow; }
 
   virtual CompositableClient* GetCompositableClient() { return nullptr; }
 protected:
-  ShadowableLayer() : mShadow(NULL) {}
+  ShadowableLayer() : mShadow(nullptr) {}
 
   PLayerChild* mShadow;
 };

@@ -194,16 +194,17 @@ menulist {
   min-width: @touch_action_minwidth@; /* keep the button from being too narrow */
   border: 0 none;
   -moz-box-align: center;
+  font-weight: 600;
 }
 
 .menu-popup richlistitem:not([disabled]):hover {
-  background-color: #dedad0;
+  background-color: #ccc;
   color: black;
 }
 
 .menu-popup richlistitem:not([disabled]):active {
-  background-color: @selected_color@ !important;
-  color: black;
+  background-color: black;
+  color: white;
 }
 
 .menu-popup > richlistbox[left-hand="true"] > richlistitem {
@@ -212,6 +213,61 @@ menulist {
 
 .menu-popup > richlistbox[left-hand="false"] > richlistitem {
   padding-right: 50px;
+}
+
+/* Additional styles applied to popups for form <select> elements. */
+
+#select-container {
+  padding: 0;
+  position: absolute;
+  background-color: transparent;
+}
+
+#select-commands {
+  -moz-appearance: none;
+  background-color: white;
+  border: #000 solid @metro_border_thick@;
+  display: -moz-box;
+  -moz-user-focus: ignore;
+  -moz-box-align: stretch;
+  width: 100%;
+}
+
+/* listcell element doesn't have flex="1" so we need to force it */
+.option-command > listcell {
+  -moz-box-flex: 1 !important;
+}
+
+.option-command {
+  min-height: @touch_button_small@;
+  min-width: @touch_action_minwidth@; /* keep the button from being too narrow */
+  border: 0 none;
+}
+
+.option-command.selected {
+  background-color: #ff8000;
+  color: white;
+}
+
+.option-command.optgroup {
+  font-weight: bold;
+  font-style: italic;
+  pointer-events: none;
+}
+
+.option-command:not([disabled]):hover {
+  background-color: #f0f0f0;
+  color: black;
+}
+
+.option-command:not([disabled]):active {
+  background-color: #d3d3d3;
+  color: black;
+}
+
+.select-popup > richlistbox > scrollbox {
+  width: 100%;
+  overflow-x: hidden !important;
 }
 
 /* Toolbar Button --------------------------------------------------------- */
@@ -442,7 +498,6 @@ notification {
   -moz-box-flex: 9999;
 }
 
-
 /* Dialogs ----------------------------------------------------------------- */
 
 .modal-block,
@@ -606,4 +661,154 @@ arrowbox {
 .meta-section-title {
   font-size: @metro_font_large@;
   font-weight: 100;
+  visibility: collapse;
+}
+
+#start-container[viewstate="snapped"] .meta-section-title.narrow-title,
+#start-container:not([viewstate="snapped"]) .meta-section-title.wide-title {
+  visibility: visible;
+}
+
+/* App bars ----------------------------------------------------------------- */
+
+appbar {
+  display: block;
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  transform: translateY(100%);
+  transition: transform @metro_animation_duration@ @metro_animation_easing@;
+  font-size: 0;
+}
+
+appbar toolbar {
+  -moz-appearance: none;
+  -moz-box-align: center;
+  border: 0;
+  width: 100%;
+  min-height: @toolbar_height@;
+  font-size: 1rem;
+}
+
+appbar[visible] {
+  transform: none;
+}
+
+#stack[keyboardVisible] > appbar {
+  /* Slow the bottom up transition since it's impossible to match the system's
+     soft keyboard movement. */
+  transition: transform @metro_animation_duration@ @metro_animation_easing@,
+              bottom @appbar_keyboard_slideup_duration@ @metro_animation_easing@;
+}
+
+appbar toolbar > toolbarbutton {
+  border: 0;
+  margin: 0 @toolbar_horizontal_spacing@;
+  padding: 0;
+  /* Don't inherit background-color from toolbarbutton[checked="true"] */
+  background-color: transparent;
+}
+
+appbar toolbar > toolbarbutton[disabled] {
+  visibility: collapse;
+}
+
+appbar toolbar[labelled] {
+  min-height: @labelled_toolbar_height@;
+}
+
+appbar toolbar[labelled] > toolbarbutton {
+  -moz-box-orient: vertical;
+}
+
+appbar toolbar[labelled] > toolbarbutton > .toolbarbutton-text {
+  display: block;
+  padding-top: @metro_spacing_small@;
+  font-size: 0.75rem;
+}
+
+/* Sprites */
+
+.appbar-primary > .toolbarbutton-icon,
+.appbar-secondary > .toolbarbutton-icon {
+  width: 40px;
+  height: 40px;
+}
+
+/* Primary sprite format: one button per sprite.
+
+   States from left to right:
+   normal, hover, active/toggled, toggled+hover, toggled+active. */
+
+.appbar-primary {
+  -moz-image-region: rect(0 40px 40px 0);
+}
+
+.appbar-primary:not([checked]):hover:not(:active):not([disabled]) {
+  -moz-image-region: rect(0 80px 40px 40px);
+}
+
+.appbar-primary:not([checked]):active:not([disabled]),
+.appbar-primary[checked] {
+  -moz-image-region: rect(0 120px 40px 80px);
+}
+
+.appbar-primary[checked]:hover:not(:active):not([disabled]) {
+  -moz-image-region: rect(0 160px 40px 120px);
+}
+
+.appbar-primary[checked]:active:not([disabled]) {
+  -moz-image-region: rect(0 200px 40px 160px);
+}
+
+@media (min-resolution: @min_res_140pc@) {
+  .appbar-primary {
+    -moz-image-region: rect(0 56px 56px 0);
+  }
+
+  .appbar-primary:not([checked]):hover:not(:active):not([disabled]) {
+    -moz-image-region: rect(0 112px 56px 56px);
+  }
+
+  .appbar-primary:not([checked]):active:not([disabled]),
+  .appbar-primary[checked] {
+    -moz-image-region: rect(0 168px 56px 112px);
+  }
+
+  .appbar-primary[checked]:hover:not(:active):not([disabled]) {
+    -moz-image-region: rect(0 224px 56px 168px);
+  }
+
+  .appbar-primary[checked]:active:not([disabled]) {
+    -moz-image-region: rect(0 280px 56px 224px);
+  }
+}
+
+@media (min-resolution: @min_res_180pc@) {
+  .appbar-primary {
+    -moz-image-region: rect(0 72px 72px 0);
+  }
+
+  .appbar-primary:not([checked]):hover:not(:active):not([disabled]) {
+    -moz-image-region: rect(0 144px 72px 72px);
+  }
+
+  .appbar-primary:not([checked]):active:not([disabled]),
+  .appbar-primary[checked] {
+    -moz-image-region: rect(0 216px 72px 144px);
+  }
+
+  .appbar-primary[checked]:hover:not(:active):not([disabled]) {
+    -moz-image-region: rect(0 288px 72px 216px);
+  }
+
+  .appbar-primary[checked]:active:not([disabled]) {
+    -moz-image-region: rect(0 360px 72px 288px);
+  }
+}
+
+/* Secondary sprite format: one sprite for everything */
+
+.appbar-secondary {
+  list-style-image: url(chrome://browser/skin/images/appbar-icons.png);
 }

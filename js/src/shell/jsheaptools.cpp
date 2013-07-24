@@ -4,11 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "shell/jsheaptools.h"
+
+#include "mozilla/Move.h"
+
 #include <string.h>
 
-#include "jsapi.h"
-
 #include "jsalloc.h"
+#include "jsapi.h"
 #include "jscntxt.h"
 #include "jscompartment.h"
 #include "jsfun.h"
@@ -19,6 +22,9 @@
 #include "jsobjinlines.h"
 
 using namespace js;
+
+using mozilla::Move;
+using mozilla::MoveRef;
 
 #ifdef DEBUG
 

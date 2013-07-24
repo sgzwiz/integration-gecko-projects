@@ -8,7 +8,7 @@
  * JS bytecode descriptors, disassemblers, and (expression) decompilers.
  */
 
-#include "jsopcode.h"
+#include "jsopcodeinlines.h"
 
 #include "mozilla/Util.h"
 
@@ -16,35 +16,32 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "jstypes.h"
-#include "jsutil.h"
-#include "jsprf.h"
 #include "jsanalyze.h"
 #include "jsapi.h"
 #include "jsatom.h"
+#include "jsautooplen.h"
 #include "jscntxt.h"
 #include "jscompartment.h"
 #include "jsfun.h"
 #include "jsnum.h"
 #include "jsobj.h"
+#include "jsprf.h"
 #include "jsscript.h"
 #include "jsstr.h"
+#include "jstypes.h"
+#include "jsutil.h"
 
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/SourceNotes.h"
 #include "js/CharacterEncoding.h"
+#include "vm/ScopeObject.h"
 #include "vm/Shape.h"
 #include "vm/StringBuffer.h"
 
 #include "jscntxtinlines.h"
-#include "jsobjinlines.h"
 #include "jscompartmentinlines.h"
-#include "jsopcodeinlines.h"
-
-#include "jsautooplen.h"
-
-#include "vm/RegExpObject-inl.h"
-#include "vm/ScopeObject-inl.h"
+#include "jsinferinlines.h"
+#include "jsscriptinlines.h"
 
 using namespace js;
 using namespace js::gc;
@@ -491,7 +488,7 @@ ToDisassemblySource(JSContext *cx, jsval v, JSAutoByteString *bytes)
                                : JSID_TO_ATOM(shape->propid());
 
                 JSAutoByteString bytes;
-                if (!js_AtomToPrintableString(cx, atom, &bytes))
+                if (!AtomToPrintableString(cx, atom, &bytes))
                     return false;
 
                 r.popFront();

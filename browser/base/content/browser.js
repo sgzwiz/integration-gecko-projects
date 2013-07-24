@@ -755,6 +755,7 @@ var gBrowserInit = {
     gBrowser.addEventListener("PluginCrashed",         gPluginHandler, true);
     gBrowser.addEventListener("PluginOutdated",        gPluginHandler, true);
     gBrowser.addEventListener("PluginInstantiated",    gPluginHandler, true);
+    gBrowser.addEventListener("PluginRemoved",         gPluginHandler, true);
 
     gBrowser.addEventListener("NewPluginInstalled", gPluginHandler.newPluginInstalled, true);
 
@@ -823,7 +824,8 @@ var gBrowserInit = {
     // setup history swipe animation
     gHistorySwipeAnimation.init();
 
-    if (window.opener && !window.opener.closed) {
+    if (window.opener && !window.opener.closed &&
+        PrivateBrowsingUtils.isWindowPrivate(window) == PrivateBrowsingUtils.isWindowPrivate(window.opener)) {
       let openerSidebarBox = window.opener.document.getElementById("sidebar-box");
       // If the opener had a sidebar, open the same sidebar in our window.
       // The opener can be the hidden window too, if we're coming from the state
@@ -2305,11 +2307,11 @@ function BrowserOnAboutPageLoad(doc) {
     }
     docElt.setAttribute("snippetsVersion", AboutHomeUtils.snippetsVersion);
 
-    function updateSearchEngine() {
+    let updateSearchEngine = function() {
       let engine = AboutHomeUtils.defaultSearchEngine;
       docElt.setAttribute("searchEngineName", engine.name);
       docElt.setAttribute("searchEngineURL", engine.searchURL);
-    }
+    };
     updateSearchEngine();
 
     // Listen for the event that's triggered when the user changes search engine.
@@ -3668,14 +3670,8 @@ var XULBrowserWindow = {
   init: function () {
     this.throbberElement = document.getElementById("navigator-throbber");
 
-    // Bug 666809 - SecurityUI support for e10s
-    if (gMultiProcessBrowser)
-      return;
-
-    // Initialize the security button's state and tooltip text.  Remember to reset
-    // _hostChanged, otherwise onSecurityChange will short circuit.
+    // Initialize the security button's state and tooltip text.
     var securityUI = gBrowser.securityUI;
-    this._hostChanged = true;
     this.onSecurityChange(null, null, securityUI.state);
   },
 
@@ -3866,7 +3862,6 @@ var XULBrowserWindow = {
 
   onLocationChange: function (aWebProgress, aRequest, aLocationURI, aFlags) {
     var location = aLocationURI ? aLocationURI.spec : "";
-    this._hostChanged = true;
 
     // Hide the form invalid popup.
     if (gFormSubmitObserver.panel) {
@@ -3977,16 +3972,6 @@ var XULBrowserWindow = {
         }
       } else
         disableFindCommands(false);
-
-      if (gFindBarInitialized) {
-        if (gFindBar.findMode != gFindBar.FIND_NORMAL) {
-          // Close the Find toolbar if we're in old-style TAF mode
-          gFindBar.close();
-        }
-
-        // fix bug 253793 - turn off highlight when page changes
-        gFindBar.getElement("highlight").checked = false;
-      }
     }
     UpdateBackForwardCommands(gBrowser.webNavigation);
 
@@ -4018,37 +4003,18 @@ var XULBrowserWindow = {
 
   // Properties used to cache security state used to update the UI
   _state: null,
-  _hostChanged: false, // onLocationChange will flip this bit
+  _lastLocation: null,
 
   onSecurityChange: function (aWebProgress, aRequest, aState) {
     // Don't need to do anything if the data we use to update the UI hasn't
     // changed
+    let uri = gBrowser.currentURI;
+    let spec = uri.spec;
     if (this._state == aState &&
-        !this._hostChanged) {
-#ifdef DEBUG
-      try {
-        var contentHost = gBrowser.contentWindow.location.host;
-        if (this._host !== undefined && this._host != contentHost) {
-            Components.utils.reportError(
-              "ASSERTION: browser.js host is inconsistent. Content window has " +
-              "<" + contentHost + "> but cached host is <" + this._host + ">.\n"
-            );
-        }
-      } catch (ex) {}
-#endif
+        this._lastLocation == spec)
       return;
-    }
     this._state = aState;
-
-#ifdef DEBUG
-    try {
-      this._host = gBrowser.contentWindow.location.host;
-    } catch(ex) {
-      this._host = null;
-    }
-#endif
-
-    this._hostChanged = false;
+    this._lastLocation = spec;
 
     // aState is defined as a bitmask that may be extended in the future.
     // We filter out any unknown bits before testing for known values.
@@ -4077,26 +4043,10 @@ var XULBrowserWindow = {
         gURLBar.removeAttribute("level");
     }
 
-    if (gMultiProcessBrowser)
-      return;
-
-    // Don't pass in the actual location object, since it can cause us to
-    // hold on to the window object too long.  Just pass in the fields we
-    // care about. (bug 424829)
-    var location = gBrowser.contentWindow.location;
-    var locationObj = {};
     try {
-      // about:blank can be used by webpages so pretend it is http
-      locationObj.protocol = location == "about:blank" ? "http:" : location.protocol;
-      locationObj.host = location.host;
-      locationObj.hostname = location.hostname;
-      locationObj.port = location.port;
-    } catch (ex) {
-      // Can sometimes throw if the URL being visited has no host/hostname,
-      // e.g. about:blank. The _state for these pages means we won't need these
-      // properties anyways, though.
-    }
-    gIdentityHandler.checkIdentity(this._state, locationObj);
+      uri = Services.uriFixup.createExposableURI(uri);
+    } catch (e) {}
+    gIdentityHandler.checkIdentity(this._state, uri);
   },
 
   // simulate all change notifications after switching tabs
@@ -4484,6 +4434,10 @@ nsBrowserAccess.prototype = {
 
   isTabContentWindow: function (aWindow) {
     return gBrowser.browsers.some(function (browser) browser.contentWindow == aWindow);
+  },
+
+  get contentWindow() {
+    return gBrowser.contentWindow;
   }
 }
 
@@ -6311,15 +6265,31 @@ function undoCloseTab(aIndex) {
   var tab = null;
   var ss = Cc["@mozilla.org/browser/sessionstore;1"].
            getService(Ci.nsISessionStore);
-  if (ss.getClosedTabCount(window) > (aIndex || 0)) {
-    TabView.prepareUndoCloseTab(blankTabToRemove);
-    tab = ss.undoCloseTab(window, aIndex || 0);
-    TabView.afterUndoCloseTab();
-
-    if (blankTabToRemove)
-      gBrowser.removeTab(blankTabToRemove);
+  let numberOfTabsToUndoClose = 0;
+  if (Number.isInteger(aIndex)) {
+    if (ss.getClosedTabCount(window) > aIndex) {
+      numberOfTabsToUndoClose = 1;
+    } else {
+      return tab;
+    }
+  } else {
+    numberOfTabsToUndoClose = ss.getNumberOfTabsClosedLast(window);
+    aIndex = 0;
   }
 
+  while (numberOfTabsToUndoClose > 0 &&
+         numberOfTabsToUndoClose--) {
+    TabView.prepareUndoCloseTab(blankTabToRemove);
+    tab = ss.undoCloseTab(window, aIndex);
+    TabView.afterUndoCloseTab();
+    if (blankTabToRemove) {
+      gBrowser.removeTab(blankTabToRemove);
+      blankTabToRemove = null;
+    }
+  }
+
+  // Reset the number of tabs closed last time to the default.
+  ss.setNumberOfTabsClosedLast(window, 1);
   return tab;
 }
 
@@ -6395,7 +6365,7 @@ var gIdentityHandler = {
 
   // Cache the most recent SSLStatus and Location seen in checkIdentity
   _lastStatus : null,
-  _lastLocation : null,
+  _lastUri : null,
   _mode : "unknownIdentity",
 
   // smart getters
@@ -6553,19 +6523,29 @@ var gIdentityHandler = {
    * be called by onSecurityChange
    *
    * @param PRUint32 state
-   * @param JS Object location that mirrors an nsLocation (i.e. has .host and
-   *                           .hostname and .port)
+   * @param nsIURI uri The address for which the UI should be updated.
    */
-  checkIdentity : function(state, location) {
+  checkIdentity : function(state, uri) {
     var currentStatus = gBrowser.securityUI
                                 .QueryInterface(Components.interfaces.nsISSLStatusProvider)
                                 .SSLStatus;
     this._lastStatus = currentStatus;
-    this._lastLocation = location;
+    this._lastUri = uri;
 
     let nsIWebProgressListener = Ci.nsIWebProgressListener;
-    if (location.protocol == "chrome:" || location.protocol == "about:") {
+
+    // For some URIs like data: we can't get a host and so can't do
+    // anything useful here. Chrome URIs however get special treatment.
+    let unknown = false;
+    try {
+      uri.host;
+    } catch (e) { unknown = true; }
+
+    if ((uri.scheme == "chrome" || uri.scheme == "about") &&
+        uri.spec !== "about:blank") {
       this.setMode(this.IDENTITY_MODE_CHROMEUI);
+    } else if (unknown) {
+      this.setMode(this.IDENTITY_MODE_UNKNOWN);
     } else if (state & nsIWebProgressListener.STATE_IDENTITY_EV_TOPLEVEL) {
       this.setMode(this.IDENTITY_MODE_IDENTIFIED);
     } else if (state & nsIWebProgressListener.STATE_IS_SECURE) {
@@ -6636,12 +6616,12 @@ var gIdentityHandler = {
                          .getService(Ci.nsIIDNService);
     try {
       let baseDomain =
-        Services.eTLD.getBaseDomainFromHost(this._lastLocation.hostname);
+        Services.eTLD.getBaseDomainFromHost(this._lastUri.host);
       return this._IDNService.convertToDisplayIDN(baseDomain, {});
     } catch (e) {
-      // If something goes wrong (e.g. hostname is an IP address) just fail back
+      // If something goes wrong (e.g. host is an IP address) just fail back
       // to the full domain.
-      return this._lastLocation.hostname;
+      return this._lastUri.host;
     }
   },
 
@@ -6688,19 +6668,17 @@ var gIdentityHandler = {
       tooltip = gNavigatorBundle.getFormattedString("identity.identified.verifier",
                                                     [iData.caOrg]);
 
-      // Check whether this site is a security exception. XPConnect does the right
-      // thing here in terms of converting _lastLocation.port from string to int, but
-      // the overrideService doesn't like undefined ports, so make sure we have
-      // something in the default case (bug 432241).
-      // .hostname can return an empty string in some exceptional cases -
-      // hasMatchingOverride does not handle that, so avoid calling it.
-      // Updating the tooltip value in those cases isn't critical.
-      // FIXME: Fixing bug 646690 would probably makes this check unnecessary
-      if (this._lastLocation.hostname &&
-          this._overrideService.hasMatchingOverride(this._lastLocation.hostname,
-                                                    (this._lastLocation.port || 443),
-                                                    iData.cert, {}, {}))
+      // This can't throw, because URI's with a host that throw don't end up in this case.
+      let host = this._lastUri.host;
+      let port = 443;
+      try {
+        if (this._lastUri.port > 0)
+          port = this._lastUri.port;
+      } catch (e) {}
+
+      if (this._overrideService.hasMatchingOverride(host, port, iData.cert, {}, {}))
         tooltip = gNavigatorBundle.getString("identity.identified.verified_by_you");
+
       break; }
     case this.IDENTITY_MODE_IDENTIFIED: {
       // If it's identified, then we can populate the dialog with credentials
@@ -6908,9 +6886,11 @@ var gIdentityHandler = {
     let menulist = document.createElement("menulist");
     let menupopup = document.createElement("menupopup");
     for (let state of SitePermissions.getAvailableStates(aPermission)) {
+      if (state == SitePermissions.UNKNOWN)
+        continue;
       let menuitem = document.createElement("menuitem");
       menuitem.setAttribute("value", state);
-      menuitem.setAttribute("label", SitePermissions.getStateLabel(state));
+      menuitem.setAttribute("label", SitePermissions.getStateLabel(aPermission, state));
       menupopup.appendChild(menuitem);
     }
     menulist.appendChild(menupopup);
@@ -7103,10 +7083,15 @@ var TabContextMenu = {
       menuItem.disabled = disabled;
 
     // Session store
-    document.getElementById("context_undoCloseTab").disabled =
-      Cc["@mozilla.org/browser/sessionstore;1"].
-      getService(Ci.nsISessionStore).
-      getClosedTabCount(window) == 0;
+    let ss = Cc["@mozilla.org/browser/sessionstore;1"].
+               getService(Ci.nsISessionStore);
+    let undoCloseTabElement = document.getElementById("context_undoCloseTab");
+    let closedTabCount = ss.getNumberOfTabsClosedLast(window);
+    undoCloseTabElement.disabled = closedTabCount == 0;
+    // Change the label of "Undo Close Tab" to specify if it will undo a batch-close
+    // or a single close.
+    let visibleLabel = closedTabCount <= 1 ? "singletablabel" : "multipletablabel";
+    undoCloseTabElement.setAttribute("label", undoCloseTabElement.getAttribute(visibleLabel));
 
     // Only one of pin/unpin should be visible
     document.getElementById("context_pinTab").hidden = this.contextTab.pinned;

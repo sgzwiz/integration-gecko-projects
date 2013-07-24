@@ -1175,28 +1175,22 @@ nsGenericHTMLElement::GetFormControlFrame(bool aFlushFrames)
   return nullptr;
 }
 
-/* static */ nsresult
-nsGenericHTMLElement::GetPrimaryPresState(nsGenericHTMLElement* aContent,
-                                          nsPresState** aPresState)
+nsPresState*
+nsGenericHTMLElement::GetPrimaryPresState()
 {
-  NS_ENSURE_ARG_POINTER(aPresState);
-  *aPresState = nullptr;
-
-  nsresult result = NS_OK;
-
   nsAutoCString key;
-  nsCOMPtr<nsILayoutHistoryState> history = GetLayoutHistoryAndKey(aContent, false, key);
-
-  if (history) {
-    // Get the pres state for this key, if it doesn't exist, create one
-    result = history->GetState(key, aPresState);
-    if (!*aPresState) {
-      *aPresState = new nsPresState();
-      result = history->AddState(key, *aPresState);
-    }
+  nsCOMPtr<nsILayoutHistoryState> history = GetLayoutHistoryAndKey(this, false, key);
+  if (!history) {
+    return nullptr;
   }
 
-  return result;
+  // Get the pres state for this key, if it doesn't exist, create one
+  nsPresState* presState = history->GetState(key);
+  if (!presState) {
+    presState = new nsPresState();
+    history->AddState(key, presState);
+  }
+  return presState;
 }
 
 
@@ -1255,10 +1249,8 @@ nsGenericHTMLElement::RestoreFormControlState(nsGenericHTMLElement* aContent,
     return false;
   }
 
-  nsPresState *state;
-  // Get the pres state for this key
-  nsresult rv = history->GetState(key, &state);
-  if (NS_SUCCEEDED(rv) && state) {
+  nsPresState* state = history->GetState(key);
+  if (state) {
     bool result = aControl->RestoreState(state);
     history->RemoveState(key);
     return result;
@@ -1435,8 +1427,8 @@ nsGenericHTMLElement::ParseScrollingValue(const nsAString& aString,
  * Handle attributes common to all html elements
  */
 void
-nsGenericHTMLElement::MapCommonAttributesInto(const nsMappedAttributes* aAttributes,
-                                              nsRuleData* aData)
+nsGenericHTMLElement::MapCommonAttributesIntoExceptHidden(const nsMappedAttributes* aAttributes,
+                                                          nsRuleData* aData)
 {
   if (aData->mSIDs & NS_STYLE_INHERIT_BIT(UserInterface)) {
     nsCSSValue* userModify = aData->ValueForUserModify();
@@ -1466,6 +1458,13 @@ nsGenericHTMLElement::MapCommonAttributesInto(const nsMappedAttributes* aAttribu
       }
     }
   }
+}
+
+void
+nsGenericHTMLElement::MapCommonAttributesInto(const nsMappedAttributes* aAttributes,
+                                              nsRuleData* aData)
+{
+  MapCommonAttributesIntoExceptHidden(aAttributes, aData);
 
   if (aData->mSIDs & NS_STYLE_INHERIT_BIT(Display)) {
     nsCSSValue* display = aData->ValueForDisplay();
@@ -1476,7 +1475,6 @@ nsGenericHTMLElement::MapCommonAttributesInto(const nsMappedAttributes* aAttribu
     }
   }
 }
-
 
 /* static */ const nsGenericHTMLElement::MappedAttributeEntry
 nsGenericHTMLElement::sCommonAttributeMap[] = {

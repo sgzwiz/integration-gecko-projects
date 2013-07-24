@@ -5,9 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "jsapi-tests/tests.h"
-#include "js/RootingAPI.h"
-#include "jsobj.h"
+
 #include <stdio.h>
+
+#include "jsobj.h"
+
+#include "js/RootingAPI.h"
 
 JSAPITest *JSAPITest::list;
 
@@ -23,8 +26,8 @@ bool JSAPITest::init()
     JS::RootedObject global(cx, createGlobal());
     if (!global)
         return false;
-    oldCompartment = JS_EnterCompartment(cx, global);
-    return oldCompartment != NULL;
+    JS_EnterCompartment(cx, global);
+    return true;
 }
 
 bool JSAPITest::exec(const char *bytes, const char *filename, int lineno)

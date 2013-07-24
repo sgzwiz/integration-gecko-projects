@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "jscompartment.h"
+#include "jscompartmentinlines.h"
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MemoryReporting.h"
@@ -22,6 +22,7 @@
 #endif
 #include "js/RootingAPI.h"
 #include "vm/StopIterationObject.h"
+#include "vm/WrapperObject.h"
 
 #include "jsfuninlines.h"
 #include "jsgcinlines.h"
@@ -193,6 +194,7 @@ bool
 JSCompartment::wrap(JSContext *cx, MutableHandleValue vp, HandleObject existingArg)
 {
     JS_ASSERT(cx->compartment() == this);
+    JS_ASSERT(this != rt->atomsCompartment);
     JS_ASSERT_IF(existingArg, existingArg->compartment() == cx->compartment());
     JS_ASSERT_IF(existingArg, vp.isObject());
     JS_ASSERT_IF(existingArg, IsDeadProxyObject(existingArg));
@@ -272,7 +274,7 @@ JSCompartment::wrap(JSContext *cx, MutableHandleValue vp, HandleObject existingA
         vp.set(p->value);
         if (vp.isObject()) {
             DebugOnly<JSObject *> obj = &vp.toObject();
-            JS_ASSERT(obj->isCrossCompartmentWrapper());
+            JS_ASSERT(obj->is<CrossCompartmentWrapperObject>());
             JS_ASSERT(obj->getParent() == global);
         }
         return true;
@@ -312,7 +314,8 @@ JSCompartment::wrap(JSContext *cx, MutableHandleValue vp, HandleObject existingA
     if (existing) {
         /* Is it possible to reuse |existing|? */
         if (!existing->getTaggedProto().isLazy() ||
-            existing->getClass() != &ObjectProxyClass ||
+            // Note: don't use is<ObjectProxyObject>() here -- it also matches subclasses!
+            existing->getClass() != &ObjectProxyObject::class_ ||
             existing->getParent() != global ||
             obj->isCallable())
         {
@@ -455,15 +458,15 @@ JSCompartment::markCrossCompartmentWrappers(JSTracer *trc)
     for (WrapperMap::Enum e(crossCompartmentWrappers); !e.empty(); e.popFront()) {
         Value v = e.front().value;
         if (e.front().key.kind == CrossCompartmentKey::ObjectWrapper) {
-            JSObject *wrapper = &v.toObject();
+            ProxyObject *wrapper = &v.toObject().as<ProxyObject>();
 
             /*
              * We have a cross-compartment wrapper. Its private pointer may
              * point into the compartment being collected, so we should mark it.
              */
-            Value referent = GetProxyPrivate(wrapper);
+            Value referent = wrapper->private_();
             MarkValueRoot(trc, &referent, "cross-compartment wrapper");
-            JS_ASSERT(referent == GetProxyPrivate(wrapper));
+            JS_ASSERT(referent == wrapper->private_());
         }
     }
 }

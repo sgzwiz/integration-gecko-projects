@@ -151,7 +151,9 @@ public:
                                                            nsIDOMWebGLRenderingContext)
 
     virtual JSObject* WrapObject(JSContext *cx,
-                                 JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
+                                 JS::Handle<JSObject*> scope) = 0;
+
+    virtual bool IsWebGL2() const = 0;
 
     NS_DECL_NSIDOMWEBGLRENDERINGCONTEXT
 
@@ -388,6 +390,7 @@ public:
     void DrawArrays(GLenum mode, WebGLint first, WebGLsizei count);
     void DrawElements(WebGLenum mode, WebGLsizei count, WebGLenum type,
                       WebGLintptr byteOffset);
+    void DrawBuffers(const dom::Sequence<GLenum>& buffers);
     void Enable(WebGLenum cap);
     void EnableVertexAttribArray(WebGLuint index);
     void Flush() {
@@ -519,7 +522,8 @@ public:
     template<class ElementType>
     void TexImage2D(WebGLenum target, WebGLint level,
                     WebGLenum internalformat, WebGLenum format, WebGLenum type,
-                    const ElementType& elt, ErrorResult& rv) {
+                    ElementType& elt, ErrorResult& rv)
+    {
         if (!IsContextStable())
             return;
         nsRefPtr<gfxImageSurface> isurf;
@@ -556,7 +560,8 @@ public:
     template<class ElementType>
     void TexSubImage2D(WebGLenum target, WebGLint level,
                        WebGLint xoffset, WebGLint yoffset, WebGLenum format,
-                       WebGLenum type, const ElementType& elt, ErrorResult& rv) {
+                       WebGLenum type, ElementType& elt, ErrorResult& rv)
+    {
         if (!IsContextStable())
             return;
         nsRefPtr<gfxImageSurface> isurf;
@@ -892,11 +897,15 @@ protected:
     };
     nsTArray<nsRefPtr<WebGLExtensionBase> > mExtensions;
 
+    // enable an extension. the extension should not be enabled before.
+    void EnableExtension(WebGLExtensionID ext);
+
     // returns true if the extension has been enabled by calling getExtension.
     bool IsExtensionEnabled(WebGLExtensionID ext) const;
 
     // returns true if the extension is supported for this JSContext (this decides what getSupportedExtensions exposes)
     bool IsExtensionSupported(JSContext *cx, WebGLExtensionID ext) const;
+    bool IsExtensionSupported(WebGLExtensionID ext) const;
 
     nsTArray<WebGLenum> mCompressedTextureFormats;
 
@@ -969,8 +978,9 @@ protected:
         return nsLayoutUtils::SurfaceFromElement(aElement, flags);
     }
     template<class ElementType>
-    nsLayoutUtils::SurfaceFromElementResult SurfaceFromElement(const dom::NonNull<ElementType>& aElement) {
-      return SurfaceFromElement(aElement.get());
+    nsLayoutUtils::SurfaceFromElementResult SurfaceFromElement(ElementType& aElement)
+    {
+      return SurfaceFromElement(&aElement);
     }
 
     nsresult SurfaceFromElementResultToImageSurface(nsLayoutUtils::SurfaceFromElementResult& res,

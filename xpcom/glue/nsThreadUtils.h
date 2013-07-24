@@ -236,7 +236,7 @@ extern NS_COM_GLUE nsIThread *NS_GetCurrentThread();
 class NS_COM_GLUE nsRunnable : public nsIRunnable
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIRUNNABLE
 
   nsRunnable() {
@@ -251,7 +251,7 @@ protected:
 class NS_COM_GLUE nsCancelableRunnable : public nsICancelableRunnable
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIRUNNABLE
   NS_DECL_NSICANCELABLERUNNABLE
 
@@ -321,9 +321,9 @@ struct nsRunnableMethodTraits<R (C::*)(), Owning> {
   typedef nsRunnableMethod<C, R, Owning> base_type;
 };
 
-#ifdef HAVE_STDCALL
+#ifdef NS_HAVE_STDCALL
 template <class C, typename R, bool Owning>
-struct nsRunnableMethodTraits<R (__stdcall C::*)(), Owning> {
+struct nsRunnableMethodTraits<R (NS_STDCALL C::*)(), Owning> {
   typedef C class_type;
   typedef R return_type;
   typedef nsRunnableMethod<C, R, Owning> base_type;

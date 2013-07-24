@@ -44,10 +44,9 @@ public:
     WINXP_VERSION     = 0x501,
     WIN2K3_VERSION    = 0x502,
     VISTA_VERSION     = 0x600,
-    // WIN2K8_VERSION    = VISTA_VERSION,
     WIN7_VERSION      = 0x601,
-    // WIN2K8R2_VERSION  = WIN7_VERSION
-    WIN8_VERSION      = 0x602
+    WIN8_VERSION      = 0x602,
+    WIN8_1_VERSION    = 0x603
   };
   static WinVersion GetWindowsVersion();
 
@@ -297,7 +296,7 @@ class AsyncEncodeAndWriteIcon : public nsIRunnable
 {
 public:
   const bool mURLShortcut;
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIRUNNABLE
 
   // Warning: AsyncEncodeAndWriteIcon assumes ownership of the aData buffer passed in
@@ -321,7 +320,7 @@ private:
 class AsyncDeleteIconFromDisk : public nsIRunnable
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIRUNNABLE
 
   AsyncDeleteIconFromDisk(const nsAString &aIconPath);
@@ -334,7 +333,7 @@ private:
 class AsyncDeleteAllFaviconsFromDisk : public nsIRunnable
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIRUNNABLE
 
   AsyncDeleteAllFaviconsFromDisk();

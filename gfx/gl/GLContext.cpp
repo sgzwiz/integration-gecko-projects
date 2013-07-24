@@ -91,6 +91,8 @@ static const char *sExtensionNames[] = {
     "GL_APPLE_vertex_array_object",
     "GL_ARB_draw_buffers",
     "GL_EXT_draw_buffers",
+    "GL_EXT_gpu_shader4",
+    "GL_EXT_blend_minmax",
     nullptr
 };
 
@@ -139,147 +141,147 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
     mWorkAroundDriverBugs = gfxPlatform::GetPlatform()->WorkAroundDriverBugs();
 
     SymLoadStruct symbols[] = {
-        { (PRFuncPtr*) &mSymbols.fActiveTexture, { "ActiveTexture", "ActiveTextureARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fAttachShader, { "AttachShader", "AttachShaderARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fBindAttribLocation, { "BindAttribLocation", "BindAttribLocationARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fBindBuffer, { "BindBuffer", "BindBufferARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fBindTexture, { "BindTexture", "BindTextureARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fBlendColor, { "BlendColor", NULL } },
-        { (PRFuncPtr*) &mSymbols.fBlendEquation, { "BlendEquation", NULL } },
-        { (PRFuncPtr*) &mSymbols.fBlendEquationSeparate, { "BlendEquationSeparate", "BlendEquationSeparateEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fBlendFunc, { "BlendFunc", NULL } },
-        { (PRFuncPtr*) &mSymbols.fBlendFuncSeparate, { "BlendFuncSeparate", "BlendFuncSeparateEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fBufferData, { "BufferData", NULL } },
-        { (PRFuncPtr*) &mSymbols.fBufferSubData, { "BufferSubData", NULL } },
-        { (PRFuncPtr*) &mSymbols.fClear, { "Clear", NULL } },
-        { (PRFuncPtr*) &mSymbols.fClearColor, { "ClearColor", NULL } },
-        { (PRFuncPtr*) &mSymbols.fClearStencil, { "ClearStencil", NULL } },
-        { (PRFuncPtr*) &mSymbols.fColorMask, { "ColorMask", NULL } },
-        { (PRFuncPtr*) &mSymbols.fCompressedTexImage2D, {"CompressedTexImage2D", NULL} },
-        { (PRFuncPtr*) &mSymbols.fCompressedTexSubImage2D, {"CompressedTexSubImage2D", NULL} },
-        { (PRFuncPtr*) &mSymbols.fCullFace, { "CullFace", NULL } },
-        { (PRFuncPtr*) &mSymbols.fDetachShader, { "DetachShader", "DetachShaderARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fDepthFunc, { "DepthFunc", NULL } },
-        { (PRFuncPtr*) &mSymbols.fDepthMask, { "DepthMask", NULL } },
-        { (PRFuncPtr*) &mSymbols.fDisable, { "Disable", NULL } },
-        { (PRFuncPtr*) &mSymbols.fDisableVertexAttribArray, { "DisableVertexAttribArray", "DisableVertexAttribArrayARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fDrawArrays, { "DrawArrays", NULL } },
-        { (PRFuncPtr*) &mSymbols.fDrawElements, { "DrawElements", NULL } },
-        { (PRFuncPtr*) &mSymbols.fEnable, { "Enable", NULL } },
-        { (PRFuncPtr*) &mSymbols.fEnableVertexAttribArray, { "EnableVertexAttribArray", "EnableVertexAttribArrayARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fFinish, { "Finish", NULL } },
-        { (PRFuncPtr*) &mSymbols.fFlush, { "Flush", NULL } },
-        { (PRFuncPtr*) &mSymbols.fFrontFace, { "FrontFace", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetActiveAttrib, { "GetActiveAttrib", "GetActiveAttribARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetActiveUniform, { "GetActiveUniform", "GetActiveUniformARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetAttachedShaders, { "GetAttachedShaders", "GetAttachedShadersARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetAttribLocation, { "GetAttribLocation", "GetAttribLocationARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetIntegerv, { "GetIntegerv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetFloatv, { "GetFloatv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetBooleanv, { "GetBooleanv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetBufferParameteriv, { "GetBufferParameteriv", "GetBufferParameterivARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetError, { "GetError", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetProgramiv, { "GetProgramiv", "GetProgramivARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetProgramInfoLog, { "GetProgramInfoLog", "GetProgramInfoLogARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fTexParameteri, { "TexParameteri", NULL } },
-        { (PRFuncPtr*) &mSymbols.fTexParameteriv, { "TexParameteriv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fTexParameterf, { "TexParameterf", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetString, { "GetString", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetTexParameterfv, { "GetTexParameterfv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetTexParameteriv, { "GetTexParameteriv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetUniformfv, { "GetUniformfv", "GetUniformfvARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetUniformiv, { "GetUniformiv", "GetUniformivARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetUniformLocation, { "GetUniformLocation", "GetUniformLocationARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetVertexAttribfv, { "GetVertexAttribfv", "GetVertexAttribfvARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetVertexAttribiv, { "GetVertexAttribiv", "GetVertexAttribivARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetVertexAttribPointerv, { "GetVertexAttribPointerv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fHint, { "Hint", NULL } },
-        { (PRFuncPtr*) &mSymbols.fIsBuffer, { "IsBuffer", "IsBufferARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fIsEnabled, { "IsEnabled", NULL } },
-        { (PRFuncPtr*) &mSymbols.fIsProgram, { "IsProgram", "IsProgramARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fIsShader, { "IsShader", "IsShaderARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fIsTexture, { "IsTexture", "IsTextureARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fLineWidth, { "LineWidth", NULL } },
-        { (PRFuncPtr*) &mSymbols.fLinkProgram, { "LinkProgram", "LinkProgramARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fPixelStorei, { "PixelStorei", NULL } },
-        { (PRFuncPtr*) &mSymbols.fPolygonOffset, { "PolygonOffset", NULL } },
-        { (PRFuncPtr*) &mSymbols.fReadPixels, { "ReadPixels", NULL } },
-        { (PRFuncPtr*) &mSymbols.fSampleCoverage, { "SampleCoverage", NULL } },
-        { (PRFuncPtr*) &mSymbols.fScissor, { "Scissor", NULL } },
-        { (PRFuncPtr*) &mSymbols.fStencilFunc, { "StencilFunc", NULL } },
-        { (PRFuncPtr*) &mSymbols.fStencilFuncSeparate, { "StencilFuncSeparate", "StencilFuncSeparateEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fStencilMask, { "StencilMask", NULL } },
-        { (PRFuncPtr*) &mSymbols.fStencilMaskSeparate, { "StencilMaskSeparate", "StencilMaskSeparateEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fStencilOp, { "StencilOp", NULL } },
-        { (PRFuncPtr*) &mSymbols.fStencilOpSeparate, { "StencilOpSeparate", "StencilOpSeparateEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fTexImage2D, { "TexImage2D", NULL } },
-        { (PRFuncPtr*) &mSymbols.fTexSubImage2D, { "TexSubImage2D", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform1f, { "Uniform1f", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform1fv, { "Uniform1fv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform1i, { "Uniform1i", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform1iv, { "Uniform1iv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform2f, { "Uniform2f", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform2fv, { "Uniform2fv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform2i, { "Uniform2i", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform2iv, { "Uniform2iv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform3f, { "Uniform3f", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform3fv, { "Uniform3fv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform3i, { "Uniform3i", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform3iv, { "Uniform3iv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform4f, { "Uniform4f", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform4fv, { "Uniform4fv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform4i, { "Uniform4i", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniform4iv, { "Uniform4iv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniformMatrix2fv, { "UniformMatrix2fv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniformMatrix3fv, { "UniformMatrix3fv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUniformMatrix4fv, { "UniformMatrix4fv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fUseProgram, { "UseProgram", NULL } },
-        { (PRFuncPtr*) &mSymbols.fValidateProgram, { "ValidateProgram", NULL } },
-        { (PRFuncPtr*) &mSymbols.fVertexAttribPointer, { "VertexAttribPointer", NULL } },
-        { (PRFuncPtr*) &mSymbols.fVertexAttrib1f, { "VertexAttrib1f", NULL } },
-        { (PRFuncPtr*) &mSymbols.fVertexAttrib2f, { "VertexAttrib2f", NULL } },
-        { (PRFuncPtr*) &mSymbols.fVertexAttrib3f, { "VertexAttrib3f", NULL } },
-        { (PRFuncPtr*) &mSymbols.fVertexAttrib4f, { "VertexAttrib4f", NULL } },
-        { (PRFuncPtr*) &mSymbols.fVertexAttrib1fv, { "VertexAttrib1fv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fVertexAttrib2fv, { "VertexAttrib2fv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fVertexAttrib3fv, { "VertexAttrib3fv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fVertexAttrib4fv, { "VertexAttrib4fv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fViewport, { "Viewport", NULL } },
-        { (PRFuncPtr*) &mSymbols.fCompileShader, { "CompileShader", NULL } },
-        { (PRFuncPtr*) &mSymbols.fCopyTexImage2D, { "CopyTexImage2D", NULL } },
-        { (PRFuncPtr*) &mSymbols.fCopyTexSubImage2D, { "CopyTexSubImage2D", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetShaderiv, { "GetShaderiv", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetShaderInfoLog, { "GetShaderInfoLog", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetShaderSource, { "GetShaderSource", NULL } },
-        { (PRFuncPtr*) &mSymbols.fShaderSource, { "ShaderSource", NULL } },
-        { (PRFuncPtr*) &mSymbols.fVertexAttribPointer, { "VertexAttribPointer", NULL } },
-        { (PRFuncPtr*) &mSymbols.fBindFramebuffer, { "BindFramebuffer", "BindFramebufferEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fBindRenderbuffer, { "BindRenderbuffer", "BindRenderbufferEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fCheckFramebufferStatus, { "CheckFramebufferStatus", "CheckFramebufferStatusEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fFramebufferRenderbuffer, { "FramebufferRenderbuffer", "FramebufferRenderbufferEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fFramebufferTexture2D, { "FramebufferTexture2D", "FramebufferTexture2DEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGenerateMipmap, { "GenerateMipmap", "GenerateMipmapEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetFramebufferAttachmentParameteriv, { "GetFramebufferAttachmentParameteriv", "GetFramebufferAttachmentParameterivEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGetRenderbufferParameteriv, { "GetRenderbufferParameteriv", "GetRenderbufferParameterivEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fIsFramebuffer, { "IsFramebuffer", "IsFramebufferEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fIsRenderbuffer, { "IsRenderbuffer", "IsRenderbufferEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fRenderbufferStorage, { "RenderbufferStorage", "RenderbufferStorageEXT", NULL } },
+        { (PRFuncPtr*) &mSymbols.fActiveTexture, { "ActiveTexture", "ActiveTextureARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fAttachShader, { "AttachShader", "AttachShaderARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fBindAttribLocation, { "BindAttribLocation", "BindAttribLocationARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fBindBuffer, { "BindBuffer", "BindBufferARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fBindTexture, { "BindTexture", "BindTextureARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fBlendColor, { "BlendColor", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fBlendEquation, { "BlendEquation", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fBlendEquationSeparate, { "BlendEquationSeparate", "BlendEquationSeparateEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fBlendFunc, { "BlendFunc", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fBlendFuncSeparate, { "BlendFuncSeparate", "BlendFuncSeparateEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fBufferData, { "BufferData", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fBufferSubData, { "BufferSubData", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fClear, { "Clear", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fClearColor, { "ClearColor", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fClearStencil, { "ClearStencil", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fColorMask, { "ColorMask", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fCompressedTexImage2D, {"CompressedTexImage2D", nullptr} },
+        { (PRFuncPtr*) &mSymbols.fCompressedTexSubImage2D, {"CompressedTexSubImage2D", nullptr} },
+        { (PRFuncPtr*) &mSymbols.fCullFace, { "CullFace", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fDetachShader, { "DetachShader", "DetachShaderARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fDepthFunc, { "DepthFunc", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fDepthMask, { "DepthMask", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fDisable, { "Disable", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fDisableVertexAttribArray, { "DisableVertexAttribArray", "DisableVertexAttribArrayARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fDrawArrays, { "DrawArrays", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fDrawElements, { "DrawElements", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fEnable, { "Enable", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fEnableVertexAttribArray, { "EnableVertexAttribArray", "EnableVertexAttribArrayARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fFinish, { "Finish", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fFlush, { "Flush", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fFrontFace, { "FrontFace", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetActiveAttrib, { "GetActiveAttrib", "GetActiveAttribARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetActiveUniform, { "GetActiveUniform", "GetActiveUniformARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetAttachedShaders, { "GetAttachedShaders", "GetAttachedShadersARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetAttribLocation, { "GetAttribLocation", "GetAttribLocationARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetIntegerv, { "GetIntegerv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetFloatv, { "GetFloatv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetBooleanv, { "GetBooleanv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetBufferParameteriv, { "GetBufferParameteriv", "GetBufferParameterivARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetError, { "GetError", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetProgramiv, { "GetProgramiv", "GetProgramivARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetProgramInfoLog, { "GetProgramInfoLog", "GetProgramInfoLogARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fTexParameteri, { "TexParameteri", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fTexParameteriv, { "TexParameteriv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fTexParameterf, { "TexParameterf", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetString, { "GetString", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetTexParameterfv, { "GetTexParameterfv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetTexParameteriv, { "GetTexParameteriv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetUniformfv, { "GetUniformfv", "GetUniformfvARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetUniformiv, { "GetUniformiv", "GetUniformivARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetUniformLocation, { "GetUniformLocation", "GetUniformLocationARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetVertexAttribfv, { "GetVertexAttribfv", "GetVertexAttribfvARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetVertexAttribiv, { "GetVertexAttribiv", "GetVertexAttribivARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetVertexAttribPointerv, { "GetVertexAttribPointerv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fHint, { "Hint", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fIsBuffer, { "IsBuffer", "IsBufferARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fIsEnabled, { "IsEnabled", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fIsProgram, { "IsProgram", "IsProgramARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fIsShader, { "IsShader", "IsShaderARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fIsTexture, { "IsTexture", "IsTextureARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fLineWidth, { "LineWidth", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fLinkProgram, { "LinkProgram", "LinkProgramARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fPixelStorei, { "PixelStorei", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fPolygonOffset, { "PolygonOffset", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fReadPixels, { "ReadPixels", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fSampleCoverage, { "SampleCoverage", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fScissor, { "Scissor", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fStencilFunc, { "StencilFunc", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fStencilFuncSeparate, { "StencilFuncSeparate", "StencilFuncSeparateEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fStencilMask, { "StencilMask", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fStencilMaskSeparate, { "StencilMaskSeparate", "StencilMaskSeparateEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fStencilOp, { "StencilOp", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fStencilOpSeparate, { "StencilOpSeparate", "StencilOpSeparateEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fTexImage2D, { "TexImage2D", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fTexSubImage2D, { "TexSubImage2D", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform1f, { "Uniform1f", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform1fv, { "Uniform1fv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform1i, { "Uniform1i", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform1iv, { "Uniform1iv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform2f, { "Uniform2f", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform2fv, { "Uniform2fv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform2i, { "Uniform2i", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform2iv, { "Uniform2iv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform3f, { "Uniform3f", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform3fv, { "Uniform3fv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform3i, { "Uniform3i", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform3iv, { "Uniform3iv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform4f, { "Uniform4f", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform4fv, { "Uniform4fv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform4i, { "Uniform4i", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniform4iv, { "Uniform4iv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniformMatrix2fv, { "UniformMatrix2fv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniformMatrix3fv, { "UniformMatrix3fv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUniformMatrix4fv, { "UniformMatrix4fv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fUseProgram, { "UseProgram", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fValidateProgram, { "ValidateProgram", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fVertexAttribPointer, { "VertexAttribPointer", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fVertexAttrib1f, { "VertexAttrib1f", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fVertexAttrib2f, { "VertexAttrib2f", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fVertexAttrib3f, { "VertexAttrib3f", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fVertexAttrib4f, { "VertexAttrib4f", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fVertexAttrib1fv, { "VertexAttrib1fv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fVertexAttrib2fv, { "VertexAttrib2fv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fVertexAttrib3fv, { "VertexAttrib3fv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fVertexAttrib4fv, { "VertexAttrib4fv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fViewport, { "Viewport", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fCompileShader, { "CompileShader", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fCopyTexImage2D, { "CopyTexImage2D", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fCopyTexSubImage2D, { "CopyTexSubImage2D", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetShaderiv, { "GetShaderiv", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetShaderInfoLog, { "GetShaderInfoLog", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetShaderSource, { "GetShaderSource", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fShaderSource, { "ShaderSource", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fVertexAttribPointer, { "VertexAttribPointer", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fBindFramebuffer, { "BindFramebuffer", "BindFramebufferEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fBindRenderbuffer, { "BindRenderbuffer", "BindRenderbufferEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fCheckFramebufferStatus, { "CheckFramebufferStatus", "CheckFramebufferStatusEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fFramebufferRenderbuffer, { "FramebufferRenderbuffer", "FramebufferRenderbufferEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fFramebufferTexture2D, { "FramebufferTexture2D", "FramebufferTexture2DEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGenerateMipmap, { "GenerateMipmap", "GenerateMipmapEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetFramebufferAttachmentParameteriv, { "GetFramebufferAttachmentParameteriv", "GetFramebufferAttachmentParameterivEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGetRenderbufferParameteriv, { "GetRenderbufferParameteriv", "GetRenderbufferParameterivEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fIsFramebuffer, { "IsFramebuffer", "IsFramebufferEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fIsRenderbuffer, { "IsRenderbuffer", "IsRenderbufferEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fRenderbufferStorage, { "RenderbufferStorage", "RenderbufferStorageEXT", nullptr } },
 
-        { (PRFuncPtr*) &mSymbols.fGenBuffers, { "GenBuffers", "GenBuffersARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGenTextures, { "GenTextures", NULL } },
-        { (PRFuncPtr*) &mSymbols.fCreateProgram, { "CreateProgram", "CreateProgramARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fCreateShader, { "CreateShader", "CreateShaderARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGenFramebuffers, { "GenFramebuffers", "GenFramebuffersEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fGenRenderbuffers, { "GenRenderbuffers", "GenRenderbuffersEXT", NULL } },
+        { (PRFuncPtr*) &mSymbols.fGenBuffers, { "GenBuffers", "GenBuffersARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGenTextures, { "GenTextures", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fCreateProgram, { "CreateProgram", "CreateProgramARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fCreateShader, { "CreateShader", "CreateShaderARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGenFramebuffers, { "GenFramebuffers", "GenFramebuffersEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fGenRenderbuffers, { "GenRenderbuffers", "GenRenderbuffersEXT", nullptr } },
 
-        { (PRFuncPtr*) &mSymbols.fDeleteBuffers, { "DeleteBuffers", "DeleteBuffersARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fDeleteTextures, { "DeleteTextures", "DeleteTexturesARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fDeleteProgram, { "DeleteProgram", "DeleteProgramARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fDeleteShader, { "DeleteShader", "DeleteShaderARB", NULL } },
-        { (PRFuncPtr*) &mSymbols.fDeleteFramebuffers, { "DeleteFramebuffers", "DeleteFramebuffersEXT", NULL } },
-        { (PRFuncPtr*) &mSymbols.fDeleteRenderbuffers, { "DeleteRenderbuffers", "DeleteRenderbuffersEXT", NULL } },
+        { (PRFuncPtr*) &mSymbols.fDeleteBuffers, { "DeleteBuffers", "DeleteBuffersARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fDeleteTextures, { "DeleteTextures", "DeleteTexturesARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fDeleteProgram, { "DeleteProgram", "DeleteProgramARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fDeleteShader, { "DeleteShader", "DeleteShaderARB", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fDeleteFramebuffers, { "DeleteFramebuffers", "DeleteFramebuffersEXT", nullptr } },
+        { (PRFuncPtr*) &mSymbols.fDeleteRenderbuffers, { "DeleteRenderbuffers", "DeleteRenderbuffersEXT", nullptr } },
 
-        { NULL, { NULL } },
+        { nullptr, { nullptr } },
 
     };
 
@@ -289,10 +291,10 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
     if (mInitialized) {
         if (mIsGLES2) {
             SymLoadStruct symbols_ES2[] = {
-                { (PRFuncPtr*) &mSymbols.fGetShaderPrecisionFormat, { "GetShaderPrecisionFormat", NULL } },
-                { (PRFuncPtr*) &mSymbols.fClearDepthf, { "ClearDepthf", NULL } },
-                { (PRFuncPtr*) &mSymbols.fDepthRangef, { "DepthRangef", NULL } },
-                { NULL, { NULL } },
+                { (PRFuncPtr*) &mSymbols.fGetShaderPrecisionFormat, { "GetShaderPrecisionFormat", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fClearDepthf, { "ClearDepthf", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fDepthRangef, { "DepthRangef", nullptr } },
+                { nullptr, { nullptr } },
             };
 
             if (!LoadSymbols(&symbols_ES2[0], trygl, prefix)) {
@@ -301,22 +303,22 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
             }
         } else {
             SymLoadStruct symbols_desktop[] = {
-                { (PRFuncPtr*) &mSymbols.fClearDepth, { "ClearDepth", NULL } },
-                { (PRFuncPtr*) &mSymbols.fDepthRange, { "DepthRange", NULL } },
-                { (PRFuncPtr*) &mSymbols.fReadBuffer, { "ReadBuffer", NULL } },
-                { (PRFuncPtr*) &mSymbols.fMapBuffer, { "MapBuffer", NULL } },
-                { (PRFuncPtr*) &mSymbols.fUnmapBuffer, { "UnmapBuffer", NULL } },
-                { (PRFuncPtr*) &mSymbols.fPointParameterf, { "PointParameterf", NULL } },
-                { (PRFuncPtr*) &mSymbols.fBeginQuery, { "BeginQuery", NULL } },
-                { (PRFuncPtr*) &mSymbols.fGetQueryObjectuiv, { "GetQueryObjectuiv", NULL } },
-                { (PRFuncPtr*) &mSymbols.fGenQueries, { "GenQueries", NULL } },
-                { (PRFuncPtr*) &mSymbols.fDeleteQueries, { "DeleteQueries", NULL } },
-                { (PRFuncPtr*) &mSymbols.fGetQueryiv, { "GetQueryiv", NULL } },
-                { (PRFuncPtr*) &mSymbols.fGetQueryObjectiv, { "GetQueryObjectiv", NULL } },
-                { (PRFuncPtr*) &mSymbols.fEndQuery, { "EndQuery", NULL } },
-                { (PRFuncPtr*) &mSymbols.fDrawBuffer, { "DrawBuffer", NULL } },
-                { (PRFuncPtr*) &mSymbols.fDrawBuffers, { "DrawBuffers", NULL } },
-                { NULL, { NULL } },
+                { (PRFuncPtr*) &mSymbols.fClearDepth, { "ClearDepth", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fDepthRange, { "DepthRange", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fReadBuffer, { "ReadBuffer", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fMapBuffer, { "MapBuffer", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fUnmapBuffer, { "UnmapBuffer", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fPointParameterf, { "PointParameterf", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fBeginQuery, { "BeginQuery", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fGetQueryObjectuiv, { "GetQueryObjectuiv", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fGenQueries, { "GenQueries", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fDeleteQueries, { "DeleteQueries", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fGetQueryiv, { "GetQueryiv", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fGetQueryObjectiv, { "GetQueryObjectiv", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fEndQuery, { "EndQuery", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fDrawBuffer, { "DrawBuffer", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fDrawBuffers, { "DrawBuffers", nullptr } },
+                { nullptr, { nullptr } },
             };
 
             if (!LoadSymbols(&symbols_desktop[0], trygl, prefix)) {
@@ -625,24 +627,11 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
 #ifdef XP_MACOSX
         if (mWorkAroundDriverBugs) {
             if (mVendor == VendorIntel) {
-                SInt32 major, minor;
-                OSErr err1 = ::Gestalt(gestaltSystemVersionMajor, &major);
-                OSErr err2 = ::Gestalt(gestaltSystemVersionMinor, &minor);
-
-                // For 2D textures, see bug 737182 for the original restriction to 4K and
-                // see bug 807096 for why we further restricted it to 2K on < 10.8
-                // For good measure, we align renderbuffers on what we do for 2D textures
-                if (err1 != noErr || err2 != noErr ||
-                    major < 10 || (major == 10 && minor < 8)) {
-                    mMaxTextureSize        = std::min(mMaxTextureSize, 2048);
-                    mMaxRenderbufferSize   = std::min(mMaxRenderbufferSize, 2048);
-                }
-                else {
-                    mMaxTextureSize        = std::min(mMaxTextureSize, 4096);
-                    mMaxRenderbufferSize   = std::min(mMaxRenderbufferSize, 4096);
-                }
-                // For cube map textures, see bug 684882.
+                // see bug 737182 for 2D textures, bug 684882 for cube map textures.
+                mMaxTextureSize        = std::min(mMaxTextureSize,        4096);
                 mMaxCubeMapTextureSize = std::min(mMaxCubeMapTextureSize, 512);
+                // for good measure, we align renderbuffers on what we do for 2D textures
+                mMaxRenderbufferSize   = std::min(mMaxRenderbufferSize,   4096);
                 mNeedsTextureSizeChecks = true;
             } else if (mVendor == VendorNVIDIA) {
                 SInt32 major, minor;
@@ -651,9 +640,17 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
 
                 if (err1 != noErr || err2 != noErr ||
                     major < 10 || (major == 10 && minor < 8)) {
+                    // See bug 877949.
                     mMaxTextureSize = std::min(mMaxTextureSize, 4096);
-                    mMaxRenderbufferSize   = std::min(mMaxRenderbufferSize, 4096);
+                    mMaxRenderbufferSize = std::min(mMaxRenderbufferSize, 4096);
                 }
+                else {
+                    // See bug 879656.  8192 fails, 8191 works.
+                    mMaxTextureSize = std::min(mMaxTextureSize, 8191);
+                    mMaxRenderbufferSize = std::min(mMaxRenderbufferSize, 8191);
+                }
+                // Part of the bug 879656, but it also doesn't hurt the 877949
+                mNeedsTextureSizeChecks = true;
             }
         }
 #endif
@@ -1170,7 +1167,7 @@ GLContext::IsFramebufferComplete(GLuint fb, GLenum* pStatus)
 void
 GLContext::AttachBuffersToFB(GLuint colorTex, GLuint colorRB,
                              GLuint depthRB, GLuint stencilRB,
-                             GLuint fb)
+                             GLuint fb, GLenum target)
 {
     MOZ_ASSERT(fb);
     MOZ_ASSERT( !(colorTex && colorRB) );
@@ -1180,9 +1177,11 @@ GLContext::AttachBuffersToFB(GLuint colorTex, GLuint colorRB,
 
     if (colorTex) {
         MOZ_ASSERT(fIsTexture(colorTex));
+        MOZ_ASSERT(target == LOCAL_GL_TEXTURE_2D ||
+                   target == LOCAL_GL_TEXTURE_RECTANGLE_ARB);
         fFramebufferTexture2D(LOCAL_GL_FRAMEBUFFER,
                               LOCAL_GL_COLOR_ATTACHMENT0,
-                              LOCAL_GL_TEXTURE_2D,
+                              target,
                               colorTex,
                               0);
     } else if (colorRB) {
@@ -1582,8 +1581,8 @@ GLContext::ReadTextureImage(GLuint aTexture,
 
     vs = fCreateShader(LOCAL_GL_VERTEX_SHADER);
     fs = fCreateShader(LOCAL_GL_FRAGMENT_SHADER);
-    fShaderSource(vs, 1, (const GLchar**) &vShader, NULL);
-    fShaderSource(fs, 1, (const GLchar**) &fShader, NULL);
+    fShaderSource(vs, 1, (const GLchar**) &vShader, nullptr);
+    fShaderSource(fs, 1, (const GLchar**) &fShader, nullptr);
     fCompileShader(vs);
     fCompileShader(fs);
     prog = fCreateProgram();
@@ -2013,8 +2012,8 @@ GLContext::BlitTextureImage(TextureImage *aSrc, const nsIntRect& aSrcRect,
         } while (aSrc->NextTile());
     } while (aDst->NextTile());
 
-    fVertexAttribPointer(0, 2, LOCAL_GL_FLOAT, LOCAL_GL_FALSE, 0, NULL);
-    fVertexAttribPointer(1, 2, LOCAL_GL_FLOAT, LOCAL_GL_FALSE, 0, NULL);
+    fVertexAttribPointer(0, 2, LOCAL_GL_FLOAT, LOCAL_GL_FALSE, 0, nullptr);
+    fVertexAttribPointer(1, 2, LOCAL_GL_FLOAT, LOCAL_GL_FALSE, 0, nullptr);
 
     // unbind the previous texture from the framebuffer
     SetBlitFramebufferForDestTexture(0);
@@ -2026,21 +2025,23 @@ GLContext::BlitTextureImage(TextureImage *aSrc, const nsIntRect& aSrcRect,
 }
 
 static unsigned int
-DataOffset(gfxImageSurface *aSurf, const nsIntPoint &aPoint)
+DataOffset(const nsIntPoint &aPoint, int32_t aStride, gfxASurface::gfxImageFormat aFormat)
 {
-  unsigned int data = aPoint.y * aSurf->Stride();
-  data += aPoint.x * gfxASurface::BytePerPixelFromFormat(aSurf->Format());
+  unsigned int data = aPoint.y * aStride;
+  data += aPoint.x * gfxASurface::BytePerPixelFromFormat(aFormat);
   return data;
 }
 
 GLContext::SurfaceFormat
-GLContext::UploadSurfaceToTexture(gfxASurface *aSurface,
-                                  const nsIntRegion& aDstRegion,
-                                  GLuint& aTexture,
-                                  bool aOverwrite,
-                                  const nsIntPoint& aSrcPoint,
-                                  bool aPixelBuffer,
-                                  GLenum aTextureUnit)
+GLContext::UploadImageDataToTexture(unsigned char* aData,
+                                    int32_t aStride,
+                                    gfxASurface::gfxImageFormat aFormat,
+                                    const nsIntRegion& aDstRegion,
+                                    GLuint& aTexture,
+                                    bool aOverwrite,
+                                    bool aPixelBuffer,
+                                    GLenum aTextureUnit,
+                                    GLenum aTextureTarget)
 {
     bool textureInited = aOverwrite ? false : true;
     MakeCurrent();
@@ -2048,22 +2049,22 @@ GLContext::UploadSurfaceToTexture(gfxASurface *aSurface,
 
     if (!aTexture) {
         fGenTextures(1, &aTexture);
-        fBindTexture(LOCAL_GL_TEXTURE_2D, aTexture);
-        fTexParameteri(LOCAL_GL_TEXTURE_2D,
+        fBindTexture(aTextureTarget, aTexture);
+        fTexParameteri(aTextureTarget,
                        LOCAL_GL_TEXTURE_MIN_FILTER,
                        LOCAL_GL_LINEAR);
-        fTexParameteri(LOCAL_GL_TEXTURE_2D,
+        fTexParameteri(aTextureTarget,
                        LOCAL_GL_TEXTURE_MAG_FILTER,
                        LOCAL_GL_LINEAR);
-        fTexParameteri(LOCAL_GL_TEXTURE_2D,
+        fTexParameteri(aTextureTarget,
                        LOCAL_GL_TEXTURE_WRAP_S,
                        LOCAL_GL_CLAMP_TO_EDGE);
-        fTexParameteri(LOCAL_GL_TEXTURE_2D,
+        fTexParameteri(aTextureTarget,
                        LOCAL_GL_TEXTURE_WRAP_T,
                        LOCAL_GL_CLAMP_TO_EDGE);
         textureInited = false;
     } else {
-        fBindTexture(LOCAL_GL_TEXTURE_2D, aTexture);
+        fBindTexture(aTextureTarget, aTexture);
     }
 
     nsIntRegion paintRegion;
@@ -2073,8 +2074,119 @@ GLContext::UploadSurfaceToTexture(gfxASurface *aSurface,
         paintRegion = aDstRegion;
     }
 
+    GLenum format;
+    GLenum internalFormat;
+    GLenum type;
+    int32_t pixelSize = gfxASurface::BytePerPixelFromFormat(aFormat);
+    SurfaceFormat surfaceFormat;
+
+    MOZ_ASSERT(GetPreferredARGB32Format() == LOCAL_GL_BGRA ||
+               GetPreferredARGB32Format() == LOCAL_GL_RGBA);
+    switch (aFormat) {
+        case gfxASurface::ImageFormatARGB32:
+            if (GetPreferredARGB32Format() == LOCAL_GL_BGRA) {
+              format = LOCAL_GL_BGRA;
+              surfaceFormat = FORMAT_R8G8B8A8;
+              type = LOCAL_GL_UNSIGNED_INT_8_8_8_8_REV;
+            } else {
+              format = LOCAL_GL_RGBA;
+              surfaceFormat = FORMAT_B8G8R8A8;
+              type = LOCAL_GL_UNSIGNED_BYTE;
+            }
+            internalFormat = LOCAL_GL_RGBA;
+            break;
+        case gfxASurface::ImageFormatRGB24:
+            // Treat RGB24 surfaces as RGBA32 except for the surface
+            // format used.
+            if (GetPreferredARGB32Format() == LOCAL_GL_BGRA) {
+              format = LOCAL_GL_BGRA;
+              surfaceFormat = FORMAT_R8G8B8X8;
+              type = LOCAL_GL_UNSIGNED_INT_8_8_8_8_REV;
+            } else {
+              format = LOCAL_GL_RGBA;
+              surfaceFormat = FORMAT_B8G8R8X8;
+              type = LOCAL_GL_UNSIGNED_BYTE;
+            }
+            internalFormat = LOCAL_GL_RGBA;
+            break;
+        case gfxASurface::ImageFormatRGB16_565:
+            internalFormat = format = LOCAL_GL_RGB;
+            type = LOCAL_GL_UNSIGNED_SHORT_5_6_5;
+            surfaceFormat = FORMAT_R5G6B5;
+            break;
+        case gfxASurface::ImageFormatA8:
+            internalFormat = format = LOCAL_GL_LUMINANCE;
+            type = LOCAL_GL_UNSIGNED_BYTE;
+            // We don't have a specific luminance shader
+            surfaceFormat = FORMAT_A8;
+            break;
+        default:
+            NS_ASSERTION(false, "Unhandled image surface format!");
+            format = 0;
+            type = 0;
+            surfaceFormat = FORMAT_UNKNOWN;
+    }
+
+    nsIntRegionRectIterator iter(paintRegion);
+    const nsIntRect *iterRect;
+
+    // Top left point of the region's bounding rectangle.
+    nsIntPoint topLeft = paintRegion.GetBounds().TopLeft();
+
+    while ((iterRect = iter.Next())) {
+        // The inital data pointer is at the top left point of the region's
+        // bounding rectangle. We need to find the offset of this rect
+        // within the region and adjust the data pointer accordingly.
+        unsigned char *rectData =
+            aData + DataOffset(iterRect->TopLeft() - topLeft, aStride, aFormat);
+
+        NS_ASSERTION(textureInited || (iterRect->x == 0 && iterRect->y == 0),
+                     "Must be uploading to the origin when we don't have an existing texture");
+
+        if (textureInited && CanUploadSubTextures()) {
+            TexSubImage2D(aTextureTarget,
+                          0,
+                          iterRect->x,
+                          iterRect->y,
+                          iterRect->width,
+                          iterRect->height,
+                          aStride,
+                          pixelSize,
+                          format,
+                          type,
+                          rectData);
+        } else {
+            TexImage2D(aTextureTarget,
+                       0,
+                       internalFormat,
+                       iterRect->width,
+                       iterRect->height,
+                       aStride,
+                       pixelSize,
+                       0,
+                       format,
+                       type,
+                       rectData);
+        }
+
+    }
+
+    return surfaceFormat;
+}
+
+GLContext::SurfaceFormat
+GLContext::UploadSurfaceToTexture(gfxASurface *aSurface,
+                                  const nsIntRegion& aDstRegion,
+                                  GLuint& aTexture,
+                                  bool aOverwrite,
+                                  const nsIntPoint& aSrcPoint,
+                                  bool aPixelBuffer,
+                                  GLenum aTextureUnit,
+                                  GLenum aTextureTarget)
+{
+
     nsRefPtr<gfxImageSurface> imageSurface = aSurface->GetAsImageSurface();
-    unsigned char* data = NULL;
+    unsigned char* data = nullptr;
 
     if (!imageSurface ||
         (imageSurface->Format() != gfxASurface::ImageFormatARGB32 &&
@@ -2101,94 +2213,56 @@ GLContext::UploadSurfaceToTexture(gfxASurface *aSurface,
         if (!aPixelBuffer) {
               data = imageSurface->Data();
         }
-        data += DataOffset(imageSurface, aSrcPoint);
+        data += DataOffset(aSrcPoint, imageSurface->Stride(),
+                           imageSurface->Format());
     }
 
     MOZ_ASSERT(imageSurface);
     imageSurface->Flush();
 
-    GLenum format;
-    GLenum type;
-    int32_t pixelSize = gfxASurface::BytePerPixelFromFormat(imageSurface->Format());
-    SurfaceFormat surfaceFormat;
+    return UploadImageDataToTexture(data,
+                                    imageSurface->Stride(),
+                                    imageSurface->Format(),
+                                    aDstRegion, aTexture, aOverwrite,
+                                    aPixelBuffer, aTextureUnit, aTextureTarget);
+}
 
-    switch (imageSurface->Format()) {
-        case gfxASurface::ImageFormatARGB32:
-            format = LOCAL_GL_RGBA;
-            type = LOCAL_GL_UNSIGNED_BYTE;
-            surfaceFormat = FORMAT_B8G8R8A8;
-            break;
-        case gfxASurface::ImageFormatRGB24:
-            // Treat RGB24 surfaces as RGBA32 except for the shader
-            // program used.
-            format = LOCAL_GL_RGBA;
-            type = LOCAL_GL_UNSIGNED_BYTE;
-            surfaceFormat = FORMAT_B8G8R8X8;
-            break;
-        case gfxASurface::ImageFormatRGB16_565:
-            format = LOCAL_GL_RGB;
-            type = LOCAL_GL_UNSIGNED_SHORT_5_6_5;
-            surfaceFormat = FORMAT_R5G6B5;
-            break;
-        case gfxASurface::ImageFormatA8:
-            format = LOCAL_GL_LUMINANCE;
-            type = LOCAL_GL_UNSIGNED_BYTE;
-            surfaceFormat = FORMAT_A8;
-            break;
+static gfxASurface::gfxImageFormat
+ImageFormatForSurfaceFormat(gfx::SurfaceFormat aFormat)
+{
+    switch (aFormat) {
+        case gfx::FORMAT_B8G8R8A8:
+            return gfxASurface::ImageFormatARGB32;
+        case gfx::FORMAT_B8G8R8X8:
+            return gfxASurface::ImageFormatRGB24;
+        case gfx::FORMAT_R5G6B5:
+            return gfxASurface::ImageFormatRGB16_565;
+        case gfx::FORMAT_A8:
+            return gfxASurface::ImageFormatA8;
         default:
-            NS_ASSERTION(false, "Unhandled image surface format!");
-            format = 0;
-            type = 0;
-            surfaceFormat = FORMAT_UNKNOWN;
+            return gfxASurface::ImageFormatUnknown;
     }
+}
 
-    int32_t stride = imageSurface->Stride();
-
-    nsIntRegionRectIterator iter(paintRegion);
-    const nsIntRect *iterRect;
-
-    // Top left point of the region's bounding rectangle.
-    nsIntPoint topLeft = paintRegion.GetBounds().TopLeft();
-
-    while ((iterRect = iter.Next())) {
-        // The inital data pointer is at the top left point of the region's
-        // bounding rectangle. We need to find the offset of this rect
-        // within the region and adjust the data pointer accordingly.
-        unsigned char *rectData =
-            data + DataOffset(imageSurface, iterRect->TopLeft() - topLeft);
-
-        NS_ASSERTION(textureInited || (iterRect->x == 0 && iterRect->y == 0),
-                     "Must be uploading to the origin when we don't have an existing texture");
-
-        if (textureInited && CanUploadSubTextures()) {
-            TexSubImage2D(LOCAL_GL_TEXTURE_2D,
-                          0,
-                          iterRect->x,
-                          iterRect->y,
-                          iterRect->width,
-                          iterRect->height,
-                          stride,
-                          pixelSize,
-                          format,
-                          type,
-                          rectData);
-        } else {
-            TexImage2D(LOCAL_GL_TEXTURE_2D,
-                       0,
-                       format,
-                       iterRect->width,
-                       iterRect->height,
-                       stride,
-                       pixelSize,
-                       0,
-                       format,
-                       type,
-                       rectData);
-        }
-
-    }
-
-    return surfaceFormat;
+GLContext::SurfaceFormat
+GLContext::UploadSurfaceToTexture(gfx::DataSourceSurface *aSurface,
+                                  const nsIntRegion& aDstRegion,
+                                  GLuint& aTexture,
+                                  bool aOverwrite,
+                                  const nsIntPoint& aSrcPoint,
+                                  bool aPixelBuffer,
+                                  GLenum aTextureUnit,
+                                  GLenum aTextureTarget)
+{
+    unsigned char* data = aPixelBuffer ? nullptr : aSurface->GetData();
+    int32_t stride = aSurface->Stride();
+    gfxASurface::gfxImageFormat format =
+        ImageFormatForSurfaceFormat(aSurface->GetFormat());
+    data += DataOffset(aSrcPoint, stride, format);
+    return UploadImageDataToTexture(data, stride, format,
+                                    aDstRegion, aTexture, aOverwrite,
+                                    aPixelBuffer, aTextureUnit,
+                                    aTextureTarget);
 }
 
 static GLint GetAddressAlignment(ptrdiff_t aAddress)
@@ -2275,7 +2349,7 @@ GLContext::TexImage2D(GLenum target, GLint level, GLint internalformat,
                         border,
                         format,
                         type,
-                        NULL);
+                        nullptr);
             TexSubImage2D(target,
                           level,
                           0,
@@ -2662,8 +2736,8 @@ GLContext::UseBlitProgram()
         "  gl_FragColor = texture2D(uSrcTexture, vTexCoord);"
         "}";
 
-    fShaderSource(shaders[0], 1, (const GLchar**) &blitVSSrc, NULL);
-    fShaderSource(shaders[1], 1, (const GLchar**) &blitFSSrc, NULL);
+    fShaderSource(shaders[0], 1, (const GLchar**) &blitVSSrc, nullptr);
+    fShaderSource(shaders[1], 1, (const GLchar**) &blitFSSrc, nullptr);
 
     for (int i = 0; i < 2; ++i) {
         GLint success, len = 0;
@@ -2884,7 +2958,7 @@ ReportArrayContents(const char *title, const nsTArray<GLContext::NamedResource>&
     nsTArray<GLContext::NamedResource> copy(aArray);
     copy.Sort();
 
-    GLContext *lastContext = NULL;
+    GLContext *lastContext = nullptr;
     for (uint32_t i = 0; i < copy.Length(); ++i) {
         if (lastContext != copy[i].origin) {
             if (lastContext)

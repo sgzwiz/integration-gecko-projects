@@ -83,6 +83,7 @@
 #include "nsDeckFrame.h"
 #include "nsTableFrame.h"
 #include "nsSubDocumentFrame.h"
+#include "nsSVGTextFrame2.h"
 
 #include "gfxContext.h"
 #include "nsRenderingContext.h"
@@ -517,7 +518,8 @@ nsFrame::Init(nsIContent*      aContent,
     mState |= state & (NS_FRAME_INDEPENDENT_SELECTION |
                        NS_FRAME_GENERATED_CONTENT |
                        NS_FRAME_IS_SVG_TEXT |
-                       NS_FRAME_IN_POPUP);
+                       NS_FRAME_IN_POPUP |
+                       NS_FRAME_IS_NONDISPLAY);
   }
   const nsStyleDisplay *disp = StyleDisplay();
   if (disp->HasTransform(this)) {
@@ -696,6 +698,26 @@ nsFrame::GetOffsets(int32_t &aStart, int32_t &aEnd) const
 /* virtual */ void
 nsFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
 {
+  if (IsSVGText()) {
+    nsSVGTextFrame2* svgTextFrame = static_cast<nsSVGTextFrame2*>(
+        nsLayoutUtils::GetClosestFrameOfType(this, nsGkAtoms::svgTextFrame2));
+    nsIFrame* anonBlock = svgTextFrame->GetFirstPrincipalChild();
+    // Just as in nsSVGTextFrame2::DidSetStyleContext, we need to ensure that
+    // any non-display nsSVGTextFrame2s get reflowed when a child text frame
+    // gets new style.  We don't need to do this when the frame has not yet
+    // been reflowed, since that will happen soon anyway.
+    //
+    // Note that we must check NS_FRAME_FIRST_REFLOW on our nsSVGTextFrame2's
+    // anonymous block frame rather than our self, since NS_FRAME_FIRST_REFLOW
+    // may be set on us if we're a new frame that has been inserted after the
+    // document's first reflow. (In which case this DidSetStyleContext call may
+    // be happening under frame construction under a Reflow() call.)
+    if (anonBlock && !(anonBlock->GetStateBits() & NS_FRAME_FIRST_REFLOW) &&
+        (svgTextFrame->GetStateBits() & NS_FRAME_IS_NONDISPLAY)) {
+      svgTextFrame->ScheduleReflowSVGNonDisplayText();
+    }
+  }
+
   ImageLoader* imageLoader = PresContext()->Document()->StyleImageLoader();
 
   // If the old context had a background image image and new context
@@ -1468,23 +1490,20 @@ nsIFrame::GetCaretColorAt(int32_t aOffset)
   return StyleColor()->mColor;
 }
 
-void
-nsFrame::DisplayBackgroundUnconditional(nsDisplayListBuilder*       aBuilder,
-                                        const nsDisplayListSet&     aLists,
-                                        bool                        aForceBackground,
-                                        nsDisplayBackgroundImage** aBackground)
+bool
+nsFrame::DisplayBackgroundUnconditional(nsDisplayListBuilder* aBuilder,
+                                        const nsDisplayListSet& aLists,
+                                        bool aForceBackground)
 {
-  *aBackground = nullptr;
-
   // Here we don't try to detect background propagation. Frames that might
   // receive a propagated background should just set aForceBackground to
   // true.
   if (aBuilder->IsForEventDelivery() || aForceBackground ||
       !StyleBackground()->IsTransparent() || StyleDisplay()->mAppearance) {
-    nsDisplayBackgroundImage::AppendBackgroundItemsToTop(aBuilder, this,
-                                                         aLists.BorderBackground(),
-                                                         aBackground);
+    return nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
+        aBuilder, this, aLists.BorderBackground());
   }
+  return false;
 }
 
 void
@@ -1504,8 +1523,8 @@ nsFrame::DisplayBorderBackgroundOutline(nsDisplayListBuilder*   aBuilder,
       nsDisplayBoxShadowOuter(aBuilder, this));
   }
 
-  nsDisplayBackgroundImage* bg;
-  DisplayBackgroundUnconditional(aBuilder, aLists, aForceBackground, &bg);
+  bool bgIsThemed = DisplayBackgroundUnconditional(aBuilder, aLists,
+                                                   aForceBackground);
 
   if (shadows && shadows->HasShadowWithInset(true)) {
     aLists.BorderBackground()->AppendNewToTop(new (aBuilder)
@@ -1514,7 +1533,7 @@ nsFrame::DisplayBorderBackgroundOutline(nsDisplayListBuilder*   aBuilder,
 
   // If there's a themed background, we should not create a border item.
   // It won't be rendered.
-  if ((!bg || !bg->IsThemed()) && StyleBorder()->HasBorder()) {
+  if (!bgIsThemed && StyleBorder()->HasBorder()) {
     aLists.BorderBackground()->AppendNewToTop(new (aBuilder)
       nsDisplayBorder(aBuilder, this));
   }
@@ -5107,7 +5126,7 @@ nsIFrame::GetPreEffectsVisualOverflowRect() const
 nsFrame::UpdateOverflow()
 {
   MOZ_ASSERT(!(mState & NS_FRAME_SVG_LAYOUT) ||
-             !(mState & NS_STATE_SVG_NONDISPLAY_CHILD),
+             !(mState & NS_FRAME_IS_NONDISPLAY),
              "Non-display SVG do not maintain visual overflow rects");
 
   nsRect rect(nsPoint(0, 0), GetSize());
@@ -6774,7 +6793,7 @@ nsIFrame::FinishAndStoreOverflow(nsOverflowAreas& aOverflowAreas,
                                  nsSize aNewSize, nsSize* aOldSize)
 {
   NS_ASSERTION(!((GetStateBits() & NS_FRAME_SVG_LAYOUT) &&
-                 (GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD)),
+                 (GetStateBits() & NS_FRAME_IS_NONDISPLAY)),
                "Don't call - overflow rects not maintained on these SVG frames");
 
   nsRect bounds(nsPoint(0, 0), aNewSize);
@@ -6921,7 +6940,7 @@ nsIFrame::RecomputePerspectiveChildrenOverflow(const nsStyleContext* aStartStyle
     for (; !childFrames.AtEnd(); childFrames.Next()) {
       nsIFrame* child = childFrames.get();
       if ((child->GetStateBits() & NS_FRAME_SVG_LAYOUT) &&
-          (child->GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD)) {
+          (child->GetStateBits() & NS_FRAME_IS_NONDISPLAY)) {
         continue; // frame does not maintain overflow rects
       }
       if (child->HasPerspective()) {
@@ -6971,7 +6990,7 @@ RecomputePreserve3DChildrenOverflow(nsIFrame* aFrame, const nsRect* aBounds)
     for (; !childFrames.AtEnd(); childFrames.Next()) {
       nsIFrame* child = childFrames.get();
       if ((child->GetStateBits() & NS_FRAME_SVG_LAYOUT) &&
-          (child->GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD)) {
+          (child->GetStateBits() & NS_FRAME_IS_NONDISPLAY)) {
         continue; // frame does not maintain overflow rects
       }
       if (child->Preserves3DChildren()) {

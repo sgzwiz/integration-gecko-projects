@@ -553,11 +553,11 @@ CreateInterfacePrototypeObject(JSContext* cx, JS::Handle<JSObject*> global,
 void
 CreateInterfaceObjects(JSContext* cx, JS::Handle<JSObject*> global,
                        JS::Handle<JSObject*> protoProto,
-                       JSClass* protoClass, JSObject** protoCache,
+                       JSClass* protoClass, JS::Heap<JSObject*>* protoCache,
                        JS::Handle<JSObject*> constructorProto,
                        JSClass* constructorClass, const JSNativeHolder* constructor,
                        unsigned ctorNargs, const NamedConstructor* namedConstructors,
-                       JSObject** constructorCache, const DOMClass* domClass,
+                       JS::Heap<JSObject*>* constructorCache, const DOMClass* domClass,
                        const NativeProperties* properties,
                        const NativeProperties* chromeOnlyProperties,
                        const char* name)
@@ -990,7 +990,7 @@ ResolvePrototypeOrConstructor(JSContext* cx, JS::Handle<JSObject*> wrapper,
   JS::Rooted<JSObject*> global(cx, js::GetGlobalForObjectCrossCompartment(obj));
   {
     JSAutoCompartment ac(cx, global);
-    JSObject** protoAndIfaceArray = GetProtoAndIfaceArray(global);
+    JS::Heap<JSObject*>* protoAndIfaceArray = GetProtoAndIfaceArray(global);
     JSObject* protoOrIface = protoAndIfaceArray[protoAndIfaceArrayIndex];
     if (!protoOrIface) {
       return false;
@@ -1350,7 +1350,7 @@ GetXrayExpandoChain(JSObject* obj)
   JS::Value v;
   if (IsDOMClass(clasp) || IsDOMIfaceAndProtoClass(clasp)) {
     v = js::GetReservedSlot(obj, DOM_XRAY_EXPANDO_SLOT);
-  } else if (js::IsObjectProxyClass(clasp) || js::IsFunctionProxyClass(clasp)) {
+  } else if (js::IsProxyClass(clasp)) {
     MOZ_ASSERT(js::GetProxyHandler(obj)->family() == ProxyFamily());
     v = js::GetProxyExtra(obj, JSPROXYSLOT_XRAY_EXPANDO);
   } else {
@@ -1367,7 +1367,7 @@ SetXrayExpandoChain(JSObject* obj, JSObject* chain)
   js::Class* clasp = js::GetObjectClass(obj);
   if (IsDOMClass(clasp) || IsDOMIfaceAndProtoClass(clasp)) {
     js::SetReservedSlot(obj, DOM_XRAY_EXPANDO_SLOT, v);
-  } else if (js::IsObjectProxyClass(clasp) || js::IsFunctionProxyClass(clasp)) {
+  } else if (js::IsProxyClass(clasp)) {
     MOZ_ASSERT(js::GetProxyHandler(obj)->family() == ProxyFamily());
     js::SetProxyExtra(obj, JSPROXYSLOT_XRAY_EXPANDO, v);
   } else {
@@ -1792,17 +1792,6 @@ ReportLenientThisUnwrappingFailure(JSContext* cx, JS::Handle<JSObject*> obj)
   if (window && window->GetDoc()) {
     window->GetDoc()->WarnOnceAbout(nsIDocument::eLenientThis);
   }
-  return true;
-}
-
-bool
-RegisterForDeferredFinalization(DeferredFinalizeStartFunction start,
-                                DeferredFinalizeFunction run)
-{
-  XPCJSRuntime *rt = nsXPConnect::GetRuntimeInstance();
-  NS_ENSURE_TRUE(rt, false);
-
-  rt->RegisterDeferredFinalize(start, run);
   return true;
 }
 

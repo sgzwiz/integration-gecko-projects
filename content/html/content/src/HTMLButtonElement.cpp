@@ -65,8 +65,6 @@ HTMLButtonElement::HTMLButtonElement(already_AddRefed<nsINodeInfo> aNodeInfo,
 
   // Set up our default state: enabled
   AddStatesSilently(NS_EVENT_STATE_ENABLED);
-
-  SetIsDOMBinding();
 }
 
 HTMLButtonElement::~HTMLButtonElement()
@@ -507,15 +505,14 @@ HTMLButtonElement::SaveState()
     return NS_OK;
   }
   
-  nsPresState *state = nullptr;
-  nsresult rv = GetPrimaryPresState(this, &state);
+  nsPresState* state = GetPrimaryPresState();
   if (state) {
     // We do not want to save the real disabled state but the disabled
     // attribute.
     state->SetDisabled(HasAttr(kNameSpaceID_None, nsGkAtoms::disabled));
   }
 
-  return rv;
+  return NS_OK;
 }
 
 bool

@@ -95,14 +95,14 @@ public:
   virtual ~nsTokenEventRunnable();
 
   NS_IMETHOD Run ();
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
 private:
   nsString mType;
   nsString mTokenName;
 };
 
 // ISuuports implementation for nsTokenEventRunnable
-NS_IMPL_THREADSAFE_ISUPPORTS1(nsTokenEventRunnable, nsIRunnable)
+NS_IMPL_ISUPPORTS1(nsTokenEventRunnable, nsIRunnable)
 
 nsTokenEventRunnable::nsTokenEventRunnable(const nsAString &aType, 
    const nsAString &aTokenName): mType(aType), mTokenName(aTokenName) { }
@@ -1256,8 +1256,6 @@ nsNSSComponent::InitializeNSS(bool showWarningBox)
       // dynamic options from prefs
       setValidationOptions(mPrefBranch);
 
-      RegisterMyOCSPAIAInfoCallback();
-
       mHttpForNSS.initTable();
       mHttpForNSS.registerHttpClient();
 
@@ -1301,7 +1299,6 @@ nsNSSComponent::ShutdownNSS()
 
     PK11_SetPasswordFunc((PK11PasswordFunc)nullptr);
     mHttpForNSS.unregisterHttpClient();
-    UnregisterMyOCSPAIAInfoCallback();
 
     if (mPrefBranch) {
       mPrefBranch->RemoveObserver("security.", this);
@@ -1414,12 +1411,12 @@ nsNSSComponent::Init()
 }
 
 /* nsISupports Implementation for the class */
-NS_IMPL_THREADSAFE_ISUPPORTS5(nsNSSComponent,
-                              nsISignatureVerifier,
-                              nsIEntropyCollector,
-                              nsINSSComponent,
-                              nsIObserver,
-                              nsISupportsWeakReference)
+NS_IMPL_ISUPPORTS5(nsNSSComponent,
+                   nsISignatureVerifier,
+                   nsIEntropyCollector,
+                   nsINSSComponent,
+                   nsIObserver,
+                   nsISupportsWeakReference)
 
 
 /* Callback functions for decoder. For now, use empty/default functions. */
@@ -1889,7 +1886,7 @@ nsNSSComponent::GetDefaultCertVerifier(RefPtr<CertVerifier> &out)
   return NS_OK;
 }
 
-NS_IMPL_THREADSAFE_ISUPPORTS1(PipUIContext, nsIInterfaceRequestor)
+NS_IMPL_ISUPPORTS1(PipUIContext, nsIInterfaceRequestor)
 
 PipUIContext::PipUIContext()
 {

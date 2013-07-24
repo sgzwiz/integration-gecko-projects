@@ -2,34 +2,30 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "base/basictypes.h"
-
 #include "IndexedDBParent.h"
 
-#include "nsIDOMFile.h"
-#include "nsIDOMEvent.h"
-#include "nsIIDBVersionChangeEvent.h"
-#include "nsIXPConnect.h"
-
+#include "AsyncConnectionHelper.h"
 #include "mozilla/AppProcessChecker.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/indexedDB/DatabaseInfo.h"
+#include "mozilla/dom/indexedDB/IDBDatabase.h"
+#include "mozilla/dom/indexedDB/IDBEvents.h"
+#include "mozilla/dom/indexedDB/IDBFactory.h"
+#include "mozilla/dom/indexedDB/IDBIndex.h"
+#include "mozilla/dom/indexedDB/IDBKeyRange.h"
+#include "mozilla/dom/indexedDB/IDBObjectStore.h"
+#include "mozilla/dom/indexedDB/IDBTransaction.h"
+#include "mozilla/dom/ipc/Blob.h"
+#include "mozilla/dom/TabParent.h"
 #include "mozilla/unused.h"
 #include "mozilla/Util.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/TabParent.h"
-#include "mozilla/dom/ipc/Blob.h"
 #include "nsContentUtils.h"
 #include "nsCxPusher.h"
-
-#include "AsyncConnectionHelper.h"
-#include "DatabaseInfo.h"
-#include "IDBDatabase.h"
-#include "IDBEvents.h"
-#include "IDBFactory.h"
-#include "IDBIndex.h"
-#include "IDBKeyRange.h"
-#include "IDBObjectStore.h"
-#include "IDBTransaction.h"
+#include "nsIDOMEvent.h"
+#include "nsIDOMFile.h"
+#include "nsIXPConnect.h"
 
 #define CHROME_ORIGIN "chrome"
 #define PERMISSION_PREFIX "indexedDB-chrome-"
@@ -240,7 +236,7 @@ IndexedDBParent::DeallocPIndexedDBDeleteDatabaseRequestParent(
  ******************************************************************************/
 
 IndexedDBDatabaseParent::IndexedDBDatabaseParent()
-: mEventListener(ALLOW_THIS_IN_INITIALIZER_LIST(this))
+: mEventListener(MOZ_THIS_IN_INITIALIZER_LIST())
 {
   MOZ_COUNT_CTOR(IndexedDBDatabaseParent);
 }
@@ -369,12 +365,10 @@ IndexedDBDatabaseParent::HandleRequestEvent(nsIDOMEvent* aEvent,
   if (aType.EqualsLiteral(BLOCKED_EVT_STR)) {
     MOZ_ASSERT(!mDatabase);
 
-    nsCOMPtr<nsIIDBVersionChangeEvent> changeEvent = do_QueryInterface(aEvent);
+    nsCOMPtr<IDBVersionChangeEvent> changeEvent = do_QueryInterface(aEvent);
     NS_ENSURE_TRUE(changeEvent, NS_ERROR_FAILURE);
 
-    uint64_t oldVersion;
-    rv = changeEvent->GetOldVersion(&oldVersion);
-    NS_ENSURE_SUCCESS(rv, rv);
+    uint64_t oldVersion = changeEvent->OldVersion();
 
     if (!SendBlocked(oldVersion)) {
       return NS_ERROR_FAILURE;
@@ -480,12 +474,10 @@ IndexedDBDatabaseParent::HandleRequestEvent(nsIDOMEvent* aEvent,
       return NS_ERROR_FAILURE;
     }
 
-    nsCOMPtr<nsIIDBVersionChangeEvent> changeEvent = do_QueryInterface(aEvent);
+    nsCOMPtr<IDBVersionChangeEvent> changeEvent = do_QueryInterface(aEvent);
     NS_ENSURE_TRUE(changeEvent, NS_ERROR_FAILURE);
 
-    uint64_t oldVersion;
-    rv = changeEvent->GetOldVersion(&oldVersion);
-    NS_ENSURE_SUCCESS(rv, rv);
+    uint64_t oldVersion = changeEvent->OldVersion();
 
     nsAutoPtr<IndexedDBVersionChangeTransactionParent> actor(
       new IndexedDBVersionChangeTransactionParent());
@@ -521,30 +513,23 @@ IndexedDBDatabaseParent::HandleDatabaseEvent(nsIDOMEvent* aEvent,
              "Should never get error events in the parent process!");
   MOZ_ASSERT(!IsDisconnected());
 
-  nsresult rv;
-
   if (aType.EqualsLiteral(VERSIONCHANGE_EVT_STR)) {
     AutoSafeJSContext cx;
     NS_ENSURE_TRUE(cx, NS_ERROR_FAILURE);
 
-    nsCOMPtr<nsIIDBVersionChangeEvent> changeEvent = do_QueryInterface(aEvent);
+    nsCOMPtr<IDBVersionChangeEvent> changeEvent = do_QueryInterface(aEvent);
     NS_ENSURE_TRUE(changeEvent, NS_ERROR_FAILURE);
 
-    uint64_t oldVersion;
-    rv = changeEvent->GetOldVersion(&oldVersion);
-    NS_ENSURE_SUCCESS(rv, rv);
+    uint64_t oldVersion = changeEvent->OldVersion();
 
-    JS::Rooted<JS::Value> newVersionVal(cx);
-    rv = changeEvent->GetNewVersion(cx, newVersionVal.address());
-    NS_ENSURE_SUCCESS(rv, rv);
+    Nullable<uint64_t> newVersionVal = changeEvent->GetNewVersion();
 
     uint64_t newVersion;
-    if (newVersionVal.isNull()) {
+    if (newVersionVal.IsNull()) {
       newVersion = 0;
     }
     else {
-      MOZ_ASSERT(newVersionVal.isNumber());
-      newVersion = static_cast<uint64_t>(newVersionVal.toNumber());
+      newVersion = newVersionVal.Value();
     }
 
     if (!SendVersionChange(oldVersion, newVersion)) {
@@ -648,7 +633,7 @@ IndexedDBDatabaseParent::DeallocPIndexedDBTransactionParent(
  ******************************************************************************/
 
 IndexedDBTransactionParent::IndexedDBTransactionParent()
-: mEventListener(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+: mEventListener(MOZ_THIS_IN_INITIALIZER_LIST()),
   mArtificialRequestCount(false)
 {
   MOZ_COUNT_CTOR(IndexedDBTransactionParent);
@@ -2086,7 +2071,7 @@ IndexedDBCursorRequestParent::Continue(const ContinueParams& aParams)
 
 IndexedDBDeleteDatabaseRequestParent::IndexedDBDeleteDatabaseRequestParent(
                                                            IDBFactory* aFactory)
-: mEventListener(ALLOW_THIS_IN_INITIALIZER_LIST(this)), mFactory(aFactory)
+: mEventListener(MOZ_THIS_IN_INITIALIZER_LIST()), mFactory(aFactory)
 {
   MOZ_COUNT_CTOR(IndexedDBDeleteDatabaseRequestParent);
   MOZ_ASSERT(aFactory);
@@ -2112,12 +2097,10 @@ IndexedDBDeleteDatabaseRequestParent::HandleEvent(nsIDOMEvent* aEvent)
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (type.EqualsASCII(BLOCKED_EVT_STR)) {
-    nsCOMPtr<nsIIDBVersionChangeEvent> event = do_QueryInterface(aEvent);
+    nsCOMPtr<IDBVersionChangeEvent> event = do_QueryInterface(aEvent);
     MOZ_ASSERT(event);
 
-    uint64_t currentVersion;
-    rv = event->GetOldVersion(&currentVersion);
-    NS_ENSURE_SUCCESS(rv, rv);
+    uint64_t currentVersion = event->OldVersion();
 
     if (!SendBlocked(currentVersion)) {
       return NS_ERROR_FAILURE;

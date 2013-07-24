@@ -507,8 +507,12 @@ var WifiManager = (function() {
     });
   }
 
-  function setPowerModeCommand(mode, callback) {
+  function setPowerModeCommandICS(mode, callback) {
     doBooleanCommand("DRIVER POWERMODE " + (mode === "AUTO" ? 0 : 1), "OK", callback);
+  }
+
+  function setPowerModeCommandJB(mode, callback) {
+    doBooleanCommand("SET ps " + (mode === "AUTO" ? 1 : 0), "OK", callback);
   }
 
   function getPowerModeCommand(callback) {
@@ -1508,7 +1512,9 @@ var WifiManager = (function() {
   manager.wpsPbc = wpsPbcCommand;
   manager.wpsPin = wpsPinCommand;
   manager.wpsCancel = wpsCancelCommand;
-  manager.setPowerMode = setPowerModeCommand;
+  manager.setPowerMode = (sdkVersion >= 16)
+                         ? setPowerModeCommandJB
+                         : setPowerModeCommandICS;
   manager.setSuspendOptimizations = setSuspendOptimizationsCommand;
   manager.setStaticIpMode = setStaticIpMode;
   manager.getRssiApprox = getRssiApproxCommand;
@@ -3199,6 +3205,7 @@ WifiWorker.prototype = {
     // hotspot status. Toggle settings to let gaia know that wifi hotspot
     // is enabled.
     this.tetheringSettings[SETTINGS_WIFI_TETHERING_ENABLED] = true;
+    this._oldWifiTetheringEnabledState = true;
     gSettingsService.createLock().set(
       SETTINGS_WIFI_TETHERING_ENABLED, true, null, "fromInternalSetting");
     // Check for the next request.
@@ -3210,6 +3217,7 @@ WifiWorker.prototype = {
     // hotspot status. Toggle settings to let gaia know that wifi hotspot
     // is disabled.
     this.tetheringSettings[SETTINGS_WIFI_TETHERING_ENABLED] = false;
+    this._oldWifiTetheringEnabledState = false;
     gSettingsService.createLock().set(
       SETTINGS_WIFI_TETHERING_ENABLED, false, null, "fromInternalSetting");
     // Check for the next request.
@@ -3327,6 +3335,7 @@ WifiWorker.prototype = {
           break;
         }
 
+        this._oldWifiTetheringEnabledState = this.tetheringSettings[SETTINGS_WIFI_TETHERING_ENABLED];
         this.handleWifiTetheringEnabled(aResult)
         break;
     };

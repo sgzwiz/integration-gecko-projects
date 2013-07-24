@@ -26,7 +26,6 @@
 
 #include "ion/IonFrameIterator-inl.h"
 #include "ion/IonFrames-inl.h"
-#include "ion/PcScriptCache-inl.h"
 #include "vm/Probes-inl.h"
 
 namespace js {
@@ -231,6 +230,31 @@ Value *
 IonFrameIterator::actualArgs() const
 {
     return jsFrame()->argv() + 1;
+}
+
+static inline size_t
+SizeOfFramePrefix(FrameType type)
+{
+    switch (type) {
+      case IonFrame_Entry:
+        return IonEntryFrameLayout::Size();
+      case IonFrame_BaselineJS:
+      case IonFrame_OptimizedJS:
+      case IonFrame_Unwound_OptimizedJS:
+        return IonJSFrameLayout::Size();
+      case IonFrame_BaselineStub:
+        return IonBaselineStubFrameLayout::Size();
+      case IonFrame_Rectifier:
+        return IonRectifierFrameLayout::Size();
+      case IonFrame_Unwound_Rectifier:
+        return IonUnwoundRectifierFrameLayout::Size();
+      case IonFrame_Exit:
+        return IonExitFrameLayout::Size();
+      case IonFrame_Osr:
+        return IonOsrFrameLayout::Size();
+      default:
+        MOZ_ASSUME_UNREACHABLE("unknown frame type");
+    }
 }
 
 uint8_t *
@@ -562,8 +586,9 @@ HandleParallelFailure(ResumeFromException *rfe)
     ForkJoinSlice *slice = ForkJoinSlice::Current();
     IonFrameIterator iter(slice->perThreadData->ionTop);
 
+    parallel::Spew(parallel::SpewBailouts, "Bailing from VM reentry");
+
     while (!iter.isEntry()) {
-        parallel::Spew(parallel::SpewBailouts, "Bailing from VM reentry");
         if (iter.isScripted()) {
             slice->bailoutRecord->setCause(ParallelBailoutFailedIC,
                                            iter.script(), iter.script(), NULL);
@@ -1024,6 +1049,15 @@ GetPcScript(JSContext *cx, JSScript **scriptRes, jsbytecode **pcRes)
     // Recover the return address.
     IonFrameIterator it(rt->mainThread.ionTop);
 
+    // If the previous frame is a rectifier frame (maybe unwound),
+    // skip past it.
+    if (it.prevType() == IonFrame_Rectifier || it.prevType() == IonFrame_Unwound_Rectifier) {
+        ++it;
+        JS_ASSERT(it.prevType() == IonFrame_BaselineStub ||
+                  it.prevType() == IonFrame_BaselineJS ||
+                  it.prevType() == IonFrame_OptimizedJS);
+    }
+
     // If the previous frame is a stub frame, skip the exit frame so that
     // returnAddress below gets the return address into the BaselineJS
     // frame.
@@ -1287,6 +1321,10 @@ InlineFrameIteratorMaybeGC<allowGC>::findNextFrame()
         if (JSOp(*pc_) == JSOP_FUNCALL) {
             JS_ASSERT(GET_ARGC(pc_) > 0);
             numActualArgs_ = GET_ARGC(pc_) - 1;
+        } else if (IsGetterPC(pc_)) {
+            numActualArgs_ = 0;
+        } else if (IsSetterPC(pc_)) {
+            numActualArgs_ = 1;
         }
 
         JS_ASSERT(numActualArgs_ != 0xbadbad);

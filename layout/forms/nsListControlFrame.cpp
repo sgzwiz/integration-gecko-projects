@@ -142,14 +142,14 @@ nsListControlFrame::DestroyFrom(nsIFrame* aDestructRoot)
 
   mEventListener->SetFrame(nullptr);
 
-  mContent->RemoveEventListener(NS_LITERAL_STRING("keypress"), mEventListener,
-                                false);
-  mContent->RemoveEventListener(NS_LITERAL_STRING("mousedown"), mEventListener,
-                                false);
-  mContent->RemoveEventListener(NS_LITERAL_STRING("mouseup"), mEventListener,
-                                false);
-  mContent->RemoveEventListener(NS_LITERAL_STRING("mousemove"), mEventListener,
-                                false);
+  mContent->RemoveSystemEventListener(NS_LITERAL_STRING("keypress"),
+                                      mEventListener, false);
+  mContent->RemoveSystemEventListener(NS_LITERAL_STRING("mousedown"),
+                                      mEventListener, false);
+  mContent->RemoveSystemEventListener(NS_LITERAL_STRING("mouseup"),
+                                      mEventListener, false);
+  mContent->RemoveSystemEventListener(NS_LITERAL_STRING("mousemove"),
+                                      mEventListener, false);
 
   nsFormControlFrame::RegUnRegAccessKey(static_cast<nsIFrame*>(this), false);
   nsHTMLScrollFrame::DestroyFrom(aDestructRoot);
@@ -996,14 +996,14 @@ nsListControlFrame::Init(nsIContent*     aContent,
   // we need to hook up our listeners before the editor is initialized
   mEventListener = new nsListEventListener(this);
 
-  mContent->AddEventListener(NS_LITERAL_STRING("keypress"), mEventListener,
-                             false, false);
-  mContent->AddEventListener(NS_LITERAL_STRING("mousedown"), mEventListener,
-                             false, false);
-  mContent->AddEventListener(NS_LITERAL_STRING("mouseup"), mEventListener,
-                             false, false);
-  mContent->AddEventListener(NS_LITERAL_STRING("mousemove"), mEventListener,
-                             false, false);
+  mContent->AddSystemEventListener(NS_LITERAL_STRING("keypress"),
+                                   mEventListener, false, false);
+  mContent->AddSystemEventListener(NS_LITERAL_STRING("mousedown"),
+                                   mEventListener, false, false);
+  mContent->AddSystemEventListener(NS_LITERAL_STRING("mouseup"),
+                                   mEventListener, false, false);
+  mContent->AddSystemEventListener(NS_LITERAL_STRING("mousemove"),
+                                   mEventListener, false, false);
 
   mStartSelectionIndex = kNothingSelected;
   mEndSelectionIndex = kNothingSelected;
@@ -1406,19 +1406,12 @@ nsListControlFrame::SetOptionsSelectedFromFrame(int32_t aStartIndex,
 {
   nsRefPtr<dom::HTMLSelectElement> selectElement =
     dom::HTMLSelectElement::FromContent(mContent);
-  bool wasChanged = false;
-#ifdef DEBUG
-  nsresult rv = 
-#endif
-    selectElement->SetOptionsSelectedByIndex(aStartIndex,
-                                             aEndIndex,
-                                             aValue,
-                                             aClearAll,
-                                             false,
-                                             true,
-                                             &wasChanged);
-  NS_ASSERTION(NS_SUCCEEDED(rv), "SetSelected failed");
-  return wasChanged;
+  return selectElement->SetOptionsSelectedByIndex(aStartIndex,
+                                                  aEndIndex,
+                                                  aValue,
+                                                  aClearAll,
+                                                  false,
+                                                  true);
 }
 
 bool
@@ -1444,21 +1437,12 @@ nsListControlFrame::ToggleOptionSelectedFromFrame(int32_t aIndex)
   NS_ASSERTION(NS_SUCCEEDED(rv), "GetSelected failed");
   nsRefPtr<dom::HTMLSelectElement> selectElement =
     dom::HTMLSelectElement::FromContent(mContent);
-  bool wasChanged = false;
-#ifdef DEBUG
-  rv =
-#endif
-    selectElement->SetOptionsSelectedByIndex(aIndex,
-                                             aIndex,
-                                             !value,
-                                             false,
-                                             false,
-                                             true,
-                                             &wasChanged);
-
-  NS_ASSERTION(NS_SUCCEEDED(rv), "SetSelected failed");
-
-  return wasChanged;
+  return selectElement->SetOptionsSelectedByIndex(aIndex,
+                                                  aIndex,
+                                                  !value,
+                                                  false,
+                                                  false,
+                                                  true);
 }
 
 
@@ -2374,7 +2358,17 @@ nsListControlFrame::KeyPress(nsIDOMEvent* aKeyEvent)
 
     default: { // Select option with this as the first character
                // XXX Not I18N compliant
-      
+
+      // We skip processing all key events in the keys that are not in the
+      // cases above, if they have been prevented. The keys listed in the cases
+      // above are required to navigate inside the list. These keys are also
+      // not prevented in most UAs, so this is also a compatibility issue.
+      bool defaultPrevented;
+      aKeyEvent->GetDefaultPrevented(&defaultPrevented);
+      if (defaultPrevented) {
+        return NS_OK;
+      }
+
       if (isControl && charcode != ' ') {
         return NS_OK;
       }

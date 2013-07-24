@@ -47,9 +47,7 @@
 #include "jsgcinlines.h"
 #include "jsinferinlines.h"
 
-#include "gc/Barrier-inl.h"
 #include "vm/Stack-inl.h"
-#include "ion/IonFrames-inl.h"
 #include "ion/CompilerRoot.h"
 #include "ion/ExecutionModeInlines.h"
 #include "ion/AsmJS.h"
@@ -172,6 +170,8 @@ ion::InitializeIon()
 
 IonRuntime::IonRuntime()
   : execAlloc_(NULL),
+    exceptionTail_(NULL),
+    bailoutTail_(NULL),
     enterJIT_(NULL),
     bailoutHandler_(NULL),
     argumentsRectifier_(NULL),
@@ -194,7 +194,8 @@ IonRuntime::~IonRuntime()
 bool
 IonRuntime::initialize(JSContext *cx)
 {
-    AutoEnterAtomsCompartment ac(cx);
+    AutoLockForExclusiveAccess lock(cx);
+    AutoCompartment ac(cx, cx->atomsCompartment());
 
     IonContext ictx(cx, NULL);
     AutoFlushCache afc("IonRuntime::initialize");
@@ -208,6 +209,14 @@ IonRuntime::initialize(JSContext *cx)
 
     functionWrappers_ = cx->new_<VMWrapperMap>(cx);
     if (!functionWrappers_ || !functionWrappers_->init())
+        return false;
+
+    exceptionTail_ = generateExceptionTailStub(cx);
+    if (!exceptionTail_)
+        return false;
+
+    bailoutTail_ = generateBailoutTailStub(cx);
+    if (!bailoutTail_)
         return false;
 
     if (cx->runtime()->jitSupportsFloatingPoint) {
@@ -274,7 +283,8 @@ IonRuntime::debugTrapHandler(JSContext *cx)
     if (!debugTrapHandler_) {
         // IonRuntime code stubs are shared across compartments and have to
         // be allocated in the atoms compartment.
-        AutoEnterAtomsCompartment ac(cx);
+        AutoLockForExclusiveAccess lock(cx);
+        AutoCompartment ac(cx, cx->runtime()->atomsCompartment);
         debugTrapHandler_ = generateDebugTrapHandler(cx);
     }
     return debugTrapHandler_;
@@ -298,6 +308,8 @@ IonCompartment::IonCompartment(IonRuntime *rt)
   : rt(rt),
     stubCodes_(NULL),
     baselineCallReturnAddr_(NULL),
+    baselineGetPropReturnAddr_(NULL),
+    baselineSetPropReturnAddr_(NULL),
     stringConcatStub_(NULL),
     parallelStringConcatStub_(NULL)
 {
@@ -404,6 +416,11 @@ IonCompartment::sweep(FreeOp *fop)
     // If the sweep removed the ICCall_Fallback stub, NULL the baselineCallReturnAddr_ field.
     if (!stubCodes_->lookup(static_cast<uint32_t>(ICStub::Call_Fallback)))
         baselineCallReturnAddr_ = NULL;
+    // Similarly for the ICGetProp_Fallback stub.
+    if (!stubCodes_->lookup(static_cast<uint32_t>(ICStub::GetProp_Fallback)))
+        baselineGetPropReturnAddr_ = NULL;
+    if (!stubCodes_->lookup(static_cast<uint32_t>(ICStub::SetProp_Fallback)))
+        baselineSetPropReturnAddr_ = NULL;
 
     if (stringConcatStub_ && !IsIonCodeMarked(stringConcatStub_.unsafeGet()))
         stringConcatStub_ = NULL;
@@ -1922,19 +1939,7 @@ ion::Cannon(JSContext *cx, RunState &state)
     if (!SetEnterJitData(cx, data, state, vals))
         return IonExec_Error;
 
-#if JS_TRACE_LOGGING
-    TraceLog(TraceLogging::defaultLogger(),
-             TraceLogging::ION_CANNON_START,
-             script);
-#endif
-
     IonExecStatus status = EnterIon(cx, data);
-
-#if JS_TRACE_LOGGING
-    TraceLog(TraceLogging::defaultLogger(),
-             TraceLogging::ION_CANNON_STOP,
-             script);
-#endif
 
     if (status == IonExec_Ok)
         state.setReturnValue(data.result);

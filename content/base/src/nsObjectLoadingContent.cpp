@@ -196,26 +196,36 @@ CheckPluginStopEvent::Run()
  */
 class nsSimplePluginEvent : public nsRunnable {
 public:
-  nsSimplePluginEvent(nsIContent* aContent, const nsAString &aEvent)
-    : mContent(aContent),
-      mEvent(aEvent)
-  {}
+  nsSimplePluginEvent(nsIContent* aTarget, const nsAString &aEvent)
+    : mTarget(aTarget)
+    , mDocument(aTarget->GetCurrentDoc())
+    , mEvent(aEvent)
+  {
+  }
+
+  nsSimplePluginEvent(nsIDocument* aTarget, const nsAString& aEvent)
+    : mTarget(aTarget)
+    , mDocument(aTarget)
+    , mEvent(aEvent)
+  {
+  }
 
   ~nsSimplePluginEvent() {}
 
   NS_IMETHOD Run();
 
 private:
-  nsCOMPtr<nsIContent> mContent;
+  nsCOMPtr<nsISupports> mTarget;
+  nsCOMPtr<nsIDocument> mDocument;
   nsString mEvent;
 };
 
 NS_IMETHODIMP
 nsSimplePluginEvent::Run()
 {
-  LOG(("OBJLC [%p]: nsSimplePluginEvent firing event \"%s\"", mContent.get(),
+  LOG(("OBJLC [%p]: nsSimplePluginEvent firing event \"%s\"", mTarget.get(),
        mEvent.get()));
-  nsContentUtils::DispatchTrustedEvent(mContent->GetDocument(), mContent,
+  nsContentUtils::DispatchTrustedEvent(mDocument, mTarget,
                                        mEvent, true, true);
   return NS_OK;
 }
@@ -674,7 +684,9 @@ nsObjectLoadingContent::UnbindFromTree(bool aDeep, bool aNullParent)
     ///             would keep the docshell around, but trash the frameloader
     UnloadObject();
   }
-
+  nsCOMPtr<nsIRunnable> ev = new nsSimplePluginEvent(thisContent->GetCurrentDoc(),
+                                           NS_LITERAL_STRING("PluginRemoved"));
+  NS_DispatchToCurrentThread(ev);
 }
 
 nsObjectLoadingContent::nsObjectLoadingContent()
@@ -1080,21 +1092,29 @@ nsObjectLoadingContent::GetBaseURI(nsIURI **aResult)
 // see an interface requestor even though WebIDL bindings don't expose
 // that stuff.
 class ObjectInterfaceRequestorShim MOZ_FINAL : public nsIInterfaceRequestor,
-                                               public nsIChannelEventSink
+                                               public nsIChannelEventSink,
+                                               public nsIStreamListener
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(ObjectInterfaceRequestorShim,
                                            nsIInterfaceRequestor)
   NS_DECL_NSIINTERFACEREQUESTOR
-  NS_FORWARD_NSICHANNELEVENTSINK(mContent->)
+  // nsRefPtr<nsObjectLoadingContent> fails due to ambiguous AddRef/Release,
+  // hence the ugly static cast :(
+  NS_FORWARD_NSICHANNELEVENTSINK(static_cast<nsObjectLoadingContent *>
+                                 (mContent.get())->)
+  NS_FORWARD_NSISTREAMLISTENER  (static_cast<nsObjectLoadingContent *>
+                                 (mContent.get())->)
+  NS_FORWARD_NSIREQUESTOBSERVER (static_cast<nsObjectLoadingContent *>
+                                 (mContent.get())->)
 
-  ObjectInterfaceRequestorShim(nsIChannelEventSink* aContent)
+  ObjectInterfaceRequestorShim(nsIObjectLoadingContent* aContent)
     : mContent(aContent)
   {}
 
 protected:
-  nsRefPtr<nsIChannelEventSink> mContent;
+  nsCOMPtr<nsIObjectLoadingContent> mContent;
 };
 
 NS_IMPL_CYCLE_COLLECTION_1(ObjectInterfaceRequestorShim, mContent)
@@ -1102,6 +1122,8 @@ NS_IMPL_CYCLE_COLLECTION_1(ObjectInterfaceRequestorShim, mContent)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ObjectInterfaceRequestorShim)
   NS_INTERFACE_MAP_ENTRY(nsIInterfaceRequestor)
   NS_INTERFACE_MAP_ENTRY(nsIChannelEventSink)
+  NS_INTERFACE_MAP_ENTRY(nsIStreamListener)
+  NS_INTERFACE_MAP_ENTRY(nsIRequestObserver)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIInterfaceRequestor)
 NS_INTERFACE_MAP_END
 
@@ -1302,7 +1324,7 @@ nsObjectLoadingContent::CheckProcessPolicy(int16_t *aContentPolicy)
   *aContentPolicy = nsIContentPolicy::ACCEPT;
   nsresult rv =
     NS_CheckContentProcessPolicy(objectType,
-                                 mURI,
+                                 mURI ? mURI : mBaseURI,
                                  doc->NodePrincipal(),
                                  static_cast<nsIImageLoadingContent*>(this),
                                  mContentType,
@@ -2261,7 +2283,7 @@ nsObjectLoadingContent::OpenChannel()
   }
 
   // AsyncOpen can fail if a file does not exist.
-  rv = chan->AsyncOpen(this, nullptr);
+  rv = chan->AsyncOpen(shim, nullptr);
   NS_ENSURE_SUCCESS(rv, rv);
   LOG(("OBJLC [%p]: Channel opened", this));
   mChannel = chan;
@@ -3130,8 +3152,8 @@ nsObjectLoadingContent::LegacyCall(JSContext* aCx,
   }
 
   JS::Rooted<JS::Value> retval(aCx);
-  bool ok = ::JS::Call(aCx, thisVal, pi_obj, args.Length(),
-                       args.Elements(), retval.address());
+  bool ok = JS::Call(aCx, thisVal, pi_obj, args.Length(), args.Elements(),
+                     &retval);
   if (!ok) {
     aRv.Throw(NS_ERROR_FAILURE);
     return JS::UndefinedValue();
@@ -3206,7 +3228,7 @@ nsObjectLoadingContent::SetupProtoChain(JSContext* aCx,
     return;
   }
 
-  if (pi_proto && js::GetObjectClass(pi_proto) != &js::ObjectClass) {
+  if (pi_proto && js::GetObjectClass(pi_proto) != js::ObjectClassPtr) {
     // The plugin wrapper has a proto that's not Object.prototype, set
     // 'pi.__proto__.__proto__' to the original 'this.__proto__'
     if (pi_proto != my_proto && !::JS_SetPrototype(aCx, pi_proto, my_proto)) {
@@ -3340,8 +3362,8 @@ nsObjectLoadingContent::TeardownProtoChain()
 
 bool
 nsObjectLoadingContent::DoNewResolve(JSContext* aCx, JS::Handle<JSObject*> aObject,
-                                     JS::Handle<jsid> aId, unsigned aFlags,
-                                     JS::MutableHandle<JSObject*> aObjp)
+                                     JS::Handle<jsid> aId,
+                                     JS::MutableHandle<JS::Value> aValue)
 {
   // We don't resolve anything; we just try to make sure we're instantiated
 

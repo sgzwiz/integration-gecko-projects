@@ -4,14 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "vm/RegExpStatics.h"
+#include "vm/RegExpStatics-inl.h"
 
 #include "vm/RegExpStaticsObject.h"
 
 #include "jsobjinlines.h"
-
-#include "vm/RegExpObject-inl.h"
-#include "vm/RegExpStatics-inl.h"
 
 using namespace js;
 

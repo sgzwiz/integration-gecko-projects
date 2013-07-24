@@ -1184,7 +1184,7 @@ public:
   : mWorkerRunnable(aWorkerRunnable)
   { }
 
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
 
   NS_IMETHOD
   Dispatch(nsIRunnable* aRunnable, uint32_t aFlags)
@@ -1213,7 +1213,7 @@ public:
   }
 };
 
-NS_IMPL_THREADSAFE_ISUPPORTS1(WorkerRunnableEventTarget, nsIEventTarget)
+NS_IMPL_ISUPPORTS1(WorkerRunnableEventTarget, nsIEventTarget)
 
 class KillCloseEventRunnable : public WorkerRunnable
 {
@@ -1539,7 +1539,7 @@ WorkerRunnable::WorkerRunnable(WorkerPrivate* aWorkerPrivate, Target aTarget,
 }
 #endif
 
-NS_IMPL_THREADSAFE_ISUPPORTS1(WorkerRunnable, nsIRunnable)
+NS_IMPL_ISUPPORTS1(WorkerRunnable, nsIRunnable)
 
 bool
 WorkerRunnable::PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
@@ -1692,6 +1692,13 @@ WorkerRunnable::Run()
   }
 
   bool result = WorkerRun(cx, mWorkerPrivate);
+  // In the case of CompileScriptRunnnable, WorkerRun above can cause us to
+  // lazily create a global, in which case we need to be in its compartment
+  // when calling PostRun() below. Maybe<> this time...
+  if (mTarget == WorkerThread && ac.empty() &&
+      js::GetDefaultGlobalForContext(cx)) {
+    ac.construct(cx, js::GetDefaultGlobalForContext(cx));
+  }
   PostRun(cx, mWorkerPrivate, result);
   return result ? NS_OK : NS_ERROR_FAILURE;
 }
@@ -1756,8 +1763,8 @@ struct WorkerPrivate::TimeoutInfo
     return mTargetTime < aOther.mTargetTime;
   }
 
-  JS::Value mTimeoutVal;
-  nsTArray<jsval> mExtraArgVals;
+  JS::Heap<JS::Value> mTimeoutVal;
+  nsTArray<JS::Heap<JS::Value> > mExtraArgVals;
   mozilla::TimeStamp mTargetTime;
   mozilla::TimeDuration mInterval;
   nsCString mFilename;
@@ -1777,7 +1784,7 @@ class WorkerPrivate::MemoryReporter MOZ_FINAL : public nsIMemoryMultiReporter
   bool mAlreadyMappedToAddon;
 
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
 
   MemoryReporter(WorkerPrivate* aWorkerPrivate)
   : mMutex(aWorkerPrivate->mMutex), mWorkerPrivate(aWorkerPrivate),
@@ -1884,8 +1891,7 @@ private:
   }
 };
 
-NS_IMPL_THREADSAFE_ISUPPORTS1(WorkerPrivate::MemoryReporter,
-                              nsIMemoryMultiReporter)
+NS_IMPL_ISUPPORTS1(WorkerPrivate::MemoryReporter, nsIMemoryMultiReporter)
 
 template <class Derived>
 WorkerPrivateParent<Derived>::WorkerPrivateParent(
@@ -2835,6 +2841,7 @@ WorkerPrivate::DoRunLoop(JSContext* aCx)
 
   EnableMemoryReporter();
 
+  Maybe<JSAutoCompartment> maybeAC;
   for (;;) {
     Status currentStatus;
     bool scheduleIdleGC;
@@ -2852,6 +2859,17 @@ WorkerPrivate::DoRunLoop(JSContext* aCx)
 
       {
         MutexAutoUnlock unlock(mMutex);
+
+        // Workers lazily create a global object in CompileScriptRunnable. In
+        // the old world, creating the global would implicitly set it as the
+        // default compartment object on mJSContext, meaning that subsequent
+        // runnables would be able to operate in that compartment without
+        // explicitly entering it. That no longer works, so we mimic the
+        // "operate in the compartment of the worker global once it exists"
+        // behavior here. This could probably be improved with some refactoring.
+        if (maybeAC.empty() && js::GetDefaultGlobalForContext(aCx)) {
+          maybeAC.construct(aCx, js::GetDefaultGlobalForContext(aCx));
+        }
 
         if (!normalGCTimerRunning &&
             event != idleGCEvent &&
@@ -3379,11 +3397,11 @@ WorkerPrivate::TraceInternal(JSTracer* aTrc)
 
   for (uint32_t index = 0; index < mTimeouts.Length(); index++) {
     TimeoutInfo* info = mTimeouts[index];
-    JS_CallValueTracer(aTrc, &info->mTimeoutVal,
-                       "WorkerPrivate timeout value");
+    JS_CallHeapValueTracer(aTrc, &info->mTimeoutVal,
+                           "WorkerPrivate timeout value");
     for (uint32_t index2 = 0; index2 < info->mExtraArgVals.Length(); index2++) {
-      JS_CallValueTracer(aTrc, &info->mExtraArgVals[index2],
-                         "WorkerPrivate timeout extra argument value");
+      JS_CallHeapValueTracer(aTrc, &info->mExtraArgVals[index2],
+                             "WorkerPrivate timeout extra argument value");
     }
   }
 }
@@ -3933,7 +3951,7 @@ WorkerPrivate::SetTimeout(JSContext* aCx, unsigned aArgc, jsval* aVp,
     newInfo->mInterval = TimeDuration::FromMilliseconds(intervalMS);
 
     if (aArgc > 2 && newInfo->mTimeoutVal.isObject()) {
-      nsTArray<jsval> extraArgVals(aArgc - 2);
+      nsTArray<JS::Heap<JS::Value> > extraArgVals(aArgc - 2);
       for (unsigned index = 2; index < aArgc; index++) {
         extraArgVals.AppendElement(argv[index]);
       }
@@ -4085,9 +4103,14 @@ WorkerPrivate::RunExpiredTimeouts(JSContext* aCx)
     }
     else {
       JS::Rooted<JS::Value> rval(aCx);
+      /*
+       * unsafeGet() is needed below because the argument is a not a const
+       * pointer, even though values are not modified.
+       */
       if (!JS_CallFunctionValue(aCx, global, info->mTimeoutVal,
                                 info->mExtraArgVals.Length(),
-                                info->mExtraArgVals.Elements(), rval.address()) &&
+                                info->mExtraArgVals.Elements()->unsafeGet(),
+                                rval.address()) &&
           !JS_ReportPendingException(aCx)) {
         retval = false;
         break;

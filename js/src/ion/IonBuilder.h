@@ -608,18 +608,28 @@ class IonBuilder : public MIRGenerator
     }
     IonBuilder *callerBuilder_;
 
+    struct LoopHeader {
+        jsbytecode *pc;
+        MBasicBlock *header;
+
+        LoopHeader(jsbytecode *pc, MBasicBlock *header)
+          : pc(pc), header(header)
+        {}
+    };
+
     Vector<CFGState, 8, IonAllocPolicy> cfgStack_;
     Vector<ControlFlowInfo, 4, IonAllocPolicy> loops_;
     Vector<ControlFlowInfo, 0, IonAllocPolicy> switches_;
     Vector<ControlFlowInfo, 2, IonAllocPolicy> labels_;
     Vector<MInstruction *, 2, IonAllocPolicy> iterators_;
+    Vector<LoopHeader, 0, IonAllocPolicy> loopHeaders_;
     BaselineInspector *inspector;
 
     size_t inliningDepth_;
 
     // Cutoff to disable compilation if excessive time is spent reanalyzing
     // loop bodies to compute a fixpoint of the types for loop variables.
-    static const size_t MAX_LOOP_RESTARTS = 20;
+    static const size_t MAX_LOOP_RESTARTS = 40;
     size_t numLoopRestarts_;
 
     // True if script->failedBoundsCheck is set for the current script or
@@ -648,14 +658,15 @@ class CallInfo
     Vector<MDefinition *> args_;
 
     bool constructing_;
-    bool lambda_;
+    bool setter_;
 
   public:
     CallInfo(JSContext *cx, bool constructing)
       : fun_(NULL),
         thisArg_(NULL),
         args_(cx),
-        constructing_(constructing)
+        constructing_(constructing),
+        setter_(false)
     { }
 
     bool init(CallInfo &callInfo) {
@@ -742,11 +753,11 @@ class CallInfo
         return constructing_;
     }
 
-    bool isLambda() const {
-        return lambda_;
+    bool isSetter() const {
+        return setter_;
     }
-    void setLambda(bool lambda) {
-        lambda_ = lambda;
+    void markAsSetter() {
+        setter_ = true;
     }
 
     void wrapArgs(MBasicBlock *current) {

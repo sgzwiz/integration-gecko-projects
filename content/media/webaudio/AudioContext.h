@@ -7,19 +7,20 @@
 #ifndef AudioContext_h_
 #define AudioContext_h_
 
-#include "nsDOMEventTargetHelper.h"
-#include "nsCycleCollectionParticipant.h"
-#include "mozilla/Attributes.h"
-#include "nsCOMPtr.h"
 #include "EnableWebAudioCheck.h"
-#include "nsAutoPtr.h"
-#include "mozilla/dom/TypedArray.h"
-#include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/AudioContextBinding.h"
 #include "MediaBufferDecoder.h"
-#include "StreamBuffer.h"
 #include "MediaStreamGraph.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/dom/AudioContextBinding.h"
+#include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/TypedArray.h"
+#include "nsAutoPtr.h"
+#include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsDOMEventTargetHelper.h"
+#include "nsHashKeys.h"
 #include "nsTHashtable.h"
+#include "StreamBuffer.h"
 
 // X11 has a #define for CurrentTime. Unbelievable :-(.
 // See content/media/DOMMediaStream.h for more fun!
@@ -127,7 +128,7 @@ public:
                bool aMixToMono, ErrorResult& aRv);
 
   already_AddRefed<MediaStreamAudioDestinationNode>
-  CreateMediaStreamDestination();
+  CreateMediaStreamDestination(ErrorResult& aRv);
 
   already_AddRefed<ScriptProcessorNode>
   CreateScriptProcessor(uint32_t aBufferSize,
@@ -227,7 +228,7 @@ private:
   nsRefPtr<AudioDestinationNode> mDestination;
   nsRefPtr<AudioListener> mListener;
   MediaBufferDecoder mDecoder;
-  nsTArray<nsAutoPtr<WebAudioDecodeJob> > mDecodeJobs;
+  nsTArray<nsRefPtr<WebAudioDecodeJob> > mDecodeJobs;
   // Two hashsets containing all the PannerNodes and AudioBufferSourceNodes,
   // to compute the doppler shift, and also to stop AudioBufferSourceNodes.
   // These are all weak pointers.

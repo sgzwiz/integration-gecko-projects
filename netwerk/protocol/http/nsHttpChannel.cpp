@@ -37,7 +37,6 @@
 #include "nsAlgorithm.h"
 #include "GeckoProfiler.h"
 #include "nsIConsoleService.h"
-#include "base/compiler_specific.h"
 #include "NullHttpTransaction.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/VisualEventTracer.h"
@@ -298,7 +297,7 @@ NS_IMPL_ISUPPORTS_INHERITED1(HttpCacheQuery, nsRunnable, nsICacheListener)
 //-----------------------------------------------------------------------------
 
 nsHttpChannel::nsHttpChannel()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(HttpAsyncAborter<nsHttpChannel>(this))
+    : HttpAsyncAborter<nsHttpChannel>(MOZ_THIS_IN_INITIALIZER_LIST())
     , mLogicalOffset(0)
     , mCacheAccess(0)
     , mCacheEntryDeviceTelemetryID(UNKNOWN_DEVICE)
@@ -2547,6 +2546,12 @@ nsHttpChannel::OpenCacheEntry(bool usingSSL)
                 (cacheKey, loadContext, getter_AddRefs(mApplicationCache));
             NS_ENSURE_SUCCESS(rv, rv);
         }
+    }
+
+    if (mLoadFlags & LOAD_INITIAL_DOCUMENT_URI) {
+        mozilla::Telemetry::Accumulate(
+            Telemetry::HTTP_OFFLINE_CACHE_DOCUMENT_LOAD,
+            !!mApplicationCache);
     }
 
     nsCOMPtr<nsICacheSession> session;

@@ -68,7 +68,6 @@
 #include "CoreLocationLocationProvider.h"
 #endif
 
-#include "nsIDOMDocument.h"
 #include "nsIDocument.h"
 
 // Some limit to the number of get or watch geolocation requests
@@ -252,6 +251,26 @@ PositionError::GetCode(int16_t *aCode)
 {
   NS_ENSURE_ARG_POINTER(aCode);
   *aCode = Code();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+PositionError::GetMessage(nsAString& aMessage)
+{
+  switch (mCode)
+  {
+    case nsIDOMGeoPositionError::PERMISSION_DENIED:
+      aMessage = NS_LITERAL_STRING("User denied geolocation prompt");
+      break;
+    case nsIDOMGeoPositionError::POSITION_UNAVAILABLE:
+      aMessage = NS_LITERAL_STRING("Unknown error acquiring position");
+      break;
+    case nsIDOMGeoPositionError::TIMEOUT:
+      aMessage = NS_LITERAL_STRING("Position acquisition timed out");
+      break;
+    default:
+      break;
+  }
   return NS_OK;
 }
 
@@ -591,8 +610,8 @@ NS_INTERFACE_MAP_BEGIN(nsGeolocationService)
   NS_INTERFACE_MAP_ENTRY(nsIObserver)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_THREADSAFE_ADDREF(nsGeolocationService)
-NS_IMPL_THREADSAFE_RELEASE(nsGeolocationService)
+NS_IMPL_ADDREF(nsGeolocationService)
+NS_IMPL_RELEASE(nsGeolocationService)
 
 
 static bool sGeoEnabled = true;
@@ -1029,9 +1048,7 @@ Geolocation::Init(nsIDOMWindow* aContentDom)
     }
 
     // Grab the principal of the document
-    nsCOMPtr<nsIDOMDocument> domdoc;
-    aContentDom->GetDocument(getter_AddRefs(domdoc));
-    nsCOMPtr<nsIDocument> doc = do_QueryInterface(domdoc);
+    nsCOMPtr<nsIDocument> doc = window->GetDoc();
     if (!doc) {
       return NS_ERROR_FAILURE;
     }

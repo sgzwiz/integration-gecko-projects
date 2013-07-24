@@ -469,11 +469,12 @@ NS_ScriptErrorReporter(JSContext *cx,
   // We don't want to report exceptions too eagerly, but warnings in the
   // absence of werror are swallowed whole, so report those now.
   if (!JSREPORT_IS_WARNING(report->flags)) {
+    nsIXPConnect* xpc = nsContentUtils::XPConnect();
     if (JS_DescribeScriptedCaller(cx, nullptr, nullptr)) {
+      xpc->MarkErrorUnreported(cx);
       return;
     }
 
-    nsIXPConnect* xpc = nsContentUtils::XPConnect();
     if (xpc) {
       nsAXPCNativeCallContext *cc = nullptr;
       xpc->GetCurrentNativeCallContext(&cc);
@@ -483,6 +484,7 @@ NS_ScriptErrorReporter(JSContext *cx,
           uint16_t lang;
           if (NS_SUCCEEDED(prev->GetLanguage(&lang)) &&
             lang == nsAXPCNativeCallContext::LANG_JS) {
+            xpc->MarkErrorUnreported(cx);
             return;
           }
         }
@@ -1322,6 +1324,7 @@ nsJSContext::CompileScript(const PRUnichar* aText,
   AutoPushJSContext cx(mContext);
   JSAutoRequest ar(cx);
   JS::Rooted<JSObject*> scopeObject(mContext, GetNativeGlobal());
+  JSAutoCompartment ac(cx, scopeObject);
   xpc_UnmarkGrayObject(scopeObject);
 
   bool ok = false;
@@ -2333,7 +2336,10 @@ nsJSContext::IsContextInitialized()
 void
 nsJSContext::ScriptEvaluated(bool aTerminated)
 {
-  JS_MaybeGC(mContext);
+  if (GetNativeGlobal()) {
+    JSAutoCompartment ac(mContext, GetNativeGlobal());
+    JS_MaybeGC(mContext);
+  }
 
   if (aTerminated) {
     mOperationCallbackTime = 0;
@@ -2888,6 +2894,9 @@ nsJSContext::MaybePokeCC()
     if (!sCCTimer) {
       return;
     }
+    // We can kill some objects before running forgetSkippable.
+    nsCycleCollector_dispatchDeferredDeletion();
+
     sCCTimer->InitWithFuncCallback(CCTimerFired, nullptr,
                                    NS_CC_SKIPPABLE_DELAY,
                                    nsITimer::TYPE_REPEATING_SLACK);
@@ -3020,6 +3029,9 @@ DOMGCSliceCallback(JSRuntime *aRt, JS::GCProgress aProgress, const JS::GCDescrip
 
   // The GC has more work to do, so schedule another GC slice.
   if (aProgress == JS::GC_SLICE_END) {
+    if (ShouldTriggerCC(nsCycleCollector_suspectedCount())) {
+      nsCycleCollector_dispatchDeferredDeletion();
+    }
     nsJSContext::KillInterSliceGCTimer();
     if (!sShuttingDown) {
       CallCreateInstance("@mozilla.org/timer;1", &sInterSliceGCTimer);

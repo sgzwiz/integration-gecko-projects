@@ -83,6 +83,7 @@ class TreeMetadataEmitter(object):
             ASFILES='ASFILES',
             CMMSRCS='CMMSRCS',
             CPPSRCS='CPP_SOURCES',
+            CPP_UNIT_TESTS='CPP_UNIT_TESTS',
             CSRCS='CSRCS',
             DEFINES='DEFINES',
             EXTRA_COMPONENTS='EXTRA_COMPONENTS',
@@ -109,6 +110,9 @@ class TreeMetadataEmitter(object):
         for mak, moz in varmap.items():
             if sandbox[moz]:
                 passthru.variables[mak] = sandbox[moz]
+
+        if sandbox['NO_DIST_INSTALL']:
+            passthru.variables['NO_DIST_INSTALL'] = '1'
 
         if passthru.variables:
             yield passthru

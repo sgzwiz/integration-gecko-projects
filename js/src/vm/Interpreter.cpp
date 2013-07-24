@@ -8,7 +8,7 @@
  * JavaScript bytecode interpreter.
  */
 
-#include "vm/Interpreter.h"
+#include "vm/Interpreter-inl.h"
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/FloatingPoint.h"
@@ -19,6 +19,7 @@
 #include "jsapi.h"
 #include "jsarray.h"
 #include "jsatom.h"
+#include "jsautooplen.h"
 #include "jscntxt.h"
 #include "jsdbgapi.h"
 #include "jsfun.h"
@@ -30,6 +31,10 @@
 #include "jsprf.h"
 #include "jsscript.h"
 #include "jsstr.h"
+#if JS_TRACE_LOGGING
+#include "TraceLogging.h"
+#endif
+
 #include "builtin/Eval.h"
 #include "ion/BaselineJIT.h"
 #include "ion/Ion.h"
@@ -39,20 +44,11 @@
 #include "jsatominlines.h"
 #include "jsboolinlines.h"
 #include "jsinferinlines.h"
-#include "jsopcodeinlines.h"
 #include "jsscriptinlines.h"
 
-#include "builtin/Iterator-inl.h"
 #include "ion/IonFrames-inl.h"
-#include "vm/Interpreter-inl.h"
 #include "vm/Probes-inl.h"
 #include "vm/Stack-inl.h"
-
-#include "jsautooplen.h"
-
-#if JS_TRACE_LOGGING
-#include "TraceLogging.h"
-#endif
 
 using namespace js;
 using namespace js::gc;
@@ -266,20 +262,31 @@ GetPropertyOperation(JSContext *cx, StackFrame *fp, HandleScript script, jsbytec
             return true;
     }
 
-    JSObject *obj = ToObjectFromStack(cx, lval);
-    if (!obj)
-        return false;
+    RootedId id(cx, NameToId(script->getName(pc)));
+    RootedObject obj(cx);
+
+    /* Optimize (.1).toString(). */
+    if (lval.isNumber() && id == NameToId(cx->names().toString)) {
+        JSObject *proto = fp->global().getOrCreateNumberPrototype(cx);
+        if (!proto)
+            return false;
+        if (ClassMethodIsNative(cx, proto, &NumberObject::class_, id, js_num_toString))
+            obj = proto;
+    }
+
+    if (!obj) {
+        obj = ToObjectFromStack(cx, lval);
+        if (!obj)
+            return false;
+    }
 
     bool wasObject = lval.isObject();
 
-    RootedId id(cx, NameToId(script->getName(pc)));
-    RootedObject nobj(cx, obj);
-
     if (obj->getOps()->getProperty) {
-        if (!JSObject::getGeneric(cx, nobj, nobj, id, vp))
+        if (!JSObject::getGeneric(cx, obj, obj, id, vp))
             return false;
     } else {
-        if (!GetPropertyHelper(cx, nobj, id, 0, vp))
+        if (!GetPropertyHelper(cx, obj, id, 0, vp))
             return false;
     }
 
@@ -288,7 +295,7 @@ GetPropertyOperation(JSContext *cx, StackFrame *fp, HandleScript script, jsbytec
         JS_UNLIKELY(vp.isPrimitive()) &&
         wasObject)
     {
-        if (!OnUnknownMethod(cx, nobj, IdToValue(id), vp))
+        if (!OnUnknownMethod(cx, obj, IdToValue(id), vp))
             return false;
     }
 #endif
@@ -1063,6 +1070,216 @@ FrameGuard::~FrameGuard()
         stack_->releaseFrame(fp_);
 }
 
+/*
+ * Compute the implicit |this| parameter for a call expression where the callee
+ * funval was resolved from an unqualified name reference to a property on obj
+ * (an object on the scope chain).
+ *
+ * We can avoid computing |this| eagerly and push the implicit callee-coerced
+ * |this| value, undefined, if any of these conditions hold:
+ *
+ * 1. The nominal |this|, obj, is a global object.
+ *
+ * 2. The nominal |this|, obj, has one of Block, Call, or DeclEnv class (this
+ *    is what IsCacheableNonGlobalScope tests). Such objects-as-scopes must be
+ *    censored with undefined.
+ *
+ * Otherwise, we bind |this| to obj->thisObject(). Only names inside |with|
+ * statements and embedding-specific scope objects fall into this category.
+ *
+ * If the callee is a strict mode function, then code implementing JSOP_THIS
+ * in the interpreter and JITs will leave undefined as |this|. If funval is a
+ * function not in strict mode, JSOP_THIS code replaces undefined with funval's
+ * global.
+ *
+ * We set *vp to undefined early to reduce code size and bias this code for the
+ * common and future-friendly cases.
+ */
+inline bool
+ComputeImplicitThis(JSContext *cx, HandleObject obj, MutableHandleValue vp)
+{
+    vp.setUndefined();
+
+    if (obj->is<GlobalObject>())
+        return true;
+
+    if (IsCacheableNonGlobalScope(obj))
+        return true;
+
+    JSObject *nobj = JSObject::thisObject(cx, obj);
+    if (!nobj)
+        return false;
+
+    vp.setObject(*nobj);
+    return true;
+}
+
+static JS_ALWAYS_INLINE bool
+AddOperation(JSContext *cx, HandleScript script, jsbytecode *pc,
+             MutableHandleValue lhs, MutableHandleValue rhs, Value *res)
+{
+    if (lhs.isInt32() && rhs.isInt32()) {
+        int32_t l = lhs.toInt32(), r = rhs.toInt32();
+        int32_t sum = l + r;
+        if (JS_UNLIKELY(bool((l ^ sum) & (r ^ sum) & 0x80000000))) {
+            res->setDouble(double(l) + double(r));
+            types::TypeScript::MonitorOverflow(cx, script, pc);
+        } else {
+            res->setInt32(sum);
+        }
+        return true;
+    }
+
+    /*
+     * If either operand is an object, any non-integer result must be
+     * reported to inference.
+     */
+    bool lIsObject = lhs.isObject(), rIsObject = rhs.isObject();
+
+    if (!ToPrimitive(cx, lhs))
+        return false;
+    if (!ToPrimitive(cx, rhs))
+        return false;
+    bool lIsString, rIsString;
+    if ((lIsString = lhs.isString()) | (rIsString = rhs.isString())) {
+        JSString *lstr, *rstr;
+        if (lIsString) {
+            lstr = lhs.toString();
+        } else {
+            lstr = ToString<CanGC>(cx, lhs);
+            if (!lstr)
+                return false;
+        }
+        if (rIsString) {
+            rstr = rhs.toString();
+        } else {
+            // Save/restore lstr in case of GC activity under ToString.
+            lhs.setString(lstr);
+            rstr = ToString<CanGC>(cx, rhs);
+            if (!rstr)
+                return false;
+            lstr = lhs.toString();
+        }
+        JSString *str = ConcatStrings<NoGC>(cx, lstr, rstr);
+        if (!str) {
+            RootedString nlstr(cx, lstr), nrstr(cx, rstr);
+            str = ConcatStrings<CanGC>(cx, nlstr, nrstr);
+            if (!str)
+                return false;
+        }
+        if (lIsObject || rIsObject)
+            types::TypeScript::MonitorString(cx, script, pc);
+        res->setString(str);
+    } else {
+        double l, r;
+        if (!ToNumber(cx, lhs, &l) || !ToNumber(cx, rhs, &r))
+            return false;
+        l += r;
+        Value nres = NumberValue(l);
+        if (nres.isDouble() &&
+            (lIsObject || rIsObject || (!lhs.isDouble() && !rhs.isDouble()))) {
+            types::TypeScript::MonitorOverflow(cx, script, pc);
+        }
+        *res = nres;
+    }
+
+    return true;
+}
+
+static JS_ALWAYS_INLINE bool
+SubOperation(JSContext *cx, HandleScript script, jsbytecode *pc, HandleValue lhs, HandleValue rhs,
+             Value *res)
+{
+    double d1, d2;
+    if (!ToNumber(cx, lhs, &d1) || !ToNumber(cx, rhs, &d2))
+        return false;
+    double d = d1 - d2;
+    if (!res->setNumber(d) && !(lhs.isDouble() || rhs.isDouble()))
+        types::TypeScript::MonitorOverflow(cx, script, pc);
+    return true;
+}
+
+static JS_ALWAYS_INLINE bool
+MulOperation(JSContext *cx, HandleScript script, jsbytecode *pc, HandleValue lhs, HandleValue rhs,
+             Value *res)
+{
+    double d1, d2;
+    if (!ToNumber(cx, lhs, &d1) || !ToNumber(cx, rhs, &d2))
+        return false;
+    double d = d1 * d2;
+    if (!res->setNumber(d) && !(lhs.isDouble() || rhs.isDouble()))
+        types::TypeScript::MonitorOverflow(cx, script, pc);
+    return true;
+}
+
+static JS_ALWAYS_INLINE bool
+DivOperation(JSContext *cx, HandleScript script, jsbytecode *pc, HandleValue lhs, HandleValue rhs,
+             Value *res)
+{
+    double d1, d2;
+    if (!ToNumber(cx, lhs, &d1) || !ToNumber(cx, rhs, &d2))
+        return false;
+    res->setNumber(NumberDiv(d1, d2));
+
+    if (d2 == 0 || (res->isDouble() && !(lhs.isDouble() || rhs.isDouble())))
+        types::TypeScript::MonitorOverflow(cx, script, pc);
+    return true;
+}
+
+static JS_ALWAYS_INLINE bool
+ModOperation(JSContext *cx, HandleScript script, jsbytecode *pc, HandleValue lhs, HandleValue rhs,
+             Value *res)
+{
+    int32_t l, r;
+    if (lhs.isInt32() && rhs.isInt32() &&
+        (l = lhs.toInt32()) >= 0 && (r = rhs.toInt32()) > 0) {
+        int32_t mod = l % r;
+        res->setInt32(mod);
+        return true;
+    }
+
+    double d1, d2;
+    if (!ToNumber(cx, lhs, &d1) || !ToNumber(cx, rhs, &d2))
+        return false;
+
+    res->setNumber(NumberMod(d1, d2));
+    types::TypeScript::MonitorOverflow(cx, script, pc);
+    return true;
+}
+
+static JS_ALWAYS_INLINE bool
+SetObjectElementOperation(JSContext *cx, Handle<JSObject*> obj, HandleId id, const Value &value,
+                          bool strict, JSScript *maybeScript = NULL, jsbytecode *pc = NULL)
+{
+    RootedScript script(cx, maybeScript);
+    types::TypeScript::MonitorAssign(cx, obj, id);
+
+    if (obj->isNative() && JSID_IS_INT(id)) {
+        uint32_t length = obj->getDenseInitializedLength();
+        int32_t i = JSID_TO_INT(id);
+        if ((uint32_t)i >= length) {
+            // In an Ion activation, GetPcScript won't work.  For non-baseline activations,
+            // that's ok, because optimized ion doesn't generate analysis info.  However,
+            // baseline must generate this information, so it passes the script and pc in
+            // as arguments.
+            if (script || cx->currentlyRunningInInterpreter()) {
+                JS_ASSERT(!!script == !!pc);
+                if (!script)
+                    types::TypeScript::GetPcScript(cx, script.address(), &pc);
+
+                if (script->hasAnalysis())
+                    script->analysis()->getCode(pc).arrayWriteHole = true;
+            }
+        }
+    }
+
+    if (obj->isNative() && !obj->setHadElementsAccess(cx))
+        return false;
+
+    RootedValue tmp(cx, value);
+    return JSObject::setGeneric(cx, obj, obj, id, &tmp, strict);
+}
+
 static JS_NEVER_INLINE bool
 Interpret(JSContext *cx, RunState &state)
 {
@@ -1080,10 +1297,6 @@ Interpret(JSContext *cx, RunState &state)
     InterruptEnabler interrupts(&switchMask, -1);
 
 # define DO_OP()            goto do_op
-# define DO_NEXT_OP(n)      JS_BEGIN_MACRO                                    \
-                                JS_ASSERT((n) == len);                        \
-                                goto advance_pc;                              \
-                            JS_END_MACRO
 
 # define BEGIN_CASE(OP)     case OP:
 # define END_CASE(OP)       END_CASE_LEN(OP##_LENGTH)
@@ -1092,21 +1305,21 @@ Interpret(JSContext *cx, RunState &state)
 
 /*
  * To share the code for all len == 1 cases we use the specialized label with
- * code that falls through to advance_pc: .
+ * code that falls through to advanceAndDoOp: .
  */
 # define END_CASE_LEN1      goto advance_pc_by_one;
-# define END_CASE_LEN2      len = 2; goto advance_pc;
-# define END_CASE_LEN3      len = 3; goto advance_pc;
-# define END_CASE_LEN4      len = 4; goto advance_pc;
-# define END_CASE_LEN5      len = 5; goto advance_pc;
-# define END_CASE_LEN6      len = 6; goto advance_pc;
-# define END_CASE_LEN7      len = 7; goto advance_pc;
-# define END_CASE_LEN8      len = 8; goto advance_pc;
-# define END_CASE_LEN9      len = 9; goto advance_pc;
-# define END_CASE_LEN10     len = 10; goto advance_pc;
-# define END_CASE_LEN11     len = 11; goto advance_pc;
-# define END_CASE_LEN12     len = 12; goto advance_pc;
-# define END_VARLEN_CASE    goto advance_pc;
+# define END_CASE_LEN2      len = 2; goto advanceAndDoOp;
+# define END_CASE_LEN3      len = 3; goto advanceAndDoOp;
+# define END_CASE_LEN4      len = 4; goto advanceAndDoOp;
+# define END_CASE_LEN5      len = 5; goto advanceAndDoOp;
+# define END_CASE_LEN6      len = 6; goto advanceAndDoOp;
+# define END_CASE_LEN7      len = 7; goto advanceAndDoOp;
+# define END_CASE_LEN8      len = 8; goto advanceAndDoOp;
+# define END_CASE_LEN9      len = 9; goto advanceAndDoOp;
+# define END_CASE_LEN10     len = 10; goto advanceAndDoOp;
+# define END_CASE_LEN11     len = 11; goto advanceAndDoOp;
+# define END_CASE_LEN12     len = 12; goto advanceAndDoOp;
+# define END_VARLEN_CASE    goto advanceAndDoOp;
 # define ADD_EMPTY_CASE(OP) BEGIN_CASE(OP)
 # define END_EMPTY_CASES    goto advance_pc_by_one;
 
@@ -1169,10 +1382,8 @@ Interpret(JSContext *cx, RunState &state)
     SET_SCRIPT(regs.fp()->script());
 
 #if JS_TRACE_LOGGING
-    AutoTraceLog logger(TraceLogging::defaultLogger(),
-                        TraceLogging::INTERPRETER_START,
-                        TraceLogging::INTERPRETER_STOP,
-                        script);
+    TraceLogging::defaultLogger()->log(TraceLogging::SCRIPT_START, script);
+    TraceLogging::defaultLogger()->log(TraceLogging::INFO_ENGINE_INTERPRETER);
 #endif
 
     /*
@@ -1235,8 +1446,8 @@ Interpret(JSContext *cx, RunState &state)
     /*
      * It is important that "op" be initialized before calling DO_OP because
      * it is possible for "op" to be specially assigned during the normal
-     * processing of an opcode while looping. We rely on DO_NEXT_OP to manage
-     * "op" correctly in all other cases.
+     * processing of an opcode while looping. We rely on |advanceAndDoOp:| to
+     * manage "op" correctly in all other cases.
      */
     JSOp op;
     int32_t len;
@@ -1245,13 +1456,13 @@ Interpret(JSContext *cx, RunState &state)
     if (rt->profilingScripts || cx->runtime()->debugHooks.interruptHook)
         interrupts.enable();
 
-    DO_NEXT_OP(len);
+    goto advanceAndDoOp;
 
     for (;;) {
       advance_pc_by_one:
         JS_ASSERT(js_CodeSpec[op].length == 1);
         len = 1;
-      advance_pc:
+      advanceAndDoOp:
         js::gc::MaybeVerifyBarriers(cx);
         regs.pc += len;
         op = (JSOp) *regs.pc;
@@ -1485,6 +1696,10 @@ BEGIN_CASE(JSOP_STOP)
      */
     CHECK_BRANCH();
 
+#if JS_TRACE_LOGGING
+    TraceLogging::defaultLogger()->log(TraceLogging::SCRIPT_STOP);
+#endif
+
     interpReturnOK = true;
     if (entryFrame != regs.fp())
   inline_return:
@@ -1515,7 +1730,7 @@ BEGIN_CASE(JSOP_STOP)
             TypeScript::Monitor(cx, script, regs.pc, regs.sp[-1]);
 
             len = JSOP_CALL_LENGTH;
-            DO_NEXT_OP(len);
+            goto advanceAndDoOp;
         }
 
         /* Increment pc so that |sp - fp->slots == ReconstructStackDepth(pc)|. */
@@ -1565,7 +1780,7 @@ BEGIN_CASE(JSOP_OR)
     bool cond = ToBooleanOp(regs);
     if (cond == true) {
         len = GET_JUMP_OFFSET(regs.pc);
-        DO_NEXT_OP(len);
+        goto advanceAndDoOp;
     }
 }
 END_CASE(JSOP_OR)
@@ -1575,7 +1790,7 @@ BEGIN_CASE(JSOP_AND)
     bool cond = ToBooleanOp(regs);
     if (cond == false) {
         len = GET_JUMP_OFFSET(regs.pc);
-        DO_NEXT_OP(len);
+        goto advanceAndDoOp;
     }
 }
 END_CASE(JSOP_AND)
@@ -1598,7 +1813,7 @@ END_CASE(JSOP_AND)
                 BRANCH(len);                                                  \
             }                                                                 \
             len = 1 + JSOP_IFEQ_LENGTH;                                       \
-            DO_NEXT_OP(len);                                                  \
+            goto advanceAndDoOp;                                              \
         }                                                                     \
     JS_END_MACRO
 
@@ -2298,7 +2513,7 @@ BEGIN_CASE(JSOP_FUNCALL)
         TypeScript::Monitor(cx, script, regs.pc, newsp[-1]);
         regs.sp = newsp;
         len = JSOP_CALL_LENGTH;
-        DO_NEXT_OP(len);
+        goto advanceAndDoOp;
     }
 
     InitialFrameFlags initial = construct ? INITIAL_CONSTRUCT : INITIAL_NONE;
@@ -2346,6 +2561,11 @@ BEGIN_CASE(JSOP_FUNCALL)
         regs.fp()->setUseNewType();
 
     SET_SCRIPT(regs.fp()->script());
+
+#if JS_TRACE_LOGGING
+    TraceLogging::defaultLogger()->log(TraceLogging::SCRIPT_START, script);
+    TraceLogging::defaultLogger()->log(TraceLogging::INFO_ENGINE_INTERPRETER);
+#endif
 
     if (!regs.fp()->prologue(cx))
         goto error;
@@ -2511,7 +2731,7 @@ BEGIN_CASE(JSOP_TABLESWITCH)
         double d;
         /* Don't use mozilla::DoubleIsInt32; treat -0 (double) as 0. */
         if (!rref.isDouble() || (d = rref.toDouble()) != (i = int32_t(rref.toDouble())))
-            DO_NEXT_OP(len);
+            goto advanceAndDoOp;
     }
 
     pc2 += JUMP_OFFSET_LEN;
@@ -2739,8 +2959,8 @@ BEGIN_CASE(JSOP_NEWINIT)
         obj = NewDenseEmptyArray(cx, NULL, newKind);
     } else {
         gc::AllocKind allocKind = GuessObjectGCKind(0);
-        newKind = UseNewTypeForInitializer(cx, script, regs.pc, &ObjectClass);
-        obj = NewBuiltinClassInstance(cx, &ObjectClass, allocKind, newKind);
+        newKind = UseNewTypeForInitializer(cx, script, regs.pc, &JSObject::class_);
+        obj = NewBuiltinClassInstance(cx, &JSObject::class_, allocKind, newKind);
     }
     if (!obj || !SetInitializerObjectType(cx, script, regs.pc, obj, newKind))
         goto error;
@@ -2798,7 +3018,7 @@ BEGIN_CASE(JSOP_INITPROP)
     /* Load the object being initialized into lval/obj. */
     RootedObject &obj = rootObject0;
     obj = &regs.sp[-2].toObject();
-    JS_ASSERT(obj->isObject());
+    JS_ASSERT(obj->is<JSObject>());
 
     PropertyName *name = script->getName(regs.pc);
 
@@ -3041,7 +3261,7 @@ BEGIN_CASE(JSOP_LEAVEBLOCKEXPR)
     } else {
         /* Another op will pop; nothing to do here. */
         len = JSOP_LEAVEFORLETIN_LENGTH;
-        DO_NEXT_OP(len);
+        goto advanceAndDoOp;
     }
 }
 END_CASE(JSOP_LEAVEBLOCK)
@@ -3153,7 +3373,7 @@ END_CASE(JSOP_ARRAYPUSH)
                  * catch block.
                  */
                 len = 0;
-                DO_NEXT_OP(len);
+                goto advanceAndDoOp;
 
               case JSTRY_FINALLY:
                 /*
@@ -3164,7 +3384,7 @@ END_CASE(JSOP_ARRAYPUSH)
                 PUSH_COPY(cx->getPendingException());
                 cx->clearPendingException();
                 len = 0;
-                DO_NEXT_OP(len);
+                goto advanceAndDoOp;
 
               case JSTRY_ITER: {
                 /* This is similar to JSOP_ENDITER in the interpreter loop. */
@@ -3263,7 +3483,7 @@ js::GetScopeName(JSContext *cx, HandleObject scopeChain, HandlePropertyName name
 
     if (!shape) {
         JSAutoByteString printable;
-        if (js_AtomToPrintableString(cx, name, &printable))
+        if (AtomToPrintableString(cx, name, &printable))
             js_ReportIsNotDefined(cx, printable.ptr());
         return false;
     }
@@ -3392,7 +3612,7 @@ js::DefFunOperation(JSContext *cx, HandleScript script, HandleObject scopeChain,
 
         if (shape->isAccessorDescriptor() || !shape->writable() || !shape->enumerable()) {
             JSAutoByteString bytes;
-            if (js_AtomToPrintableString(cx, name, &bytes)) {
+            if (AtomToPrintableString(cx, name, &bytes)) {
                 JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_CANT_REDEFINE_PROP,
                                      bytes.ptr());
             }
@@ -3494,17 +3714,6 @@ bool
 js::GetElement(JSContext *cx, MutableHandleValue lref, HandleValue rref, MutableHandleValue vp)
 {
     return GetElementOperation(cx, JSOP_GETELEM, lref, rref, vp);
-}
-
-bool
-js::GetElementMonitored(JSContext *cx, MutableHandleValue lref, HandleValue rref,
-                        MutableHandleValue vp)
-{
-    if (!GetElement(cx, lref, rref, vp))
-        return false;
-
-    TypeScript::Monitor(cx, vp);
-    return true;
 }
 
 bool

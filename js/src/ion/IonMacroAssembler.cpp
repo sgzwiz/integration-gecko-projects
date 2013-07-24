@@ -802,6 +802,12 @@ MacroAssembler::performOsr()
     ret();
 }
 
+static void
+ReportOverRecursed(JSContext *cx)
+{
+    js_ReportOverRecursed(cx);
+}
+
 void
 MacroAssembler::generateBailoutTail(Register scratch, Register bailoutInfo)
 {
@@ -823,7 +829,7 @@ MacroAssembler::generateBailoutTail(Register scratch, Register bailoutInfo)
         loadJSContext(ReturnReg);
         setupUnalignedABICall(1, scratch);
         passABIArg(ReturnReg);
-        callWithABI(JS_FUNC_TO_DATA_PTR(void *, js_ReportOverRecursed));
+        callWithABI(JS_FUNC_TO_DATA_PTR(void *, ReportOverRecursed));
         jump(&exception);
     }
 
@@ -1018,8 +1024,7 @@ MacroAssembler::loadBaselineFramePtr(Register framePtr, Register dest)
 }
 
 void
-MacroAssembler::enterParallelExitFrameAndLoadSlice(const VMFunction *f, Register slice,
-                                                   Register scratch)
+MacroAssembler::loadForkJoinSlice(Register slice, Register scratch)
 {
     // Load the current ForkJoinSlice *. If we need a parallel exit frame,
     // chances are we are about to do something very slow anyways, so just
@@ -1028,6 +1033,29 @@ MacroAssembler::enterParallelExitFrameAndLoadSlice(const VMFunction *f, Register
     callWithABI(JS_FUNC_TO_DATA_PTR(void *, ParForkJoinSlice));
     if (ReturnReg != slice)
         movePtr(ReturnReg, slice);
+}
+
+void
+MacroAssembler::loadContext(Register cxReg, Register scratch, ExecutionMode executionMode)
+{
+    switch (executionMode) {
+      case SequentialExecution:
+        // The scratch register is not used for sequential execution.
+        loadJSContext(cxReg);
+        break;
+      case ParallelExecution:
+        loadForkJoinSlice(cxReg, scratch);
+        break;
+      default:
+        MOZ_ASSUME_UNREACHABLE("No such execution mode");
+    }
+}
+
+void
+MacroAssembler::enterParallelExitFrameAndLoadSlice(const VMFunction *f, Register slice,
+                                                   Register scratch)
+{
+    loadForkJoinSlice(slice, scratch);
     // Load the PerThreadData from from the slice.
     loadPtr(Address(slice, offsetof(ForkJoinSlice, perThreadData)), scratch);
     linkParallelExitFrame(scratch);
@@ -1035,6 +1063,17 @@ MacroAssembler::enterParallelExitFrameAndLoadSlice(const VMFunction *f, Register
     exitCodePatch_ = PushWithPatch(ImmWord(-1));
     // Push the VMFunction pointer, to mark arguments.
     Push(ImmWord(f));
+}
+
+void
+MacroAssembler::enterFakeParallelExitFrame(Register slice, Register scratch,
+                                           IonCode *codeVal)
+{
+    // Load the PerThreadData from from the slice.
+    loadPtr(Address(slice, offsetof(ForkJoinSlice, perThreadData)), scratch);
+    linkParallelExitFrame(scratch);
+    Push(ImmWord(uintptr_t(codeVal)));
+    Push(ImmWord(uintptr_t(NULL)));
 }
 
 void
@@ -1049,6 +1088,24 @@ MacroAssembler::enterExitFrameAndLoadContext(const VMFunction *f, Register cxReg
         break;
       case ParallelExecution:
         enterParallelExitFrameAndLoadSlice(f, cxReg, scratch);
+        break;
+      default:
+        MOZ_ASSUME_UNREACHABLE("No such execution mode");
+    }
+}
+
+void
+MacroAssembler::enterFakeExitFrame(Register cxReg, Register scratch,
+                                   ExecutionMode executionMode,
+                                   IonCode *codeVal)
+{
+    switch (executionMode) {
+      case SequentialExecution:
+        // The cx and scratch registers are not used for sequential execution.
+        enterFakeExitFrame(codeVal);
+        break;
+      case ParallelExecution:
+        enterFakeParallelExitFrame(cxReg, scratch, codeVal);
         break;
       default:
         MOZ_ASSUME_UNREACHABLE("No such execution mode");
@@ -1176,20 +1233,73 @@ MacroAssembler::printf(const char *output, Register value)
     PopRegsInMask(RegisterSet::Volatile());
 }
 
+#if JS_TRACE_LOGGING
 void
-MacroAssembler::copyMem(Register copyFrom, Register copyEnd, Register copyTo, Register temp)
+MacroAssembler::tracelogStart(JSScript *script)
 {
-    Label copyDone;
-    Label copyLoop;
-    bind(&copyLoop);
-    branchPtr(Assembler::AboveOrEqual, copyFrom, copyEnd, &copyDone);
-    load32(Address(copyFrom, 0), temp);
-    store32(temp, Address(copyTo, 0));
-    addPtr(Imm32(4), copyTo);
-    addPtr(Imm32(4), copyFrom);
-    jump(&copyLoop);
-    bind(&copyDone);
+    void (&TraceLogStart)(TraceLogging*, TraceLogging::Type, JSScript*) = TraceLog;
+    RegisterSet regs = RegisterSet::Volatile();
+    PushRegsInMask(regs);
+
+    Register temp = regs.takeGeneral();
+    Register logger = regs.takeGeneral();
+    Register type = regs.takeGeneral();
+    Register rscript = regs.takeGeneral();
+
+    setupUnalignedABICall(3, temp);
+    movePtr(ImmWord((void *)TraceLogging::defaultLogger()), logger);
+    passABIArg(logger);
+    move32(Imm32(TraceLogging::SCRIPT_START), type);
+    passABIArg(type);
+    movePtr(ImmGCPtr(script), rscript);
+    passABIArg(rscript);
+    callWithABI(JS_FUNC_TO_DATA_PTR(void *, TraceLogStart));
+
+    PopRegsInMask(RegisterSet::Volatile());
 }
+
+void
+MacroAssembler::tracelogStop()
+{
+    void (&TraceLogStop)(TraceLogging*, TraceLogging::Type) = TraceLog;
+    RegisterSet regs = RegisterSet::Volatile();
+    PushRegsInMask(regs);
+
+    Register temp = regs.takeGeneral();
+    Register logger = regs.takeGeneral();
+    Register type = regs.takeGeneral();
+
+    setupUnalignedABICall(2, temp);
+    movePtr(ImmWord((void *)TraceLogging::defaultLogger()), logger);
+    passABIArg(logger);
+    move32(Imm32(TraceLogging::SCRIPT_STOP), type);
+    passABIArg(type);
+    callWithABI(JS_FUNC_TO_DATA_PTR(void *, TraceLogStop));
+
+    PopRegsInMask(RegisterSet::Volatile());
+}
+
+void
+MacroAssembler::tracelogLog(TraceLogging::Type type)
+{
+    void (&TraceLogStop)(TraceLogging*, TraceLogging::Type) = TraceLog;
+    RegisterSet regs = RegisterSet::Volatile();
+    PushRegsInMask(regs);
+
+    Register temp = regs.takeGeneral();
+    Register logger = regs.takeGeneral();
+    Register rtype = regs.takeGeneral();
+
+    setupUnalignedABICall(2, temp);
+    movePtr(ImmWord((void *)TraceLogging::defaultLogger()), logger);
+    passABIArg(logger);
+    move32(Imm32(type), rtype);
+    passABIArg(rtype);
+    callWithABI(JS_FUNC_TO_DATA_PTR(void *, TraceLogStop));
+
+    PopRegsInMask(RegisterSet::Volatile());
+}
+#endif
 
 void
 MacroAssembler::convertInt32ValueToDouble(const Address &address, Register scratch, Label *done)
@@ -1308,22 +1418,4 @@ MacroAssembler::popRooted(VMFunction::RootType rootType, Register cellReg,
         Pop(valueReg);
         break;
     }
-}
-
-ABIArgIter::ABIArgIter(const MIRTypeVector &types)
-  : gen_(),
-    types_(types),
-    i_(0)
-{
-    if (!done())
-        gen_.next(types_[i_]);
-}
-
-void
-ABIArgIter::operator++(int)
-{
-    JS_ASSERT(!done());
-    i_++;
-    if (!done())
-        gen_.next(types_[i_]);
 }

@@ -743,6 +743,11 @@ class ICStub
           case SetProp_CallScripted:
           case SetProp_CallNative:
           case RetSub_Fallback:
+          // These two fallback stubs don't actually make non-tail calls,
+          // but the fallback code for the bailout path needs to pop the stub frame
+          // pushed during the bailout.
+          case GetProp_Fallback:
+          case SetProp_Fallback:
             return true;
           default:
             return false;
@@ -979,9 +984,9 @@ class ICStubCompiler
     // Prevent GC in the middle of stub compilation.
     js::gc::AutoSuppressGC suppressGC;
 
-    mozilla::DebugOnly<bool> entersStubFrame_;
 
   protected:
+    mozilla::DebugOnly<bool> entersStubFrame_;
     JSContext *cx;
     ICStub::Kind kind;
 
@@ -3748,7 +3753,9 @@ class ICGetProp_Fallback : public ICMonitoredFallbackStub
 
     class Compiler : public ICStubCompiler {
       protected:
+        uint32_t returnOffset_;
         bool generateStubCode(MacroAssembler &masm);
+        bool postGenerateStubCode(MacroAssembler &masm, Handle<IonCode *> code);
 
       public:
         Compiler(JSContext *cx)
@@ -4379,7 +4386,7 @@ class ICGetProp_CallDOMProxyWithGenerationNative : public ICGetPropCallDOMProxyN
 
 class ICGetPropCallDOMProxyNativeCompiler : public ICStubCompiler {
     ICStub *firstMonitorStub_;
-    RootedObject obj_;
+    Rooted<ProxyObject*> proxy_;
     RootedObject holder_;
     RootedFunction getter_;
     uint32_t pcOffset_;
@@ -4390,7 +4397,7 @@ class ICGetPropCallDOMProxyNativeCompiler : public ICStubCompiler {
 
   public:
     ICGetPropCallDOMProxyNativeCompiler(JSContext *cx, ICStub::Kind kind,
-                                        ICStub *firstMonitorStub, HandleObject obj,
+                                        ICStub *firstMonitorStub, Handle<ProxyObject*> proxy,
                                         HandleObject holder, HandleFunction getter,
                                         uint32_t pcOffset);
 
@@ -4444,18 +4451,18 @@ class ICGetProp_DOMProxyShadowed : public ICMonitoredStub
 
     class Compiler : public ICStubCompiler {
         ICStub *firstMonitorStub_;
-        RootedObject obj_;
+        Rooted<ProxyObject*> proxy_;
         RootedPropertyName name_;
         uint32_t pcOffset_;
 
         bool generateStubCode(MacroAssembler &masm);
 
       public:
-        Compiler(JSContext *cx, ICStub *firstMonitorStub, HandleObject obj, HandlePropertyName name,
-                 uint32_t pcOffset)
+        Compiler(JSContext *cx, ICStub *firstMonitorStub, Handle<ProxyObject*> proxy,
+                 HandlePropertyName name, uint32_t pcOffset)
           : ICStubCompiler(cx, ICStub::GetProp_CallNative),
             firstMonitorStub_(firstMonitorStub),
-            obj_(cx, obj),
+            proxy_(cx, proxy),
             name_(cx, name),
             pcOffset_(pcOffset)
         {}
@@ -4538,7 +4545,9 @@ class ICSetProp_Fallback : public ICFallbackStub
 
     class Compiler : public ICStubCompiler {
       protected:
+        uint32_t returnOffset_;
         bool generateStubCode(MacroAssembler &masm);
+        bool postGenerateStubCode(MacroAssembler &masm, Handle<IonCode *> code);
 
       public:
         Compiler(JSContext *cx)
