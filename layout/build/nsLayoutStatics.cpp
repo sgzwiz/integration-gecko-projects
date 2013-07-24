@@ -59,7 +59,6 @@
 #include "nsMathMLOperators.h"
 #include "Navigator.h"
 #include "DOMStorageObserver.h"
-#include "CacheObserver.h"
 #include "DisplayItemClip.h"
 
 #include "AudioChannelService.h"
@@ -122,7 +121,6 @@ using namespace mozilla::system;
 extern void NS_ShutdownEventTargetChainItemRecyclePool();
 
 using namespace mozilla;
-using namespace mozilla::net;
 using namespace mozilla::dom;
 using namespace mozilla::dom::ipc;
 using namespace mozilla::dom::time;
@@ -274,10 +272,8 @@ nsLayoutStatics::Initialize()
   nsApplicationCacheService::AppClearDataObserverInit();
 
   InitializeDateCacheCleaner();
-  
-  HTMLVideoElement::Init();
 
-  CacheObserver::Init();
+  HTMLVideoElement::Init();
 
   return NS_OK;
 }
@@ -398,6 +394,4 @@ nsLayoutStatics::Shutdown()
   DisplayItemClip::Shutdown();
 
   nsDocument::XPCOMShutdown();
-
-  CacheObserver::Shutdown();
 }
