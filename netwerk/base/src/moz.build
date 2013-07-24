@@ -27,6 +27,7 @@ CPP_SOURCES += [
     'NetworkActivityMonitor.cpp',
     'ProxyAutoConfig.cpp',
     'RedirectChannelRegistrar.cpp',
+    'Tickler.cpp',
     'nsAsyncRedirectVerifyHelper.cpp',
     'nsAsyncStreamCopier.cpp',
     'nsAuthInformationHolder.cpp',
