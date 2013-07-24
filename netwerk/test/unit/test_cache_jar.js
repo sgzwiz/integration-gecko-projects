@@ -2,6 +2,10 @@ Cu.import("resource://testing-common/httpd.js");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
+XPCOMUtils.defineLazyGetter(this, "URL", function() {
+  return "http://localhost:" + httpserv.identity.primaryPort + "/cached";
+});
+
 var httpserv = null;
 var handlers_called = 0;
 
@@ -37,7 +41,7 @@ var thirdTests = [[0, false, 0], [0, true, 0], [1, false, 1], [1, true, 1]];
 function run_all_tests() {
   for (let test of firstTests) {
     handlers_called = 0;
-    var chan = makeChan("http://localhost:4444/cached", test[0], test[1]);
+    var chan = makeChan(URL, test[0], test[1]);
     chan.asyncOpen(new ChannelListener(doneFirstLoad, test[2]), null);
     yield;
   }
@@ -57,7 +61,7 @@ function run_all_tests() {
 
   for (let test of secondTests) {
     handlers_called = 0;
-    var chan = makeChan("http://localhost:4444/cached", test[0], test[1]);
+    var chan = makeChan(URL, test[0], test[1]);
     chan.asyncOpen(new ChannelListener(doneFirstLoad, test[2]), null);
     yield;
   }
@@ -71,7 +75,7 @@ function run_all_tests() {
 
   for (let test of thirdTests) {
     handlers_called = 0;
-    var chan = makeChan("http://localhost:4444/cached", test[0], test[1]);
+    var chan = makeChan(URL, test[0], test[1]);
     chan.asyncOpen(new ChannelListener(doneFirstLoad, test[2]), null);
     yield;
   }
@@ -83,14 +87,14 @@ function run_test() {
   do_test_pending();
   httpserv = new HttpServer();
   httpserv.registerPathHandler("/cached", cached_handler);
-  httpserv.start(4444);
+  httpserv.start(-1);
   gTests = run_all_tests();
   gTests.next();
 }
 
 function doneFirstLoad(req, buffer, expected) {
   // Load it again, make sure it hits the cache
-  var chan = makeChan("http://localhost:4444/cached", 0, false);
+  var chan = makeChan(URL, 0, false);
   chan.asyncOpen(new ChannelListener(doneSecondLoad, expected), null);
 }
 
