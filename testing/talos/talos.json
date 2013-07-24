@@ -1,4 +1,8 @@
 {
+    "talos.zip": {
+        "url": "http://build.mozilla.org/talos/zips/talos.fcbb9d7d3c78.zip",
+        "path": ""
+    },
     "global": {
         "talos_repo": "http://hg.mozilla.org/build/talos",
         "talos_revision": "7d4ae29b7d1f"
