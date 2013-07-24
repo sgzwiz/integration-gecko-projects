@@ -1,6 +1,7 @@
 Cu.import("resource://testing-common/httpd.js");
 
-var httpserv = null;
+var httpserv = null;" + httpserv.identity.primaryPort +
+                       
 var test_nr = 0;
 var observers_called = "";
 var handlers_called = "";
@@ -46,7 +47,7 @@ function run_test() {
   httpserv.registerPathHandler("/bug482601/partial", bug482601_partial);
   httpserv.registerPathHandler("/bug482601/cached", bug482601_cached);
   httpserv.registerPathHandler("/bug482601/only_from_cache", bug482601_only_from_cache);
-  httpserv.start(4444);
+  httpserv.start(-1);
 
   var obs = Cc["@mozilla.org/observer-service;1"].getService();
   obs = obs.QueryInterface(Ci.nsIObserverService);
@@ -103,12 +104,14 @@ function storeCache(aCacheEntry, aResponseHeads, aContent) {
 function test_nocache() {
   observers_called = "";
 
-  var chan = makeChan("http://localhost:4444/bug482601/nocache");
+  var chan = makeChan("http://localhost:" + httpserv.identity.primaryPort +
+                      "/bug482601/nocache");
   chan.asyncOpen(listener, null);
 }
 
 function test_partial() {
-   asyncOpenCacheEntry("http://localhost:4444/bug482601/partial",
+   asyncOpenCacheEntry("http://localhost:" + httpserv.identity.primaryPort +
+                       "/bug482601/partial",
                        "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
                        test_partial2);
 }
@@ -127,12 +130,14 @@ function test_partial2(status, entry) {
 
   observers_called = "";
 
-  var chan = makeChan("http://localhost:4444/bug482601/partial");
+  var chan = makeChan("http://localhost:" + httpserv.identity.primaryPort +
+                      "/bug482601/partial");
   chan.asyncOpen(listener, null);
 }
 
 function test_cached() {
-   asyncOpenCacheEntry("http://localhost:4444/bug482601/cached",
+   asyncOpenCacheEntry("http://localhost:" + httpserv.identity.primaryPort +
+                       "/bug482601/cached",
                        "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
                        test_cached2);
 }
@@ -151,13 +156,15 @@ function test_cached2(status, entry) {
 
   observers_called = "";
 
-  var chan = makeChan("http://localhost:4444/bug482601/cached");
+  var chan = makeChan("http://localhost:" + httpserv.identity.primaryPort +
+                      "/bug482601/cached");
   chan.loadFlags = Ci.nsIRequest.VALIDATE_ALWAYS;
   chan.asyncOpen(listener, null);
 }
 
 function test_only_from_cache() {
-   asyncOpenCacheEntry("http://localhost:4444/bug482601/only_from_cache",
+   asyncOpenCacheEntry("http://localhost:" + httpserv.identity.primaryPort +
+                       "/bug482601/only_from_cache",
                        "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
                        test_only_from_cache2);
 }
@@ -176,7 +183,8 @@ function test_only_from_cache2(status, entry) {
 
   observers_called = "";
 
-  var chan = makeChan("http://localhost:4444/bug482601/only_from_cache");
+  var chan = makeChan("http://localhost:" + httpserv.identity.primaryPort +
+                      "/bug482601/only_from_cache");
   chan.loadFlags = Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE;
   chan.asyncOpen(listener, null);
 }

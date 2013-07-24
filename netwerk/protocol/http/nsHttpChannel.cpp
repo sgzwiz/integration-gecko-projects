@@ -40,7 +40,6 @@
 #include "nsAlgorithm.h"
 #include "GeckoProfiler.h"
 #include "nsIConsoleService.h"
-#include "base/compiler_specific.h"
 #include "NullHttpTransaction.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/VisualEventTracer.h"
@@ -196,7 +195,7 @@ AutoRedirectVetoNotifier::ReportRedirectResult(bool succeeded)
 //-----------------------------------------------------------------------------
 
 nsHttpChannel::nsHttpChannel()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(HttpAsyncAborter<nsHttpChannel>(this))
+    : HttpAsyncAborter<nsHttpChannel>(MOZ_THIS_IN_INITIALIZER_LIST())
     , mLogicalOffset(0)
     , mCacheEntryDeviceTelemetryID(UNKNOWN_DEVICE)
     , mPostID(0)
@@ -2434,6 +2433,12 @@ nsHttpChannel::OpenCacheEntry(bool usingSSL)
     nsCOMPtr<nsICacheStorageService> cacheStorageService =
         do_GetService("@mozilla.org/netwerk/cache-storage-service;1", &rv);
     NS_ENSURE_SUCCESS(rv, rv);
+    }
+
+    if (mLoadFlags & LOAD_INITIAL_DOCUMENT_URI) {
+        mozilla::Telemetry::Accumulate(
+            Telemetry::HTTP_OFFLINE_CACHE_DOCUMENT_LOAD,
+            !!mApplicationCache);
 
     nsRefPtr<LoadContextInfo> info = GetLoadContextInfo(this);
 
