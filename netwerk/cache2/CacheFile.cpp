@@ -539,7 +539,7 @@ CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
 
   if (aChunk->mRefCnt != 2) {
     LOG(("CacheFile::OnChunkWritten() - Chunk is still used [this=%p, chunk=%p,"
-         " refcnt=%d]", this, aChunk, aChunk->mRefCnt));
+         " refcnt=%d]", this, aChunk, aChunk->mRefCnt.get()));
 
     return NS_OK;
   }
@@ -1237,7 +1237,7 @@ CacheFile::RemoveChunk(CacheFileChunk *aChunk)
 
     if (aChunk->mRefCnt != 2) {
       LOG(("CacheFile::RemoveChunk() - Chunk is still used [this=%p, chunk=%p, "
-           "refcnt=%d]", this, aChunk, aChunk->mRefCnt));
+           "refcnt=%d]", this, aChunk, aChunk->mRefCnt.get()));
 
       // somebody got the reference before the lock was acquired
       return NS_OK;
