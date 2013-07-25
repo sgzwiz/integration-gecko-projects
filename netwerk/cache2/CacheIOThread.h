@@ -23,7 +23,7 @@ public:
   NS_DECL_NSITHREADOBSERVER
 
   CacheIOThread();
-  ~CacheIOThread();
+  virtual ~CacheIOThread();
 
   enum ELevel {
     IMMEDIATE,
