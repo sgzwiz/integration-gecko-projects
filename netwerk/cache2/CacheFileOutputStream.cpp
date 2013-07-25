@@ -14,13 +14,12 @@
 namespace mozilla {
 namespace net {
 
-NS_IMPL_THREADSAFE_ADDREF(CacheFileOutputStream)
+NS_IMPL_ADDREF(CacheFileOutputStream)
 NS_IMETHODIMP_(nsrefcnt)
 CacheFileOutputStream::Release()
 {
-  nsrefcnt count;
   NS_PRECONDITION(0 != mRefCnt, "dup release");
-  count = NS_AtomicDecrementRefcnt(mRefCnt);
+  nsrefcnt count = --mRefCnt;
   NS_LOG_RELEASE(this, count, "CacheFileOutputStream");
 
   if (0 == count) {

@@ -1,7 +1,6 @@
 Cu.import("resource://testing-common/httpd.js");
 
-var httpserv = null;" + httpserv.identity.primaryPort +
-                       
+var httpserv = null;
 var test_nr = 0;
 var observers_called = "";
 var handlers_called = "";

@@ -29,7 +29,7 @@ class CacheEntryTable : public TCacheEntryTable { };
 
 class CacheStorage : public nsICacheStorage
 {
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSICACHESTORAGE
 
 public:

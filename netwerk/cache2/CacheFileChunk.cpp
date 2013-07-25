@@ -97,13 +97,12 @@ private:
 };
 
 
-NS_IMPL_THREADSAFE_ADDREF(CacheFileChunk)
+NS_IMPL_ADDREF(CacheFileChunk)
 NS_IMETHODIMP_(nsrefcnt)
 CacheFileChunk::Release()
 {
-  nsrefcnt count;
   NS_PRECONDITION(0 != mRefCnt, "dup release");
-  count = NS_AtomicDecrementRefcnt(mRefCnt);
+  nsrefcnt count = --mRefCnt;
   NS_LOG_RELEASE(this, count, "CacheFileChunk");
 
   if (0 == count) {
