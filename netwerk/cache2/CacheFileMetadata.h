@@ -45,7 +45,7 @@ NS_DEFINE_STATIC_IID_ACCESSOR(CacheFileMetadataListener,
 class CacheFileMetadata : public CacheFileIOListener
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
 
   CacheFileMetadata(CacheFileHandle *aHandle, const nsACString &aKey);
   CacheFileMetadata(const nsACString &aKey);

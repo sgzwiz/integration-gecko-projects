@@ -21,7 +21,7 @@ class CacheFileInputStream : public nsIAsyncInputStream
                            , public nsISeekableStream
                            , public CacheFileChunkListener
 {
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIINPUTSTREAM
   NS_DECL_NSIASYNCINPUTSTREAM
   NS_DECL_NSISEEKABLESTREAM

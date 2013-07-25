@@ -24,7 +24,7 @@ class CacheFileHandle : public nsISupports
                       , public PRCList
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
 
   CacheFileHandle(const SHA1Sum::Hash *aHash, bool aPriority);
   bool IsDoomed() { return mIsDoomed; }
@@ -124,7 +124,7 @@ NS_DEFINE_STATIC_IID_ACCESSOR(CacheFileIOListener, CACHEFILEIOLISTENER_IID)
 class CacheFileIOManager : public nsISupports
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
 
   enum {
     OPEN       = 0U,
