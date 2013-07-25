@@ -32,7 +32,7 @@ class CacheEntryTable;
 class CacheStorageService : public nsICacheStorageService
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSICACHESTORAGESERVICE
 
   CacheStorageService();

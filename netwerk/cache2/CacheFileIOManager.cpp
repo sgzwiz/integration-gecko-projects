@@ -42,7 +42,7 @@ NS_IMPL_ADDREF(CacheFileHandle)
 NS_IMETHODIMP_(nsrefcnt)
 CacheFileHandle::Release()
 {
-  LOG(("CacheFileHandle::Release() [this=%p, refcnt=%d]", this, mRefCnt));
+  LOG(("CacheFileHandle::Release() [this=%p, refcnt=%d]", this, mRefCnt.get()));
   NS_PRECONDITION(0 != mRefCnt, "dup release");
   nsrefcnt count = --mRefCnt;
   NS_LOG_RELEASE(this, count, "CacheFileHandle");
