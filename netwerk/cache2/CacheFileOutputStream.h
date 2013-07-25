@@ -21,7 +21,7 @@ class CacheFileOutputStream : public nsIAsyncOutputStream
                             , public nsISeekableStream
                             , public CacheFileChunkListener
 {
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIOUTPUTSTREAM
   NS_DECL_NSIASYNCOUTPUTSTREAM
   NS_DECL_NSISEEKABLESTREAM

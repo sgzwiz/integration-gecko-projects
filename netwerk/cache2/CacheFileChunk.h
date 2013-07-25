@@ -65,7 +65,7 @@ public:
 class CacheFileChunk : public CacheFileIOListener
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
 
   CacheFileChunk(CacheFile *aFile, uint32_t aIndex);
 

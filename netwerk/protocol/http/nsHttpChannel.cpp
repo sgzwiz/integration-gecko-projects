@@ -2348,6 +2348,11 @@ nsHttpChannel::ContinueProcessFallback(nsresult rv)
     if (NS_FAILED(rv))
         return rv;
 
+    if (mLoadFlags & LOAD_INITIAL_DOCUMENT_URI) {
+        mozilla::Telemetry::Accumulate(Telemetry::HTTP_OFFLINE_CACHE_DOCUMENT_LOAD,
+                                       true);
+    }
+
     // close down this channel
     Cancel(NS_BINDING_REDIRECTED);
 
@@ -2433,12 +2438,6 @@ nsHttpChannel::OpenCacheEntry(bool usingSSL)
     nsCOMPtr<nsICacheStorageService> cacheStorageService =
         do_GetService("@mozilla.org/netwerk/cache-storage-service;1", &rv);
     NS_ENSURE_SUCCESS(rv, rv);
-    }
-
-    if (mLoadFlags & LOAD_INITIAL_DOCUMENT_URI) {
-        mozilla::Telemetry::Accumulate(
-            Telemetry::HTTP_OFFLINE_CACHE_DOCUMENT_LOAD,
-            !!mApplicationCache);
 
     nsRefPtr<LoadContextInfo> info = GetLoadContextInfo(this);
 
@@ -2989,6 +2988,11 @@ nsHttpChannel::OnNormalCacheEntryAvailable(nsICacheEntry *aEntry,
     if (NS_SUCCEEDED(aEntryStatus)) {
         mCacheEntry = aEntry;
         mCacheEntryIsWriteOnly = aNew;
+
+        if (mLoadFlags & LOAD_INITIAL_DOCUMENT_URI) {
+            mozilla::Telemetry::Accumulate(Telemetry::HTTP_OFFLINE_CACHE_DOCUMENT_LOAD,
+                                           false);
+        }
     }
 
     return NS_OK;
@@ -3017,6 +3021,12 @@ nsHttpChannel::OnOfflineCacheEntryAvailable(nsICacheEntry *aEntry,
         mCacheEntryIsReadOnly = true; // mayhemer: may be redundant with mLoadedFromApplicationCache
         mCacheEntry = aEntry;
         mCacheEntryIsWriteOnly = false;
+
+        if (mLoadFlags & LOAD_INITIAL_DOCUMENT_URI && !mApplicationCacheForWrite) {
+            mozilla::Telemetry::Accumulate(Telemetry::HTTP_OFFLINE_CACHE_DOCUMENT_LOAD,
+                                           true);
+        }
+
         return NS_OK;
     }
 

@@ -22,7 +22,7 @@ class CacheStorage;
 class _OldDescriptorWrapper : public nsICacheEntry
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_FORWARD_NSICACHEENTRYDESCRIPTOR(mOldDesc->)
   NS_FORWARD_NSICACHEENTRYINFO(mOldDesc->)
 

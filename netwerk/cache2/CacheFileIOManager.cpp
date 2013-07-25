@@ -38,14 +38,13 @@ namespace net {
 #define kOpenHandlesLimit   64
 
 
-NS_IMPL_THREADSAFE_ADDREF(CacheFileHandle)
+NS_IMPL_ADDREF(CacheFileHandle)
 NS_IMETHODIMP_(nsrefcnt)
 CacheFileHandle::Release()
 {
   LOG(("CacheFileHandle::Release() [this=%p, refcnt=%d]", this, mRefCnt));
-  nsrefcnt count;
   NS_PRECONDITION(0 != mRefCnt, "dup release");
-  count = NS_AtomicDecrementRefcnt(mRefCnt);
+  nsrefcnt count = --mRefCnt;
   NS_LOG_RELEASE(this, count, "CacheFileHandle");
 
   if (0 == count) {
@@ -794,7 +793,7 @@ protected:
 
 CacheFileIOManager * CacheFileIOManager::gInstance = nullptr;
 
-NS_IMPL_THREADSAFE_ISUPPORTS0(CacheFileIOManager)
+NS_IMPL_ISUPPORTS0(CacheFileIOManager)
 
 CacheFileIOManager::CacheFileIOManager()
   : mShuttingDown(false)

@@ -34,7 +34,7 @@ static uint32_t const ENTRY_VALID =
 static uint32_t const ENTRY_NEEDS_REVALIDATION =
   nsICacheEntryOpenCallback::ENTRY_NEEDS_REVALIDATION;
 
-NS_IMPL_THREADSAFE_ISUPPORTS1(CacheEntry::Handle, nsICacheEntry)
+NS_IMPL_ISUPPORTS1(CacheEntry::Handle, nsICacheEntry)
 
 // CacheEntry::Handle
 
@@ -55,10 +55,10 @@ CacheEntry::Handle::~Handle()
 
 // CacheEntry
 
-NS_IMPL_THREADSAFE_ISUPPORTS3(CacheEntry,
-                              nsICacheEntry,
-                              nsIRunnable,
-                              CacheFileListener)
+NS_IMPL_ISUPPORTS3(CacheEntry,
+                   nsICacheEntry,
+                   nsIRunnable,
+                   CacheFileListener)
 
 CacheEntry::CacheEntry(const nsACString& aStorageID,
                        nsIURI* aURI,
