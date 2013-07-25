@@ -20,7 +20,7 @@
 namespace mozilla {
 namespace net {
 
-NS_IMPL_THREADSAFE_ISUPPORTS1(CacheStorage, nsICacheStorage)
+NS_IMPL_ISUPPORTS1(CacheStorage, nsICacheStorage)
 
 CacheStorage::CacheStorage(nsILoadContextInfo* aInfo,
                            bool aAllowDisk,

@@ -53,7 +53,7 @@ class CacheEntry : public nsICacheEntry
                  , public CacheFileListener
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSICACHEENTRY
   NS_DECL_NSIRUNNABLE
 
@@ -125,7 +125,7 @@ private:
     Handle(CacheEntry* aEntry);
     virtual ~Handle();
 
-    NS_DECL_ISUPPORTS
+    NS_DECL_THREADSAFE_ISUPPORTS
     NS_FORWARD_NSICACHEENTRY(mEntry->)
   private:
     nsRefPtr<CacheEntry> mEntry;

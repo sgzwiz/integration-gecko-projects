@@ -11,7 +11,7 @@
 namespace mozilla {
 namespace net {
 
-NS_IMPL_THREADSAFE_ISUPPORTS1(LoadContextInfo, nsILoadContextInfo)
+NS_IMPL_ISUPPORTS1(LoadContextInfo, nsILoadContextInfo)
 
 LoadContextInfo::LoadContextInfo(bool aIsPrivate, uint32_t aAppId, bool aIsInBrowser, bool aIsAnonymous)
   : mAppId(aAppId)

@@ -96,7 +96,7 @@ protected:
 class MetadataWriteTimer : public nsITimerCallback
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSITIMERCALLBACK
 
   MetadataWriteTimer(CacheFile *aFile);
@@ -113,8 +113,8 @@ protected:
   PRIntervalTime             mFireTime;
 };
 
-NS_IMPL_THREADSAFE_ADDREF(MetadataWriteTimer)
-NS_IMPL_THREADSAFE_RELEASE(MetadataWriteTimer)
+NS_IMPL_ADDREF(MetadataWriteTimer)
+NS_IMPL_RELEASE(MetadataWriteTimer)
 
 NS_INTERFACE_MAP_BEGIN(MetadataWriteTimer)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsITimerCallback)
@@ -220,7 +220,7 @@ MetadataWriteTimer::ShouldFireNew()
 class DoomFileHelper : public CacheFileIOListener
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
 
   DoomFileHelper(CacheFileListener *aListener)
     : mListener(aListener)
@@ -269,7 +269,7 @@ private:
   nsCOMPtr<CacheFileListener>  mListener;
 };
 
-NS_IMPL_THREADSAFE_ISUPPORTS1(DoomFileHelper, CacheFileIOListener)
+NS_IMPL_ISUPPORTS1(DoomFileHelper, CacheFileIOListener)
 
 
 // We try to write metadata when the last reference to CacheFile is released.
@@ -280,7 +280,7 @@ NS_IMPL_THREADSAFE_ISUPPORTS1(DoomFileHelper, CacheFileIOListener)
 class MetadataListenerHelper : public CacheFileMetadataListener
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
 
   MetadataListenerHelper(CacheFile *aFile)
     : mFile(aFile)
@@ -314,16 +314,15 @@ private:
   nsCOMPtr<CacheFileMetadataListener>  mListener;
 };
 
-NS_IMPL_THREADSAFE_ISUPPORTS1(MetadataListenerHelper, CacheFileMetadataListener)
+NS_IMPL_ISUPPORTS1(MetadataListenerHelper, CacheFileMetadataListener)
 
 
-NS_IMPL_THREADSAFE_ADDREF(CacheFile)
+NS_IMPL_ADDREF(CacheFile)
 NS_IMETHODIMP_(nsrefcnt)
 CacheFile::Release()
 {
-  nsrefcnt count;
   NS_PRECONDITION(0 != mRefCnt, "dup release");
-  count = NS_AtomicDecrementRefcnt(mRefCnt);
+  nsrefcnt count = --mRefCnt;
   NS_LOG_RELEASE(this, count, "CacheFile");
 
   MOZ_ASSERT(count != 0, "Unexpected");

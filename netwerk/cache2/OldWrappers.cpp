@@ -28,7 +28,7 @@ namespace mozilla { namespace net {
 namespace {
 class DoomCallbackWrapper :  public nsICacheListener
 {
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_IMETHOD OnCacheEntryAvailable(nsICacheEntryDescriptor *descriptor, nsCacheAccessMode accessGranted, nsresult status)
     { return NS_OK; }
   NS_IMETHOD OnCacheEntryDoomed(nsresult status)
@@ -38,7 +38,7 @@ private:
   virtual ~DoomCallbackWrapper() {}
   nsCOMPtr<nsICacheEntryDoomCallback> mCB;
 };
-NS_IMPL_THREADSAFE_ISUPPORTS1(DoomCallbackWrapper, nsICacheListener);
+NS_IMPL_ISUPPORTS1(DoomCallbackWrapper, nsICacheListener);
 }
 
 NS_IMETHODIMP _OldDescriptorWrapper::AsyncDoom(nsICacheEntryDoomCallback* listener)
@@ -91,7 +91,7 @@ GetCacheSessionNameForStoragePolicy(
 
 // _OldApplicationCacheLoad
 
-NS_IMPL_THREADSAFE_ISUPPORTS1(_OldDescriptorWrapper, nsICacheEntry /*, nsICacheEntryInfo */)
+NS_IMPL_ISUPPORTS1(_OldDescriptorWrapper, nsICacheEntry /*, nsICacheEntryInfo */)
 
 NS_IMPL_ISUPPORTS_INHERITED1(_OldGenericCacheLoad, nsRunnable, nsICacheListener)
 

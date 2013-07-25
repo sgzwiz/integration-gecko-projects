@@ -21,7 +21,7 @@ namespace net {
 
 #define NO_EXPIRATION_TIME 0xFFFFFFFF
 
-NS_IMPL_THREADSAFE_ISUPPORTS1(CacheFileMetadata, CacheFileIOListener)
+NS_IMPL_ISUPPORTS1(CacheFileMetadata, CacheFileIOListener)
 
 CacheFileMetadata::CacheFileMetadata(CacheFileHandle *aHandle, const nsACString &aKey)
   : mHandle(aHandle)
