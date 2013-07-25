@@ -65,7 +65,7 @@ typedef nsClassHashtable<nsCStringHashKey, CacheEntryTable>
  */
 static GlobalEntryTables* sGlobalEntryTables;
 
-NS_IMPL_THREADSAFE_ISUPPORTS1(CacheStorageService, nsICacheStorageService)
+NS_IMPL_ISUPPORTS1(CacheStorageService, nsICacheStorageService)
 
 CacheStorageService* CacheStorageService::sSelf = nullptr;
 
