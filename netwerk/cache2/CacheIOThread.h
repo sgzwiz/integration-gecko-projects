@@ -5,6 +5,7 @@
 #ifndef CacheIOThread__h__
 #define CacheIOThread__h__
 
+#include "nsIThreadInternal.h"
 #include "prthread.h"
 #include "nsTArray.h"
 #include "nsAutoPtr.h"
@@ -15,11 +16,11 @@ class nsIRunnable;
 namespace mozilla {
 namespace net {
 
-class CacheIOThread
+  class CacheIOThread : public nsIThreadObserver
 {
 public:
-  nsrefcnt AddRef(void);
-  nsrefcnt Release(void);
+  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSITHREADOBSERVER
 
   CacheIOThread();
   ~CacheIOThread();
@@ -42,21 +43,23 @@ public:
   nsresult Dispatch(nsIRunnable* aRunnable, uint32_t aLevel);
   bool IsCurrentThread();
   nsresult Shutdown();
+  already_AddRefed<nsIEventTarget> Target();
 
 private:
   static void ThreadFunc(void* aClosure);
   void ThreadFunc();
   void LoopOneLevel(uint32_t aLevel);
+  bool EventsPending(uint32_t aLastLevel = LAST_LEVEL);
 
   mozilla::Monitor mMonitor;
+  mozilla::Monitor mStartup;
   PRThread* mThread;
+  nsCOMPtr<nsIThread> mXPCOMThread;
   uint32_t mLowestLevelWaiting;
   nsTArray<nsRefPtr<nsIRunnable> > mEventQueue[LAST_LEVEL];
 
+  bool mHasXPCOMEvents;
   bool mShutdown;
-
-  nsAutoRefCnt mRefCnt;
-  NS_DECL_OWNINGTHREAD
 };
 
 } // net
