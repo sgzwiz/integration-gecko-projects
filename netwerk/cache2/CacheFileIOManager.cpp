@@ -412,6 +412,7 @@ public:
     mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
     mIOMan = CacheFileIOManager::gInstance;
     MOZ_ASSERT(mTarget);
+    MOZ_ASSERT(!CacheFileIOManager::gInstance->mIOThread->IsCurrentThread());
 
     MOZ_EVENT_TRACER_NAME_OBJECT(static_cast<nsIRunnable*>(this), aKey.BeginReading());
     MOZ_EVENT_TRACER_WAIT(static_cast<nsIRunnable*>(this), "net::cache::open-background");
@@ -503,6 +504,7 @@ public:
   {
     MOZ_COUNT_CTOR(ReadEvent);
     mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+    MOZ_ASSERT(!CacheFileIOManager::gInstance->mIOThread->IsCurrentThread());
 
     MOZ_EVENT_TRACER_NAME_OBJECT(static_cast<nsIRunnable*>(this), aHandle->mKey.get());
     MOZ_EVENT_TRACER_WAIT(static_cast<nsIRunnable*>(this), "net::cache::read-background");
@@ -562,6 +564,7 @@ public:
   {
     MOZ_COUNT_CTOR(WriteEvent);
     mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+    MOZ_ASSERT(!CacheFileIOManager::gInstance->mIOThread->IsCurrentThread());
 
     MOZ_EVENT_TRACER_NAME_OBJECT(static_cast<nsIRunnable*>(this), aHandle->mKey.get());
     MOZ_EVENT_TRACER_WAIT(static_cast<nsIRunnable*>(this), "net::cache::write-background");
@@ -618,6 +621,7 @@ public:
   {
     MOZ_COUNT_CTOR(DoomFileEvent);
     mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+    MOZ_ASSERT(!CacheFileIOManager::gInstance->mIOThread->IsCurrentThread());
 
     MOZ_EVENT_TRACER_NAME_OBJECT(static_cast<nsIRunnable*>(this), aHandle->mKey.get());
     MOZ_EVENT_TRACER_WAIT(static_cast<nsIRunnable*>(this), "net::cache::doom-background");
@@ -674,6 +678,7 @@ public:
 
     mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
     mIOMan = CacheFileIOManager::gInstance;
+    MOZ_ASSERT(!CacheFileIOManager::gInstance->mIOThread->IsCurrentThread());
     MOZ_ASSERT(mTarget);
   }
 
@@ -748,6 +753,7 @@ public:
   {
     MOZ_COUNT_CTOR(TruncateSeekSetEOFEvent);
     mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
+    MOZ_ASSERT(!CacheFileIOManager::gInstance->mIOThread->IsCurrentThread());
   }
 
   ~TruncateSeekSetEOFEvent()
@@ -947,17 +953,6 @@ CacheFileIOManager::OnProfile()
   }
 
   return NS_OK;
-}
-
-// static
-already_AddRefed<nsIEventTarget>
-CacheFileIOManager::IOTarget()
-{
-  nsCOMPtr<nsIEventTarget> target;
-  if (gInstance && gInstance->mIOThread)
-    target = gInstance->mIOThread->Target();
-
-  return target.forget();
 }
 
 nsresult

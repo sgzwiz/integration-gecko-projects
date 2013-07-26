@@ -3,24 +3,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CacheIOThread.h"
-#include "CacheFileIOManager.h"
 
 #include "nsIRunnable.h"
+#include "nsISupportsImpl.h"
 #include "nsPrintfCString.h"
-#include "nsThreadUtils.h"
 #include "mozilla/VisualEventTracer.h"
 
 namespace mozilla {
 namespace net {
 
-NS_IMPL_ISUPPORTS1(CacheIOThread, nsIThreadObserver)
-
 CacheIOThread::CacheIOThread()
 : mMonitor("CacheIOThread")
-, mStartup("CacheIOThread::Startup")
 , mThread(nullptr)
 , mLowestLevelWaiting(LAST_LEVEL)
-, mHasXPCOMEvents(false)
 , mShutdown(false)
 {
 }
@@ -82,22 +77,6 @@ nsresult CacheIOThread::Shutdown()
   return NS_OK;
 }
 
-already_AddRefed<nsIEventTarget> CacheIOThread::Target()
-{
-  nsCOMPtr<nsIEventTarget> target;
-
-  if (mThread)
-  {
-    MonitorAutoLock lock(mStartup);
-    if (!mXPCOMThread)
-      lock.Wait();
-
-    target = mXPCOMThread;
-  }
-
-  return target.forget();
-}
-
 // static
 void CacheIOThread::ThreadFunc(void* aClosure)
 {
@@ -108,71 +87,37 @@ void CacheIOThread::ThreadFunc(void* aClosure)
 
 void CacheIOThread::ThreadFunc()
 {
-  nsCOMPtr<nsIThreadInternal> threadInternal;
+  MonitorAutoLock lock(mMonitor);
 
-  {
-    MonitorAutoLock lock(mStartup);
+  static PRIntervalTime const waitTime = PR_MillisecondsToInterval(5000);
 
-    // This creates nsThread for this PRThread
-    mXPCOMThread = NS_GetCurrentThread();
+  do {
+    // Reset the lowest level now, so that we can detect a new event on
+    // a lower level (i.e. higher priority) has been scheduled while
+    // executing any previously scheduled event.
+    mLowestLevelWaiting = LAST_LEVEL;
 
-    threadInternal = do_QueryInterface(mXPCOMThread);
-    if (threadInternal)
-      threadInternal->SetObserver(this);
-
-    lock.NotifyAll();
-  }
-
-  {
-    MonitorAutoLock lock(mMonitor);
-
-    static PRIntervalTime const waitTime = PR_MillisecondsToInterval(5000);
-
-    do {
-loopStart:
-      // Reset the lowest level now, so that we can detect a new event on
-      // a lower level (i.e. higher priority) has been scheduled while
-      // executing any previously scheduled event.
-      mLowestLevelWaiting = LAST_LEVEL;
-
-      // Process xpcom events first
-      while (mHasXPCOMEvents) {
-        eventtracer::AutoEventTracer tracer(this, eventtracer::eExec, eventtracer::eDone,
-          "net::cache::io::level(xpcom)");
-
-        mHasXPCOMEvents = false;
-        MonitorAutoUnlock unlock(mMonitor);
-        NS_ProcessPendingEvents(mXPCOMThread, 0);
+    for (uint32_t level = 0; level < LAST_LEVEL; ++level) {
+      if (!mEventQueue[level].Length()) {
+        // no events on this level, go to the next level
+        continue;
       }
 
-      uint32_t level;
-      for (level = 0; level < LAST_LEVEL; ++level) {
-        if (!mEventQueue[level].Length()) {
-          // no events on this level, go to the next level
-          continue;
-        }
+      LoopOneLevel(level);
 
-        LoopOneLevel(level);
+      // Go to the first (lowest) level again
+      break;
+    }
 
-        // Go to the first (lowest) level again
-        goto loopStart;
-      }
+    if (mLowestLevelWaiting < LAST_LEVEL)
+      continue;
 
-      if (EventsPending())
-        continue;
+    lock.Wait(waitTime);
 
-      lock.Wait(waitTime);
+    if (mLowestLevelWaiting < LAST_LEVEL)
+      continue;
 
-      if (EventsPending())
-        continue;
-
-    } while (!mShutdown);
-
-    MOZ_ASSERT(!EventsPending());
-  } // lock
-
-  if (threadInternal)
-    threadInternal->SetObserver(nullptr);
+  } while (!mShutdown);
 }
 
 static const char* const sLevelTraceName[] = {
@@ -200,48 +145,20 @@ void CacheIOThread::LoopOneLevel(uint32_t aLevel)
   events.SwapElements(mEventQueue[aLevel]);
   uint32_t length = events.Length();
 
-  bool returnEvents = false;
-  uint32_t index;
-  {
-    MonitorAutoUnlock unlock(mMonitor);
+  MonitorAutoUnlock unlock(mMonitor);
 
-    for (index = 0; index < length; ++index) {
-      if (EventsPending(aLevel)) {
-        // Somebody scheduled a new event on a lower level, break and harry
-        // to execute it!  Don't forget to return what we haven't exec.
-        returnEvents = true;
-        break;
-      }
-
-      events[index]->Run();
-      events[index] = nullptr;
+  for (uint32_t index = 0; index < length; ++index) {
+    if (mLowestLevelWaiting < aLevel) {
+      // Somebody scheduled a new event on a lower level, break and harry
+      // to execute it!  Don't forget to return what we haven't exec.
+      MonitorAutoLock lock(mMonitor); // TODO somehow save unlock/lock here...
+      mEventQueue[aLevel].InsertElementsAt(0, events.Elements() + index, length - index);
+      return;
     }
+
+    events[index]->Run();
+    events[index] = nullptr;
   }
-
-  if (returnEvents)
-    mEventQueue[aLevel].InsertElementsAt(0, events.Elements() + index, length - index);
-}
-
-bool CacheIOThread::EventsPending(uint32_t aLastLevel)
-{
-  return mLowestLevelWaiting < aLastLevel || mHasXPCOMEvents;
-}
-
-NS_IMETHODIMP CacheIOThread::OnDispatchedEvent(nsIThreadInternal *thread)
-{
-  MonitorAutoLock lock(mMonitor);
-  mHasXPCOMEvents = true;
-  return NS_OK;
-}
-
-NS_IMETHODIMP CacheIOThread::OnProcessNextEvent(nsIThreadInternal *thread, bool mayWait, uint32_t recursionDepth)
-{
-  return NS_OK;
-}
-
-NS_IMETHODIMP CacheIOThread::AfterProcessNextEvent(nsIThreadInternal *thread, uint32_t recursionDepth)
-{
-  return NS_OK;
 }
 
 } // net

@@ -138,7 +138,6 @@ public:
   static nsresult Init();
   static nsresult Shutdown();
   static nsresult OnProfile();
-  static already_AddRefed<nsIEventTarget> IOTarget();
 
   static nsresult OpenFile(const nsACString &aKey,
                            uint32_t aFlags,
