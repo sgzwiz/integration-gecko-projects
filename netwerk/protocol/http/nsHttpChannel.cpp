@@ -308,6 +308,9 @@ nsHttpChannel::Connect()
         return NS_ERROR_DOCUMENT_NOT_CACHED;
     }
 
+    if (ShouldSkipCache())
+        return ContinueConnect();
+
     // open a cache entry for this channel...
     rv = OpenCacheEntry(usingSSL);
 
@@ -3835,12 +3838,12 @@ nsHttpChannel::InstallCacheListener(int64_t offset)
         do_CreateInstance(kStreamListenerTeeCID, &rv);
     if (NS_FAILED(rv)) return rv;
 
-    nsCOMPtr<nsICacheStorageService> serv =
-        do_GetService("@mozilla.org/netwerk/cache-storage-service;1", &rv);
+    nsCOMPtr<nsICacheService> serv =
+        do_GetService(NS_CACHESERVICE_CONTRACTID, &rv);
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<nsIEventTarget> cacheIOTarget;
-    serv->GetIoTarget(getter_AddRefs(cacheIOTarget));
+    serv->GetCacheIOTarget(getter_AddRefs(cacheIOTarget));
 
     if (!cacheIOTarget) {
         LOG(("nsHttpChannel::InstallCacheListener sync tee %p rv=%x "
@@ -5944,6 +5947,52 @@ nsHttpChannel::UpdateAggregateCallbacks()
                                            NS_GetCurrentThread(),
                                            getter_AddRefs(callbacks));
     mTransaction->SetSecurityCallbacks(callbacks);
+}
+
+bool
+nsHttpChannel::ShouldSkipCache()
+{
+    if (!gHttpHandler->UseCache())
+        return true;
+
+    if (mLoadFlags & LOAD_ONLY_FROM_CACHE)
+        return false;
+    
+    if (mChooseApplicationCache || (mLoadFlags & LOAD_CHECK_OFFLINE_CACHE))
+        return false;
+
+    TimeStamp cacheSkippedUntil = gHttpHandler->GetCacheSkippedUntil();
+    if (!cacheSkippedUntil.IsNull()) {
+        TimeStamp now = TimeStamp::Now();
+        if (now < cacheSkippedUntil) {
+            LOG(("channel=%p Cache bypassed because of dampener\n", this));
+            return true;
+        }
+        LOG(("channel=%p Cache dampener released\n", this));
+        gHttpHandler->ClearCacheSkippedUntil();
+    }
+
+    // If the cache lock has been held for a long time then just
+    // bypass the cache instead of getting in that queue.
+    nsCOMPtr<nsICacheService> cacheService =
+        do_GetService(NS_CACHESERVICE_CONTRACTID);
+    nsCOMPtr<nsICacheServiceInternal> internalCacheService =
+        do_QueryInterface(cacheService);
+    if (!internalCacheService)
+        return false;
+    
+    double timeLocked;
+    if (NS_FAILED(internalCacheService->GetLockHeldTime(&timeLocked)))
+        return false;
+    
+    if (timeLocked <= gHttpHandler->BypassCacheLockThreshold())
+        return false;
+
+    LOG(("Cache dampener installed because service lock held too long [%fms]\n",
+         timeLocked));
+    cacheSkippedUntil = TimeStamp::Now() + TimeDuration::FromSeconds(60);
+    gHttpHandler->SetCacheSkippedUntil(cacheSkippedUntil);
+    return true;
 }
 
 nsIPrincipal *
