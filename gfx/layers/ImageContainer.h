@@ -13,6 +13,7 @@
 #include "mozilla/TimeStamp.h"
 #include "ImageTypes.h"
 #include "nsTArray.h"
+#include "pratom.h"
 
 #ifdef XP_WIN
 struct ID3D10Texture2D;
@@ -33,6 +34,7 @@ namespace layers {
 
 class ImageClient;
 class SharedPlanarYCbCrImage;
+class DeprecatedSharedPlanarYCbCrImage;
 
 struct ImageBackendData
 {
@@ -719,6 +721,7 @@ public:
   PlanarYCbCrImage(BufferRecycleBin *aRecycleBin);
 
   virtual SharedPlanarYCbCrImage *AsSharedPlanarYCbCrImage() { return nullptr; }
+  virtual DeprecatedSharedPlanarYCbCrImage *AsDeprecatedSharedPlanarYCbCrImage() { return nullptr; }
 
 protected:
   /**
