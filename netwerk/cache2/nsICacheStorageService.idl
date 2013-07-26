@@ -7,12 +7,11 @@
 interface nsICacheStorage;
 interface nsILoadContextInfo;
 interface nsIApplicationCache;
-interface nsIEventTarget;
 
 /**
  * Provides access to particual cache storages of the network URI cache.
  */
-[scriptable, uuid(1040606d-278c-425a-8281-3511b1c7ba7e)]
+[scriptable, uuid(7c900be6-6794-4264-a0ac-53ef3ab63087)]
 interface nsICacheStorageService : nsISupports
 {
   /**
@@ -50,9 +49,4 @@ interface nsICacheStorageService : nsISupports
    * Evict the whole cache.
    */
   void clear();
-
-  /**
-   * I/O thread target to use for any operations on disk
-   */
-  readonly attribute nsIEventTarget ioTarget;
 };

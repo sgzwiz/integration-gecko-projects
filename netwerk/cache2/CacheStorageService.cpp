@@ -104,8 +104,9 @@ void CacheStorageService::Shutdown()
   nsCOMPtr<nsIRunnable> event =
     NS_NewRunnableMethod(this, &CacheStorageService::ShutdownBackground);
 
-  if (mThread)
-    mThread->Dispatch(event, nsIEventTarget::DISPATCH_NORMAL);
+  mThread->Dispatch(event, nsIEventTarget::DISPATCH_NORMAL);
+  mThread->Shutdown();
+  mThread = nullptr;
 
   mozilla::MutexAutoLock lock(mLock);
   sGlobalEntryTables->Clear();
@@ -428,15 +429,6 @@ NS_IMETHODIMP CacheStorageService::Clear()
   for (uint32_t i = 0; i < keys.Length(); ++i)
     DoomStorageEntries(keys[i], true, nullptr);
 
-  return NS_OK;
-}
-
-NS_IMETHODIMP CacheStorageService::GetIoTarget(nsIEventTarget** aEventTarget)
-{
-  NS_ENSURE_ARG(aEventTarget);
-
-  nsCOMPtr<nsIEventTarget> ioTarget = CacheFileIOManager::IOTarget();
-  ioTarget.forget(aEventTarget);
   return NS_OK;
 }
 
