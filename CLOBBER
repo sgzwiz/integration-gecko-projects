@@ -18,3 +18,4 @@
 # Modifying this file will now automatically clobber the buildbot machines \o/
 #
 Bug 878600 requires a clobber on Windows due to bug 890744
+CACHE2
