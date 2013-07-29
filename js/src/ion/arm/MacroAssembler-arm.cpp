@@ -4,10 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ion/arm/MacroAssembler-arm.h"
+
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MathAlgorithms.h"
 
-#include "ion/arm/MacroAssembler-arm.h"
 #include "ion/BaselineFrame.h"
 #include "ion/MoveEmitter.h"
 
@@ -388,11 +389,11 @@ MacroAssemblerARM::ma_mov(const ImmGCPtr &ptr, Register dest)
     // before to recover the pointer, and not after.
     writeDataRelocation(ptr);
     RelocStyle rs;
-    if (hasMOVWT()) {
+    if (hasMOVWT())
         rs = L_MOVWT;
-    } else {
+    else
         rs = L_LDR;
-    }
+
     ma_movPatchable(Imm32(ptr.value), dest, Always, rs);
 }
 
@@ -1526,7 +1527,13 @@ MacroAssemblerARMCompat::callWithExitFrame(IonCode *target)
     Push(Imm32(descriptor)); // descriptor
 
     addPendingJump(m_buffer.nextOffset(), target->raw(), Relocation::IONCODE);
-    ma_mov(Imm32((int) target->raw()), ScratchRegister);
+    RelocStyle rs;
+    if (hasMOVWT())
+        rs = L_MOVWT;
+    else
+        rs = L_LDR;
+
+    ma_movPatchable(Imm32((int) target->raw()), ScratchRegister, Always, rs);
     ma_callIonHalfPush(ScratchRegister);
 }
 
@@ -1538,7 +1545,13 @@ MacroAssemblerARMCompat::callWithExitFrame(IonCode *target, Register dynStack)
     Push(dynStack); // descriptor
 
     addPendingJump(m_buffer.nextOffset(), target->raw(), Relocation::IONCODE);
-    ma_mov(Imm32((int) target->raw()), ScratchRegister);
+    RelocStyle rs;
+    if (hasMOVWT())
+        rs = L_MOVWT;
+    else
+        rs = L_LDR;
+
+    ma_movPatchable(Imm32((int) target->raw()), ScratchRegister, Always, rs);
     ma_callIonHalfPush(ScratchRegister);
 }
 
@@ -2969,7 +2982,13 @@ MacroAssemblerARM::ma_callIonHalfPush(const Register r)
 void
 MacroAssemblerARM::ma_call(void *dest)
 {
-    ma_mov(Imm32((uint32_t)dest), CallReg);
+    RelocStyle rs;
+    if (hasMOVWT())
+        rs = L_MOVWT;
+    else
+        rs = L_LDR;
+
+    ma_movPatchable(Imm32((uint32_t) dest), CallReg, Always, rs);
     as_blx(CallReg);
 }
 

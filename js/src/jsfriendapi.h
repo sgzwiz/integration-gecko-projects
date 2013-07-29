@@ -204,8 +204,6 @@ JS_SetSourceHook(JSRuntime *rt, JS_SourceHook hook);
 
 namespace js {
 
-extern mozilla::ThreadLocal<PerThreadData *> TlsPerThreadData;
-
 inline JSRuntime *
 GetRuntime(const JSContext *cx)
 {
@@ -1473,6 +1471,10 @@ class JSJitGetterCallArgs : protected JS::MutableHandleValue
   public:
     explicit JSJitGetterCallArgs(const JS::CallArgs& args)
       : JS::MutableHandleValue(args.rval())
+    {}
+
+    explicit JSJitGetterCallArgs(JS::Rooted<JS::Value>* rooted)
+      : JS::MutableHandleValue(rooted)
     {}
 
     JS::MutableHandleValue rval() {

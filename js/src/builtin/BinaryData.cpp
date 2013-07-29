@@ -1,24 +1,25 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- */
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "builtin/BinaryData.h"
 
-#include <vector>
-
 #include "mozilla/FloatingPoint.h"
+
+#include <vector>
 
 #include "jscompartment.h"
 #include "jsfun.h"
 #include "jsobj.h"
 #include "jsutil.h"
 
-#include "vm/TypedArrayObject.h"
+#include "gc/Marking.h"
+#include "vm/GlobalObject.h"
 #include "vm/String.h"
 #include "vm/StringBuffer.h"
-#include "vm/GlobalObject.h"
+#include "vm/TypedArrayObject.h"
 
 #include "jsatominlines.h"
 #include "jsobjinlines.h"
@@ -43,12 +44,15 @@ static bool Reify(JSContext *cx, HandleObject type, HandleObject owner,
  */
 static bool ConvertAndCopyTo(JSContext *cx, HandleObject type,
                              HandleValue from, uint8_t *mem);
-JSBool TypeThrowError(JSContext *cx, unsigned argc, Value *vp)
+
+static JSBool
+TypeThrowError(JSContext *cx, unsigned argc, Value *vp)
 {
     return ReportIsNotFunction(cx, *vp);
 }
 
-JSBool DataThrowError(JSContext *cx, unsigned argc, Value *vp)
+static JSBool
+DataThrowError(JSContext *cx, unsigned argc, Value *vp)
 {
     return ReportIsNotFunction(cx, *vp);
 }
@@ -178,9 +182,44 @@ GetAlign(JSContext *cx, HandleObject type)
 
 struct FieldInfo
 {
-    jsid name;
-    JSObject *type;
+    HeapId name;
+    HeapPtrObject type;
     size_t offset;
+
+    FieldInfo() : offset(0) {}
+
+    FieldInfo(const FieldInfo &o)
+        : name(o.name.get()), type(o.type), offset(o.offset)
+    {
+    }
+};
+
+Class js::DataClass = {
+    "Data",
+    JSCLASS_HAS_CACHED_PROTO(JSProto_Data),
+    JS_PropertyStub,
+    JS_DeletePropertyStub,
+    JS_PropertyStub,
+    JS_StrictPropertyStub,
+    JS_EnumerateStub,
+    JS_ResolveStub,
+    JS_ConvertStub
+};
+
+Class js::TypeClass = {
+    "Type",
+    JSCLASS_HAS_CACHED_PROTO(JSProto_Type),
+    JS_PropertyStub,
+    JS_DeletePropertyStub,
+    JS_PropertyStub,
+    JS_StrictPropertyStub,
+    JS_EnumerateStub,
+    JS_ResolveStub,
+    JS_ConvertStub
+};
+
+Class js::NumericTypeClasses[NUMERICTYPES] = {
+    BINARYDATA_FOR_EACH_NUMERIC_TYPES(BINARYDATA_NUMERIC_CLASSES)
 };
 
 typedef std::vector<FieldInfo> FieldList;
@@ -231,7 +270,7 @@ IsSameStructType(JSContext *cx, HandleObject type1, HandleObject type2)
         FieldInfo fieldInfo1 = fieldList1->at(i);
         FieldInfo fieldInfo2 = fieldList2->at(i);
 
-        if (fieldInfo1.name != fieldInfo2.name)
+        if (fieldInfo1.name.get() != fieldInfo2.name.get())
             return false;
 
         if (fieldInfo1.offset != fieldInfo2.offset)
@@ -787,7 +826,7 @@ ArrayType::repeat(JSContext *cx, unsigned int argc, Value *vp)
     RootedObject thisObj(cx, args.thisv().toObjectOrNull());
     if (!IsArrayType(thisObj)) {
         JSString *valueStr = JS_ValueToString(cx, args.thisv());
-        char *valueChars = "(unknown type)";
+        char *valueChars = const_cast<char*>("(unknown type)");
         if (valueStr)
             valueChars = JS_EncodeString(cx, valueStr);
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_INCOMPATIBLE_PROTO, "ArrayType", "repeat", valueChars);
@@ -1315,7 +1354,7 @@ BinaryArray::obj_getGenericAttributes(JSContext *cx, HandleObject obj,
         return true;
     }
 
-	return false;
+    return false;
 }
 
 JSBool
@@ -1396,11 +1435,11 @@ Class StructType::class_ = {
     JS_ResolveStub,
     JS_ConvertStub,
     StructType::finalize,
-    NULL,
-    NULL,
-    NULL,
+    NULL, /* checkAccess */
+    NULL, /* call */
+    NULL, /* hasInstance */
     BinaryStruct::construct,
-    NULL
+    StructType::trace
 };
 
 Class BinaryStruct::class_ = {
@@ -1419,41 +1458,41 @@ Class BinaryStruct::class_ = {
     BinaryStruct::finalize,
     NULL,           /* checkAccess */
     NULL,           /* call        */
-    NULL,           /* construct   */
     NULL,           /* hasInstance */
+    NULL,           /* construct   */
     BinaryStruct::obj_trace,
     JS_NULL_CLASS_EXT,
     {
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
+        NULL, /* lookupGeneric */
+        NULL, /* lookupProperty */
+        NULL, /* lookupElement */
+        NULL, /* lookupSpecial */
+        NULL, /* defineGeneric */
+        NULL, /* defineProperty */
+        NULL, /* defineElement */
+        NULL, /* defineSpecial */
         BinaryStruct::obj_getGeneric,
         BinaryStruct::obj_getProperty,
-        NULL,
-        NULL,
+        NULL, /* getElement */
+        NULL, /* getElementIfPresent */
         BinaryStruct::obj_getSpecial,
         BinaryStruct::obj_setGeneric,
         BinaryStruct::obj_setProperty,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        NULL,
+        NULL, /* setElement */
+        NULL, /* setSpecial */
+        NULL, /* getGenericAttributes */
+        NULL, /* getPropertyAttributes */
+        NULL, /* getElementAttributes */
+        NULL, /* getSpecialAttributes */
+        NULL, /* setGenericAttributes */
+        NULL, /* setPropertyAttributes */
+        NULL, /* setElementAttributes */
+        NULL, /* setSpecialAttributes */
+        NULL, /* deleteProperty */
+        NULL, /* deleteElement */
+        NULL, /* deleteSpecial */
+        BinaryStruct::obj_enumerate,
+        NULL, /* thisObject */
     }
 };
 
@@ -1659,6 +1698,17 @@ StructType::finalize(FreeOp *op, JSObject *obj)
     delete list;
 }
 
+void
+StructType::trace(JSTracer *tracer, JSObject *obj)
+{
+    FieldList *fieldList = static_cast<FieldList *>(obj->getPrivate());
+    JS_ASSERT(fieldList);
+    for (FieldList::iterator it = fieldList->begin(); it != fieldList->end(); ++it) {
+        gc::MarkId(tracer, &(it->name), "structtype.field.name");
+        MarkObject(tracer, &(it->type), "structtype.field.type");
+    }
+}
+
 JSBool
 StructType::toString(JSContext *cx, unsigned int argc, Value *vp)
 {
@@ -1784,6 +1834,45 @@ BinaryStruct::obj_trace(JSTracer *tracer, JSObject *obj)
 
     HeapPtrObject type(obj->getFixedSlot(SLOT_DATATYPE).toObjectOrNull());
     MarkObject(tracer, &type, "binarystruct.type");
+}
+
+JSBool
+BinaryStruct::obj_enumerate(JSContext *cx, HandleObject obj, JSIterateOp enum_op,
+                            MutableHandleValue statep, MutableHandleId idp)
+{
+    JS_ASSERT(IsBinaryStruct(obj));
+
+    RootedObject type(cx, GetType(obj));
+
+    FieldList *fieldList = static_cast<FieldList *>(type->getPrivate());
+    JS_ASSERT(fieldList);
+
+    uint32_t index;
+    switch (enum_op) {
+        case JSENUMERATE_INIT_ALL:
+        case JSENUMERATE_INIT:
+            statep.setInt32(0);
+            idp.set(INT_TO_JSID(fieldList->size()));
+            break;
+
+        case JSENUMERATE_NEXT:
+            index = static_cast<uint32_t>(statep.toInt32());
+
+            if (index < fieldList->size()) {
+                idp.set(fieldList->at(index).name);
+                statep.setInt32(index + 1);
+            } else {
+                statep.setNull();
+            }
+
+            break;
+
+        case JSENUMERATE_DESTROY:
+            statep.setNull();
+            break;
+    }
+
+    return true;
 }
 
 JSBool

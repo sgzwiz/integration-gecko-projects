@@ -2408,10 +2408,10 @@ GetPDA(JSContext *cx, unsigned argc, jsval *vp)
         value = pd->value;
         flags.setInt32(pd->flags);
         alias = pd->alias;
-        ok = JS_SetProperty(cx, pdobj, "id", &id) &&
-             JS_SetProperty(cx, pdobj, "value", &value) &&
-             JS_SetProperty(cx, pdobj, "flags", &flags) &&
-             JS_SetProperty(cx, pdobj, "alias", &alias);
+        ok = JS_SetProperty(cx, pdobj, "id", id) &&
+             JS_SetProperty(cx, pdobj, "value", value) &&
+             JS_SetProperty(cx, pdobj, "flags", flags) &&
+             JS_SetProperty(cx, pdobj, "alias", alias);
         if (!ok)
             break;
     }
@@ -2517,7 +2517,7 @@ NewSandbox(JSContext *cx, bool lazy)
             return NULL;
 
         RootedValue value(cx, BooleanValue(lazy));
-        if (!JS_SetProperty(cx, obj, "lazy", &value))
+        if (!JS_SetProperty(cx, obj, "lazy", value))
             return NULL;
     }
 
@@ -5421,6 +5421,10 @@ main(int argc, char **argv, char **envp)
         JSC::MacroAssembler::SetFloatingPointDisabled();
 #endif
 #endif
+
+    // Start the engine.
+    if (!JS_Init())
+        return 1;
 
     /* Use the same parameters as the browser in xpcjsruntime.cpp. */
     rt = JS_NewRuntime(32L * 1024L * 1024L, JS_USE_HELPER_THREADS);

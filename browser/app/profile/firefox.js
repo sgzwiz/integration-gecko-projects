@@ -333,6 +333,10 @@ pref("browser.download.manager.resumeOnWakeDelay", 10000);
 // This allows disabling the Downloads Panel in favor of the old interface.
 pref("browser.download.useToolkitUI", false);
 
+// This allows disabling the animated notifications shown by
+// the Downloads Indicator when a download starts or completes.
+pref("browser.download.animateNotifications", true);
+
 // This records whether or not the panel has been shown at least once.
 pref("browser.download.panel.shown", false);
 
@@ -763,6 +767,12 @@ pref("browser.safebrowsing.reportMalwareErrorURL", "http://%LOCALE%.malware-erro
 
 pref("browser.safebrowsing.warning.infoURL", "https://www.mozilla.org/%LOCALE%/firefox/phishing-protection/");
 pref("browser.safebrowsing.malware.reportURL", "http://safebrowsing.clients.google.com/safebrowsing/diagnostic?client=%NAME%&hl=%LOCALE%&site=");
+// Since the application reputation query isn't hooked in anywhere yet, this
+// preference does not matter. To be extra safe, don't turn this preference on
+// for official builds without whitelisting (bug 842828).
+#ifndef MOZILLA_OFFICIAL
+pref("browser.safebrowsing.appRepURL", "https://sb-ssl.google.com/safebrowsing/clientreport/download");
+#endif
 
 #ifdef MOZILLA_OFFICIAL
 // Normally the "client ID" sent in updates is appinfo.name, but for
@@ -1277,3 +1287,7 @@ pref("dom.debug.propagate_gesture_events_through_content", false);
 
 // The request URL of the GeoLocation backend.
 pref("geo.wifi.uri", "https://www.googleapis.com/geolocation/v1/geolocate?key=%GOOGLE_API_KEY%");
+
+// Necko IPC security checks only needed for app isolation for cookies/cache/etc:
+// currently irrelevant for desktop e10s
+pref("network.disable.ipc.security", true);

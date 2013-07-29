@@ -4,9 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "jscntxt.h"
-
 #include "vm/ForkJoin.h"
+
+#include "jscntxt.h"
 
 #ifdef JS_THREADSAFE
 # include "prthread.h"
@@ -1712,9 +1712,9 @@ bool
 ForkJoinSlice::InitializeTLS()
 {
     if (!TLSInitialized) {
+        if (PR_NewThreadPrivateIndex(&ThreadPrivateIndex, NULL) != PR_SUCCESS)
+            return false;
         TLSInitialized = true;
-        PRStatus status = PR_NewThreadPrivateIndex(&ThreadPrivateIndex, NULL);
-        return status == PR_SUCCESS;
     }
     return true;
 }
