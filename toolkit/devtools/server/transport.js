@@ -78,6 +78,7 @@ DebuggerTransport.prototype = {
    * Close the transport.
    */
   close: function DT_close() {
+    dumpn("DebuggerTransport.close");
     this._input.close();
     this._output.close();
   },
@@ -125,6 +126,7 @@ DebuggerTransport.prototype = {
 
   onStopRequest:
   makeInfallible(function DT_onStopRequest(aRequest, aContext, aStatus) {
+    dumpn("onStopRequest");
     this.close();
     if (this.hooks) {
       this.hooks.onClosed(aStatus);
@@ -246,6 +248,7 @@ LocalDebuggerTransport.prototype = {
    * Close the transport.
    */
   close: function LDT_close() {
+    dumpn("LocalDebuggerTransport.close");
     if (this.other) {
       // Remove the reference to the other endpoint before calling close(), to
       // avoid infinite recursion.
@@ -316,6 +319,7 @@ ChildDebuggerTransport.prototype = {
   },
 
   close: function () {
+    dumpn("ChildDebuggerTransport.close");
     this._sender.removeMessageListener(this._messageName, this);
     this.hooks.onClosed();
   },
