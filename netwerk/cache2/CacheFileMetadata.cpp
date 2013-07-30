@@ -54,6 +54,7 @@ CacheFileMetadata::~CacheFileMetadata()
   if (mHashArray) {
     free(mHashArray);
     mHashArray = nullptr;
+    mHashArraySize = 0;
   }
 
   if (mBuf) {
@@ -61,6 +62,8 @@ CacheFileMetadata::~CacheFileMetadata()
     mBuf = nullptr;
     mBufSize = 0;
   }
+
+  DoMemoryReport(MemoryUsage());
 }
 
 CacheFileMetadata::CacheFileMetadata(const nsACString &aKey)
@@ -140,6 +143,8 @@ CacheFileMetadata::ReadMetadata(CacheFileMetadataListener *aListener)
   mBufSize = size - offset;
   mBuf = static_cast<char *>(moz_xmalloc(mBufSize));
 
+  DoMemoryReport(MemoryUsage());
+
   LOG(("CacheFileMetadata::ReadMetadata() - Reading metadata from disk, trying "
        "offset=%lld, filesize=%lld [this=%p]", offset, size, this));
 
@@ -210,6 +215,8 @@ CacheFileMetadata::WriteMetadata(uint32_t aOffset,
     mWriteBuf = nullptr;
     NS_ENSURE_SUCCESS(rv, rv);
   }
+
+  DoMemoryReport(MemoryUsage());
 
   return NS_OK;
 }
@@ -329,6 +336,9 @@ CacheFileMetadata::SetHash(uint32_t aIndex, CacheHashUtils::Hash16_t aHash)
   }
 
   mHashArray[aIndex] = PR_htons(aHash);
+
+  DoMemoryReport(MemoryUsage());
+
   return NS_OK;
 }
 
@@ -407,6 +417,8 @@ CacheFileMetadata::OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
   mListener.swap(listener);
   listener->OnMetadataWritten(aResult);
 
+  DoMemoryReport(MemoryUsage());
+
   return NS_OK;
 }
 
@@ -458,6 +470,8 @@ CacheFileMetadata::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
     mBuf = static_cast<char *>(moz_xrealloc(mBuf, mBufSize + missing));
     memmove(mBuf + missing, mBuf, mBufSize);
     mBufSize += missing;
+
+    DoMemoryReport(MemoryUsage());
 
     LOG(("CacheFileMetadata::OnDataRead() - We need to read %d more bytes to "
          "have full metadata. [this=%p]", missing, this));
@@ -518,6 +532,8 @@ CacheFileMetadata::InitEmptyMetadata()
   mMetaHdr.mFetchCount = 1;
   mMetaHdr.mExpirationTime = NO_EXPIRATION_TIME;
   mMetaHdr.mKeySize = mKey.Length();
+
+  DoMemoryReport(MemoryUsage());
 }
 
 nsresult
@@ -614,6 +630,8 @@ CacheFileMetadata::ParseMetadata(uint32_t aMetaOffset, uint32_t aBufOffset)
 
   // TODO: shrink memory if buffer is too big
 
+  DoMemoryReport(MemoryUsage());
+
   return NS_OK;
 }
 
@@ -652,6 +670,8 @@ CacheFileMetadata::EnsureBuffer(uint32_t aSize)
     mBufSize = aSize;
     mBuf = static_cast<char *>(moz_xrealloc(mBuf, mBufSize));
   }
+
+  DoMemoryReport(MemoryUsage());
 }
 
 } // net

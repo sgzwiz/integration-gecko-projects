@@ -894,18 +894,14 @@ CacheFile::ThrowMemoryCachedData()
 
   LOG(("CacheFile::ThrowMemoryCachedData() [this=%p]", this));
 
-  if (mMemoryOnly) {
-    LOG(("CacheFile::ThrowMemoryCachedData() - Ignoring request because the "
-         "entry is memory-only [this=%p]", this));
-
-    return NS_OK;
-  }
-
   if (mOpeningFile) {
+    // mayhemer, note: we shouldn't get here, since CacheEntry prevents loading
+    // entries from being purged.
+
     LOG(("CacheFile::ThrowMemoryCachedData() - Ignoring request because the "
          "entry is still opening the file [this=%p]", this));
 
-    return NS_OK;
+    return NS_ERROR_ABORT;
   }
 
   mCachedChunks.Clear();
