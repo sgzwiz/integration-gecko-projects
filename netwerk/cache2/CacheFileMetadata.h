@@ -6,6 +6,7 @@
 #define CacheFileMetadata__h__
 
 #include "CacheFileIOManager.h"
+#include "CacheStorageService.h"
 #include "CacheHashUtils.h"
 #include "nsAutoPtr.h"
 #include "nsString.h"
@@ -43,6 +44,7 @@ NS_DEFINE_STATIC_IID_ACCESSOR(CacheFileMetadataListener,
 
 
 class CacheFileMetadata : public CacheFileIOListener
+                        , public CacheMemoryConsumer
 {
 public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -74,6 +76,7 @@ public:
   uint32_t ElementsSize() { return mElementsSize; }
   void     MarkDirty() { mIsDirty = true; }
   bool     IsDirty() { return mIsDirty; }
+  uint32_t MemoryUsage() { return mHashArraySize + mBufSize; }
 
   NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult);
   NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,

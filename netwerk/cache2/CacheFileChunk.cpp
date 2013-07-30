@@ -156,6 +156,8 @@ CacheFileChunk::~CacheFileChunk()
     mRWBuf = nullptr;
     mRWBufSize = 0;
   }
+
+  DoMemoryReport(MemorySize());
 }
 
 void
@@ -174,6 +176,8 @@ CacheFileChunk::InitNew(CacheFileChunkListener *aCallback)
   mDataSize = 0;
   mState = READY;
   mIsDirty = true;
+
+  DoMemoryReport(MemorySize());
 }
 
 nsresult
@@ -195,6 +199,8 @@ CacheFileChunk::Read(CacheFileHandle *aHandle, uint32_t aLen,
 
   mRWBuf = static_cast<char *>(moz_xmalloc(aLen));
   mRWBufSize = aLen;
+
+  DoMemoryReport(MemorySize());
 
   rv = CacheFileIOManager::Read(aHandle, mIndex * kChunkSize, mRWBuf, aLen,
                                 this);
@@ -481,6 +487,8 @@ CacheFileChunk::OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
 
       mRWBuf = nullptr;
       mRWBufSize = 0;
+
+      DoMemoryReport(MemorySize());
 #if 0
     }
 #endif
@@ -542,6 +550,8 @@ CacheFileChunk::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
           mBufSize = mRWBufSize;
           mRWBuf = nullptr;
           mRWBufSize = 0;
+
+          DoMemoryReport(MemorySize());
         }
       }
     }
@@ -657,6 +667,8 @@ CacheFileChunk::EnsureBufSize(uint32_t aBufSize)
 
   if (copy)
     memcpy(mBuf, mRWBuf, mRWBufSize);
+
+  DoMemoryReport(MemorySize());
 }
 
 } // net
