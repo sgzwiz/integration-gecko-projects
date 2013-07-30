@@ -267,7 +267,7 @@ private:
     nsresult StoreAuthorizationMetaData(nsICacheEntry *entry);
     nsresult FinalizeCacheEntry();
     nsresult InstallCacheListener(int64_t offset = 0);
-    nsresult InstallOfflineCacheListener();
+    nsresult InstallOfflineCacheListener(int64_t offset = 0);
     void     MaybeInvalidateCacheEntryForSubsequentGet();
     nsCacheStoragePolicy DetermineStoragePolicy();
     nsresult DetermineCacheAccess(nsCacheAccessMode *_retval);
@@ -323,7 +323,8 @@ private:
     static bool HasQueryString(nsHttpAtom method, nsIURI * uri);
     bool ResponseWouldVary(nsICacheEntry* entry) const;
     bool MustValidateBasedOnQueryUrl() const;
-    nsresult SetupByteRangeRequest(uint32_t partialLen);
+    nsresult MaybeSetupByteRangeRequest(int64_t partialLen, int64_t contentLength);
+    nsresult SetupByteRangeRequest(int64_t partialLen);
     nsresult OpenCacheInputStream(nsICacheEntry* cacheEntry, bool startBuffering);
 
     // Disk cache is skipped for some requests when it is behaving slowly
@@ -400,7 +401,7 @@ private:
     // when true, after we finish read from cache we must check all data
     // had been loaded from cache. If not, then an error has to be propagated
     // to the consumer.
-    uint32_t                          mPerformCacheCompletenessCheck : 1;
+    uint32_t                          mConcurentCacheAccess : 1;
 
     nsTArray<nsContinueRedirectionFunc> mRedirectFuncStack;
 
