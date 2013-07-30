@@ -65,6 +65,18 @@ typedef nsClassHashtable<nsCStringHashKey, CacheEntryTable>
  */
 static GlobalEntryTables* sGlobalEntryTables;
 
+CacheMemoryConsumer::CacheMemoryConsumer()
+: mReportedMemoryConsumption(0)
+{
+}
+
+void
+CacheMemoryConsumer::DoMemoryReport(uint32_t aCurrentSize)
+{
+  if (CacheStorageService::Self())
+    CacheStorageService::Self()->OnMemoryConsumptionChange(this, aCurrentSize);
+}
+
 NS_IMPL_ISUPPORTS1(CacheStorageService, nsICacheStorageService)
 
 CacheStorageService* CacheStorageService::sSelf = nullptr;
@@ -73,6 +85,7 @@ CacheStorageService::CacheStorageService()
 : mLock("CacheStorageService")
 , mShutdown(false)
 , mMemorySize(0)
+, mPurging(false)
 {
   MOZ_COUNT_CTOR(CacheStorageService);
 
@@ -89,7 +102,15 @@ CacheStorageService::CacheStorageService()
 
 CacheStorageService::~CacheStorageService()
 {
+  LOG(("CacheStorageService::~CacheStorageService"));
   sSelf = nullptr;
+
+  // This assertion is not actually critical, it's here to just confirm
+  // that memory occupation inc/dec code works well.  If the value here
+  // is not significantly different from 0 (or overflow of ~0) then when
+  // a quick solution is needed to fix this assertion failure, just disable
+  // it and file a bug.
+  MOZ_ASSERT(mMemorySize == 0);
 
   MOZ_COUNT_DTOR(CacheStorageService);
 }
@@ -98,6 +119,8 @@ void CacheStorageService::Shutdown()
 {
   if (mShutdown)
     return;
+
+  LOG(("CacheStorageService::Shutdown - start"));
 
   mShutdown = true;
 
@@ -111,6 +134,8 @@ void CacheStorageService::Shutdown()
   sGlobalEntryTables->Clear();
   delete sGlobalEntryTables;
   sGlobalEntryTables = nullptr;
+
+  LOG(("CacheStorageService::Shutdown - done"));
 }
 
 void CacheStorageService::ShutdownBackground()
@@ -294,7 +319,7 @@ private:
     if (!walker->mUsingDisk && aEntry->UsingDisk())
       return PL_DHASH_NEXT;
 
-    walker->mSize += aEntry->GetMetadataMemoryOccupation();
+    walker->mSize += aEntry->GetMetadataMemoryConsumption();
 
     int64_t size;
     if (NS_SUCCEEDED(aEntry->GetDataSize(&size)))
@@ -489,7 +514,7 @@ CacheStorageService::UnregisterEntry(CacheEntry* aEntry)
 {
   MOZ_ASSERT(IsOnManagementThread());
 
-  if (!aEntry->IsRegistered() || mShutdown)
+  if (!aEntry->IsRegistered())
     return;
 
   LOG(("CacheStorageService::UnregisterEntry [entry=%p]", aEntry));
@@ -497,8 +522,9 @@ CacheStorageService::UnregisterEntry(CacheEntry* aEntry)
   mozilla::DebugOnly<bool> removedFrecency = mFrecencyArray.RemoveElement(aEntry);
   mozilla::DebugOnly<bool> removedExpiration = mExpirationArray.RemoveElement(aEntry);
 
-  MOZ_ASSERT(removedFrecency && removedExpiration);
+  MOZ_ASSERT(mShutdown || (removedFrecency && removedExpiration));
 
+  // Note: aEntry->CanRegister() since now returns false
   aEntry->SetRegistered(false);
 }
 
@@ -626,43 +652,57 @@ CacheStorageService::RecordMemoryOnlyEntry(CacheEntry* aEntry,
 }
 
 void
-CacheStorageService::OnMemoryConsumptionChange(CacheEntry* aEntry,
-                                               int64_t aCurrentMemorySize)
+CacheStorageService::OnMemoryConsumptionChange(CacheMemoryConsumer* aConsumer,
+                                               uint32_t aCurrentMemoryConsumption)
 {
-  LOG(("CacheStorageService::OnMemoryConsumptionChange [entry=%p, size=%u]",
-    aEntry, aCurrentMemorySize));
+  // Throw the oldest data or whole entries away when over certain limits
+  #define MEMCACHE_LIMIT (1000000) // bytes
 
-  MOZ_ASSERT(IsOnManagementThread());
+  LOG(("CacheStorageService::OnMemoryConsumptionChange [consumer=%p, size=%u]",
+    aConsumer, aCurrentMemoryConsumption));
 
-  int64_t savedMemorySize = aEntry->ReportedMemorySize();
-  if (savedMemorySize == aCurrentMemorySize)
+  uint32_t savedMemorySize = aConsumer->mReportedMemoryConsumption;
+  if (savedMemorySize == aCurrentMemoryConsumption)
     return;
 
-  mMemorySize -= savedMemorySize;
-  mMemorySize += aCurrentMemorySize;
-
-  LOG(("  mMemorySize=%llu (+%llu,-%llu)", mMemorySize, aCurrentMemorySize, savedMemorySize));
-
-  bool dataRaise = savedMemorySize < aCurrentMemorySize;
-
   // Exchange saved size with current one.
-  aEntry->ReportedMemorySize() = aCurrentMemorySize;
+  aConsumer->mReportedMemoryConsumption = aCurrentMemoryConsumption;
+
+  mMemorySize -= savedMemorySize;
+  mMemorySize += aCurrentMemoryConsumption;
+
+  LOG(("  mMemorySize=%u (+%u,-%u)", mMemorySize, aCurrentMemoryConsumption, savedMemorySize));
 
   // Bypass purging when memory has not grew up significantly
-  if (!dataRaise) {
-    LOG(("  no raise"));
+  if (aCurrentMemoryConsumption <= savedMemorySize)
+    return;
+
+  if (mPurging) {
+    LOG(("  already purging"));
     return;
   }
 
+  if (mMemorySize <= MEMCACHE_LIMIT)
+    return;
+
+  mPurging = true;
+
+  // Must dipatch, since this can be called under e.g. a CacheFile's lock.
+  nsCOMPtr<nsIRunnable> event =
+    NS_NewRunnableMethod(this, &CacheStorageService::PurgeOverMemoryLimit);
+
+  Dispatch(event);
+}
+
+void
+CacheStorageService::PurgeOverMemoryLimit()
+{
+  MOZ_ASSERT(IsOnManagementThread());
+
+  LOG(("CacheStorageService::PurgeOverMemoryLimit"));
+
 #ifdef MOZ_LOGGING
   TimeStamp start(TimeStamp::Now());
-#endif
-
-  // Throw the oldest data or whole entries away when over certain limits
-  #define MEMCACHE_LIMIT (1 * 1024 * 1204) // bytes
-
-#ifdef MOZ_LOGGING
-  bool wasOverLimit = mMemorySize > MEMCACHE_LIMIT;
 #endif
 
   if (mMemorySize > MEMCACHE_LIMIT) {
@@ -686,11 +726,9 @@ CacheStorageService::OnMemoryConsumptionChange(CacheEntry* aEntry,
     PurgeByFrecency(frecencyNeedsSort, CacheEntry::PURGE_WHOLE);
   }
 
-#ifdef MOZ_LOGGING
-  if (wasOverLimit) {
-    LOG(("  purging took %1.2fms", (TimeStamp::Now() - start).ToMilliseconds()));
-  }
-#endif
+  LOG(("  purging took %1.2fms", (TimeStamp::Now() - start).ToMilliseconds()));
+
+  mPurging = false;
 }
 
 void
@@ -705,7 +743,7 @@ CacheStorageService::PurgeExpired()
     nsRefPtr<CacheEntry> entry = mExpirationArray[i];
 
     uint32_t expirationTime = entry->GetExpirationTime();
-    if (expirationTime <= now) {
+    if (expirationTime > 0 && expirationTime <= now) {
       LOG(("  dooming expired entry=%p, exptime=%u (now=%u)",
         entry.get(), entry->GetExpirationTime(), now));
 

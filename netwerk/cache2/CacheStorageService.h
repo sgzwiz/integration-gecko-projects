@@ -12,6 +12,7 @@
 #include "nsThreadUtils.h"
 #include "nsProxyRelease.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/Atomics.h"
 #include "nsTArray.h"
 
 class nsIURI;
@@ -25,9 +26,20 @@ class nsIEventTarget;
 namespace mozilla {
 namespace net {
 
+class CacheStorageService;
 class CacheStorage;
 class CacheEntry;
 class CacheEntryTable;
+
+class CacheMemoryConsumer
+{
+private:
+  friend class CacheStorageService;
+  uint32_t mReportedMemoryConsumption;
+protected:
+  CacheMemoryConsumer();
+  void DoMemoryReport(uint32_t aCurrentSize);
+};
 
 class CacheStorageService : public nsICacheStorageService
 {
@@ -84,14 +96,6 @@ private:
                              bool aOnlyInMemory,
                              bool aOverwrite);
 
-  /**
-   * When memory consumption of this entry radically changes, this method
-   * is called to reflect the size of allocated memory.  This call may purge
-   * unspecified number of entries from memory (but not from disk).
-   */
-  void OnMemoryConsumptionChange(CacheEntry* aEntry,
-                                 int64_t aMemorySizeIncreasedBy);
-
 private:
   // Following methods are thread safe to call.
   friend class CacheStorage;
@@ -130,6 +134,17 @@ private:
                               nsICacheStorageVisitor* aVisitor);
 
 private:
+  friend class CacheMemoryConsumer;
+  /**
+   * When memory consumption of this entry radically changes, this method
+   * is called to reflect the size of allocated memory.  This call may purge
+   * unspecified number of entries from memory (but not from disk).
+   */
+  void OnMemoryConsumptionChange(CacheMemoryConsumer* aConsumer,
+                                 uint32_t aCurrentMemoryConsumption);
+  void PurgeOverMemoryLimit();
+
+private:
   /**
    * Purges entries from memory based on the frecency ordered array.
    */
@@ -159,7 +174,8 @@ private:
   // Accessible only on the service thread
   nsTArray<nsRefPtr<CacheEntry> > mFrecencyArray;
   nsTArray<nsRefPtr<CacheEntry> > mExpirationArray;
-  uint64_t mMemorySize;
+  mozilla::Atomic<uint32_t> mMemorySize;
+  bool mPurging;
 };
 
 template<class T>

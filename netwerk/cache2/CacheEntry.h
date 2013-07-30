@@ -63,8 +63,7 @@ public:
   void AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags);
 
 public:
-  uint32_t GetMetadataMemoryOccupation() const;
-  uint32_t GetDataMemoryOccupation() const;
+  uint32_t GetMetadataMemoryConsumption();
   nsCString const &GetStorageID() const { return mStorageID; }
   nsCString const &GetEnhanceID() const { return mEnhanceID; }
   nsIURI* GetURI() const { return mURI; }
@@ -77,7 +76,6 @@ public:
   // TODO make these inline
   double GetFrecency() const;
   uint32_t GetExpirationTime() const;
-  int64_t& ReportedMemorySize();
 
   bool IsRegistered() const;
   bool CanRegister() const;
@@ -102,7 +100,6 @@ public:
                              nsACString &aResult);
 
   // Accessed only on the service management thread
-  int64_t mReportedMemorySize;
   double mFrecency;
   uint32_t mSortingExpirationTime;
 
@@ -279,10 +276,9 @@ private:
   class Ops {
   public:
     static uint32_t const REGISTER =          1 << 0;
-    static uint32_t const REPORTUSAGE =       1 << 1;
-    static uint32_t const FRECENCYUPDATE =    1 << 2;
-    static uint32_t const DOOM =              1 << 3;
-    static uint32_t const CALLBACKS =         1 << 4;
+    static uint32_t const FRECENCYUPDATE =    1 << 1;
+    static uint32_t const DOOM =              1 << 2;
+    static uint32_t const CALLBACKS =         1 << 3;
 
     Ops() : mFlags(0) { }
     uint32_t Grab() { uint32_t flags = mFlags; mFlags = 0; return flags; }
@@ -295,8 +291,6 @@ private:
 
   int64_t mPredictedDataSize;
   uint32_t mDataSize; // ???
-
-  uint32_t mMetadataMemoryOccupation;
 };
 
 } // net

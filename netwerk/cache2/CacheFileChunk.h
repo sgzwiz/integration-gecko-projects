@@ -6,6 +6,7 @@
 #define CacheFileChunk__h__
 
 #include "CacheFileIOManager.h"
+#include "CacheStorageService.h"
 #include "CacheHashUtils.h"
 #include "nsAutoPtr.h"
 #include "mozilla/Mutex.h"
@@ -63,6 +64,7 @@ public:
 };
 
 class CacheFileChunk : public CacheFileIOListener
+                     , public CacheMemoryConsumer
 {
 public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -97,6 +99,7 @@ public:
   char *       BufForWriting();
   const char * BufForReading();
   void         EnsureBufSize(uint32_t aBufSize);
+  uint32_t     MemorySize() { return mRWBufSize + mBufSize; }
 
 private:
   friend class CacheFileInputStream;
