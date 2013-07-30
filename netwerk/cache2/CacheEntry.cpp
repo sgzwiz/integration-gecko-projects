@@ -64,8 +64,7 @@ CacheEntry::CacheEntry(const nsACString& aStorageID,
                        nsIURI* aURI,
                        const nsACString& aEnhanceID,
                        bool aUseDisk)
-: mReportedMemorySize(0)
-, mFrecency(0)
+: mFrecency(0)
 , mSortingExpirationTime(uint32_t(-1))
 , mLock("CacheEntry")
 , mURI(aURI)
@@ -83,7 +82,6 @@ CacheEntry::CacheEntry(const nsACString& aStorageID,
 , mWriter(nullptr)
 , mPredictedDataSize(0)
 , mDataSize(0)
-, mMetadataMemoryOccupation(0)
 {
   MOZ_COUNT_CTOR(CacheEntry);
 
@@ -631,7 +629,6 @@ void CacheEntry::OnWriterClosed(Handle const* aHandle)
       mState = READY;
     }
 
-    BackgroundOp(Ops::REPORTUSAGE);
     InvokeCallbacks();
   }
 
@@ -666,23 +663,17 @@ bool CacheEntry::SetUsingDisk(bool aUsingDisk)
   return changed;
 }
 
-uint32_t CacheEntry::GetMetadataMemoryOccupation() const
+uint32_t CacheEntry::GetMetadataMemoryConsumption()
 {
-  return mMetadataMemoryOccupation;
-}
-
-uint32_t CacheEntry::GetDataMemoryOccupation() const
-{
-  int64_t size;
-  CacheEntry* this_non_const = const_cast<CacheEntry*>(this);
-
-  // TODO
-  nsresult rv = this_non_const->GetDataSize(&size);
-  if (NS_FAILED(rv))
+  nsRefPtr<CacheFile> file(File());
+  if (file)
     return 0;
 
-  // TODO 2x.. :)
-  return uint32_t(size);
+  uint32_t size;
+  if (NS_FAILED(file->ElementsSize(&size)))
+    return 0;
+
+  return size;
 }
 
 // nsICacheEntry
@@ -1027,7 +1018,6 @@ NS_IMETHODIMP CacheEntry::MetaDataReady()
   if (mState == WRITING)
     mState = READY;
 
-  BackgroundOp(Ops::REPORTUSAGE);
   InvokeCallbacks();
 
   return NS_OK;
@@ -1047,7 +1037,6 @@ NS_IMETHODIMP CacheEntry::SetValid()
     mState = READY;
     mHasData = true;
 
-    BackgroundOp(Ops::REPORTUSAGE);
     InvokeCallbacks();
 
     outputStream.swap(mOutputStream);
@@ -1166,12 +1155,6 @@ uint32_t CacheEntry::GetExpirationTime() const
   return mSortingExpirationTime;
 }
 
-int64_t& CacheEntry::ReportedMemorySize()
-{
-  MOZ_ASSERT(CacheStorageService::IsOnManagementThread());
-  return mReportedMemorySize;
-}
-
 bool CacheEntry::IsRegistered() const
 {
   MOZ_ASSERT(CacheStorageService::IsOnManagementThread());
@@ -1201,26 +1184,24 @@ bool CacheEntry::Purge(uint32_t aWhat)
 
   MOZ_ASSERT(CacheStorageService::IsOnManagementThread());
 
-  {
-    switch (aWhat) {
-    case PURGE_DATA_ONLY_DISK_BACKED:
-    case PURGE_WHOLE_ONLY_DISK_BACKED:
-      // This is an in-memory only entry, don't purge it
-      if (!mUseDisk) {
-        LOG(("  not using disk"));
-        return false;
-      }
-    }
-
-    if (mState == WRITING || mState == LOADING || mFrecency == 0) {
-      // In-progress (write or load) entries should (at least for consistency and from
-      // the logical point of view) stay in memory.
-      // Zero-frecency entries are those which have never been given to any consumer, those
-      // are actually very fresh and should not go just because frecency had not been set
-      // so far.
-      LOG(("  state=%s, frecency=%1.10f", StateString(mState), mFrecency));
+  switch (aWhat) {
+  case PURGE_DATA_ONLY_DISK_BACKED:
+  case PURGE_WHOLE_ONLY_DISK_BACKED:
+    // This is an in-memory only entry, don't purge it
+    if (!mUseDisk) {
+      LOG(("  not using disk"));
       return false;
     }
+  }
+
+  if (mState == WRITING || mState == LOADING || mFrecency == 0) {
+    // In-progress (write or load) entries should (at least for consistency and from
+    // the logical point of view) stay in memory.
+    // Zero-frecency entries are those which have never been given to any consumer, those
+    // are actually very fresh and should not go just because frecency had not been set
+    // so far.
+    LOG(("  state=%s, frecency=%1.10f", StateString(mState), mFrecency));
+    return false;
   }
 
   switch (aWhat) {
@@ -1230,8 +1211,6 @@ bool CacheEntry::Purge(uint32_t aWhat)
       CacheStorageService::Self()->UnregisterEntry(this);
       CacheStorageService::Self()->RemoveEntry(this);
 
-      CacheStorageService::Self()->OnMemoryConsumptionChange(this, 0);
-
       // Entry removed it self from control arrays, return true
       return true;
     }
@@ -1240,11 +1219,10 @@ bool CacheEntry::Purge(uint32_t aWhat)
     {
       nsRefPtr<CacheFile> file(File());
       if (file) {
-        // TODO
-        // file->ThrowMemoryCachedData();
+        nsresult rv = file->ThrowMemoryCachedData();
+        if (NS_FAILED(rv))
+          return false;
       }
-
-      CacheStorageService::Self()->OnMemoryConsumptionChange(this, mMetadataMemoryOccupation);
 
       // Entry has been left in control arrays, return false (not purged)
       return false;
@@ -1279,7 +1257,6 @@ void CacheEntry::DoomAlreadyRemoved()
   }
 
   CacheStorageService::Self()->UnregisterEntry(this);
-  CacheStorageService::Self()->OnMemoryConsumptionChange(this, 0);
 
   nsRefPtr<CacheFile> file;
   {
@@ -1349,31 +1326,6 @@ void CacheEntry::BackgroundOp(uint32_t aOperations, bool aForceAsync)
     LOG(("CacheEntry REGISTER [this=%p]", this));
 
     CacheStorageService::Self()->RegisterEntry(this);
-  }
-
-  if (aOperations & Ops::REPORTUSAGE) {
-    LOG(("CacheEntry REPORTUSAGE [this=%p]", this));
-
-    nsRefPtr<CacheFile> file(File());
-    if (!file)
-      return;
-
-    int64_t memorySize;
-    {
-      // TODO: The following line is wrong, need API on CacheFile to get
-      // actual allocation consumption, best with file->Metadata()->ElementsSize() included
-      if (!file->DataSize(&memorySize))
-        memorySize = 0;
-
-      uint32_t elementsSize;
-      nsresult rv = file->ElementsSize(&elementsSize);
-      if (NS_SUCCEEDED(rv)) {
-        mMetadataMemoryOccupation = elementsSize;
-        memorySize += mMetadataMemoryOccupation;
-      }
-    }
-
-    CacheStorageService::Self()->OnMemoryConsumptionChange(this, memorySize);
   }
 
   if (aOperations & Ops::DOOM) {
