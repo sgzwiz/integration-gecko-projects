@@ -99,8 +99,8 @@ DebuggerTransport.prototype = {
     try {
       written = aStream.write(this._outgoing, this._outgoing.length);
     } catch(e if e.result == Components.results.NS_BASE_STREAM_CLOSED) {
-      dumpn("Connection closed.");
-      this.close();
+      dumpn("onOutputStreamReady: connection closed.");
+      //this.close();
       return;
     }
     this._outgoing = this._outgoing.slice(written);
