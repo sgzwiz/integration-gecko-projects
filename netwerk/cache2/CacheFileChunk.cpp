@@ -265,7 +265,6 @@ CacheFileChunk::WaitForUpdate(CacheFileChunkListener *aCallback)
 
   ChunkListenerItem *item = new ChunkListenerItem();
   item->mTarget = NS_GetCurrentThread();
-  MOZ_ASSERT(!CacheFileIOManager::gInstance->mIOThread->IsCurrentThread());
   item->mCallback = aCallback;
 
   mUpdateListeners.AppendElement(item);
