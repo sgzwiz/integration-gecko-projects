@@ -671,7 +671,7 @@ CacheStorageService::OnMemoryConsumptionChange(CacheMemoryConsumer* aConsumer,
   mMemorySize -= savedMemorySize;
   mMemorySize += aCurrentMemoryConsumption;
 
-  LOG(("  mMemorySize=%u (+%u,-%u)", mMemorySize, aCurrentMemoryConsumption, savedMemorySize));
+  LOG(("  mMemorySize=%u (+%u,-%u)", uint32_t(mMemorySize), aCurrentMemoryConsumption, savedMemorySize));
 
   // Bypass purging when memory has not grew up significantly
   if (aCurrentMemoryConsumption <= savedMemorySize)
