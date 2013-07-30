@@ -327,9 +327,6 @@ private:
     nsresult SetupByteRangeRequest(int64_t partialLen);
     nsresult OpenCacheInputStream(nsICacheEntry* cacheEntry, bool startBuffering);
 
-    // Disk cache is skipped for some requests when it is behaving slowly
-    bool ShouldSkipCache();
-
 private:
     nsCOMPtr<nsISupports>             mSecurityInfo;
     nsCOMPtr<nsICancelable>           mProxyRequest;
