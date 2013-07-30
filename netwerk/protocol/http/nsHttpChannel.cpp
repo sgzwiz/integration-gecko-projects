@@ -217,7 +217,7 @@ nsHttpChannel::nsHttpChannel()
     , mCacheEntryIsWriteOnly(false)
     , mCacheEntriesToWaitFor(0)
     , mHasQueryString(0)
-    , mPerformCacheCompletenessCheck(0)
+    , mConcurentCacheAccess(0)
     , mDidReval(false)
 {
     LOG(("Creating nsHttpChannel [this=%p]\n", this));
@@ -2020,10 +2020,36 @@ nsHttpChannel::EnsureAssocReq()
 //-----------------------------------------------------------------------------
 
 nsresult
-nsHttpChannel::SetupByteRangeRequest(uint32_t partialLen)
+nsHttpChannel::MaybeSetupByteRangeRequest(int64_t partialLen, int64_t contentLength)
 {
-    //AssertOnCacheThread();
+    nsresult rv = NS_OK;
 
+    bool hasContentEncoding =
+        mCachedResponseHead->PeekHeader(nsHttp::Content_Encoding)
+        != nullptr;
+
+    if ((int64_t(partialLen) < contentLength) &&
+         partialLen > 0 &&
+         !hasContentEncoding &&
+         mCachedResponseHead->IsResumable() &&
+         !mCustomConditionalRequest &&
+         !mCachedResponseHead->NoStore()) {
+        // looks like a partial entry we can reuse; add If-Range
+        // and Range headers.
+        rv = SetupByteRangeRequest(partialLen);
+        if (NS_FAILED(rv)) {
+            // Make the request unconditional again.
+            mRequestHead.ClearHeader(nsHttp::Range);
+            mRequestHead.ClearHeader(nsHttp::If_Range);
+        }
+    }
+
+    return rv;
+}
+
+nsresult
+nsHttpChannel::SetupByteRangeRequest(int64_t partialLen)
+{
     // cached content has been found to be partial, add necessary request
     // headers to complete cache entry.
 
@@ -2038,8 +2064,8 @@ nsHttpChannel::SetupByteRangeRequest(uint32_t partialLen)
         return NS_ERROR_FAILURE;
     }
 
-    char buf[32];
-    PR_snprintf(buf, sizeof(buf), "bytes=%u-", partialLen);
+    char buf[64];
+    PR_snprintf(buf, sizeof(buf), "bytes=%lld-", partialLen);
 
     mRequestHead.SetHeader(nsHttp::Range, nsDependentCString(buf));
     mRequestHead.SetHeader(nsHttp::If_Range, nsDependentCString(val));
@@ -2072,36 +2098,76 @@ nsHttpChannel::ProcessPartialContent()
         return CallOnStartRequest();
     }
 
+    nsresult rv;
 
-    // suspend the current transaction
-    nsresult rv = mTransactionPump->Suspend();
-    if (NS_FAILED(rv)) return rv;
+    if (mConcurentCacheAccess) {
+        // We started to read cached data sooner then its write has been done.
+        // But the concurrent write has not finished completely, so we had
+        // do a range request.  Now let the content coming from the network
+        // be presented to consumers and also stored to the cache entry.
 
-    // merge any new headers with the cached response headers
-    rv = mCachedResponseHead->UpdateHeaders(mResponseHead->Headers());
-    if (NS_FAILED(rv)) return rv;
+        rv = InstallCacheListener(mLogicalOffset);
+        if (NS_FAILED(rv)) return rv;
 
-    // update the cached response head
-    nsAutoCString head;
-    mCachedResponseHead->Flatten(head, true);
-    rv = mCacheEntry->SetMetaDataElement("response-head", head.get());
-    if (NS_FAILED(rv)) return rv;
+        if (mOfflineCacheEntry) {
+            rv = InstallOfflineCacheListener(mLogicalOffset);
+            if (NS_FAILED(rv)) return rv;
+        }
 
-    // make the cached response be the current response
-    mResponseHead = mCachedResponseHead;
+        // merge any new headers with the cached response headers
+        rv = mCachedResponseHead->UpdateHeaders(mResponseHead->Headers());
+        if (NS_FAILED(rv)) return rv;
 
-    UpdateInhibitPersistentCachingFlag();
+        // update the cached response head
+        nsAutoCString head;
+        mCachedResponseHead->Flatten(head, true);
+        rv = mCacheEntry->SetMetaDataElement("response-head", head.get());
+        if (NS_FAILED(rv)) return rv;
 
-    rv = UpdateExpirationTime();
-    if (NS_FAILED(rv)) return rv;
+        UpdateInhibitPersistentCachingFlag();
 
-    // notify observers interested in looking at a response that has been
-    // merged with any cached headers (http-on-examine-merged-response).
-    gHttpHandler->OnExamineMergedResponse(this);
+        rv = UpdateExpirationTime();
+        if (NS_FAILED(rv)) return rv;
 
-    // the cached content is valid, although incomplete.
-    mCachedContentIsValid = true;
-    return ReadFromCache(false);
+        mCachedContentIsPartial = false;
+
+        // notify observers interested in looking at a response that has been
+        // merged with any cached headers (http-on-examine-merged-response).
+        gHttpHandler->OnExamineMergedResponse(this);
+    }
+    else {
+        // suspend the current transaction
+        rv = mTransactionPump->Suspend();
+        if (NS_FAILED(rv)) return rv;
+
+        // merge any new headers with the cached response headers
+        rv = mCachedResponseHead->UpdateHeaders(mResponseHead->Headers());
+        if (NS_FAILED(rv)) return rv;
+
+        // update the cached response head
+        nsAutoCString head;
+        mCachedResponseHead->Flatten(head, true);
+        rv = mCacheEntry->SetMetaDataElement("response-head", head.get());
+        if (NS_FAILED(rv)) return rv;
+
+        // make the cached response be the current response
+        mResponseHead = mCachedResponseHead;
+
+        UpdateInhibitPersistentCachingFlag();
+
+        rv = UpdateExpirationTime();
+        if (NS_FAILED(rv)) return rv;
+
+        // notify observers interested in looking at a response that has been
+        // merged with any cached headers (http-on-examine-merged-response).
+        gHttpHandler->OnExamineMergedResponse(this);
+
+        // the cached content is valid, although incomplete.
+        mCachedContentIsValid = true;
+        rv = ReadFromCache(false);
+    }
+
+    return rv;
 }
 
 nsresult
@@ -2386,7 +2452,7 @@ nsHttpChannel::OpenCacheEntry(bool usingSSL)
     AutoCacheWaitFlags waitFlags(this);
 
     // Drop this flag here
-    mPerformCacheCompletenessCheck = 0;
+    mConcurentCacheAccess = 0;
 
     nsresult rv;
 
@@ -2647,36 +2713,17 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
 
         if (size == int64_t(-1)) {
             LOG(("  write is in progress"));
-            mPerformCacheCompletenessCheck = 1;
+            mConcurentCacheAccess = 1;
         }
         else if (contentLength != int64_t(-1) && contentLength != size) {
             LOG(("Cached data size does not match the Content-Length header "
                  "[content-length=%lld size=%lld]\n", contentLength, size));
 
-            bool hasContentEncoding =
-                mCachedResponseHead->PeekHeader(nsHttp::Content_Encoding)
-                != nullptr;
-            if ((int64_t(size) < contentLength) &&
-                 size > 0 &&
-                 !hasContentEncoding &&
-                 mCachedResponseHead->IsResumable() &&
-                 !mCustomConditionalRequest &&
-                 !mCachedResponseHead->NoStore()) {
-                // looks like a partial entry we can reuse; add If-Range
-                // and Range headers.
-                rv = SetupByteRangeRequest(size);
-                mCachedContentIsPartial = NS_SUCCEEDED(rv);
-                if (mCachedContentIsPartial) {
-                    rv = OpenCacheInputStream(entry, false);
-                } else {
-                    // Make the request unconditional again.
-                    mRequestHead.ClearHeader(nsHttp::Range);
-                    mRequestHead.ClearHeader(nsHttp::If_Range);
-                }
-
-                if (mCachedContentIsPartial) {
-                    *aResult = ENTRY_NEEDS_REVALIDATION;
-                }
+            rv = MaybeSetupByteRangeRequest(size, contentLength);
+            mCachedContentIsPartial = NS_SUCCEEDED(rv);
+            if (mCachedContentIsPartial) {
+                rv = OpenCacheInputStream(entry, false);
+                *aResult = ENTRY_NEEDS_REVALIDATION;
             }
             return rv;
         }
@@ -3586,7 +3633,7 @@ nsHttpChannel::InitCacheEntry()
     mInitedCacheEntry = true;
 
     // Don't perform the check when writing (doesn't make sense)
-    mPerformCacheCompletenessCheck = 0;
+    mConcurentCacheAccess = 0;
 
     return NS_OK;
 }
@@ -3860,7 +3907,7 @@ nsHttpChannel::InstallCacheListener(int64_t offset)
 }
 
 nsresult
-nsHttpChannel::InstallOfflineCacheListener()
+nsHttpChannel::InstallOfflineCacheListener(int64_t offset)
 {
     nsresult rv;
 
@@ -3871,7 +3918,7 @@ nsHttpChannel::InstallOfflineCacheListener()
     MOZ_ASSERT(mListener);
 
     nsCOMPtr<nsIOutputStream> out;
-    rv = mOfflineCacheEntry->OpenOutputStream(0, getter_AddRefs(out));
+    rv = mOfflineCacheEntry->OpenOutputStream(offset, getter_AddRefs(out));
     if (NS_FAILED(rv)) return rv;
 
     nsCOMPtr<nsIStreamListenerTee> tee =
@@ -4948,6 +4995,9 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
                     return status;
                 // otherwise, fall through and fire OnStopRequest...
             }
+            else if (request == mTransactionPump) {
+                MOZ_ASSERT(mConcurentCacheAccess);
+            }
             else
                 NS_NOTREACHED("unexpected request");
         }
@@ -5028,19 +5078,37 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
     mIsPending = false;
 
     // if needed, check cache entry has all data we expect
-    if (mCacheEntry && mPerformCacheCompletenessCheck && contentComplete) {
+    if (mCacheEntry && mCachePump &&
+        mConcurentCacheAccess && contentComplete) {
         int64_t size, contentLength;
         nsresult rv = CheckPartial(mCacheEntry, &size, &contentLength);
         if (NS_SUCCEEDED(rv)) {
             if (size == int64_t(-1)) {
+                // mayhemer TODO - we have to restart read from cache here at the size offset
                 MOZ_ASSERT(false);
                 LOG(("  cache entry write is still in progress, but we just "
-                     "finished reading the cache entry, a bit strange"));
+                     "finished reading the cache entry"));
             }
             else if (contentLength != int64_t(-1) && contentLength != size) {
-                status = NS_ERROR_NET_INTERRUPT;
-                LOG(("  concurrent cache entry write has been interrupted, "
-                     "failing this load too"));
+                LOG(("  concurrent cache entry write has been interrupted"));
+                mCachedResponseHead = mResponseHead;
+                rv = MaybeSetupByteRangeRequest(size, contentLength);
+                if (NS_SUCCEEDED(rv)) {
+                    // Prevent read from cache again
+                    mCachedContentIsValid = 0;
+                    mCachedContentIsPartial = 1;
+
+                    // Perform the range request
+                    rv = ContinueConnect();
+                    if (NS_SUCCEEDED(rv)) {
+                        LOG(("  performing range request"));
+                        mCachePump = nullptr;
+                        return NS_OK;
+                    } else {
+                        LOG(("  perform range request failed 0x%08x", rv));
+                        status = NS_ERROR_NET_INTERRUPT;
+                    }
+                }
             }
         }
     }
