@@ -7,6 +7,7 @@
 
 #include "nsIObserver.h"
 #include "nsWeakReference.h"
+#include <algorithm>
 
 namespace mozilla {
 namespace net {
@@ -21,9 +22,18 @@ class CacheObserver : public nsIObserver
 
   static nsresult Init();
   static nsresult Shutdown();
+  static CacheObserver* Self() { return sSelf; }
+
+  // Access to preferences
+  static uint32_t const MemoryLimit() // <0.5MB,1024MB>, result in bytes.
+    { return std::max(512U, std::min(1048576U, sMemoryLimit)) << 10; }
 
 private:
   static CacheObserver* sSelf;
+
+  void AttachToPreferences();
+
+  static uint32_t sMemoryLimit;
 };
 
 } // net

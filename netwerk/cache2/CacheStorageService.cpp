@@ -5,6 +5,7 @@
 #include "CacheLog.h"
 #include "CacheStorageService.h"
 #include "CacheFileIOManager.h"
+#include "CacheObserver.h"
 
 #include "nsICacheStorageVisitor.h"
 #include "CacheStorage.h"
@@ -655,9 +656,6 @@ void
 CacheStorageService::OnMemoryConsumptionChange(CacheMemoryConsumer* aConsumer,
                                                uint32_t aCurrentMemoryConsumption)
 {
-  // Throw the oldest data or whole entries away when over certain limits
-  #define MEMCACHE_LIMIT (1000000) // bytes
-
   LOG(("CacheStorageService::OnMemoryConsumptionChange [consumer=%p, size=%u]",
     aConsumer, aCurrentMemoryConsumption));
 
@@ -682,12 +680,13 @@ CacheStorageService::OnMemoryConsumptionChange(CacheMemoryConsumer* aConsumer,
     return;
   }
 
-  if (mMemorySize <= MEMCACHE_LIMIT)
+  if (mMemorySize <= CacheObserver::MemoryLimit())
     return;
 
+  // Throw the oldest data or whole entries away when over certain limits
   mPurging = true;
 
-  // Must dipatch, since this can be called under e.g. a CacheFile's lock.
+  // Must always dipatch, since this can be called under e.g. a CacheFile's lock.
   nsCOMPtr<nsIRunnable> event =
     NS_NewRunnableMethod(this, &CacheStorageService::PurgeOverMemoryLimit);
 
@@ -705,23 +704,25 @@ CacheStorageService::PurgeOverMemoryLimit()
   TimeStamp start(TimeStamp::Now());
 #endif
 
-  if (mMemorySize > MEMCACHE_LIMIT) {
+  uint32_t const memoryLimit = CacheObserver::MemoryLimit();
+
+  if (mMemorySize > memoryLimit) {
     LOG(("  memory data consumption over the limit, abandon expired entries"));
     PurgeExpired();
   }
 
   bool frecencyNeedsSort = true;
-  if (mMemorySize > MEMCACHE_LIMIT) {
+  if (mMemorySize > memoryLimit) {
     LOG(("  memory data consumption over the limit, abandon disk backed data"));
     PurgeByFrecency(frecencyNeedsSort, CacheEntry::PURGE_DATA_ONLY_DISK_BACKED);
   }
 
-  if (mMemorySize > MEMCACHE_LIMIT) {
+  if (mMemorySize > memoryLimit) {
     LOG(("  metadata consumtion over the limit, abandon disk backed entries"));
     PurgeByFrecency(frecencyNeedsSort, CacheEntry::PURGE_WHOLE_ONLY_DISK_BACKED);
   }
 
-  if (mMemorySize > MEMCACHE_LIMIT) {
+  if (mMemorySize > memoryLimit) {
     LOG(("  memory data consumption over the limit, abandon any entry"));
     PurgeByFrecency(frecencyNeedsSort, CacheEntry::PURGE_WHOLE);
   }
@@ -739,7 +740,9 @@ CacheStorageService::PurgeExpired()
   mExpirationArray.Sort(ExpirationComparator());
   uint32_t now = NowInSeconds();
 
-  for (uint32_t i = 0; mMemorySize > MEMCACHE_LIMIT && i < mExpirationArray.Length();) {
+  uint32_t const memoryLimit = CacheObserver::MemoryLimit();
+
+  for (uint32_t i = 0; mMemorySize > memoryLimit && i < mExpirationArray.Length();) {
     nsRefPtr<CacheEntry> entry = mExpirationArray[i];
 
     uint32_t expirationTime = entry->GetExpirationTime();
@@ -766,7 +769,9 @@ CacheStorageService::PurgeByFrecency(bool &aFrecencyNeedsSort, uint32_t aWhat)
     aFrecencyNeedsSort = false;
   }
 
-  for (uint32_t i = 0; mMemorySize > MEMCACHE_LIMIT && i < mFrecencyArray.Length();) {
+  uint32_t const memoryLimit = CacheObserver::MemoryLimit();
+
+  for (uint32_t i = 0; mMemorySize > memoryLimit && i < mFrecencyArray.Length();) {
     nsRefPtr<CacheEntry> entry = mFrecencyArray[i];
 
     if (entry->Purge(aWhat)) {
