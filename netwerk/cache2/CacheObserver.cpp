@@ -16,6 +16,9 @@ namespace net {
 
 CacheObserver* CacheObserver::sSelf = nullptr;
 
+static uint32_t const kDefaultMemoryLimit = 50 * 1024; // 50 MB
+uint32_t CacheObserver::sMemoryLimit = kDefaultMemoryLimit;
+
 NS_IMPL_ISUPPORTS2(CacheObserver,
                    nsIObserver,
                    nsISupportsWeakReference)
@@ -55,6 +58,13 @@ CacheObserver::Shutdown()
   return NS_OK;
 }
 
+void
+CacheObserver::AttachToPreferences()
+{
+  mozilla::Preferences::AddUintVarCache(
+    &sMemoryLimit, "browser.cache.memory_limit", kDefaultMemoryLimit);
+}
+
 NS_IMETHODIMP
 CacheObserver::Observe(nsISupports* aSubject,
                        const char* aTopic,
@@ -68,11 +78,12 @@ CacheObserver::Observe(nsISupports* aSubject,
   if (!strcmp(aTopic, "profile-do-change")) {
     CacheFileIOManager::Init();
     CacheFileIOManager::OnProfile();
+    AttachToPreferences();
     return NS_OK;
   }
 
   if (!strcmp(aTopic, "profile-before-change")) {
-    CacheStorageService* service = CacheStorageService::Self();
+    nsRefPtr<CacheStorageService> service = CacheStorageService::Self();
     if (service)
       service->Shutdown();
 
@@ -80,7 +91,7 @@ CacheObserver::Observe(nsISupports* aSubject,
   }
 
   if (!strcmp(aTopic, "xpcom-shutdown")) {
-    CacheStorageService* service = CacheStorageService::Self();
+    nsRefPtr<CacheStorageService> service = CacheStorageService::Self();
     if (service)
       service->Shutdown();
 
@@ -88,7 +99,7 @@ CacheObserver::Observe(nsISupports* aSubject,
   }
 
   if (!strcmp(aTopic, "last-pb-context-exited")) {
-    CacheStorageService* service = CacheStorageService::Self();
+    nsRefPtr<CacheStorageService> service = CacheStorageService::Self();
     if (!service)
       return NS_OK;
 
