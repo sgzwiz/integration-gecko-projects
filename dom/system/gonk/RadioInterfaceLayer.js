@@ -37,7 +37,7 @@ DEBUG = RIL.DEBUG_RIL || debugPref;
 
 function debug(s) {
   dump("-*- RadioInterfaceLayer: " + s + "\n");
-};
+}
 
 const RADIOINTERFACELAYER_CID =
   Components.ID("{2d831c8d-6017-435b-a80c-e5d422810cea}");
@@ -51,6 +51,7 @@ const nsITelephonyProvider = Ci.nsITelephonyProvider;
 
 const kNetworkInterfaceStateChangedTopic = "network-interface-state-changed";
 const kSmsReceivedObserverTopic          = "sms-received";
+const kSilentSmsReceivedObserverTopic    = "silent-sms-received";
 const kSmsSendingObserverTopic           = "sms-sending";
 const kSmsSentObserverTopic              = "sms-sent";
 const kSmsFailedObserverTopic            = "sms-failed";
@@ -65,6 +66,7 @@ const kTimeNitzAvailable                 = "time.nitz.available";
 const kCellBroadcastSearchList           = "ril.cellbroadcast.searchlist";
 const kCellBroadcastDisabled             = "ril.cellbroadcast.disabled";
 const kPrefenceChangedObserverTopic      = "nsPref:changed";
+const kClirModePreference                = "ril.clirMode";
 
 const DOM_MOBILE_MESSAGE_DELIVERY_RECEIVED = "received";
 const DOM_MOBILE_MESSAGE_DELIVERY_SENDING  = "sending";
@@ -144,6 +146,10 @@ XPCOMUtils.defineLazyServiceGetter(this, "gPowerManagerService",
 XPCOMUtils.defineLazyServiceGetter(this, "gMobileMessageService",
                                    "@mozilla.org/mobilemessage/mobilemessageservice;1",
                                    "nsIMobileMessageService");
+
+XPCOMUtils.defineLazyServiceGetter(this, "gSmsService",
+                                   "@mozilla.org/sms/smsservice;1",
+                                   "nsISmsService");
 
 XPCOMUtils.defineLazyServiceGetter(this, "gMobileMessageDatabaseService",
                                    "@mozilla.org/mobilemessage/rilmobilemessagedatabaseservice;1",
@@ -557,12 +563,17 @@ function RadioInterfaceLayer() {
 
   let options = {
     debug: debugPref,
-    cellBroadcastDisabled: false
+    cellBroadcastDisabled: false,
+    clirMode: RIL.CLIR_DEFAULT
   };
 
   try {
     options.cellBroadcastDisabled =
       Services.prefs.getBoolPref(kCellBroadcastDisabled);
+  } catch(e) {}
+
+  try {
+    options.clirMode = Services.prefs.getIntPref(kClirModePreference);
   } catch(e) {}
 
   let numIfaces = this.numRadioInterfaces;
@@ -1888,6 +1899,31 @@ RadioInterface.prototype = {
     message.body = message.fullBody = message.fullBody || null;
     message.timestamp = Date.now();
 
+    if (gSmsService.isSilentNumber(message.sender)) {
+      message.id = -1;
+      message.threadId = 0;
+      message.delivery = DOM_MOBILE_MESSAGE_DELIVERY_RECEIVED;
+      message.deliveryStatus = RIL.GECKO_SMS_DELIVERY_STATUS_SUCCESS;
+      message.read = false;
+
+      let domMessage =
+        gMobileMessageService.createSmsMessage(message.id,
+                                               message.threadId,
+                                               message.delivery,
+                                               message.deliveryStatus,
+                                               message.sender,
+                                               message.receiver,
+                                               message.body,
+                                               message.messageClass,
+                                               message.timestamp,
+                                               message.read);
+
+      Services.obs.notifyObservers(domMessage,
+                                   kSilentSmsReceivedObserverTopic,
+                                   null);
+      return true;
+    }
+
     // TODO: Bug #768441
     // For now we don't store indicators persistently. When the mwi.discard
     // flag is false, we'll need to persist the indicator to EFmwis.
@@ -1977,6 +2013,25 @@ RadioInterface.prototype = {
       return;
     }
 
+    if (options.silent) {
+      // There is no way to modify nsIDOMMozSmsMessage attributes as they are
+      // read only so we just create a new sms instance to send along with
+      // the notification.
+      let sms = options.sms;
+      options.request.notifyMessageSent(
+        gMobileMessageService.createSmsMessage(sms.id,
+                                               sms.threadId,
+                                               DOM_MOBILE_MESSAGE_DELIVERY_SENT,
+                                               sms.deliveryStatus,
+                                               sms.sender,
+                                               sms.receiver,
+                                               sms.body,
+                                               sms.messageClass,
+                                               sms.timestamp,
+                                               sms.read));
+      return;
+    }
+
     gMobileMessageDatabaseService.setMessageDelivery(options.sms.id,
                                                      null,
                                                      DOM_MOBILE_MESSAGE_DELIVERY_SENT,
@@ -2006,6 +2061,10 @@ RadioInterface.prototype = {
     }
     delete this._sentSmsEnvelopes[message.envelopeId];
 
+    if (options.silent) {
+      return;
+    }
+
     gMobileMessageDatabaseService.setMessageDelivery(options.sms.id,
                                                      null,
                                                      options.sms.delivery,
@@ -2033,6 +2092,11 @@ RadioInterface.prototype = {
       case RIL.ERROR_RADIO_NOT_AVAILABLE:
         error = Ci.nsIMobileMessageCallback.NO_SIGNAL_ERROR;
         break;
+    }
+
+    if (options.silent) {
+      options.request.notifySendMessageFailed(error);
+      return;
     }
 
     gMobileMessageDatabaseService.setMessageDelivery(options.sms.id,
@@ -2280,8 +2344,23 @@ RadioInterface.prototype = {
 
   handleSetCLIR: function handleSetCLIR(message) {
     if (DEBUG) this.debug("handleSetCLIR: " + JSON.stringify(message));
-    gMessageManager.sendRequestResults("RIL:SetCallingLineIdRestriction",
-                                       message);
+    let messageType;
+    if (message.isSendMMI) {
+      messageType = message.success ? "RIL:SendMMI:Return:OK" :
+                                      "RIL:SendMMI:Return:KO";
+    } else {
+      messageType = "RIL:SetCallingLineIdRestriction";
+    }
+    if (message.success) {
+      try {
+        Services.prefs.setIntPref(kClirModePreference, message.clirMode);
+        Services.prefs.savePrefFile(null);
+        if (DEBUG) {
+          this.debug(kClirModePreference + " pref is now " + message.clirMode);
+        }
+      } catch (e) {}
+    }
+    gMessageManager.sendRequestResults(messageType, message);
   },
 
   handleSetRoamingPreference: function handleSetRoamingPreference(message) {
@@ -3145,7 +3224,7 @@ RadioInterface.prototype = {
     return result;
   },
 
-  sendSMS: function sendSMS(number, message, request) {
+  sendSMS: function sendSMS(number, message, silent, request) {
     let strict7BitEncoding;
     try {
       strict7BitEncoding = Services.prefs.getBoolPref("dom.sms.strict7BitEncoding");
@@ -3169,6 +3248,57 @@ RadioInterface.prototype = {
       options.segmentRef = this.nextSegmentRef;
     }
 
+    let notifyResult = (function notifyResult(rv, domMessage) {
+      // TODO bug 832140 handle !Components.isSuccessCode(rv)
+      if (!silent) {
+        Services.obs.notifyObservers(domMessage, kSmsSendingObserverTopic, null);
+      }
+
+      // If the radio is disabled or the SIM card is not ready, just directly
+      // return with the corresponding error code.
+      let errorCode;
+      if (!PhoneNumberUtils.isPlainPhoneNumber(options.number)) {
+        if (DEBUG) this.debug("Error! Address is invalid when sending SMS: " +
+                              options.number);
+        errorCode = Ci.nsIMobileMessageCallback.INVALID_ADDRESS_ERROR;
+      } else if (!this._radioEnabled) {
+        if (DEBUG) this.debug("Error! Radio is disabled when sending SMS.");
+        errorCode = Ci.nsIMobileMessageCallback.RADIO_DISABLED_ERROR;
+      } else if (this.rilContext.cardState != "ready") {
+        if (DEBUG) this.debug("Error! SIM card is not ready when sending SMS.");
+        errorCode = Ci.nsIMobileMessageCallback.NO_SIM_CARD_ERROR;
+      }
+      if (errorCode) {
+        if (silent) {
+          request.notifySendMessageFailed(errorCode);
+          return;
+        }
+
+        gMobileMessageDatabaseService
+          .setMessageDelivery(domMessage.id,
+                              null,
+                              DOM_MOBILE_MESSAGE_DELIVERY_ERROR,
+                              RIL.GECKO_SMS_DELIVERY_STATUS_ERROR,
+                              function notifyResult(rv, domMessage) {
+          // TODO bug 832140 handle !Components.isSuccessCode(rv)
+          request.notifySendMessageFailed(errorCode);
+          Services.obs.notifyObservers(domMessage, kSmsFailedObserverTopic, null);
+        });
+        return;
+      }
+
+      // Keep current SMS message info for sent/delivered notifications
+      options.envelopeId = this.createSmsEnvelope({
+        request: request,
+        sms: domMessage,
+        requestStatusReport: options.requestStatusReport,
+        silent: silent
+      });
+
+      // This is the entry point starting to send SMS.
+      this.worker.postMessage(options);
+    }).bind(this);
+
     let sendingMessage = {
       type: "sms",
       sender: this.getMsisdn(),
@@ -3178,52 +3308,26 @@ RadioInterface.prototype = {
       timestamp: Date.now()
     };
 
+    if (silent) {
+      let deliveryStatus = RIL.GECKO_SMS_DELIVERY_STATUS_PENDING;
+      let delivery = DOM_MOBILE_MESSAGE_DELIVERY_SENDING;
+      let domMessage =
+        gMobileMessageService.createSmsMessage(-1, // id
+                                               0,  // threadId
+                                               delivery,
+                                               deliveryStatus,
+                                               sendingMessage.sender,
+                                               sendingMessage.receiver,
+                                               sendingMessage.body,
+                                               "normal", // message class
+                                               sendingMessage.timestamp,
+                                               false);
+      notifyResult(Cr.NS_OK, domMessage);
+      return;
+    }
+
     let id = gMobileMessageDatabaseService.saveSendingMessage(
-      sendingMessage,
-      function notifyResult(rv, domMessage) {
-
-        // TODO bug 832140 handle !Components.isSuccessCode(rv)
-        Services.obs.notifyObservers(domMessage, kSmsSendingObserverTopic, null);
-
-        // If the radio is disabled or the SIM card is not ready, just directly
-        // return with the corresponding error code.
-        let errorCode;
-        if (!PhoneNumberUtils.isPlainPhoneNumber(options.number)) {
-          if (DEBUG) this.debug("Error! Address is invalid when sending SMS: " +
-                                options.number);
-          errorCode = Ci.nsIMobileMessageCallback.INVALID_ADDRESS_ERROR;
-        } else if (!this._radioEnabled) {
-          if (DEBUG) this.debug("Error! Radio is disabled when sending SMS.");
-          errorCode = Ci.nsIMobileMessageCallback.RADIO_DISABLED_ERROR;
-        } else if (this.rilContext.cardState != "ready") {
-          if (DEBUG) this.debug("Error! SIM card is not ready when sending SMS.");
-          errorCode = Ci.nsIMobileMessageCallback.NO_SIM_CARD_ERROR;
-        }
-        if (errorCode) {
-          gMobileMessageDatabaseService
-            .setMessageDelivery(domMessage.id,
-                                null,
-                                DOM_MOBILE_MESSAGE_DELIVERY_ERROR,
-                                RIL.GECKO_SMS_DELIVERY_STATUS_ERROR,
-                                function notifyResult(rv, domMessage) {
-            // TODO bug 832140 handle !Components.isSuccessCode(rv)
-            request.notifySendMessageFailed(errorCode);
-            Services.obs.notifyObservers(domMessage, kSmsFailedObserverTopic, null);
-          });
-          return;
-        }
-
-        // Keep current SMS message info for sent/delivered notifications
-        options.envelopeId = this.createSmsEnvelope({
-          request: request,
-          sms: domMessage,
-          requestStatusReport: options.requestStatusReport
-        });
-
-        // This is the entry point starting to send SMS.
-        this.worker.postMessage(options);
-
-      }.bind(this));
+      sendingMessage, notifyResult);
   },
 
   registerDataCallCallback: function registerDataCallCallback(callback) {

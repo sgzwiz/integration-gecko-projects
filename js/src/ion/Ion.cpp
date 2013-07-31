@@ -15,9 +15,8 @@
 #endif
 
 #include "gc/Marking.h"
-#include "ion/AliasAnalysis.h"
-#include "ion/AsmJS.h"
 #include "ion/AsmJSModule.h"
+#include "ion/AliasAnalysis.h"
 #include "ion/BacktrackingAllocator.h"
 #include "ion/BaselineCompiler.h"
 #include "ion/BaselineInspector.h"
@@ -2413,8 +2412,6 @@ AutoFlushInhibitor::~AutoFlushInhibitor()
     if (afc)
         IonSpewCont(IonSpew_CacheFlush, "{");
 }
-
-int js::ion::LabelBase::id_count = 0;
 
 void
 ion::PurgeCaches(JSScript *script, Zone *zone)

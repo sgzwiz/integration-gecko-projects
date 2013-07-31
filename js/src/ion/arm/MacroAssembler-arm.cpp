@@ -31,6 +31,14 @@ isValueDTRDCandidate(ValueOperand &val)
 }
 
 void
+MacroAssemblerARM::convertBoolToInt32(Register source, Register dest)
+{
+    // Note that C++ bool is only 1 byte, so zero extend it to clear the
+    // higher-order bits.
+    ma_and(Imm32(0xff), source, dest);
+}
+
+void
 MacroAssemblerARM::convertInt32ToDouble(const Register &src, const FloatRegister &dest_)
 {
     // direct conversions aren't possible.
@@ -342,6 +350,14 @@ MacroAssemblerARM::ma_movPatchable(Imm32 imm_, Register dest,
                                    Assembler::Condition c, RelocStyle rs, Instruction *i)
 {
     int32_t imm = imm_.value;
+    if (i) {
+        // Make sure the current instruction is not an artificial guard
+        // inserted by the assembler buffer.
+        // The InstructionIterator already does this and handles edge cases,
+        // so, just asking an iterator for its current instruction should be
+        // enough to make sure we don't accidentally inspect an artificial guard.
+        i = InstructionIterator(i).cur();
+    }
     switch(rs) {
       case L_MOVWT:
         as_movw(dest, Imm16(imm & 0xffff), c, i);
@@ -2695,13 +2711,18 @@ MacroAssemblerARMCompat::extractTag(const BaseIndex &address, Register scratch)
 }
 
 void
-MacroAssemblerARMCompat::moveValue(const Value &val, Register type, Register data) {
+MacroAssemblerARMCompat::moveValue(const Value &val, Register type, Register data)
+{
     jsval_layout jv = JSVAL_TO_IMPL(val);
     ma_mov(Imm32(jv.s.tag), type);
-    ma_mov(Imm32(jv.s.payload.i32), data);
+    if (val.isMarkable())
+        ma_mov(ImmGCPtr(reinterpret_cast<gc::Cell *>(val.toGCThing())), data);
+    else
+        ma_mov(Imm32(jv.s.payload.i32), data);
 }
 void
-MacroAssemblerARMCompat::moveValue(const Value &val, const ValueOperand &dest) {
+MacroAssemblerARMCompat::moveValue(const Value &val, const ValueOperand &dest)
+{
     moveValue(val, dest.typeReg(), dest.payloadReg());
 }
 
@@ -2709,7 +2730,8 @@ MacroAssemblerARMCompat::moveValue(const Value &val, const ValueOperand &dest) {
 // X86/X64-common (ARM too now) interface.
 /////////////////////////////////////////////////////////////////
 void
-MacroAssemblerARMCompat::storeValue(ValueOperand val, Operand dst) {
+MacroAssemblerARMCompat::storeValue(ValueOperand val, Operand dst)
+{
     ma_str(val.payloadReg(), ToPayload(dst));
     ma_str(val.typeReg(), ToType(dst));
 }
