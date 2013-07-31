@@ -60,6 +60,9 @@ pref("browser.cache.disk_cache_ssl",        true);
 // 0 = once-per-session, 1 = each-time, 2 = never, 3 = when-appropriate/automatically
 pref("browser.cache.check_doc_frequency",   3);
 
+// Limit for how much memory the cache can consume, for any data, in Kb
+pref("browser.cache.memory_limit", 51200); // 50 MB
+
 pref("browser.cache.offline.enable",           true);
 
 // offline cache capacity in kilobytes
