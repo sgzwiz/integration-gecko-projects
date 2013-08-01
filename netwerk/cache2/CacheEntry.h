@@ -202,14 +202,13 @@ private:
   already_AddRefed<CacheEntry> ReopenTruncated(nsICacheEntryOpenCallback* aCallback);
   void TransferCallbacks(CacheEntry const& aFromEntry);
 
-  already_AddRefed<CacheFile> File();
-
   mozilla::Mutex mLock;
 
   nsCOMArray<nsICacheEntryOpenCallback> mCallbacks, mReadOnlyCallbacks;
   nsCOMPtr<nsICacheEntryDoomCallback> mDoomCallback;
 
   nsRefPtr<CacheFile> mFile;
+  nsresult mFileStatus;
   nsCOMPtr<nsIURI> mURI;
   nsCString mEnhanceID;
   nsCString mStorageID;
