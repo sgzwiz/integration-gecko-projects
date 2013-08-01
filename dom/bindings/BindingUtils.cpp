@@ -1887,6 +1887,15 @@ ConstructJSImplementation(JSContext* aCx, const char* aContractId,
     return nullptr;
   }
 
+  return ConstructJSImplementation(aCx, aContractId, window, aObject, aRv);
+}
+
+already_AddRefed<nsPIDOMWindow>
+ConstructJSImplementation(JSContext* aCx, const char* aContractId,
+                          nsCOMPtr<nsPIDOMWindow> aWindow,
+                          JS::MutableHandle<JSObject*> aObject,
+                          ErrorResult& aRv)
+{
   // Make sure to have nothing on the JS context stack while creating and
   // initializing the object, so exceptions from that will get reported
   // properly, since those are never exceptions that a spec wants to be thrown.
@@ -1905,7 +1914,7 @@ ConstructJSImplementation(JSContext* aCx, const char* aContractId,
       do_QueryInterface(implISupports);
     if (gpi) {
       JS::Rooted<JS::Value> initReturn(aCx);
-      nsresult rv = gpi->Init(window, initReturn.address());
+      nsresult rv = gpi->Init(aWindow, initReturn.address());
       if (NS_FAILED(rv)) {
         aRv.Throw(rv);
         return nullptr;
@@ -1928,7 +1937,7 @@ ConstructJSImplementation(JSContext* aCx, const char* aContractId,
     }
   }
 
-  return window.forget();
+  return aWindow.forget();
 }
 
 bool

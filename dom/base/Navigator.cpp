@@ -74,6 +74,7 @@
 
 #include "nsScriptNameSpaceManager.h"
 
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/NavigatorBinding.h"
 
 using namespace mozilla::dom::power;
@@ -1262,6 +1263,36 @@ Navigator::GetMozBluetooth(ErrorResult& aRv)
 }
 #endif //MOZ_B2G_BT
 
+SettingsManager*
+Navigator::GetMozSettings(ErrorResult& aRv)
+{
+  if (!mSettingsManager) {
+    if (!mWindow) {
+      aRv.Throw(NS_ERROR_UNEXPECTED);
+      return nullptr;
+    }
+
+    bool hasPermission = CheckPermission("settings-read") ||
+                         CheckPermission("settings-write");
+    NS_ENSURE_TRUE(hasPermission, nullptr);
+
+    AutoJSContext cx;
+    NS_ENSURE_TRUE(cx, nullptr);
+
+    JS::Rooted<JSObject*> jsImplObj(cx);
+    nsCOMPtr<nsPIDOMWindow> window =
+      ConstructJSImplementation(cx, "@mozilla.org/settingsManager;1", mWindow, &jsImplObj, aRv);
+    if (aRv.Failed()) {
+      aRv.Throw(NS_ERROR_UNEXPECTED);
+      return nullptr;
+    }
+    // Build the C++ implementation.
+    mSettingsManager = new SettingsManager(jsImplObj, window);
+  }
+
+  return mSettingsManager;
+}
+
 nsresult
 Navigator::EnsureMessagesManager()
 {
@@ -1701,6 +1732,30 @@ bool Navigator::HasUserMediaSupport(JSContext* /* unused */,
          Preferences::GetBool("media.peerconnection.enabled", false);
 }
 #endif // MOZ_MEDIA_NAVIGATOR
+
+/* static */
+bool Navigator::HasSettingsSupport(JSContext* /* unused */, JSObject* aGlobal)
+{
+  bool enabled = false;
+  Preferences::GetBool("dom.mozSettings.enabled", &enabled);
+
+#ifdef MOZ_B2G
+  NS_ENSURE_TRUE(enabled, false);
+
+  nsCOMPtr<nsPIDOMWindow> win = GetWindowFromGlobal(aGlobal);
+  NS_ENSURE_TRUE(win, false);
+  nsCOMPtr<nsIDocument> doc = win->GetExtantDoc();
+  NS_ENSURE_TRUE(doc, false);
+  nsCOMPtr<nsIPrincipal> principal = doc->NodePrincipal();
+  NS_ENSURE_TRUE(principal, false);
+
+  uint16_t appStatus = nsIPrincipal::APP_STATUS_NOT_INSTALLED;
+  principal->GetAppStatus(&appStatus);
+  return appStatus == nsIPrincipal::APP_STATUS_CERTIFIED;
+#endif // MOZ_B2G
+
+  return enabled;
+}
 
 /* static */
 already_AddRefed<nsPIDOMWindow>
