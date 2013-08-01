@@ -666,7 +666,7 @@ bool CacheEntry::SetUsingDisk(bool aUsingDisk)
 uint32_t CacheEntry::GetMetadataMemoryConsumption()
 {
   nsRefPtr<CacheFile> file(File());
-  if (file)
+  if (!file)
     return 0;
 
   uint32_t size;
