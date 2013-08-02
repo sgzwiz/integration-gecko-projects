@@ -23,8 +23,9 @@ namespace net {
 
 NS_IMPL_ISUPPORTS1(CacheFileMetadata, CacheFileIOListener)
 
-CacheFileMetadata::CacheFileMetadata(CacheFileHandle *aHandle, const nsACString &aKey)
+CacheFileMetadata::CacheFileMetadata(CacheFileHandle *aHandle, const nsACString &aKey, bool aKeyIsHash)
   : mHandle(aHandle)
+  , mKeyIsHash(aKeyIsHash)
   , mHashArray(nullptr)
   , mHashArraySize(0)
   , mHashCount(0)
@@ -68,6 +69,7 @@ CacheFileMetadata::~CacheFileMetadata()
 
 CacheFileMetadata::CacheFileMetadata(const nsACString &aKey)
   : mHandle(nullptr)
+  , mKeyIsHash(false)
   , mHashArray(nullptr)
   , mHashArraySize(0)
   , mHashCount(0)
@@ -580,19 +582,21 @@ CacheFileMetadata::ParseMetadata(uint32_t aMetaOffset, uint32_t aBufOffset)
     return NS_ERROR_FILE_CORRUPTED;
   }
 
-  uint32_t keySize = reinterpret_cast<CacheFileMetadataHeader *>(
-                       mBuf + hdrOffset)->mKeySize;
+  if (!mKeyIsHash) {
+    uint32_t keySize = reinterpret_cast<CacheFileMetadataHeader *>(
+                         mBuf + hdrOffset)->mKeySize;
 
-  if (keySize != mKey.Length()) {
-    LOG(("CacheFileMetadata::ParseMetadata() - Key collision, key=%s [this=%p]",
-         nsCString(mBuf + keyOffset, keySize).get(), this));
-    return NS_ERROR_FILE_CORRUPTED;
-  }
+    if (keySize != mKey.Length()) {
+      LOG(("CacheFileMetadata::ParseMetadata() - Key collision (1), key=%s [this=%p]",
+           nsCString(mBuf + keyOffset, keySize).get(), this));
+      return NS_ERROR_FILE_CORRUPTED;
+    }
 
-  if (memcmp(mKey.get(), mBuf + keyOffset, mKey.Length()) != 0) {
-    LOG(("CacheFileMetadata::ParseMetadata() - Key collision, key=%s [this=%p]",
-         nsCString(mBuf + keyOffset, keySize).get(), this));
-    return NS_ERROR_FILE_CORRUPTED;
+    if (memcmp(mKey.get(), mBuf + keyOffset, mKey.Length()) != 0) {
+      LOG(("CacheFileMetadata::ParseMetadata() - Key collision (2), key=%s [this=%p]",
+           nsCString(mBuf + keyOffset, keySize).get(), this));
+      return NS_ERROR_FILE_CORRUPTED;
+    }
   }
 
   // check metadata hash (data from hashesOffset to metaposOffset)

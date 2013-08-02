@@ -24,6 +24,7 @@ EXPORTS += [
 
 CPP_SOURCES += [
     'AppCacheStorage.cpp',
+    'CacheEntriesEnumerator.cpp',
     'CacheEntry.cpp',
     'CacheFile.cpp',
     'CacheFileChunk.cpp',

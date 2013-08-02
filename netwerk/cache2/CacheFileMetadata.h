@@ -49,7 +49,9 @@ class CacheFileMetadata : public CacheFileIOListener
 public:
   NS_DECL_THREADSAFE_ISUPPORTS
 
-  CacheFileMetadata(CacheFileHandle *aHandle, const nsACString &aKey);
+  CacheFileMetadata(CacheFileHandle *aHandle,
+                    const nsACString &aKey,
+                    bool aKeyIsHash);
   CacheFileMetadata(const nsACString &aKey);
 
   void SetHandle(CacheFileHandle *aHandle);
@@ -95,6 +97,7 @@ private:
 
   nsRefPtr<CacheFileHandle>           mHandle;
   nsCString                           mKey;
+  bool                                mKeyIsHash;
   CacheHashUtils::Hash16_t           *mHashArray;
   uint32_t                            mHashArraySize;
   uint32_t                            mHashCount;

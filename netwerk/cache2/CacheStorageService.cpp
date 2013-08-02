@@ -14,6 +14,7 @@
 
 #include "OldWrappers.h"
 
+#include "nsIFile.h"
 #include "nsIURI.h"
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
@@ -21,6 +22,7 @@
 #include "nsServiceManagerUtils.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/VisualEventTracer.h"
 
 namespace mozilla {
 namespace net {
@@ -436,23 +438,252 @@ NS_IMETHODIMP CacheStorageService::AppCacheStorage(nsILoadContextInfo *aLoadCont
   return NS_OK;
 }
 
+namespace { // anon
+
+class CacheFilesDeletor : public nsRunnable
+                        , public CacheEntriesEnumeratorCallback
+{
+public:
+  NS_DECL_ISUPPORTS_INHERITED
+  CacheFilesDeletor(nsICacheEntryDoomCallback* aCallback);
+  ~CacheFilesDeletor();
+
+  nsresult DeleteAll();
+  nsresult DeleteOverLimit();
+  nsresult DeleteDoomed();
+
+private:
+  nsresult Init(CacheFileIOManager::EEnumerateMode aMode);
+  NS_IMETHOD Run();
+  NS_IMETHOD Execute();
+  virtual void OnFile(CacheFile* aFile);
+
+  nsCOMPtr<nsICacheEntryDoomCallback> mCallback;
+  nsAutoPtr<CacheEntriesEnumerator> mEnumerator;
+  nsRefPtr<CacheIOThread> mIOThread;
+
+  uint32_t mRunning;
+  enum {
+    ALL,
+    OVERLIMIT,
+    DOOMED
+  } mMode;
+  nsresult mRv;
+};
+
+NS_IMPL_ISUPPORTS_INHERITED0(CacheFilesDeletor, nsRunnable);
+
+CacheFilesDeletor::CacheFilesDeletor(nsICacheEntryDoomCallback* aCallback)
+: mCallback(aCallback)
+, mRunning(0)
+, mRv(NS_OK)
+{
+  MOZ_COUNT_CTOR(CacheFilesDeletor);
+  MOZ_EVENT_TRACER_WAIT(static_cast<nsRunnable*>(this), "net::cache::deletor");
+}
+
+CacheFilesDeletor::~CacheFilesDeletor()
+{
+  MOZ_COUNT_DTOR(CacheFilesDeletor);
+  MOZ_EVENT_TRACER_DONE(static_cast<nsRunnable*>(this), "net::cache::deletor");
+
+  if (mMode == ALL) {
+    // Now delete the doomed entries if some left.
+    nsRefPtr<CacheFilesDeletor> deletor = new CacheFilesDeletor(mCallback);
+
+    nsRefPtr<nsRunnableMethod<CacheFilesDeletor, nsresult> > event =
+      NS_NewRunnableMethod(deletor.get(), &CacheFilesDeletor::DeleteDoomed);
+    NS_DispatchToMainThread(event);
+
+    return;
+  }
+
+  if (mCallback) {
+    mCallback->OnCacheEntryDoomed(mRv);
+  }
+}
+
+nsresult CacheFilesDeletor::DeleteAll()
+{
+  mMode = ALL;
+  return Init(CacheFileIOManager::ENTRIES);
+}
+
+nsresult CacheFilesDeletor::DeleteOverLimit()
+{
+  mMode = OVERLIMIT;
+  return Init(CacheFileIOManager::ENTRIES);
+}
+
+nsresult CacheFilesDeletor::DeleteDoomed()
+{
+  mMode = DOOMED;
+  return Init(CacheFileIOManager::DOOMED);
+}
+
+nsresult CacheFilesDeletor::Init(CacheFileIOManager::EEnumerateMode aMode)
+{
+  nsresult rv;
+
+  rv = CacheFileIOManager::EnumerateEntryFiles(
+    aMode, getter_Transfers(mEnumerator));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  mIOThread = CacheFileIOManager::IOThread();
+  NS_ENSURE_TRUE(mIOThread, NS_ERROR_NOT_INITIALIZED);
+
+  rv = mIOThread->Dispatch(this, CacheIOThread::EVICT);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP CacheFilesDeletor::Run()
+{
+  if (!mRunning) {
+    MOZ_EVENT_TRACER_EXEC(static_cast<nsRunnable*>(this), "net::cache::deletor");
+  }
+
+  MOZ_EVENT_TRACER_EXEC(static_cast<nsRunnable*>(this), "net::cache::deletor::exec");
+
+  nsresult rv = Execute();
+  if (NS_SUCCEEDED(mRv))
+    mRv = rv;
+
+  MOZ_EVENT_TRACER_DONE(static_cast<nsRunnable*>(this), "net::cache::deletor::exec");
+
+  return NS_OK;
+}
+
+nsresult CacheFilesDeletor::Execute()
+{
+  LOG(("CacheFilesDeletor::Execute [this=%p]", this));
+  nsresult rv;
+  TimeStamp start;
+
+  switch (mMode) {
+  case OVERLIMIT:
+    // Examine file by file and delete what is considered expired/unused.
+    while (mEnumerator->HasMore()) {
+      rv = mEnumerator->GetNextCacheFile(this);
+      if (NS_FAILED(rv))
+        return rv;
+
+      // Limit up to 5 concurrent file opens
+      if (mRunning >= 5)
+        break;
+
+      ++mRunning;
+    }
+    break;
+
+  case ALL:
+  case DOOMED:
+    // Simply delete all files, don't doom then though the backend
+    start = TimeStamp::NowLoRes();
+
+    while (mEnumerator->HasMore()) {
+      nsCOMPtr<nsIFile> file;
+      rv = mEnumerator->GetNextFile(getter_AddRefs(file));
+      if (NS_FAILED(rv))
+        return rv;
+
+#ifdef PR_LOG
+      nsAutoCString key;
+      file->GetNativeLeafName(key);
+      LOG(("  deleting file with key=%s", key.get()));
+#endif
+
+      rv = file->Remove(false);
+      if (NS_FAILED(rv)) {
+        LOG(("  could not remove the file, probably doomed, rv=0x%08x", rv));
+#if 0
+        // No need to open and doom the file manually since we doom all entries
+        // we currently have loaded in memory.
+        rv = mEnumerator->GetCacheFileFromFile(file, this);
+        if (NS_FAILED(rv))
+          return rv;
+#endif
+      }
+
+      ++mRunning;
+
+      if (!(mRunning % (1 << 5))) {
+        TimeStamp now(TimeStamp::NowLoRes());
+#define DELETOR_LOOP_LIMIT_MS 200
+        static TimeDuration const kLimitms = TimeDuration::FromMilliseconds(DELETOR_LOOP_LIMIT_MS);
+        if ((now - start) > kLimitms) {
+          LOG(("  deleted %u files, breaking %dms loop", mRunning, DELETOR_LOOP_LIMIT_MS));
+          rv = mIOThread->Dispatch(this, CacheIOThread::EVICT);
+          return rv;
+        }
+      }
+    }
+
+    break;
+
+  default:
+    MOZ_ASSERT(false);
+  }
+
+  return NS_OK;
+}
+
+void CacheFilesDeletor::OnFile(CacheFile* aFile)
+{
+  LOG(("CacheFilesDeletor::OnFile [this=%p, file=%p]", this, aFile));
+
+  if (!aFile)
+    return;
+
+  MOZ_EVENT_TRACER_EXEC(static_cast<nsRunnable*>(this), "net::cache::deletor::file");
+
+#ifdef PR_LOG
+  nsAutoCString key;
+  aFile->Key(key);
+#endif
+
+  switch (mMode) {
+  case OVERLIMIT:
+    if (mEnumerator->HasMore())
+      mEnumerator->GetNextCacheFile(this);
+
+    // NO BREAK ..so far..
+    // mayhemer TODO - here we should decide based on frecency and exp time
+    // whether to delete the file or not.  Then we have to check the consumption
+    // as well.
+
+  case ALL:
+  case DOOMED:
+    LOG(("  dooming file with key=%s", key.get()));
+    // Uncompromisely delete the file!
+    aFile->Doom(nullptr);
+    break;
+  }
+
+  MOZ_EVENT_TRACER_DONE(static_cast<nsRunnable*>(this), "net::cache::deletor::file");
+}
+
+} // anon
+
 NS_IMETHODIMP CacheStorageService::Clear()
 {
-  mozilla::MutexAutoLock lock(mLock);
+  {
+    mozilla::MutexAutoLock lock(mLock);
 
-  NS_ENSURE_TRUE(!mShutdown, NS_ERROR_NOT_INITIALIZED);
+    NS_ENSURE_TRUE(!mShutdown, NS_ERROR_NOT_INITIALIZED);
 
-  // TODO
-  // - tell the file manager to doom the current cache (all files)
+    nsTArray<nsCString> keys;
+    sGlobalEntryTables->EnumerateRead(&CollectContexts, &keys);
 
-  // (Could be optimized by just throwing all away / however, should doom entries
-  // that could be used)
+    for (uint32_t i = 0; i < keys.Length(); ++i)
+      DoomStorageEntries(keys[i], true, nullptr);
+  }
 
-  nsTArray<nsCString> keys;
-  sGlobalEntryTables->EnumerateRead(&CollectContexts, &keys);
-
-  for (uint32_t i = 0; i < keys.Length(); ++i)
-    DoomStorageEntries(keys[i], true, nullptr);
+  // TODO - Callback can be provided!
+  nsRefPtr<CacheFilesDeletor> deletor = new CacheFilesDeletor(nullptr);
+  nsresult rv = deletor->DeleteAll();
+  NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
 }
