@@ -37,6 +37,7 @@ public:
     OPEN_TRUNCATE,
     WRITE,
     CLOSE,
+    EVICT,
     LAST_LEVEL
   };
 

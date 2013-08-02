@@ -234,6 +234,7 @@ bool CacheEntry::Load(bool aTruncate, bool aPriority)
                      aTruncate,
                      !mUseDisk,
                      aPriority,
+                     false /* key is not a hash */,
                      directLoad ? nullptr : this);
   }
 

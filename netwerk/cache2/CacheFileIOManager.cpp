@@ -399,15 +399,9 @@ public:
     : mFlags(aFlags)
     , mCallback(aCallback)
     , mRV(NS_ERROR_FAILURE)
-#ifdef MOZ_VISUAL_EVENT_TRACER
     , mKey(aKey)
-#endif
   {
     MOZ_COUNT_CTOR(OpenFileEvent);
-
-    SHA1Sum sum;
-    sum.update(aKey.BeginReading(), aKey.Length());
-    sum.finish(mHash);
 
     mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
     mIOMan = CacheFileIOManager::gInstance;
@@ -425,18 +419,49 @@ public:
   NS_IMETHOD Run()
   {
     if (mTarget) {
-      MOZ_EVENT_TRACER_EXEC(static_cast<nsIRunnable*>(this), "net::cache::open-background");
-      if (!mIOMan)
-        mRV = NS_ERROR_NOT_INITIALIZED;
-      else {
-        mRV = mIOMan->OpenFileInternal(&mHash, mFlags, getter_AddRefs(mHandle));
-        mIOMan = nullptr;
-#ifdef MOZ_VISUAL_EVENT_TRACER
-        if (mHandle) {
-          MOZ_EVENT_TRACER_NAME_OBJECT(mHandle.get(), mKey.get());
-          mHandle->mKey = mKey;
+      mRV = NS_OK;
+
+      if (mFlags & CacheFileIOManager::NOHASH) {
+        nsACString::const_char_iterator begin, end;
+        begin = mKey.BeginReading();
+        end = mKey.EndReading();
+        uint32_t i = 0;
+        while (begin != end && i < (SHA1Sum::HashSize << 1)) {
+          if (!(i & 1))
+            mHash[i >> 1] = 0;
+          uint8_t shift = (i & 1) ? 0 : 4;
+          if (*begin >= '0' && *begin <= '9')
+            mHash[i >> 1] |= (*begin - '0') << shift;
+          else if (*begin >= 'A' && *begin <= 'F')
+            mHash[i >> 1] |= (*begin - 'A' + 10) << shift;
+          else
+            break;
+
+          ++i;
+          ++begin;
         }
-#endif
+
+        if (i != (SHA1Sum::HashSize << 1) || begin != end)
+          mRV = NS_ERROR_INVALID_ARG;
+      }
+      else {
+        SHA1Sum sum;
+        sum.update(mKey.BeginReading(), mKey.Length());
+        sum.finish(mHash);
+      }
+
+      MOZ_EVENT_TRACER_EXEC(static_cast<nsIRunnable*>(this), "net::cache::open-background");
+      if (NS_SUCCEEDED(mRV)) {
+        if (!mIOMan)
+          mRV = NS_ERROR_NOT_INITIALIZED;
+        else {
+          mRV = mIOMan->OpenFileInternal(&mHash, mFlags, getter_AddRefs(mHandle));
+          mIOMan = nullptr;
+          if (mHandle) {
+            MOZ_EVENT_TRACER_NAME_OBJECT(mHandle.get(), mKey.get());
+            mHandle->Key() = mKey;
+          }
+        }
       }
       MOZ_EVENT_TRACER_DONE(static_cast<nsIRunnable*>(this), "net::cache::open-background");
 
@@ -461,9 +486,7 @@ protected:
   nsRefPtr<CacheFileIOManager>  mIOMan;
   nsRefPtr<CacheFileHandle>     mHandle;
   nsresult                      mRV;
-#ifdef MOZ_VISUAL_EVENT_TRACER
   nsCString                     mKey;
-#endif
 };
 
 class CloseHandleEvent : public nsRunnable {
@@ -504,7 +527,7 @@ public:
     MOZ_COUNT_CTOR(ReadEvent);
     mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
 
-    MOZ_EVENT_TRACER_NAME_OBJECT(static_cast<nsIRunnable*>(this), aHandle->mKey.get());
+    MOZ_EVENT_TRACER_NAME_OBJECT(static_cast<nsIRunnable*>(this), aHandle->Key().get());
     MOZ_EVENT_TRACER_WAIT(static_cast<nsIRunnable*>(this), "net::cache::read-background");
   }
 
@@ -563,7 +586,7 @@ public:
     MOZ_COUNT_CTOR(WriteEvent);
     mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
 
-    MOZ_EVENT_TRACER_NAME_OBJECT(static_cast<nsIRunnable*>(this), aHandle->mKey.get());
+    MOZ_EVENT_TRACER_NAME_OBJECT(static_cast<nsIRunnable*>(this), aHandle->Key().get());
     MOZ_EVENT_TRACER_WAIT(static_cast<nsIRunnable*>(this), "net::cache::write-background");
   }
 
@@ -619,7 +642,7 @@ public:
     MOZ_COUNT_CTOR(DoomFileEvent);
     mTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
 
-    MOZ_EVENT_TRACER_NAME_OBJECT(static_cast<nsIRunnable*>(this), aHandle->mKey.get());
+    MOZ_EVENT_TRACER_NAME_OBJECT(static_cast<nsIRunnable*>(this), aHandle->Key().get());
     MOZ_EVENT_TRACER_WAIT(static_cast<nsIRunnable*>(this), "net::cache::doom-background");
   }
 
@@ -960,6 +983,16 @@ CacheFileIOManager::IOTarget()
   return target.forget();
 }
 
+already_AddRefed<CacheIOThread>
+CacheFileIOManager::IOThread()
+{
+  nsRefPtr<CacheIOThread> thread;
+  if (gInstance)
+    thread = gInstance->mIOThread;
+
+  return thread.forget();
+}
+
 nsresult
 CacheFileIOManager::OpenFile(const nsACString &aKey,
                              uint32_t aFlags,
@@ -1155,6 +1188,12 @@ CacheFileIOManager::ReadInternal(CacheFileHandle *aHandle, int64_t aOffset,
     NSPRHandleUsed(aHandle);
   }
 
+  // Check again, OpenNSPRHandle could figure out the file was gone.
+  if (!aHandle->mFileExists) {
+    NS_WARNING("Trying to read from non-existent file");
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
   int64_t offset = PR_Seek64(aHandle->mFD, aOffset, PR_SEEK_SET);
   if (offset == -1)
     return NS_ERROR_FAILURE;
@@ -1207,6 +1246,11 @@ CacheFileIOManager::WriteInternal(CacheFileHandle *aHandle, int64_t aOffset,
   }
   else {
     NSPRHandleUsed(aHandle);
+  }
+
+  // Check again, OpenNSPRHandle could figure out the file was gone.
+  if (!aHandle->mFileExists) {
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
   // Write invalidates the entry by default
@@ -1280,9 +1324,15 @@ CacheFileIOManager::DoomFileInternal(CacheFileHandle *aHandle)
     NS_ENSURE_SUCCESS(rv, rv);
 
     rv = aHandle->mFile->MoveToNative(parentDir, leafName);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    aHandle->mFile.swap(file);
+    if (NS_ERROR_FILE_NOT_FOUND == rv || NS_ERROR_FILE_TARGET_DOES_NOT_EXIST == rv) {
+      LOG(("  file already removed under our hands"));
+      aHandle->mFileExists = false;
+      rv = NS_OK;
+    }
+    else {
+      NS_ENSURE_SUCCESS(rv, rv);
+      aHandle->mFile.swap(file);
+    }
   }
 
   aHandle->mIsDoomed = true;
@@ -1408,6 +1458,49 @@ CacheFileIOManager::TruncateSeekSetEOF(CacheFileHandle *aHandle,
   return NS_OK;
 }
 
+nsresult
+CacheFileIOManager::EnumerateEntryFiles(EEnumerateMode aMode,
+                                        CacheEntriesEnumerator** aEnumerator)
+{
+  LOG(("CacheFileIOManager::EnumerateEntryFiles(%d)", aMode));
+
+  nsresult rv;
+  CacheFileIOManager *ioMan = gInstance;
+
+  if (!ioMan)
+    return NS_ERROR_NOT_INITIALIZED;
+
+  nsCOMPtr<nsIFile> file;
+  rv = ioMan->mCacheDirectory->Clone(getter_AddRefs(file));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  switch (aMode) {
+  case ENTRIES:
+    rv = file->AppendNative(NS_LITERAL_CSTRING("entries"));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    break;
+
+  case DOOMED:
+    rv = file->AppendNative(NS_LITERAL_CSTRING("doomed"));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    break;
+
+  default:
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  nsAutoPtr<CacheEntriesEnumerator> enumerator(
+    new CacheEntriesEnumerator(file));
+
+  rv = enumerator->Init();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  *aEnumerator = enumerator.forget();
+  return NS_OK;
+}
+
 static nsresult
 TruncFile(PRFileDesc *aFD, uint32_t aEOF)
 {
@@ -1454,6 +1547,11 @@ CacheFileIOManager::TruncateSeekSetEOFInternal(CacheFileHandle *aHandle,
   }
   else {
     NSPRHandleUsed(aHandle);
+  }
+
+  // Check again, OpenNSPRHandle could figure out the file was gone.
+  if (!aHandle->mFileExists) {
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
   // This operation always invalidates the entry
@@ -1650,6 +1748,12 @@ CacheFileIOManager::OpenNSPRHandle(CacheFileHandle *aHandle, bool aCreate)
   }
   else {
     rv = aHandle->mFile->OpenNSPRFileDesc(PR_RDWR, 0600, &aHandle->mFD);
+    if (NS_ERROR_FILE_NOT_FOUND == rv) {
+      LOG(("  file doesn't exists"));
+      aHandle->mFileExists = false;
+      aHandle->mIsDoomed = true;
+      return NS_OK;
+    }
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
