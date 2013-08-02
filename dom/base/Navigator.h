@@ -48,8 +48,6 @@ class nsIDOMBluetoothManager;
 
 #include "DOMCameraManager.h"
 
-#include "mozilla/dom/SettingsManagerBinding.h"
-
 //*****************************************************************************
 // Navigator: Script "navigator" object
 //*****************************************************************************
@@ -243,8 +241,6 @@ public:
                               MozDOMGetUserMediaErrorCallback* aOnError,
                               ErrorResult& aRv);
 #endif // MOZ_MEDIA_NAVIGATOR
-  SettingsManager* GetMozSettings(ErrorResult& aRv);
-
   bool DoNewResolve(JSContext* aCx, JS::Handle<JSObject*> aObject,
                     JS::Handle<jsid> aId, JS::MutableHandle<JS::Value> aValue);
 
@@ -284,7 +280,6 @@ public:
   static bool HasUserMediaSupport(JSContext* /* unused */,
                                   JSObject* /* unused */);
 #endif // MOZ_MEDIA_NAVIGATOR
-  static bool HasSettingsSupport(JSContext* /* unused */, JSObject* aGlobal);
 
   nsPIDOMWindow* GetParentObject() const
   {
@@ -328,7 +323,6 @@ private:
   nsCOMPtr<nsIDOMNavigatorSystemMessages> mMessagesManager;
   nsTArray<nsRefPtr<nsDOMDeviceStorage> > mDeviceStorageStores;
   nsRefPtr<time::TimeManager> mTimeManager;
-  nsRefPtr<SettingsManager> mSettingsManager;
   nsCOMPtr<nsPIDOMWindow> mWindow;
 };
 

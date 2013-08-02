@@ -251,11 +251,6 @@ partial interface Navigator {
   boolean mozHasPendingMessage (DOMString type);
 };
 
-partial interface Navigator {
-  [Throws, Func="Navigator::HasSettingsSupport"]
-  readonly attribute SettingsManager? mozSettings;
-};
-
 #ifdef MOZ_B2G_RIL
 interface MozTelephony;
 // nsIDOMNavigatorTelephony
