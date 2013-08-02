@@ -6,6 +6,7 @@
 #define CacheFileIOManager__h__
 
 #include "CacheIOThread.h"
+#include "CacheEntriesEnumerator.h"
 #include "nsIEventTarget.h"
 #include "nsCOMPtr.h"
 #include "mozilla/SHA1.h"
@@ -33,10 +34,7 @@ public:
   bool IsPriority() { return mPriority; }
   bool FileExists() { return mFileExists; }
   bool IsClosed() { return mClosed; }
-
-#ifdef MOZ_VISUAL_EVENT_TRACER
-  nsCString            mKey;
-#endif
+  nsCString & Key() { return mKey; }
 
 private:
   friend class CacheFileIOManager;
@@ -58,6 +56,7 @@ private:
   nsCOMPtr<nsIFile>    mFile;
   int64_t              mFileSize;
   PRFileDesc          *mFD;  // if null then the file doesn't exists on the disk
+  nsCString            mKey;
 };
 
 class CacheFileHandles {
@@ -130,7 +129,8 @@ public:
     OPEN       = 0U,
     CREATE     = 1U,
     CREATE_NEW = 2U,
-    PRIORITY   = 4U
+    PRIORITY   = 4U,
+    NOHASH     = 8U
   };
 
   CacheFileIOManager();
@@ -139,6 +139,7 @@ public:
   static nsresult Shutdown();
   static nsresult OnProfile();
   static already_AddRefed<nsIEventTarget> IOTarget();
+  static already_AddRefed<CacheIOThread> IOThread();
 
   static nsresult OpenFile(const nsACString &aKey,
                            uint32_t aFlags,
@@ -157,6 +158,14 @@ public:
   static nsresult TruncateSeekSetEOF(CacheFileHandle *aHandle,
                                      int64_t aTruncatePos, int64_t aEOFPos,
                                      CacheFileIOListener *aCallback);
+
+  enum EEnumerateMode {
+    ENTRIES,
+    DOOMED
+  };
+
+  static nsresult EnumerateEntryFiles(EEnumerateMode aMode,
+                                      CacheEntriesEnumerator** aEnumerator);
 
 private:
   friend class CacheFileHandle;
