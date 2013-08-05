@@ -955,7 +955,7 @@ CreateDedicatedWorkerGlobalScope(JSContext* aCx)
     options.setVersion(JSVERSION_LATEST);
   JS::Rooted<JSObject*> global(aCx,
     JS_NewGlobalObject(aCx, DedicatedWorkerGlobalScope::Class(),
-                       GetWorkerPrincipal(), options));
+                       GetWorkerPrincipal(), JS::DontFireOnNewGlobalHook, options));
   if (!global) {
     return NULL;
   }
@@ -979,14 +979,14 @@ CreateDedicatedWorkerGlobalScope(JSContext* aCx)
     return NULL;
   }
 
-  JSObject* scopeProto =
-    WorkerGlobalScope::InitClass(aCx, global, eventTargetProto);
+  JS::Rooted<JSObject*> scopeProto(aCx,
+    WorkerGlobalScope::InitClass(aCx, global, eventTargetProto));
   if (!scopeProto) {
     return NULL;
   }
 
-  JSObject* dedicatedScopeProto =
-    DedicatedWorkerGlobalScope::InitClass(aCx, global, scopeProto);
+  JS::Rooted<JSObject*> dedicatedScopeProto(aCx,
+    DedicatedWorkerGlobalScope::InitClass(aCx, global, scopeProto));
   if (!dedicatedScopeProto) {
     return NULL;
   }
@@ -1032,6 +1032,8 @@ CreateDedicatedWorkerGlobalScope(JSContext* aCx)
   if (!JS_DefineProfilingFunctions(aCx, global)) {
     return NULL;
   }
+
+  JS_FireOnNewGlobalObject(aCx, global);
 
   return global;
 }
