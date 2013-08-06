@@ -78,7 +78,6 @@ DebuggerTransport.prototype = {
    * Close the transport.
    */
   close: function DT_close() {
-    dumpn("DebuggerTransport.close");
     this._input.close();
     this._output.close();
   },
@@ -99,8 +98,8 @@ DebuggerTransport.prototype = {
     try {
       written = aStream.write(this._outgoing, this._outgoing.length);
     } catch(e if e.result == Components.results.NS_BASE_STREAM_CLOSED) {
-      dumpn("onOutputStreamReady: connection closed.");
-      //this.close();
+      dumpn("Connection closed.");
+      this.close();
       return;
     }
     this._outgoing = this._outgoing.slice(written);
@@ -126,12 +125,14 @@ DebuggerTransport.prototype = {
 
   onStopRequest:
   makeInfallible(function DT_onStopRequest(aRequest, aContext, aStatus) {
-    dumpn("onStopRequest");
-    this.close();
-    if (this.hooks) {
-      this.hooks.onClosed(aStatus);
-      this.hooks = null;
-    }
+    let self = this;
+    Services.tm.currentThread.dispatch(makeInfallible(function() {
+      self.close();
+      if (self.hooks) {
+        self.hooks.onClosed(aStatus);
+        self.hooks = null;
+      }
+    }, "DebuggerTransport instance's this.close"), 0);
   }, "DebuggerTransport.prototype.onStopRequest"),
 
   onDataAvailable:
@@ -248,7 +249,6 @@ LocalDebuggerTransport.prototype = {
    * Close the transport.
    */
   close: function LDT_close() {
-    dumpn("LocalDebuggerTransport.close");
     if (this.other) {
       // Remove the reference to the other endpoint before calling close(), to
       // avoid infinite recursion.
@@ -319,7 +319,6 @@ ChildDebuggerTransport.prototype = {
   },
 
   close: function () {
-    dumpn("ChildDebuggerTransport.close");
     this._sender.removeMessageListener(this._messageName, this);
     this.hooks.onClosed();
   },

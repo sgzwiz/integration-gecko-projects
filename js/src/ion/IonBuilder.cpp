@@ -4823,10 +4823,12 @@ IonBuilder::makeCallsiteClone(HandleFunction target, MDefinition *fun)
 {
     // Bake in the clone eagerly if we have a known target. We have arrived here
     // because TI told us that the known target is a should-clone-at-callsite
-    // function, which means that target already is the clone.
+    // function, which means that target already is the clone. Make sure to ensure
+    // that the old definition remains in resume points.
     if (target) {
         MConstant *constant = MConstant::New(ObjectValue(*target));
         current->add(constant);
+        fun->setFoldedUnchecked();
         return constant;
     }
 
@@ -8246,9 +8248,6 @@ IonBuilder::jsop_object(JSObject *obj)
 bool
 IonBuilder::jsop_lambda(JSFunction *fun)
 {
-    if (fun->isInterpreted() && !fun->getOrCreateScript(cx))
-        return false;
-
     JS_ASSERT(script()->analysis()->usesScopeChain());
     if (fun->isArrow())
         return abort("bound arrow function");
