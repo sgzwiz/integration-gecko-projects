@@ -4,7 +4,7 @@
 
 "use strict"
 
-const DEBUG = true;
+const DEBUG = false;
 function debug(s) {
   if (DEBUG) dump("-*- SettingsChangeNotifier: " + s + "\n");
 }

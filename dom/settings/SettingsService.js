@@ -5,7 +5,7 @@
 "use strict"
 
 /* static functions */
-let DEBUG = 1;
+let DEBUG = 0;
 let debug;
 if (DEBUG)
   debug = function (s) { dump("-*- SettingsService: " + s + "\n"); }
