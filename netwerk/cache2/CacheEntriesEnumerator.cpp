@@ -40,7 +40,7 @@ nsresult CacheEntriesEnumerator::Init()
   rv = mEntriesDirectory->GetDirectoryEntries(getter_AddRefs(e));
 
   if (NS_ERROR_FILE_NOT_FOUND == rv) {
-    return rv;
+    return NS_OK;
   }
 
   NS_ENSURE_SUCCESS(rv, rv);
@@ -61,7 +61,6 @@ bool CacheEntriesEnumerator::HasMore()
 #endif
 
   if (!mEnumerator) {
-    NS_WARNING("CacheEntriesEnumerator not initialized, or initialization failed");
     return false;
   }
 
