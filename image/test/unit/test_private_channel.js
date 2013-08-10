@@ -1,6 +1,7 @@
 Components.utils.import("resource://testing-common/httpd.js");
 const Cc = Components.classes;
 const Ci = Components.interfaces;
+const Cr = Components.results;
 
 var server = new HttpServer();
 server.registerPathHandler('/image.png', imageHandler);
