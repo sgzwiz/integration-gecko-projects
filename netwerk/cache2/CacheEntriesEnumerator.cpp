@@ -38,6 +38,11 @@ nsresult CacheEntriesEnumerator::Init()
 
   nsCOMPtr<nsISimpleEnumerator> e;
   rv = mEntriesDirectory->GetDirectoryEntries(getter_AddRefs(e));
+
+  if (NS_ERROR_FILE_NOT_FOUND == rv) {
+    return rv;
+  }
+
   NS_ENSURE_SUCCESS(rv, rv);
 
   mEnumerator = do_QueryInterface(e, &rv);
