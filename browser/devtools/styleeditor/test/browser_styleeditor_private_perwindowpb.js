@@ -22,7 +22,7 @@ function test() {
   function doTest(aWindow) {
     aWindow.gBrowser.selectedBrowser.addEventListener("load", function onLoad() {
       aWindow.gBrowser.selectedBrowser.removeEventListener("load", onLoad, true);
-      cache.clear();
+      cache.evictEntries(Ci.nsICache.STORE_ANYWHERE);
       openStyleEditorInWindow(aWindow, function(panel) {
         gUI = panel.UI;
         gUI.on("editor-added", onEditorAdded);

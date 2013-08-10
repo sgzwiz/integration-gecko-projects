@@ -30,13 +30,6 @@ const UNEXPECTED_NOTIFICATIONS = [
 
 const URL = "ftp://localhost/clearHistoryOnShutdown/";
 
-function createURI(urispec)
-{
-  var ioServ = Components.classes["@mozilla.org/network/io-service;1"]
-                         .getService(Components.interfaces.nsIIOService);
-  return ioServ.newURI(urispec, null, null);
-}
-
 // Send the profile-after-change notification to the form history component to ensure
 // that it has been initialized.
 var formHistoryStartup = Cc["@mozilla.org/satchel/form-history-startup;1"].
@@ -141,16 +134,13 @@ function getDistinctNotifications() {
 }
 
 function storeCache(aURL, aContent) {
-  let cache = Cc["@mozilla.org/netwerk/cache-storage-service;1"].
-              getService(Ci.nsICacheStorageService);
-  let storage = cache.diskCacheStorage(new LoadContextInfo(), false);
+  let cache = Cc["@mozilla.org/network/cache-service;1"].
+              getService(Ci.nsICacheService);
+  let session = cache.createSession("FTP", Ci.nsICache.STORE_ANYWHERE,
+                                    Ci.nsICache.STREAM_BASED);
 
   var storeCacheListener = {
-    onCacheEntryCheck: function (entry, appcache) {
-      return nsICacheEntryOpenCallback.ENTRY_VALID;
-    },
-    
-    onCacheEntryAvailable: function (entry, isnew, appcache, status) {
+    onCacheEntryAvailable: function (entry, access, status) {
       do_check_eq(status, Cr.NS_OK);
 
       entry.setMetaDataElement("servertype", "0");
@@ -168,25 +158,26 @@ function storeCache(aURL, aContent) {
     }
   };
 
-  storage.asyncOpenURI(createURI(aURL), "", 
-                       Ci.nsICacheStorage.OPEN_NORMALLY,
-                       storeCacheListener);
+  session.asyncOpenCacheEntry(aURL,
+                              Ci.nsICache.ACCESS_READ_WRITE,
+                              storeCacheListener);
 }
 
 
 function checkCache(aURL) {
-  let cache = Cc["@mozilla.org/netwerk/cache-storage-service;1"].
-              getService(Ci.nsICacheStorageService);
-  let storage = cache.diskCacheStorage(new LoadContextInfo(), false);
+  let cache = Cc["@mozilla.org/network/cache-service;1"].
+              getService(Ci.nsICacheService);
+  let session = cache.createSession("FTP", Ci.nsICache.STORE_ANYWHERE,
+                                    Ci.nsICache.STREAM_BASED);
 
   var checkCacheListener = {
-    onCacheEntryAvailable: function (entry, isnew, appcache, status) {
+    onCacheEntryAvailable: function (entry, access, status) {
       do_check_eq(status, Cr.NS_ERROR_CACHE_KEY_NOT_FOUND);
       do_test_finished();
     }
   };
 
-  storage.asyncOpenURI(createURI(aURL), "", 
-                       Ci.nsICacheStorage.OPEN_READONLY,
-                       checkCacheListener);
+  session.asyncOpenCacheEntry(aURL,
+                              Ci.nsICache.ACCESS_READ,
+                              checkCacheListener);
 }

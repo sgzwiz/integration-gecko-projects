@@ -77,8 +77,8 @@ var gAdvancedPane = {
     this.initSubmitHealthReport();
 #endif
 
-    this.updateActualCacheSize();
-    this.updateActualAppCacheSize();
+    this.updateActualCacheSize("disk");
+    this.updateActualCacheSize("offline");
 
     // Notify observers that the UI is now ready
     Services.obs.notifyObservers(window, "advanced-pane-loaded", null);
@@ -296,80 +296,22 @@ var gAdvancedPane = {
                                            "", null);
   },
 
-  // Retrieves the amount of space currently used by disk cache
-  updateActualCacheSize: function ()
-  {
-    var sum = 0;
-    function updateUI(consumption) {
-      var actualSizeLabel = document.getElementById("actualDiskCacheSize");
-      var sizeStrings = DownloadUtils.convertByteUnits(consumption);
-      var prefStrBundle = document.getElementById("bundlePreferences");
-      var sizeStr = prefStrBundle.getFormattedString("actualDiskCacheSize", sizeStrings);
-      actualSizeLabel.value = sizeStr;
-    }
-    
-    Visitor.prototype = {
-      expexted: 0,
-      sum: 0,
-      QueryInterface: function listener_qi(iid) {
-        if (iid.equals(Ci.nsISupports) ||
-            iid.equals(Ci.nsICacheStorageVisitor)) {
-          return this;
-        }
-        throw Components.results.NS_ERROR_NO_INTERFACE;
-      },
-      onCacheStorageInfo: function(num, consumption)
-      {
-        this.sum += consumption;
-        this.sum += 1234; // mayhemer: only a testing this code works!  visiting is broken now.
-        if (!--this.expect)
-          updateUI(this.sum);
-      }
-    };
-    function Visitor(callbacksExpected) {
-      this.expexted = callbacksExpected;
-    }
-
-    LoadContextInfo.prototype = {
-      QueryInterface: function(iid) {
-        if (iid.equals(Ci.nsILoadContextInfo))
-          return this;
-        throw Cr.NS_ERROR_NO_INTERFACE;
-      },
-      isPrivate : false,
-      isAnonymous : false,
-      isInBrowserElement : false,
-      appId : 0
-    };
-    function LoadContextInfo(isAnonymous) {
-      this.isAnonymous = isAnonymous;
-    }
-
-    var cacheService =
-      Components.classes["@mozilla.org/netwerk/cache-storage-service;1"]
-                .getService(Components.interfaces.nsICacheStorageService);
-    // non-anonymous
-    var storage1 = cacheService.diskCacheStorage(new LoadContextInfo(false), false); 
-    // anonymous
-    var storage2 = cacheService.diskCacheStorage(new LoadContextInfo(true), false);
-
-    // expect 2 callbacks
-    var visitor = new Visitor(2);
-    storage1.asyncVisitStorage(visitor, false /* Do not walk entries */);
-    storage2.asyncVisitStorage(visitor, false /* Do not walk entries */);
-  },
-
-  // Retrieves the amount of space currently used by offline cache
-  updateActualAppCacheSize: function ()
+  // Retrieves the amount of space currently used by disk or offline cache
+  updateActualCacheSize: function (device)
   {
     var visitor = {
       visitDevice: function (deviceID, deviceInfo)
       {
-        if (deviceID == "offline") {
-          var actualSizeLabel = document.getElementById("actualAppCacheSize");
+        if (deviceID == device) {
+          var actualSizeLabel = document.getElementById(device == "disk" ?
+                                                        "actualDiskCacheSize" :
+                                                        "actualAppCacheSize");
           var sizeStrings = DownloadUtils.convertByteUnits(deviceInfo.totalSize);
           var prefStrBundle = document.getElementById("bundlePreferences");
-          var sizeStr = prefStrBundle.getFormattedString("actualAppCacheSize", sizeStrings);
+          var sizeStr = prefStrBundle.getFormattedString(device == "disk" ?
+                                                         "actualDiskCacheSize" :
+                                                         "actualAppCacheSize",
+                                                         sizeStrings);
           actualSizeLabel.value = sizeStr;
         }
         // Do not enumerate entries
@@ -430,12 +372,12 @@ var gAdvancedPane = {
    */
   clearCache: function ()
   {
-    var cache = Components.classes["@mozilla.org/netwerk/cache-storage-service;1"]
-                                 .getService(Components.interfaces.nsICacheStorageService);
+    var cacheService = Components.classes["@mozilla.org/network/cache-service;1"]
+                                 .getService(Components.interfaces.nsICacheService);
     try {
-      cache.clear();
+      cacheService.evictEntries(Components.interfaces.nsICache.STORE_ANYWHERE);
     } catch(ex) {}
-    this.updateActualCacheSize();
+    this.updateActualCacheSize("disk");
   },
 
   /**
@@ -446,7 +388,7 @@ var gAdvancedPane = {
     Components.utils.import("resource:///modules/offlineAppCache.jsm");
     OfflineAppCacheHelper.clear();
 
-    this.updateActualAppCacheSize();
+    this.updateActualCacheSize("offline");
     this.updateOfflineApps();
   },
 
@@ -591,7 +533,7 @@ var gAdvancedPane = {
 
     list.removeChild(item);
     gAdvancedPane.offlineAppSelected();
-    this.updateActualAppCacheSize();
+    this.updateActualCacheSize("offline");
   },
 
   // UPDATE TAB

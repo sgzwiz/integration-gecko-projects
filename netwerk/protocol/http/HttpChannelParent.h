@@ -17,7 +17,7 @@
 #include "nsIProgressEventSink.h"
 #include "nsHttpChannel.h"
 
-class nsICacheEntry;
+class nsICacheEntryDescriptor;
 class nsIAssociatedContentSecurity;
 
 namespace mozilla {
@@ -98,7 +98,7 @@ protected:
 
 private:
   nsCOMPtr<nsIChannel>                    mChannel;
-  nsCOMPtr<nsICacheEntry>       mCacheEntry;
+  nsCOMPtr<nsICacheEntryDescriptor>       mCacheDescriptor;
   nsCOMPtr<nsIAssociatedContentSecurity>  mAssociatedContentSecurity;
   bool mIPCClosed;                // PHttpChannel actor has been Closed()
 
