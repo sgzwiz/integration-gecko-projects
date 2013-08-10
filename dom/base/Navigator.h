@@ -9,7 +9,6 @@
 
 #include "mozilla/MemoryReporting.h"
 #include "nsIDOMNavigator.h"
-#include "nsIDOMSmsManager.h"
 #include "nsIDOMMobileMessageManager.h"
 #include "nsIMozNavigatorNetwork.h"
 #include "nsAutoPtr.h"
@@ -34,7 +33,6 @@ class systemMessageCallback;
 #endif
 
 #ifdef MOZ_B2G_RIL
-class nsIDOMTelephony;
 class nsIDOMMozMobileConnection;
 class nsIDOMMozCellBroadcast;
 class nsIDOMMozVoicemail;
@@ -63,7 +61,6 @@ class BatteryManager;
 } // namespace battery
 
 class DesktopNotificationCenter;
-class SmsManager;
 class MobileMessageManager;
 class MozIdleObserver;
 #ifdef MOZ_GAMEPAD
@@ -87,6 +84,12 @@ class Connection;
 class MobileConnection;
 #endif
 } // namespace Connection;
+
+#ifdef MOZ_B2G_RIL
+namespace telephony {
+class Telephony;
+} // namespace Telephony;
+#endif
 
 namespace power {
 class PowerManager;
@@ -208,7 +211,6 @@ public:
   DesktopNotificationCenter* GetMozNotification(ErrorResult& aRv);
   bool MozIsLocallyAvailable(const nsAString& aURI, bool aWhenOffline,
                              ErrorResult& aRv);
-  nsIDOMMozSmsManager* GetMozSms();
   nsIDOMMozMobileMessageManager* GetMozMobileMessage();
   nsIDOMMozConnection* GetMozConnection();
   nsDOMCameraManager* GetMozCameras(ErrorResult& aRv);
@@ -217,7 +219,7 @@ public:
                             ErrorResult& aRv);
   bool MozHasPendingMessage(const nsAString& aType, ErrorResult& aRv);
 #ifdef MOZ_B2G_RIL
-  nsIDOMTelephony* GetMozTelephony(ErrorResult& aRv);
+  telephony::Telephony* GetMozTelephony(ErrorResult& aRv);
   nsIDOMMozMobileConnection* GetMozMobileConnection(ErrorResult& aRv);
   nsIDOMMozCellBroadcast* GetMozCellBroadcast(ErrorResult& aRv);
   nsIDOMMozVoicemail* GetMozVoicemail(ErrorResult& aRv);
@@ -246,6 +248,8 @@ public:
 #endif // MOZ_MEDIA_NAVIGATOR
   bool DoNewResolve(JSContext* aCx, JS::Handle<JSObject*> aObject,
                     JS::Handle<jsid> aId, JS::MutableHandle<JS::Value> aValue);
+  void GetOwnPropertyNames(JSContext* aCx, nsTArray<nsString>& aNames,
+                           ErrorResult& aRv);
 
   // WebIDL helper methods
   static bool HasBatterySupport(JSContext* /* unused*/, JSObject* /*unused */);
@@ -257,7 +261,6 @@ public:
   {
     return HasDesktopNotificationSupport();
   }
-  static bool HasSmsSupport(JSContext* /* unused */, JSObject* aGlobal);
   static bool HasMobileMessageSupport(JSContext* /* unused */,
                                       JSObject* aGlobal);
   static bool HasCameraSupport(JSContext* /* unused */,
@@ -285,6 +288,9 @@ public:
                                   JSObject* /* unused */);
 #endif // MOZ_MEDIA_NAVIGATOR
 
+  static bool HasPushNotificationsSupport(JSContext* /* unused */,
+                                          JSObject* aGlobal);
+
   nsPIDOMWindow* GetParentObject() const
   {
     return GetWindow();
@@ -306,10 +312,9 @@ private:
   nsRefPtr<DesktopNotificationCenter> mNotification;
   nsRefPtr<battery::BatteryManager> mBatteryManager;
   nsRefPtr<power::PowerManager> mPowerManager;
-  nsRefPtr<SmsManager> mSmsManager;
   nsRefPtr<MobileMessageManager> mMobileMessageManager;
 #ifdef MOZ_B2G_RIL
-  nsCOMPtr<nsIDOMTelephony> mTelephony;
+  nsRefPtr<telephony::Telephony> mTelephony;
   nsCOMPtr<nsIDOMMozVoicemail> mVoicemail;
 #endif
   nsRefPtr<network::Connection> mConnection;

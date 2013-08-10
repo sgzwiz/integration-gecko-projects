@@ -42,6 +42,7 @@ const kDebugSelectionDisplayPref = "metro.debug.selection.displayRanges";
 const kDebugSelectionDumpPref = "metro.debug.selection.dumpRanges";
 // Dump message manager event traffic for selection.
 const kDebugSelectionDumpEvents = "metro.debug.selection.dumpEvents";
+const kAsyncPanZoomEnabled = "layers.async-pan-zoom.enabled"
 
 /**
  * TouchModule
@@ -235,6 +236,13 @@ var TouchModule = {
       return;
     }
 
+    // Don't allow kinetic panning if APZC is enabled and the pan element is the deck
+    let deck = document.getElementById("browsers");
+    if (Services.prefs.getBoolPref(kAsyncPanZoomEnabled) &&
+        this._targetScrollbox == deck) {
+      return;
+    }
+
     // XXX shouldn't dragger always be valid here?
     if (dragger) {
       let draggable = dragger.isDraggable(targetScrollbox, targetScrollInterface);
@@ -354,8 +362,14 @@ var TouchModule = {
     if (dragData.isPan()) {
       if (Date.now() - this._dragStartTime > kStopKineticPanOnDragTimeout)
         this._kinetic._velocity.set(0, 0);
-      // Start kinetic pan.
-      this._kinetic.start();
+
+      // Start kinetic pan if we aren't using async pan zoom or the scroll
+      // element is not browsers.
+      let deck = document.getElementById("browsers");
+      if (!Services.prefs.getBoolPref(kAsyncPanZoomEnabled) ||
+          this._targetScrollbox != deck) {
+        this._kinetic.start();
+      }
     } else {
       this._kinetic.end();
       if (this._dragger)
@@ -433,8 +447,10 @@ var ScrollUtils = {
   getScrollboxFromElement: function getScrollboxFromElement(elem) {
     let scrollbox = null;
     let qinterface = null;
-    // if element is content, get the browser scroll interface
-    if (elem.ownerDocument == Browser.selectedBrowser.contentDocument) {
+
+    // if element is content (but not the startui page), get the browser scroll interface
+    if (!BrowserUI.isStartTabVisible &&
+        elem.ownerDocument == Browser.selectedBrowser.contentDocument) {
       elem = Browser.selectedBrowser;
     }
     for (; elem; elem = elem.parentNode) {

@@ -205,7 +205,7 @@ TiledContentHost::RenderTile(const TiledTexture& aTile,
                                   textureRect.width / aTextureBounds.width,
                                   textureRect.height / aTextureBounds.height);
     mCompositor->DrawQuad(graphicsRect, aClipRect, aEffectChain, aOpacity, aTransform, aOffset);
-    mCompositor->DrawDiagnostics(gfx::Color(0.0,0.5,0.0,1.0),
+    mCompositor->DrawDiagnostics(DIAGNOSTIC_CONTENT|DIAGNOSTIC_TILE,
                                  graphicsRect, aClipRect, aTransform, aOffset);
   }
 
@@ -228,7 +228,7 @@ TiledContentHost::RenderLayerBuffer(TiledLayerBufferComposite& aLayerBuffer,
     NS_WARNING("Can't render tiled content host - no compositor");
     return;
   }
-  volatile float resolution = aLayerBuffer.GetResolution(); // bug 881018 investigation
+  float resolution = aLayerBuffer.GetResolution();
   gfxSize layerScale(1, 1);
   // We assume that the current frame resolution is the one used in our primary
   // layer buffer. Compensate for a changing frame resolution.
@@ -288,6 +288,10 @@ TiledContentHost::RenderLayerBuffer(TiledLayerBufferComposite& aLayerBuffer,
     tileX++;
     x += w;
   }
+  gfx::Rect rect(aVisibleRect.x, aVisibleRect.y,
+                 aVisibleRect.width, aVisibleRect.height);
+  GetCompositor()->DrawDiagnostics(DIAGNOSTIC_CONTENT,
+                                   rect, aClipRect, aTransform, aOffset);
 }
 
 void
@@ -300,7 +304,7 @@ TiledTexture::Validate(gfxReusableSurfaceWrapper* aReusableSurface, Compositor* 
                                                   TEXTURE_HOST_TILED,
                                                   flags);
     mDeprecatedTextureHost->SetCompositor(aCompositor);
-    flags |= NewTile;
+    flags |= TEXTURE_NEW_TILE;
   }
 
   mDeprecatedTextureHost->Update(aReusableSurface, flags, gfx::IntSize(aSize, aSize));

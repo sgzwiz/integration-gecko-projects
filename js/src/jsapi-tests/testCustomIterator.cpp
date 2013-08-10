@@ -8,7 +8,7 @@
 
 int count = 0;
 
-static JSBool
+static bool
 IterNext(JSContext *cx, unsigned argc, jsval *vp)
 {
     if (count++ == 100)
@@ -18,7 +18,7 @@ IterNext(JSContext *cx, unsigned argc, jsval *vp)
 }
 
 static JSObject *
-IterHook(JSContext *cx, JS::HandleObject obj, JSBool keysonly)
+IterHook(JSContext *cx, JS::HandleObject obj, bool keysonly)
 {
     JS::RootedObject iterObj(cx, JS_NewObject(cx, NULL, NULL, NULL));
     if (!iterObj)
@@ -41,8 +41,8 @@ js::Class HasCustomIterClass = {
     NULL,
     NULL, /* checkAccess */
     NULL, /* call */
-    NULL, /* construct */
     NULL, /* hasInstance */
+    NULL, /* construct */
     NULL, /* mark */
     {
         NULL,       /* outerObject */
@@ -52,7 +52,7 @@ js::Class HasCustomIterClass = {
     }
 };
 
-JSBool
+bool
 IterClassConstructor(JSContext *cx, unsigned argc, jsval *vp)
 {
     JSObject *obj = JS_NewObjectForConstructor(cx, Jsvalify(&HasCustomIterClass), vp);

@@ -7,7 +7,8 @@
 #include "jsfriendapi.h"
 
 #include "mozilla/PodOperations.h"
-#include "mozilla/StandardInteger.h"
+
+#include <stdint.h>
 
 #include "jscntxt.h"
 #include "jscompartment.h"
@@ -93,7 +94,7 @@ JS_GetObjectFunction(JSObject *obj)
     return NULL;
 }
 
-JS_FRIEND_API(JSBool)
+JS_FRIEND_API(bool)
 JS_SplicePrototype(JSContext *cx, JSObject *objArg, JSObject *protoArg)
 {
     RootedObject obj(cx, objArg);
@@ -217,12 +218,12 @@ JS_SetCompartmentPrincipals(JSCompartment *compartment, JSPrincipals *principals
 
     // Any compartment with the trusted principals -- and there can be
     // multiple -- is a system compartment.
-    JSPrincipals *trusted = compartment->rt->trustedPrincipals();
+    JSPrincipals *trusted = compartment->runtimeFromMainThread()->trustedPrincipals();
     bool isSystem = principals && principals == trusted;
 
     // Clear out the old principals, if any.
     if (compartment->principals) {
-        JS_DropPrincipals(compartment->rt, compartment->principals);
+        JS_DropPrincipals(compartment->runtimeFromMainThread(), compartment->principals);
         compartment->principals = NULL;
         // We'd like to assert that our new principals is always same-origin
         // with the old one, but JSPrincipals doesn't give us a way to do that.
@@ -241,13 +242,16 @@ JS_SetCompartmentPrincipals(JSCompartment *compartment, JSPrincipals *principals
     compartment->isSystem = isSystem;
 }
 
-JS_FRIEND_API(JSBool)
-JS_WrapPropertyDescriptor(JSContext *cx, js::PropertyDescriptor *desc)
+JS_FRIEND_API(bool)
+JS_WrapPropertyDescriptor(JSContext *cx, js::PropertyDescriptor *descArg)
 {
-    return cx->compartment()->wrap(cx, desc);
+    Rooted<PropertyDescriptor> desc(cx, *descArg);
+    bool status = cx->compartment()->wrap(cx, &desc);
+    *descArg = desc;
+    return status;
 }
 
-JS_FRIEND_API(JSBool)
+JS_FRIEND_API(bool)
 JS_WrapAutoIdVector(JSContext *cx, js::AutoIdVector &props)
 {
     return cx->compartment()->wrap(cx, props);
@@ -336,7 +340,7 @@ js::IsSystemZone(Zone *zone)
 JS_FRIEND_API(bool)
 js::IsAtomsCompartment(JSCompartment *comp)
 {
-    return comp == comp->rt->atomsCompartment;
+    return comp == comp->runtimeFromAnyThread()->atomsCompartment;
 }
 
 JS_FRIEND_API(bool)
@@ -370,9 +374,15 @@ js::GetGlobalForObjectCrossCompartment(JSObject *obj)
 }
 
 JS_FRIEND_API(JSObject *)
-js::GetDefaultGlobalForContext(JSContext *cx)
+js::DefaultObjectForContextOrNull(JSContext *cx)
 {
     return cx->maybeDefaultCompartmentObject();
+}
+
+JS_FRIEND_API(void)
+js::SetDefaultObjectForContext(JSContext *cx, JSObject *obj)
+{
+    cx->setDefaultCompartmentObject(obj);
 }
 
 JS_FRIEND_API(void)
@@ -550,7 +560,7 @@ JS_GetCustomIteratorCount(JSContext *cx)
     return sCustomIteratorCount;
 }
 
-JS_FRIEND_API(JSBool)
+JS_FRIEND_API(bool)
 JS_IsDeadWrapper(JSObject *obj)
 {
     if (!obj->is<ProxyObject>()) {
@@ -879,8 +889,19 @@ JS::DisableGenerationalGC(JSRuntime *rt)
 {
     rt->gcGenerationalEnabled = false;
 #ifdef JSGC_GENERATIONAL
+    MinorGC(rt, JS::gcreason::API);
     rt->gcNursery.disable();
     rt->gcStoreBuffer.disable();
+#endif
+}
+
+extern JS_FRIEND_API(void)
+JS::EnableGenerationalGC(JSRuntime *rt)
+{
+    rt->gcGenerationalEnabled = true;
+#ifdef JSGC_GENERATIONAL
+    rt->gcNursery.enable();
+    rt->gcStoreBuffer.enable();
 #endif
 }
 
@@ -902,7 +923,7 @@ JS::IncrementalObjectBarrier(JSObject *obj)
     if (!obj)
         return;
 
-    JS_ASSERT(!obj->zone()->rt->isHeapMajorCollecting());
+    JS_ASSERT(!obj->zone()->runtimeFromMainThread()->isHeapMajorCollecting());
 
     AutoMarkInDeadZone amn(obj->zone());
 
@@ -920,7 +941,7 @@ JS::IncrementalReferenceBarrier(void *ptr, JSGCTraceKind kind)
                  ? static_cast<JSObject *>(cell)->zone()
                  : cell->tenuredZone();
 
-    JS_ASSERT(!zone->rt->isHeapMajorCollecting());
+    JS_ASSERT(!zone->runtimeFromMainThread()->isHeapMajorCollecting());
 
     AutoMarkInDeadZone amn(zone);
 
@@ -1084,24 +1105,25 @@ js::GetObjectMetadata(JSObject *obj)
     return obj->getMetadata();
 }
 
-JS_FRIEND_API(JSBool)
+JS_FRIEND_API(bool)
 js_DefineOwnProperty(JSContext *cx, JSObject *objArg, jsid idArg,
-                     const js::PropertyDescriptor& descriptor, JSBool *bp)
+                     const js::PropertyDescriptor& descriptorArg, bool *bp)
 {
     RootedObject obj(cx, objArg);
     RootedId id(cx, idArg);
+    Rooted<PropertyDescriptor> descriptor(cx, descriptorArg);
     JS_ASSERT(cx->runtime()->heapState == js::Idle);
     CHECK_REQUEST(cx);
-    assertSameCompartment(cx, obj, id, descriptor.value);
-    if (descriptor.attrs & JSPROP_GETTER)
-        assertSameCompartment(cx, CastAsObjectJsval(descriptor.getter));
-    if (descriptor.attrs & JSPROP_SETTER)
-        assertSameCompartment(cx, CastAsObjectJsval(descriptor.setter));
+    assertSameCompartment(cx, obj, id, descriptor.value());
+    if (descriptor.hasGetterObject())
+        assertSameCompartment(cx, descriptor.getterObject());
+    if (descriptor.hasSetterObject())
+        assertSameCompartment(cx, descriptor.setterObject());
 
     return DefineOwnProperty(cx, HandleObject(obj), id, descriptor, bp);
 }
 
-JS_FRIEND_API(JSBool)
+JS_FRIEND_API(bool)
 js_ReportIsNotFunction(JSContext *cx, const JS::Value& v)
 {
     return ReportIsNotFunction(cx, v);
@@ -1118,6 +1140,22 @@ js::IsInRequest(JSContext *cx)
 #endif
 }
 #endif
+
+void
+AsmJSModuleSourceDesc::init(ScriptSource *scriptSource, uint32_t bufStart, uint32_t bufEnd)
+{
+    JS_ASSERT(scriptSource_ == NULL);
+    scriptSource_ = scriptSource;
+    bufStart_ = bufStart;
+    bufEnd_ = bufEnd;
+    scriptSource_->incref();
+}
+
+AsmJSModuleSourceDesc::~AsmJSModuleSourceDesc()
+{
+    if (scriptSource_)
+        scriptSource_->decref();
+}
 
 #ifdef JSGC_GENERATIONAL
 JS_FRIEND_API(void)

@@ -453,7 +453,8 @@ pref("devtools.debugger.remote-enabled", false);
 pref("devtools.debugger.remote-port", 6000);
 // Force debugger server binding on the loopback interface
 pref("devtools.debugger.force-local", true);
-
+// Display a prompt when a new connection starts to accept/reject it
+pref("devtools.debugger.prompt-connection", true);
 // Temporary setting to enable webapps actors
 pref("devtools.debugger.enable-content-actors", false);
 
@@ -476,7 +477,9 @@ pref("nglayout.events.dispatchLeftClickOnly", true);
 pref("nglayout.enable_drag_images", true);
 
 // enable/disable paint flashing --- useful for debugging
+// the first one applies to everything, the second one only to chrome
 pref("nglayout.debug.paint_flashing", false);
+pref("nglayout.debug.paint_flashing_chrome", false);
 
 // enable/disable widget update area flashing --- only supported with 
 // BasicLayers (other layer managers always update the entire widget area)
@@ -1378,7 +1381,11 @@ pref("network.proxy.socks_remote_dns",      false);
 pref("network.proxy.no_proxies_on",         "localhost, 127.0.0.1");
 pref("network.proxy.failover_timeout",      1800); // 30 minutes
 pref("network.online",                      true); //online/offline
+#ifdef RELEASE_BUILD
+pref("network.cookie.cookieBehavior",       0); // 0-Accept, 1-dontAcceptForeign, 2-dontUse, 3-limitForeign
+#else
 pref("network.cookie.cookieBehavior",       3); // 0-Accept, 1-dontAcceptForeign, 2-dontUse, 3-limitForeign
+#endif
 #ifdef ANDROID
 pref("network.cookie.cookieBehavior",       0); // Keep the old default of accepting all cookies
 #endif
@@ -1774,8 +1781,14 @@ pref("layout.css.masking.enabled", false);
 pref("layout.css.masking.enabled", true);
 #endif
 
+// Is support for mix-blend-mode enabled? 
+pref("layout.css.mix-blend-mode.enabled", false);
+
 // Is support for the the @supports rule enabled?
 pref("layout.css.supports-rule.enabled", true);
+
+// Is support for CSS Filters enabled?
+pref("layout.css.filters.enabled", false);
 
 // Is support for CSS Flexbox enabled?
 pref("layout.css.flexbox.enabled", true);
@@ -1808,6 +1821,14 @@ pref("layout.css.scope-pseudo.enabled", true);
 
 // Is support for CSS vertical text enabled?
 pref("layout.css.vertical-text.enabled", false);
+
+// Is -moz-osx-font-smoothing enabled?
+// Only supported in OSX builds
+#ifdef XP_MACOSX
+pref("layout.css.osx-font-smoothing.enabled", true);
+#else
+pref("layout.css.osx-font-smoothing.enabled", false);
+#endif
 
 // pref for which side vertical scrollbars should be on
 // 0 = end-side in UI direction
@@ -1853,6 +1874,7 @@ pref("gestures.enable_single_finger_input", true);
 pref("editor.resizing.preserve_ratio",       true);
 pref("editor.positioning.offset",            0);
 
+pref("dom.use_watchdog", true);
 pref("dom.max_chrome_script_run_time", 20);
 pref("dom.max_script_run_time", 10);
 
@@ -4044,6 +4066,9 @@ pref("layers.async-video.enabled",false);
 // Whether to disable acceleration for all widgets.
 pref("layers.acceleration.disabled", false);
 
+// Whether to use the deprecated texture architecture rather than the new one.
+pref("layers.use-deprecated-textures", true);
+
 // Whether to force acceleration on, ignoring blacklists.
 #ifdef ANDROID
 // bug 838603 -- on Android, accidentally blacklisting OpenGL layers
@@ -4056,11 +4081,11 @@ pref("layers.acceleration.force-enabled", false);
 pref("layers.acceleration.draw-fps", false);
 
 pref("layers.draw-borders", false);
+pref("layers.draw-tile-borders", false);
+pref("layers.draw-bigimage-borders", false);
 pref("layers.frame-counter", false);
-
 // Max number of layers per container. See Overwrite in mobile prefs.
 pref("layers.max-active", -1);
-
 
 #ifdef XP_MACOSX
 pref("layers.offmainthreadcomposition.enabled", true);
@@ -4070,8 +4095,18 @@ pref("layers.offmainthreadcomposition.enabled", false);
 // same effect as layers.offmainthreadcomposition.enabled, but specifically for
 // use with tests.
 pref("layers.offmainthreadcomposition.testing.enabled", false);
+
+// whether to allow use of the basic compositor
+pref("layers.offmainthreadcomposition.force-basic", false);
+
 // Whether to animate simple opacity and transforms on the compositor
 pref("layers.offmainthreadcomposition.async-animations", false);
+// Whether to prefer normal memory over shared memory. Ignored with cross-process compositing
+pref("layers.prefer-memory-over-shmem", true);
+
+pref("layers.bufferrotation.enabled", true);
+
+pref("layers.componentalpha.enabled", true);
 
 #ifdef MOZ_X11
 #ifdef MOZ_WIDGET_GTK2

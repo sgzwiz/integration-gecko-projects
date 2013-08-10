@@ -16,6 +16,7 @@
 #include "nsIWebNavigation.h"
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
+#include "nsEventDispatcher.h"
 #include "nsIWebBrowserChrome2.h"
 #include "nsIEmbeddingSiteWindow.h"
 #include "nsIWebBrowserChromeFocus.h"
@@ -117,6 +118,13 @@ public:
                                                     aUseCapture,
                                                     aWantsUntrusted,
                                                     optional_argc);
+  }
+
+  nsresult
+  PreHandleEvent(nsEventChainPreVisitor& aVisitor)
+  {
+    aVisitor.mForceContentDispatch = true;
+    return NS_OK;
   }
 
   virtual JSContext* GetJSContextForEventHandlers() MOZ_OVERRIDE;
@@ -378,10 +386,7 @@ private:
     void DestroyWindow();
     void SetProcessNameToAppName();
     bool ProcessUpdateFrame(const mozilla::layers::FrameMetrics& aFrameMetrics);
-
-    // Update the DOM with the given display port. Finds the element based on
-    // the aFrameMetrics.mScrollId.
-    void SetDisplayPort(const FrameMetrics& aFrameMetrics);
+    bool ProcessUpdateSubframe(nsIContent* aContent, const FrameMetrics& aMetrics);
 
     // Call RecvShow(nsIntSize(0, 0)) and block future calls to RecvShow().
     void DoFakeShow();
@@ -426,7 +431,11 @@ private:
                               bool* aWindowIsNew,
                               nsIDOMWindow** aReturn);
 
+    // Get the DOMWindowUtils for the top-level window in this tab.
     already_AddRefed<nsIDOMWindowUtils> GetDOMWindowUtils();
+    // Get the DOMWindowUtils for the window corresponding to the givent content
+    // element. This might be an iframe inside the tab, for instance.
+    already_AddRefed<nsIDOMWindowUtils> GetDOMWindowUtils(nsIContent* aContent);
 
     class CachedFileDescriptorInfo;
     class CachedFileDescriptorCallbackRunnable;

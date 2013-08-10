@@ -10,7 +10,7 @@
 #include "jscntxt.h"
 #include "jsgc.h"
 
-#include "ion/Ion.h"
+#include "jit/Ion.h"
 #include "vm/ThreadPool.h"
 
 ///////////////////////////////////////////////////////////////////////////
@@ -410,7 +410,7 @@ InParallelSection()
 #endif
 }
 
-bool InSequentialOrExclusiveParallelSection();
+bool InExclusiveParallelSection();
 
 bool ParallelTestsShouldPass(JSContext *cx);
 

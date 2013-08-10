@@ -63,7 +63,7 @@ bool_toSource_impl(JSContext *cx, CallArgs args)
     return true;
 }
 
-JSBool
+bool
 bool_toSource(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
@@ -82,7 +82,7 @@ bool_toString_impl(JSContext *cx, CallArgs args)
     return true;
 }
 
-JSBool
+bool
 bool_toString(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
@@ -100,7 +100,7 @@ bool_valueOf_impl(JSContext *cx, CallArgs args)
     return true;
 }
 
-JSBool
+bool
 bool_valueOf(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
@@ -115,7 +115,7 @@ static const JSFunctionSpec boolean_methods[] = {
     JS_FS_END
 };
 
-static JSBool
+static bool
 Boolean(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
@@ -176,7 +176,7 @@ js_InitBooleanClass(JSContext *cx, HandleObject obj)
 }
 
 JSString *
-js_BooleanToString(ExclusiveContext *cx, JSBool b)
+js_BooleanToString(ExclusiveContext *cx, bool b)
 {
     return b ? cx->names().true_ : cx->names().false_;
 }
