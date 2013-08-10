@@ -8,6 +8,7 @@
 #include "CacheObserver.h"
 
 #include "nsICacheStorageVisitor.h"
+#include "nsIObserverService.h"
 #include "CacheStorage.h"
 #include "AppCacheStorage.h"
 #include "CacheEntry.h"
@@ -23,6 +24,7 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/VisualEventTracer.h"
+#include "mozilla/Services.h"
 
 namespace mozilla {
 namespace net {
@@ -489,6 +491,13 @@ CacheFilesDeletor::~CacheFilesDeletor()
   MOZ_EVENT_TRACER_DONE(static_cast<nsRunnable*>(this), "net::cache::deletor");
 
   if (mMode == ALL) {
+    nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
+    if (obsSvc) {
+      obsSvc->NotifyObservers(CacheStorageService::Self(),
+                              "cacheservice:empty-cache",
+                              nullptr);
+    }
+
     // Now delete the doomed entries if some left.
     nsRefPtr<CacheFilesDeletor> deletor = new CacheFilesDeletor(mCallback);
 
