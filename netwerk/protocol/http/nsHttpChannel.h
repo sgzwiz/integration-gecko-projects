@@ -399,6 +399,8 @@ private:
     // had been loaded from cache. If not, then an error has to be propagated
     // to the consumer.
     uint32_t                          mConcurentCacheAccess : 1;
+    // whether the request is setup be byte-range
+    uint32_t                          mIsPartialRequest : 1;
 
     nsTArray<nsContinueRedirectionFunc> mRedirectFuncStack;
 
