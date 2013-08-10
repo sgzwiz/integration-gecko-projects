@@ -12,7 +12,7 @@ function test() {
               .getService(Ci.nsICacheStorageService);
 
   function checkDiskCacheFor(filename, goon) {
-    visitor = {
+    Visitor.prototype = {
       onCacheStorageInfo: function(num, consumption)
       {
         info("disk storage contains " + num + " entries");
@@ -27,16 +27,18 @@ function test() {
         goon();
       }
     };
+    function Visitor() {}
 
-    loadContextInfo = {
+    LoadContextInfo.prototype = {
       isPrivate : false,
       isAnonymous : false,
       isInBrowserElement : false,
       appId : 0
     };
+    function LoadContextInfo() {}
 
-    var storage = cache.diskCacheStorage(loadContextInfo, false);
-    storage.asyncVisitStorage(visitor, true /* Do walk entries */);
+    var storage = cache.diskCacheStorage(new LoadContextInfo, false);
+    storage.asyncVisitStorage(new Visitor(), true /* Do walk entries */);
   }
 
   function contextMenuOpened(aWindow, event) {
