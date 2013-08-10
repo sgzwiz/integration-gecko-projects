@@ -13,8 +13,8 @@ Components.utils.import("resource://gre/modules/devtools/Console.jsm", tempScope
 let console = tempScope.console;
 
 let gPanelWindow;
-let cache = Cc["@mozilla.org/network/cache-service;1"]
-              .getService(Ci.nsICacheService);
+let cache = Cc["@mozilla.org/netwerk/cache-storage-service;1"]
+              .getService(Ci.nsICacheStorageService);
 
 
 // Import the GCLI test helper
@@ -88,7 +88,7 @@ function checkDiskCacheFor(host, done)
 {
   let foundPrivateData = false;
 
-  visitor = {
+  Visitor.prototype = {
     onCacheStorageInfo: function(num, consumption)
     {
       info("disk storage contains " + num + " entries");
@@ -104,16 +104,18 @@ function checkDiskCacheFor(host, done)
       done();
     }
   };
+  function Visitor() {}
 
-  loadContextInfo = {
+  LoadContextInfo.prototype = {
     isPrivate : false,
     isAnonymous : false,
     isInBrowserElement : false,
     appId : 0
   };
+  function LoadContextInfo() {}
 
-  var storage = cache.diskCacheStorage(loadContextInfo, false);
-  storage.asyncVisitStorage(visitor, true /* Do walk entries */);
+  var storage = cache.diskCacheStorage(new LoadContextInfo(), false);
+  storage.asyncVisitStorage(new Visitor(), true /* Do walk entries */);
 }
 
 registerCleanupFunction(cleanup);
