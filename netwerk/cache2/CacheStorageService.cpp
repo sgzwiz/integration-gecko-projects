@@ -499,7 +499,9 @@ CacheFilesDeletor::~CacheFilesDeletor()
   }
 
   if (mCallback) {
-    mCallback->OnCacheEntryDoomed(mRv);
+    nsCOMPtr<nsICacheEntryDoomCallback> callback;
+    callback.swap(mCallback);
+    callback->OnCacheEntryDoomed(mRv);
   }
 }
 
@@ -527,6 +529,12 @@ nsresult CacheFilesDeletor::Init(CacheFileIOManager::EEnumerateMode aMode)
 
   rv = CacheFileIOManager::EnumerateEntryFiles(
     aMode, getter_Transfers(mEnumerator));
+
+  if (NS_ERROR_FILE_NOT_FOUND == rv) {
+    // The entries directory has not been found, job done.
+    return NS_OK;
+  }
+
   NS_ENSURE_SUCCESS(rv, rv);
 
   mIOThread = CacheFileIOManager::IOThread();
