@@ -1470,6 +1470,9 @@ CacheFileIOManager::EnumerateEntryFiles(EEnumerateMode aMode,
   if (!ioMan)
     return NS_ERROR_NOT_INITIALIZED;
 
+  if (!ioMan->mCacheDirectory)
+    return NS_ERROR_FILE_NOT_FOUND;
+
   nsCOMPtr<nsIFile> file;
   rv = ioMan->mCacheDirectory->Clone(getter_AddRefs(file));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1495,6 +1498,11 @@ CacheFileIOManager::EnumerateEntryFiles(EEnumerateMode aMode,
     new CacheEntriesEnumerator(file));
 
   rv = enumerator->Init();
+  if (NS_ERROR_FILE_NOT_FOUND == rv) {
+    LOG(("  the cache directory doesn't exist, nothing to enumerate"));
+    return rv;
+  }
+
   NS_ENSURE_SUCCESS(rv, rv);
 
   *aEnumerator = enumerator.forget();
