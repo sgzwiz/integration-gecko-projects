@@ -39,7 +39,7 @@ nsresult CacheEntriesEnumerator::Init()
   nsCOMPtr<nsISimpleEnumerator> e;
   rv = mEntriesDirectory->GetDirectoryEntries(getter_AddRefs(e));
 
-  if (NS_ERROR_FILE_NOT_FOUND == rv) {
+  if (NS_ERROR_FILE_NOT_FOUND == rv || NS_ERROR_FILE_TARGET_DOES_NOT_EXIST == rv) {
     return NS_OK;
   }
 

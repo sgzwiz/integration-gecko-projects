@@ -540,7 +540,7 @@ nsresult CacheFilesDeletor::Init(CacheFileIOManager::EEnumerateMode aMode)
   rv = CacheFileIOManager::EnumerateEntryFiles(
     aMode, getter_Transfers(mEnumerator));
 
-  if (NS_ERROR_FILE_NOT_FOUND == rv) {
+  if (NS_ERROR_FILE_NOT_FOUND == rv || NS_ERROR_FILE_TARGET_DOES_NOT_EXIST == rv) {
     rv = NS_OK;
   }
 
