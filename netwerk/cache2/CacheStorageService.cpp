@@ -484,6 +484,7 @@ CacheFilesDeletor::CacheFilesDeletor(nsICacheEntryDoomCallback* aCallback)
 
 CacheFilesDeletor::~CacheFilesDeletor()
 {
+  MOZ_ASSERT(NS_IsMainThread());
   MOZ_COUNT_DTOR(CacheFilesDeletor);
   MOZ_EVENT_TRACER_DONE(static_cast<nsRunnable*>(this), "net::cache::deletor");
 
@@ -531,8 +532,7 @@ nsresult CacheFilesDeletor::Init(CacheFileIOManager::EEnumerateMode aMode)
     aMode, getter_Transfers(mEnumerator));
 
   if (NS_ERROR_FILE_NOT_FOUND == rv) {
-    // The entries directory has not been found, job done.
-    return NS_OK;
+    rv = NS_OK;
   }
 
   NS_ENSURE_SUCCESS(rv, rv);
@@ -558,6 +558,14 @@ NS_IMETHODIMP CacheFilesDeletor::Run()
   if (NS_SUCCEEDED(mRv))
     mRv = rv;
 
+  if (!mEnumerator || !mEnumerator->HasMore()) {
+    // No enumerator or no more elements means the job is done.
+    mEnumerator = nullptr;
+    nsCOMPtr<nsIRunnable> self(this);
+    ProxyReleaseMainThread(self);
+    return NS_OK;
+  }
+
   MOZ_EVENT_TRACER_DONE(static_cast<nsRunnable*>(this), "net::cache::deletor::exec");
 
   return NS_OK;
@@ -566,6 +574,12 @@ NS_IMETHODIMP CacheFilesDeletor::Run()
 nsresult CacheFilesDeletor::Execute()
 {
   LOG(("CacheFilesDeletor::Execute [this=%p]", this));
+
+  if (!mEnumerator) {
+    // No enumerator means the job is done.
+    return NS_OK;
+  }
+
   nsresult rv;
   TimeStamp start;
 
@@ -616,7 +630,7 @@ nsresult CacheFilesDeletor::Execute()
 
       ++mRunning;
 
-      if (!(mRunning % (1 << 5))) {
+      if (!(mRunning % (1 << 5)) && mEnumerator->HasMore()) {
         TimeStamp now(TimeStamp::NowLoRes());
 #define DELETOR_LOOP_LIMIT_MS 200
         static TimeDuration const kLimitms = TimeDuration::FromMilliseconds(DELETOR_LOOP_LIMIT_MS);
