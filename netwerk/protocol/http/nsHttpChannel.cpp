@@ -218,6 +218,7 @@ nsHttpChannel::nsHttpChannel()
     , mCacheEntriesToWaitFor(0)
     , mHasQueryString(0)
     , mConcurentCacheAccess(0)
+    , mIsPartialRequest(0)
     , mDidReval(false)
 {
     LOG(("Creating nsHttpChannel [this=%p]\n", this));
@@ -2025,7 +2026,10 @@ nsHttpChannel::MaybeSetupByteRangeRequest(int64_t partialLen, int64_t contentLen
         mCachedResponseHead->PeekHeader(nsHttp::Content_Encoding)
         != nullptr;
 
-    if ((int64_t(partialLen) < contentLength) &&
+    // Be pesimistic
+    mIsPartialRequest = false;
+
+    if ((partialLen < contentLength) &&
          partialLen > 0 &&
          !hasContentEncoding &&
          mCachedResponseHead->IsResumable() &&
@@ -2058,6 +2062,7 @@ nsHttpChannel::SetupByteRangeRequest(int64_t partialLen)
         // if we hit this code it means mCachedResponseHead->IsResumable() is
         // either broken or not being called.
         NS_NOTREACHED("no cache validator");
+        mIsPartialRequest = false;
         return NS_ERROR_FAILURE;
     }
 
@@ -2066,6 +2071,7 @@ nsHttpChannel::SetupByteRangeRequest(int64_t partialLen)
 
     mRequestHead.SetHeader(nsHttp::Range, nsDependentCString(buf));
     mRequestHead.SetHeader(nsHttp::If_Range, nsDependentCString(val));
+    mIsPartialRequest = true;
 
     return NS_OK;
 }
@@ -5090,7 +5096,7 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
                 LOG(("  concurrent cache entry write has been interrupted"));
                 mCachedResponseHead = mResponseHead;
                 rv = MaybeSetupByteRangeRequest(size, contentLength);
-                if (NS_SUCCEEDED(rv)) {
+                if (NS_SUCCEEDED(rv) && mIsPartialRequest) {
                     // Prevent read from cache again
                     mCachedContentIsValid = 0;
                     mCachedContentIsPartial = 1;
@@ -5102,9 +5108,12 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
                         mCachePump = nullptr;
                         return NS_OK;
                     } else {
-                        LOG(("  perform range request failed 0x%08x", rv));
+                        LOG(("  but range request perform failed 0x%08x", rv));
                         status = NS_ERROR_NET_INTERRUPT;
                     }
+                }
+                else {
+                    LOG(("  but range request setup failed rv=0x%08x, failing load", rv));
                 }
             }
         }
