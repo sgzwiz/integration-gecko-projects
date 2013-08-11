@@ -61,7 +61,7 @@ function sanitizeCache() {
 }
 
 function get_cache_service() {
-  return Components.classes["@mozilla.org/network/cache-service;1"]
+  return Components.classes["@mozilla.org/netwerk/cache-storage-service;1"]
                    .getService(Components.interfaces.nsICacheService);
 }
 

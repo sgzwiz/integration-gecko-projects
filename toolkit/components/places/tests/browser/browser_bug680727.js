@@ -24,7 +24,7 @@ function test() {
   Services.prefs.setIntPref("network.proxy.type", 0);
 
   // Clear network cache.
-  Components.classes["@mozilla.org/network/cache-storage-service;1"]
+  Components.classes["@mozilla.org/netwerk/cache-storage-service;1"]
             .getService(Components.interfaces.nsICacheStorageService)
             .clear();
 
