@@ -458,6 +458,7 @@ private:
   nsresult Init(CacheFileIOManager::EEnumerateMode aMode);
   NS_IMETHOD Run();
   NS_IMETHOD Execute();
+  void Callback();
   virtual void OnFile(CacheFile* aFile);
 
   nsCOMPtr<nsICacheEntryDoomCallback> mCallback;
@@ -486,32 +487,16 @@ CacheFilesDeletor::CacheFilesDeletor(nsICacheEntryDoomCallback* aCallback)
 
 CacheFilesDeletor::~CacheFilesDeletor()
 {
-  MOZ_ASSERT(NS_IsMainThread());
   MOZ_COUNT_DTOR(CacheFilesDeletor);
   MOZ_EVENT_TRACER_DONE(static_cast<nsRunnable*>(this), "net::cache::deletor");
 
   if (mMode == ALL) {
-    nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
-    if (obsSvc) {
-      obsSvc->NotifyObservers(CacheStorageService::Self(),
-                              "cacheservice:empty-cache",
-                              nullptr);
-    }
-
     // Now delete the doomed entries if some left.
     nsRefPtr<CacheFilesDeletor> deletor = new CacheFilesDeletor(mCallback);
 
     nsRefPtr<nsRunnableMethod<CacheFilesDeletor, nsresult> > event =
       NS_NewRunnableMethod(deletor.get(), &CacheFilesDeletor::DeleteDoomed);
     NS_DispatchToMainThread(event);
-
-    return;
-  }
-
-  if (mCallback) {
-    nsCOMPtr<nsICacheEntryDoomCallback> callback;
-    callback.swap(mCallback);
-    callback->OnCacheEntryDoomed(mRv);
   }
 }
 
@@ -555,6 +540,25 @@ nsresult CacheFilesDeletor::Init(CacheFileIOManager::EEnumerateMode aMode)
   return NS_OK;
 }
 
+void CacheFilesDeletor::Callback()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
+  if (obsSvc) {
+    obsSvc->NotifyObservers(CacheStorageService::Self(),
+                            "cacheservice:empty-cache",
+                            nullptr);
+  }
+
+  if (!mCallback)
+    return;
+
+  nsCOMPtr<nsICacheEntryDoomCallback> callback;
+  callback.swap(mCallback);
+  callback->OnCacheEntryDoomed(mRv);
+}
+
 NS_IMETHODIMP CacheFilesDeletor::Run()
 {
   if (!mRunning) {
@@ -570,9 +574,12 @@ NS_IMETHODIMP CacheFilesDeletor::Run()
   if (!mEnumerator || !mEnumerator->HasMore()) {
     // No enumerator or no more elements means the job is done.
     mEnumerator = nullptr;
-    nsCOMPtr<nsIRunnable> self(this);
-    ProxyReleaseMainThread(self);
-    return NS_OK;
+
+    if (mMode != ALL) {
+      nsRefPtr<nsRunnableMethod<CacheFilesDeletor> > event =
+        NS_NewRunnableMethod(this, &CacheFilesDeletor::Callback);
+      NS_DispatchToMainThread(event);
+    }
   }
 
   MOZ_EVENT_TRACER_DONE(static_cast<nsRunnable*>(this), "net::cache::deletor::exec");
