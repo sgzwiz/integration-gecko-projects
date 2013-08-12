@@ -11,6 +11,12 @@
 #include "mozilla/EventForwards.h"
 #include "mozilla/dom/ClipboardEventBinding.h"
 
+namespace mozilla {
+namespace dom {
+class DataTransfer;
+}
+}
+
 class nsDOMClipboardEvent : public nsDOMEvent,
                             public nsIDOMClipboardEvent
 {
@@ -39,7 +45,12 @@ public:
               const mozilla::dom::ClipboardEventInit& aParam,
               mozilla::ErrorResult& aRv);
 
-  nsIDOMDataTransfer* GetClipboardData();
+  mozilla::dom::DataTransfer* GetClipboardData();
+
+  void InitClipboardEvent(const nsAString& aType, bool aCanBubble,
+                          bool aCancelable,
+                          mozilla::dom::DataTransfer* aClipboardData,
+                          mozilla::ErrorResult& aError);
 };
 
 #endif // nsDOMClipboardEvent_h_

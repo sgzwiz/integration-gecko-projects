@@ -4994,16 +4994,20 @@ nsContentUtils::SetDataTransferInEvent(WidgetDragEvent* aDragEvent)
   nsCOMPtr<nsIDragSession> dragSession = GetDragSession();
   NS_ENSURE_TRUE(dragSession, NS_OK); // no drag in progress
 
-  nsCOMPtr<nsIDOMDataTransfer> initialDataTransfer;
-  dragSession->GetDataTransfer(getter_AddRefs(initialDataTransfer));
-  if (!initialDataTransfer) {
+  nsCOMPtr<nsIDOMDataTransfer> dataTransfer;
+  nsCOMPtr<DataTransfer> initialDataTransfer;
+  dragSession->GetDataTransfer(getter_AddRefs(dataTransfer));
+  if (dataTransfer) {
+    initialDataTransfer = do_QueryInterface(dataTransfer);
+    if (!initialDataTransfer) {
+      return NS_ERROR_FAILURE;
+    }
+  } else {
     // A dataTransfer won't exist when a drag was started by some other
     // means, for instance calling the drag service directly, or a drag
     // from another application. In either case, a new dataTransfer should
     // be created that reflects the data.
     initialDataTransfer = new DataTransfer(aDragEvent->message, true, -1);
-
-    NS_ENSURE_TRUE(initialDataTransfer, NS_ERROR_OUT_OF_MEMORY);
 
     // now set it in the drag session so we don't need to create it again
     dragSession->SetDataTransfer(initialDataTransfer);

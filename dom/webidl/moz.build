@@ -74,6 +74,7 @@ WEBIDL_FILES = [
     'DOMTokenList.webidl',
     'DOMTransaction.webidl',
     'DataContainerEvent.webidl',
+    'DataTransfer.webidl',
     'DelayNode.webidl',
     'DesktopNotification.webidl',
     'DeviceMotionEvent.webidl',

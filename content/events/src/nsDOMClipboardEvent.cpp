@@ -42,15 +42,30 @@ NS_IMPL_RELEASE_INHERITED(nsDOMClipboardEvent, nsDOMEvent)
 
 nsresult
 nsDOMClipboardEvent::InitClipboardEvent(const nsAString & aType, bool aCanBubble, bool aCancelable,
-                                        nsIDOMDataTransfer* clipboardData)
+                                        nsIDOMDataTransfer* aClipboardData)
 {
-  nsresult rv = nsDOMEvent::InitEvent(aType, aCanBubble, aCancelable);
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsCOMPtr<DataTransfer> clipboardData = do_QueryInterface(aClipboardData);
+  NS_ENSURE_ARG(clipboardData);
+
+  ErrorResult rv;
+  InitClipboardEvent(aType, aCanBubble, aCancelable, clipboardData, rv);
+
+  return rv.ErrorCode();
+}
+
+void
+nsDOMClipboardEvent::InitClipboardEvent(const nsAString& aType, bool aCanBubble,
+                                        bool aCancelable,
+                                        DataTransfer* aClipboardData,
+                                        ErrorResult& aError)
+{
+  aError = nsDOMEvent::InitEvent(aType, aCanBubble, aCancelable);
+  if (aError.Failed()) {
+    return;
+  }
 
   InternalClipboardEvent* event = static_cast<InternalClipboardEvent*>(mEvent);
-  event->clipboardData = clipboardData;
-
-  return NS_OK;
+  event->clipboardData = aClipboardData;
 }
 
 already_AddRefed<nsDOMClipboardEvent>
@@ -77,8 +92,8 @@ nsDOMClipboardEvent::Constructor(const GlobalObject& aGlobal,
     }
   }
 
-  aRv = e->InitClipboardEvent(aType, aParam.mBubbles, aParam.mCancelable,
-                              clipboardData);
+  e->InitClipboardEvent(aType, aParam.mBubbles, aParam.mCancelable,
+                        clipboardData, aRv);
   e->SetTrusted(trusted);
   return e.forget();
 }
@@ -90,7 +105,7 @@ nsDOMClipboardEvent::GetClipboardData(nsIDOMDataTransfer** aClipboardData)
   return NS_OK;
 }
 
-nsIDOMDataTransfer*
+mozilla::dom::DataTransfer*
 nsDOMClipboardEvent::GetClipboardData()
 {
   InternalClipboardEvent* event = static_cast<InternalClipboardEvent*>(mEvent);

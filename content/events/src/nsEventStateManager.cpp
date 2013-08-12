@@ -1916,8 +1916,6 @@ nsEventStateManager::GenerateDragGesture(nsPresContext* aPresContext,
 
       nsRefPtr<DataTransfer> dataTransfer =
         new DataTransfer(NS_DRAGDROP_START, false, -1);
-      if (!dataTransfer)
-        return;
 
       nsCOMPtr<nsISelection> selection;
       nsCOMPtr<nsIContent> eventContent, targetContent;
@@ -2129,16 +2127,12 @@ nsEventStateManager::DoDefaultDragStart(nsPresContext* aPresContext,
   // target of the mouse event. If one wasn't set in the
   // aDataTransfer during the event handler, just use the original
   // target instead.
-  nsCOMPtr<nsIDOMNode> dragTarget;
-  nsCOMPtr<nsIDOMElement> dragTargetElement;
-  aDataTransfer->GetDragTarget(getter_AddRefs(dragTargetElement));
-  dragTarget = do_QueryInterface(dragTargetElement);
+  nsCOMPtr<Element> dragTarget = aDataTransfer->GetDragTarget();
   if (!dragTarget) {
     dragTarget = do_QueryInterface(aDragTarget);
     if (!dragTarget)
       return false;
   }
-  nsCOMPtr<nsIContent> content = do_QueryInterface(dragTarget);
 
   // check which drag effect should initially be used. If the effect was not
   // set, just use all actions, otherwise Windows won't allow a drop.
@@ -2151,9 +2145,10 @@ nsEventStateManager::DoDefaultDragStart(nsPresContext* aPresContext,
 
   // get any custom drag image that was set
   int32_t imageX, imageY;
-  nsIDOMElement* dragImage = aDataTransfer->GetDragImage(&imageX, &imageY);
+  Element* dragImage = aDataTransfer->GetDragImage(&imageX, &imageY);
 
-  nsCOMPtr<nsISupportsArray> transArray = aDataTransfer->GetTransferables(dragTarget);
+  nsCOMPtr<nsISupportsArray> transArray =
+    aDataTransfer->GetTransferables(dragTarget->AsDOMNode());
   if (!transArray)
     return false;
 
@@ -2161,7 +2156,7 @@ nsEventStateManager::DoDefaultDragStart(nsPresContext* aPresContext,
   // here, but we need something to pass to the InvokeDragSession
   // methods.
   nsCOMPtr<nsIDOMEvent> domEvent;
-  NS_NewDOMDragEvent(getter_AddRefs(domEvent), content,
+  NS_NewDOMDragEvent(getter_AddRefs(domEvent), dragTarget,
                      aPresContext, aDragEvent);
 
   nsCOMPtr<nsIDOMDragEvent> domDragEvent = do_QueryInterface(domEvent);
@@ -2186,9 +2181,10 @@ nsEventStateManager::DoDefaultDragStart(nsPresContext* aPresContext,
     nsCOMPtr<nsIScriptableRegion> region;
 #ifdef MOZ_XUL
     if (dragTarget && !dragImage) {
-      if (content->NodeInfo()->Equals(nsGkAtoms::treechildren,
-                                      kNameSpaceID_XUL)) {
-        nsTreeBodyFrame* treeBody = do_QueryFrame(content->GetPrimaryFrame());
+      if (dragTarget->NodeInfo()->Equals(nsGkAtoms::treechildren,
+                                         kNameSpaceID_XUL)) {
+        nsTreeBodyFrame* treeBody =
+          do_QueryFrame(dragTarget->GetPrimaryFrame());
         if (treeBody) {
           treeBody->GetSelectionRegion(getter_AddRefs(region));
         }
@@ -2196,9 +2192,12 @@ nsEventStateManager::DoDefaultDragStart(nsPresContext* aPresContext,
     }
 #endif
 
-    dragService->InvokeDragSessionWithImage(dragTarget, transArray,
-                                            region, action, dragImage,
-                                            imageX, imageY, domDragEvent,
+    dragService->InvokeDragSessionWithImage(dragTarget->AsDOMNode(), transArray,
+                                            region, action,
+                                            dragImage ? dragImage->AsDOMNode() :
+                                                        nullptr,
+                                            imageX,
+                                            imageY, domDragEvent,
                                             aDataTransfer);
   }
 
