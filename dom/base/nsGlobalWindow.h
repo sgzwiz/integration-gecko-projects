@@ -470,6 +470,8 @@ public:
   uint32_t GetLength();
   already_AddRefed<nsIDOMWindow> IndexedGetter(uint32_t aIndex, bool& aFound);
 
+  void GetSupportedNames(nsTArray<nsString>& aNames);
+
   // Object Management
   nsGlobalWindow(nsGlobalWindow *aOuterWindow);
 
@@ -1241,6 +1243,11 @@ protected:
   bool mSetOpenerWindowCalled;
   nsCOMPtr<nsIURI> mLastOpenedURI;
 #endif
+
+#ifdef MOZ_B2G
+  bool mNetworkUploadObserverEnabled;
+  bool mNetworkDownloadObserverEnabled;
+#endif // MOZ_B2G
 
   bool mCleanedUp;
 

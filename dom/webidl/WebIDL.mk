@@ -94,6 +94,7 @@ webidl_files = \
   Function.webidl \
   GainNode.webidl \
   Geolocation.webidl \
+  History.webidl \
   HTMLAnchorElement.webidl \
   HTMLAppletElement.webidl \
   HTMLAreaElement.webidl \
@@ -437,7 +438,10 @@ endif
 
 ifdef MOZ_B2G_RIL
 webidl_files += \
+  CallsList.webidl \
   MozStkCommandEvent.webidl \
+  Telephony.webidl \
+  TelephonyCall.webidl \
   $(NULL)
 endif
 

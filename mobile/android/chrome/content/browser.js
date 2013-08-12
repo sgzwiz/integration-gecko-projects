@@ -149,15 +149,11 @@ const kDoNotTrackPrefState = Object.freeze({
 });
 
 function dump(a) {
-  Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService).logStringMessage(a);
-}
-
-function getBridge() {
-  return Cc["@mozilla.org/android/bridge;1"].getService(Ci.nsIAndroidBridge);
+  Services.console.logStringMessage(a);
 }
 
 function sendMessageToJava(aMessage) {
-  return getBridge().handleGeckoMessage(JSON.stringify(aMessage));
+  return Services.androidBridge.handleGeckoMessage(JSON.stringify(aMessage));
 }
 
 function doChangeMaxLineBoxWidth(aWidth) {
@@ -269,7 +265,7 @@ var BrowserApp = {
     BrowserEventHandler.init();
     ViewportHandler.init();
 
-    getBridge().browserApp = this;
+    Services.androidBridge.browserApp = this;
 
     Services.obs.addObserver(this, "Tab:Load", false);
     Services.obs.addObserver(this, "Tab:Selected", false);
@@ -672,7 +668,7 @@ var BrowserApp = {
   // off to the compositor.
   isBrowserContentDocumentDisplayed: function() {
     try {
-      if (!getBridge().isContentDocumentDisplayed())
+      if (!Services.androidBridge.isContentDocumentDisplayed())
         return false;
     } catch (e) {
       return false;
@@ -686,7 +682,7 @@ var BrowserApp = {
 
   contentDocumentChanged: function() {
     window.top.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils).isFirstPaint = true;
-    getBridge().contentDocumentChanged();
+    Services.androidBridge.contentDocumentChanged();
   },
 
   get tabs() {
@@ -3253,7 +3249,7 @@ Tab.prototype = {
 
   sendViewportUpdate: function(aPageSizeUpdate) {
     let viewport = this.getViewport();
-    let displayPort = getBridge().getDisplayPort(aPageSizeUpdate, BrowserApp.isBrowserContentDocumentDisplayed(), this.id, viewport);
+    let displayPort = Services.androidBridge.getDisplayPort(aPageSizeUpdate, BrowserApp.isBrowserContentDocumentDisplayed(), this.id, viewport);
     if (displayPort != null)
       this.setDisplayPort(displayPort);
   },
@@ -4320,10 +4316,14 @@ var BrowserEventHandler = {
 
   onDoubleTap: function(aData) {
     let data = JSON.parse(aData);
+    let element = ElementTouchHelper.anyElementFromPoint(data.x, data.y);
 
-    // We only want to do this if reflow-on-zoom is enabled.
+    // We only want to do this if reflow-on-zoom is enabled, we don't already
+    // have a reflow-on-zoom event pending, and the element upon which the user
+    // double-tapped isn't of a type we want to avoid reflow-on-zoom.
     if (BrowserEventHandler.mReflozPref &&
-       !BrowserApp.selectedTab._mReflozPoint) {
+       !BrowserApp.selectedTab._mReflozPoint &&
+       !this._shouldSuppressReflowOnZoom(element)) {
      let data = JSON.parse(aData);
      let zoomPointX = data.x;
      let zoomPointY = data.y;
@@ -4333,8 +4333,6 @@ var BrowserEventHandler = {
        BrowserApp.selectedTab.probablyNeedRefloz = true;
     }
 
-    let zoom = BrowserApp.selectedTab._zoom;
-    let element = ElementTouchHelper.anyElementFromPoint(data.x, data.y);
     if (!element) {
       this._zoomOut();
       return;
@@ -4348,6 +4346,28 @@ var BrowserEventHandler = {
     } else {
       this._zoomToElement(element, data.y);
     }
+  },
+
+  /**
+   * Determine if reflow-on-zoom functionality should be suppressed, given a
+   * particular element. Double-tapping on the following elements suppresses
+   * reflow-on-zoom:
+   *
+   * <video>, <object>, <embed>, <applet>, <canvas>, <img>, <media>, <pre>
+   */
+  _shouldSuppressReflowOnZoom: function(aElement) {
+    if (aElement instanceof Ci.nsIDOMHTMLVideoElement ||
+        aElement instanceof Ci.nsIDOMHTMLObjectElement ||
+        aElement instanceof Ci.nsIDOMHTMLEmbedElement ||
+        aElement instanceof Ci.nsIDOMHTMLAppletElement ||
+        aElement instanceof Ci.nsIDOMHTMLCanvasElement ||
+        aElement instanceof Ci.nsIDOMHTMLImageElement ||
+        aElement instanceof Ci.nsIDOMHTMLMediaElement ||
+        aElement instanceof Ci.nsIDOMHTMLPreElement) {
+      return true;
+    }
+
+    return false;
   },
 
   /* Zoom to an element, optionally keeping a particular part of it
@@ -4879,7 +4899,7 @@ var ErrorPageEventHandler = {
           let isMalware = errorDoc.documentURI.contains("e=malwareBlocked");
           let bucketName = isMalware ? "WARNING_MALWARE_PAGE_" : "WARNING_PHISHING_PAGE_";
           let nsISecTel = Ci.nsISecurityUITelemetry;
-          let isIframe = (aOwnerDoc.defaultView.parent === aOwnerDoc.defaultView);
+          let isIframe = (errorDoc.defaultView.parent === errorDoc.defaultView);
           bucketName += isIframe ? "TOP_" : "FRAME_";
 
           let formatter = Cc["@mozilla.org/toolkit/URLFormatterService;1"].getService(Ci.nsIURLFormatter);
@@ -7607,12 +7627,26 @@ let Reader = {
 var ExternalApps = {
   _contextMenuId: -1,
 
+  // extend _getLink to pickup html5 media links.
+  _getMediaLink: function(aElement) {
+    let uri = NativeWindow.contextmenus._getLink(aElement);
+    if (uri == null) {
+      if (aElement.nodeType == Ci.nsIDOMNode.ELEMENT_NODE && (aElement instanceof Ci.nsIDOMHTMLMediaElement && mediaSrc)) {
+        try {
+          let mediaSrc = aElement.currentSrc || aElement.src;
+          uri = ContentAreaUtils.makeURI(mediaSrc, null, null);
+        } catch (e) {}
+      }
+    }
+    return uri;
+  },
+
   init: function helper_init() {
     this._contextMenuId = NativeWindow.contextmenus.add(function(aElement) {
       let uri = null;
       var node = aElement;
       while (node && !uri) {
-        uri = NativeWindow.contextmenus._getLink(node);
+        uri = ExternalApps._getMediaLink(node);
         node = node.parentNode;
       }
       let apps = [];
@@ -7630,7 +7664,7 @@ var ExternalApps = {
 
   filter: {
     matches: function(aElement) {
-      let uri = NativeWindow.contextmenus._getLink(aElement);
+      let uri = ExternalApps._getMediaLink(aElement);
       let apps = [];
       if (uri) {
         apps = HelperApps.getAppsForUri(uri);
@@ -7640,7 +7674,7 @@ var ExternalApps = {
   },
 
   openExternal: function(aElement) {
-    let uri = NativeWindow.contextmenus._getLink(aElement);
+    let uri = ExternalApps._getMediaLink(aElement);
     HelperApps.openUriInApp(uri);
   }
 };

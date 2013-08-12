@@ -22,6 +22,11 @@ class JSScript;
 namespace js {
 namespace analyze {
 
+class LoopAnalysis;
+class SlotValue;
+class SSAValue;
+class SSAUseChain;
+
 /*
  * There are three analyses we can perform on a JSScript, outlined below.
  * The results of all three are stored in ScriptAnalysis, but the analyses
@@ -104,8 +109,6 @@ class Bytecode
      * hints about the script for use during compilation.
      */
     bool arrayWriteHole: 1;     /* SETELEM which has written to an array hole. */
-    bool getStringElement:1;    /* GETELEM which has accessed string properties. */
-    bool nonNativeGetElement:1; /* GETELEM on a non-native, non-array object. */
     bool accessGetter: 1;       /* Property read on a shape with a getter hook. */
 
     /* Stack depth before this opcode. */

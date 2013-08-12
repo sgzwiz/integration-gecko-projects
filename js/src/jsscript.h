@@ -34,12 +34,19 @@ namespace ion {
 
 # define BASELINE_DISABLED_SCRIPT ((js::ion::BaselineScript *)0x1)
 
-class Shape;
-
+class BreakpointSite;
 class BindingIter;
+class RegExpObject;
+struct SourceCompressionToken;
+class Shape;
+class WatchpointMap;
 
 namespace analyze {
     class ScriptAnalysis;
+}
+
+namespace frontend {
+    class BytecodeEmitter;
 }
 
 }
@@ -809,6 +816,7 @@ class JSScript : public js::gc::Cell
     inline void clearPropertyReadTypes();
 
     inline js::GlobalObject &global() const;
+    js::GlobalObject &uninlinedGlobal() const;
 
     /* See StaticScopeIter comment. */
     JSObject *enclosingStaticScope() const {

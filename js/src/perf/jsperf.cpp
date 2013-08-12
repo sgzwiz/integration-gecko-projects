@@ -18,14 +18,14 @@ static PerfMeasurement* GetPMFromThis(JSContext* cx, jsval* vp);
 // Property access
 
 #define GETTER(name)                                                    \
-    static JSBool                                                       \
+    static bool                                                         \
     pm_get_##name(JSContext* cx, JS::HandleObject obj, JS::HandleId /*unused*/, JS::MutableHandleValue vp) \
     {                                                                   \
         PerfMeasurement* p = GetPM(cx, obj, #name);                     \
         if (!p)                                                         \
-            return JS_FALSE;                                            \
+            return false;                                               \
         vp.set(JS_NumberValue(double(p->name)));                        \
-        return JS_TRUE;                                                 \
+        return true;                                                    \
     }
 
 GETTER(cpu_cycles)

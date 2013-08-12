@@ -11,12 +11,17 @@
  */
 
 #include "jsobj.h"
-#include "jsprvtd.h"
 #include "jsscript.h"
 
 #include "gc/Barrier.h"
 
-namespace js { class FunctionExtended; }
+namespace js {
+class FunctionExtended;
+
+typedef JSNative           Native;
+typedef JSParallelNative   ParallelNative;
+typedef JSThreadSafeNative ThreadSafeNative;
+}
 
 class JSFunction : public JSObject
 {
@@ -411,7 +416,7 @@ DefineFunction(JSContext *cx, HandleObject obj, HandleId id, JSNative native,
                gc::AllocKind allocKind = JSFunction::FinalizeKind,
                NewObjectKind newKind = GenericObject);
 
-extern JSBool
+extern bool
 fun_resolve(JSContext *cx, js::HandleObject obj, js::HandleId id,
             unsigned flags, js::MutableHandleObject objp);
 

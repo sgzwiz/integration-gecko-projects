@@ -42,7 +42,7 @@ struct Zone;
  * prevents many bugs from being caught at compile time. E.g.:
  *
  *  jsid id = ...
- *  if (id == JS_TRUE)  // error
+ *  if (id)             // error
  *    ...
  *
  *  size_t n = id;      // error
@@ -200,11 +200,11 @@ class                                       JSStableString;  // long story
 class                                       JSString;
 
 #ifdef JS_THREADSAFE
-typedef struct PRCallOnceType    JSCallOnceType;
+typedef struct PRCallOnceType   JSCallOnceType;
 #else
-typedef JSBool                   JSCallOnceType;
+typedef bool                    JSCallOnceType;
 #endif
-typedef JSBool                 (*JSInitCallback)(void);
+typedef bool                    (*JSInitCallback)(void);
 
 namespace JS {
 namespace shadow {
