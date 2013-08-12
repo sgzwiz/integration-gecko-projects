@@ -533,6 +533,11 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
   LOG(("CacheEntry::InvokeAvailableCallback [this=%p, state=%s, cb=%p, r/o=%d]",
     this, StateString(mState), aCallback, aReadOnly));
 
+  uint32_t const state = mState;
+
+  // When we are here, the entry must be loaded from disk
+  MOZ_ASSERT(state > LOADING || mIsDoomed);
+
   if (!NS_IsMainThread()) {
     // Must happen on the main thread :(
     nsRefPtr<AvailableCallbackRunnable> event =
@@ -542,11 +547,6 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
   }
 
   // This happens only on the main thread / :( /
-
-  uint32_t const state = mState;
-
-  // When we are here, the entry must be loaded from disk
-  MOZ_ASSERT(state > LOADING);
 
   if (mIsDoomed) {
     LOG(("  doomed, notifying OCEA with NS_ERROR_CACHE_KEY_NOT_FOUND"));
