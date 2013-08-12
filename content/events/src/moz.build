@@ -16,6 +16,7 @@ EXPORTS += [
 ]
 
 EXPORTS.mozilla.dom += [
+    'DataTransfer.h',
     'Touch.h',
 ]
 
@@ -24,6 +25,7 @@ if CONFIG['MOZ_WEBSPEECH']:
 
 CPP_SOURCES += [
     'DOMWheelEvent.cpp',
+    'DataTransfer.cpp',
     'EventTarget.cpp',
     'TextComposition.cpp',
     'Touch.cpp',
@@ -35,7 +37,6 @@ CPP_SOURCES += [
     'nsDOMCommandEvent.cpp',
     'nsDOMCompositionEvent.cpp',
     'nsDOMDataContainerEvent.cpp',
-    'nsDOMDataTransfer.cpp',
     'nsDOMDeviceMotionEvent.cpp',
     'nsDOMDragEvent.cpp',
     'nsDOMEvent.cpp',

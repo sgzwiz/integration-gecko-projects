@@ -68,7 +68,7 @@
 #include "nsIDOMXULDocument.h"
 #include "nsIDragService.h"
 #include "nsIDragSession.h"
-#include "nsDOMDataTransfer.h"
+#include "mozilla/dom/DataTransfer.h"
 #include "nsContentAreaDragDrop.h"
 #ifdef MOZ_XUL
 #include "nsTreeBodyFrame.h"
@@ -1914,8 +1914,8 @@ nsEventStateManager::GenerateDragGesture(nsPresContext* aPresContext,
         KillClickHoldTimer();
       }
 
-      nsRefPtr<nsDOMDataTransfer> dataTransfer =
-        new nsDOMDataTransfer(NS_DRAGDROP_START, false, -1);
+      nsRefPtr<DataTransfer> dataTransfer =
+        new DataTransfer(NS_DRAGDROP_START, false, -1);
       if (!dataTransfer)
         return;
 
@@ -2009,7 +2009,7 @@ nsEventStateManager::GenerateDragGesture(nsPresContext* aPresContext,
 void
 nsEventStateManager::DetermineDragTarget(nsPresContext* aPresContext,
                                          nsIContent* aSelectionTarget,
-                                         nsDOMDataTransfer* aDataTransfer,
+                                         DataTransfer* aDataTransfer,
                                          nsISelection** aSelection,
                                          nsIContent** aTargetNode)
 {
@@ -2096,7 +2096,7 @@ nsEventStateManager::DetermineDragTarget(nsPresContext* aPresContext,
 bool
 nsEventStateManager::DoDefaultDragStart(nsPresContext* aPresContext,
                                         WidgetDragEvent* aDragEvent,
-                                        nsDOMDataTransfer* aDataTransfer,
+                                        DataTransfer* aDataTransfer,
                                         nsIContent* aDragTarget,
                                         nsISelection* aSelection)
 {
