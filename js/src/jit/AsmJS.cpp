@@ -14,19 +14,23 @@
 
 #include "jsmath.h"
 #include "jsworkers.h"
+#include "jsprf.h"
 #include "prmjtime.h"
 
 #include "frontend/Parser.h"
+#include "jit/AsmJSLink.h"
 #include "jit/AsmJSModule.h"
 #include "jit/CodeGenerator.h"
 #include "jit/MIR.h"
 #include "jit/MIRGraph.h"
 #include "jit/PerfSpewer.h"
+#include "vm/Interpreter.h"
 
-#include "jsfuninlines.h"
+#include "jsinferinlines.h"
 
-#include "frontend/ParseMaps-inl.h"
 #include "frontend/ParseNode-inl.h"
+#include "frontend/Parser-inl.h"
+#include "gc/Barrier-inl.h"
 
 using namespace js;
 using namespace js::frontend;
@@ -972,25 +976,21 @@ class MOZ_STACK_CLASS ModuleCompiler
     class Func
     {
         PropertyName *name_;
+        bool defined_;
         uint32_t srcOffset_;
         Signature sig_;
         Label *code_;
         unsigned compileTime_;
 
       public:
-        Func(JSContext *cx, PropertyName *name, MoveRef<Signature> sig, Label *code)
-          : name_(name), srcOffset_(UINT32_MAX), sig_(sig), code_(code), compileTime_(0) {}
-
-        Func(MoveRef<Func> rhs)
-          : name_(rhs->name_),
-            sig_(Move(rhs->sig_)),
-            code_(rhs->code_),
-            compileTime_(rhs->compileTime_)
+        Func(PropertyName *name, MoveRef<Signature> sig, Label *code)
+          : name_(name), defined_(false), srcOffset_(0), sig_(sig), code_(code), compileTime_(0)
         {}
 
         PropertyName *name() const { return name_; }
-        void initSrcOffset(uint32_t srcOffset) { srcOffset_ = srcOffset; }
-        uint32_t srcOffset() const { JS_ASSERT(srcOffset_ != UINT32_MAX); return srcOffset_; }
+        bool defined() const { return defined_; }
+        void define(uint32_t so) { JS_ASSERT(!defined_); defined_ = true; srcOffset_ = so; }
+        uint32_t srcOffset() const { JS_ASSERT(defined_); return srcOffset_; }
         Signature &sig() { return sig_; }
         const Signature &sig() const { return sig_; }
         Label *code() const { return code_; }
@@ -1384,7 +1384,7 @@ class MOZ_STACK_CLASS ModuleCompiler
         Label *code = moduleLifo_.new_<Label>();
         if (!code)
             return false;
-        *func = moduleLifo_.new_<Func>(cx_, name, sig, code);
+        *func = moduleLifo_.new_<Func>(name, sig, code);
         if (!*func)
             return false;
         return functions_.append(*func);
@@ -4697,10 +4697,10 @@ CheckFunction(ModuleCompiler &m, LifoAlloc &lifo, MIRGenerator **mir, ModuleComp
     if (!CheckFunctionSignature(m, fn, Move(sig), FunctionName(fn), &func))
         return false;
 
-    if (func->code()->bound())
+    if (func->defined())
         return m.failName(fn, "function '%s' already defined", FunctionName(fn));
 
-    func->initSrcOffset(fn->pn_pos.begin);
+    func->define(fn->pn_pos.begin);
     func->accumulateCompileTime((PRMJ_Now() - before) / PRMJ_USEC_PER_MSEC);
 
     m.parser().release(mark);
@@ -6311,6 +6311,9 @@ js::CompileAsmJS(JSContext *cx, AsmJSParser &parser, ParseNode *stmtList, bool *
 
     if (!cx->hasOption(JSOPTION_ASMJS))
         return Warn(cx, JSMSG_USE_ASM_TYPE_FAIL, "Disabled by javascript.options.asmjs in about:config");
+
+    if (!parser.options().compileAndGo)
+        return Warn(cx, JSMSG_USE_ASM_TYPE_FAIL, "Temporarily disabled for event-handler and other cloneable scripts");
 
     if (cx->compartment()->debugMode())
         return Warn(cx, JSMSG_USE_ASM_TYPE_FAIL, "Disabled by debugger");

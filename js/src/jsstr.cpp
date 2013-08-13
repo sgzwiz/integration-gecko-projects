@@ -15,14 +15,14 @@
  * allocations in the same native method.
  */
 
-#include "jsstrinlines.h"
+#include "jsstr.h"
 
 #include "mozilla/Attributes.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/PodOperations.h"
 
-#include <stdlib.h>
+#include <ctype.h>
 #include <string.h>
 
 #include "jsapi.h"
@@ -35,7 +35,6 @@
 #include "jsnum.h"
 #include "jsobj.h"
 #include "jsopcode.h"
-#include "jsprf.h"
 #include "jstypes.h"
 #include "jsutil.h"
 #include "jsversion.h"
@@ -47,7 +46,6 @@
 #include "vm/RegExpObject.h"
 #include "vm/RegExpStatics.h"
 #include "vm/ScopeObject.h"
-#include "vm/Shape.h"
 #include "vm/StringBuffer.h"
 
 #include "jsinferinlines.h"
@@ -810,7 +808,7 @@ str_toLocaleUpperCase(JSContext *cx, unsigned argc, Value *vp)
     return ToUpperCaseHelper(cx, args);
 }
 
-#if !ENABLE_INTL_API
+#if !EXPOSE_INTL_API
 static bool
 str_localeCompare(JSContext *cx, unsigned argc, Value *vp)
 {
@@ -1090,6 +1088,56 @@ js::StringHasPattern(const jschar *text, uint32_t textlen,
 {
     return StringMatch(text, textlen, pat, patlen) != -1;
 }
+
+// When an algorithm does not need a string represented as a single linear
+// array of characters, this range utility may be used to traverse the string a
+// sequence of linear arrays of characters. This avoids flattening ropes.
+class StringSegmentRange
+{
+    // If malloc() shows up in any profiles from this vector, we can add a new
+    // StackAllocPolicy which stashes a reusable freed-at-gc buffer in the cx.
+    AutoStringVector stack;
+    Rooted<JSLinearString*> cur;
+
+    bool settle(JSString *str) {
+        while (str->isRope()) {
+            JSRope &rope = str->asRope();
+            if (!stack.append(rope.rightChild()))
+                return false;
+            str = rope.leftChild();
+        }
+        cur = &str->asLinear();
+        return true;
+    }
+
+  public:
+    StringSegmentRange(JSContext *cx)
+      : stack(cx), cur(cx)
+    {}
+
+    JS_WARN_UNUSED_RESULT bool init(JSString *str) {
+        JS_ASSERT(stack.empty());
+        return settle(str);
+    }
+
+    bool empty() const {
+        return cur == NULL;
+    }
+
+    JSLinearString *front() const {
+        JS_ASSERT(!cur->isRope());
+        return cur;
+    }
+
+    JS_WARN_UNUSED_RESULT bool popFront() {
+        JS_ASSERT(!empty());
+        if (stack.empty()) {
+            cur = NULL;
+            return true;
+        }
+        return settle(stack.popCopy());
+    }
+};
 
 /*
  * RopeMatch takes the text to search and the pattern to search for in the text.
@@ -1934,6 +1982,31 @@ js::str_search(JSContext *cx, unsigned argc, Value *vp)
     return true;
 }
 
+// Utility for building a rope (lazy concatenation) of strings.
+class RopeBuilder {
+    JSContext *cx;
+    RootedString res;
+
+    RopeBuilder(const RopeBuilder &other) MOZ_DELETE;
+    void operator=(const RopeBuilder &other) MOZ_DELETE;
+
+  public:
+    RopeBuilder(JSContext *cx)
+      : cx(cx), res(cx, cx->runtime()->emptyString)
+    {}
+
+    inline bool append(HandleString str) {
+        res = ConcatStrings<CanGC>(cx, res, str);
+        return !!res;
+    }
+
+    inline JSString *result() {
+        return res;
+    }
+};
+
+namespace {
+
 struct ReplaceData
 {
     ReplaceData(JSContext *cx)
@@ -1957,6 +2030,8 @@ struct ReplaceData
     FastInvokeGuard    fig;            /* used for lambda calls, also holds arguments */
     StringBuffer       sb;             /* buffer built during DoMatch */
 };
+
+} /* anonymous namespace */
 
 static bool
 ReplaceRegExp(JSContext *cx, RegExpStatics *res, ReplaceData &rdata);
@@ -3474,7 +3549,7 @@ static const JSFunctionSpec string_methods[] = {
     JS_FN("trimRight",         str_trimRight,         0,JSFUN_GENERIC_NATIVE),
     JS_FN("toLocaleLowerCase", str_toLocaleLowerCase, 0,JSFUN_GENERIC_NATIVE),
     JS_FN("toLocaleUpperCase", str_toLocaleUpperCase, 0,JSFUN_GENERIC_NATIVE),
-#if ENABLE_INTL_API
+#if EXPOSE_INTL_API
          {"localeCompare",     {NULL, NULL},          1,0, "String_localeCompare"},
 #else
     JS_FN("localeCompare",     str_localeCompare,     1,JSFUN_GENERIC_NATIVE),
@@ -3582,7 +3657,7 @@ static const JSFunctionSpec string_static_methods[] = {
 
     // This must be at the end because of bug 853075: functions listed after
     // self-hosted methods aren't available in self-hosted code.
-#if ENABLE_INTL_API
+#if EXPOSE_INTL_API
          {"localeCompare",     {NULL, NULL},          2,0, "String_static_localeCompare"},
 #endif
     JS_FS_END

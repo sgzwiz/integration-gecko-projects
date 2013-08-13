@@ -15,7 +15,6 @@
 
 #include <ctype.h>
 #include <stdarg.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -50,7 +49,6 @@
 #if ENABLE_YARR_JIT
 #include "assembler/jit/ExecutableAllocator.h"
 #endif
-#include "builtin/BinaryData.h"
 #include "builtin/Eval.h"
 #include "builtin/Intl.h"
 #include "builtin/MapObject.h"
@@ -60,7 +58,6 @@
 #include "frontend/FullParseHandler.h"  // for JS_BufferIsCompileableUnit
 #include "frontend/Parser.h" // for JS_BufferIsCompileableUnit
 #include "gc/Marking.h"
-#include "gc/Memory.h"
 #include "jit/AsmJSLink.h"
 #include "js/CharacterEncoding.h"
 #if ENABLE_INTL_API
@@ -83,6 +80,7 @@
 #include "yarr/BumpPointerAllocator.h"
 
 #include "jsatominlines.h"
+#include "jsfuninlines.h"
 #include "jsinferinlines.h"
 #include "jsscriptinlines.h"
 
@@ -690,12 +688,12 @@ JS_Init(void)
     if (!ForkJoinSlice::InitializeTLS())
         return false;
 
-#if ENABLE_INTL_API
+#if EXPOSE_INTL_API
     UErrorCode err = U_ZERO_ERROR;
     u_init(&err);
     if (U_FAILURE(err))
         return false;
-#endif // ENABLE_INTL_API
+#endif // EXPOSE_INTL_API
 
     jsInitState = Running;
     return true;
@@ -718,9 +716,9 @@ JS_ShutDown(void)
 
     PRMJ_NowShutdown();
 
-#if ENABLE_INTL_API
+#if EXPOSE_INTL_API
     u_cleanup();
-#endif // ENABLE_INTL_API
+#endif // EXPOSE_INTL_API
 
     jsInitState = ShutDown;
 }
@@ -767,7 +765,7 @@ JS_SetICUMemoryFunctions(JS_ICUAllocFn allocFn, JS_ICUReallocFn reallocFn, JS_IC
                "must call JS_SetICUMemoryFunctions before any other JSAPI "
                "operation (including JS_Init)");
 
-#if ENABLE_INTL_API
+#if EXPOSE_INTL_API
     UErrorCode status = U_ZERO_ERROR;
     u_setMemoryFunctions(/* context = */ NULL, allocFn, reallocFn, freeFn, &status);
     return U_SUCCESS(status);
@@ -1398,7 +1396,7 @@ static const JSStdName standard_class_atoms[] = {
     {js_InitParallelArrayClass,         EAGER_ATOM_AND_OCLASP(ParallelArray)},
 #endif
     {js_InitProxyClass,                 EAGER_CLASS_ATOM(Proxy), OCLASP(ObjectProxy)},
-#if ENABLE_INTL_API
+#if EXPOSE_INTL_API
     {js_InitIntlClass,                  EAGER_ATOM_AND_CLASP(Intl)},
 #endif
 #ifdef ENABLE_BINARYDATA
@@ -3603,7 +3601,7 @@ GetPropertyDescriptorById(JSContext *cx, HandleObject obj, HandleId id, unsigned
     if (!LookupPropertyById(cx, obj, id, flags, &obj2, &shape))
         return false;
 
-    JS_ASSERT(desc.isClear());
+    desc.clear();
     if (!shape || (own && obj != obj2))
         return true;
 
@@ -3638,15 +3636,11 @@ GetPropertyDescriptorById(JSContext *cx, HandleObject obj, HandleId id, unsigned
 
 JS_PUBLIC_API(bool)
 JS_GetPropertyDescriptorById(JSContext *cx, JSObject *objArg, jsid idArg, unsigned flags,
-                             JSPropertyDescriptor *desc_)
+                             MutableHandle<JSPropertyDescriptor> desc)
 {
     RootedObject obj(cx, objArg);
     RootedId id(cx, idArg);
-    Rooted<PropertyDescriptor> desc(cx);
-    if (!GetPropertyDescriptorById(cx, obj, id, flags, false, &desc))
-        return false;
-    *desc_ = desc;
-    return true;
+    return GetPropertyDescriptorById(cx, obj, id, flags, false, desc);
 }
 
 JS_PUBLIC_API(bool)
@@ -5425,17 +5419,17 @@ JS_New(JSContext *cx, JSObject *ctorArg, unsigned argc, jsval *argv)
 }
 
 JS_PUBLIC_API(JSOperationCallback)
-JS_SetOperationCallback(JSContext *cx, JSOperationCallback callback)
+JS_SetOperationCallback(JSRuntime *rt, JSOperationCallback callback)
 {
-    JSOperationCallback old = cx->operationCallback;
-    cx->operationCallback = callback;
+    JSOperationCallback old = rt->operationCallback;
+    rt->operationCallback = callback;
     return old;
 }
 
 JS_PUBLIC_API(JSOperationCallback)
-JS_GetOperationCallback(JSContext *cx)
+JS_GetOperationCallback(JSRuntime *rt)
 {
-    return cx->operationCallback;
+    return rt->operationCallback;
 }
 
 JS_PUBLIC_API(void)
