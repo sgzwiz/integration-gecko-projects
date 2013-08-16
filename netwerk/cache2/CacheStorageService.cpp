@@ -1162,6 +1162,39 @@ CacheStorageService::AddStorageEntry(nsCSubstring const& aContextKey,
   return NS_OK;
 }
 
+namespace { // anon
+
+class CacheEntryDoomByKeyCallback : public CacheFileIOListener
+{
+public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+
+  CacheEntryDoomByKeyCallback(nsICacheEntryDoomCallback* aCallback)
+    : mCallback(aCallback) { }
+private:
+  NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult) { return NS_OK; }
+  NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, const char *aBuf, nsresult aResult) { return NS_OK; }
+  NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, char *aBuf, nsresult aResult) { return NS_OK; }
+  NS_IMETHOD OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult);
+  NS_IMETHOD OnEOFSet(CacheFileHandle *aHandle, nsresult aResult) { return NS_OK; }
+
+  nsCOMPtr<nsICacheEntryDoomCallback> mCallback;
+};
+
+NS_IMETHODIMP CacheEntryDoomByKeyCallback::OnFileDoomed(CacheFileHandle *aHandle, 
+                                                        nsresult aResult)
+{
+  if (!mCallback)
+    return NS_OK;
+
+  mCallback->OnCacheEntryDoomed(aResult);
+  return NS_OK;
+}
+
+NS_IMPL_ISUPPORTS1(CacheEntryDoomByKeyCallback, CacheFileIOListener);
+
+} // anon
+
 nsresult
 CacheStorageService::DoomStorageEntry(CacheStorage const* aStorage,
                                       nsIURI *aURI,
@@ -1214,15 +1247,18 @@ CacheStorageService::DoomStorageEntry(CacheStorage const* aStorage,
   LOG(("  no entry loaded for %s", entryKey.get()));
 
   if (aStorage->WriteToDisk()) {
-    LOG(("  dooming file only for %s", entryKey.get()));
-    // TODO - go to the disk and doom the entry...
-    // ? should record the entry is doomed and don't let open the file
-    //   but the file io thread queue should ensure we first remove the
-    //   existing file before anyone else would try to open it
+    nsAutoCString contextKey;
+    LoadContextInfoMappingKey(contextKey, aStorage->LoadInfo());
 
-    // HACK...
-    if (aCallback)
-      aCallback->OnCacheEntryDoomed(NS_ERROR_NOT_AVAILABLE);
+    rv = CacheEntry::HashingKey(contextKey, aIdExtension, aURI, entryKey);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    LOG(("  dooming file only for %s", entryKey.get()));
+    
+    nsRefPtr<CacheEntryDoomByKeyCallback> callback(
+      new CacheEntryDoomByKeyCallback(aCallback));
+    rv = CacheFileIOManager::DoomFileByKey(entryKey, callback);
+    NS_ENSURE_SUCCESS(rv, rv);
 
     return NS_OK;
   }
