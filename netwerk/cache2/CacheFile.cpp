@@ -1359,8 +1359,7 @@ CacheFile::NotifyChunkListener(CacheFileChunkListener *aCallback,
   if (aTarget)
     rv = aTarget->Dispatch(ev, NS_DISPATCH_NORMAL);
   else
-//    rv = NS_DispatchToCurrentThread(ev);  // temporary HACK (see below)
-    rv = NS_DispatchToMainThread(ev);
+    rv = NS_DispatchToCurrentThread(ev);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
