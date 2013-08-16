@@ -256,8 +256,10 @@ public:
     , mVisitEntries(aVisitEntries)
     , mUsingDisk(aUsingDisk)
   {
+    MOZ_ASSERT(NS_IsMainThread());
   }
 
+private:
   NS_IMETHODIMP Run()
   {
     if (CacheStorageService::IsOnManagementThread()) {
@@ -313,7 +315,12 @@ public:
     return NS_OK;
   }
 
-private:
+  virtual ~WalkRunnable()
+  {
+    if (mCallback)
+      ProxyReleaseMainThread(mCallback);
+  }
+
   static PLDHashOperator
   WalkStorage(const nsACString& aKey,
               CacheEntry* aEntry,
