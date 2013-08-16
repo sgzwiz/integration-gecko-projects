@@ -1178,6 +1178,7 @@ public:
 
   CacheEntryDoomByKeyCallback(nsICacheEntryDoomCallback* aCallback)
     : mCallback(aCallback) { }
+  virtual ~CacheEntryDoomByKeyCallback() { }
 private:
   NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult) { return NS_OK; }
   NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, const char *aBuf, nsresult aResult) { return NS_OK; }
@@ -1188,7 +1189,7 @@ private:
   nsCOMPtr<nsICacheEntryDoomCallback> mCallback;
 };
 
-NS_IMETHODIMP CacheEntryDoomByKeyCallback::OnFileDoomed(CacheFileHandle *aHandle, 
+NS_IMETHODIMP CacheEntryDoomByKeyCallback::OnFileDoomed(CacheFileHandle *aHandle,
                                                         nsresult aResult)
 {
   if (!mCallback)
@@ -1261,7 +1262,7 @@ CacheStorageService::DoomStorageEntry(CacheStorage const* aStorage,
     NS_ENSURE_SUCCESS(rv, rv);
 
     LOG(("  dooming file only for %s", entryKey.get()));
-    
+
     nsRefPtr<CacheEntryDoomByKeyCallback> callback(
       new CacheEntryDoomByKeyCallback(aCallback));
     rv = CacheFileIOManager::DoomFileByKey(entryKey, callback);
