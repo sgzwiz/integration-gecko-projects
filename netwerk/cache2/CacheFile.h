@@ -184,16 +184,31 @@ class CacheFileAutoLock {
 public:
   CacheFileAutoLock(CacheFile *aFile)
     : mFile(aFile)
+    , mLocked(true)
   {
     mFile->Lock();
   }
   ~CacheFileAutoLock()
   {
+    if (mLocked)
+      mFile->Unlock();
+  }
+  void Lock()
+  {
+    MOZ_ASSERT(!mLocked);
+    mFile->Lock();
+    mLocked = true;
+  }
+  void Unlock()
+  {
+    MOZ_ASSERT(mLocked);
     mFile->Unlock();
+    mLocked = false;
   }
 
 private:
   nsRefPtr<CacheFile> mFile;
+  bool mLocked;
 };
 
 } // net
