@@ -330,6 +330,8 @@ CacheFile::Release()
   if (count == 1) {
     bool deleteFile = false;
 
+    // Not using CacheFileAutoLock since it hard-refers the file
+    // and in it's destructor reenters this method.
     Lock();
 
     if (mMemoryOnly) {
@@ -345,15 +347,15 @@ CacheFile::Release()
       }
     }
 
+    Unlock();
+
     if (!deleteFile) {
-      Unlock();
       return count;
-    } else {
-      Unlock();
-      NS_LOG_RELEASE(this, 0, "CacheFile");
-      delete (this);
-      return 0;
     }
+
+    NS_LOG_RELEASE(this, 0, "CacheFile");
+    delete (this);
+    return 0;
   }
 
   return count;
