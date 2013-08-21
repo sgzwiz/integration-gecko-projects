@@ -249,6 +249,7 @@ webidl_files = \
   SimpleGestureEvent.webidl \
   SourceBuffer.webidl \
   SourceBufferList.webidl \
+  StorageType.webidl \
   StyleSheet.webidl \
   SVGAElement.webidl \
   SVGAltGlyphElement.webidl \

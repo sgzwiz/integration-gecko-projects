@@ -44,6 +44,9 @@ interface IDBDatabase : EventTarget {
 };
 
 partial interface IDBDatabase {
+    [Pref="dom.indexedDB.experimental.enabled"]
+    readonly    attribute DOMString          storage;
+
     [Throws]
     IDBRequest mozCreateFileHandle (DOMString name, optional DOMString type);
 };

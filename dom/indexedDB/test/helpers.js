@@ -3,7 +3,10 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+const experimentalPref = "dom.indexedDB.experimental.enabled";
+
 var testGenerator = testSteps();
+var experimentalEnabled = false;
 var archiveReaderEnabled = false;
 
 // The test js is shared between xpcshell (which has no SpecialPowers object)
@@ -84,6 +87,7 @@ if (!window.runTest) {
       allowUnlimitedQuota();
     }
 
+    enableExperimental();
     enableArchiveReader();
 
     clearAllDatabases(function () { testGenerator.next(); });
@@ -93,6 +97,7 @@ if (!window.runTest) {
 function finishTest()
 {
   resetUnlimitedQuota();
+  resetExperimental();
   resetArchiveReader();
   SpecialPowers.notifyObserversInParentProcess(null, "disk-space-watcher",
                                                "free");
@@ -253,8 +258,24 @@ function resetArchiveReader()
   SpecialPowers.setBoolPref("dom.archivereader.enabled", archiveReaderEnabled);
 }
 
+function enableExperimental()
+{
+  experimentalEnabled = SpecialPowers.getBoolPref(experimentalPref);
+  SpecialPowers.setBoolPref(experimentalPref, true);
+}
+
+function resetExperimental()
+{
+  SpecialPowers.setBoolPref(experimentalPref, experimentalEnabled);
+}
+
 function gc()
 {
   SpecialPowers.forceGC();
   SpecialPowers.forceCC();
+}
+
+function scheduleGC()
+{
+  SpecialPowers.exactGC(window, continueToNextStep);
 }

@@ -1191,7 +1191,9 @@ TabParent::ReceiveMessage(const nsString& aMessage,
 }
 
 PIndexedDBParent*
-TabParent::AllocPIndexedDBParent(const nsCString& aASCIIOrigin, bool* /* aAllowed */)
+TabParent::AllocPIndexedDBParent(
+                            const nsCString& aGroup,
+                            const nsCString& aASCIIOrigin, bool* /* aAllowed */)
 {
   return new IndexedDBParent(this);
 }
@@ -1205,6 +1207,7 @@ TabParent::DeallocPIndexedDBParent(PIndexedDBParent* aActor)
 
 bool
 TabParent::RecvPIndexedDBConstructor(PIndexedDBParent* aActor,
+                                     const nsCString& aGroup,
                                      const nsCString& aASCIIOrigin,
                                      bool* aAllowed)
 {
@@ -1259,7 +1262,7 @@ TabParent::RecvPIndexedDBConstructor(PIndexedDBParent* aActor,
   NS_ASSERTION(contentParent, "Null manager?!");
 
   nsRefPtr<IDBFactory> factory;
-  rv = IDBFactory::Create(window, aASCIIOrigin, contentParent,
+  rv = IDBFactory::Create(window, aGroup, aASCIIOrigin, contentParent,
                           getter_AddRefs(factory));
   NS_ENSURE_SUCCESS(rv, false);
 
