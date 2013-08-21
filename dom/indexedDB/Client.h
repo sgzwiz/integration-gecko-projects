@@ -24,7 +24,6 @@ public:
   NS_IMETHOD_(nsrefcnt)
   AddRef() MOZ_OVERRIDE;
 
-
   NS_IMETHOD_(nsrefcnt)
   Release() MOZ_OVERRIDE;
 
