@@ -48,6 +48,8 @@ class RuntimeStats;
 
 BEGIN_WORKERS_NAMESPACE
 
+class WorkerChild;
+class WorkerParent;
 class WorkerPrivate;
 
 class WorkerRunnable : public nsIRunnable
@@ -254,6 +256,7 @@ protected:
   mozilla::CondVar mMemoryReportCondVar;
 
 private:
+  uint64_t mTopLevelId;
   JSObject* mJSObject;
   WorkerPrivate* mParent;
   JSContext* mParentJSContext;
@@ -289,6 +292,9 @@ private:
   bool mEvalAllowed;
   bool mReportCSPViolations;
 
+  WorkerParent* mWorkerParent;
+  WorkerChild* mWorkerChild;
+
 protected:
   WorkerPrivateParent(JSContext* aCx, JS::Handle<JSObject*> aObject, WorkerPrivate* aParent,
                       JSContext* aParentJSContext, const nsAString& aScriptURL,
@@ -323,6 +329,18 @@ private:
   }
 
 public:
+  int64_t
+  GetTopLevelId() const
+  {
+    return mTopLevelId;
+  }
+
+  void
+  SetTopLevelId(uint64_t aTopLevelId)
+  {
+    mTopLevelId = aTopLevelId;
+  }
+
   // May be called on any thread...
   bool
   Start();
@@ -607,6 +625,23 @@ public:
   AssertInnerWindowIsCorrect() const
   { }
 #endif
+
+  void
+  SetWorkerParent(WorkerParent* aWorkerParent)
+  {
+    NS_ASSERTION(!aWorkerParent || !mWorkerParent,
+                 "Shouldn't have more than one!");
+    mWorkerParent = aWorkerParent;
+  }
+
+  WorkerParent*
+  GetWorkerParent() const
+  {
+    return mWorkerParent;
+  }
+
+  WorkerChild*
+  GetWorkerChild();
 
   void RegisterHostObjectURI(const nsACString& aURI);
   void UnregisterHostObjectURI(const nsACString& aURI);

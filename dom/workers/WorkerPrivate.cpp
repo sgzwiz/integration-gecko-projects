@@ -58,12 +58,25 @@
 #include "Events.h"
 #include "Exceptions.h"
 #include "File.h"
+#include "IPCThreadUtils.h"
 #include "Principal.h"
 #include "RuntimeService.h"
 #include "ScriptLoader.h"
 #include "Worker.h"
 #include "WorkerFeature.h"
 #include "WorkerScope.h"
+
+#include "ipc/WorkerChild.h"
+#include "ipc/WorkerModuleChild.h"
+#include "ipc/WorkerParent.h"
+
+#ifdef CreateFile
+#undef CreateFile
+#endif
+
+#ifdef PostMessage
+#undef PostMessage
+#endif
 
 // GC will run once every thirty seconds during normal execution.
 #define NORMAL_GC_TIMER_DELAY_MS 30000
@@ -649,6 +662,11 @@ public:
   Run()
   {
     AssertIsOnMainThread();
+
+    WorkerParent* workerParent = mFinishedWorker->GetWorkerParent();
+    if (workerParent && !workerParent->Send__delete__(workerParent)) {
+      NS_WARNING("Failed to send delete!");
+    }
 
     AutoSafeJSContext cx;
     JSAutoRequest ar(cx);
@@ -1906,12 +1924,13 @@ WorkerPrivateParent<Derived>::WorkerPrivateParent(
 : EventTarget(aParent ? aCx : NULL), mMutex("WorkerPrivateParent Mutex"),
   mCondVar(mMutex, "WorkerPrivateParent CondVar"),
   mMemoryReportCondVar(mMutex, "WorkerPrivateParent Memory Report CondVar"),
-  mJSObject(aObject), mParent(aParent), mParentJSContext(aParentJSContext),
-  mScriptURL(aScriptURL), mDomain(aDomain), mBusyCount(0),
-  mParentStatus(Pending), mJSObjectRooted(false), mParentSuspended(false),
-  mIsChromeWorker(aIsChromeWorker), mPrincipalIsSystem(false),
-  mMainThreadObjectsForgotten(false), mEvalAllowed(aEvalAllowed),
-  mReportCSPViolations(aReportCSPViolations)
+  mTopLevelId(0), mJSObject(aObject), mParent(aParent),
+  mParentJSContext(aParentJSContext), mScriptURL(aScriptURL), mDomain(aDomain),
+  mBusyCount(0), mParentStatus(Pending), mJSObjectRooted(false),
+  mParentSuspended(false), mIsChromeWorker(aIsChromeWorker),
+  mPrincipalIsSystem(false), mMainThreadObjectsForgotten(false),
+  mEvalAllowed(aEvalAllowed), mReportCSPViolations(aReportCSPViolations),
+  mWorkerParent(nullptr), mWorkerChild(nullptr)
 {
   MOZ_COUNT_CTOR(mozilla::dom::workers::WorkerPrivateParent);
 
@@ -2499,6 +2518,31 @@ WorkerPrivateParent<Derived>::ParentJSContext() const
   }
 
   return mParentJSContext;
+}
+
+template <class Derived>
+WorkerChild*
+WorkerPrivateParent<Derived>::GetWorkerChild()
+{
+  AssertIsOnIPCThread();
+
+  if (GetParent()) {
+    return GetParent()->GetWorkerChild();
+  }
+
+  if (!mWorkerChild) {
+    WorkerModuleChild* workerModuleChild =
+      RuntimeService::GetWorkerModuleChild();
+
+    WorkerChild* workerChild = new WorkerChild();
+
+    WorkerHandle handle(mTopLevelId);
+    workerModuleChild->SendPWorkerConstructor(workerChild, handle);
+
+    mWorkerChild = workerChild;
+  }
+
+  return mWorkerChild;
 }
 
 WorkerPrivate::WorkerPrivate(JSContext* aCx, JS::Handle<JSObject*> aObject,

@@ -1,0 +1,25 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+include protocol PWorker;
+
+include "mozilla/dom/workers/SerializationHelpers.h";
+
+using mozilla::dom::workers::WorkerHandle;
+
+namespace mozilla {
+namespace dom {
+namespace workers {
+
+protocol PWorkerModule
+{
+    manages PWorker;
+
+parent:
+    PWorker(WorkerHandle handle);
+};
+
+} // namespace workers
+} // namespace dom
+} // namespace mozilla

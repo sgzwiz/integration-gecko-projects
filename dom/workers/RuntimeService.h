@@ -18,17 +18,25 @@
 #include "nsAutoPtr.h"
 #include "nsClassHashtable.h"
 #include "nsCOMPtr.h"
+#include "nsDataHashtable.h"
 #include "nsHashKeys.h"
 #include "nsStringGlue.h"
 #include "nsTArray.h"
 
+class MessageLoop;
 class nsIThread;
 class nsITimer;
 class nsPIDOMWindow;
 
+namespace base {
+class Thread;
+}
+
 BEGIN_WORKERS_NAMESPACE
 
 class WorkerPrivate;
+class WorkerModuleParent;
+class WorkerModuleChild;
 
 class RuntimeService MOZ_FINAL : public nsIObserver
 {
@@ -68,10 +76,20 @@ class RuntimeService MOZ_FINAL : public nsIObserver
   // Only used on the main thread.
   nsCOMPtr<nsITimer> mIdleThreadTimer;
 
+  // Only used on the main thread.
+  uint64_t mLastTopLevelWorkerId;
+  nsDataHashtable<nsUint64HashKey, WorkerPrivate*> mTopLevelWorkers;
+
   nsCString mDetectorName;
   nsCString mSystemCharset;
 
   static JSSettings sDefaultJSSettings;
+
+  nsRefPtr<WorkerModuleParent> mWorkerModuleParent;
+  nsRefPtr<WorkerModuleChild> mWorkerModuleChild;
+  base::Thread* mIPCThread;
+  MessageLoop* mIPCMessageLoop;
+  mozilla::Mutex mIPCMutex;
 
 public:
   struct NavigatorStrings
@@ -201,6 +219,44 @@ public:
 
   void
   GarbageCollectAllWorkers(bool aShrinking);
+
+  static WorkerPrivate*
+  GetTopLevelWorker(uint64_t aTopLevelId)
+  {
+    AssertIsOnMainThread();
+
+    RuntimeService* service = GetService();
+    NS_ASSERTION(service, "Must have a service here!");
+
+    return service->mTopLevelWorkers.Get(aTopLevelId);
+  }
+
+  static MessageLoop*
+  IPCMessageLoop()
+  {
+    RuntimeService* service = GetService();
+    NS_ASSERTION(service, "Must have a service here!");
+
+    return service->mIPCMessageLoop;
+  }
+
+  static Mutex&
+  IPCMutex()
+  {
+    RuntimeService* service = GetService();
+    NS_ASSERTION(service, "Must have a service here!");
+
+    return service->mIPCMutex;
+  }
+
+  static WorkerModuleChild*
+  GetWorkerModuleChild()
+  {
+    RuntimeService* service = GetService();
+    NS_ASSERTION(service, "Must have a service here!");
+
+    return service->mWorkerModuleChild;
+  }
 
 private:
   RuntimeService();

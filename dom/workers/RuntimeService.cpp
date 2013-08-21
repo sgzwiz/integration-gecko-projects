@@ -18,6 +18,7 @@
 #include "nsPIDOMWindow.h"
 
 #include <algorithm>
+#include "base/thread.h"
 #include "GeckoProfiler.h"
 #include "jsdbgapi.h"
 #include "jsfriendapi.h"
@@ -44,11 +45,15 @@
 #include "Worker.h"
 #include "WorkerPrivate.h"
 
+#include "ipc/WorkerModuleParent.h"
+#include "ipc/WorkerModuleChild.h"
+
 using namespace mozilla;
 using namespace mozilla::dom;
 
 USING_WORKERS_NAMESPACE
 
+using base::Thread;
 using mozilla::MutexAutoLock;
 using mozilla::MutexAutoUnlock;
 using mozilla::Preferences;
@@ -1103,8 +1108,11 @@ END_WORKERS_NAMESPACE
 JSSettings RuntimeService::sDefaultJSSettings;
 
 RuntimeService::RuntimeService()
-: mMutex("RuntimeService::mMutex"), mObserved(false),
-  mShuttingDown(false), mNavigatorStringsLoaded(false)
+: mMutex("RuntimeService::mMutex"), mLastTopLevelWorkerId(0),
+  mIPCThread(nullptr), mIPCMessageLoop(nullptr),
+  mIPCMutex("RuntimeService::mIPCMutex"),
+  mObserved(false), mShuttingDown(false),
+  mNavigatorStringsLoaded(false)
 {
   AssertIsOnMainThread();
   NS_ASSERTION(!gRuntimeService, "More than one service!");
@@ -1235,6 +1243,9 @@ RuntimeService::RegisterWorker(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
     NS_ASSERTION(!windowArray->Contains(aWorkerPrivate),
                  "Already know about this worker!");
     windowArray->AppendElement(aWorkerPrivate);
+
+    aWorkerPrivate->SetTopLevelId(mLastTopLevelWorkerId++);
+    mTopLevelWorkers.Put(aWorkerPrivate->GetTopLevelId(), aWorkerPrivate);
   }
 
   if (!queued && !ScheduleWorker(aCx, aWorkerPrivate)) {
@@ -1320,6 +1331,8 @@ RuntimeService::UnregisterWorker(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
       NS_ASSERTION(!queuedWorker, "How can this be?!");
       mWindowMap.Remove(window);
     }
+
+    mTopLevelWorkers.Remove(aWorkerPrivate->GetTopLevelId());
   }
 
   if (queuedWorker && !ScheduleWorker(aCx, queuedWorker)) {
@@ -1465,6 +1478,7 @@ RuntimeService::Init()
 
   mDomainMap.Init();
   mWindowMap.Init();
+  mTopLevelWorkers.Init();
 
   nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
   NS_ENSURE_TRUE(obs, NS_ERROR_FAILURE);
@@ -1555,6 +1569,22 @@ RuntimeService::Init()
   rv = InitOSFileConstants();
   if (NS_FAILED(rv)) {
     return rv;
+  }
+
+  mIPCThread = new Thread("WorkersIPCThread");
+  if (!mIPCThread->Start()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  mIPCMessageLoop = mIPCThread->message_loop();
+
+  mWorkerModuleParent = new WorkerModuleParent();
+
+  mWorkerModuleChild = new WorkerModuleChild();
+
+  if (!mWorkerModuleParent->Open(mWorkerModuleChild->GetIPCChannel(),
+                                 mIPCMessageLoop, ipc::AsyncChannel::Parent)) {
+    return NS_ERROR_FAILURE;
   }
 
   return NS_OK;
@@ -1705,6 +1735,9 @@ RuntimeService::Cleanup()
   }
 
   CleanupOSFileConstants();
+
+  mIPCThread->Stop();
+
   nsLayoutStatics::Release();
 }
 

@@ -105,6 +105,8 @@ public:
     else {
       mAnchor.clear();
     }
+
+    return *this;
   }
 
   T*

@@ -4,12 +4,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+DIRS += ['ipc']
 TEST_DIRS += ['test']
 
 MODULE = 'dom'
 
 # Public stuff.
 EXPORTS.mozilla.dom.workers += [
+    'WorkerHandle.h',
     'Workers.h',
 ]
 
@@ -39,6 +41,7 @@ CPP_SOURCES += [
     'Exceptions.cpp',
     'File.cpp',
     'FileReaderSync.cpp',
+    'IPCThreadUtils.cpp',
     'Location.cpp',
     'Navigator.cpp',
     'Principal.cpp',
@@ -54,6 +57,4 @@ CPP_SOURCES += [
     'XMLHttpRequestEventTarget.cpp',
     'XMLHttpRequestUpload.cpp',
 ]
-
-LIBRARY_NAME = 'domworkers_s'
 
