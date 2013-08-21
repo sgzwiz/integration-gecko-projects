@@ -28,6 +28,18 @@ private:
   virtual void
   ActorDestroy(ActorDestroyReason aWhy) MOZ_OVERRIDE;
 
+  virtual PIndexedDBParent*
+  AllocPIndexedDBParent(const nsCString& aGroup,
+                        const nsCString& aASCIIOrigin) MOZ_OVERRIDE;
+
+  virtual bool
+  DeallocPIndexedDBParent(PIndexedDBParent* aActor) MOZ_OVERRIDE;
+
+  virtual bool
+  RecvPIndexedDBConstructor(PIndexedDBParent* aActor,
+                            const nsCString& aGroup,
+                            const nsCString& aASCIIOrigin) MOZ_OVERRIDE;
+
   WorkerPrivate* mWorkerPrivate;
 };
 

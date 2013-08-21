@@ -10,6 +10,7 @@ EXPORTS.mozilla.dom.workers += [
 ]
 
 CPP_SOURCES += [
+    'IndexedDBWorkerChild.cpp',
     'WorkerChild.cpp',
     'WorkerModuleChild.cpp',
     'WorkerModuleParent.cpp',

@@ -73,9 +73,8 @@ struct ObjectStoreInfoMap
 } // anonymous namespace
 
 IDBFactory::IDBFactory()
-: mPrivilege(Content), mDefaultPersistenceType(PERSISTENCE_TYPE_TEMPORARY),
-  mOwningObject(nullptr), mActorChild(nullptr), mActorParent(nullptr),
-  mContentParent(nullptr), mRootedOwningObject(false)
+: mPrivilege(Content), mOwningObject(nullptr), mActorChild(nullptr),
+  mActorParent(nullptr), mContentParent(nullptr), mRootedOwningObject(false)
 {
   SetIsDOMBinding();
 }
@@ -225,7 +224,7 @@ IDBFactory::Create(ContentParent* aContentParent,
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   NS_ASSERTION(IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
   NS_ASSERTION(nsContentUtils::IsCallerChrome(), "Only for chrome!");
-  NS_ASSERTION(aContentParent, "Null ContentParent!");
+  //NS_ASSERTION(aContentParent, "Null ContentParent!");
 
   NS_ASSERTION(!nsContentUtils::GetCurrentJSContext(), "Should be called from C++");
 
@@ -687,31 +686,6 @@ IDBFactory::DeleteDatabase(const nsAString& aName,
 {
   return Open(nullptr, aName, Optional<uint64_t>(), aOptions.mStorage, true,
               aRv);
-}
-
-int16_t
-IDBFactory::Cmp(JSContext* aCx, JS::Handle<JS::Value> aFirst,
-                JS::Handle<JS::Value> aSecond, ErrorResult& aRv)
-{
-  Key first, second;
-  nsresult rv = first.SetFromJSVal(aCx, aFirst);
-  if (NS_FAILED(rv)) {
-    aRv.Throw(rv);
-    return 0;
-  }
-
-  rv = second.SetFromJSVal(aCx, aSecond);
-  if (NS_FAILED(rv)) {
-    aRv.Throw(rv);
-    return 0;
-  }
-
-  if (first.IsUnset() || second.IsUnset()) {
-    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_DATA_ERR);
-    return 0;
-  }
-
-  return Key::CompareKeys(first, second);
 }
 
 already_AddRefed<IDBOpenDBRequest>

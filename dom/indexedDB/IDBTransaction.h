@@ -22,8 +22,8 @@
 #include "nsInterfaceHashtable.h"
 #include "nsRefPtrHashtable.h"
 
-#include "mozilla/dom/IDBTransactionBinding.h"
 #include "mozilla/dom/indexedDB/IDBDatabase.h"
+#include "mozilla/dom/indexedDB/IDBTransactionBase.h"
 #include "mozilla/dom/indexedDB/IDBWrapperCache.h"
 #include "mozilla/dom/indexedDB/FileInfo.h"
 
@@ -55,7 +55,8 @@ public:
 };
 
 class IDBTransaction : public IDBWrapperCache,
-                       public nsIRunnable
+                       public nsIRunnable,
+                       public IDBTransactionBase
 {
   friend class AsyncConnectionHelper;
   friend class CommitHelper;
@@ -68,16 +69,6 @@ public:
   NS_DECL_NSIRUNNABLE
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(IDBTransaction, IDBWrapperCache)
-
-  enum Mode
-  {
-    READ_ONLY = 0,
-    READ_WRITE,
-    VERSION_CHANGE,
-
-    // Only needed for IPC serialization helper, should never be used in code.
-    MODE_INVALID
-  };
 
   enum ReadyState
   {
@@ -130,16 +121,6 @@ public:
   bool IsFinished() const
   {
     return mReadyState > LOADING;
-  }
-
-  bool IsWriteAllowed() const
-  {
-    return mMode == READ_WRITE || mMode == VERSION_CHANGE;
-  }
-
-  bool IsAborted() const
-  {
-    return NS_FAILED(mAbortCode);
   }
 
   // 'Get' prefix is to avoid name collisions with the enum
@@ -202,12 +183,6 @@ public:
   nsresult
   Abort(nsresult aAbortCode);
 
-  nsresult
-  GetAbortCode() const
-  {
-    return mAbortCode;
-  }
-
 #ifdef MOZ_ENABLE_PROFILER_SPS
   uint64_t
   GetSerialNumber() const
@@ -228,7 +203,11 @@ public:
   }
 
   IDBTransactionMode
-  GetMode(ErrorResult& aRv) const;
+  GetMode(ErrorResult& aRv) const
+  {
+    NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+    return IDBTransactionBase::GetMode(aRv);
+  }
 
   IDBDatabase*
   Db() const
@@ -278,9 +257,7 @@ private:
   nsRefPtr<IDBDatabase> mDatabase;
   nsRefPtr<DatabaseInfo> mDatabaseInfo;
   nsRefPtr<DOMError> mError;
-  nsTArray<nsString> mObjectStoreNames;
   ReadyState mReadyState;
-  Mode mMode;
   uint32_t mPendingRequests;
 
   nsInterfaceHashtable<nsCStringHashKey, mozIStorageStatement>
@@ -303,7 +280,6 @@ private:
   IndexedDBTransactionChild* mActorChild;
   IndexedDBTransactionParent* mActorParent;
 
-  nsresult mAbortCode;
 #ifdef MOZ_ENABLE_PROFILER_SPS
   uint64_t mSerialNumber;
 #endif

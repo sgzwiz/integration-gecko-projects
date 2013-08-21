@@ -2062,6 +2062,20 @@ QuotaManager::GetStorageId(PersistenceType aPersistenceType,
 }
 
 // static
+void
+QuotaManager::GetStorageId(PersistenceType aPersistenceType,
+                           const nsACString& aOrigin,
+                           const nsAString& aName,
+                           nsACString& aId)
+{
+  aId.AppendInt(aPersistenceType);
+  aId.Append('*');
+  aId.Append(aOrigin);
+  aId.Append('*');
+  aId.Append(NS_ConvertUTF16toUTF8(aName));
+}
+
+// static
 nsresult
 QuotaManager::GetInfoFromURI(nsIURI* aURI,
                              uint32_t aAppId,

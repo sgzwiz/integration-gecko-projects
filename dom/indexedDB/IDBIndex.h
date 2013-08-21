@@ -15,6 +15,7 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 
+#include "mozilla/dom/indexedDB/IDBIndexBase.h"
 #include "mozilla/dom/indexedDB/IDBObjectStore.h"
 #include "mozilla/dom/indexedDB/IDBRequest.h"
 #include "mozilla/dom/indexedDB/KeyPath.h"
@@ -36,7 +37,8 @@ class Key;
 struct IndexInfo;
 
 class IDBIndex MOZ_FINAL : public nsISupports,
-                           public nsWrapperCache
+                           public nsWrapperCache,
+                           public IDBIndexBase
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -50,26 +52,6 @@ public:
   IDBObjectStore* ObjectStore()
   {
     return mObjectStore;
-  }
-
-  const int64_t Id() const
-  {
-    return mId;
-  }
-
-  const nsString& Name() const
-  {
-    return mName;
-  }
-
-  bool IsUnique() const
-  {
-    return mUnique;
-  }
-
-  bool IsMultiEntry() const
-  {
-    return mMultiEntry;
   }
 
   const KeyPath& GetKeyPath() const
@@ -232,16 +214,9 @@ private:
 
   nsRefPtr<IDBObjectStore> mObjectStore;
 
-  int64_t mId;
-  nsString mName;
-  KeyPath mKeyPath;
-  JS::Heap<JS::Value> mCachedKeyPath;
-
   IndexedDBIndexChild* mActorChild;
   IndexedDBIndexParent* mActorParent;
 
-  bool mUnique;
-  bool mMultiEntry;
   bool mRooted;
 };
 

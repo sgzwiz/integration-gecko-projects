@@ -932,6 +932,144 @@ const JSPropertySpec ProgressEvent::sProperties[] = {
   { 0, 0, 0, JSOP_NULLWRAPPER, JSOP_NULLWRAPPER }
 };
 
+class VersionChangeEvent : public Event
+{
+  static JSClass sClass;
+  static const JSPropertySpec sProperties[];
+
+public:
+  static JSClass*
+  Class()
+  {
+    return &sClass;
+  }
+
+  static JSObject*
+  InitClass(JSContext* aCx, JSObject* aObj, JSObject* aParentProto)
+  {
+    return JS_InitClass(aCx, aObj, aParentProto, &sClass, Construct, 0,
+                        sProperties, NULL, NULL, NULL);
+  }
+
+  static JSObject*
+  Create(JSContext* aCx, JS::Handle<JSObject*> aParent, uint64_t aOldVersion,
+         uint64_t aNewVersion)
+  {
+    JS::Rooted<JSString*> type(aCx, JS_InternString(aCx, "versionchange"));
+    if (!type) {
+      return NULL;
+    }
+
+    JS::Rooted<JSObject*> obj(aCx, JS_NewObject(aCx, &sClass, NULL, aParent));
+    if (!obj) {
+      return NULL;
+    }
+
+    VersionChangeEvent* priv = new VersionChangeEvent();
+    SetJSPrivateSafeish(obj, priv);
+    InitVersionChangeEventCommon(obj, priv, type, false, false, aOldVersion,
+                                 aNewVersion, true);
+    return obj;
+  }
+
+protected:
+  VersionChangeEvent()
+  {
+    MOZ_COUNT_CTOR(mozilla::dom::workers::VersionChangeEvent);
+  }
+
+  ~VersionChangeEvent()
+  {
+    MOZ_COUNT_DTOR(mozilla::dom::workers::VersionChangeEvent);
+  }
+
+  enum SLOT {
+    SLOT_oldVersion = Event::SLOT_COUNT,
+    SLOT_newVersion,
+
+    SLOT_COUNT,
+    SLOT_FIRST = SLOT_oldVersion
+  };
+
+private:
+  static VersionChangeEvent*
+  GetInstancePrivate(JSContext* aCx, JSObject* aObj, const char* aFunctionName)
+  {
+    JSClass* classPtr = JS_GetClass(aObj);
+    if (classPtr == &sClass) {
+      return GetJSPrivateSafeish<VersionChangeEvent>(aObj);
+    }
+
+    JS_ReportErrorNumber(aCx, js_GetErrorMessage, NULL,
+                         JSMSG_INCOMPATIBLE_PROTO, sClass.name, aFunctionName,
+                         classPtr->name);
+    return NULL;
+  }
+
+  static void
+  InitVersionChangeEventCommon(JSObject* aObj, Event* aEvent, JSString* aType,
+                               bool aBubbles, bool aCancelable,
+                               uint64_t aOldVersion, uint64_t aNewVersion,
+                               bool aIsTrusted)
+  {
+    Event::InitEventCommon(aObj, aEvent, aType, aBubbles, aCancelable,
+                           aIsTrusted);
+    JS_SetReservedSlot(aObj, SLOT_oldVersion, JS_NumberValue(aOldVersion));
+    JS_SetReservedSlot(aObj, SLOT_newVersion,
+                       aNewVersion ? JS_NumberValue(aNewVersion) : JSVAL_NULL);
+  }
+
+  static bool
+  Construct(JSContext* aCx, unsigned aArgc, jsval* aVp)
+  {
+    JS_ReportErrorNumber(aCx, js_GetErrorMessage, NULL, JSMSG_WRONG_CONSTRUCTOR,
+                         sClass.name);
+    return false;
+  }
+
+  static void
+  Finalize(JSFreeOp* aFop, JSObject* aObj)
+  {
+    JS_ASSERT(JS_GetClass(aObj) == &sClass);
+    delete GetJSPrivateSafeish<VersionChangeEvent>(aObj);
+  }
+
+  static bool
+  GetProperty(JSContext* aCx, JS::Handle<JSObject*> aObj,
+              JS::Handle<jsid> aIdval, JS::MutableHandle<JS::Value> aVp)
+  {
+    JS_ASSERT(JSID_IS_INT(aIdval));
+
+    int32_t slot = JSID_TO_INT(aIdval);
+
+    JS_ASSERT(slot >= SLOT_oldVersion && slot < SLOT_COUNT);
+
+    const char* name = sProperties[slot - SLOT_FIRST].name;
+    VersionChangeEvent* event = GetInstancePrivate(aCx, aObj, name);
+    if (!event) {
+      return false;
+    }
+
+    aVp.set(JS_GetReservedSlot(aObj, slot));
+    return true;
+  }
+};
+
+JSClass VersionChangeEvent::sClass = {
+  "WorkerVersionChangeEvent",
+  JSCLASS_HAS_PRIVATE | JSCLASS_HAS_RESERVED_SLOTS(SLOT_COUNT),
+  JS_PropertyStub, JS_DeletePropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
+  JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub, Finalize
+};
+
+const JSPropertySpec VersionChangeEvent::sProperties[] = {
+  { "oldVersion", SLOT_oldVersion, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { "newVersion", SLOT_newVersion, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { 0, 0, 0, JSOP_NULLWRAPPER, JSOP_NULLWRAPPER }
+};
+
 Event*
 Event::GetPrivate(JSObject* aObj)
 {
@@ -940,7 +1078,8 @@ Event::GetPrivate(JSObject* aObj)
     if (IsThisClass(classPtr) ||
         MessageEvent::IsThisClass(classPtr) ||
         ErrorEvent::IsThisClass(classPtr) ||
-        classPtr == ProgressEvent::Class()) {
+        classPtr == ProgressEvent::Class() ||
+        classPtr == VersionChangeEvent::Class()) {
       return GetJSPrivateSafeish<Event>(aObj);
     }
   }
@@ -963,7 +1102,8 @@ InitClasses(JSContext* aCx, JS::Handle<JSObject*> aGlobal, bool aMainRuntime)
 
   return MessageEvent::InitClass(aCx, aGlobal, eventProto, aMainRuntime) &&
          ErrorEvent::InitClass(aCx, aGlobal, eventProto, aMainRuntime) &&
-         ProgressEvent::InitClass(aCx, aGlobal, eventProto);
+         ProgressEvent::InitClass(aCx, aGlobal, eventProto) &&
+         VersionChangeEvent::InitClass(aCx, aGlobal, eventProto);
 }
 
 JSObject*
@@ -1000,6 +1140,14 @@ CreateProgressEvent(JSContext* aCx, JSString* aType, bool aLengthComputable,
   JS::Rooted<JSObject*> global(aCx, JS::CurrentGlobalOrNull(aCx));
   return ProgressEvent::Create(aCx, global, aType, aLengthComputable, aLoaded,
                                aTotal);
+}
+
+JSObject*
+CreateVersionChangeEvent(JSContext* aCx, uint64_t aOldVersion,
+                         uint64_t aNewVersion)
+{
+  JS::Rooted<JSObject*> global(aCx, JS::CurrentGlobalOrNull(aCx));
+  return VersionChangeEvent::Create(aCx, global, aOldVersion, aNewVersion);
 }
 
 bool

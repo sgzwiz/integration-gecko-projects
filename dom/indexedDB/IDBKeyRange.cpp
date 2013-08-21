@@ -294,20 +294,6 @@ IDBKeyRange::FromSerializedKeyRange(const T& aKeyRange)
   return keyRange.forget();
 }
 
-template <class T>
-void
-IDBKeyRange::ToSerializedKeyRange(T& aKeyRange)
-{
-  aKeyRange.lowerOpen() = IsLowerOpen();
-  aKeyRange.upperOpen() = IsUpperOpen();
-  aKeyRange.isOnly() = IsOnly();
-
-  aKeyRange.lower() = Lower();
-  if (!IsOnly()) {
-    aKeyRange.upper() = Upper();
-  }
-}
-
 NS_IMPL_CYCLE_COLLECTION_CLASS(IDBKeyRange)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(IDBKeyRange)
@@ -419,6 +405,3 @@ IDBKeyRange::GetUpperOpen(bool* aUpperOpen)
 // Explicitly instantiate for all our key range types... Grumble.
 template already_AddRefed<IDBKeyRange>
 IDBKeyRange::FromSerializedKeyRange<KeyRange> (const KeyRange& aKeyRange);
-
-template void
-IDBKeyRange::ToSerializedKeyRange<KeyRange> (KeyRange& aKeyRange);

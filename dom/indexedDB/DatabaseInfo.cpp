@@ -126,6 +126,62 @@ IndexUpdateInfo::~IndexUpdateInfo()
 
 #endif /* NS_BUILD_REFCNT_LOGGING */
 
+bool
+DatabaseInfoBase::GetObjectStoreNames(nsTArray<nsString>& aNames)
+{
+  aNames.Clear();
+  if (objectStoreHash) {
+    objectStoreHash->EnumerateRead(EnumerateObjectStoreNames, &aNames);
+  }
+  return true;
+}
+
+bool
+DatabaseInfoBase::ContainsStoreName(const nsAString& aName)
+{
+  return objectStoreHash && objectStoreHash->Get(aName, nullptr);
+}
+
+ObjectStoreInfo*
+DatabaseInfoBase::GetObjectStore(const nsAString& aName)
+{
+  if (objectStoreHash) {
+    return objectStoreHash->GetWeak(aName);
+  }
+
+  return nullptr;
+}
+
+bool
+DatabaseInfoBase::PutObjectStore(ObjectStoreInfo* aInfo)
+{
+  NS_ASSERTION(aInfo, "Null pointer!");
+
+  if (!objectStoreHash) {
+    nsAutoPtr<ObjectStoreInfoHash> hash(new ObjectStoreInfoHash());
+    hash->Init();
+    objectStoreHash = hash.forget();
+  }
+
+  if (objectStoreHash->Get(aInfo->name, nullptr)) {
+    NS_ERROR("Already have an entry for this objectstore!");
+    return false;
+  }
+
+  objectStoreHash->Put(aInfo->name, aInfo);
+  return true;
+}
+
+void
+DatabaseInfoBase::RemoveObjectStore(const nsAString& aName)
+{
+  NS_ASSERTION(GetObjectStore(aName), "Don't know about this one!");
+
+  if (objectStoreHash) {
+    objectStoreHash->Remove(aName);
+  }
+}
+
 // static
 bool
 DatabaseInfo::Get(nsIAtom* aId,
@@ -186,11 +242,7 @@ DatabaseInfo::GetObjectStoreNames(nsTArray<nsString>& aNames)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
-  aNames.Clear();
-  if (objectStoreHash) {
-    objectStoreHash->EnumerateRead(EnumerateObjectStoreNames, &aNames);
-  }
-  return true;
+  return DatabaseInfoBase::GetObjectStoreNames(aNames);
 }
 
 bool
@@ -198,7 +250,7 @@ DatabaseInfo::ContainsStoreName(const nsAString& aName)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
-  return objectStoreHash && objectStoreHash->Get(aName, nullptr);
+  return DatabaseInfoBase::ContainsStoreName(aName);
 }
 
 ObjectStoreInfo*
@@ -206,43 +258,23 @@ DatabaseInfo::GetObjectStore(const nsAString& aName)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
-  if (objectStoreHash) {
-    return objectStoreHash->GetWeak(aName);
-  }
-
-  return nullptr;
+  return DatabaseInfoBase::GetObjectStore(aName);
 }
 
 bool
 DatabaseInfo::PutObjectStore(ObjectStoreInfo* aInfo)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-  NS_ASSERTION(aInfo, "Null pointer!");
 
-  if (!objectStoreHash) {
-    nsAutoPtr<ObjectStoreInfoHash> hash(new ObjectStoreInfoHash());
-    hash->Init();
-    objectStoreHash = hash.forget();
-  }
-
-  if (objectStoreHash->Get(aInfo->name, nullptr)) {
-    NS_ERROR("Already have an entry for this objectstore!");
-    return false;
-  }
-
-  objectStoreHash->Put(aInfo->name, aInfo);
-  return true;
+  return DatabaseInfoBase::PutObjectStore(aInfo);
 }
 
 void
 DatabaseInfo::RemoveObjectStore(const nsAString& aName)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-  NS_ASSERTION(GetObjectStore(aName), "Don't know about this one!");
 
-  if (objectStoreHash) {
-    objectStoreHash->Remove(aName);
-  }
+  DatabaseInfoBase::RemoveObjectStore(aName);
 }
 
 already_AddRefed<DatabaseInfo>

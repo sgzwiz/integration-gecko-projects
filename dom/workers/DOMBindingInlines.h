@@ -6,7 +6,15 @@
 #ifndef mozilla_dom_workers_dombindinginlines_h__
 #define mozilla_dom_workers_dombindinginlines_h__
 
+#include "mozilla/dom/DOMStringListBinding.h"
 #include "mozilla/dom/FileReaderSyncBinding.h"
+#include "mozilla/dom/IDBCursorSyncBinding.h"
+#include "mozilla/dom/IDBDatabaseSyncBinding.h"
+#include "mozilla/dom/IDBFactorySyncBinding.h"
+#include "mozilla/dom/IDBIndexSyncBinding.h"
+#include "mozilla/dom/IDBKeyRangeBinding.h"
+#include "mozilla/dom/IDBObjectStoreSyncBinding.h"
+#include "mozilla/dom/IDBTransactionSyncBinding.h"
 #include "mozilla/dom/TextDecoderBinding.h"
 #include "mozilla/dom/TextEncoderBinding.h"
 #include "mozilla/dom/XMLHttpRequestBinding.h"
@@ -51,7 +59,16 @@ struct WrapPrototypeTraits
     }                                                                          \
   };
 
+SPECIALIZE_PROTO_TRAITS(DOMStringList)
 SPECIALIZE_PROTO_TRAITS(FileReaderSync)
+SPECIALIZE_PROTO_TRAITS(IDBCursorSync)
+SPECIALIZE_PROTO_TRAITS(IDBCursorWithValueSync)
+SPECIALIZE_PROTO_TRAITS(IDBDatabaseSync)
+SPECIALIZE_PROTO_TRAITS(IDBFactorySync)
+SPECIALIZE_PROTO_TRAITS(IDBIndexSync)
+SPECIALIZE_PROTO_TRAITS(IDBKeyRange)
+SPECIALIZE_PROTO_TRAITS(IDBObjectStoreSync)
+SPECIALIZE_PROTO_TRAITS(IDBTransactionSync)
 SPECIALIZE_PROTO_TRAITS(TextDecoder)
 SPECIALIZE_PROTO_TRAITS(TextEncoder)
 SPECIALIZE_PROTO_TRAITS(XMLHttpRequest)

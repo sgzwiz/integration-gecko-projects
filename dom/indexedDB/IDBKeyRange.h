@@ -8,11 +8,13 @@
 #define mozilla_dom_indexeddb_idbkeyrange_h__
 
 #include "mozilla/dom/indexedDB/IndexedDatabase.h"
-#include "mozilla/dom/indexedDB/Key.h"
 
 #include "nsIIDBKeyRange.h"
 
 #include "nsCycleCollectionParticipant.h"
+
+#include "mozilla/dom/indexedDB/IDBKeyRangeBase.h"
+#include "mozilla/dom/indexedDB/Key.h"
 
 class mozIStorageStatement;
 
@@ -22,7 +24,8 @@ namespace ipc {
 class KeyRange;
 } // namespace ipc
 
-class IDBKeyRange MOZ_FINAL : public nsIIDBKeyRange
+class IDBKeyRange MOZ_FINAL : public nsIIDBKeyRange,
+                              public IDBKeyRangeBase
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -43,45 +46,9 @@ public:
   IDBKeyRange(bool aLowerOpen,
               bool aUpperOpen,
               bool aIsOnly)
-  : mCachedLowerVal(JSVAL_VOID), mCachedUpperVal(JSVAL_VOID),
-    mLowerOpen(aLowerOpen), mUpperOpen(aUpperOpen), mIsOnly(aIsOnly),
-    mHaveCachedLowerVal(false), mHaveCachedUpperVal(false), mRooted(false)
+  : IDBKeyRangeBase(aLowerOpen, aUpperOpen, aIsOnly),
+    mRooted(false)
   { }
-
-  const Key& Lower() const
-  {
-    return mLower;
-  }
-
-  Key& Lower()
-  {
-    return mLower;
-  }
-
-  const Key& Upper() const
-  {
-    return mIsOnly ? mLower : mUpper;
-  }
-
-  Key& Upper()
-  {
-    return mIsOnly ? mLower : mUpper;
-  }
-
-  bool IsLowerOpen() const
-  {
-    return mLowerOpen;
-  }
-
-  bool IsUpperOpen() const
-  {
-    return mUpperOpen;
-  }
-
-  bool IsOnly() const
-  {
-    return mIsOnly;
-  }
 
   void GetBindingClause(const nsACString& aKeyColumnName,
                         nsACString& _retval) const
@@ -145,23 +112,11 @@ public:
     return NS_OK;
   }
 
-  template <class T>
-  void ToSerializedKeyRange(T& aKeyRange);
-
   void DropJSObjects();
 
 private:
   ~IDBKeyRange();
 
-  Key mLower;
-  Key mUpper;
-  JS::Heap<JS::Value> mCachedLowerVal;
-  JS::Heap<JS::Value> mCachedUpperVal;
-  bool mLowerOpen;
-  bool mUpperOpen;
-  bool mIsOnly;
-  bool mHaveCachedLowerVal;
-  bool mHaveCachedUpperVal;
   bool mRooted;
 };
 

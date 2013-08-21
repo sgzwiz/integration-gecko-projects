@@ -12,6 +12,8 @@
 
 interface DOMStringList {
   readonly attribute unsigned long length;
-  getter DOMString? item(unsigned long index);
+  // XXXjanv getters in workers tracked in bug 820339
+  //getter DOMString? item(unsigned long index);
+  DOMString? item(unsigned long index);
   boolean contains(DOMString string);
 };

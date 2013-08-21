@@ -26,6 +26,9 @@ namespace dom {
 class ContentParent;
 class PBlobParent;
 class TabParent;
+namespace workers {
+class WorkerParent;
+}
 }
 }
 
@@ -144,6 +147,7 @@ class IndexedDBParent : private PIndexedDBParent
 {
   friend class mozilla::dom::ContentParent;
   friend class mozilla::dom::TabParent;
+  friend class mozilla::dom::workers::WorkerParent;
   friend class IndexedDBDatabaseParent;
   friend class IndexedDBDeleteDatabaseRequestParent;
 
@@ -152,12 +156,14 @@ class IndexedDBParent : private PIndexedDBParent
 
   ContentParent* mManagerContent;
   TabParent* mManagerTab;
+  workers::WorkerParent* mManagerWorker;
 
   bool mDisconnected;
 
 public:
   IndexedDBParent(ContentParent* aContentParent);
   IndexedDBParent(TabParent* aTabParent);
+  IndexedDBParent(workers::WorkerParent* aWorkerParent);
 
   virtual ~IndexedDBParent();
 

@@ -395,13 +395,8 @@ IDBIndex::Create(IDBObjectStore* aObjectStore,
 }
 
 IDBIndex::IDBIndex()
-: mId(INT64_MIN),
-  mKeyPath(0),
-  mCachedKeyPath(JSVAL_VOID),
-  mActorChild(nullptr),
+: mActorChild(nullptr),
   mActorParent(nullptr),
-  mUnique(false),
-  mMultiEntry(false),
   mRooted(false)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
@@ -1308,7 +1303,7 @@ GetHelper::SendResponseToChildProcess(nsresult aResultCode)
     NS_ASSERTION(database, "This should never be null!");
 
     ContentParent* contentParent = database->GetContentParent();
-    NS_ASSERTION(contentParent, "This should never be null!");
+    //NS_ASSERTION(contentParent, "This should never be null!");
 
     FileManager* fileManager = database->Manager();
     NS_ASSERTION(fileManager, "This should never be null!");
@@ -1677,7 +1672,7 @@ GetAllHelper::SendResponseToChildProcess(nsresult aResultCode)
     NS_ASSERTION(database, "This should never be null!");
 
     ContentParent* contentParent = database->GetContentParent();
-    NS_ASSERTION(contentParent, "This should never be null!");
+    //NS_ASSERTION(contentParent, "This should never be null!");
 
     FileManager* fileManager = database->Manager();
     NS_ASSERTION(fileManager, "This should never be null!");
@@ -2364,7 +2359,7 @@ OpenCursorHelper::SendResponseToChildProcess(nsresult aResultCode)
     NS_ASSERTION(database, "This should never be null!");
 
     ContentParent* contentParent = database->GetContentParent();
-    NS_ASSERTION(contentParent, "This should never be null!");
+    //NS_ASSERTION(contentParent, "This should never be null!");
 
     FileManager* fileManager = database->Manager();
     NS_ASSERTION(fileManager, "This should never be null!");

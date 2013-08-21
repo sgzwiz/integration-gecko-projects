@@ -18,6 +18,14 @@ public:
   virtual ~WorkerChild();
 
   NS_INLINE_DECL_REFCOUNTING(WorkerChild)
+
+private:
+  virtual PIndexedDBChild*
+  AllocPIndexedDBChild(const nsCString& aGroup,
+                       const nsCString& aASCIIOrigin) MOZ_OVERRIDE;
+
+  virtual bool
+  DeallocPIndexedDBChild(PIndexedDBChild* aActor) MOZ_OVERRIDE;
 };
 
 END_WORKERS_NAMESPACE

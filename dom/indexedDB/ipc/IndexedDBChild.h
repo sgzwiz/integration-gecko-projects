@@ -64,6 +64,12 @@ protected:
   virtual void
   ActorDestroy(ActorDestroyReason aWhy) MOZ_OVERRIDE;
 
+  virtual bool
+  RecvResponse(const bool& aAllowed) MOZ_OVERRIDE
+  {
+    return true;
+  }
+
   virtual PIndexedDBDatabaseChild*
   AllocPIndexedDBDatabaseChild(const nsString& aName, const uint64_t& aVersion,
                                const PersistenceType& aPersistenceType)

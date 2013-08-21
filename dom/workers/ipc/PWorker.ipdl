@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PWorkerModule;
+include protocol PIndexedDB;
 
 namespace mozilla {
 namespace dom {
@@ -11,6 +12,11 @@ namespace workers {
 protocol PWorker
 {
     manager PWorkerModule;
+
+    manages PIndexedDB;
+
+parent:
+    PIndexedDB(nsCString group, nsCString asciiOrigin);
 
 child:
     __delete__();

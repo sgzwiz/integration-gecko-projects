@@ -18,6 +18,8 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 
+#include "mozilla/dom/indexedDB/IDBFactoryBase.h"
+
 class nsIAtom;
 class nsIFile;
 class nsIFileURL;
@@ -41,7 +43,8 @@ class IndexedDBParent;
 struct ObjectStoreInfo;
 
 class IDBFactory MOZ_FINAL : public nsISupports,
-                             public nsWrapperCache
+                             public nsWrapperCache,
+                             public IDBFactoryBase
 {
   typedef mozilla::dom::ContentParent ContentParent;
   typedef mozilla::dom::quota::PersistenceType PersistenceType;
@@ -141,12 +144,6 @@ public:
     mActorParent = aActorParent;
   }
 
-  const nsCString&
-  GetASCIIOrigin() const
-  {
-    return mASCIIOrigin;
-  }
-
   // nsWrapperCache
   virtual JSObject*
   WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
@@ -172,10 +169,6 @@ public:
   already_AddRefed<IDBOpenDBRequest>
   DeleteDatabase(const nsAString& aName, const IDBOpenDBOptions& aOptions,
                  ErrorResult& aRv);
-
-  int16_t
-  Cmp(JSContext* aCx, JS::Handle<JS::Value> aFirst,
-      JS::Handle<JS::Value> aSecond, ErrorResult& aRv);
 
   already_AddRefed<IDBOpenDBRequest>
   OpenForPrincipal(nsIPrincipal* aPrincipal, const nsAString& aName,
@@ -206,10 +199,7 @@ private:
        const Optional<mozilla::dom::StorageType>& aStorageType, bool aDelete,
        ErrorResult& aRv);
 
-  nsCString mGroup;
-  nsCString mASCIIOrigin;
   StoragePrivilege mPrivilege;
-  PersistenceType mDefaultPersistenceType;
 
   // If this factory lives on a window then mWindow must be non-null. Otherwise
   // mOwningObject must be non-null.

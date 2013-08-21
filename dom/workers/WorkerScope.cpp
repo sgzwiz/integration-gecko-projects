@@ -12,7 +12,16 @@
 #include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/EventTargetBinding.h"
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/DOMStringListBinding.h"
 #include "mozilla/dom/FileReaderSyncBinding.h"
+#include "mozilla/dom/IDBCursorSyncBinding.h"
+#include "mozilla/dom/IDBDatabaseSyncBinding.h"
+#include "mozilla/dom/IDBFactorySyncBinding.h"
+#include "mozilla/dom/IDBIndexSyncBinding.h"
+#include "mozilla/dom/IDBKeyRangeBinding.h"
+#include "mozilla/dom/IDBObjectStoreSyncBinding.h"
+//#include "mozilla/dom/IDBVersionChangeEventBinding.h"
+#include "mozilla/dom/IDBTransactionSyncBinding.h"
 #include "mozilla/dom/ImageData.h"
 #include "mozilla/dom/ImageDataBinding.h"
 #include "mozilla/dom/TextDecoderBinding.h"
@@ -37,6 +46,7 @@
 #include "Exceptions.h"
 #include "File.h"
 #include "FileReaderSync.h"
+#include "IDBFactorySync.h"
 #include "Location.h"
 #include "Navigator.h"
 #include "Principal.h"
@@ -53,9 +63,12 @@
 #define FUNCTION_FLAGS \
   JSPROP_ENUMERATE
 
+#define IDBSYNC_STR "indexedDBSync"
+
 using namespace mozilla;
 using namespace mozilla::dom;
 USING_WORKERS_NAMESPACE
+using mozilla::dom::workers::IDBFactorySync;
 
 namespace {
 
@@ -939,6 +952,52 @@ WorkerGlobalScope::GetInstancePrivate(JSContext* aCx, JSObject* aObj,
   return NULL;
 }
 
+bool
+IndexedDBSyncLazyGetter(JSContext* aCx, JS::Handle<JSObject*> aObj,
+                        JS::Handle<jsid> aId, JS::MutableHandle<JS::Value> aVp)
+{
+  NS_ASSERTION(JS_IsGlobalObject(aObj), "Not a global object!");
+  NS_ASSERTION(JSID_IS_STRING(aId), "Bad id!");
+  NS_ASSERTION(JS_FlatStringEqualsAscii(JSID_TO_FLAT_STRING(aId), IDBSYNC_STR),
+               "Bad id!");
+
+  IDBFactorySync* indexedDBSync = IDBFactorySync::Create(aCx, aObj);
+  if (!indexedDBSync) {
+    return false;
+  }
+
+  JS::Rooted<JS::Value> wrappedIndexedDBSync(aCx);
+  if (!WrapNewBindingObject(aCx, aObj, indexedDBSync, &wrappedIndexedDBSync)) {
+    return false;
+  }
+
+  if (!JS_DeletePropertyById(aCx, aObj, aId) ||
+      !JS_DefinePropertyById(aCx, aObj, aId, wrappedIndexedDBSync, NULL, NULL,
+                             JSPROP_ENUMERATE)) {
+    return false;
+  }
+
+  return JS_GetPropertyById(aCx, aObj, aId, aVp);
+}
+
+inline bool
+DefineIndexedDBSyncLazyGetter(JSContext* aCx, JSObject* aGlobal)
+{
+  JSString* indexedDBSyncStr = JS_InternString(aCx, IDBSYNC_STR);
+  if (!indexedDBSyncStr) {
+    return false;
+  }
+
+  jsid indexedDBSyncId = INTERNED_STRING_TO_JSID(aCx, indexedDBSyncStr);
+
+  if (!JS_DefinePropertyById(aCx, aGlobal, indexedDBSyncId, JSVAL_VOID,
+                             IndexedDBSyncLazyGetter, NULL, 0)) {
+    return false;
+  }
+
+  return true;
+}
+
 } /* anonymous namespace */
 
 BEGIN_WORKERS_NAMESPACE
@@ -1018,7 +1077,17 @@ CreateDedicatedWorkerGlobalScope(JSContext* aCx)
   }
 
   // Init other paris-bindings.
-  if (!FileReaderSyncBinding_workers::GetConstructorObject(aCx, global) ||
+  if (!DOMStringListBinding_workers::GetProtoObject(aCx, global) ||
+      !FileReaderSyncBinding_workers::GetConstructorObject(aCx, global) ||
+      !IDBCursorSyncBinding_workers::GetProtoObject(aCx, global) ||
+      !IDBCursorWithValueSyncBinding_workers::GetProtoObject(aCx, global) ||
+      !IDBDatabaseSyncBinding_workers::GetProtoObject(aCx, global) ||
+      !IDBFactorySyncBinding_workers::GetProtoObject(aCx, global) ||
+      !IDBIndexSyncBinding_workers::GetProtoObject(aCx, global) ||
+      !IDBKeyRangeBinding_workers::GetProtoObject(aCx, global) ||
+      !IDBObjectStoreSyncBinding_workers::GetProtoObject(aCx, global) ||
+//      !IDBVersionChangeEventBinding_workers::GetProtoObject(aCx, global) ||
+      !IDBTransactionSyncBinding_workers::GetProtoObject(aCx, global) ||
       !ImageDataBinding::GetConstructorObject(aCx, global) ||
       !TextDecoderBinding_workers::GetConstructorObject(aCx, global) ||
       !TextEncoderBinding_workers::GetConstructorObject(aCx, global) ||
@@ -1027,6 +1096,10 @@ CreateDedicatedWorkerGlobalScope(JSContext* aCx)
       !URLBinding_workers::GetConstructorObject(aCx, global) ||
       !WorkerLocationBinding_workers::GetConstructorObject(aCx, global) ||
       !WorkerNavigatorBinding_workers::GetConstructorObject(aCx, global)) {
+    return NULL;
+  }
+
+  if (!DefineIndexedDBSyncLazyGetter(aCx, global)) {
     return NULL;
   }
 

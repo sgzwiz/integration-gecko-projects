@@ -274,28 +274,6 @@ IDBCursor::Create(IDBRequest* aRequest,
 }
 
 // static
-IDBCursor::Direction
-IDBCursor::ConvertDirection(mozilla::dom::IDBCursorDirection aDirection)
-{
-  switch (aDirection) {
-    case mozilla::dom::IDBCursorDirection::Next:
-      return NEXT;
-
-    case mozilla::dom::IDBCursorDirection::Nextunique:
-      return NEXT_UNIQUE;
-
-    case mozilla::dom::IDBCursorDirection::Prev:
-      return PREV;
-
-    case mozilla::dom::IDBCursorDirection::Prevunique:
-      return PREV_UNIQUE;
-
-    default:
-      MOZ_CRASH("Unknown direction!");
-  }
-}
-
-// static
 already_AddRefed<IDBCursor>
 IDBCursor::CreateCommon(IDBRequest* aRequest,
                         IDBTransaction* aTransaction,
@@ -339,16 +317,8 @@ IDBCursor::CreateCommon(IDBRequest* aRequest,
 
 IDBCursor::IDBCursor()
 : mScriptOwner(nullptr),
-  mType(OBJECTSTORE),
-  mDirection(IDBCursor::NEXT),
-  mCachedKey(JSVAL_VOID),
-  mCachedPrimaryKey(JSVAL_VOID),
-  mCachedValue(JSVAL_VOID),
   mActorChild(nullptr),
   mActorParent(nullptr),
-  mHaveCachedKey(false),
-  mHaveCachedPrimaryKey(false),
-  mHaveCachedValue(false),
   mRooted(false),
   mContinueCalled(false),
   mHaveValue(true)
@@ -491,32 +461,6 @@ IDBCursor::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
           ? IDBCursorWithValueBinding::Wrap(aCx, aScope, this)
           : IDBCursorBinding::Wrap(aCx, aScope, this);
 }
-
-mozilla::dom::IDBCursorDirection
-IDBCursor::GetDirection() const
-{
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-
-  switch (mDirection) {
-    case NEXT:
-      return mozilla::dom::IDBCursorDirection::Next;
-
-    case NEXT_UNIQUE:
-      return mozilla::dom::IDBCursorDirection::Nextunique;
-
-    case PREV:
-      return mozilla::dom::IDBCursorDirection::Prev;
-
-    case PREV_UNIQUE:
-      return mozilla::dom::IDBCursorDirection::Prevunique;
-
-    case DIRECTION_INVALID:
-    default:
-      MOZ_CRASH("Unknown direction!");
-      return mozilla::dom::IDBCursorDirection::Next;
-  }
-}
-
 
 already_AddRefed<nsISupports>
 IDBCursor::Source() const
@@ -1067,7 +1011,7 @@ ContinueHelper::SendResponseToChildProcess(nsresult aResultCode)
     NS_ASSERTION(database, "This should never be null!");
 
     ContentParent* contentParent = database->GetContentParent();
-    NS_ASSERTION(contentParent, "This should never be null!");
+    //NS_ASSERTION(contentParent, "This should never be null!");
 
     FileManager* fileManager = database->Manager();
     NS_ASSERTION(fileManager, "This should never be null!");

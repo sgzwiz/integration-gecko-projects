@@ -18,6 +18,7 @@
 #include "jsapi.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CondVar.h"
+#include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/TimeStamp.h"
 #include "nsAutoPtr.h"
@@ -262,6 +263,9 @@ private:
   JSContext* mParentJSContext;
   nsString mScriptURL;
   nsCString mDomain;
+  nsCString mGroup;
+  nsCString mOrigin;
+  mozilla::dom::quota::PersistenceType mDefaultPersistenceType;
   LocationInfo mLocationInfo;
 
   // Main-thread things.
@@ -496,6 +500,24 @@ public:
   Domain() const
   {
     return mDomain;
+  }
+
+  const nsCString&
+  Group() const
+  {
+    return mGroup;
+  }
+
+  const nsCString&
+  Origin() const
+  {
+    return mOrigin;
+  }
+
+  mozilla::dom::quota::PersistenceType
+  DefaultPersistenceType() const
+  {
+    return mDefaultPersistenceType;;
   }
 
   nsIURI*

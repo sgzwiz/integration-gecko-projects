@@ -474,36 +474,6 @@ private:
   uint64_t mCount;
 };
 
-class MOZ_STACK_CLASS AutoRemoveIndex
-{
-public:
-  AutoRemoveIndex(ObjectStoreInfo* aObjectStoreInfo,
-                  const nsAString& aIndexName)
-  : mObjectStoreInfo(aObjectStoreInfo), mIndexName(aIndexName)
-  { }
-
-  ~AutoRemoveIndex()
-  {
-    if (mObjectStoreInfo) {
-      for (uint32_t i = 0; i < mObjectStoreInfo->indexes.Length(); i++) {
-        if (mObjectStoreInfo->indexes[i].name == mIndexName) {
-          mObjectStoreInfo->indexes.RemoveElementAt(i);
-          break;
-        }
-      }
-    }
-  }
-
-  void forget()
-  {
-    mObjectStoreInfo = nullptr;
-  }
-
-private:
-  ObjectStoreInfo* mObjectStoreInfo;
-  nsString mIndexName;
-};
-
 class ThreadLocalJSRuntime
 {
   JSRuntime* mRuntime;
@@ -902,89 +872,6 @@ IDBObjectStore::Create(IDBTransaction* aTransaction,
   }
 
   return objectStore.forget();
-}
-
-// static
-nsresult
-IDBObjectStore::AppendIndexUpdateInfo(
-                                    int64_t aIndexID,
-                                    const KeyPath& aKeyPath,
-                                    bool aUnique,
-                                    bool aMultiEntry,
-                                    JSContext* aCx,
-                                    JS::Handle<JS::Value> aVal,
-                                    nsTArray<IndexUpdateInfo>& aUpdateInfoArray)
-{
-  nsresult rv;
-
-  if (!aMultiEntry) {
-    Key key;
-    rv = aKeyPath.ExtractKey(aCx, aVal, key);
-
-    // If an index's keypath doesn't match an object, we ignore that object.
-    if (rv == NS_ERROR_DOM_INDEXEDDB_DATA_ERR || key.IsUnset()) {
-      return NS_OK;
-    }
-
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-
-    IndexUpdateInfo* updateInfo = aUpdateInfoArray.AppendElement();
-    updateInfo->indexId = aIndexID;
-    updateInfo->indexUnique = aUnique;
-    updateInfo->value = key;
-
-    return NS_OK;
-  }
-
-  JS::Rooted<JS::Value> val(aCx);
-  if (NS_FAILED(aKeyPath.ExtractKeyAsJSVal(aCx, aVal, val.address()))) {
-    return NS_OK;
-  }
-
-  if (!JSVAL_IS_PRIMITIVE(val) &&
-      JS_IsArrayObject(aCx, JSVAL_TO_OBJECT(val))) {
-    JS::Rooted<JSObject*> array(aCx, JSVAL_TO_OBJECT(val));
-    uint32_t arrayLength;
-    if (!JS_GetArrayLength(aCx, array, &arrayLength)) {
-      return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
-    }
-
-    for (uint32_t arrayIndex = 0; arrayIndex < arrayLength; arrayIndex++) {
-      JS::Rooted<JS::Value> arrayItem(aCx);
-      if (!JS_GetElement(aCx, array, arrayIndex, &arrayItem)) {
-        return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
-      }
-
-      Key value;
-      if (NS_FAILED(value.SetFromJSVal(aCx, arrayItem)) ||
-          value.IsUnset()) {
-        // Not a value we can do anything with, ignore it.
-        continue;
-      }
-
-      IndexUpdateInfo* updateInfo = aUpdateInfoArray.AppendElement();
-      updateInfo->indexId = aIndexID;
-      updateInfo->indexUnique = aUnique;
-      updateInfo->value = value;
-    }
-  }
-  else {
-    Key value;
-    if (NS_FAILED(value.SetFromJSVal(aCx, val)) ||
-        value.IsUnset()) {
-      // Not a value we can do anything with, ignore it.
-      return NS_OK;
-    }
-
-    IndexUpdateInfo* updateInfo = aUpdateInfoArray.AppendElement();
-    updateInfo->indexId = aIndexID;
-    updateInfo->indexUnique = aUnique;
-    updateInfo->value = value;
-  }
-
-  return NS_OK;
 }
 
 // static
@@ -1682,7 +1569,7 @@ IDBObjectStore::ConvertBlobsToActors(
 {
   NS_ASSERTION(IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-  NS_ASSERTION(aContentParent, "Null contentParent!");
+  //NS_ASSERTION(aContentParent, "Null contentParent!");
   NS_ASSERTION(aFileManager, "Null file manager!");
 
   if (!aFiles.IsEmpty()) {
@@ -1723,11 +1610,7 @@ IDBObjectStore::ConvertBlobsToActors(
 }
 
 IDBObjectStore::IDBObjectStore()
-: mId(INT64_MIN),
-  mKeyPath(0),
-  mCachedKeyPath(JSVAL_VOID),
-  mRooted(false),
-  mAutoIncrement(false),
+: mRooted(false),
   mActorChild(nullptr),
   mActorParent(nullptr)
 {
@@ -2289,9 +2172,8 @@ void
 IDBObjectStore::SetInfo(ObjectStoreInfo* aInfo)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread");
-  NS_ASSERTION(aInfo != mInfo, "This is nonsense");
 
-  mInfo = aInfo;
+  IDBObjectStoreBase::SetInfo(aInfo);
 }
 
 already_AddRefed<IDBIndex>
@@ -2641,16 +2523,7 @@ IDBObjectStore::CreateIndex(JSContext* aCx, const nsAString& aName,
     return nullptr;
   }
 
-  bool found = false;
-  uint32_t indexCount = mInfo->indexes.Length();
-  for (uint32_t index = 0; index < indexCount; index++) {
-    if (mInfo->indexes[index].name == aName) {
-      found = true;
-      break;
-    }
-  }
-
-  if (found) {
+  if (InfoContainsIndexName(aName)) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_CONSTRAINT_ERR);
     return nullptr;
   }
@@ -3289,7 +3162,7 @@ GetHelper::SendResponseToChildProcess(nsresult aResultCode)
     NS_ASSERTION(database, "This should never be null!");
 
     ContentParent* contentParent = database->GetContentParent();
-    NS_ASSERTION(contentParent, "This should never be null!");
+    //NS_ASSERTION(contentParent, "This should never be null!");
 
     FileManager* fileManager = database->Manager();
     NS_ASSERTION(fileManager, "This should never be null!");
@@ -3754,7 +3627,7 @@ OpenCursorHelper::SendResponseToChildProcess(nsresult aResultCode)
     NS_ASSERTION(database, "This should never be null!");
 
     ContentParent* contentParent = database->GetContentParent();
-    NS_ASSERTION(contentParent, "This should never be null!");
+    //NS_ASSERTION(contentParent, "This should never be null!");
 
     FileManager* fileManager = database->Manager();
     NS_ASSERTION(fileManager, "This should never be null!");
@@ -3997,7 +3870,7 @@ CreateIndexHelper::InsertDataFromObjectStore(mozIStorageConnection* aConnection)
     }
 
     nsTArray<IndexUpdateInfo> updateInfo;
-    rv = IDBObjectStore::AppendIndexUpdateInfo(mIndex->Id(),
+    rv = IDBObjectStoreBase::AppendIndexUpdateInfo(mIndex->Id(),
                                                mIndex->GetKeyPath(),
                                                mIndex->IsUnique(),
                                                mIndex->IsMultiEntry(),
@@ -4214,7 +4087,7 @@ GetAllHelper::SendResponseToChildProcess(nsresult aResultCode)
     NS_ASSERTION(database, "This should never be null!");
 
     ContentParent* contentParent = database->GetContentParent();
-    NS_ASSERTION(contentParent, "This should never be null!");
+    //NS_ASSERTION(contentParent, "This should never be null!");
 
     FileManager* fileManager = database->Manager();
     NS_ASSERTION(fileManager, "This should never be null!");

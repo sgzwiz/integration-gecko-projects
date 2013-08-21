@@ -10,11 +10,11 @@
 #include "mozilla/dom/indexedDB/IndexedDatabase.h"
 
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/IDBCursorBinding.h"
 #include "mozilla/ErrorResult.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 
+#include "mozilla/dom/indexedDB/IDBCursorBase.h"
 #include "mozilla/dom/indexedDB/IDBObjectStore.h"
 #include "mozilla/dom/indexedDB/Key.h"
 
@@ -35,7 +35,8 @@ class IndexedDBCursorChild;
 class IndexedDBCursorParent;
 
 class IDBCursor MOZ_FINAL : public nsISupports,
-                            public nsWrapperCache
+                            public nsWrapperCache,
+                            public IDBCursorBase
 {
   friend class ContinueHelper;
   friend class ContinueObjectStoreHelper;
@@ -45,24 +46,6 @@ class IDBCursor MOZ_FINAL : public nsISupports,
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(IDBCursor)
-
-  enum Type
-  {
-    OBJECTSTORE = 0,
-    INDEXKEY,
-    INDEXOBJECT
-  };
-
-  enum Direction
-  {
-    NEXT = 0,
-    NEXT_UNIQUE,
-    PREV,
-    PREV_UNIQUE,
-
-    // Only needed for IPC serialization helper, should never be used in code.
-    DIRECTION_INVALID
-  };
 
   // For OBJECTSTORE cursors.
   static
@@ -114,9 +97,6 @@ public:
     return mRequest;
   }
 
-  static Direction
-  ConvertDirection(IDBCursorDirection aDirection);
-
   void
   SetActor(IndexedDBCursorChild* aActorChild)
   {
@@ -163,7 +143,11 @@ public:
   Source() const;
 
   IDBCursorDirection
-  GetDirection() const;
+  GetDirection(ErrorResult& aRv) const
+  {
+    NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+    return IDBCursorBase::GetDirection(aRv);
+  }
 
   JS::Value
   GetKey(JSContext* aCx, ErrorResult& aRv);
@@ -210,29 +194,17 @@ protected:
 
   JS::Heap<JSObject*> mScriptOwner;
 
-  Type mType;
-  Direction mDirection;
   nsCString mContinueQuery;
   nsCString mContinueToQuery;
 
-  // These are cycle-collected!
-  JS::Heap<JS::Value> mCachedKey;
-  JS::Heap<JS::Value> mCachedPrimaryKey;
-  JS::Heap<JS::Value> mCachedValue;
-
   Key mRangeKey;
 
-  Key mKey;
-  Key mObjectKey;
   StructuredCloneReadInfo mCloneReadInfo;
   Key mContinueToKey;
 
   IndexedDBCursorChild* mActorChild;
   IndexedDBCursorParent* mActorParent;
 
-  bool mHaveCachedKey;
-  bool mHaveCachedPrimaryKey;
-  bool mHaveCachedValue;
   bool mRooted;
   bool mContinueCalled;
   bool mHaveValue;

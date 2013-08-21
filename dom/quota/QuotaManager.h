@@ -291,6 +291,12 @@ public:
                const nsACString& aOrigin,
                const nsAString& aName);
 
+  static void
+  GetStorageId(PersistenceType aPersistenceType,
+               const nsACString& aOrigin,
+               const nsAString& aName,
+               nsACString& aId);
+
   static nsresult
   GetInfoFromURI(nsIURI* aURI,
                  uint32_t aAppId,

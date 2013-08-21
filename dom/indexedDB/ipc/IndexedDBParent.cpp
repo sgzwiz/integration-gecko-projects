@@ -39,6 +39,7 @@ USING_INDEXEDDB_NAMESPACE
 
 using namespace mozilla;
 using namespace mozilla::dom;
+using namespace mozilla::dom::workers;
 
 /*******************************************************************************
  * AutoSetCurrentTransaction
@@ -61,17 +62,27 @@ AutoSetCurrentTransaction::~AutoSetCurrentTransaction()
  ******************************************************************************/
 
 IndexedDBParent::IndexedDBParent(ContentParent* aContentParent)
-: mManagerContent(aContentParent), mManagerTab(nullptr), mDisconnected(false)
+: mManagerContent(aContentParent), mManagerTab(nullptr),
+  mManagerWorker(nullptr), mDisconnected(false)
 {
   MOZ_COUNT_CTOR(IndexedDBParent);
   MOZ_ASSERT(aContentParent);
 }
 
 IndexedDBParent::IndexedDBParent(TabParent* aTabParent)
-: mManagerContent(nullptr), mManagerTab(aTabParent), mDisconnected(false)
+: mManagerContent(nullptr), mManagerTab(aTabParent), mManagerWorker(nullptr),
+  mDisconnected(false)
 {
   MOZ_COUNT_CTOR(IndexedDBParent);
   MOZ_ASSERT(aTabParent);
+}
+
+IndexedDBParent::IndexedDBParent(WorkerParent* aWorkerParent)
+: mManagerContent(nullptr), mManagerTab(nullptr), mManagerWorker(aWorkerParent),
+  mDisconnected(false)
+{
+  MOZ_COUNT_CTOR(IndexedDBParent);
+  MOZ_ASSERT(aWorkerParent);
 }
 
 IndexedDBParent::~IndexedDBParent()
@@ -115,7 +126,7 @@ IndexedDBParent::CheckPermissionInternal(const nsAString& aDatabaseName,
                                          const nsDependentCString& aPermission)
 {
   MOZ_ASSERT(!mASCIIOrigin.IsEmpty());
-  MOZ_ASSERT(mManagerContent || mManagerTab);
+  MOZ_ASSERT(mManagerContent || mManagerTab || mManagerWorker);
 
   if (mASCIIOrigin.EqualsLiteral(CHROME_ORIGIN)) {
     nsAutoCString fullPermission =

@@ -6,5 +6,6 @@
 
 DIRS += [
     'extensions',
+    'indexedDB',
     'subdir',
 ]

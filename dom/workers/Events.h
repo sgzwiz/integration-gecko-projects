@@ -35,6 +35,10 @@ JSObject*
 CreateProgressEvent(JSContext* aCx, JSString* aType, bool aLengthComputable,
                     double aLoaded, double aTotal);
 
+JSObject*
+CreateVersionChangeEvent(JSContext* aCx, uint64_t aOldVersion,
+                         uint64_t aNewVersion);
+
 bool
 IsSupportedEventClass(JSObject* aEvent);
 

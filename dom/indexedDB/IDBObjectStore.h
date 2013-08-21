@@ -14,9 +14,9 @@
 #include "mozilla/dom/IDBObjectStoreBinding.h"
 #include "nsCycleCollectionParticipant.h"
 
+#include "mozilla/dom/indexedDB/IDBObjectStoreBase.h"
 #include "mozilla/dom/indexedDB/IDBRequest.h"
 #include "mozilla/dom/indexedDB/IDBTransaction.h"
-#include "mozilla/dom/indexedDB/KeyPath.h"
 
 class nsIDOMBlob;
 class nsIScriptContext;
@@ -49,7 +49,8 @@ struct FileHandleData;
 struct BlobOrFileData;
 
 class IDBObjectStore MOZ_FINAL : public nsISupports,
-                                 public nsWrapperCache
+                                 public nsWrapperCache,
+                                 public IDBObjectStoreBase
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -60,15 +61,6 @@ public:
          ObjectStoreInfo* aInfo,
          nsIAtom* aDatabaseId,
          bool aCreating);
-
-  static nsresult
-  AppendIndexUpdateInfo(int64_t aIndexID,
-                        const KeyPath& aKeyPath,
-                        bool aUnique,
-                        bool aMultiEntry,
-                        JSContext* aCx,
-                        JS::Handle<JS::Value> aObject,
-                        nsTArray<IndexUpdateInfo>& aUpdateInfoArray);
 
   static nsresult
   UpdateIndexes(IDBTransaction* aTransaction,
@@ -130,25 +122,9 @@ public:
   ConvertActorsToBlobs(const InfallibleTArray<PBlobChild*>& aActors,
                        nsTArray<StructuredCloneFile>& aFiles);
 
-  const nsString& Name() const
-  {
-    return mName;
-  }
-
-  bool IsAutoIncrement() const
-  {
-    return mAutoIncrement;
-  }
-
   bool IsWriteAllowed() const
   {
     return mTransaction->IsWriteAllowed();
-  }
-
-  int64_t Id() const
-  {
-    NS_ASSERTION(mId != INT64_MIN, "Don't ask for this yet!");
-    return mId;
   }
 
   const KeyPath& GetKeyPath() const
@@ -156,19 +132,9 @@ public:
     return mKeyPath;
   }
 
-  const bool HasValidKeyPath() const
-  {
-    return mKeyPath.IsValid();
-  }
-
   IDBTransaction* Transaction()
   {
     return mTransaction;
-  }
-
-  ObjectStoreInfo* Info()
-  {
-    return mInfo;
   }
 
   void
@@ -369,14 +335,8 @@ protected:
 private:
   nsRefPtr<IDBTransaction> mTransaction;
 
-  int64_t mId;
-  nsString mName;
-  KeyPath mKeyPath;
-  JS::Heap<JS::Value> mCachedKeyPath;
   bool mRooted;
-  bool mAutoIncrement;
   nsCOMPtr<nsIAtom> mDatabaseId;
-  nsRefPtr<ObjectStoreInfo> mInfo;
 
   nsTArray<nsRefPtr<IDBIndex> > mCreatedIndexes;
 

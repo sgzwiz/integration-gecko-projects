@@ -4,7 +4,10 @@
 
 #include "WorkerChild.h"
 
+#include "mozilla/dom/indexedDB/PIndexedDBChild.h"
+
 USING_WORKERS_NAMESPACE
+using namespace mozilla::dom::indexedDB;
 
 WorkerChild::WorkerChild()
 {
@@ -14,4 +17,19 @@ WorkerChild::WorkerChild()
 WorkerChild::~WorkerChild()
 {
   MOZ_COUNT_DTOR(WorkerChild);
+}
+
+PIndexedDBChild*
+WorkerChild::AllocPIndexedDBChild(const nsCString& aGroup,
+                                  const nsCString& aASCIIOrigin)
+{
+  NS_NOTREACHED("Should never get here!");
+  return NULL;
+}
+
+bool
+WorkerChild::DeallocPIndexedDBChild(PIndexedDBChild* aActor)
+{
+  delete aActor;
+  return true;
 }

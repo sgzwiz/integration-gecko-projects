@@ -12,7 +12,9 @@ namespace mozilla {
 namespace dom {
 namespace workers {
 
-protocol PWorkerModule
+// This should really be "async", but we're using "rpc" as a workaround
+// for bug 716631.
+rpc protocol PWorkerModule
 {
     manages PWorker;
 

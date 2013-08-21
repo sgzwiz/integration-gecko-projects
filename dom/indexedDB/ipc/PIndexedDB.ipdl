@@ -6,6 +6,7 @@ include protocol PBrowser;
 include protocol PContent;
 include protocol PIndexedDBDatabase;
 include protocol PIndexedDBDeleteDatabaseRequest;
+include protocol PWorker;
 
 include "mozilla/dom/indexedDB/SerializationHelpers.h";
 
@@ -17,7 +18,7 @@ namespace indexedDB {
 
 protocol PIndexedDB
 {
-  manager PBrowser or PContent;
+  manager PBrowser or PContent or PWorker;
 
   manages PIndexedDBDatabase;
   manages PIndexedDBDeleteDatabaseRequest;
@@ -30,6 +31,10 @@ parent:
 
   PIndexedDBDeleteDatabaseRequest(nsString name,
                                   PersistenceType persistenceType);
+
+child:
+  Response(bool allowed);
+
 };
 
 } // namespace indexedDB

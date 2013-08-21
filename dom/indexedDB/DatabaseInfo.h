@@ -54,10 +54,29 @@ struct DatabaseInfoGuts
   int64_t nextIndexId;
 };
 
-struct DatabaseInfo : public DatabaseInfoGuts
+struct DatabaseInfoBase : public DatabaseInfoGuts
+{
+  DatabaseInfoBase()
+  : cloned(false)
+  { }
+
+  bool GetObjectStoreNames(nsTArray<nsString>& aNames);
+  bool ContainsStoreName(const nsAString& aName);
+
+  ObjectStoreInfo* GetObjectStore(const nsAString& aName);
+
+  bool PutObjectStore(ObjectStoreInfo* aInfo);
+
+  void RemoveObjectStore(const nsAString& aName);
+
+  nsString filePath;
+  bool cloned;
+  nsAutoPtr<ObjectStoreInfoHash> objectStoreHash;
+};
+
+struct DatabaseInfo : public DatabaseInfoBase
 {
   DatabaseInfo()
-  : cloned(false)
   { }
 
   ~DatabaseInfo();
@@ -70,6 +89,7 @@ struct DatabaseInfo : public DatabaseInfoGuts
   static void Remove(nsIAtom* aId);
 
   bool GetObjectStoreNames(nsTArray<nsString>& aNames);
+
   bool ContainsStoreName(const nsAString& aName);
 
   ObjectStoreInfo* GetObjectStore(const nsAString& aName);
@@ -81,10 +101,6 @@ struct DatabaseInfo : public DatabaseInfoGuts
   already_AddRefed<DatabaseInfo> Clone();
 
   nsCOMPtr<nsIAtom> id;
-  nsString filePath;
-  bool cloned;
-
-  nsAutoPtr<ObjectStoreInfoHash> objectStoreHash;
 
   NS_INLINE_DECL_REFCOUNTING(DatabaseInfo)
 };
@@ -192,6 +208,36 @@ struct IndexUpdateInfo
   int64_t indexId;
   bool indexUnique;
   Key value;
+};
+
+class MOZ_STACK_CLASS AutoRemoveIndex
+{
+public:
+  AutoRemoveIndex(ObjectStoreInfo* aObjectStoreInfo,
+                  const nsAString& aIndexName)
+  : mObjectStoreInfo(aObjectStoreInfo), mIndexName(aIndexName)
+  { }
+
+  ~AutoRemoveIndex()
+  {
+    if (mObjectStoreInfo) {
+      for (uint32_t i = 0; i < mObjectStoreInfo->indexes.Length(); i++) {
+        if (mObjectStoreInfo->indexes[i].name == mIndexName) {
+          mObjectStoreInfo->indexes.RemoveElementAt(i);
+          break;
+        }
+      }
+    }
+  }
+
+  void forget()
+  {
+    mObjectStoreInfo = nullptr;
+  }
+
+private:
+  ObjectStoreInfo* mObjectStoreInfo;
+  nsString mIndexName;
 };
 
 END_INDEXEDDB_NAMESPACE

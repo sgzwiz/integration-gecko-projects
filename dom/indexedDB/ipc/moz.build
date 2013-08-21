@@ -7,6 +7,7 @@
 MODULE = 'dom'
 
 EXPORTS.mozilla.dom.indexedDB += [
+    'IndexedDBParent.h',
     'SerializationHelpers.h',
 ]
 

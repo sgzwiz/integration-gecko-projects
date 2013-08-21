@@ -20,6 +20,7 @@
 #include "nsDOMEventTargetHelper.h"
 
 #include "mozilla/dom/indexedDB/FileManager.h"
+#include "mozilla/dom/indexedDB/IDBDatabaseBase.h"
 #include "mozilla/dom/indexedDB/IDBRequest.h"
 #include "mozilla/dom/indexedDB/IDBWrapperCache.h"
 
@@ -49,7 +50,8 @@ class IndexedDBDatabaseParent;
 struct ObjectStoreInfoGuts;
 
 class IDBDatabase : public IDBWrapperCache,
-                    public nsIOfflineStorage
+                    public nsIOfflineStorage,
+                    public IDBDatabaseBase
 {
   friend class AsyncConnectionHelper;
   friend class IndexedDatabaseManager;
@@ -86,11 +88,6 @@ public:
   DatabaseInfo* Info() const
   {
     return mDatabaseInfo;
-  }
-
-  const nsString& Name() const
-  {
-    return mName;
   }
 
   const nsString& FilePath() const
@@ -239,7 +236,6 @@ private:
   // transaction.
   nsRefPtr<DatabaseInfo> mPreviousDatabaseInfo;
   nsCOMPtr<nsIAtom> mDatabaseId;
-  nsString mName;
   nsString mFilePath;
   nsCString mASCIIOrigin;
 
@@ -254,8 +250,6 @@ private:
 
   bool mInvalidated;
   bool mRegistered;
-  bool mClosed;
-  bool mRunningVersionChange;
 };
 
 END_INDEXEDDB_NAMESPACE

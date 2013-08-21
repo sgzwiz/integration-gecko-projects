@@ -37,6 +37,7 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ImageData.h"
 #include "mozilla/dom/ImageDataBinding.h"
+#include "mozilla/dom/quota/QuotaManager.h"
 #include "nsAlgorithm.h"
 #include "nsContentUtils.h"
 #include "nsCxPusher.h"
@@ -2497,6 +2498,14 @@ WorkerPrivateParent<Derived>::SetPrincipal(nsIPrincipal* aPrincipal)
 
   mPrincipal = aPrincipal;
   mPrincipalIsSystem = nsContentUtils::IsSystemPrincipal(aPrincipal);
+
+  bool unknownAppId;
+  if (NS_SUCCEEDED(aPrincipal->GetUnknownAppId(&unknownAppId)) &&
+      !unknownAppId) {
+    quota::QuotaManager::GetInfoFromPrincipal(aPrincipal, &mGroup, &mOrigin,
+                                              nullptr,
+                                              &mDefaultPersistenceType);
+  }
 }
 
 template <class Derived>

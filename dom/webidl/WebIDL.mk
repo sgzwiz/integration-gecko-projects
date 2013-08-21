@@ -70,6 +70,7 @@ webidl_files = \
   DOMParser.webidl \
   DOMRequest.webidl \
   DOMSettableTokenList.webidl \
+  DOMStringList.webidl \
   DOMStringMap.webidl \
   DOMTokenList.webidl \
   DOMTransaction.webidl \
@@ -167,14 +168,23 @@ webidl_files = \
   HTMLUListElement.webidl \
   HTMLVideoElement.webidl \
   IDBCursor.webidl \
+  IDBCursorSync.webidl \
   IDBDatabase.webidl \
+  IDBDatabaseSync.webidl \
   IDBFactory.webidl \
+  IDBFactorySync.webidl \
   IDBFileHandle.webidl \
   IDBIndex.webidl \
+  IDBIndexSync.webidl \
+  IDBKeyRange.webidl \
   IDBObjectStore.webidl \
+  IDBObjectStoreSync.webidl \
   IDBOpenDBRequest.webidl \
   IDBRequest.webidl \
   IDBTransaction.webidl \
+  IDBTransactionCallback.webidl \
+  IDBTransactionSync.webidl \
+  IDBVersionChangeCallback.webidl \
   IDBVersionChangeEvent.webidl \
   ImageData.webidl \
   ImageDocument.webidl \

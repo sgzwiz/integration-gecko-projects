@@ -12,10 +12,11 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/storage.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/IDBDatabaseBinding.h"
 #include "mozilla/dom/quota/Client.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "nsDOMLists.h"
-#include "nsJSUtils.h"
+//#include "nsJSUtils.h"
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
 
@@ -33,8 +34,6 @@
 
 #include "ipc/IndexedDBChild.h"
 #include "ipc/IndexedDBParent.h"
-
-#include "mozilla/dom/IDBDatabaseBinding.h"
 
 USING_INDEXEDDB_NAMESPACE
 using mozilla::dom::ContentParent;
@@ -233,9 +232,7 @@ IDBDatabase::IDBDatabase()
   mActorParent(nullptr),
   mContentParent(nullptr),
   mInvalidated(false),
-  mRegistered(false),
-  mClosed(false),
-  mRunningVersionChange(false)
+  mRegistered(false)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
@@ -354,7 +351,7 @@ NS_IMETHODIMP_(bool)
 IDBDatabase::IsClosed()
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-  return mClosed;
+  return IDBDatabaseBase::IsClosed();
 }
 
 void

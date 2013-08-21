@@ -18,6 +18,7 @@ interface IDBCursor {
     // This should be: readonly    attribute (IDBObjectStore or IDBIndex) source;
     readonly    attribute nsISupports source;
 
+    [Throws]
     readonly    attribute IDBCursorDirection           direction;
 
     [Throws]

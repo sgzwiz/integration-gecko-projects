@@ -163,12 +163,10 @@ IDBTransaction::CreateInternal(IDBDatabase* aDatabase,
 
 IDBTransaction::IDBTransaction()
 : mReadyState(IDBTransaction::INITIAL),
-  mMode(IDBTransaction::READ_ONLY),
   mPendingRequests(0),
   mSavepointCount(0),
   mActorChild(nullptr),
   mActorParent(nullptr),
-  mAbortCode(NS_OK),
 #ifdef MOZ_ENABLE_PROFILER_SPS
   mSerialNumber(gNextSerialNumber++),
 #endif
@@ -632,28 +630,6 @@ JSObject*
 IDBTransaction::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 {
   return IDBTransactionBinding::Wrap(aCx, aScope, this);
-}
-
-mozilla::dom::IDBTransactionMode
-IDBTransaction::GetMode(ErrorResult& aRv) const
-{
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-
-  switch (mMode) {
-    case READ_ONLY:
-      return mozilla::dom::IDBTransactionMode::Readonly;
-
-    case READ_WRITE:
-      return mozilla::dom::IDBTransactionMode::Readwrite;
-
-    case VERSION_CHANGE:
-      return mozilla::dom::IDBTransactionMode::Versionchange;
-
-    case MODE_INVALID:
-    default:
-      aRv.Throw(NS_ERROR_UNEXPECTED);
-      return mozilla::dom::IDBTransactionMode::Readonly;
-  }
 }
 
 DOMError*
