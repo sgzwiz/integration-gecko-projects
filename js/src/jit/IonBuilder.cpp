@@ -159,10 +159,8 @@ IonBuilder::getSingleCallTarget(types::StackTypeSet *calleeTypes)
 }
 
 bool
-IonBuilder::getPolyCallTargets(types::StackTypeSet *calleeTypes,
-                               AutoObjectVector &targets,
-                               uint32_t maxTargets,
-                               bool *gotLambda)
+IonBuilder::getPolyCallTargets(types::StackTypeSet *calleeTypes, bool constructing,
+                               AutoObjectVector &targets, uint32_t maxTargets, bool *gotLambda)
 {
     JS_ASSERT(targets.length() == 0);
     JS_ASSERT(gotLambda);
@@ -183,18 +181,13 @@ IonBuilder::getPolyCallTargets(types::StackTypeSet *calleeTypes,
         return false;
     for(unsigned i = 0; i < objCount; i++) {
         JSObject *obj = calleeTypes->getSingleObject(i);
+        JSFunction *fun;
         if (obj) {
             if (!obj->is<JSFunction>()) {
                 targets.clear();
                 return true;
             }
-            if (obj->as<JSFunction>().isInterpreted() &&
-                !obj->as<JSFunction>().getOrCreateScript(cx))
-            {
-                return false;
-            }
-            DebugOnly<bool> appendOk = targets.append(obj);
-            JS_ASSERT(appendOk);
+            fun = &obj->as<JSFunction>();
         } else {
             types::TypeObject *typeObj = calleeTypes->getTypeObject(i);
             JS_ASSERT(typeObj);
@@ -202,13 +195,24 @@ IonBuilder::getPolyCallTargets(types::StackTypeSet *calleeTypes,
                 targets.clear();
                 return true;
             }
-            if (!typeObj->interpretedFunction->getOrCreateScript(cx))
-                return false;
-            DebugOnly<bool> appendOk = targets.append(typeObj->interpretedFunction);
-            JS_ASSERT(appendOk);
 
+            fun = typeObj->interpretedFunction;
             *gotLambda = true;
         }
+
+        if (fun->isInterpreted() && !fun->getOrCreateScript(cx))
+            return false;
+
+        // Don't optimize if we're constructing and the callee is not a
+        // constructor, so that CallKnown does not have to handle this case
+        // (it should always throw).
+        if (constructing && !fun->isInterpretedConstructor() && !fun->isNativeConstructor()) {
+            targets.clear();
+            return true;
+        }
+
+        DebugOnly<bool> appendOk = targets.append(fun);
+        JS_ASSERT(appendOk);
     }
 
     // For now, only inline "singleton" lambda calls
@@ -3980,121 +3984,6 @@ IonBuilder::getInlineableGetPropertyCache(CallInfo &callInfo)
     return NULL;
 }
 
-MPolyInlineDispatch *
-IonBuilder::makePolyInlineDispatch(JSContext *cx, CallInfo &callInfo,
-                                   MGetPropertyCache *getPropCache, MBasicBlock *bottom,
-                                   Vector<MDefinition *, 8, IonAllocPolicy> &retvalDefns)
-{
-    // If we're not optimizing away a GetPropertyCache, then this is pretty simple.
-    if (!getPropCache)
-        return MPolyInlineDispatch::New(callInfo.fun());
-
-    InlinePropertyTable *inlinePropTable = getPropCache->propTable();
-
-    // Take a resumepoint at this point so we can capture the state of the stack
-    // immediately prior to the call operation.
-    MResumePoint *preCallResumePoint =
-        MResumePoint::New(current, pc, callerResumePoint_, MResumePoint::ResumeAt);
-    if (!preCallResumePoint)
-        return NULL;
-    DebugOnly<size_t> preCallFuncDefnIdx = preCallResumePoint->numOperands() - (((size_t) callInfo.argc()) + 2);
-    JS_ASSERT(preCallResumePoint->getOperand(preCallFuncDefnIdx) == callInfo.fun());
-
-    MDefinition *targetObject = getPropCache->object();
-
-    // If we got here, then we know the following:
-    //      1. The input to the CALL is a GetPropertyCache, or a GetPropertyCache
-    //         followed by a TypeBarrier followed by an Unbox.
-    //      2. The GetPropertyCache has inlineable cases by guarding on the Object's type
-    //      3. The GetPropertyCache (and sequence of definitions) leading to the function
-    //         definition is not used by anyone else.
-    //      4. Notably, this means that no resume points as of yet capture the GetPropertyCache,
-    //         which implies that everything from the GetPropertyCache up to the call is
-    //         repeatable.
-
-    // If we are optimizing away a getPropCache, we replace the funcDefn
-    // with a constant undefined on the stack.
-    int funcDefnDepth = -((int) callInfo.argc() + 2);
-    MConstant *undef = MConstant::New(UndefinedValue());
-    current->add(undef);
-    current->rewriteAtDepth(funcDefnDepth, undef);
-
-    // Now construct a fallbackPrepBlock that prepares the stack state for fallback.
-    // Namely it pops off all the arguments and the callee.
-    MBasicBlock *fallbackPrepBlock = newBlock(current, pc);
-    if (!fallbackPrepBlock)
-        return NULL;
-
-    // Pop formals (|fun|, |this| and arguments).
-    callInfo.popFormals(fallbackPrepBlock);
-
-    // Generate a fallback block that'll do the call, but the PC for this fallback block
-    // is the PC for the GetPropCache.
-    JS_ASSERT(inlinePropTable->pc() != NULL);
-    JS_ASSERT(inlinePropTable->priorResumePoint() != NULL);
-    MBasicBlock *fallbackBlock = newBlock(fallbackPrepBlock, inlinePropTable->pc(),
-                                          inlinePropTable->priorResumePoint());
-    if (!fallbackBlock)
-        return NULL;
-
-    fallbackPrepBlock->end(MGoto::New(fallbackBlock));
-
-    // The fallbackBlock inherits the state of the stack right before the getprop, which
-    // means we have to pop off the target of the getprop before performing it.
-    DebugOnly<MDefinition *> checkTargetObject = fallbackBlock->pop();
-    JS_ASSERT(checkTargetObject == targetObject);
-
-    // Remove the instructions leading to the function definition from the current
-    // block and add them to the fallback block.  Also, discard the old instructions.
-    if (callInfo.fun()->isGetPropertyCache()) {
-        JS_ASSERT(callInfo.fun()->toGetPropertyCache() == getPropCache);
-        fallbackBlock->addFromElsewhere(getPropCache);
-        fallbackBlock->push(getPropCache);
-    } else {
-        JS_ASSERT(callInfo.fun()->isUnbox());
-        MUnbox *unbox = callInfo.fun()->toUnbox();
-        JS_ASSERT(unbox->input()->isTypeBarrier());
-        JS_ASSERT(unbox->type() == MIRType_Object);
-        JS_ASSERT(unbox->mode() == MUnbox::Infallible);
-
-        MTypeBarrier *typeBarrier = unbox->input()->toTypeBarrier();
-        JS_ASSERT(typeBarrier->input()->isGetPropertyCache());
-        JS_ASSERT(typeBarrier->input()->toGetPropertyCache() == getPropCache);
-
-        fallbackBlock->addFromElsewhere(getPropCache);
-        fallbackBlock->addFromElsewhere(typeBarrier);
-        fallbackBlock->addFromElsewhere(unbox);
-        fallbackBlock->push(unbox);
-    }
-
-    // Finally create a fallbackEnd block to do the actual call.  The fallbackEnd block will
-    // have the |pc| restored to the current PC.
-    MBasicBlock *fallbackEndBlock = newBlock(fallbackBlock, pc, preCallResumePoint);
-    if (!fallbackEndBlock)
-        return NULL;
-    fallbackBlock->end(MGoto::New(fallbackEndBlock));
-
-    MBasicBlock *top = current;
-    setCurrentAndSpecializePhis(fallbackEndBlock);
-
-    // Make the actual call.
-    CallInfo realCallInfo(cx, callInfo.constructing());
-    if (!realCallInfo.init(callInfo))
-        return NULL;
-    realCallInfo.popFormals(current);
-    realCallInfo.wrapArgs(current);
-
-    RootedFunction target(cx, NULL);
-    makeCall(target, realCallInfo, false);
-
-    setCurrentAndSpecializePhis(top);
-
-    // Create a new MPolyInlineDispatch containing the getprop and the fallback block
-    return MPolyInlineDispatch::New(targetObject, inlinePropTable,
-                                    fallbackPrepBlock, fallbackBlock,
-                                    fallbackEndBlock);
-}
-
 IonBuilder::InliningStatus
 IonBuilder::inlineSingleCall(CallInfo &callInfo, JSFunction *target)
 {
@@ -4947,7 +4836,7 @@ IonBuilder::jsop_call(uint32_t argc, bool constructing)
     bool gotLambda = false;
     types::StackTypeSet *calleeTypes = current->peek(calleeDepth)->resultTypeSet();
     if (calleeTypes) {
-        if (!getPolyCallTargets(calleeTypes, originals, 4, &gotLambda))
+        if (!getPolyCallTargets(calleeTypes, constructing, originals, 4, &gotLambda))
             return false;
     }
     JS_ASSERT_IF(gotLambda, originals.length() <= 1);
@@ -4983,15 +4872,8 @@ IonBuilder::jsop_call(uint32_t argc, bool constructing)
 
     // No inline, just make the call.
     RootedFunction target(cx, NULL);
-    if (targets.length() == 1) {
+    if (targets.length() == 1)
         target = &targets[0]->as<JSFunction>();
-
-        // Don't optimize if we're constructing and the callee is not an
-        // interpreted constructor, so that CallKnown does not have to
-        // handle this case (it should always throw).
-        if (constructing && !target->isInterpretedConstructor())
-            target = NULL;
-    }
 
     return makeCall(target, callInfo, hasClones);
 }
@@ -5266,7 +5148,8 @@ IonBuilder::makeCall(HandleFunction target, CallInfo &callInfo, bool cloneAtCall
 {
     // Constructor calls to non-constructors should throw. We don't want to use
     // CallKnown in this case.
-    JS_ASSERT_IF(callInfo.constructing() && target, target->isInterpretedConstructor());
+    JS_ASSERT_IF(callInfo.constructing() && target,
+                 target->isInterpretedConstructor() || target->isNativeConstructor());
 
     MCall *call = makeCallHelper(target, callInfo, cloneAtCallsite);
     if (!call)

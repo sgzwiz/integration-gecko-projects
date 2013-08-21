@@ -225,10 +225,8 @@ class IonBuilder : public MIRGenerator
     }
 
     JSFunction *getSingleCallTarget(types::StackTypeSet *calleeTypes);
-    bool getPolyCallTargets(types::StackTypeSet *calleeTypes,
-                            AutoObjectVector &targets,
-                            uint32_t maxTargets,
-                            bool *gotLambda);
+    bool getPolyCallTargets(types::StackTypeSet *calleeTypes, bool constructing,
+                            AutoObjectVector &targets, uint32_t maxTargets, bool *gotLambda);
     bool canInlineTarget(JSFunction *target, bool constructing);
 
     void popCfgStack();
@@ -593,11 +591,6 @@ class IonBuilder : public MIRGenerator
                                   types::StackTypeSet *objTypes, types::StackTypeSet *pushedTypes);
 
     MGetPropertyCache *getInlineableGetPropertyCache(CallInfo &callInfo);
-
-    MPolyInlineDispatch *
-    makePolyInlineDispatch(JSContext *cx, CallInfo &callInfo,
-                           MGetPropertyCache *getPropCache, MBasicBlock *bottom,
-                           Vector<MDefinition *, 8, IonAllocPolicy> &retvalDefns);
 
     types::StackTypeSet *cloneTypeSet(types::StackTypeSet *types);
 
