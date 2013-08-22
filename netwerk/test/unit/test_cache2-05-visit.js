@@ -15,7 +15,7 @@ function run_test()
         false);
       }),
     true);
-  });
+  }, !newCacheBackEndUsed());
 
   asyncOpenCacheEntry("http://a/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
     new OpenCallback(NEW, "a1m", "a1d", function(entry) {

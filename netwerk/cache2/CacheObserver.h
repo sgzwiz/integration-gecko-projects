@@ -27,6 +27,7 @@ class CacheObserver : public nsIObserver
   // Access to preferences
   static uint32_t const MemoryLimit() // <0.5MB,1024MB>, result in bytes.
     { return std::max(512U, std::min(1048576U, sMemoryLimit)) << 10; }
+  static bool const UseNewCache();
 
 private:
   static CacheObserver* sSelf;
@@ -34,6 +35,7 @@ private:
   void AttachToPreferences();
 
   static uint32_t sMemoryLimit;
+  static uint32_t sUseNewCache;
 };
 
 } // net

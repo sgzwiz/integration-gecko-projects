@@ -16,7 +16,7 @@ interface nsICacheListener;
 interface nsIFile;
 interface nsICacheMetaDataVisitor;
 
-[scriptable, uuid(8a70ccb1-5105-47a3-8b91-38db12e17998)]
+[scriptable, uuid(faaf16c8-b2d2-42de-91e9-7d2f44c4cb1e)]
 interface nsICacheEntry : nsISupports
 {
   /**
@@ -155,9 +155,19 @@ interface nsICacheEntry : nsISupports
    */
   readonly attribute long long dataSize;
 
+  /**
+   * FOR BACKWARD COMPATIBILITY ONLY
+   * When the old cache backend is eventually removed, this method
+   * can be removed too.
+   *
+   * In the new backend: this method is no-op
+   * In the old backend: this method delegates to nsICacheEntryDescriptor.close()
+   */
+  void close();
+
+
   // *************** GET RID OF THESE ??? ***************
   void setDataSize(in unsigned long size);
   void markValid();
-  void close();
   attribute nsCacheStoragePolicy storagePolicy;
 };

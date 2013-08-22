@@ -2543,6 +2543,11 @@ nsHttpChannel::OpenCacheEntry(bool usingSSL)
         cacheEntryOpenFlags |= nsICacheStorage::OPEN_PRIORITY;
     }
 
+    // Only for backward compatibility with the old cache back end.
+    // When removed, remove the flags and related code snippets.
+    if (mLoadFlags & LOAD_BYPASS_LOCAL_CACHE_IF_BUSY)
+        cacheEntryOpenFlags |= nsICacheStorage::OPEN_BYPASS_IF_BUSY;
+
     nsCOMPtr<nsIURI> openURI;
     if (!mFallbackKey.IsEmpty() && mFallbackChannel) {
         // This is a fallback channel, open fallback URI instead

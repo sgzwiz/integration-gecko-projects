@@ -7,15 +7,17 @@ function run_test()
     storage.asyncEvictStorage(
       new EvictionCallback(true, function() {
         storage.asyncVisitStorage(
-          new VisitCallback(0, 0, null, function() {
+          new VisitCallback(0, 0, [], function() {
             var storage = getCacheStorage("disk");
             storage.asyncVisitStorage(
               new VisitCallback(2, 24, ["http://a/", "http://b/"], function() {
                 finish_cache2_test();
               }),
-            true);
+              true
+            );
           }),
-        true);
+          true
+        );
       })
     );
   });
