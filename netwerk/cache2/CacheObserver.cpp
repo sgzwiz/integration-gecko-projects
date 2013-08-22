@@ -43,6 +43,7 @@ CacheObserver::Init()
   obs->AddObserver(sSelf, "profile-before-change", true);
   obs->AddObserver(sSelf, "xpcom-shutdown", true);
   obs->AddObserver(sSelf, "last-pb-context-exited", true);
+  obs->AddObserver(sSelf, "memory-pressure", true);
 
   return NS_OK;
 }
@@ -96,14 +97,22 @@ CacheObserver::Observe(nsISupports* aSubject,
       service->Shutdown();
 
     CacheFileIOManager::Shutdown();
+    return NS_OK;
   }
 
   if (!strcmp(aTopic, "last-pb-context-exited")) {
     nsRefPtr<CacheStorageService> service = CacheStorageService::Self();
-    if (!service)
-      return NS_OK;
+    if (service)
+      service->DropPrivateBrowsingEntries();
 
-    service->DropPrivateBrowsingEntries();
+    return NS_OK;
+  }
+
+  if (!strcmp(aTopic, "memory-pressure")) {
+    nsRefPtr<CacheStorageService> service = CacheStorageService::Self();
+    if (service)
+      service->PurgeFromMemory(nsICacheStorageService::PURGE_EVERYTHING);
+
     return NS_OK;
   }
 
