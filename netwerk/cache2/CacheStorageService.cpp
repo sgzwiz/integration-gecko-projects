@@ -733,6 +733,33 @@ NS_IMETHODIMP CacheStorageService::Clear()
   return NS_OK;
 }
 
+NS_IMETHODIMP CacheStorageService::PurgeFromMemory(uint32_t aWhat)
+{
+  uint32_t what;
+
+  switch (aWhat) {
+  case PURGE_DISK_DATA_ONLY:
+    what = CacheEntry::PURGE_DATA_ONLY_DISK_BACKED;
+    break;
+
+  case PURGE_DISK_ALL:
+    what = CacheEntry::PURGE_WHOLE_ONLY_DISK_BACKED;
+    break;
+
+  case PURGE_EVERYTHING:
+    what = CacheEntry::PURGE_WHOLE;
+    break;
+
+  default:
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  nsCOMPtr<nsIRunnable> event =
+    new PurgeFromMemoryRunnable(this, what);
+
+  return Dispatch(event);
+}
+
 NS_IMETHODIMP CacheStorageService::GetIoTarget(nsIEventTarget** aEventTarget)
 {
   NS_ENSURE_ARG(aEventTarget);
@@ -1053,6 +1080,25 @@ CacheStorageService::PurgeByFrecency(bool &aFrecencyNeedsSort, uint32_t aWhat)
     if (entry->Purge(aWhat)) {
       LOG(("  abandoned (%d), entry=%p, frecency=%1.10f",
         aWhat, entry.get(), entry->GetFrecency()));
+      continue;
+    }
+
+    // not purged, move to the next one
+    ++i;
+  }
+}
+
+void
+CacheStorageService::PurgeAll(uint32_t aWhat)
+{
+  LOG(("CacheStorageService::PurgeAll aWhat=%d", aWhat));
+  MOZ_ASSERT(IsOnManagementThread());
+
+  for (uint32_t i = 0; i < mFrecencyArray.Length();) {
+    nsRefPtr<CacheEntry> entry = mFrecencyArray[i];
+
+    if (entry->Purge(aWhat)) {
+      LOG(("  abandoned entry=%p", entry.get()));
       continue;
     }
 
