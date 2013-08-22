@@ -9,6 +9,7 @@
 
 #include "nsICacheStorageVisitor.h"
 #include "nsIObserverService.h"
+#include "nsICacheService.h" // for old cache preference
 #include "CacheStorage.h"
 #include "AppCacheStorage.h"
 #include "CacheEntry.h"
@@ -408,8 +409,13 @@ NS_IMETHODIMP CacheStorageService::MemoryCacheStorage(nsILoadContextInfo *aLoadC
   NS_ENSURE_ARG(aLoadContextInfo);
   NS_ENSURE_ARG(_retval);
 
-  nsRefPtr<CacheStorage> storage =
-    new CacheStorage(aLoadContextInfo, false, false);
+  nsCOMPtr<nsICacheStorage> storage;
+  if (CacheObserver::UseNewCache()) {
+    storage = new CacheStorage(aLoadContextInfo, false, false);
+  }
+  else {
+    storage = new _OldStorage(aLoadContextInfo, false, false, false, nullptr);
+  }
 
   storage.forget(_retval);
   return NS_OK;
@@ -424,8 +430,13 @@ NS_IMETHODIMP CacheStorageService::DiskCacheStorage(nsILoadContextInfo *aLoadCon
 
   // TODO save some heap granularity - cache commonly used storages.
 
-  nsRefPtr<CacheStorage> storage =
-    new CacheStorage(aLoadContextInfo, true, aLookupAppCache);
+  nsCOMPtr<nsICacheStorage> storage;
+  if (CacheObserver::UseNewCache()) {
+    storage = new CacheStorage(aLoadContextInfo, true, aLookupAppCache);
+  }
+  else {
+    storage = new _OldStorage(aLoadContextInfo, true, aLookupAppCache, false, nullptr);
+  }
 
   storage.forget(_retval);
   return NS_OK;
@@ -438,10 +449,15 @@ NS_IMETHODIMP CacheStorageService::AppCacheStorage(nsILoadContextInfo *aLoadCont
   NS_ENSURE_ARG(aLoadContextInfo);
   NS_ENSURE_ARG(_retval);
 
-  // Using classification since cl believes we want to instantiate this method
-  // having the same name as the desired class...
-  nsRefPtr<mozilla::net::AppCacheStorage> storage =
-    new mozilla::net::AppCacheStorage(aLoadContextInfo, aApplicationCache);
+  nsCOMPtr<nsICacheStorage> storage;
+  if (CacheObserver::UseNewCache()) {
+    // Using classification since cl believes we want to instantiate this method
+    // having the same name as the desired class...
+    storage = new mozilla::net::AppCacheStorage(aLoadContextInfo, aApplicationCache);
+  }
+  else {
+    storage = new _OldStorage(aLoadContextInfo, true, false, true, aApplicationCache);
+  }
 
   storage.forget(_retval);
   return NS_OK;
@@ -713,22 +729,34 @@ void CacheFilesDeletor::OnFile(CacheFile* aFile)
 
 NS_IMETHODIMP CacheStorageService::Clear()
 {
-  {
-    mozilla::MutexAutoLock lock(mLock);
+  nsresult rv;
 
-    NS_ENSURE_TRUE(!mShutdown, NS_ERROR_NOT_INITIALIZED);
+  if (CacheObserver::UseNewCache()) {
+    {
+      mozilla::MutexAutoLock lock(mLock);
 
-    nsTArray<nsCString> keys;
-    sGlobalEntryTables->EnumerateRead(&CollectContexts, &keys);
+      NS_ENSURE_TRUE(!mShutdown, NS_ERROR_NOT_INITIALIZED);
 
-    for (uint32_t i = 0; i < keys.Length(); ++i)
-      DoomStorageEntries(keys[i], true, nullptr);
+      nsTArray<nsCString> keys;
+      sGlobalEntryTables->EnumerateRead(&CollectContexts, &keys);
+
+      for (uint32_t i = 0; i < keys.Length(); ++i)
+        DoomStorageEntries(keys[i], true, nullptr);
+    }
+
+    // TODO - Callback can be provided!
+    nsRefPtr<CacheFilesDeletor> deletor = new CacheFilesDeletor(nullptr);
+    rv = deletor->DeleteAll();
+    NS_ENSURE_SUCCESS(rv, rv);
   }
+  else {
+    nsCOMPtr<nsICacheService> serv =
+        do_GetService(NS_CACHESERVICE_CONTRACTID, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
 
-  // TODO - Callback can be provided!
-  nsRefPtr<CacheFilesDeletor> deletor = new CacheFilesDeletor(nullptr);
-  nsresult rv = deletor->DeleteAll();
-  NS_ENSURE_SUCCESS(rv, rv);
+    rv = serv->EvictEntries(nsICache::STORE_ANYWHERE);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   return NS_OK;
 }
@@ -764,8 +792,21 @@ NS_IMETHODIMP CacheStorageService::GetIoTarget(nsIEventTarget** aEventTarget)
 {
   NS_ENSURE_ARG(aEventTarget);
 
-  nsCOMPtr<nsIEventTarget> ioTarget = CacheFileIOManager::IOTarget();
-  ioTarget.forget(aEventTarget);
+  if (CacheObserver::UseNewCache()) {
+    nsCOMPtr<nsIEventTarget> ioTarget = CacheFileIOManager::IOTarget();
+    ioTarget.forget(aEventTarget);
+  }
+  else {
+    nsresult rv;
+
+    nsCOMPtr<nsICacheService> serv =
+        do_GetService(NS_CACHESERVICE_CONTRACTID, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    rv = serv->GetCacheIOTarget(aEventTarget);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
   return NS_OK;
 }
 

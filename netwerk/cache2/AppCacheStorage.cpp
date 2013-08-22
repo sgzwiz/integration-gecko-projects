@@ -63,14 +63,17 @@ NS_IMETHODIMP AppCacheStorage::AsyncOpenURI(nsIURI *aURI,
     return NS_OK;
   }
 
-  bool truncate = aFlags & nsICacheStorage::OPEN_TRUNCATE;
-
   nsCOMPtr<nsIURI> noRefURI;
   rv = aURI->CloneIgnoringRef(getter_AddRefs(noRefURI));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsRefPtr<_OldApplicationCacheLoad> appCacheLoad =
-    new _OldApplicationCacheLoad(noRefURI, aCallback, appCache, this, truncate);
+  nsAutoCString cacheKey;
+  rv = noRefURI->GetAsciiSpec(cacheKey);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsRefPtr<_OldCacheLoad> appCacheLoad =
+    new _OldCacheLoad(cacheKey, aCallback, appCache,
+                      LoadInfo(), WriteToDisk(), aFlags);
   rv = appCacheLoad->Start();
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -88,6 +91,7 @@ NS_IMETHODIMP AppCacheStorage::AsyncDoomURI(nsIURI *aURI, const nsACString & aId
   }
 
   // TODO - remove entry from app cache
+  // I think no one is using this...
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -105,8 +109,14 @@ NS_IMETHODIMP AppCacheStorage::AsyncEvictStorage(nsICacheEntryDoomCallback* aCal
   if (!mAppCache) {
     if (LoadInfo()->AppId() == nsILoadContextInfo::NO_APP_ID &&
         !LoadInfo()->IsInBrowserElement()) {
+
       // Clear everything.
-      // TODO - need nsIAppCacheServ::ClearAll() - copy discardByAppID
+      nsCOMPtr<nsICacheService> serv =
+          do_GetService(NS_CACHESERVICE_CONTRACTID, &rv);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      rv = serv->EvictEntries(nsICache::STORE_OFFLINE);
+      NS_ENSURE_SUCCESS(rv, rv);
     }
     else {
       // Clear app or inbrowser staff.

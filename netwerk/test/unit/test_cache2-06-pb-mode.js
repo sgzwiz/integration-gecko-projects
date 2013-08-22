@@ -22,12 +22,14 @@ function run_test()
               exitPB();
               // Check the entry is gone
               storage.asyncVisitStorage(
-                new VisitCallback(0, 0, null, function() {
+                new VisitCallback(0, 0, [], function() {
                   finish_cache2_test();
                 }),
-              true);
+                true
+              );
             }),
-          true);
+            true
+          );
         })
       );
     })

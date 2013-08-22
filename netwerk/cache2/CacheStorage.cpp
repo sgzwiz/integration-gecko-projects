@@ -65,8 +65,13 @@ NS_IMETHODIMP CacheStorage::AsyncOpenURI(nsIURI *aURI,
   }
 
   if (appCache) {
-    nsRefPtr<_OldApplicationCacheLoad> appCacheLoad =
-      new _OldApplicationCacheLoad(noRefURI, aCallback, appCache, this, truncate);
+    nsAutoCString cacheKey;
+    rv = noRefURI->GetAsciiSpec(cacheKey);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsRefPtr<_OldCacheLoad> appCacheLoad =
+      new _OldCacheLoad(cacheKey, aCallback, appCache,
+                        LoadInfo(), WriteToDisk(), aFlags);
     rv = appCacheLoad->Start();
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -94,7 +99,6 @@ NS_IMETHODIMP CacheStorage::AsyncDoomURI(nsIURI *aURI, const nsACString & aIdExt
   if (!CacheStorageService::Self())
     return NS_ERROR_NOT_INITIALIZED;
 
-  nsRefPtr<CacheEntry> entry;
   nsresult rv = CacheStorageService::Self()->DoomStorageEntry(
     this, aURI, aIdExtension, aCallback);
   NS_ENSURE_SUCCESS(rv, rv);

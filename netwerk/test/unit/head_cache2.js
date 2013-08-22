@@ -3,6 +3,16 @@ const Ci = Components.interfaces;
 const Cu = Components.utils;
 const Cr = Components.results;
 
+function newCacheBackEndUsed()
+{
+  var cache1srv = Components.classes["@mozilla.org/network/cache-service;1"]
+                            .getService(Components.interfaces.nsICacheService);
+  var cache2srv = Components.classes["@mozilla.org/netwerk/cache-storage-service;1"]
+                            .getService(Components.interfaces.nsICacheStorageService);
+
+  return cache1srv.cacheIOTarget != cache2srv.ioTarget;
+}
+
 var callbacks = new Array();
 
 // Expect an existing entry
@@ -23,7 +33,7 @@ const REVAL =           1 << 5;
 const PARTIAL =         1 << 6
 // Expect the entry is doomed, i.e. the output stream should not be possible to open
 const DOOMED =          1 << 7;
-// Expect the entry is doomed, i.e. the output stream should not be possible to open
+// Don't trigger the go-on callback until the entry is written
 const WAITFORWRITE =    1 << 8;
 // Don't write data (i.e. don't open output stream)
 const METAONLY =        1 << 9;
@@ -42,28 +52,36 @@ function LOG_C2(o, m)
 
 function pumpReadStream(inputStream, goon)
 {
-  var pump = Cc["@mozilla.org/network/input-stream-pump;1"]
-             .createInstance(Ci.nsIInputStreamPump);
-  pump.init(inputStream, -1, -1, 0, 0, true);
-  var data = "";
-  pump.asyncRead({
-    onStartRequest: function (aRequest, aContext) { },
-    onDataAvailable: function (aRequest, aContext, aInputStream, aOffset, aCount)
-    {
-      var wrapper = Cc["@mozilla.org/scriptableinputstream;1"].
-                    createInstance(Ci.nsIScriptableInputStream);
-      wrapper.init(aInputStream);
-      var str = wrapper.read(wrapper.available());
-      LOG_C2("reading data '" + str.substring(0,5) + "'");
-      data += str;
-    },
-    onStopRequest: function (aRequest, aContext, aStatusCode)
-    {
-      LOG_C2("done reading data: " + aStatusCode);
-      do_check_eq(aStatusCode, Cr.NS_OK);
-      goon(data);
-    },
-  }, null);
+  if (inputStream.isNonBlocking()) {
+    // non-blocking stream, must read via pump
+    var pump = Cc["@mozilla.org/network/input-stream-pump;1"]
+               .createInstance(Ci.nsIInputStreamPump);
+    pump.init(inputStream, -1, -1, 0, 0, true);
+    var data = "";
+    pump.asyncRead({
+      onStartRequest: function (aRequest, aContext) { },
+      onDataAvailable: function (aRequest, aContext, aInputStream, aOffset, aCount)
+      {
+        var wrapper = Cc["@mozilla.org/scriptableinputstream;1"].
+                      createInstance(Ci.nsIScriptableInputStream);
+        wrapper.init(aInputStream);
+        var str = wrapper.read(wrapper.available());
+        LOG_C2("reading data '" + str.substring(0,5) + "'");
+        data += str;
+      },
+      onStopRequest: function (aRequest, aContext, aStatusCode)
+      {
+        LOG_C2("done reading data: " + aStatusCode);
+        do_check_eq(aStatusCode, Cr.NS_OK);
+        goon(data);
+      },
+    }, null);
+  }
+  else {
+    // blocking stream
+    var data = read_stream(inputStream, inputStream.available());
+    goon(data);
+  }
 }
 
 OpenCallback.prototype =
@@ -143,6 +161,7 @@ OpenCallback.prototype =
         if (self.behavior & METAONLY) {
           // Since forcing GC/CC doesn't trigger OnWriterClosed, we have to set the entry valid manually :(
           entry.setValid();
+          entry.close();
           return;
         }
         do_execute_soon(function() { // emulate more network latency
@@ -169,6 +188,8 @@ OpenCallback.prototype =
           os.close();
           if (self.behavior & WAITFORWRITE)
             self.goon(entry);
+
+          entry.close();
         })
       })
     }
@@ -186,6 +207,7 @@ OpenCallback.prototype =
         self.onDataCheckPassed = true;
         LOG_C2(self, "entry read done");
         self.goon(entry);
+        entry.close();
       });
     }
   },
@@ -238,9 +260,11 @@ VisitCallback.prototype =
   {
     LOG_C2(this, "onCacheStorageInfo: num=" + num + ", size=" + consumption);
     do_check_eq(this.num, num);
-    do_check_eq(this.consumption, consumption);
-
-    if (!this.entries || num == 0)
+    if (newCacheBackEndUsed()) {
+      // Consumption is as expected only in the new backend
+      do_check_eq(this.consumption, consumption);
+    }
+    if (!this.entries)
       this.notify();
   },
   onCacheEntryInfo: function(entry)
@@ -254,18 +278,20 @@ VisitCallback.prototype =
     do_check_true(index > -1);
 
     this.entries.splice(index, 1);
-
-    if (this.entries.length == 0) {
-      this.entries = null;
-      this.notify();
-    }
+  },
+  onCacheEntryVisitCompleted: function()
+  {
+    LOG_C2(this, "onCacheEntryVisitCompleted");
+    if (this.entries)
+      do_check_eq(this.entries.length, 0);
+    this.notify();
   },
   notify: function()
   {
     do_check_true(!!this.goon);
     var goon = this.goon;
     this.goon = null;
-    goon();
+    do_execute_soon(goon);
   },
   selfCheck: function()
   {
@@ -313,14 +339,21 @@ MultipleCallbacks.prototype =
   fired: function()
   {
     if (--this.pending == 0)
-      this.goon();
+    {
+      var self = this;
+      if (this.delayed)
+        do_execute_soon(function() { self.goon(); });
+      else
+        this.goon();
+    }
   }
 }
 
-function MultipleCallbacks(number, goon)
+function MultipleCallbacks(number, goon, delayed)
 {
   this.pending = number;
   this.goon = goon;
+  this.delayed = delayed;
 }
 
 function finish_cache2_test()

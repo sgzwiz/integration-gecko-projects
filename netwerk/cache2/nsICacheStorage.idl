@@ -38,6 +38,15 @@ interface nsICacheStorage : nsISupports
   const uint32_t OPEN_PRIORITY = 1 << 2;
 
   /**
+   * BACKWARD COMPATIBILITY ONLY
+   *
+   * Reflects LOAD_BYPASS_LOCAL_CACHE_IF_BUSY.  Only used for the old
+   * backend compatibility.  Doesn't have any mening in the new
+   * implementation.
+   */
+  const uint32_t OPEN_BYPASS_IF_BUSY = 1 << 31;
+
+  /**
    * Asynchronously opens a cache entry for the specified URI.
    * Result is fetched asynchronously via the callback.
    *
@@ -52,6 +61,8 @@ interface nsICacheStorage : nsISupports
    *    OPEN_NORMALLY - open cache entry normally for read and write
    *    OPEN_TRUNCATE - delete any existing entry before opening it
    *    OPEN_READONLY - don't create an entry if there is none
+   *    OPEN_PRIORITY - give this request a priority over others
+   *    OPEN_BYPASS_IF_BUSY - backward compatibility only, LOAD_BYPASS_LOCAL_CACHE_IF_BUSY
    * @param aCallback
    *    The consumer that receives the result.
    *    IMPORTANT: The callback may be called sooner the method returns.

@@ -1,5 +1,10 @@
 function run_test()
 {
+  if (!newCacheBackEndUsed()) {
+    do_check_true(true, "This test doesn't run when the old cache back end is used since the behavior is different");
+    return;
+  }
+
   do_get_profile();
 
   // Open for write, write
