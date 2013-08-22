@@ -1,5 +1,10 @@
 function run_test()
 {
+  if (!newCacheBackEndUsed()) {
+    do_check_true(true, "This test doesn't run when the old cache back end is used since the behavior is different");
+    return;
+  }
+
   do_get_profile();
 
   var mc = new MultipleCallbacks(3, function() {
@@ -7,15 +12,17 @@ function run_test()
     storage.asyncEvictStorage(
       new EvictionCallback(true, function() {
         storage.asyncVisitStorage(
-          new VisitCallback(0, 0, null, function() {
+          new VisitCallback(0, 0, [], function() {
             var storage = getCacheStorage("memory");
             storage.asyncVisitStorage(
-              new VisitCallback(0, 0, null, function() {
+              new VisitCallback(0, 0, [], function() {
                 finish_cache2_test();
               }),
-            true);
+              true
+            );
           }),
-        true);
+          true
+        );
       })
     );
   });

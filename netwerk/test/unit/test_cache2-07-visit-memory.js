@@ -1,5 +1,10 @@
 function run_test()
 {
+  if (!newCacheBackEndUsed()) {
+    do_check_true(true, "This test doesn't run when the old cache back end is used since the behavior is different");
+    return;
+  }
+
   do_get_profile();
 
   // Add entry to the memory storage
@@ -23,7 +28,6 @@ function run_test()
     new OpenCallback(NEW, "m1m", "m1d", function(entry) {
       asyncOpenCacheEntry("http://mem1/", "memory", Ci.nsICacheStorage.OPEN_NORMALLY, null,
         new OpenCallback(NORMAL, "m1m", "m1d", function(entry) {
-          dump("************* 1\n");
           mc.fired();
         })
       );
