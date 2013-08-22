@@ -135,6 +135,7 @@ private:
 
 private:
   friend class CacheMemoryConsumer;
+
   /**
    * When memory consumption of this entry radically changes, this method
    * is called to reflect the size of allocated memory.  This call may purge
@@ -145,11 +146,30 @@ private:
   void PurgeOverMemoryLimit();
 
 private:
+  class PurgeFromMemoryRunnable : public nsRunnable
+  {
+  public:
+    PurgeFromMemoryRunnable(CacheStorageService* aService, uint32_t aWhat)
+      : mService(aService), mWhat(aWhat) { }
+
+  private:
+    virtual ~PurgeFromMemoryRunnable() { }
+
+    NS_IMETHOD Run() {
+      mService->PurgeAll(mWhat);
+      return NS_OK;
+    }
+
+    nsRefPtr<CacheStorageService> mService;
+    uint32_t mWhat;
+  };
+
   /**
    * Purges entries from memory based on the frecency ordered array.
    */
   void PurgeByFrecency(bool &aFrecencyNeedsSort, uint32_t aWhat);
   void PurgeExpired();
+  void PurgeAll(uint32_t aWhat);
 
   nsresult DoomStorageEntries(nsCSubstring const& aContextKey,
                               bool aDiskStorage,

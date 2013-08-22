@@ -12,7 +12,7 @@ interface nsIEventTarget;
 /**
  * Provides access to particual cache storages of the network URI cache.
  */
-[scriptable, uuid(1040606d-278c-425a-8281-3511b1c7ba7e)]
+[scriptable, uuid(d669bf30-b6d9-48e1-a8fb-33cd18b0d752)]
 interface nsICacheStorageService : nsISupports
 {
   /**
@@ -50,6 +50,27 @@ interface nsICacheStorageService : nsISupports
    * Evict the whole cache.
    */
   void clear();
+
+  /**
+   * Purge only data of disk backed entries.  Metadata are left for
+   * performance purposes.
+   */
+  const uint32_t PURGE_DISK_DATA_ONLY = 1;
+  /**
+   * Purge whole disk backed entries from memory.  Disk files will
+   * be left unattended.
+   */
+  const uint32_t PURGE_DISK_ALL = 2;
+  /**
+   * Purge all entries we keep in memory, including memory-storage
+   * entries.  This may be dangerous to use.
+   */
+  const uint32_t PURGE_EVERYTHING = 3;
+  /**
+   * Purges data we keep warmed in memory.  Use for tests and for
+   * saving memory.
+   */
+  void purgeFromMemory(in uint32_t aWhat);
 
   /**
    * I/O thread target to use for any operations on disk
