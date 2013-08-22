@@ -19,6 +19,9 @@ CacheObserver* CacheObserver::sSelf = nullptr;
 static uint32_t const kDefaultMemoryLimit = 50 * 1024; // 50 MB
 uint32_t CacheObserver::sMemoryLimit = kDefaultMemoryLimit;
 
+static uint32_t const kDefaultUseNewCache = 0; // use new cache unconditionally
+uint32_t CacheObserver::sUseNewCache = kDefaultUseNewCache;
+
 NS_IMPL_ISUPPORTS2(CacheObserver,
                    nsIObserver,
                    nsISupportsWeakReference)
@@ -64,6 +67,28 @@ CacheObserver::AttachToPreferences()
 {
   mozilla::Preferences::AddUintVarCache(
     &sMemoryLimit, "browser.cache.memory_limit", kDefaultMemoryLimit);
+  mozilla::Preferences::AddUintVarCache(
+    &sUseNewCache, "browser.cache.use_new_backend", kDefaultUseNewCache);
+}
+
+// static
+bool const CacheObserver::UseNewCache()
+{
+  switch (sUseNewCache) {
+    case 0: // use the old cache backend
+      return false;
+
+    case 1: // use the new cache backend
+      return true;
+
+    case 2: // use A/B testing
+    {
+      static bool const sABTest = rand() & 1;
+      return sABTest;
+    }
+  }
+
+  return true;
 }
 
 NS_IMETHODIMP

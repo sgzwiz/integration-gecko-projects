@@ -125,7 +125,6 @@ function syncWithCacheIOThread(callback)
   callback();
 }
 
-// TODO - this has to be async...
 function get_device_entry_count(where, lci, continuation) {
   var storage = getCacheStorage(where, lci);
   if (!storage) {
@@ -135,7 +134,9 @@ function get_device_entry_count(where, lci, continuation) {
 
   var visitor = {
     onCacheStorageInfo: function (entryCount, consumption) {
-      continuation(entryCount, consumption);
+      do_execute_soon(function() {
+        continuation(entryCount, consumption);
+      });
     },
   };
 
