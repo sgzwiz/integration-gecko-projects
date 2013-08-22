@@ -13,6 +13,7 @@
 
 BEGIN_WORKERS_NAMESPACE
 
+// XXX
 struct DatabaseInfoSync : public indexedDB::DatabaseInfoBase
 {
   DatabaseInfoSync();
