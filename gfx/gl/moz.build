@@ -53,6 +53,7 @@ EXPORTS += [
     'SurfaceFactory.h',
     'SurfaceStream.h',
     'SurfaceTypes.h',
+    'VBOArena.h',
 ]
 
 if CONFIG['MOZ_X11']:
@@ -101,7 +102,7 @@ if gl_provider == 'EGL':
 
 CPP_SOURCES += [
     'GLContext.cpp',
-    'GLContextExtensionGroupQueries.cpp',
+    'GLContextFeatures.cpp',
     'GLContextTypes.cpp',
     'GLContextUtils.cpp',
     'GLLibraryLoader.cpp',
@@ -112,6 +113,7 @@ CPP_SOURCES += [
     'SharedSurfaceGL.cpp',
     'SurfaceFactory.cpp',
     'SurfaceStream.cpp',
+    'VBOArena.cpp',
 ]
 
 FAIL_ON_WARNINGS = True

@@ -14,7 +14,8 @@
 #define mozilla_dom_BindingDeclarations_h__
 
 #include "nsStringGlue.h"
-#include "jsapi.h"
+#include "js/Value.h"
+#include "js/RootingAPI.h"
 #include "mozilla/Util.h"
 #include "nsCOMPtr.h"
 #include "nsDOMString.h"
@@ -22,6 +23,8 @@
 #include "nsTArray.h"
 #include "nsAutoPtr.h" // for nsRefPtr member variables
 
+struct JSContext;
+class JSObject;
 class nsWrapperCache;
 
 // nsGlobalWindow implements nsWrapperCache, but doesn't always use it. Don't
@@ -61,31 +64,13 @@ class MOZ_STACK_CLASS GlobalObject
 public:
   GlobalObject(JSContext* aCx, JSObject* aObject);
 
-  nsISupports* Get() const
-  {
-    return mGlobalObject;
-  }
-
-  bool Failed() const
-  {
-    return !Get();
-  }
-
-private:
-  JS::RootedObject mGlobalJSObject;
-  nsISupports* mGlobalObject;
-  nsCOMPtr<nsISupports> mGlobalObjectRef;
-};
-
-class MOZ_STACK_CLASS WorkerGlobalObject
-{
-public:
-  WorkerGlobalObject(JSContext* aCx, JSObject* aObject);
-
   JSObject* Get() const
   {
     return mGlobalJSObject;
   }
+
+  nsISupports* GetAsSupports() const;
+
   // The context that this returns is not guaranteed to be in the compartment of
   // the object returned from Get(), in fact it's generally in the caller's
   // compartment.
@@ -99,9 +84,11 @@ public:
     return !Get();
   }
 
-private:
+protected:
   JS::RootedObject mGlobalJSObject;
   JSContext* mCx;
+  mutable nsISupports* mGlobalObject;
+  mutable nsCOMPtr<nsISupports> mGlobalObjectRef;
 };
 
 /**

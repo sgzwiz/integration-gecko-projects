@@ -226,12 +226,7 @@ js::StartOffThreadParseScript(JSContext *cx, const CompileOptions &options,
     if (!global)
         return false;
 
-    // For now, type inference is always disabled in exclusive zones, as type
-    // inference data is not merged between zones when finishing the off thread
-    // parse. This restriction would be fairly easy to lift.
-    JS_ASSERT(!cx->typeInferenceEnabled());
-    global->zone()->types.inferenceEnabled = false;
-
+    global->zone()->types.inferenceEnabled = cx->typeInferenceEnabled();
     JS_SetCompartmentPrincipals(global->compartment(), cx->compartment()->principals);
 
     RootedObject obj(cx);
@@ -241,7 +236,8 @@ js::StartOffThreadParseScript(JSContext *cx, const CompileOptions &options,
     // pointers can be changed infallibly after parsing finishes.
     if (!js_GetClassObject(cx, cx->global(), JSProto_Function, &obj) ||
         !js_GetClassObject(cx, cx->global(), JSProto_Array, &obj) ||
-        !js_GetClassObject(cx, cx->global(), JSProto_RegExp, &obj))
+        !js_GetClassObject(cx, cx->global(), JSProto_RegExp, &obj) ||
+        !js_GetClassObject(cx, cx->global(), JSProto_GeneratorFunction, &obj))
     {
         return false;
     }
@@ -249,7 +245,8 @@ js::StartOffThreadParseScript(JSContext *cx, const CompileOptions &options,
         AutoCompartment ac(cx, global);
         if (!js_GetClassObject(cx, global, JSProto_Function, &obj) ||
             !js_GetClassObject(cx, global, JSProto_Array, &obj) ||
-            !js_GetClassObject(cx, global, JSProto_RegExp, &obj))
+            !js_GetClassObject(cx, global, JSProto_RegExp, &obj) ||
+            !js_GetClassObject(cx, global, JSProto_GeneratorFunction, &obj))
         {
             return false;
         }
