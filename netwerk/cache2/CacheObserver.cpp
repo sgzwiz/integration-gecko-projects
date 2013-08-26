@@ -19,7 +19,7 @@ CacheObserver* CacheObserver::sSelf = nullptr;
 static uint32_t const kDefaultMemoryLimit = 50 * 1024; // 50 MB
 uint32_t CacheObserver::sMemoryLimit = kDefaultMemoryLimit;
 
-static uint32_t const kDefaultUseNewCache = 1; // use new cache unconditionally
+static uint32_t const kDefaultUseNewCache = 0; // use new cache unconditionally
 uint32_t CacheObserver::sUseNewCache = kDefaultUseNewCache;
 
 NS_IMPL_ISUPPORTS2(CacheObserver,
