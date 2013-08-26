@@ -93,8 +93,6 @@ CacheStorageService::CacheStorageService()
 , mMemorySize(0)
 , mPurging(false)
 {
-  MOZ_COUNT_CTOR(CacheStorageService);
-
   CacheFileIOManager::Init();
 
   MOZ_ASSERT(!sSelf);
@@ -117,8 +115,6 @@ CacheStorageService::~CacheStorageService()
   // a quick solution is needed to fix this assertion failure, just disable
   // it and file a bug.
   MOZ_ASSERT(mMemorySize == 0);
-
-  MOZ_COUNT_DTOR(CacheStorageService);
 }
 
 void CacheStorageService::Shutdown()
