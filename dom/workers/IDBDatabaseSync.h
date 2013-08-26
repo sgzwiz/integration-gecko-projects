@@ -18,7 +18,7 @@
 
 namespace mozilla {
 namespace dom {
-struct IDBObjectStoreParametersWorkers;
+struct IDBObjectStoreParameters;
 struct IDBOpenDBOptionsWorkers;
 namespace indexedDB {
 struct ObjectStoreInfo;
@@ -40,8 +40,7 @@ class IDBDatabaseSync MOZ_FINAL : public IDBObjectSyncEventTarget,
   friend class IDBFactorySync;
   friend class IndexedDBDatabaseWorkerChild;
 
-  typedef mozilla::dom::IDBObjectStoreParametersWorkers
-                                                IDBObjectStoreParametersWorkers;
+  typedef mozilla::dom::IDBObjectStoreParameters IDBObjectStoreParameters;
   typedef mozilla::dom::indexedDB::ObjectStoreInfo ObjectStoreInfo;
   typedef mozilla::dom::quota::PersistenceType PersistenceType;
 
@@ -132,7 +131,7 @@ public:
 
   IDBObjectStoreSync*
   CreateObjectStore(JSContext* aCx, const nsAString& aName,
-                    const IDBObjectStoreParametersWorkers& aOptionalParameters,
+                    const IDBObjectStoreParameters& aOptionalParameters,
                     ErrorResult& aRv);
 
   void

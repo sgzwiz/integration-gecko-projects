@@ -1178,6 +1178,12 @@ interface nsIDOMWindowUtils : nsISupports {
   nsIDOMElement findElementWithViewId(in nsViewID aId);
 
   /**
+   * Find the view ID for a given element. This is the reverse of
+   * findElementWithViewId().
+   */
+  nsViewID getViewId(in nsIDOMElement aElement);
+
+  /**
    * Checks the layer tree for this window and returns true
    * if all layers have transforms that are translations by integers,
    * no leaf layers overlap, and the union of the leaf layers is exactly

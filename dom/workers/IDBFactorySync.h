@@ -18,7 +18,7 @@
 
 namespace mozilla {
 namespace dom {
-struct IDBOpenDBOptionsWorkers;
+struct IDBOpenDBOptions;
 } // namespace dom
 } // namespace mozilla
 
@@ -81,13 +81,13 @@ public:
 
   IDBDatabaseSync*
   Open(JSContext* aCx, const nsAString& aName,
-       const IDBOpenDBOptionsWorkers& aOptions,
+       const IDBOpenDBOptions& aOptions,
        const Optional<JS::Handle<JSObject*> >& aUpgradeCallback,
        const Optional<uint32_t>& aTimeout, ErrorResult& aRv);
 
   void
   DeleteDatabase(JSContext* aCx, const nsAString& aName,
-                 const IDBOpenDBOptionsWorkers& aOptions, ErrorResult& aRv);
+                 const IDBOpenDBOptions& aOptions, ErrorResult& aRv);
 
 private:
   IDBFactorySync(JSContext* aCx, WorkerPrivate* aWorkerPrivate);

@@ -11,7 +11,7 @@
 USING_WORKERS_NAMESPACE
 using mozilla::ErrorResult;
 using mozilla::dom::indexedDB::Key;
-using mozilla::dom::WorkerGlobalObject;
+using mozilla::dom::GlobalObject;
 
 namespace {
 
@@ -64,7 +64,8 @@ IDBKeyRange::FromJSVal(JSContext* aCx, const jsval& aVal,
   else {
     MOZ_ASSERT(aVal.isObject());
     // An object is not permitted unless it's another IDBKeyRange.
-    if (NS_FAILED(UnwrapObject<IDBKeyRange>(aCx, &aVal.toObject(), keyRange))) {
+    if (NS_FAILED(UNWRAP_WORKER_OBJECT(IDBKeyRange, aCx, &aVal.toObject(),
+                                       keyRange))) {
       return NS_ERROR_DOM_INDEXEDDB_DATA_ERR;
     }
   }
@@ -116,7 +117,7 @@ IDBKeyRange::GetUpper(JSContext* aCx, ErrorResult& aRv)
 
 // static
 IDBKeyRange*
-IDBKeyRange::Only(const WorkerGlobalObject& aGlobal, const JS::Value& aValue,
+IDBKeyRange::Only(const GlobalObject& aGlobal, const JS::Value& aValue,
                   ErrorResult& aRv)
 {
   JSContext* cx = aGlobal.GetContext();
@@ -139,7 +140,7 @@ IDBKeyRange::Only(const WorkerGlobalObject& aGlobal, const JS::Value& aValue,
 
 // static
 IDBKeyRange*
-IDBKeyRange::LowerBound(const WorkerGlobalObject& aGlobal,
+IDBKeyRange::LowerBound(const GlobalObject& aGlobal,
                         const JS::Value& aValue, bool aOpen, ErrorResult& aRv)
 {
   JSContext* cx = aGlobal.GetContext();
@@ -162,7 +163,7 @@ IDBKeyRange::LowerBound(const WorkerGlobalObject& aGlobal,
 
 // static
 IDBKeyRange*
-IDBKeyRange::UpperBound(const WorkerGlobalObject& aGlobal,
+IDBKeyRange::UpperBound(const GlobalObject& aGlobal,
                         const JS::Value& aValue, bool aOpen, ErrorResult& aRv)
 {
   JSContext* cx = aGlobal.GetContext();
@@ -185,7 +186,7 @@ IDBKeyRange::UpperBound(const WorkerGlobalObject& aGlobal,
 
 // static
 IDBKeyRange*
-IDBKeyRange::Bound(const WorkerGlobalObject& aGlobal,
+IDBKeyRange::Bound(const GlobalObject& aGlobal,
                    const JS::Value& aLower, const JS::Value& aUpper,
                    bool aLowerOpen, bool aUpperOpen, ErrorResult& aRv)
 {

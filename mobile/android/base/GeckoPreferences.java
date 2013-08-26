@@ -77,7 +77,7 @@ public class GeckoPreferences
     private static String PREFS_HEALTHREPORT_LINK = NON_PREF_PREFIX + "healthreport.link";
     private static String PREFS_DEVTOOLS_REMOTE_ENABLED = "devtools.debugger.remote-enabled";
 
-    public static String PREFS_RESTORE_SESSION = NON_PREF_PREFIX + "restoreSession2";
+    public static String PREFS_RESTORE_SESSION = NON_PREF_PREFIX + "restoreSession3";
 
     // These values are chosen to be distinct from other Activity constants.
     private static int REQUEST_CODE_PREF_SCREEN = 5;
@@ -664,9 +664,7 @@ public class GeckoPreferences
 
     // Initialize preferences by requesting the preference values from Gecko
     private int getGeckoPreferences(final PreferenceGroup screen, ArrayList<String> prefs) {
-        JSONArray jsonPrefs = new JSONArray(prefs);
-
-        return PrefsHelper.getPrefs(jsonPrefs, new PrefsHelper.PrefHandlerBase() {
+        return PrefsHelper.getPrefs(prefs, new PrefsHelper.PrefHandlerBase() {
             private Preference getField(String prefName) {
                 return screen.findPreference(prefName);
             }

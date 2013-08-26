@@ -27,10 +27,12 @@
 
 #include "IndexedDatabaseInlines.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/UnionTypes.h"
 
 USING_INDEXEDDB_NAMESPACE
 using namespace mozilla::dom::indexedDB::ipc;
 using mozilla::dom::Optional;
+using mozilla::dom::IDBObjectStoreOrIDBIndexReturnValue;
 using mozilla::ErrorResult;
 
 static_assert(sizeof(size_t) >= sizeof(IDBCursor::Direction),
@@ -462,20 +464,17 @@ IDBCursor::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
           : IDBCursorBinding::Wrap(aCx, aScope, this);
 }
 
-already_AddRefed<nsISupports>
-IDBCursor::Source() const
+void
+IDBCursor::GetSource(IDBObjectStoreOrIDBIndexReturnValue& aSource) const
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
-  nsCOMPtr<nsISupports> source;
   if (mType == OBJECTSTORE) {
-    source = do_QueryInterface(mObjectStore);
+    aSource.SetAsIDBObjectStore() = mObjectStore;
   }
   else {
-    source = do_QueryInterface(mIndex);
+    aSource.SetAsIDBIndex() = mIndex;
   }
-
-  return source.forget();
 }
 
 JS::Value

@@ -271,7 +271,7 @@ struct WorkerStructuredCloneCallbacks
     // See if this is an ImageData object.
     {
       ImageData* imageData = nullptr;
-      if (NS_SUCCEEDED(UnwrapObject<ImageData>(aCx, aObj, imageData))) {
+      if (NS_SUCCEEDED(UNWRAP_OBJECT(ImageData, aCx, aObj, imageData))) {
         // Prepare the ImageData internals.
         uint32_t width = imageData->Width();
         uint32_t height = imageData->Height();
@@ -4452,13 +4452,6 @@ BEGIN_WORKERS_NAMESPACE
 
 // Force instantiation.
 template class WorkerPrivateParent<WorkerPrivate>;
-
-WorkerPrivate*
-GetWorkerPrivateFromContext(JSContext* aCx)
-{
-  NS_ASSERTION(!NS_IsMainThread(), "Wrong thread!");
-  return static_cast<WorkerPrivate*>(JS_GetRuntimePrivate(JS_GetRuntime(aCx)));
-}
 
 JSStructuredCloneCallbacks*
 WorkerStructuredCloneCallbacks(bool aMainRuntime)

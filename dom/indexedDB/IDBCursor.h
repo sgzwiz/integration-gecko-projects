@@ -22,6 +22,12 @@ class nsIRunnable;
 class nsIScriptContext;
 class nsPIDOMWindow;
 
+namespace mozilla {
+namespace dom {
+class IDBObjectStoreOrIDBIndexReturnValue;
+}
+}
+
 BEGIN_INDEXEDDB_NAMESPACE
 
 class ContinueHelper;
@@ -139,8 +145,8 @@ public:
     return mTransaction;
   }
 
-  already_AddRefed<nsISupports>
-  Source() const;
+  void
+  GetSource(IDBObjectStoreOrIDBIndexReturnValue& aSource) const;
 
   IDBCursorDirection
   GetDirection(ErrorResult& aRv) const

@@ -51,19 +51,19 @@ public:
   }
 
   static IDBKeyRange*
-  Only(const WorkerGlobalObject& aGlobal, const JS::Value& aValue,
+  Only(const GlobalObject& aGlobal, const JS::Value& aValue,
        ErrorResult& aRv);
 
   static IDBKeyRange*
-  LowerBound(const WorkerGlobalObject& aGlobal, const JS::Value& aValue,
+  LowerBound(const GlobalObject& aGlobal, const JS::Value& aValue,
              bool aOpen, ErrorResult& aRv);
 
   static IDBKeyRange*
-  UpperBound(const WorkerGlobalObject& aGlobal, const JS::Value& aValue,
+  UpperBound(const GlobalObject& aGlobal, const JS::Value& aValue,
              bool aOpen, ErrorResult& aRv);
 
   static IDBKeyRange*
-  Bound(const WorkerGlobalObject& aGlobal, const JS::Value& aLower,
+  Bound(const GlobalObject& aGlobal, const JS::Value& aLower,
         const JS::Value& aUpper, bool aLowerOpen, bool aUpperOpen,
         ErrorResult& aRv);
 

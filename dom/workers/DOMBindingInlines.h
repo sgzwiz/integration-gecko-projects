@@ -8,6 +8,7 @@
 
 #include "mozilla/dom/DOMStringListBinding.h"
 #include "mozilla/dom/FileReaderSyncBinding.h"
+#include "mozilla/dom/JSSlots.h"
 #include "mozilla/dom/IDBCursorSyncBinding.h"
 #include "mozilla/dom/IDBDatabaseSyncBinding.h"
 #include "mozilla/dom/IDBFactorySyncBinding.h"
@@ -15,18 +16,15 @@
 #include "mozilla/dom/IDBKeyRangeBinding.h"
 #include "mozilla/dom/IDBObjectStoreSyncBinding.h"
 #include "mozilla/dom/IDBTransactionSyncBinding.h"
-#include "mozilla/dom/TextDecoderBinding.h"
-#include "mozilla/dom/TextEncoderBinding.h"
 #include "mozilla/dom/XMLHttpRequestBinding.h"
 #include "mozilla/dom/XMLHttpRequestUploadBinding.h"
 #include "mozilla/dom/WorkerLocationBinding.h"
 #include "mozilla/dom/WorkerNavigatorBinding.h"
+#include "jsfriendapi.h"
 
 BEGIN_WORKERS_NAMESPACE
 
 class FileReaderSync;
-class TextDecoder;
-class TextEncoder;
 class XMLHttpRequest;
 class XMLHttpRequestUpload;
 class WorkerLocation;
@@ -48,7 +46,7 @@ struct WrapPrototypeTraits
     GetJSClass()                                                               \
     {                                                                          \
       using namespace mozilla::dom;                                            \
-      return _class##Binding_workers::Class.ToJSClass();                       \
+      return _class##Binding_workers::GetJSClass();                            \
     }                                                                          \
                                                                                \
     static inline JSObject*                                                    \
@@ -69,8 +67,6 @@ SPECIALIZE_PROTO_TRAITS(IDBIndexSync)
 SPECIALIZE_PROTO_TRAITS(IDBKeyRange)
 SPECIALIZE_PROTO_TRAITS(IDBObjectStoreSync)
 SPECIALIZE_PROTO_TRAITS(IDBTransactionSync)
-SPECIALIZE_PROTO_TRAITS(TextDecoder)
-SPECIALIZE_PROTO_TRAITS(TextEncoder)
 SPECIALIZE_PROTO_TRAITS(XMLHttpRequest)
 SPECIALIZE_PROTO_TRAITS(XMLHttpRequestUpload)
 SPECIALIZE_PROTO_TRAITS(WorkerLocation)

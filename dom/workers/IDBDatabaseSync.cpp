@@ -305,7 +305,7 @@ IDBObjectStoreSync*
 IDBDatabaseSync::CreateObjectStore(
                      JSContext* aCx,
                      const nsAString& aName,
-                     const IDBObjectStoreParametersWorkers& aOptionalParameters,
+                     const IDBObjectStoreParameters& aOptionalParameters,
                      ErrorResult& aRv)
 {
   if (!mTransaction ||

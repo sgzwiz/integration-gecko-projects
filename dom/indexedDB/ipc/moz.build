@@ -30,3 +30,8 @@ IPDL_SOURCES += [
     'PIndexedDBRequest.ipdl',
     'PIndexedDBTransaction.ipdl',
 ]
+
+FAIL_ON_WARNINGS = True
+
+LIBXUL_LIBRARY = True
+

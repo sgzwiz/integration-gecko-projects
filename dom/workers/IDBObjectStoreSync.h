@@ -18,7 +18,7 @@
 
 namespace mozilla {
 namespace dom {
-struct IDBIndexParametersWorkers;
+struct IDBIndexParameters;
 namespace indexedDB {
 struct IndexUpdateInfo;
 struct ObjectStoreInfo;
@@ -38,7 +38,7 @@ class IDBObjectStoreSync MOZ_FINAL : public IDBObjectSync,
 {
   friend class IDBTransactionSync;
 
-  typedef mozilla::dom::IDBIndexParametersWorkers IDBIndexParametersWorkers;
+  typedef mozilla::dom::IDBIndexParameters IDBIndexParameters;
   typedef mozilla::dom::indexedDB::Key Key;
   typedef mozilla::dom::indexedDB::IndexUpdateInfo IndexUpdateInfo;
   typedef mozilla::dom::indexedDB::ObjectStoreInfo ObjectStoreInfo;
@@ -151,13 +151,13 @@ public:
 
   IDBIndexSync*
   CreateIndex(JSContext* aCx, const nsAString& aName, const nsAString& aKeyPath,
-              const IDBIndexParametersWorkers& aOptionalParameters,
+              const IDBIndexParameters& aOptionalParameters,
               ErrorResult& aRv);
 
   IDBIndexSync*
   CreateIndex(JSContext* aCx, const nsAString& aName,
               const Sequence<nsString>& aKeyPath,
-              const IDBIndexParametersWorkers& aOptionalParameters,
+              const IDBIndexParameters& aOptionalParameters,
               ErrorResult& aRv);
 
   IDBIndexSync*
@@ -197,7 +197,7 @@ private:
   IDBIndexSync*
   CreateIndex(JSContext* aCx, const nsAString& aName,
               indexedDB::KeyPath& aKeyPath,
-              const IDBIndexParametersWorkers& aOptionalParameters,
+              const IDBIndexParameters& aOptionalParameters,
               ErrorResult& aRv);
 
   nsTArray<nsRefPtr<IDBIndexSync> > mCreatedIndexes;

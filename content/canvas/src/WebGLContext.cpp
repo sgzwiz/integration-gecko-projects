@@ -52,6 +52,7 @@
 #include "mozilla/Services.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/ImageData.h"
 #include "mozilla/ProcessPriorityManager.h"
 
 #include "Layers.h"
@@ -155,6 +156,7 @@ WebGLContext::WebGLContext()
 
     mScissorTestEnabled = 0;
     mDitherEnabled = 1;
+    mRasterizerDiscardEnabled = 0; // OpenGL ES 3.0 spec p244
 
     // initialize some GL values: we're going to get them from the GL and use them as the sizes of arrays,
     // so in case glGetIntegerv leaves them uninitialized because of a GL bug, we would have very weird crashes.
@@ -971,16 +973,16 @@ bool WebGLContext::IsExtensionSupported(WebGLExtensionID ext) const
 
     switch (ext) {
         case OES_element_index_uint:
-            return gl->IsExtensionSupported(GLContext::XXX_element_index_uint);
+            return gl->IsSupported(GLFeature::element_index_uint);
         case OES_standard_derivatives:
-            return gl->IsExtensionSupported(GLContext::XXX_standard_derivatives);
+            return gl->IsSupported(GLFeature::standard_derivatives);
         case WEBGL_lose_context:
             // We always support this extension.
             return true;
         case OES_texture_float:
-            return gl->IsExtensionSupported(GLContext::XXX_texture_float);
+            return gl->IsSupported(GLFeature::texture_float);
         case OES_texture_float_linear:
-            return gl->IsExtensionSupported(GLContext::XXX_texture_float_linear);
+            return gl->IsSupported(GLFeature::texture_float_linear);
         case OES_vertex_array_object:
             return WebGLExtensionVertexArray::IsSupported(this);
         case EXT_texture_filter_anisotropic:
@@ -1001,8 +1003,8 @@ bool WebGLContext::IsExtensionSupported(WebGLExtensionID ext) const
         case WEBGL_compressed_texture_pvrtc:
             return gl->IsExtensionSupported(GLContext::IMG_texture_compression_pvrtc);
         case WEBGL_depth_texture:
-            return gl->IsExtensionSupported(GLContext::XXX_packed_depth_stencil) &&
-                   gl->IsExtensionSupported(GLContext::XXX_depth_texture);
+            return gl->IsSupported(GLFeature::packed_depth_stencil) &&
+                   gl->IsSupported(GLFeature::depth_texture);
         case ANGLE_instanced_arrays:
             return WebGLExtensionInstancedArrays::IsSupported(this);
         default:
@@ -1327,12 +1329,20 @@ WebGLContext::ForceClearFramebufferWithDefaultValues(GLbitfield mask, const bool
         gl->fClearStencil(0);
     }
 
+    if (mRasterizerDiscardEnabled) {
+        gl->fDisable(LOCAL_GL_RASTERIZER_DISCARD);
+    }
+
     // Do the clear!
     gl->fClear(mask);
 
     // And reset!
     if (mScissorTestEnabled)
         gl->fEnable(LOCAL_GL_SCISSOR_TEST);
+
+    if (mRasterizerDiscardEnabled) {
+        gl->fEnable(LOCAL_GL_RASTERIZER_DISCARD);
+    }
 
     // Restore GL state after clearing.
     if (initializeColorBuffer) {
@@ -1596,17 +1606,19 @@ WebGLContext::GetSupportedExtensions(JSContext *cx, Nullable< nsTArray<nsString>
 NS_IMPL_CYCLE_COLLECTING_ADDREF(WebGLContext)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(WebGLContext)
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_10(WebGLContext,
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_12(WebGLContext,
   mCanvasElement,
   mExtensions,
   mBound2DTextures,
   mBoundCubeMapTextures,
   mBoundArrayBuffer,
+  mBoundTransformFeedbackBuffer,
   mCurrentProgram,
   mBoundFramebuffer,
   mBoundRenderbuffer,
   mBoundVertexArray,
-  mActiveOcclusionQuery)
+  mActiveOcclusionQuery,
+  mActiveTransformFeedbackQuery)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WebGLContext)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY

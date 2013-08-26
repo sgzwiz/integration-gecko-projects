@@ -795,7 +795,7 @@ IDBIndexSync*
 IDBObjectStoreSync::CreateIndex(
                            JSContext* aCx, const nsAString& aName,
                            const nsAString& aKeyPath,
-                           const IDBIndexParametersWorkers& aOptionalParameters,
+                           const IDBIndexParameters& aOptionalParameters,
                            ErrorResult& aRv)
 {
   indexedDB::KeyPath keyPath(0);
@@ -813,7 +813,7 @@ IDBIndexSync*
 IDBObjectStoreSync::CreateIndex(
                            JSContext* aCx, const nsAString& aName,
                            const Sequence<nsString>& aKeyPath,
-                           const IDBIndexParametersWorkers& aOptionalParameters,
+                           const IDBIndexParameters& aOptionalParameters,
                            ErrorResult& aRv)
 {
   if (!aKeyPath.Length()) {
@@ -836,7 +836,7 @@ IDBIndexSync*
 IDBObjectStoreSync::CreateIndex(
                            JSContext* aCx, const nsAString& aName,
                            KeyPath& aKeyPath,
-                           const IDBIndexParametersWorkers& aOptionalParameters,
+                           const IDBIndexParameters& aOptionalParameters,
                            ErrorResult& aRv)
 {
   if (mTransaction->IsInvalid()) {

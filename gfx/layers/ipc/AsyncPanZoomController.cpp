@@ -12,7 +12,6 @@
 #include "AsyncPanZoomController.h"     // for AsyncPanZoomController, etc
 #include "CompositorParent.h"           // for CompositorParent
 #include "FrameMetrics.h"               // for FrameMetrics, etc
-#include "GeckoProfilerFunc.h"          // for TimeDuration, TimeStamp
 #include "GestureEventListener.h"       // for GestureEventListener
 #include "InputData.h"                  // for MultiTouchInput, etc
 #include "Units.h"                      // for CSSRect, CSSPoint, etc
@@ -213,7 +212,6 @@ AsyncPanZoomController::AsyncPanZoomController(uint64_t aLayersId,
      mLastAsyncScrollOffset(0, 0),
      mCurrentAsyncScrollOffset(0, 0),
      mAsyncScrollTimeoutTask(nullptr),
-     mDPI(72),
      mDisableNextTouchBatch(false),
      mHandlingTouchQueue(false),
      mDelayPanning(false)
@@ -223,8 +221,6 @@ AsyncPanZoomController::AsyncPanZoomController(uint64_t aLayersId,
   if (aGestures == USE_GESTURE_DETECTOR) {
     mGestureEventListener = new GestureEventListener(this);
   }
-
-  SetDPI(mDPI);
 }
 
 AsyncPanZoomController::~AsyncPanZoomController() {
@@ -255,6 +251,7 @@ AsyncPanZoomController::Destroy()
   }
   mPrevSibling = nullptr;
   mLastChild = nullptr;
+  mParent = nullptr;
 }
 
 /* static */float
@@ -432,7 +429,7 @@ nsEventStatus AsyncPanZoomController::OnTouchMove(const MultiTouchInput& aEvent)
       return nsEventStatus_eIgnore;
 
     case TOUCHING: {
-      float panThreshold = gTouchStartTolerance * mDPI;
+      float panThreshold = gTouchStartTolerance * APZCTreeManager::GetDPI();
       UpdateWithTouchAtDevicePoint(aEvent);
 
       if (PanDistance() < panThreshold) {
@@ -950,14 +947,6 @@ const CSSRect AsyncPanZoomController::CalculatePendingDisplayPort(
   return scrollableRect.ClampRect(shiftedDisplayPort) - scrollOffset;
 }
 
-void AsyncPanZoomController::SetDPI(int aDPI) {
-  mDPI = aDPI;
-}
-
-int AsyncPanZoomController::GetDPI() {
-  return mDPI;
-}
-
 void AsyncPanZoomController::ScheduleComposite() {
   if (mCompositorParent) {
     mCompositorParent->ScheduleRenderOnCompositorThread();
@@ -1145,30 +1134,6 @@ void AsyncPanZoomController::NotifyLayersUpdated(const FrameMetrics& aLayerMetri
 
   bool isDefault = mFrameMetrics.IsDefault();
   mFrameMetrics.mMayHaveTouchListeners = aLayerMetrics.mMayHaveTouchListeners;
-
-  // TODO: Once a mechanism for calling UpdateScrollOffset() when content does
-  //       a scrollTo() is implemented for metro (bug 898580), this block can be removed.
-#ifdef MOZ_METRO
-  if (!mPaintThrottler.IsOutstanding()) {
-    // No paint was requested, but we got one anyways. One possible cause of this
-    // is that content could have fired a scrollTo(). In this case, we should take
-    // the new scroll offset. Document/viewport changes are handled elsewhere.
-    // Also note that, since NotifyLayersUpdated() is called whenever there's a
-    // layers update, we didn't necessarily get a new scroll offset, but we're
-    // updating our local copy of it anyways just in case.
-    switch (mState) {
-    case NOTHING:
-    case FLING:
-    case TOUCHING:
-    case WAITING_LISTENERS:
-      mFrameMetrics.mScrollOffset = aLayerMetrics.mScrollOffset;
-      break;
-    // Don't clobber if we're in other states.
-    default:
-      break;
-    }
-  }
-#endif
 
   mPaintThrottler.TaskComplete(GetFrameTime());
   bool needContentRepaint = false;

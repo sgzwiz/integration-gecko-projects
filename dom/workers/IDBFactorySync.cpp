@@ -130,7 +130,7 @@ IDBFactorySync::Open(JSContext* aCx, const nsAString& aName, uint64_t aVersion,
                      const Optional<JS::Handle<JSObject*> >& aUpgradeCallback,
                      const Optional<uint32_t>& aTimeout, ErrorResult& aRv)
 {
-  IDBOpenDBOptionsWorkers options;
+  IDBOpenDBOptions options;
   options.mVersion.Construct();
   options.mVersion.Value() = aVersion;
 
@@ -139,7 +139,7 @@ IDBFactorySync::Open(JSContext* aCx, const nsAString& aName, uint64_t aVersion,
 
 IDBDatabaseSync*
 IDBFactorySync::Open(JSContext* aCx, const nsAString& aName,
-                     const IDBOpenDBOptionsWorkers& aOptions,
+                     const IDBOpenDBOptions& aOptions,
                      const Optional<JS::Handle<JSObject*> >& aUpgradeCallback,
                      const Optional<uint32_t>& aTimeout, ErrorResult& aRv)
 {
@@ -176,7 +176,7 @@ IDBFactorySync::Open(JSContext* aCx, const nsAString& aName,
 
 void
 IDBFactorySync::DeleteDatabase(JSContext* aCx, const nsAString& aName,
-                               const IDBOpenDBOptionsWorkers& aOptions,
+                               const IDBOpenDBOptions& aOptions,
                                ErrorResult& aRv)
 {
   DOMBindingAnchor<IDBFactorySync> selfAnchor(this);

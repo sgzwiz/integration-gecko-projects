@@ -110,6 +110,8 @@ static const char BROWSER_ZOOM_TO_RECT[] = "browser-zoom-to-rect";
 static const char BEFORE_FIRST_PAINT[] = "before-first-paint";
 static const char DETECT_SCROLLABLE_SUBFRAME[] = "detect-scrollable-subframe";
 
+static bool sCpowsEnabled = false;
+
 NS_IMETHODIMP
 ContentListener::HandleEvent(nsIDOMEvent* aEvent)
 {
@@ -297,7 +299,6 @@ TabChild::TabChild(ContentChild* aManager, const TabContext& aContext, uint32_t 
   , mOrientation(eScreenOrientation_PortraitPrimary)
   , mUpdateHitRegion(false)
 {
-    printf("creating %d!\n", NS_IsMainThread());
 }
 
 // Get the DOMWindowUtils for the window corresponding to the given document.
@@ -1281,7 +1282,6 @@ TabChild::IsRootContentDocument()
 bool
 TabChild::RecvLoadURL(const nsCString& uri)
 {
-    printf("loading %s, %d\n", uri.get(), NS_IsMainThread());
     SetProcessNameToAppName();
 
     nsresult rv = mWebNav->LoadURI(NS_ConvertUTF8toUTF16(uri).get(),
@@ -1457,8 +1457,6 @@ TabChild::RecvShow(const nsIntSize& size)
     if (mDidFakeShow) {
         return true;
     }
-
-    printf("[TabChild] SHOW (w,h)= (%d, %d)\n", size.width, size.height);
 
     nsCOMPtr<nsIBaseWindow> baseWindow = do_QueryInterface(mWebNav);
     if (!baseWindow) {
@@ -2339,6 +2337,11 @@ TabChild::InitRenderingState()
                                      false);
     }
 
+    // This state can't really change during the lifetime of the child.
+    sCpowsEnabled = Preferences::GetBool("browser.tabs.remote", false);
+    if (Preferences::GetBool("dom.ipc.cpows.force-enabled", false))
+      sCpowsEnabled = true;
+
     return true;
 }
 
@@ -2471,8 +2474,10 @@ TabChild::DoSendSyncMessage(JSContext* aCx,
     return false;
   }
   InfallibleTArray<CpowEntry> cpows;
-  if (!cc->GetCPOWManager()->Wrap(aCx, aCpows, &cpows)) {
-    return false;
+  if (sCpowsEnabled) {
+    if (!cc->GetCPOWManager()->Wrap(aCx, aCpows, &cpows)) {
+      return false;
+    }
   }
   return SendSyncMessage(nsString(aMessage), data, cpows, aJSONRetVal);
 }
@@ -2489,8 +2494,10 @@ TabChild::DoSendAsyncMessage(JSContext* aCx,
     return false;
   }
   InfallibleTArray<CpowEntry> cpows;
-  if (!cc->GetCPOWManager()->Wrap(aCx, aCpows, &cpows)) {
-    return false;
+  if (sCpowsEnabled) {
+    if (!cc->GetCPOWManager()->Wrap(aCx, aCpows, &cpows)) {
+      return false;
+    }
   }
   return SendAsyncMessage(nsString(aMessage), data, cpows);
 }
