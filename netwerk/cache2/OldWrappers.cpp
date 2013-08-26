@@ -35,11 +35,18 @@ namespace { // anon
 class DoomCallbackSynchronizer : public nsRunnable
 {
 public:
-  DoomCallbackSynchronizer(nsICacheEntryDoomCallback* cb) : mCB(cb) {}
+  DoomCallbackSynchronizer(nsICacheEntryDoomCallback* cb) : mCB(cb)
+  {
+    MOZ_COUNT_CTOR(DoomCallbackSynchronizer);
+  }
   nsresult Dispatch();
 
 private:
-  virtual ~DoomCallbackSynchronizer() {}
+  virtual ~DoomCallbackSynchronizer()
+  {
+    MOZ_COUNT_DTOR(DoomCallbackSynchronizer);
+  }
+
   NS_DECL_NSIRUNNABLE
   nsCOMPtr<nsICacheEntryDoomCallback> mCB;
 };
@@ -81,10 +88,17 @@ class DoomCallbackWrapper : public nsICacheListener
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSICACHELISTENER
 
-  DoomCallbackWrapper(nsICacheEntryDoomCallback* cb) : mCB(cb) {}
+  DoomCallbackWrapper(nsICacheEntryDoomCallback* cb) : mCB(cb)
+  {
+    MOZ_COUNT_CTOR(DoomCallbackWrapper);
+  }
 
 private:
-  virtual ~DoomCallbackWrapper() {}
+  virtual ~DoomCallbackWrapper()
+  {
+    MOZ_COUNT_DTOR(DoomCallbackWrapper);
+  }
+
   nsCOMPtr<nsICacheEntryDoomCallback> mCB;
 };
 
@@ -119,7 +133,9 @@ class VisitCallbackWrapper : public nsICacheVisitor
   : mCB(cb)
   , mVisitEntries(visitEntries)
   , mDeviceID(deviceID)
-  {}
+  {
+    MOZ_COUNT_CTOR(VisitCallbackWrapper);
+  }
 
 private:
   virtual ~VisitCallbackWrapper();
@@ -134,6 +150,8 @@ VisitCallbackWrapper::~VisitCallbackWrapper()
 {
   if (mVisitEntries)
     mCB->OnCacheEntryVisitCompleted();
+
+  MOZ_COUNT_DTOR(VisitCallbackWrapper);
 }
 
 NS_IMETHODIMP VisitCallbackWrapper::VisitDevice(const char * deviceID,
@@ -182,6 +200,20 @@ NS_IMETHODIMP VisitCallbackWrapper::VisitEntry(const char * deviceID,
 
 
 // _OldCacheEntryWrapper
+
+_OldCacheEntryWrapper::_OldCacheEntryWrapper(nsICacheEntryDescriptor* desc)
+: mOldDesc(desc), mOldInfo(desc)
+{
+}
+
+_OldCacheEntryWrapper::_OldCacheEntryWrapper(nsICacheEntryInfo* info)
+: mOldInfo(info)
+{
+}
+
+_OldCacheEntryWrapper::~_OldCacheEntryWrapper()
+{
+}
 
 NS_IMPL_ISUPPORTS1(_OldCacheEntryWrapper, nsICacheEntry)
 
@@ -392,11 +424,13 @@ _OldCacheLoad::_OldCacheLoad(nsCSubstring const& aCacheKey,
   , mRunCount(0)
   , mAppCache(aAppCache)
 {
+  MOZ_COUNT_CTOR(_OldCacheLoad);
 }
 
 _OldCacheLoad::~_OldCacheLoad()
 {
   ProxyReleaseMainThread(mAppCache);
+  MOZ_COUNT_DTOR(_OldCacheLoad);
 }
 
 nsresult _OldCacheLoad::Start()
@@ -556,12 +590,18 @@ _OldStorage::_OldStorage(nsILoadContextInfo* aInfo,
                          bool aLookupAppCache,
                          bool aOfflineStorage,
                          nsIApplicationCache* aAppCache)
-: mLoadInfo(aInfo)
+: mLoadInfo(GetLoadContextInfo(aInfo))
 , mAppCache(aAppCache)
 , mWriteToDisk(aAllowDisk)
 , mLookupAppCache(aLookupAppCache)
 , mOfflineStorage(aOfflineStorage)
 {
+  MOZ_COUNT_CTOR(_OldStorage);
+}
+
+_OldStorage::~_OldStorage()
+{
+  MOZ_COUNT_DTOR(_OldStorage);
 }
 
 NS_IMETHODIMP _OldStorage::AsyncOpenURI(nsIURI *aURI,
@@ -600,6 +640,8 @@ NS_IMETHODIMP _OldStorage::AsyncOpenURI(nsIURI *aURI,
 NS_IMETHODIMP _OldStorage::AsyncDoomURI(nsIURI *aURI, const nsACString & aIdExtension,
                                         nsICacheEntryDoomCallback* aCallback)
 {
+  LOG(("_OldStorage::AsyncDoomURI"));
+
   nsresult rv;
 
   nsAutoCString cacheKey;
@@ -619,6 +661,8 @@ NS_IMETHODIMP _OldStorage::AsyncDoomURI(nsIURI *aURI, const nsACString & aIdExte
 
 NS_IMETHODIMP _OldStorage::AsyncEvictStorage(nsICacheEntryDoomCallback* aCallback)
 {
+  LOG(("_OldStorage::AsyncEvictStorage"));
+
   nsresult rv;
 
   if (!mAppCache && mOfflineStorage) {
@@ -667,6 +711,8 @@ NS_IMETHODIMP _OldStorage::AsyncEvictStorage(nsICacheEntryDoomCallback* aCallbac
 NS_IMETHODIMP _OldStorage::AsyncVisitStorage(nsICacheStorageVisitor* aVisitor,
                                              bool aVisitEntries)
 {
+  LOG(("_OldStorage::AsyncVisitStorage"));
+
   nsresult rv;
 
   nsCOMPtr<nsICacheService> serv =

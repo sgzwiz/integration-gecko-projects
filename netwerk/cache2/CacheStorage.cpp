@@ -29,12 +29,10 @@ CacheStorage::CacheStorage(nsILoadContextInfo* aInfo,
 , mWriteToDisk(aAllowDisk)
 , mLookupAppCache(aLookupAppCache)
 {
-  MOZ_COUNT_CTOR(CacheStorage);
 }
 
 CacheStorage::~CacheStorage()
 {
-  MOZ_COUNT_DTOR(CacheStorage);
 }
 
 NS_IMETHODIMP CacheStorage::AsyncOpenURI(nsIURI *aURI,
