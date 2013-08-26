@@ -38,12 +38,10 @@ public:
   NS_IMETHOD OpenInputStream(int64_t offset, nsIInputStream * *_retval);
   NS_IMETHOD OpenOutputStream(int64_t offset, nsIOutputStream * *_retval);
 
-  _OldCacheEntryWrapper(nsICacheEntryDescriptor* desc)
-    : mOldDesc(desc), mOldInfo(desc) {}
-  _OldCacheEntryWrapper(nsICacheEntryInfo* info)
-    : mOldInfo(info) {}
+  _OldCacheEntryWrapper(nsICacheEntryDescriptor* desc);
+  _OldCacheEntryWrapper(nsICacheEntryInfo* info);
 
-  virtual ~_OldCacheEntryWrapper() {}
+  virtual ~_OldCacheEntryWrapper();
 
 private:
   _OldCacheEntryWrapper() MOZ_DELETE;
@@ -104,7 +102,7 @@ public:
               nsIApplicationCache* aAppCache);
 
 private:
-  virtual ~_OldStorage() { }
+  virtual ~_OldStorage();
   nsresult AssembleCacheKey(nsIURI *aURI, nsACString const & aIdExtension, nsACString & _result);
   nsresult ChooseApplicationCache(nsCSubstring const &cacheKey, nsIApplicationCache** aCache);
 
