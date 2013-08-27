@@ -184,8 +184,8 @@ function xpcWaitForFinishedFrames(callback, numFrames) {
         (win.document.body.textContent == body ||
          win.document.body.textContent == popup_body) && 
         win.document.readyState == "complete") {
-      if (!contains(win, finishedWindows)) {
-        finishedWindows.push(win);
+      if (!contains(win.name, finishedWindows)) {
+        finishedWindows.push(win.name);
         frameFinished();
       }
     }
