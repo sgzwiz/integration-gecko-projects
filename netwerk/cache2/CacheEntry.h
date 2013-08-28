@@ -135,19 +135,22 @@ private:
   public:
     AvailableCallbackRunnable(CacheEntry* aEntry,
                               nsICacheEntryOpenCallback* aCallback,
-                              bool aReadOnly)
-      : mEntry(aEntry), mCallback(aCallback), mReadOnly(aReadOnly) {}
+                              bool aReadOnly,
+                              bool aNotWanted)
+      : mEntry(aEntry), mCallback(aCallback)
+      , mReadOnly(aReadOnly), mNotWanted(aNotWanted) {}
 
   private:
     NS_IMETHOD Run()
     {
-      mEntry->InvokeAvailableCallback(mCallback, mReadOnly);
+      mEntry->InvokeAvailableCallback(mCallback, mReadOnly, mNotWanted);
       return NS_OK;
     }
 
     nsRefPtr<CacheEntry> mEntry;
     nsCOMPtr<nsICacheEntryOpenCallback> mCallback;
-    bool mReadOnly;
+    bool mReadOnly : 1;
+    bool mNotWanted : 1;
   };
 
   // Since OnCacheEntryDoomed must be invoked on the main thread
@@ -184,7 +187,7 @@ private:
   bool PendingCallbacks();
   void InvokeCallbacks();
   bool InvokeCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
-  void InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly);
+  void InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback, bool aReadOnly, bool aNotWanted);
   void InvokeCallbacksMainThread();
 
   nsresult OpenOutputStreamInternal(int64_t offset, nsIOutputStream * *_retval);

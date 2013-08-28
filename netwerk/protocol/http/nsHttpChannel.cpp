@@ -2654,7 +2654,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
         mRequestHead.PeekHeader(nsHttp::If_Range);
 
     // Be pessimistic: assume the cache entry has no useful data.
-    *aResult = ENTRY_NOT_VALID;
+    *aResult = ENTRY_WANTED;
     mCachedContentIsValid = false;
 
     nsXPIDLCString buf;
@@ -2709,7 +2709,6 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
          mFallbackChannel)) {
         rv = OpenCacheInputStream(entry, true);
         if (NS_SUCCEEDED(rv)) {
-            *aResult = ENTRY_VALID;
             mCachedContentIsValid = true;
             // XXX: Isn't the cache entry already valid?
             MaybeMarkCacheEntryValid(this, entry, mCacheEntryIsWriteOnly);
@@ -2732,6 +2731,13 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
 
         if (size == int64_t(-1)) {
             LOG(("  write is in progress"));
+            if (mLoadFlags & LOAD_BYPASS_LOCAL_CACHE_IF_BUSY) {
+                LOG(("  not interested in the entry, "
+                     "LOAD_BYPASS_LOCAL_CACHE_IF_BUSY specified"));
+                *aResult = ENTRY_NOT_WANTED;
+                return NS_OK;
+            }
+
             mConcurentCacheAccess = 1;
         }
         else if (contentLength != int64_t(-1) && contentLength != size) {
@@ -2939,10 +2945,8 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
 
     if (mDidReval)
         *aResult = ENTRY_NEEDS_REVALIDATION;
-    else if (mCachedContentIsValid)
-        *aResult = ENTRY_VALID;
     else
-        *aResult = ENTRY_NOT_VALID;
+        *aResult = ENTRY_WANTED;
 
     if (mCachedContentIsValid) {
         // XXX: Isn't the cache entry already valid?
