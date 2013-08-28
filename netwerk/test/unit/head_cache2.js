@@ -39,6 +39,8 @@ const WAITFORWRITE =    1 << 8;
 const METAONLY =        1 << 9;
 // Do recreation of an existing cache entry
 const RECREATE =        1 << 10;
+// Do not give me the entry
+const NOTWANTED =       1 << 11;
 
 var log_c2 = true;
 function LOG_C2(o, m)
@@ -100,8 +102,13 @@ OpenCallback.prototype =
     this.onCheckPassed = true;
 
     if (this.behavior & NOTVALID) {
-      LOG_C2(this, "onCacheEntryCheck DONE, return ENTRY_NOT_VALID");
-      return Ci.nsICacheEntryOpenCallback.ENTRY_NOT_VALID;
+      LOG_C2(this, "onCacheEntryCheck DONE, return ENTRY_WANTED");
+      return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED;
+    }
+
+    if (this.behavior & NOTWANTED) {
+      LOG_C2(this, "onCacheEntryCheck DONE, return ENTRY_NOT_WANTED");
+      return Ci.nsICacheEntryOpenCallback.ENTRY_NOT_WANTED;
     }
 
     do_check_eq(entry.getMetaDataElement("meto"), this.workingMetadata);
@@ -114,8 +121,8 @@ OpenCallback.prototype =
       return Ci.nsICacheEntryOpenCallback.ENTRY_NEEDS_REVALIDATION;
     }
 
-    LOG_C2(this, "onCacheEntryCheck DONE, return ENTRY_VALID");
-    return Ci.nsICacheEntryOpenCallback.ENTRY_VALID;
+    LOG_C2(this, "onCacheEntryCheck DONE, return ENTRY_WANTED");
+    return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED;
   },
   onCacheEntryAvailable: function(entry, isnew, appCache, status)
   {
@@ -125,7 +132,7 @@ OpenCallback.prototype =
 
     do_check_eq(isnew, !!(this.behavior & NEW));
 
-    if (this.behavior & NOTFOUND) {
+    if (this.behavior & (NOTFOUND|NOTWANTED)) {
       do_check_eq(status, Cr.NS_ERROR_CACHE_KEY_NOT_FOUND);
       do_check_false(!!entry);
       if (this.behavior & THROWAVAIL)
@@ -242,7 +249,7 @@ function OpenCallback(behavior, workingMetadata, workingData, goon)
   this.goon = goon;
   this.onCheckPassed = (!!(behavior & (NEW|RECREATE)) || !workingMetadata) && !(behavior & NOTVALID);
   this.onAvailPassed = false;
-  this.onDataCheckPassed = !!(behavior & (NEW|RECREATE)) || !workingMetadata;
+  this.onDataCheckPassed = !!(behavior & (NEW|RECREATE|NOTWANTED)) || !workingMetadata;
   callbacks.push(this);
   this.order = callbacks.length;
 }

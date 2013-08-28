@@ -13,19 +13,18 @@ interface nsICacheEntryOpenCallback : nsISupports
   /**
    * State of the entry determined by onCacheEntryCheck.
    *
-   * ENTRY_NOT_VALID - entry has been found unusable right during the examination
-   *    by the callback.
-   * ENTRY_VALID - entry has been found valid and can be directly used w/o any
-   *    revalidation with the server
+   * ENTRY_WANTED - the consumer is interested in the entry, we will pass it.
    * ENTRY_NEEDS_REVALIDATION - entry needs to be revalidated first with origin server,
    *    this means the loading channel will decide whether to use the entry content
    *    as is after it gets a positive response from the server about validity of the
    *    content ; when a new content needs to be loaded from the server, the loading
-   *    channel opens a new entry with OPEN_TRUNCATE flag
+   *    channel opens a new entry with OPEN_TRUNCATE flag which dooms the one
+   *    this check has been made for.
+   * ENTRY_NOT_WANTED - the consumer is not interested in the entry, we will not pass it.
    */
-  const unsigned long ENTRY_NOT_VALID = 0;
-  const unsigned long ENTRY_VALID = 1;
-  const unsigned long ENTRY_NEEDS_REVALIDATION = 2;
+  const unsigned long ENTRY_WANTED = 0;
+  const unsigned long ENTRY_NEEDS_REVALIDATION = 1;
+  const unsigned long ENTRY_NOT_WANTED = 2;
 
   /**
    * Callback to perform any validity checks before the entry should be used.
