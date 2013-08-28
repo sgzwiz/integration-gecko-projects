@@ -117,6 +117,7 @@ NS_IMETHODIMP DoomCallbackWrapper::OnCacheEntryDoomed(nsresult status)
     return NS_ERROR_NULL_POINTER;
 
   mCB->OnCacheEntryDoomed(status);
+  mCB = nullptr;
   return NS_OK;
 }
 
@@ -652,7 +653,9 @@ NS_IMETHODIMP _OldStorage::AsyncDoomURI(nsIURI *aURI, const nsACString & aIdExte
   rv = GetCacheSession(mWriteToDisk, mLoadInfo, mAppCache, getter_AddRefs(session));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsRefPtr<DoomCallbackWrapper> cb = new DoomCallbackWrapper(aCallback);
+  nsRefPtr<DoomCallbackWrapper> cb = aCallback
+    ? new DoomCallbackWrapper(aCallback)
+    : nullptr;
   rv = session->DoomEntry(cacheKey, cb);
   NS_ENSURE_SUCCESS(rv, rv);
 
