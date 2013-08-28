@@ -27,12 +27,12 @@
 namespace mozilla {
 namespace net {
 
-static uint32_t const ENTRY_NOT_VALID =
-  nsICacheEntryOpenCallback::ENTRY_NOT_VALID;
-static uint32_t const ENTRY_VALID =
-  nsICacheEntryOpenCallback::ENTRY_VALID;
+static uint32_t const ENTRY_WANTED =
+  nsICacheEntryOpenCallback::ENTRY_WANTED;
 static uint32_t const ENTRY_NEEDS_REVALIDATION =
   nsICacheEntryOpenCallback::ENTRY_NEEDS_REVALIDATION;
+static uint32_t const ENTRY_NOT_WANTED =
+  nsICacheEntryOpenCallback::ENTRY_NOT_WANTED;
 
 NS_IMPL_ISUPPORTS1(CacheEntry::Handle, nsICacheEntry)
 
@@ -441,6 +441,8 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
 
   mLock.AssertCurrentThreadOwns();
 
+  bool notWanted = false;
+
   if (!mIsDoomed) {
     // When we are here, the entry must be loaded from disk
     MOZ_ASSERT(mState > LOADING);
@@ -473,46 +475,37 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
 
       if (mState == READY) {
         // Metadata present, validate the entry
-        uint32_t validityState;
+        uint32_t checkResult;
         {
           // mayhemer: TODO check and solve any potential races of concurent OnCacheEntryCheck
           mozilla::MutexAutoUnlock unlock(mLock);
 
-          nsresult rv = aCallback->OnCacheEntryCheck(this, nullptr, &validityState);
-          LOG(("  OnCacheEntryCheck result: rv=0x%08x, validity=%d", rv, validityState));
+          nsresult rv = aCallback->OnCacheEntryCheck(this, nullptr, &checkResult);
+          LOG(("  OnCacheEntryCheck: rv=0x%08x, result=%d", rv, checkResult));
 
           if (NS_FAILED(rv))
-            validityState = ENTRY_NOT_VALID;
+            checkResult = ENTRY_WANTED;
         }
 
-        switch (validityState) {
-        /*
-        mayhemer - probably a dead code now, consumer is responsible to recreate
-                   an entry when found invalid and wants to write to it.
-        case ENTRY_NOT_VALID:
-        {
-          // Entry found not valid, break callback execution.  This result
-          // causes this entry replacement with a new truncated one.
-          nsRefPtr<CacheEntry> newEntry = ReopenTruncated(aCallback);
-          if (newEntry) {
-            // This new entry now grabbed all our callbacks, indicate callback
-            // had been invoked.
-            return true;
-          }
+        switch (checkResult) {
+        case ENTRY_WANTED:
+          // Nothing more to do here, the consumer is responsible to handle
+          // the result of OnCacheEntryCheck it self.
+          // Proceed to callback...
           break;
-        }
-        */
 
         case ENTRY_NEEDS_REVALIDATION:
           LOG(("  will be holding callbacks until entry is revalidated"));
           // State is READY now and from that state entry cannot transit to any other
-          // state then REVALIDATING for which cocurrency is not an issue.  No need
-          // to lock here.
+          // state then REVALIDATING for which cocurrency is not an issue.  Potentially
+          // no need to lock here.
           mState = REVALIDATING;
           break;
 
-        case ENTRY_VALID:
-          // Nothing more to do here, proceed to callback...
+        case ENTRY_NOT_WANTED:
+          LOG(("  consumer not interested in the entry"));
+          // Do not give this entry to the consumer, it is not interested in us.
+          notWanted = true;
           break;
         }
       }
@@ -521,17 +514,18 @@ bool CacheEntry::InvokeCallback(nsICacheEntryOpenCallback* aCallback,
 
   if (aCallback) {
     mozilla::MutexAutoUnlock unlock(mLock);
-    InvokeAvailableCallback(aCallback, aReadOnly);
+    InvokeAvailableCallback(aCallback, aReadOnly, notWanted);
   }
 
   return true;
 }
 
 void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
-                                         bool aReadOnly)
+                                         bool aReadOnly,
+                                         bool aNotWanted)
 {
-  LOG(("CacheEntry::InvokeAvailableCallback [this=%p, state=%s, cb=%p, r/o=%d]",
-    this, StateString(mState), aCallback, aReadOnly));
+  LOG(("CacheEntry::InvokeAvailableCallback [this=%p, state=%s, cb=%p, r/o=%d, n/w=%d]",
+    this, StateString(mState), aCallback, aReadOnly, aNotWanted));
 
   uint32_t const state = mState;
 
@@ -541,15 +535,15 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
   if (!NS_IsMainThread()) {
     // Must happen on the main thread :(
     nsRefPtr<AvailableCallbackRunnable> event =
-      new AvailableCallbackRunnable(this, aCallback, aReadOnly);
+      new AvailableCallbackRunnable(this, aCallback, aReadOnly, aNotWanted);
     NS_DispatchToMainThread(event);
     return;
   }
 
   // This happens only on the main thread / :( /
 
-  if (mIsDoomed) {
-    LOG(("  doomed, notifying OCEA with NS_ERROR_CACHE_KEY_NOT_FOUND"));
+  if (mIsDoomed || aNotWanted) {
+    LOG(("  doomed or not wanted, notifying OCEA with NS_ERROR_CACHE_KEY_NOT_FOUND"));
     aCallback->OnCacheEntryAvailable(nullptr, false, nullptr, NS_ERROR_CACHE_KEY_NOT_FOUND);
     return;
   }
@@ -574,7 +568,7 @@ void CacheEntry::InvokeAvailableCallback(nsICacheEntryOpenCallback* aCallback,
   // This is a new or potentially non-valid entry and needs to be fetched first.
   // The Handle blocks other consumers until the channel
   // either releases the entry or marks metadata as filled or whole entry valid,
-  // i.e. until SetValid() on the entry is called.
+  // i.e. until MetaDataReady() or SetValid() on the entry is called respectively.
 
   // Consumer will be responsible to fill or validate the entry metadata and data.
 
