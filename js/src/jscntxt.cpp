@@ -25,7 +25,6 @@
 
 #include "jsatom.h"
 #include "jscompartment.h"
-#include "jsdbgapi.h"
 #include "jsexn.h"
 #include "jsfun.h"
 #include "jsgc.h"
@@ -44,6 +43,7 @@
 #include "jit/Ion.h"
 #endif
 #include "js/CharacterEncoding.h"
+#include "js/OldDebugAPI.h"
 #include "vm/Shape.h"
 #include "yarr/BumpPointerAllocator.h"
 
@@ -340,7 +340,7 @@ ReportError(JSContext *cx, const char *message, JSErrorReport *reportp,
          * the reporter triggers an over-recursion.
          */
         int stackDummy;
-        if (!JS_CHECK_STACK_SIZE(cx->mainThread().nativeStackLimit, &stackDummy))
+        if (!JS_CHECK_STACK_SIZE(GetNativeStackLimit(cx), &stackDummy))
             return;
 
         if (cx->errorReporter)
@@ -1025,7 +1025,7 @@ js_InvokeOperationCallback(JSContext *cx)
      * A worker thread may have set the callback after finishing an Ion
      * compilation.
      */
-    ion::AttachFinishedCompilations(cx);
+    jit::AttachFinishedCompilations(cx);
 #endif
 
     /*

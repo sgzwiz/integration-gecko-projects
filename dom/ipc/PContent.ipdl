@@ -30,7 +30,6 @@ include URIParams;
 include "mozilla/chrome/RegistryMessageUtils.h";
 include "mozilla/dom/PermissionMessageUtils.h";
 include "mozilla/dom/TabMessageUtils.h";
-include "mozilla/dom/Element.h";
 include "mozilla/HalTypes.h";
 include "mozilla/layout/RenderFrameUtils.h";
 include "mozilla/net/NeckoMessageUtils.h";
@@ -275,6 +274,12 @@ child:
     NotifyProcessPriorityChanged(ProcessPriority priority);
     MinimizeMemoryUsage();
     CancelMinimizeMemoryUsage();
+
+    /**
+     * Used to manage nsIStyleSheetService across processes.
+     */
+    async LoadAndRegisterSheet(URIParams uri, uint32_t type);
+    async UnregisterSheet(URIParams uri, uint32_t type);
 
 parent:
     /**

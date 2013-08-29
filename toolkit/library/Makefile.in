@@ -148,7 +148,7 @@ COMPONENT_LIBS += \
   uconv \
   i18n \
   chardet \
-  jar$(VERSION_NUMBER) \
+  jar \
   startupcache \
   pref \
   htmlpars \
@@ -177,6 +177,12 @@ COMPONENT_LIBS += \
   windowds \
   diskspacewatcher \
   $(NULL)
+
+ifeq (gonk,$(MOZ_WIDGET_TOOLKIT))
+COMPONENT_LIBS += \
+  domwifi_s \
+  $(NULL)
+endif
 
 ifdef BUILD_CTYPES
 COMPONENT_LIBS += \
