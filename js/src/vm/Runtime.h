@@ -79,7 +79,7 @@ class AsmJSActivation;
 class MathCache;
 class WorkerThreadState;
 
-namespace ion {
+namespace jit {
 class IonRuntime;
 class JitActivation;
 struct PcScriptCache;
@@ -514,7 +514,7 @@ class PerThreadData : public PerThreadDataFriendFields,
   private:
     friend class js::Activation;
     friend class js::ActivationIterator;
-    friend class js::ion::JitActivation;
+    friend class js::jit::JitActivation;
     friend class js::AsmJSActivation;
 
     /*
@@ -663,7 +663,10 @@ typedef Vector<JS::Zone *, 1, SystemAllocPolicy> ZoneVector;
 
 class AutoLockForExclusiveAccess;
 class AutoPauseWorkersForGC;
+struct SelfHostedClass;
 class ThreadDataIter;
+
+void RecomputeStackLimit(JSRuntime *rt, StackKind kind);
 
 } // namespace js
 
@@ -753,13 +756,10 @@ struct JSRuntime : public JS::shadow::Runtime,
 #endif
     }
 
-#ifdef JS_THREADSAFE
-
-    js::SourceCompressorThread sourceCompressorThread;
-
-# ifdef JS_ION
-    js::WorkerThreadState *workerThreadState;
+#if defined(JS_THREADSAFE) && defined(JS_ION)
 # define JS_WORKER_THREADS
+
+    js::WorkerThreadState *workerThreadState;
 
   private:
     /*
@@ -786,8 +786,7 @@ struct JSRuntime : public JS::shadow::Runtime,
     void setUsedByExclusiveThread(JS::Zone *zone);
     void clearUsedByExclusiveThread(JS::Zone *zone);
 
-# endif // JS_ION
-#endif // JS_THREADSAFE
+#endif // JS_THREADSAFE && JS_ION
 
     bool currentThreadHasExclusiveAccess() {
 #if defined(JS_WORKER_THREADS) && defined(DEBUG)
@@ -850,16 +849,17 @@ struct JSRuntime : public JS::shadow::Runtime,
      */
     JSC::ExecutableAllocator *execAlloc_;
     WTF::BumpPointerAllocator *bumpAlloc_;
-    js::ion::IonRuntime *ionRuntime_;
+    js::jit::IonRuntime *ionRuntime_;
 
     JSObject *selfHostingGlobal_;
+    js::SelfHostedClass *selfHostedClasses_;
 
     /* Space for interpreter frames. */
     js::InterpreterStack interpreterStack_;
 
     JSC::ExecutableAllocator *createExecutableAllocator(JSContext *cx);
     WTF::BumpPointerAllocator *createBumpPointerAllocator(JSContext *cx);
-    js::ion::IonRuntime *createIonRuntime(JSContext *cx);
+    js::jit::IonRuntime *createIonRuntime(JSContext *cx);
 
   public:
     JSC::ExecutableAllocator *getExecAlloc(JSContext *cx) {
@@ -875,10 +875,10 @@ struct JSRuntime : public JS::shadow::Runtime,
     WTF::BumpPointerAllocator *getBumpPointerAllocator(JSContext *cx) {
         return bumpAlloc_ ? bumpAlloc_ : createBumpPointerAllocator(cx);
     }
-    js::ion::IonRuntime *getIonRuntime(JSContext *cx) {
+    js::jit::IonRuntime *getIonRuntime(JSContext *cx) {
         return ionRuntime_ ? ionRuntime_ : createIonRuntime(cx);
     }
-    js::ion::IonRuntime *ionRuntime() {
+    js::jit::IonRuntime *ionRuntime() {
         return ionRuntime_;
     }
     bool hasIonRuntime() const {
@@ -898,6 +898,10 @@ struct JSRuntime : public JS::shadow::Runtime,
     bool isSelfHostingGlobal(js::HandleObject global) {
         return global == selfHostingGlobal_;
     }
+    js::SelfHostedClass *selfHostedClasses() {
+        return selfHostedClasses_;
+    }
+    void addSelfHostedClass(js::SelfHostedClass *shClass);
     bool cloneSelfHostedFunctionScript(JSContext *cx, js::Handle<js::PropertyName*> name,
                                        js::Handle<JSFunction*> targetFun);
     bool cloneSelfHostedValue(JSContext *cx, js::Handle<js::PropertyName*> name,
@@ -931,7 +935,7 @@ struct JSRuntime : public JS::shadow::Runtime,
     uintptr_t           nativeStackBase;
 
     /* The native stack size limit that runtime should not exceed. */
-    size_t              nativeStackQuota;
+    size_t              nativeStackQuota[js::StackKindCount];
 
     /* Context create/destroy callback. */
     JSContextCallback   cxCallback;
@@ -1276,7 +1280,7 @@ struct JSRuntime : public JS::shadow::Runtime,
 
     JS_SourceHook       sourceHook;
 
-    /* Per runtime debug hooks -- see jsdbgapi.h. */
+    /* Per runtime debug hooks -- see js/OldDebugAPI.h. */
     JSDebugHooks        debugHooks;
 
     /* If true, new compartments are initially in debug mode. */
@@ -1460,11 +1464,11 @@ struct JSRuntime : public JS::shadow::Runtime,
     // has been noticed by Ion/Baseline.
     void resetIonStackLimit() {
         AutoLockForOperationCallback lock(this);
-        mainThread.setIonStackLimit(mainThread.nativeStackLimit);
+        mainThread.setIonStackLimit(mainThread.nativeStackLimit[js::StackForUntrustedScript]);
     }
 
-    // Cache for ion::GetPcScript().
-    js::ion::PcScriptCache *ionPcScriptCache;
+    // Cache for jit::GetPcScript().
+    js::jit::PcScriptCache *ionPcScriptCache;
 
     js::ThreadPool threadPool;
 

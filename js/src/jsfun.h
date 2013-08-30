@@ -122,6 +122,13 @@ class JSFunction : public JSObject
         return flags & SH_WRAPPABLE;
     }
 
+    bool hasJITCode() const {
+        if (!hasScript())
+            return false;
+
+        return nonLazyScript()->hasBaselineScript() || nonLazyScript()->hasIonScript();
+    }
+
     // Arrow functions are a little weird.
     //
     // Like all functions, (1) when the compiler parses an arrow function, it
@@ -281,7 +288,12 @@ class JSFunction : public JSObject
     js::GeneratorKind generatorKind() const {
         if (!isInterpreted())
             return js::NotGenerator;
-        return hasScript() ? nonLazyScript()->generatorKind() : lazyScript()->generatorKind();
+        if (hasScript())
+            return nonLazyScript()->generatorKind();
+        if (js::LazyScript *lazy = lazyScriptOrNull())
+            return lazy->generatorKind();
+        JS_ASSERT(isSelfHostedBuiltin());
+        return js::NotGenerator;
     }
 
     bool isGenerator() const { return generatorKind() != js::NotGenerator; }
