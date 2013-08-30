@@ -487,8 +487,6 @@ _OldCacheLoad::Run()
   nsresult rv;
 
   if (!NS_IsMainThread()) {
-    //AssertOnCacheThread();
-
     nsCOMPtr<nsICacheSession> session;
     rv = GetCacheSession(mWriteToDisk, mLoadInfo, mAppCache, getter_AddRefs(session));
     if (NS_SUCCEEDED(rv)) {
@@ -507,12 +505,15 @@ _OldCacheLoad::Run()
 
       bool bypassBusy = mFlags & nsICacheStorage::OPEN_BYPASS_IF_BUSY;
       rv = session->AsyncOpenCacheEntry(mCacheKey, cacheAccess, this, bypassBusy);
+
+      if (NS_SUCCEEDED(rv))
+        return NS_OK;
     }
 
-    // TODO fix...
-    if (NS_FAILED(rv)) {
-      rv = OnCacheEntryAvailable(nullptr, 0, rv);
-    }
+    // Opening failed, propagate the error to the consumer
+    mStatus = rv;
+    mNew = false;
+    NS_DispatchToMainThread(this);
   } else {
     if (mMainThreadOnly)
       Check();
@@ -551,14 +552,8 @@ _OldCacheLoad::OnCacheEntryAvailable(nsICacheEntryDescriptor *entry,
   NS_ENSURE_TRUE(mRunCount == 0, NS_ERROR_UNEXPECTED);
   ++mRunCount;
 
-  //AssertOnCacheThread();
-
   mCacheEntry = entry ? new _OldCacheEntryWrapper(entry) : nullptr;
   mStatus = status;
-
-#if 0
-  mNew = NS_SUCCEEDED(mStatus) && !(access & nsICache::ACCESS_READ);
-#endif
   mNew = access == nsICache::ACCESS_WRITE;
 
   if (!mMainThreadOnly)
@@ -570,15 +565,25 @@ _OldCacheLoad::OnCacheEntryAvailable(nsICacheEntryDescriptor *entry,
 void
 _OldCacheLoad::Check()
 {
-  if (mCacheEntry && !mNew) {
-    uint32_t valid;
-    nsresult rv = mCallback->OnCacheEntryCheck(mCacheEntry, mAppCache, &valid);
-    LOG(("  OnCacheEntryCheck result ent=%p, cb=%p, appcache=%p, rv=0x%08x",
-      mCacheEntry.get(), mCallback.get(), mAppCache.get(), rv));
+  if (!mCacheEntry)
+    return;
 
-    if (NS_FAILED(rv)) {
-      NS_WARNING("cache check failed");
-    }
+  if (mNew)
+    return;
+
+  uint32_t result;
+  nsresult rv = mCallback->OnCacheEntryCheck(mCacheEntry, mAppCache, &result);
+  LOG(("  OnCacheEntryCheck result ent=%p, cb=%p, appcache=%p, rv=0x%08x, result=%d",
+    mCacheEntry.get(), mCallback.get(), mAppCache.get(), rv, result));
+
+  if (NS_FAILED(rv)) {
+    NS_WARNING("cache check failed");
+  }
+
+  if (result == nsICacheEntryOpenCallback::ENTRY_NOT_WANTED) {
+    mCacheEntry->Close();
+    mCacheEntry = nullptr;
+    mStatus = NS_ERROR_CACHE_KEY_NOT_FOUND;
   }
 }
 
