@@ -137,13 +137,22 @@ WillRedirect(const nsHttpResponseHead * response)
 }
 
 void
-MaybeMarkCacheEntryValid(nsHttpChannel const * channel,
-                         nsICacheEntry * cacheEntry)
+MaybeMarkCacheEntryValid(const void * channel,
+                         nsICacheEntry * cacheEntry,
+                         bool newEntry)
 {
-    nsresult rv = cacheEntry->MarkValid();
-    LOG(("Marking cache entry valid "
-         "[channel=%p, entry=%p, result=0x%08x]",
-         channel, cacheEntry, int(rv)));
+    // Mark the cache entry as valid in order to allow others access to it.
+    // XXX: Is it really necessary to check for write acccess to the entry?
+    if (newEntry) {
+        nsresult rv = cacheEntry->MarkValid();
+        LOG(("Marking cache entry valid "
+             "[channel=%p, entry=%p, new=%d, result=%d]",
+             channel, cacheEntry, newEntry, int(rv)));
+    } else {
+        LOG(("Not marking read-only cache entry valid "
+             "[channel=%p, entry=%p, new=%d]",
+             channel, cacheEntry, newEntry));
+    }
 }
 
 } // unnamed namespace
@@ -2702,7 +2711,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
         if (NS_SUCCEEDED(rv)) {
             mCachedContentIsValid = true;
             // XXX: Isn't the cache entry already valid?
-            MaybeMarkCacheEntryValid(this, entry);
+            MaybeMarkCacheEntryValid(this, entry, mCacheEntryIsWriteOnly);
         }
         return rv;
     }
@@ -2941,7 +2950,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
 
     if (mCachedContentIsValid) {
         // XXX: Isn't the cache entry already valid?
-        MaybeMarkCacheEntryValid(this, entry);
+        MaybeMarkCacheEntryValid(this, entry, mCacheEntryIsWriteOnly);
     }
 
     LOG(("nsHTTPChannel::OnCacheEntryCheck exit [this=%p doValidation=%d result=%d]\n",
@@ -3473,7 +3482,7 @@ nsHttpChannel::ReadFromCache(bool alreadyMarkedValid)
         //
         // TODO: This should be done asynchronously so we don't take the cache
         // service lock on the main thread.
-        MaybeMarkCacheEntryValid(this, mCacheEntry);
+        MaybeMarkCacheEntryValid(this, mCacheEntry, mCacheEntryIsWriteOnly);
     }
 
     nsresult rv;
