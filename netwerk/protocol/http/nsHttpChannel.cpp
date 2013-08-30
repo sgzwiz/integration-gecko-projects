@@ -137,22 +137,13 @@ WillRedirect(const nsHttpResponseHead * response)
 }
 
 void
-MaybeMarkCacheEntryValid(const void * channel,
-                         nsICacheEntry * cacheEntry,
-                         bool newEntry)
+MaybeMarkCacheEntryValid(nsHttpChannel const * channel,
+                         nsICacheEntry * cacheEntry)
 {
-    // Mark the cache entry as valid in order to allow others access to it.
-    // XXX: Is it really necessary to check for write acccess to the entry?
-    if (newEntry) {
-        nsresult rv = cacheEntry->MarkValid();
-        LOG(("Marking cache entry valid "
-             "[channel=%p, entry=%p, new=%d, result=%d]",
-             channel, cacheEntry, newEntry, int(rv)));
-    } else {
-        LOG(("Not marking read-only cache entry valid "
-             "[channel=%p, entry=%p, new=%d]",
-             channel, cacheEntry, newEntry));
-    }
+    nsresult rv = cacheEntry->MarkValid();
+    LOG(("Marking cache entry valid "
+         "[channel=%p, entry=%p, result=0x%08x]",
+         channel, cacheEntry, int(rv)));
 }
 
 } // unnamed namespace
@@ -2706,7 +2697,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
         if (NS_SUCCEEDED(rv)) {
             mCachedContentIsValid = true;
             // XXX: Isn't the cache entry already valid?
-            MaybeMarkCacheEntryValid(this, entry, mCacheEntryIsWriteOnly);
+            MaybeMarkCacheEntryValid(this, entry);
         }
         return rv;
     }
@@ -2945,7 +2936,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
 
     if (mCachedContentIsValid) {
         // XXX: Isn't the cache entry already valid?
-        MaybeMarkCacheEntryValid(this, entry, mCacheEntryIsWriteOnly);
+        MaybeMarkCacheEntryValid(this, entry);
     }
 
     LOG(("nsHTTPChannel::OnCacheEntryCheck exit [this=%p doValidation=%d result=%d]\n",
@@ -3083,7 +3074,7 @@ nsHttpChannel::OnOfflineCacheEntryAvailable(nsICacheEntry *aEntry,
         // We successfully opened an offline cache session and the entry,
         // so indicate we will load from the offline cache.
         mLoadedFromApplicationCache = true;
-        mCacheEntryIsReadOnly = true; // mayhemer: may be redundant with mLoadedFromApplicationCache
+        mCacheEntryIsReadOnly = true;
         mCacheEntry = aEntry;
         mCacheEntryIsWriteOnly = false;
 
@@ -3477,7 +3468,7 @@ nsHttpChannel::ReadFromCache(bool alreadyMarkedValid)
         //
         // TODO: This should be done asynchronously so we don't take the cache
         // service lock on the main thread.
-        MaybeMarkCacheEntryValid(this, mCacheEntry, mCacheEntryIsWriteOnly);
+        MaybeMarkCacheEntryValid(this, mCacheEntry);
     }
 
     nsresult rv;
@@ -3631,7 +3622,10 @@ nsHttpChannel::InitCacheEntry()
         nsCOMPtr<nsICacheEntry> currentEntry;
         currentEntry.swap(mCacheEntry);
         rv = currentEntry->Recreate(getter_AddRefs(mCacheEntry));
-        if (NS_FAILED(rv)) return rv;
+        if (NS_FAILED(rv)) {
+          LOG(("  recreation failed, the response will not be cached"));
+          return NS_OK;
+        }
 
         mCacheEntryIsWriteOnly = true;
     }

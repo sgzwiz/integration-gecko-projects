@@ -145,6 +145,12 @@ interface nsICacheEntry : nsISupports
    * Doom this entry and open a new, empty, entry for write.  Consumer has
    * to exchange this entry for the newly created.
    * Used on 200 responses to conditional requests.
+   *
+   * @returns
+   *    - an entry that can be used to write to
+   * @throws
+   *    - NS_ERROR_NOT_AVAILABLE when the entry cannot be from some reason
+   *      recreated for write
    */
   nsICacheEntry recreate();
 
