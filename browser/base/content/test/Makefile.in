@@ -36,15 +36,18 @@ MOCHITEST_FILES = \
         test_offline_gzip.html \
         test_offlineNotification.html \
         video.ogg \
+        offlineByDefault.js \
         $(NULL)
 
-# test_contextmenu.html is disabled on Linux due to bug 513558
+# test_contextmenu.html and test_contextmenu_input are disabled on Linux due to bug 513558
 ifndef MOZ_WIDGET_GTK
 MOCHITEST_FILES += \
         audio.ogg \
         privateBrowsingMode.js \
         subtst_contextmenu.html \
+        contextmenu_common.js \
         test_contextmenu.html \
+        test_contextmenu_input.html \
         $(NULL)
 endif
 
@@ -182,6 +185,7 @@ MOCHITEST_BROWSER_FILES = \
                  browser_bug818118.js \
                  browser_bug820497.js \
                  browser_bug822367.js \
+                 browser_bug902156.js \
                  browser_bug832435.js \
                  browser_bug839103.js \
                  browser_bug880101.js \
@@ -296,6 +300,10 @@ MOCHITEST_BROWSER_FILES = \
                  file_bug822367_4B.html \
                  file_bug822367_5.html \
                  file_bug822367_6.html \
+                 file_bug902156_1.html \
+                 file_bug902156_2.html \
+                 file_bug902156_3.html \
+                 file_bug902156.js \
                  file_fullscreen-window-open.html \
                  healthreport_testRemoteCommands.html \
                  moz.png \
@@ -362,6 +370,13 @@ ifdef MOZ_CRASHREPORTER
 MOCHITEST_BROWSER_FILES += \
   browser_pluginCrashCommentAndURL.js \
   pluginCrashCommentAndURL.html \
+  $(NULL)
+endif
+
+# browser_CTP_context_menu.js fails intermittently on Linux (bug 909342)
+ifndef MOZ_WIDGET_GTK
+MOCHITEST_BROWSER_FILES += \
+  browser_CTP_context_menu.js \
   $(NULL)
 endif
 

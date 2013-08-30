@@ -6,15 +6,13 @@
 
 #include "jit/x64/MacroAssembler-x64.h"
 
-#include "mozilla/Casting.h"
-
 #include "jit/Bailouts.h"
 #include "jit/BaselineFrame.h"
 #include "jit/IonFrames.h"
 #include "jit/MoveEmitter.h"
 
 using namespace js;
-using namespace js::ion;
+using namespace js::jit;
 
 void
 MacroAssemblerX64::loadConstantDouble(double d, const FloatRegister &dest)
@@ -315,7 +313,7 @@ MacroAssemblerX64::handleFailureWithHandlerTail()
 Assembler::Condition
 MacroAssemblerX64::testNegativeZero(const FloatRegister &reg, const Register &scratch)
 {
-    movqsd(reg, scratch);
+    movq(reg, scratch);
     subq(Imm32(1), scratch);
     return Overflow;
 }

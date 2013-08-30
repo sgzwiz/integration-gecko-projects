@@ -8,7 +8,6 @@
 #include "nsIVariant.h"
 #include "nsIServiceManager.h"
 #include "nsMemory.h"
-#include "nsContentUtils.h"
 #include "nsCxPusher.h"
 #include "nsIXPConnect.h"
 #include "nsIDOMWindow.h"
@@ -21,6 +20,7 @@
 #include "jsdIDebuggerService.h"
 #endif
 #include "nsDOMClassInfoID.h"
+#include "mozilla/Maybe.h"
 
 using namespace mozilla::dom;
 using mozilla::AutoSafeJSContext;

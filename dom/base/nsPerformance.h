@@ -5,17 +5,15 @@
 #ifndef nsPerformance_h___
 #define nsPerformance_h___
 
-#include "nscore.h"
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
 #include "mozilla/Attributes.h"
 #include "nsWrapperCache.h"
 #include "nsDOMNavigationTiming.h"
 #include "nsContentUtils.h"
+#include "nsIDOMWindow.h"
 
-class nsIURI;
 class nsITimedChannel;
-class nsIDOMWindow;
 class nsPerformance;
 class JSObject;
 struct JSContext;

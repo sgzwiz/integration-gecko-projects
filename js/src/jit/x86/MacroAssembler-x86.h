@@ -14,7 +14,7 @@
 #include "jit/shared/MacroAssembler-x86-shared.h"
 
 namespace js {
-namespace ion {
+namespace jit {
 
 class MacroAssemblerX86 : public MacroAssemblerX86Shared
 {
@@ -175,10 +175,10 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         loadValue(Operand(src), val);
     }
     void tagValue(JSValueType type, Register payload, ValueOperand dest) {
-        JS_ASSERT(payload != dest.typeReg());
-        movl(ImmType(type), dest.typeReg());
+        JS_ASSERT(dest.typeReg() != dest.payloadReg());
         if (payload != dest.payloadReg())
             movl(payload, dest.payloadReg());
+        movl(ImmType(type), dest.typeReg());
     }
     void pushValue(ValueOperand val) {
         push(val.typeReg());
@@ -535,6 +535,11 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
 
     CodeOffsetJump jumpWithPatch(RepatchLabel *label) {
         jump(label);
+        return CodeOffsetJump(size());
+    }
+
+    CodeOffsetJump jumpWithPatch(RepatchLabel *label, Assembler::Condition cond) {
+        j(cond, label);
         return CodeOffsetJump(size());
     }
 
@@ -976,19 +981,19 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
     }
 
     // See CodeGeneratorX86 calls to noteAsmJSGlobalAccess.
-    void patchAsmJSGlobalAccess(unsigned offset, uint8_t *code, unsigned codeBytes,
+    void patchAsmJSGlobalAccess(unsigned offset, uint8_t *code, uint8_t *globalData,
                                 unsigned globalDataOffset)
     {
         uint8_t *nextInsn = code + offset;
-        JS_ASSERT(nextInsn <= code + codeBytes);
-        uint8_t *target = code + codeBytes + globalDataOffset;
+        JS_ASSERT(nextInsn <= globalData);
+        uint8_t *target = globalData + globalDataOffset;
         ((int32_t *)nextInsn)[-1] = uintptr_t(target);
     }
 };
 
 typedef MacroAssemblerX86 MacroAssemblerSpecific;
 
-} // namespace ion
+} // namespace jit
 } // namespace js
 
 #endif /* jit_x86_MacroAssembler_x86_h */

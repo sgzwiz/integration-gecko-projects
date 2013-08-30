@@ -6,6 +6,7 @@
 
 #include "frontend/BytecodeCompiler.h"
 
+#include "jscntxt.h"
 #include "jsscript.h"
 
 #include "frontend/BytecodeEmitter.h"
@@ -19,6 +20,7 @@
 #include "jsscriptinlines.h"
 
 #include "frontend/ParseMaps-inl.h"
+#include "frontend/Parser-inl.h"
 
 using namespace js;
 using namespace js::frontend;
@@ -67,7 +69,7 @@ CheckArgumentsWithinEval(JSContext *cx, Parser<FullParseHandler> &parser, Handle
     }
 
     // It's an error to use |arguments| in a legacy generator expression.
-    if (script->isGeneratorExp && script->isLegacyGenerator) {
+    if (script->isGeneratorExp && script->isLegacyGenerator()) {
         parser.report(ParseError, false, NULL, JSMSG_BAD_GENEXP_BODY, js_arguments_str);
         return false;
     }
@@ -130,8 +132,7 @@ CanLazilyParse(ExclusiveContext *cx, const CompileOptions &options)
     return options.canLazilyParse &&
         options.compileAndGo &&
         options.sourcePolicy == CompileOptions::SAVE_SOURCE &&
-        cx->isJSContext() &&
-        !cx->asJSContext()->compartment()->debugMode();
+        !cx->compartment()->debugMode();
 }
 
 void
@@ -155,7 +156,7 @@ frontend::CompileScript(ExclusiveContext *cx, LifoAlloc *alloc, HandleObject sco
                         const jschar *chars, size_t length,
                         JSString *source_ /* = NULL */,
                         unsigned staticLevel /* = 0 */,
-                        SourceCompressionToken *extraSct /* = NULL */)
+                        SourceCompressionTask *extraSct /* = NULL */)
 {
     RootedString source(cx, source_);
     SkipRoot skip(cx, &chars);
@@ -191,19 +192,12 @@ frontend::CompileScript(ExclusiveContext *cx, LifoAlloc *alloc, HandleObject sco
     if (!sourceObject)
         return NULL;
 
-    // Saving source is not yet supported when parsing off thread.
-    JS_ASSERT_IF(!cx->isJSContext(), !extraSct && options.sourcePolicy == CompileOptions::NO_SOURCE);
-
-    SourceCompressionToken *sct = extraSct;
-    Maybe<SourceCompressionToken> mysct;
-    if (cx->isJSContext() && !sct) {
-        mysct.construct(cx->asJSContext());
-        sct = mysct.addr();
-    }
+    SourceCompressionTask mysct(cx);
+    SourceCompressionTask *sct = extraSct ? extraSct : &mysct;
 
     switch (options.sourcePolicy) {
       case CompileOptions::SAVE_SOURCE:
-        if (!ss->setSourceCopy(cx->asJSContext(), chars, length, false, sct))
+        if (!ss->setSourceCopy(cx, chars, length, false, sct))
             return NULL;
         break;
       case CompileOptions::LAZY_SOURCE:
@@ -264,7 +258,7 @@ frontend::CompileScript(ExclusiveContext *cx, LifoAlloc *alloc, HandleObject sco
 
     pc.construct(&parser, (GenericParseContext *) NULL, (ParseNode *) NULL, &globalsc,
                  (Directives *) NULL, staticLevel, /* bodyid = */ 0);
-    if (!pc.ref().init())
+    if (!pc.ref().init(parser.tokenStream))
         return NULL;
 
     /* If this is a direct call to eval, inherit the caller's strictness.  */
@@ -291,7 +285,8 @@ frontend::CompileScript(ExclusiveContext *cx, LifoAlloc *alloc, HandleObject sco
              */
             JSFunction *fun = evalCaller->functionOrCallerFunction();
             Directives directives(/* strict = */ fun->strict());
-            ObjectBox *funbox = parser.newFunctionBox(/* fn = */ NULL, fun, pc.addr(), directives);
+            ObjectBox *funbox = parser.newFunctionBox(/* fn = */ NULL, fun, pc.addr(),
+                                                      directives, fun->generatorKind());
             if (!funbox)
                 return NULL;
             bce.objectList.add(funbox);
@@ -330,7 +325,7 @@ frontend::CompileScript(ExclusiveContext *cx, LifoAlloc *alloc, HandleObject sco
                 pc.destroy();
                 pc.construct(&parser, (GenericParseContext *) NULL, (ParseNode *) NULL,
                              &globalsc, (Directives *) NULL, staticLevel, /* bodyid = */ 0);
-                if (!pc.ref().init())
+                if (!pc.ref().init(parser.tokenStream))
                     return NULL;
                 JS_ASSERT(parser.pc == pc.addr());
                 pn = parser.statement();
@@ -411,7 +406,9 @@ frontend::CompileLazyFunction(JSContext *cx, LazyScript *lazy, const jschar *cha
     uint32_t staticLevel = lazy->staticLevel(cx);
 
     Rooted<JSFunction*> fun(cx, lazy->function());
-    ParseNode *pn = parser.standaloneLazyFunction(fun, staticLevel, lazy->strict());
+    JS_ASSERT(!lazy->isLegacyGenerator());
+    ParseNode *pn = parser.standaloneLazyFunction(fun, staticLevel, lazy->strict(),
+                                                  lazy->generatorKind());
     if (!pn)
         return false;
 
@@ -446,9 +443,10 @@ frontend::CompileLazyFunction(JSContext *cx, LazyScript *lazy, const jschar *cha
 
 // Compile a JS function body, which might appear as the value of an event
 // handler attribute in an HTML <INPUT> tag, or in a Function() constructor.
-bool
-frontend::CompileFunctionBody(JSContext *cx, MutableHandleFunction fun, CompileOptions options,
-                              const AutoNameVector &formals, const jschar *chars, size_t length)
+static bool
+CompileFunctionBody(JSContext *cx, MutableHandleFunction fun, CompileOptions options,
+                    const AutoNameVector &formals, const jschar *chars, size_t length,
+                    GeneratorKind generatorKind)
 {
 #if JS_TRACE_LOGGING
         js::AutoTraceLog logger(js::TraceLogging::defaultLogger(),
@@ -473,7 +471,7 @@ frontend::CompileFunctionBody(JSContext *cx, MutableHandleFunction fun, CompileO
     JS::RootedScriptSource sourceObject(cx, ScriptSourceObject::create(cx, ss));
     if (!sourceObject)
         return false;
-    SourceCompressionToken sct(cx);
+    SourceCompressionTask sct(cx);
     JS_ASSERT(options.sourcePolicy != CompileOptions::LAZY_SOURCE);
     if (options.sourcePolicy == CompileOptions::SAVE_SOURCE) {
         if (!ss->setSourceCopy(cx, chars, length, true, &sct))
@@ -515,7 +513,7 @@ frontend::CompileFunctionBody(JSContext *cx, MutableHandleFunction fun, CompileO
     ParseNode *fn;
     while (true) {
         Directives newDirectives = directives;
-        fn = parser.standaloneFunctionBody(fun, formals, directives, &newDirectives);
+        fn = parser.standaloneFunctionBody(fun, formals, generatorKind, directives, &newDirectives);
         if (fn)
             break;
 
@@ -579,4 +577,19 @@ frontend::CompileFunctionBody(JSContext *cx, MutableHandleFunction fun, CompileO
         return false;
 
     return true;
+}
+
+bool
+frontend::CompileFunctionBody(JSContext *cx, MutableHandleFunction fun, CompileOptions options,
+                              const AutoNameVector &formals, const jschar *chars, size_t length)
+{
+    return CompileFunctionBody(cx, fun, options, formals, chars, length, NotGenerator);
+}
+
+bool
+frontend::CompileStarGeneratorBody(JSContext *cx, MutableHandleFunction fun,
+                                   CompileOptions options, const AutoNameVector &formals,
+                                   const jschar *chars, size_t length)
+{
+    return CompileFunctionBody(cx, fun, options, formals, chars, length, StarGenerator);
 }

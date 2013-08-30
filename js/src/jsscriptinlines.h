@@ -9,15 +9,9 @@
 
 #include "jsscript.h"
 
-#include "jsautooplen.h"
-#include "jscntxt.h"
-#include "jsfun.h"
-#include "jsopcode.h"
-
 #include "jit/AsmJSLink.h"
-#include "vm/GlobalObject.h"
-#include "vm/RegExpObject.h"
-#include "vm/Shape.h"
+#include "jit/BaselineJIT.h"
+#include "vm/ScopeObject.h"
 
 #include "jscompartmentinlines.h"
 
@@ -159,6 +153,31 @@ JSScript::setOriginalFunctionObject(JSObject *fun) {
     JS_ASSERT(isCallsiteClone);
     JS_ASSERT(fun->is<JSFunction>());
     enclosingScopeOrOriginalFunction_ = fun;
+}
+
+inline void
+JSScript::setIonScript(js::jit::IonScript *ionScript) {
+    if (hasIonScript())
+        js::jit::IonScript::writeBarrierPre(tenuredZone(), ion);
+    ion = ionScript;
+    updateBaselineOrIonRaw();
+}
+
+inline void
+JSScript::setParallelIonScript(js::jit::IonScript *ionScript) {
+    if (hasParallelIonScript())
+        js::jit::IonScript::writeBarrierPre(tenuredZone(), parallelIon);
+    parallelIon = ionScript;
+}
+
+inline void
+JSScript::setBaselineScript(js::jit::BaselineScript *baselineScript) {
+#ifdef JS_ION
+    if (hasBaselineScript())
+        js::jit::BaselineScript::writeBarrierPre(tenuredZone(), baseline);
+#endif
+    baseline = baselineScript;
+    updateBaselineOrIonRaw();
 }
 
 #endif /* jsscriptinlines_h */

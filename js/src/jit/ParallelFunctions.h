@@ -9,10 +9,9 @@
 
 #include "gc/Heap.h"
 #include "vm/ForkJoin.h"
-#include "vm/ThreadPool.h"
 
 namespace js {
-namespace ion {
+namespace jit {
 
 ForkJoinSlice *ForkJoinSlicePar();
 JSObject *NewGCThingPar(gc::AllocKind allocKind);
@@ -84,9 +83,9 @@ void TraceLIR(uint32_t bblock, uint32_t lir, uint32_t execModeInt,
               const char *lirOpName, const char *mirOpName,
               JSScript *script, jsbytecode *pc);
 
-void CallToUncompiledScriptPar(JSFunction *func);
+void CallToUncompiledScriptPar(JSObject *obj);
 
-} // namespace ion
+} // namespace jit
 } // namespace js
 
 #endif /* jit_ParallelFunctions_h */

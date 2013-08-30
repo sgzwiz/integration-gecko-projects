@@ -37,6 +37,7 @@
 #include "mozilla/Hal.h"
 #include "mozilla/hal_sandbox/PHalParent.h"
 #include "mozilla/ipc/TestShellParent.h"
+#include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/layers/CompositorParent.h"
 #include "mozilla/layers/ImageBridgeParent.h"
 #include "mozilla/net/NeckoParent.h"
@@ -48,6 +49,7 @@
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsAppRunner.h"
 #include "nsAutoPtr.h"
+#include "nsCDefaultURIFixup.h"
 #include "nsCExternalHandlerService.h"
 #include "nsCOMPtr.h"
 #include "nsChromeRegistryChrome.h"
@@ -75,9 +77,12 @@
 #include "nsIRemoteBlob.h"
 #include "nsIScriptError.h"
 #include "nsIScriptSecurityManager.h"
+#include "nsIStyleSheet.h"
 #include "nsISupportsPrimitives.h"
+#include "nsIURIFixup.h"
 #include "nsIWindowWatcher.h"
 #include "nsServiceManagerUtils.h"
+#include "nsStyleSheetService.h"
 #include "nsSystemInfo.h"
 #include "nsThreadUtils.h"
 #include "nsToolkitCompsCID.h"
@@ -163,6 +168,12 @@ public:
     {
     }
 
+    NS_IMETHOD GetProcess(nsACString& aProcess)
+    {
+      aProcess.Assign(mProcess);
+      return NS_OK;
+    }
+
 private:
     int64_t Amount() { return mAmount; }
 
@@ -183,7 +194,6 @@ private:
         return static_cast<ContentParent*>(Manager());
     }
 };
-    
 
 MemoryReportRequestParent::MemoryReportRequestParent()
 {
@@ -931,6 +941,10 @@ ContentParent::OnChannelConnected(int32_t pid)
         }
 #endif
     }
+
+    // Set a reply timeout. The only time the parent process will actually
+    // timeout is through urgent messages (which are used by CPOWs).
+    SetReplyTimeoutMs(Preferences::GetInt("dom.ipc.cpow.timeout", 3000));
 }
 
 void
@@ -1008,8 +1022,7 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
     }
 
     // clear the child memory reporters
-    InfallibleTArray<MemoryReport> empty;
-    SetChildMemoryReporters(empty);
+    ClearChildMemoryReporters();
 
     // remove the global remote preferences observers
     Preferences::RemoveObserver(this, "");
@@ -1177,6 +1190,7 @@ ContentParent::ContentParent(mozIApplication* aApp,
     , mIsForBrowser(aIsForBrowser)
     , mCalledClose(false)
     , mCalledCloseWithError(false)
+    , mCalledKillHard(false)
 {
     // No more than one of !!aApp, aIsForBrowser, and aIsForPreallocated should
     // be true.
@@ -1246,9 +1260,37 @@ ContentParent::ContentParent(mozIApplication* aApp,
         nsCString name(gAppData->name);
         nsCString UAName(gAppData->UAName);
 
-        //Sending all information to content process
+        // Sending all information to content process.
         unused << SendAppInfo(version, buildID, name, UAName);
     }
+
+    nsStyleSheetService *sheetService = nsStyleSheetService::GetInstance();
+    if (sheetService) {
+        // This looks like a lot of work, but in a normal browser session we just
+        // send two loads.
+
+        nsCOMArray<nsIStyleSheet>& agentSheets = *sheetService->AgentStyleSheets();
+        for (uint32_t i = 0; i < agentSheets.Length(); i++) {
+            URIParams uri;
+            SerializeURI(agentSheets[i]->GetSheetURI(), uri);
+            unused << SendLoadAndRegisterSheet(uri, nsIStyleSheetService::AGENT_SHEET);
+        }
+
+        nsCOMArray<nsIStyleSheet>& userSheets = *sheetService->UserStyleSheets();
+        for (uint32_t i = 0; i < userSheets.Length(); i++) {
+            URIParams uri;
+            SerializeURI(userSheets[i]->GetSheetURI(), uri);
+            unused << SendLoadAndRegisterSheet(uri, nsIStyleSheetService::USER_SHEET);
+        }
+
+        nsCOMArray<nsIStyleSheet>& authorSheets = *sheetService->AuthorStyleSheets();
+        for (uint32_t i = 0; i < authorSheets.Length(); i++) {
+            URIParams uri;
+            SerializeURI(authorSheets[i]->GetSheetURI(), uri);
+            unused << SendLoadAndRegisterSheet(uri, nsIStyleSheetService::AUTHOR_SHEET);
+        }
+    }
+
 }
 
 ContentParent::~ContentParent()
@@ -1668,14 +1710,19 @@ ContentParent::Observe(nsISupports* aSubject,
         nsString mountPoint;
         int32_t  state;
         int32_t  mountGeneration;
+        bool     isMediaPresent;
+        bool     isSharing;
 
         vol->GetName(volName);
         vol->GetMountPoint(mountPoint);
         vol->GetState(&state);
         vol->GetMountGeneration(&mountGeneration);
+        vol->GetIsMediaPresent(&isMediaPresent);
+        vol->GetIsSharing(&isSharing);
 
         unused << SendFileSystemUpdate(volName, mountPoint, state,
-                                       mountGeneration);
+                                       mountGeneration, isMediaPresent,
+                                       isSharing);
     }
 #endif
 #ifdef ACCESSIBILITY
@@ -1834,31 +1881,67 @@ ContentParent::DeallocPBlobParent(PBlobParent* aActor)
 BlobParent*
 ContentParent::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-  NS_ASSERTION(aBlob, "Null pointer!");
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(aBlob);
+
+  // If the blob represents a remote blob for this ContentParent then we can
+  // simply pass its actor back here.
+  if (nsCOMPtr<nsIRemoteBlob> remoteBlob = do_QueryInterface(aBlob)) {
+    BlobParent* actor =
+      static_cast<BlobParent*>(
+        static_cast<PBlobParent*>(remoteBlob->GetPBlob()));
+    MOZ_ASSERT(actor);
+
+    if (static_cast<ContentParent*>(actor->Manager()) == this) {
+      return actor;
+    }
+  }
 
   // XXX This is only safe so long as all blob implementations in our tree
   //     inherit nsDOMFileBase. If that ever changes then this will need to grow
   //     a real interface or something.
   const nsDOMFileBase* blob = static_cast<nsDOMFileBase*>(aBlob);
 
+  // We often pass blobs that are multipart but that only contain one sub-blob
+  // (WebActivities does this a bunch). Unwrap to reduce the number of actors
+  // that we have to maintain.
+  const nsTArray<nsCOMPtr<nsIDOMBlob> >* subBlobs = blob->GetSubBlobs();
+  if (subBlobs && subBlobs->Length() == 1) {
+    const nsCOMPtr<nsIDOMBlob>& subBlob = subBlobs->ElementAt(0);
+    MOZ_ASSERT(subBlob);
+
+    // We can only take this shortcut if the multipart and the sub-blob are both
+    // Blob objects or both File objects.
+    nsCOMPtr<nsIDOMFile> multipartBlobAsFile = do_QueryInterface(aBlob);
+    nsCOMPtr<nsIDOMFile> subBlobAsFile = do_QueryInterface(subBlob);
+    if (!multipartBlobAsFile == !subBlobAsFile) {
+      // The wrapping might have been unnecessary, see if we can simply pass an
+      // existing remote blob for this ContentParent.
+      if (nsCOMPtr<nsIRemoteBlob> remoteSubBlob = do_QueryInterface(subBlob)) {
+        BlobParent* actor =
+          static_cast<BlobParent*>(
+            static_cast<PBlobParent*>(remoteSubBlob->GetPBlob()));
+        MOZ_ASSERT(actor);
+
+        if (static_cast<ContentParent*>(actor->Manager()) == this) {
+          return actor;
+        }
+      }
+
+      // No need to add a reference here since the original blob must have a
+      // strong reference in the caller and it must also have a strong reference
+      // to this sub-blob.
+      aBlob = subBlob;
+      blob = static_cast<nsDOMFileBase*>(aBlob);
+      subBlobs = blob->GetSubBlobs();
+    }
+  }
+
   // All blobs shared between processes must be immutable.
   nsCOMPtr<nsIMutable> mutableBlob = do_QueryInterface(aBlob);
   if (!mutableBlob || NS_FAILED(mutableBlob->SetMutable(false))) {
     NS_WARNING("Failed to make blob immutable!");
     return nullptr;
-  }
-
-  nsCOMPtr<nsIRemoteBlob> remoteBlob = do_QueryInterface(aBlob);
-  if (remoteBlob) {
-    BlobParent* actor =
-      static_cast<BlobParent*>(
-        static_cast<PBlobParent*>(remoteBlob->GetPBlob()));
-    NS_ASSERTION(actor, "Null actor?!");
-
-    if (static_cast<ContentParent*>(actor->Manager()) == this) {
-      return actor;
-    }
   }
 
   ChildBlobConstructorParams params;
@@ -1899,21 +1982,24 @@ ContentParent::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
       blobParams.length() = length;
       params = blobParams;
     }
-      }
+  }
 
   BlobParent* actor = BlobParent::Create(this, aBlob);
   NS_ENSURE_TRUE(actor, nullptr);
 
-  if (!SendPBlobConstructor(actor, params)) {
-    return nullptr;
-  }
-
-  return actor;
+  return SendPBlobConstructor(actor, params) ? actor : nullptr;
 }
 
 void
 ContentParent::KillHard()
 {
+    // On Windows, calling KillHard multiple times causes problems - the
+    // process handle becomes invalid on the first call, causing a second call
+    // to crash our process - more details in bug 890840.
+    if (mCalledKillHard) {
+        return;
+    }
+    mCalledKillHard = true;
     mForceKillTask = nullptr;
     // This ensures the process is eventually killed, but doesn't
     // immediately KILLITWITHFIRE because we want to get a minidump if
@@ -2076,6 +2162,15 @@ ContentParent::SetChildMemoryReporters(const InfallibleTArray<MemoryReport>& rep
         do_GetService("@mozilla.org/observer-service;1");
     if (obs)
         obs->NotifyObservers(nullptr, "child-memory-reporter-update", nullptr);
+}
+
+void
+ContentParent::ClearChildMemoryReporters()
+{
+    nsCOMPtr<nsIMemoryReporterManager> mgr =
+        do_GetService("@mozilla.org/memory-reporter-manager;1");
+    for (int32_t i = 0; i < mMemoryReporters.Count(); i++)
+        mgr->UnregisterReporter(mMemoryReporters[i]);
 }
 
 PTestShellParent*
@@ -2439,23 +2534,6 @@ ContentParent::RecvCloseAlert(const nsString& aName)
 }
 
 bool
-ContentParent::RecvTestPermissionFromPrincipal(const IPC::Principal& aPrincipal,
-                                               const nsCString& aType,
-                                               uint32_t* permission)
-{
-    nsCOMPtr<nsIPermissionManager> permissionManager =
-        do_GetService(NS_PERMISSIONMANAGER_CONTRACTID);
-    NS_ENSURE_TRUE(permissionManager, false);
-
-    nsresult rv = permissionManager->TestPermissionFromPrincipal(aPrincipal,
-                                                                 aType.get(),
-                                                                 permission);
-    NS_ENSURE_SUCCESS(rv, false);
-
-    return true;
-}
-
-bool
 ContentParent::RecvSyncMessage(const nsString& aMsg,
                                const ClonedMessageData& aData,
                                const InfallibleTArray<CpowEntry>& aCpows,
@@ -2524,7 +2602,7 @@ bool
 ContentParent::RecvAddGeolocationListener(const IPC::Principal& aPrincipal,
                                           const bool& aHighAccuracy)
 {
-#ifdef MOZ_PERMISSIONS
+#ifdef MOZ_CHILD_PERMISSIONS
   if (Preferences::GetBool("geo.testing.ignore_ipc_principal", false) == false) {
     nsIPrincipal* principal = aPrincipal;
     if (principal == nullptr) {
@@ -2762,6 +2840,36 @@ ContentParent::RecvSetFakeVolumeState(const nsString& fsName, const int32_t& fsS
   NS_WARNING("ContentParent::RecvSetFakeVolumeState shouldn't be called when MOZ_WIDGET_GONK is not defined");
   return false;
 #endif
+}
+
+bool
+ContentParent::RecvKeywordToURI(const nsCString& aKeyword, OptionalInputStreamParams* aPostData,
+                                OptionalURIParams* aURI)
+{
+  nsCOMPtr<nsIURIFixup> fixup = do_GetService(NS_URIFIXUP_CONTRACTID);
+  if (!fixup) {
+    return true;
+  }
+
+  nsCOMPtr<nsIInputStream> postData;
+  nsCOMPtr<nsIURI> uri;
+  if (NS_FAILED(fixup->KeywordToURI(aKeyword, getter_AddRefs(postData),
+                                    getter_AddRefs(uri)))) {
+    return true;
+  }
+
+  SerializeInputStream(postData, *aPostData);
+  SerializeURI(uri, *aURI);
+  return true;
+}
+
+bool
+ContentParent::ShouldContinueFromReplyTimeout()
+{
+  // The only time ContentParent sends blocking messages is for CPOWs, so
+  // timeouts should only ever occur in electrolysis-enabled sessions.
+  MOZ_ASSERT(Preferences::GetBool("browser.tabs.remote", false));
+  return false;
 }
 
 } // namespace dom

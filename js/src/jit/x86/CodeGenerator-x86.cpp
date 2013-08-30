@@ -20,7 +20,7 @@
 #include "jit/shared/CodeGenerator-shared-inl.h"
 
 using namespace js;
-using namespace js::ion;
+using namespace js::jit;
 
 using mozilla::DebugOnly;
 using mozilla::DoubleExponentBias;
@@ -265,9 +265,6 @@ CodeGeneratorX86::visitImplicitThis(LImplicitThis *lir)
     return true;
 }
 
-typedef bool (*InterruptCheckFn)(JSContext *);
-static const VMFunction InterruptCheckInfo = FunctionInfo<InterruptCheckFn>(InterruptCheck);
-
 bool
 CodeGeneratorX86::visitInterruptCheck(LInterruptCheck *lir)
 {
@@ -321,10 +318,8 @@ CodeGeneratorX86::visitCompareBAndBranch(LCompareBAndBranch *lir)
 
     JS_ASSERT(mir->jsop() == JSOP_STRICTEQ || mir->jsop() == JSOP_STRICTNE);
 
-    if (mir->jsop() == JSOP_STRICTEQ)
-        masm.branchTestBoolean(Assembler::NotEqual, lhs, lir->ifFalse()->lir()->label());
-    else
-        masm.branchTestBoolean(Assembler::NotEqual, lhs, lir->ifTrue()->lir()->label());
+    Assembler::Condition cond = masm.testBoolean(Assembler::NotEqual, lhs);
+    jumpToBlock((mir->jsop() == JSOP_STRICTEQ) ? lir->ifFalse() : lir->ifTrue(), cond);
 
     if (rhs->isConstant())
         masm.cmp32(lhs.payloadReg(), Imm32(rhs->toConstant()->toBoolean()));
@@ -373,14 +368,10 @@ CodeGeneratorX86::visitCompareVAndBranch(LCompareVAndBranch *lir)
     JS_ASSERT(mir->jsop() == JSOP_EQ || mir->jsop() == JSOP_STRICTEQ ||
               mir->jsop() == JSOP_NE || mir->jsop() == JSOP_STRICTNE);
 
-    Label *notEqual;
-    if (cond == Assembler::Equal)
-        notEqual = lir->ifFalse()->lir()->label();
-    else
-        notEqual = lir->ifTrue()->lir()->label();
+    MBasicBlock *notEqual = (cond == Assembler::Equal) ? lir->ifFalse() : lir->ifTrue();
 
     masm.cmp32(lhs.typeReg(), rhs.typeReg());
-    masm.j(Assembler::NotEqual, notEqual);
+    jumpToBlock(notEqual, Assembler::NotEqual);
     masm.cmp32(lhs.payloadReg(), rhs.payloadReg());
     emitBranch(cond, lir->ifTrue(), lir->ifFalse());
 
@@ -403,7 +394,7 @@ CodeGeneratorX86::visitUInt32ToDouble(LUInt32ToDouble *lir)
 
 // Load a NaN or zero into a register for an out of bounds AsmJS or static
 // typed array load.
-class ion::OutOfLineLoadTypedArrayOutOfBounds : public OutOfLineCodeBase<CodeGeneratorX86>
+class jit::OutOfLineLoadTypedArrayOutOfBounds : public OutOfLineCodeBase<CodeGeneratorX86>
 {
     AnyRegister dest_;
   public:
@@ -692,7 +683,7 @@ GetElementParIC::initializeAddCacheState(LInstruction *ins, AddCacheState *addSt
 }
 
 namespace js {
-namespace ion {
+namespace jit {
 
 class OutOfLineTruncate : public OutOfLineCodeBase<CodeGeneratorX86>
 {
@@ -711,7 +702,7 @@ class OutOfLineTruncate : public OutOfLineCodeBase<CodeGeneratorX86>
     }
 };
 
-} // namespace ion
+} // namespace jit
 } // namespace js
 
 bool

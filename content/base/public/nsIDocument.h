@@ -50,6 +50,7 @@ class nsIDOMDocument;
 class nsIDOMDocumentFragment;
 class nsIDOMDocumentType;
 class nsIDOMElement;
+class nsIDOMNodeFilter;
 class nsIDOMNodeList;
 class nsIDOMXPathExpression;
 class nsIDOMXPathNSResolver;
@@ -98,9 +99,9 @@ class Element;
 struct ElementRegistrationOptions;
 class EventTarget;
 class FrameRequestCallback;
-class GlobalObject;
 class HTMLBodyElement;
 class Link;
+class GlobalObject;
 class NodeFilter;
 class NodeIterator;
 class ProcessingInstruction;
@@ -116,8 +117,8 @@ typedef CallbackObjectHolder<NodeFilter, nsIDOMNodeFilter> NodeFilterHolder;
 } // namespace mozilla
 
 #define NS_IDOCUMENT_IID \
-{ 0x62cca591, 0xa030, 0x4117, \
- { 0x9b, 0x80, 0xdc, 0xd3, 0x66, 0xbb, 0xb5, 0x9 } }
+{ 0x56a350f4, 0xc286, 0x440c, \
+  { 0x85, 0xb1, 0xb6, 0x55, 0x77, 0xeb, 0x63, 0xfd } }
 
 // Flag for AddStyleSheet().
 #define NS_STYLESHEET_FROM_CATALOG                (1 << 0)
@@ -149,6 +150,7 @@ NS_GetContentList(nsINode* aRootNode,
 // Gecko.
 class nsIDocument : public nsINode
 {
+  typedef mozilla::dom::GlobalObject GlobalObject;
 public:
   typedef mozilla::dom::Element Element;
 
@@ -267,12 +269,7 @@ public:
     }
     return mDocumentBaseURI ? mDocumentBaseURI : mDocumentURI;
   }
-  virtual already_AddRefed<nsIURI> GetBaseURI() const MOZ_OVERRIDE
-  {
-    nsCOMPtr<nsIURI> uri = GetDocBaseURI();
-
-    return uri.forget();
-  }
+  virtual already_AddRefed<nsIURI> GetBaseURI() const MOZ_OVERRIDE;
 
   virtual nsresult SetBaseURI(nsIURI* aURI) = 0;
 
@@ -655,6 +652,9 @@ public:
    */
   nsresult GetSrcdocData(nsAString& aSrcdocData);
 
+  bool DidDocumentOpen() {
+    return mDidDocumentOpen;
+  }
 
 protected:
   virtual Element *GetRootElementInternal() const = 0;
@@ -1920,7 +1920,7 @@ public:
     return GetScopeObject();
   }
   static already_AddRefed<nsIDocument>
-    Constructor(const mozilla::dom::GlobalObject& aGlobal,
+    Constructor(const GlobalObject& aGlobal,
                 mozilla::ErrorResult& rv);
   virtual mozilla::dom::DOMImplementation*
     GetImplementation(mozilla::ErrorResult& rv) = 0;
@@ -2337,6 +2337,11 @@ protected:
 
   // Whether the document was created by a srcdoc iframe.
   bool mIsSrcdocDocument;
+
+  // Records whether we've done a document.open. If this is true, it's possible
+  // for nodes from this document to have outdated wrappers in their wrapper
+  // caches.
+  bool mDidDocumentOpen;
 
   // The document's script global object, the object from which the
   // document can get its script context and scope. This is the

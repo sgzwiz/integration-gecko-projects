@@ -3,9 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PCOMContentPermissionRequestChild.h"
-#include "mozilla/dom/PBrowserChild.h"
 #include "mozilla/dom/Notification.h"
-#include "mozilla/dom/ContentChild.h"
 #include "mozilla/Preferences.h"
 #include "TabChild.h"
 #include "nsContentUtils.h"
@@ -307,7 +305,7 @@ Notification::Constructor(const GlobalObject& aGlobal,
                                                          tag,
                                                          aOptions.mIcon);
 
-  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aGlobal.Get());
+  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aGlobal.GetAsSupports());
   MOZ_ASSERT(window, "Window should not be null.");
   notification->BindToOwner(window);
 
@@ -372,8 +370,8 @@ Notification::RequestPermission(const GlobalObject& aGlobal,
                                 ErrorResult& aRv)
 {
   // Get principal from global to make permission request for notifications.
-  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aGlobal.Get());
-  nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(aGlobal.Get());
+  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aGlobal.GetAsSupports());
+  nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(aGlobal.GetAsSupports());
   if (!sop) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return;
@@ -393,7 +391,7 @@ Notification::RequestPermission(const GlobalObject& aGlobal,
 NotificationPermission
 Notification::GetPermission(const GlobalObject& aGlobal, ErrorResult& aRv)
 {
-  return GetPermissionInternal(aGlobal.Get(), aRv);
+  return GetPermissionInternal(aGlobal.GetAsSupports(), aRv);
 }
 
 NotificationPermission
@@ -433,20 +431,12 @@ Notification::GetPermissionInternal(nsISupports* aGlobal, ErrorResult& aRv)
 
   uint32_t permission = nsIPermissionManager::UNKNOWN_ACTION;
 
-  if (XRE_GetProcessType() == GeckoProcessType_Content) {
-    ContentChild* cpc = ContentChild::GetSingleton();
+  nsCOMPtr<nsIPermissionManager> permissionManager =
+    do_GetService(NS_PERMISSIONMANAGER_CONTRACTID);
 
-    cpc->SendTestPermissionFromPrincipal(IPC::Principal(principal),
-                                         NS_LITERAL_CSTRING("desktop-notification"),
-                                         &permission);
-  } else {
-    nsCOMPtr<nsIPermissionManager> permissionManager =
-      do_GetService(NS_PERMISSIONMANAGER_CONTRACTID);
-
-    permissionManager->TestPermissionFromPrincipal(principal,
-                                                   "desktop-notification",
-                                                   &permission);
-  }
+  permissionManager->TestPermissionFromPrincipal(principal,
+                                                 "desktop-notification",
+                                                 &permission);
 
   // Convert the result to one of the enum types.
   switch (permission) {

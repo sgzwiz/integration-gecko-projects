@@ -22,9 +22,11 @@
 #endif
 
 #include "jsfuninlines.h"
+#include "jsobjinlines.h"
+#include "jsscriptinlines.h"
 
 using namespace js;
-using namespace js::ion;
+using namespace js::jit;
 
 using mozilla::IsNaN;
 
@@ -44,17 +46,17 @@ GetDataProperty(JSContext *cx, const Value &objVal, HandlePropertyName field, Mu
     if (!objVal.isObject())
         return LinkFail(cx, "accessing property of non-object");
 
-    JSPropertyDescriptor desc;
+    Rooted<JSPropertyDescriptor> desc(cx);
     if (!JS_GetPropertyDescriptorById(cx, &objVal.toObject(), NameToId(field), 0, &desc))
         return false;
 
-    if (!desc.obj)
+    if (!desc.object())
         return LinkFail(cx, "property not present on object");
 
-    if (desc.attrs & (JSPROP_GETTER | JSPROP_SETTER))
+    if (desc.hasGetterOrSetterObject())
         return LinkFail(cx, "property is not a data property");
 
-    v.set(desc.value);
+    v.set(desc.value());
     return true;
 }
 
@@ -311,7 +313,7 @@ CallAsmJS(JSContext *cx, unsigned argc, Value *vp)
     //  - a pointer to the module from which it was returned
     //  - its index in the ordered list of exported functions
     RootedObject moduleObj(cx, &callee->getExtendedSlot(ASM_MODULE_SLOT).toObject());
-    AsmJSModule &module = AsmJSModuleObjectToModule(moduleObj);
+    AsmJSModule &module = moduleObj->as<AsmJSModuleObject>().module();
 
     // An exported function points to the code as well as the exported
     // function's signature, which implies the dynamic coercions performed on
@@ -347,16 +349,24 @@ CallAsmJS(JSContext *cx, unsigned argc, Value *vp)
     }
 
     {
+        // Each call into an asm.js module requires an AsmJSActivation record
+        // pushed on a stack maintained by the runtime. This record is used for
+        // to handle a variety of exceptional things that can happen in asm.js
+        // code.
         AsmJSActivation activation(cx, module);
-        ion::IonContext ictx(cx, NULL);
+
+        // Eagerly push an IonContext+JitActivation so that the optimized
+        // asm.js-to-Ion FFI call path (which we want to be very fast) can
+        // avoid doing so.
+        jit::IonContext ictx(cx, NULL);
         JitActivation jitActivation(cx, /* firstFrameIsConstructing = */ false, /* active */ false);
 
-        // Call into generated code.
+        // Call the per-exported-function trampoline created by GenerateEntry.
 #ifdef JS_CPU_ARM
-        if (!func.code()(coercedArgs.begin(), module.globalData()))
+        if (!module.entryTrampoline(func)(coercedArgs.begin(), module.globalData()))
             return false;
 #else
-        if (!func.code()(coercedArgs.begin()))
+        if (!module.entryTrampoline(func)(coercedArgs.begin()))
             return false;
 #endif
     }
@@ -574,7 +584,7 @@ SendModuleToAttachedProfiler(JSContext *cx, AsmJSModule &module)
 static JSObject *
 CreateExportObject(JSContext *cx, HandleObject moduleObj)
 {
-    AsmJSModule &module = AsmJSModuleObjectToModule(moduleObj);
+    AsmJSModule &module = moduleObj->as<AsmJSModuleObject>().module();
 
     if (module.numExportedFunctions() == 1) {
         const AsmJSModule::ExportedFunction &func = module.exportedFunction(0);
@@ -614,7 +624,7 @@ LinkAsmJS(JSContext *cx, unsigned argc, JS::Value *vp)
     // function and stores its module in an extended slot.
     RootedFunction fun(cx, &args.callee().as<JSFunction>());
     RootedObject moduleObj(cx,  &fun->getExtendedSlot(MODULE_FUN_SLOT).toObject());
-    AsmJSModule &module = AsmJSModuleObjectToModule(moduleObj);
+    AsmJSModule &module = moduleObj->as<AsmJSModuleObject>().module();
 
     // Link the module by performing the link-time validation checks in the
     // asm.js spec and then patching the generated module to associate it with
@@ -643,7 +653,7 @@ LinkAsmJS(JSContext *cx, unsigned argc, JS::Value *vp)
 }
 
 JSFunction *
-js::NewAsmJSModuleFunction(JSContext *cx, JSFunction *origFun, HandleObject moduleObj)
+js::NewAsmJSModuleFunction(ExclusiveContext *cx, JSFunction *origFun, HandleObject moduleObj)
 {
     RootedPropertyName name(cx, origFun->name());
     JSFunction *moduleFun = NewFunction(cx, NullPtr(), LinkAsmJS, origFun->nargs,

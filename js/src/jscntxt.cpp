@@ -14,7 +14,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Util.h"
 
-#include <locale.h>
+#include <ctype.h>
 #include <stdarg.h>
 #include <string.h>
 #ifdef ANDROID
@@ -25,12 +25,10 @@
 
 #include "jsatom.h"
 #include "jscompartment.h"
-#include "jsdbgapi.h"
 #include "jsexn.h"
 #include "jsfun.h"
 #include "jsgc.h"
 #include "jsiter.h"
-#include "jsmath.h"
 #include "jsobj.h"
 #include "jsopcode.h"
 #include "jsprf.h"
@@ -45,11 +43,12 @@
 #include "jit/Ion.h"
 #endif
 #include "js/CharacterEncoding.h"
-#include "js/MemoryMetrics.h"
+#include "js/OldDebugAPI.h"
 #include "vm/Shape.h"
 #include "yarr/BumpPointerAllocator.h"
 
 #include "jsobjinlines.h"
+#include "jsscriptinlines.h"
 
 #include "vm/Stack-inl.h"
 
@@ -263,6 +262,11 @@ js::DestroyContext(JSContext *cx, DestroyContextMode mode)
             CancelOffThreadIonCompile(c, NULL);
         WaitForOffThreadParsingToFinish(rt);
 
+#ifdef JS_WORKER_THREADS
+        if (rt->workerThreadState)
+            rt->workerThreadState->cleanup(rt);
+#endif
+
         /* Unpin all common names before final GC. */
         FinishCommonNames(rt);
 
@@ -336,7 +340,7 @@ ReportError(JSContext *cx, const char *message, JSErrorReport *reportp,
          * the reporter triggers an over-recursion.
          */
         int stackDummy;
-        if (!JS_CHECK_STACK_SIZE(cx->mainThread().nativeStackLimit, &stackDummy))
+        if (!JS_CHECK_STACK_SIZE(GetNativeStackLimit(cx), &stackDummy))
             return;
 
         if (cx->errorReporter)
@@ -619,6 +623,16 @@ js::PrintError(JSContext *cx, FILE *file, const char *message, JSErrorReport *re
     return true;
 }
 
+char *
+js_strdup(ExclusiveContext *cx, const char *s)
+{
+    size_t n = strlen(s) + 1;
+    void *p = cx->malloc_(n);
+    if (!p)
+        return NULL;
+    return (char *)js_memcpy(p, s, n);
+}
+
 /*
  * The arguments from ap need to be packaged up into an array and stored
  * into the report struct.
@@ -631,7 +645,7 @@ js::PrintError(JSContext *cx, FILE *file, const char *message, JSErrorReport *re
  * Returns true if the expansion succeeds (can fail if out of memory).
  */
 bool
-js_ExpandErrorArguments(JSContext *cx, JSErrorCallback callback,
+js_ExpandErrorArguments(ExclusiveContext *cx, JSErrorCallback callback,
                         void *userRef, const unsigned errorNumber,
                         char **messagep, JSErrorReport *reportp,
                         ErrorArgumentsType argumentsType, va_list ap)
@@ -748,7 +762,7 @@ js_ExpandErrorArguments(JSContext *cx, JSErrorCallback callback,
              */
             if (efs->format) {
                 size_t len;
-                *messagep = JS_strdup(cx, efs->format);
+                *messagep = js_strdup(cx, efs->format);
                 if (!*messagep)
                     goto error;
                 len = strlen(*messagep);
@@ -1003,7 +1017,7 @@ js_InvokeOperationCallback(JSContext *cx)
      * thread is racing us here we will accumulate another callback request
      * which will be serviced at the next opportunity.
      */
-    JS_ATOMIC_SET(&rt->interrupt, 0);
+    rt->interrupt = 0;
 
     /* IonMonkey sets its stack limit to UINTPTR_MAX to trigger operaton callbacks. */
     rt->resetIonStackLimit();
@@ -1021,7 +1035,7 @@ js_InvokeOperationCallback(JSContext *cx)
      * A worker thread may have set the callback after finishing an Ion
      * compilation.
      */
-    ion::AttachFinishedCompilations(cx);
+    jit::AttachFinishedCompilations(cx);
 #endif
 
     /*
@@ -1029,7 +1043,7 @@ js_InvokeOperationCallback(JSContext *cx)
      * if it re-enters the JS engine. The embedding must ensure that the
      * callback is disconnected before attempting such re-entry.
      */
-    JSOperationCallback cb = cx->operationCallback;
+    JSOperationCallback cb = cx->runtime()->operationCallback;
     return !cb || cb(cx);
 }
 
@@ -1073,7 +1087,6 @@ JSContext::JSContext(JSRuntime *rt)
     defaultCompartmentObject_(NULL),
     cycleDetectorSet(MOZ_THIS_IN_INITIALIZER_LIST()),
     errorReporter(NULL),
-    operationCallback(NULL),
     data(NULL),
     data2(NULL),
 #ifdef JS_THREADSAFE

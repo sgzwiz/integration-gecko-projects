@@ -21,10 +21,10 @@
 #include "jsatom.h"
 #include "jsautooplen.h"
 #include "jscntxt.h"
-#include "jsdbgapi.h"
 #include "jsfun.h"
 #include "jsgc.h"
 #include "jsiter.h"
+#include "jslibmath.h"
 #include "jsnum.h"
 #include "jsobj.h"
 #include "jsopcode.h"
@@ -38,16 +38,19 @@
 #include "builtin/Eval.h"
 #include "jit/BaselineJIT.h"
 #include "jit/Ion.h"
+#include "js/OldDebugAPI.h"
 #include "vm/Debugger.h"
 #include "vm/Shape.h"
 
 #include "jsatominlines.h"
 #include "jsboolinlines.h"
+#include "jsfuninlines.h"
 #include "jsinferinlines.h"
 #include "jsscriptinlines.h"
 
 #include "jit/IonFrames-inl.h"
 #include "vm/Probes-inl.h"
+#include "vm/ScopeObject-inl.h"
 #include "vm/Stack-inl.h"
 
 using namespace js;
@@ -414,22 +417,22 @@ js::RunScript(JSContext *cx, RunState &state)
     SPSEntryMarker marker(cx->runtime());
 
 #ifdef JS_ION
-    if (ion::IsEnabled(cx)) {
-        ion::MethodStatus status = ion::CanEnter(cx, state);
-        if (status == ion::Method_Error)
+    if (jit::IsIonEnabled(cx)) {
+        jit::MethodStatus status = jit::CanEnter(cx, state);
+        if (status == jit::Method_Error)
             return false;
-        if (status == ion::Method_Compiled) {
-            ion::IonExecStatus status = ion::Cannon(cx, state);
+        if (status == jit::Method_Compiled) {
+            jit::IonExecStatus status = jit::Cannon(cx, state);
             return !IsErrorStatus(status);
         }
     }
 
-    if (ion::IsBaselineEnabled(cx)) {
-        ion::MethodStatus status = ion::CanEnterBaselineMethod(cx, state);
-        if (status == ion::Method_Error)
+    if (jit::IsBaselineEnabled(cx)) {
+        jit::MethodStatus status = jit::CanEnterBaselineMethod(cx, state);
+        if (status == jit::Method_Error)
             return false;
-        if (status == ion::Method_Compiled) {
-            ion::IonExecStatus status = ion::EnterBaselineMethod(cx, state);
+        if (status == jit::Method_Compiled) {
+            jit::IonExecStatus status = jit::EnterBaselineMethod(cx, state);
             return !IsErrorStatus(status);
         }
     }
@@ -972,30 +975,6 @@ TryNoteIter::settle()
             goto error;                                                       \
     JS_END_MACRO
 
-template<typename T>
-class GenericInterruptEnabler : public InterpreterFrames::InterruptEnablerBase {
-  public:
-    GenericInterruptEnabler(T *variable, T value) : variable(variable), value(value) { }
-    void enable() const { *variable = value; }
-
-  private:
-    T *variable;
-    T value;
-};
-
-inline InterpreterFrames::InterpreterFrames(JSContext *cx, FrameRegs *regs,
-                                            const InterruptEnablerBase &enabler)
-  : context(cx), regs(regs), enabler(enabler)
-{
-    older = cx->runtime()->interpreterFrames;
-    cx->runtime()->interpreterFrames = this;
-}
-
-inline InterpreterFrames::~InterpreterFrames()
-{
-    context->runtime()->interpreterFrames = older;
-}
-
 /*
  * Ensure that the interpreter switch can close call-bytecode cases in the
  * same way as non-call bytecodes.
@@ -1284,10 +1263,19 @@ Interpret(JSContext *cx, RunState &state)
 
 #define CHECK_PCCOUNT_INTERRUPTS() JS_ASSERT_IF(script->hasScriptCounts, switchMask == -1)
 
+    /*
+     * When Debugger puts a script in single-step mode, all js::Interpret
+     * invocations that might be presently running that script must have
+     * interrupts enabled. It's not practical to simply check
+     * script->stepModeEnabled() at each point some callee could have changed
+     * it, because there are so many places js::Interpret could possibly cause
+     * JavaScript to run: each place an object might be coerced to a primitive
+     * or a number, for example. So instead, we expose a simple mechanism to
+     * let Debugger tweak the affected js::Interpret frames when an onStep
+     * handler is added: setting switchMask to -1 will enable interrupts.
+     */
     register int switchMask = 0;
     int switchOp;
-    typedef GenericInterruptEnabler<int> InterruptEnabler;
-    InterruptEnabler interrupts(&switchMask, -1);
 
 # define DO_OP()            goto do_op
 
@@ -1325,7 +1313,7 @@ Interpret(JSContext *cx, RunState &state)
      */
 #define CHECK_BRANCH()                                                        \
     JS_BEGIN_MACRO                                                            \
-        if (cx->runtime()->interrupt && !js_HandleExecutionInterrupt(cx))       \
+        if (cx->runtime()->interrupt && !js_HandleExecutionInterrupt(cx))     \
             goto error;                                                       \
     JS_END_MACRO
 
@@ -1342,7 +1330,7 @@ Interpret(JSContext *cx, RunState &state)
     JS_BEGIN_MACRO                                                            \
         script = (s);                                                         \
         if (script->hasAnyBreakpointsOrStepMode() || script->hasScriptCounts) \
-            interrupts.enable();                                              \
+            switchMask = -1; /* Enable interrupts. */                         \
     JS_END_MACRO
 
     FrameRegs regs;
@@ -1361,13 +1349,7 @@ Interpret(JSContext *cx, RunState &state)
 
     JS_ASSERT_IF(entryFrame->isEvalFrame(), state.script()->isActiveEval);
 
-    InterpreterActivation activation(cx, entryFrame, regs);
-
-    /*
-     * Help Debugger find frames running scripts that it has put in
-     * single-step mode.
-     */
-    InterpreterFrames interpreterFrame(cx, &regs, interrupts);
+    InterpreterActivation activation(cx, entryFrame, regs, &switchMask);
 
     /* Copy in hot values that change infrequently. */
     JSRuntime *const rt = cx->runtime();
@@ -1447,7 +1429,7 @@ Interpret(JSContext *cx, RunState &state)
     len = 0;
 
     if (rt->profilingScripts || cx->runtime()->debugHooks.interruptHook)
-        interrupts.enable();
+        switchMask = -1; /* Enable interrupts. */
 
     goto advanceAndDoOp;
 
@@ -1598,18 +1580,18 @@ BEGIN_CASE(JSOP_LOOPENTRY)
 
 #ifdef JS_ION
     // Attempt on-stack replacement with Baseline code.
-    if (ion::IsBaselineEnabled(cx)) {
-        ion::MethodStatus status = ion::CanEnterBaselineAtBranch(cx, regs.fp(), false);
-        if (status == ion::Method_Error)
+    if (jit::IsBaselineEnabled(cx)) {
+        jit::MethodStatus status = jit::CanEnterBaselineAtBranch(cx, regs.fp(), false);
+        if (status == jit::Method_Error)
             goto error;
-        if (status == ion::Method_Compiled) {
-            ion::IonExecStatus maybeOsr = ion::EnterBaselineAtBranch(cx, regs.fp(), regs.pc);
+        if (status == jit::Method_Compiled) {
+            jit::IonExecStatus maybeOsr = jit::EnterBaselineAtBranch(cx, regs.fp(), regs.pc);
 
             // We failed to call into baseline at all, so treat as an error.
-            if (maybeOsr == ion::IonExec_Aborted)
+            if (maybeOsr == jit::IonExec_Aborted)
                 goto error;
 
-            interpReturnOK = (maybeOsr == ion::IonExec_Ok);
+            interpReturnOK = (maybeOsr == jit::IonExec_Ok);
 
             if (entryFrame != regs.fp())
                 goto jit_return_pop_frame;
@@ -2512,17 +2494,19 @@ BEGIN_CASE(JSOP_FUNCALL)
     InitialFrameFlags initial = construct ? INITIAL_CONSTRUCT : INITIAL_NONE;
     bool newType = cx->typeInferenceEnabled() && UseNewType(cx, script, regs.pc);
 
+    TypeMonitorCall(cx, args, construct);
+
 #ifdef JS_ION
     InvokeState state(cx, args, initial);
     if (newType)
         state.setUseNewType();
 
-    if (!newType && ion::IsEnabled(cx)) {
-        ion::MethodStatus status = ion::CanEnter(cx, state);
-        if (status == ion::Method_Error)
+    if (!newType && jit::IsIonEnabled(cx)) {
+        jit::MethodStatus status = jit::CanEnter(cx, state);
+        if (status == jit::Method_Error)
             goto error;
-        if (status == ion::Method_Compiled) {
-            ion::IonExecStatus exec = ion::Cannon(cx, state);
+        if (status == jit::Method_Compiled) {
+            jit::IonExecStatus exec = jit::Cannon(cx, state);
             CHECK_BRANCH();
             regs.sp = args.spAfterCall();
             interpReturnOK = !IsErrorStatus(exec);
@@ -2530,12 +2514,12 @@ BEGIN_CASE(JSOP_FUNCALL)
         }
     }
 
-    if (ion::IsBaselineEnabled(cx)) {
-        ion::MethodStatus status = ion::CanEnterBaselineMethod(cx, state);
-        if (status == ion::Method_Error)
+    if (jit::IsBaselineEnabled(cx)) {
+        jit::MethodStatus status = jit::CanEnterBaselineMethod(cx, state);
+        if (status == jit::Method_Error)
             goto error;
-        if (status == ion::Method_Compiled) {
-            ion::IonExecStatus exec = ion::EnterBaselineMethod(cx, state);
+        if (status == jit::Method_Compiled) {
+            jit::IonExecStatus exec = jit::EnterBaselineMethod(cx, state);
             CHECK_BRANCH();
             regs.sp = args.spAfterCall();
             interpReturnOK = !IsErrorStatus(exec);
@@ -2543,8 +2527,6 @@ BEGIN_CASE(JSOP_FUNCALL)
         }
     }
 #endif
-
-    TypeMonitorCall(cx, args, construct);
 
     funScript = fun->nonLazyScript();
     if (!activation.pushInlineFrame(args, funScript, initial))
@@ -3521,7 +3503,7 @@ js::Lambda(JSContext *cx, HandleFunction fun, HandleObject parent)
         } else {
 #ifdef JS_ION
             JS_ASSERT(cx->currentlyRunningInJit());
-            frame = ion::GetTopBaselineFrame(cx);
+            frame = jit::GetTopBaselineFrame(cx);
 #endif
         }
 

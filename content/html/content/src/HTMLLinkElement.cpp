@@ -57,9 +57,8 @@ NS_IMPL_RELEASE_INHERITED(HTMLLinkElement, Element)
 
 // QueryInterface implementation for HTMLLinkElement
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(HTMLLinkElement)
-  NS_INTERFACE_TABLE_INHERITED4(HTMLLinkElement,
+  NS_INTERFACE_TABLE_INHERITED3(HTMLLinkElement,
                                 nsIDOMHTMLLinkElement,
-                                nsIDOMLinkStyle,
                                 nsIStyleSheetLinkingElement,
                                 Link)
 NS_INTERFACE_TABLE_TAIL_INHERITING(nsGenericHTMLElement)
@@ -330,7 +329,8 @@ HTMLLinkElement::GetStyleSheetURL(bool* aIsInline)
   if (href.IsEmpty()) {
     return nullptr;
   }
-  return Link::GetURI();
+  nsCOMPtr<nsIURI> uri = Link::GetURI();
+  return uri.forget();
 }
 
 void

@@ -88,7 +88,8 @@ class XULDocument MOZ_FINAL : public XMLDocument,
                               public nsIXULDocument,
                               public nsIDOMXULDocument,
                               public nsIStreamLoaderObserver,
-                              public nsICSSLoaderObserver
+                              public nsICSSLoaderObserver,
+                              public nsIOffThreadScriptReceiver
 {
 public:
     XULDocument();
@@ -172,6 +173,8 @@ public:
     virtual int GetDocumentLWTheme() MOZ_OVERRIDE;
 
     virtual void ResetDocumentLWTheme() MOZ_OVERRIDE { mDocLWTheme = Doc_Theme_Uninitialized; }
+
+    NS_IMETHOD OnScriptCompileComplete(JSScript* aScript, nsresult aStatus) MOZ_OVERRIDE;
 
     static bool
     MatchAttribute(nsIContent* aContent,
@@ -440,6 +443,18 @@ protected:
     nsXULPrototypeScript* mCurrentScriptProto;
 
     /**
+     * Whether the current transcluded script is being compiled off thread.
+     * The load event is blocked while this is in progress.
+     */
+    bool mOffThreadCompiling;
+
+    /**
+     * If the current transcluded script is being compiled off thread, the
+     * source for that script.
+     */
+    nsString mOffThreadCompileString;
+
+    /**
      * Check if a XUL template builder has already been hooked up.
      */
     static nsresult
@@ -576,11 +591,11 @@ protected:
 
     static
     nsresult
-    InsertElement(nsIContent* aParent, nsIContent* aChild, bool aNotify);
+    InsertElement(nsINode* aParent, nsIContent* aChild, bool aNotify);
 
     static 
     nsresult
-    RemoveElement(nsIContent* aParent, nsIContent* aChild);
+    RemoveElement(nsINode* aParent, nsINode* aChild);
 
     /**
      * The current prototype that we are walking to construct the

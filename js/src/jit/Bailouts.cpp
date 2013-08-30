@@ -6,22 +6,20 @@
 
 #include "jit/Bailouts.h"
 
-#include "jsanalyze.h"
 #include "jscntxt.h"
-#include "jscompartment.h"
-#include "jsinfer.h"
 
 #include "jit/BaselineJIT.h"
 #include "jit/Ion.h"
 #include "jit/IonCompartment.h"
 #include "jit/IonSpewer.h"
 #include "jit/SnapshotReader.h"
-#include "vm/Interpreter.h"
+
+#include "jsobjinlines.h"
 
 #include "vm/Stack-inl.h"
 
 using namespace js;
-using namespace js::ion;
+using namespace js::jit;
 
 // These constructor are exactly the same except for the type of the iterator
 // which is given to the SnapshotIterator constructor. Doing so avoid the
@@ -65,7 +63,7 @@ IonBailoutIterator::dump() const
 }
 
 uint32_t
-ion::Bailout(BailoutStack *sp, BaselineBailoutInfo **bailoutInfo)
+jit::Bailout(BailoutStack *sp, BaselineBailoutInfo **bailoutInfo)
 {
     JS_ASSERT(bailoutInfo);
     JSContext *cx = GetIonContext()->cx;
@@ -93,7 +91,7 @@ ion::Bailout(BailoutStack *sp, BaselineBailoutInfo **bailoutInfo)
 }
 
 uint32_t
-ion::InvalidationBailout(InvalidationBailoutStack *sp, size_t *frameSizeOut,
+jit::InvalidationBailout(InvalidationBailoutStack *sp, size_t *frameSizeOut,
                          BaselineBailoutInfo **bailoutInfo)
 {
     sp->checkInvariants();
@@ -156,7 +154,7 @@ IonBailoutIterator::IonBailoutIterator(const JitActivationIterator &activations,
 }
 
 uint32_t
-ion::ExceptionHandlerBailout(JSContext *cx, const InlineFrameIterator &frame,
+jit::ExceptionHandlerBailout(JSContext *cx, const InlineFrameIterator &frame,
                              const ExceptionBailoutInfo &excInfo,
                              BaselineBailoutInfo **bailoutInfo)
 {
@@ -180,7 +178,7 @@ ion::ExceptionHandlerBailout(JSContext *cx, const InlineFrameIterator &frame,
 
 // Initialize the decl env Object, call object, and any arguments obj of the current frame.
 bool
-ion::EnsureHasScopeObjects(JSContext *cx, AbstractFramePtr fp)
+jit::EnsureHasScopeObjects(JSContext *cx, AbstractFramePtr fp)
 {
     if (fp.isFunctionFrame() &&
         fp.fun()->isHeavyweight() &&
@@ -192,7 +190,7 @@ ion::EnsureHasScopeObjects(JSContext *cx, AbstractFramePtr fp)
 }
 
 bool
-ion::CheckFrequentBailouts(JSContext *cx, JSScript *script)
+jit::CheckFrequentBailouts(JSContext *cx, JSScript *script)
 {
     if (script->hasIonScript()) {
         // Invalidate if this script keeps bailing out without invalidation. Next time

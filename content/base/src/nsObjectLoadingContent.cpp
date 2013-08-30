@@ -75,11 +75,19 @@
 #include "nsObjectFrame.h"
 #include "nsDOMClassInfo.h"
 #include "nsWrapperCacheInlines.h"
+#include "nsDOMJSUtils.h"
 
 #include "nsWidgetsCID.h"
 #include "nsContentCID.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/Telemetry.h"
+
+#ifdef XP_WIN
+// Thanks so much, Microsoft! :(
+#ifdef CreateEvent
+#undef CreateEvent
+#endif
+#endif // XP_WIN
 
 static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
 
@@ -1262,7 +1270,7 @@ nsObjectLoadingContent::CheckJavaCodebase()
   // the exception of URIs that represent local files
   if (NS_URIIsLocalFile(mBaseURI) &&
       nsScriptSecurityManager::GetStrictFileOriginPolicy() &&
-      !NS_RelaxStrictFileOriginPolicy(mBaseURI, principalBaseURI)) {
+      !NS_RelaxStrictFileOriginPolicy(mBaseURI, principalBaseURI, true)) {
     LOG(("OBJLC [%p]: Java failed RelaxStrictFileOriginPolicy for file URI",
          this));
     return false;

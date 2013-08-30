@@ -21,6 +21,8 @@
 
 namespace js {
 
+class Breakpoint;
+
 /*
  * A weakmap that supports the keys being in different compartments to the
  * values, although all values must be in the same compartment.
@@ -56,6 +58,7 @@ class DebuggerWeakMap : private WeakMap<Key, Value, DefaultHasher<Key> >
   public:
     /* Expose those parts of HashMap public interface that are used by Debugger methods. */
 
+    typedef typename Base::Entry Entry;
     typedef typename Base::Ptr Ptr;
     typedef typename Base::AddPtr AddPtr;
     typedef typename Base::Range Range;
@@ -102,10 +105,12 @@ class DebuggerWeakMap : private WeakMap<Key, Value, DefaultHasher<Key> >
 
   public:
     void markKeys(JSTracer *tracer) {
-        for (Range r = all(); !r.empty(); r.popFront()) {
-            Key key = r.front().key;
-            gc::Mark(tracer, &key, "cross-compartment WeakMap key");
-            JS_ASSERT(key == r.front().key);
+        for (Enum e(*static_cast<Base *>(this)); !e.empty(); e.popFront()) {
+            Key key = e.front().key;
+            gc::Mark(tracer, &key, "Debugger WeakMap key");
+            if (key != e.front().key)
+                e.rekeyFront(key);
+            key.unsafeSet(NULL);
         }
     }
 
@@ -145,6 +150,14 @@ class DebuggerWeakMap : private WeakMap<Key, Value, DefaultHasher<Key> >
             zoneCounts.remove(zone);
     }
 };
+
+/*
+ * Env is the type of what ES5 calls "lexical environments" (runtime
+ * activations of lexical scopes). This is currently just JSObject, and is
+ * implemented by Call, Block, With, and DeclEnv objects, among others--but
+ * environments and objects are really two different concepts.
+ */
+typedef JSObject Env;
 
 class Debugger : private mozilla::LinkedListElement<Debugger>
 {
@@ -409,7 +422,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
     static inline void onNewGlobalObject(JSContext *cx, Handle<GlobalObject *> global);
     static JSTrapStatus onTrap(JSContext *cx, MutableHandleValue vp);
     static JSTrapStatus onSingleStep(JSContext *cx, MutableHandleValue vp);
-    static bool handleBaselineOsr(JSContext *cx, StackFrame *from, ion::BaselineFrame *to);
+    static bool handleBaselineOsr(JSContext *cx, StackFrame *from, jit::BaselineFrame *to);
 
     /************************************* Functions for use by Debugger.cpp. */
 
@@ -535,7 +548,7 @@ class BreakpointSite {
   private:
     JSCList breakpoints;  /* cyclic list of all js::Breakpoints at this instruction */
     size_t enabledCount;  /* number of breakpoints in the list that are enabled */
-    JSTrapHandler trapHandler;  /* jsdbgapi trap state */
+    JSTrapHandler trapHandler;  /* trap state */
     HeapValue trapClosure;
 
     void recompile(FreeOp *fop);

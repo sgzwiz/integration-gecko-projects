@@ -6,10 +6,14 @@
 
 #include "jit/BaselineInspector.h"
 
+#include "mozilla/DebugOnly.h"
+
 #include "jit/BaselineIC.h"
 
 using namespace js;
-using namespace js::ion;
+using namespace js::jit;
+
+using mozilla::DebugOnly;
 
 bool
 SetElemICInspector::sawOOBDenseWrite() const
@@ -228,7 +232,7 @@ TryToSpecializeBinaryArithOp(ICStub **stubs,
                              uint32_t nstubs,
                              MIRType *result)
 {
-    bool sawInt32 = false;
+    DebugOnly<bool> sawInt32 = false;
     bool sawDouble = false;
     bool sawOther = false;
 
@@ -296,6 +300,20 @@ BaselineInspector::hasSeenNonNativeGetElement(jsbytecode *pc)
 
     if (stub->isGetElem_Fallback())
         return stub->toGetElem_Fallback()->hasNonNativeAccess();
+    return false;
+}
+
+bool
+BaselineInspector::hasSeenNegativeIndexGetElement(jsbytecode *pc)
+{
+    if (!hasBaselineScript())
+        return false;
+
+    const ICEntry &entry = icEntryFromPC(pc);
+    ICStub *stub = entry.fallbackStub();
+
+    if (stub->isGetElem_Fallback())
+        return stub->toGetElem_Fallback()->hasNegativeIndex();
     return false;
 }
 

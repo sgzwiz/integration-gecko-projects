@@ -30,6 +30,9 @@
 #include "mozilla/layers/PCompositorChild.h"
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/Preferences.h"
+#ifdef MOZ_CONTENT_SANDBOX
+#include "mozilla/Sandbox.h"
+#endif
 #include "mozilla/unused.h"
 
 #include "nsIMemoryReporter.h"
@@ -40,6 +43,7 @@
 #include "nsIObserver.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsServiceManagerUtils.h"
+#include "nsStyleSheetService.h"
 #include "nsXULAppAPI.h"
 #include "nsWeakReference.h"
 #include "nsIScriptError.h"
@@ -342,8 +346,11 @@ ContentChild::SetProcessName(const nsAString& aName)
         printf_stderr("\n\nCHILDCHILDCHILDCHILD\n  [%s] debug me @%d\n\n", name, getpid());
         sleep(30);
 #elif defined(OS_WIN)
-        printf_stderr("\n\nCHILDCHILDCHILDCHILD\n  [%s] debug me @%d\n\n", name, _getpid());
-        Sleep(30000);
+        // Windows has a decent JIT debugging story, so NS_DebugBreak does the
+        // right thing.
+        NS_DebugBreak(NS_DEBUG_BREAK,
+                      "Invoking NS_DebugBreak() to debug child process",
+                      nullptr, __FILE__, __LINE__);
 #endif
     }
 
@@ -546,6 +553,13 @@ ContentChild::RecvSetProcessPrivileges(const ChildPrivileges& aPrivs)
                           aPrivs;
   // If this fails, we die.
   SetCurrentProcessPrivileges(privs);
+#ifdef MOZ_CONTENT_SANDBOX
+  // SetCurrentProcessSandbox should be moved close to process initialization
+  // time if/when possible. SetCurrentProcessPrivileges should probably be
+  // moved as well. Right now this is set ONLY if we receive the
+  // RecvSetProcessPrivileges message. See bug 880808.
+  SetCurrentProcessSandbox();
+#endif
   return true;
 }
 
@@ -657,28 +671,61 @@ ContentChild::DeallocPBlobChild(PBlobChild* aActor)
 BlobChild*
 ContentChild::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-  NS_ASSERTION(aBlob, "Null pointer!");
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(aBlob);
+
+  // If the blob represents a remote blob then we can simply pass its actor back
+  // here.
+  if (nsCOMPtr<nsIRemoteBlob> remoteBlob = do_QueryInterface(aBlob)) {
+    BlobChild* actor =
+      static_cast<BlobChild*>(
+        static_cast<PBlobChild*>(remoteBlob->GetPBlob()));
+    MOZ_ASSERT(actor);
+    return actor;
+  }
 
   // XXX This is only safe so long as all blob implementations in our tree
   //     inherit nsDOMFileBase. If that ever changes then this will need to grow
   //     a real interface or something.
   const nsDOMFileBase* blob = static_cast<nsDOMFileBase*>(aBlob);
 
+  // We often pass blobs that are multipart but that only contain one sub-blob
+  // (WebActivities does this a bunch). Unwrap to reduce the number of actors
+  // that we have to maintain.
+  const nsTArray<nsCOMPtr<nsIDOMBlob> >* subBlobs = blob->GetSubBlobs();
+  if (subBlobs && subBlobs->Length() == 1) {
+    const nsCOMPtr<nsIDOMBlob>& subBlob = subBlobs->ElementAt(0);
+    MOZ_ASSERT(subBlob);
+
+    // We can only take this shortcut if the multipart and the sub-blob are both
+    // Blob objects or both File objects.
+    nsCOMPtr<nsIDOMFile> multipartBlobAsFile = do_QueryInterface(aBlob);
+    nsCOMPtr<nsIDOMFile> subBlobAsFile = do_QueryInterface(subBlob);
+    if (!multipartBlobAsFile == !subBlobAsFile) {
+      // The wrapping was unnecessary, see if we can simply pass an existing
+      // remote blob.
+      if (nsCOMPtr<nsIRemoteBlob> remoteBlob = do_QueryInterface(subBlob)) {
+        BlobChild* actor =
+          static_cast<BlobChild*>(
+            static_cast<PBlobChild*>(remoteBlob->GetPBlob()));
+        MOZ_ASSERT(actor);
+        return actor;
+      }
+
+      // No need to add a reference here since the original blob must have a
+      // strong reference in the caller and it must also have a strong reference
+      // to this sub-blob.
+      aBlob = subBlob;
+      blob = static_cast<nsDOMFileBase*>(aBlob);
+      subBlobs = blob->GetSubBlobs();
+    }
+  }
+
   // All blobs shared between processes must be immutable.
   nsCOMPtr<nsIMutable> mutableBlob = do_QueryInterface(aBlob);
   if (!mutableBlob || NS_FAILED(mutableBlob->SetMutable(false))) {
     NS_WARNING("Failed to make blob immutable!");
     return nullptr;
-  }
-
-  nsCOMPtr<nsIRemoteBlob> remoteBlob = do_QueryInterface(aBlob);
-  if (remoteBlob) {
-    BlobChild* actor =
-      static_cast<BlobChild*>(static_cast<PBlobChild*>(remoteBlob->GetPBlob()));
-    NS_ASSERTION(actor, "Null actor?!");
-
-    return actor;
   }
 
   ParentBlobConstructorParams params;
@@ -729,16 +776,12 @@ ContentChild::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
       blobParams.length() = length;
       params.blobParams() = blobParams;
     }
-    }
+  }
 
   BlobChild* actor = BlobChild::Create(this, aBlob);
   NS_ENSURE_TRUE(actor, nullptr);
 
-  if (!SendPBlobConstructor(actor, params)) {
-        return nullptr;
-      }
-
-  return actor;
+  return SendPBlobConstructor(actor, params) ? actor : nullptr;
 }
 
 PCrashReporterChild*
@@ -1235,11 +1278,14 @@ bool
 ContentChild::RecvFileSystemUpdate(const nsString& aFsName,
                                    const nsString& aVolumeName,
                                    const int32_t& aState,
-                                   const int32_t& aMountGeneration)
+                                   const int32_t& aMountGeneration,
+                                   const bool& aIsMediaPresent,
+                                   const bool& aIsSharing)
 {
 #ifdef MOZ_WIDGET_GONK
     nsRefPtr<nsVolume> volume = new nsVolume(aFsName, aVolumeName, aState,
-                                             aMountGeneration);
+                                             aMountGeneration, aIsMediaPresent,
+                                             aIsSharing);
 
     nsRefPtr<nsVolumeService> vs = nsVolumeService::GetSingleton();
     if (vs) {
@@ -1251,6 +1297,8 @@ ContentChild::RecvFileSystemUpdate(const nsString& aFsName,
     unused << aVolumeName;
     unused << aState;
     unused << aMountGeneration;
+    unused << aIsMediaPresent;
+    unused << aIsSharing;
 #endif
     return true;
 }
@@ -1302,6 +1350,38 @@ ContentChild::RecvCancelMinimizeMemoryUsage()
     if (runnable) {
         runnable->Cancel();
         mMemoryMinimizerRunnable = nullptr;
+    }
+
+    return true;
+}
+
+bool
+ContentChild::RecvLoadAndRegisterSheet(const URIParams& aURI, const uint32_t& aType)
+{
+    nsCOMPtr<nsIURI> uri = DeserializeURI(aURI);
+    if (!uri) {
+        return true;
+    }
+
+    nsStyleSheetService *sheetService = nsStyleSheetService::GetInstance();
+    if (sheetService) {
+        sheetService->LoadAndRegisterSheet(uri, aType);
+    }
+
+    return true;
+}
+
+bool
+ContentChild::RecvUnregisterSheet(const URIParams& aURI, const uint32_t& aType)
+{
+    nsCOMPtr<nsIURI> uri = DeserializeURI(aURI);
+    if (!uri) {
+        return true;
+    }
+
+    nsStyleSheetService *sheetService = nsStyleSheetService::GetInstance();
+    if (sheetService) {
+        sheetService->UnregisterSheet(uri, aType);
     }
 
     return true;

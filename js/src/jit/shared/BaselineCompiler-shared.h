@@ -7,8 +7,6 @@
 #ifndef jit_shared_BaselineCompiler_shared_h
 #define jit_shared_BaselineCompiler_shared_h
 
-#include "jscntxt.h"
-
 #include "jit/BaselineFrameInfo.h"
 #include "jit/BaselineIC.h"
 #include "jit/IonInstrumentation.h"
@@ -16,7 +14,7 @@
 #include "jit/IonSpewer.h"
 
 namespace js {
-namespace ion {
+namespace jit {
 
 class BaselineCompilerShared
 {
@@ -138,7 +136,7 @@ class BaselineCompilerShared
     }
 };
 
-} // namespace ion
+} // namespace jit
 } // namespace js
 
 #endif /* jit_shared_BaselineCompiler_shared_h */

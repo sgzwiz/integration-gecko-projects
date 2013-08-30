@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AudioContext.h"
-#include "nsContentUtils.h"
 #include "nsPIDOMWindow.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/AnalyserNode.h"
@@ -31,6 +30,7 @@
 #include "WaveShaperNode.h"
 #include "PeriodicWave.h"
 #include "ConvolverNode.h"
+#include "OscillatorNode.h"
 #include "nsNetUtil.h"
 
 namespace mozilla {
@@ -65,6 +65,7 @@ AudioContext::AudioContext(nsPIDOMWindow* aWindow,
 
   mPannerNodes.Init();
   mAudioBufferSourceNodes.Init();
+  mOscillatorNodes.Init();
   mScriptProcessorNodes.Init();
 }
 
@@ -83,9 +84,10 @@ AudioContext::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 }
 
 /* static */ already_AddRefed<AudioContext>
-AudioContext::Constructor(const GlobalObject& aGlobal, ErrorResult& aRv)
+AudioContext::Constructor(const GlobalObject& aGlobal,
+                          ErrorResult& aRv)
 {
-  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aGlobal.Get());
+  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aGlobal.GetAsSupports());
   if (!window) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
@@ -103,7 +105,7 @@ AudioContext::Constructor(const GlobalObject& aGlobal,
                           float aSampleRate,
                           ErrorResult& aRv)
 {
-  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aGlobal.Get());
+  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aGlobal.GetAsSupports());
   if (!window) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
@@ -370,6 +372,15 @@ AudioContext::CreateBiquadFilter()
   return filterNode.forget();
 }
 
+already_AddRefed<OscillatorNode>
+AudioContext::CreateOscillator()
+{
+  nsRefPtr<OscillatorNode> oscillatorNode =
+    new OscillatorNode(this);
+  mOscillatorNodes.PutEntry(oscillatorNode);
+  return oscillatorNode.forget();
+}
+
 already_AddRefed<PeriodicWave>
 AudioContext::CreatePeriodicWave(const Float32Array& aRealData,
                                  const Float32Array& aImagData,
@@ -442,6 +453,12 @@ AudioContext::UnregisterPannerNode(PannerNode* aNode)
   if (mListener) {
     mListener->UnregisterPannerNode(aNode);
   }
+}
+
+void
+AudioContext::UnregisterOscillatorNode(OscillatorNode* aNode)
+{
+  mOscillatorNodes.RemoveEntry(aNode);
 }
 
 void
@@ -534,6 +551,14 @@ AudioContext::Shutdown()
   for (uint32_t i = 0; i < sourceNodes.Length(); ++i) {
     ErrorResult rv;
     sourceNodes[i]->Stop(0.0, rv, true);
+  }
+  // Stop all Oscillator nodes to make sure they release their
+  // playing reference.
+  nsTArray<OscillatorNode*> oscNodes;
+  GetHashtableElements(mOscillatorNodes, oscNodes);
+  for (uint32_t i = 0; i < oscNodes.Length(); ++i) {
+    ErrorResult rv;
+    oscNodes[i]->Stop(0.0, rv);
   }
   // Stop all script processor nodes, to make sure that they release
   // their self-references.

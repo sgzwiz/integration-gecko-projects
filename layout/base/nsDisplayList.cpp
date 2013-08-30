@@ -10,11 +10,7 @@
  * used during painting and hit testing
  */
 
-// include PBrowserChild explicitly because TabChild won't include it
-// because we're in layout :(
-#include "mozilla/dom/PBrowserChild.h"
 #include "mozilla/dom/TabChild.h"
-
 #include "mozilla/layers/PLayerTransaction.h"
 
 #include "nsDisplayList.h"
@@ -24,8 +20,6 @@
 #include "nsISelectionController.h"
 #include "nsIPresShell.h"
 #include "nsRegion.h"
-#include "nsFrameManager.h"
-#include "gfxContext.h"
 #include "nsStyleStructInlines.h"
 #include "nsStyleTransformMatrix.h"
 #include "gfxMatrix.h"
@@ -36,10 +30,10 @@
 #include "LayerTreeInvalidation.h"
 
 #include "imgIContainer.h"
-#include "nsIInterfaceRequestorUtils.h"
 #include "BasicLayers.h"
 #include "nsBoxFrame.h"
 #include "nsViewportFrame.h"
+#include "nsSubDocumentFrame.h"
 #include "nsSVGEffects.h"
 #include "nsSVGElement.h"
 #include "nsSVGClipPathFrame.h"
@@ -684,6 +678,16 @@ static void RecordFrameMetrics(nsIFrame* aForFrame,
       mozilla::gfx::IntRect(bounds.x, bounds.y, bounds.width, bounds.height));
   }
 
+  // Adjust for the size of scroll bars.
+  if (scrollableFrame) {
+    nsMargin sizes = scrollableFrame->GetActualScrollbarSizes();
+    ScreenIntMargin boundMargins(nsPresContext::AppUnitsToIntCSSPixels(sizes.top),
+                                 nsPresContext::AppUnitsToIntCSSPixels(sizes.right),
+                                 nsPresContext::AppUnitsToIntCSSPixels(sizes.bottom),
+                                 nsPresContext::AppUnitsToIntCSSPixels(sizes.left));
+    metrics.mCompositionBounds.Deflate(boundMargins);
+  }
+
   metrics.mPresShellId = presShell->GetPresShellId();
 
   aRoot->SetFrameMetrics(metrics);
@@ -1155,6 +1159,13 @@ void nsDisplayList::PaintForFrame(nsDisplayListBuilder* aBuilder,
       usingDisplayport = nsLayoutUtils::GetDisplayPort(content, &displayport);
       usingCriticalDisplayport =
         nsLayoutUtils::GetCriticalDisplayPort(content, &criticalDisplayport);
+
+      if (id == FrameMetrics::ROOT_SCROLL_ID) {
+        // Record the mapping between the root scroll frame's content and
+        // ROOT_SCROLL_ID so that users of nsLayoutUtils::FindIDFor() and
+        // nsLayoutUtils::FindContentFor() don't have to special-case the root.
+        nsLayoutUtils::FindOrCreateIDFor(content, true);
+      }
     }
   }
 
@@ -1270,6 +1281,17 @@ GetMouseThrough(const nsIFrame* aFrame)
   return false;
 }
 
+static bool
+IsFrameReceivingPointerEvents(nsIFrame* aFrame)
+{
+  nsSubDocumentFrame* frame = do_QueryFrame(aFrame);
+  if (frame && frame->PassPointerEventsToChildren()) {
+    return true;
+  }
+  return NS_STYLE_POINTER_EVENTS_NONE !=
+    aFrame->StyleVisibility()->GetEffectivePointerEvents(aFrame);
+}
+
 // A list of frames, and their z depth. Used for sorting
 // the results of hit testing.
 struct FramesWithDepth
@@ -1352,8 +1374,7 @@ void nsDisplayList::HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
       for (uint32_t j = 0; j < outFrames.Length(); j++) {
         nsIFrame *f = outFrames.ElementAt(j);
         // Handle the XUL 'mousethrough' feature and 'pointer-events'.
-        if (!GetMouseThrough(f) &&
-            f->StyleVisibility()->GetEffectivePointerEvents(f) != NS_STYLE_POINTER_EVENTS_NONE) {
+        if (!GetMouseThrough(f) && IsFrameReceivingPointerEvents(f)) {
           writeFrames->AppendElement(f);
         }
       }
@@ -2599,6 +2620,33 @@ nsDisplayBoxShadowOuter::ComputeVisibility(nsDisplayListBuilder* aBuilder,
 }
 
 void
+nsDisplayBoxShadowOuter::ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
+                                                   const nsDisplayItemGeometry* aGeometry,
+                                                   nsRegion* aInvalidRegion)
+{
+  const nsDisplayItemGenericGeometry* geometry =
+    static_cast<const nsDisplayItemGenericGeometry*>(aGeometry);
+  bool snap;
+  if (!geometry->mBounds.IsEqualInterior(GetBounds(aBuilder, &snap)) ||
+      !geometry->mBorderRect.IsEqualInterior(GetBorderRect())) {
+    nsRegion oldShadow, newShadow;
+    nscoord dontCare[8];
+    bool hasBorderRadius = mFrame->GetBorderRadii(dontCare);
+    if (hasBorderRadius) {
+      // If we have rounded corners then we need to invalidate the frame area
+      // too since we paint into it.
+      oldShadow = geometry->mBounds;
+      newShadow = GetBounds(aBuilder, &snap);
+    } else {
+      oldShadow = oldShadow.Sub(geometry->mBounds, geometry->mBorderRect);
+      newShadow = newShadow.Sub(GetBounds(aBuilder, &snap), GetBorderRect());
+    }
+    aInvalidRegion->Or(oldShadow, newShadow);
+  }
+}
+
+
+void
 nsDisplayBoxShadowInner::Paint(nsDisplayListBuilder* aBuilder,
                                nsRenderingContext* aCtx) {
   nsPoint offset = ToReferenceFrame();
@@ -3021,14 +3069,12 @@ already_AddRefed<Layer>
 nsDisplayOwnLayer::BuildLayer(nsDisplayListBuilder* aBuilder,
                               LayerManager* aManager,
                               const ContainerParameters& aContainerParameters) {
-  nsRefPtr<Layer> layer = aManager->GetLayerBuilder()->
+  nsRefPtr<ContainerLayer> layer = aManager->GetLayerBuilder()->
     BuildContainerLayerFor(aBuilder, aManager, mFrame, this, mList,
                            aContainerParameters, nullptr);
 
   if (mFlags & GENERATE_SUBDOC_INVALIDATIONS) {
-    ContainerLayerPresContext* pres = new ContainerLayerPresContext;
-    pres->mPresContext = mFrame->PresContext();
-    layer->SetUserData(&gNotifySubDocInvalidationData, pres);
+    mFrame->PresContext()->SetNotifySubDocInvalidationData(layer);
   }
   return layer.forget();
 }
@@ -3204,7 +3250,7 @@ nsDisplayScrollLayer::BuildLayer(nsDisplayListBuilder* aBuilder,
   // Get the already set unique ID for scrolling this content remotely.
   // Or, if not set, generate a new ID.
   nsIContent* content = mScrolledFrame->GetContent();
-  ViewID scrollId = nsLayoutUtils::FindIDFor(content);
+  ViewID scrollId = nsLayoutUtils::FindOrCreateIDFor(content);
 
   nsRect viewport = mScrollFrame->GetRect() -
                     mScrollFrame->GetPosition() +

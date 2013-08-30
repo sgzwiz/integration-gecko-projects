@@ -4,12 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "base/basictypes.h"
+#include "nsLayoutUtils.h"
+
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Util.h"
-
-#include "nsLayoutUtils.h"
-#include "nsIFormControlFrame.h"
 #include "nsPresContext.h"
 #include "nsIContent.h"
 #include "nsIDOMHTMLDocument.h"
@@ -23,7 +21,6 @@
 #include "nsView.h"
 #include "nsPlaceholderFrame.h"
 #include "nsIScrollableFrame.h"
-#include "nsCSSFrameConstructor.h"
 #include "nsIDOMEvent.h"
 #include "nsGUIEvent.h"
 #include "nsDisplayList.h"
@@ -32,23 +29,21 @@
 #include "nsBlockFrame.h"
 #include "nsBidiPresUtils.h"
 #include "imgIContainer.h"
+#include "ImageOps.h"
 #include "gfxRect.h"
 #include "gfxContext.h"
 #include "gfxFont.h"
 #include "nsRenderingContext.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsCSSRendering.h"
-#include "nsContentUtils.h"
 #include "nsCxPusher.h"
 #include "nsThemeConstants.h"
 #include "nsPIDOMWindow.h"
-#include "nsIBaseWindow.h"
 #include "nsIDocShell.h"
 #include "nsIWidget.h"
 #include "gfxMatrix.h"
 #include "gfxPoint3D.h"
 #include "gfxTypes.h"
-#include "gfxUserFontSet.h"
 #include "nsTArray.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "nsICanvasRenderingContextInternal.h"
@@ -62,8 +57,6 @@
 #include "nsCOMPtr.h"
 #include "nsCSSProps.h"
 #include "nsListControlFrame.h"
-#include "ImageLayers.h"
-#include "mozilla/arm.h"
 #include "mozilla/dom/Element.h"
 #include "nsCanvasFrame.h"
 #include "gfxDrawable.h"
@@ -73,15 +66,10 @@
 #include "nsFontFaceList.h"
 #include "nsFontInflationData.h"
 #include "nsSVGUtils.h"
-#include "nsSVGIntegrationUtils.h"
-#include "nsSVGForeignObjectFrame.h"
-#include "nsSVGOuterSVGFrame.h"
 #include "nsSVGTextFrame2.h"
 #include "nsStyleStructInlines.h"
 #include "nsStyleTransformMatrix.h"
 
-#include "mozilla/dom/PBrowserChild.h"
-#include "mozilla/dom/TabChild.h"
 #include "mozilla/Preferences.h"
 
 #ifdef MOZ_XUL
@@ -91,13 +79,18 @@
 #include "GeckoProfiler.h"
 #include "nsAnimationManager.h"
 #include "nsTransitionManager.h"
-#include "nsViewportInfo.h"
+#include "RestyleManager.h"
 
 using namespace mozilla;
 using namespace mozilla::css;
 using namespace mozilla::dom;
 using namespace mozilla::layers;
 using namespace mozilla::layout;
+
+using mozilla::image::Angle;
+using mozilla::image::Flip;
+using mozilla::image::ImageOps;
+using mozilla::image::Orientation;
 
 #define FLEXBOX_ENABLED_PREF_NAME "layout.css.flexbox.enabled"
 
@@ -435,16 +428,24 @@ static void DestroyViewID(void* aObject, nsIAtom* aPropertyName,
  * A namespace class for static layout utilities.
  */
 
+bool
+nsLayoutUtils::FindIDFor(nsIContent* aContent, ViewID* aOutViewId)
+{
+  void* scrollIdProperty = aContent->GetProperty(nsGkAtoms::RemoteId);
+  if (scrollIdProperty) {
+    *aOutViewId = *static_cast<ViewID*>(scrollIdProperty);
+    return true;
+  }
+  return false;
+}
+
 ViewID
-nsLayoutUtils::FindIDFor(nsIContent* aContent)
+nsLayoutUtils::FindOrCreateIDFor(nsIContent* aContent, bool aRoot)
 {
   ViewID scrollId;
 
-  void* scrollIdProperty = aContent->GetProperty(nsGkAtoms::RemoteId);
-  if (scrollIdProperty) {
-    scrollId = *static_cast<ViewID*>(scrollIdProperty);
-  } else {
-    scrollId = sScrollIdCounter++;
+  if (!FindIDFor(aContent, &scrollId)) {
+    scrollId = aRoot ? FrameMetrics::ROOT_SCROLL_ID : sScrollIdCounter++;
     aContent->SetProperty(nsGkAtoms::RemoteId, new ViewID(scrollId),
                           DestroyViewID);
     GetContentMap().Put(scrollId, aContent);
@@ -456,9 +457,8 @@ nsLayoutUtils::FindIDFor(nsIContent* aContent)
 nsIContent*
 nsLayoutUtils::FindContentFor(ViewID aId)
 {
-  NS_ABORT_IF_FALSE(aId != FrameMetrics::NULL_SCROLL_ID &&
-                    aId != FrameMetrics::ROOT_SCROLL_ID,
-                    "Cannot find a content element in map for null or root IDs.");
+  NS_ABORT_IF_FALSE(aId != FrameMetrics::NULL_SCROLL_ID,
+                    "Cannot find a content element in map for null IDs.");
   nsIContent* content;
   bool exists = GetContentMap().Get(aId, &content);
 
@@ -1150,7 +1150,7 @@ nsLayoutUtils::GetNearestScrollableFrameForDirection(nsIFrame* aFrame,
   for (nsIFrame* f = aFrame; f; f = nsLayoutUtils::GetCrossDocParentFrame(f)) {
     nsIScrollableFrame* scrollableFrame = do_QueryFrame(f);
     if (scrollableFrame) {
-      nsPresContext::ScrollbarStyles ss = scrollableFrame->GetScrollbarStyles();
+      ScrollbarStyles ss = scrollableFrame->GetScrollbarStyles();
       uint32_t directions = scrollableFrame->GetPerceivedScrollingDirections();
       if (aDirection == eVertical ?
           (ss.mVertical != NS_STYLE_OVERFLOW_HIDDEN &&
@@ -1172,7 +1172,7 @@ nsLayoutUtils::GetNearestScrollableFrame(nsIFrame* aFrame, uint32_t aFlags)
        f->GetParent() : nsLayoutUtils::GetCrossDocParentFrame(f)) {
     nsIScrollableFrame* scrollableFrame = do_QueryFrame(f);
     if (scrollableFrame) {
-      nsPresContext::ScrollbarStyles ss = scrollableFrame->GetScrollbarStyles();
+      ScrollbarStyles ss = scrollableFrame->GetScrollbarStyles();
       if ((aFlags & SCROLLABLE_INCLUDE_HIDDEN) ||
           ss.mVertical != NS_STYLE_OVERFLOW_HIDDEN ||
           ss.mHorizontal != NS_STYLE_OVERFLOW_HIDDEN)
@@ -1906,14 +1906,15 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
   nsIFrame* rootScrollFrame = presShell->GetRootScrollFrame();
   bool usingDisplayPort = false;
   nsRect displayport;
-  if (rootScrollFrame) {
+  if (rootScrollFrame && !aFrame->GetParent()) {
     nsIContent* content = rootScrollFrame->GetContent();
     if (content) {
       usingDisplayPort = nsLayoutUtils::GetDisplayPort(content, &displayport);
     }
   }
 
-  bool ignoreViewportScrolling = presShell->IgnoringViewportScrolling();
+  bool ignoreViewportScrolling =
+    aFrame->GetParent() ? false : presShell->IgnoringViewportScrolling();
   nsRegion visibleRegion;
   if (aFlags & PAINT_WIDGET_LAYERS) {
     // This layer tree will be reused, so we'll need to calculate it
@@ -1975,30 +1976,27 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
   }
 #endif
 
-  if (ignoreViewportScrolling && !aFrame->GetParent()) {
-    nsIFrame* rootScrollFrame = presShell->GetRootScrollFrame();
-    if (rootScrollFrame) {
-      nsIScrollableFrame* rootScrollableFrame =
-        presShell->GetRootScrollFrameAsScrollable();
-      if (aFlags & PAINT_DOCUMENT_RELATIVE) {
-        // Make visibleRegion and aRenderingContext relative to the
-        // scrolled frame instead of the root frame.
-        nsPoint pos = rootScrollableFrame->GetScrollPosition();
-        visibleRegion.MoveBy(-pos);
-        if (aRenderingContext) {
-          aRenderingContext->Translate(pos);
-        }
+  if (ignoreViewportScrolling && rootScrollFrame) {
+    nsIScrollableFrame* rootScrollableFrame =
+      presShell->GetRootScrollFrameAsScrollable();
+    if (aFlags & PAINT_DOCUMENT_RELATIVE) {
+      // Make visibleRegion and aRenderingContext relative to the
+      // scrolled frame instead of the root frame.
+      nsPoint pos = rootScrollableFrame->GetScrollPosition();
+      visibleRegion.MoveBy(-pos);
+      if (aRenderingContext) {
+        aRenderingContext->Translate(pos);
       }
-      builder.SetIgnoreScrollFrame(rootScrollFrame);
+    }
+    builder.SetIgnoreScrollFrame(rootScrollFrame);
 
-      nsCanvasFrame* canvasFrame =
-        do_QueryFrame(rootScrollableFrame->GetScrolledFrame());
-      if (canvasFrame) {
-        // Use UnionRect here to ensure that areas where the scrollbars
-        // were are still filled with the background color.
-        canvasArea.UnionRect(canvasArea,
-          canvasFrame->CanvasArea() + builder.ToReferenceFrame(canvasFrame));
-      }
+    nsCanvasFrame* canvasFrame =
+      do_QueryFrame(rootScrollableFrame->GetScrolledFrame());
+    if (canvasFrame) {
+      // Use UnionRect here to ensure that areas where the scrollbars
+      // were are still filled with the background color.
+      canvasArea.UnionRect(canvasArea,
+        canvasFrame->CanvasArea() + builder.ToReferenceFrame(canvasFrame));
     }
   }
 
@@ -4277,6 +4275,25 @@ nsLayoutUtils::GetWholeImageDestination(const nsIntSize& aWholeImageSize,
   nscoord wholeSizeY = NSToCoordRound(aWholeImageSize.height*appUnitsPerCSSPixel*scaleY);
   return nsRect(aDestArea.TopLeft() - nsPoint(destOffsetX, destOffsetY),
                 nsSize(wholeSizeX, wholeSizeY));
+}
+
+/* static */ already_AddRefed<imgIContainer>
+nsLayoutUtils::OrientImage(imgIContainer* aContainer,
+                           const nsStyleImageOrientation& aOrientation)
+{
+  MOZ_ASSERT(aContainer, "Should have an image container");
+  nsCOMPtr<imgIContainer> img(aContainer);
+
+  if (aOrientation.IsFromImage()) {
+    img = ImageOps::Orient(img, img->GetOrientation());
+  } else if (!aOrientation.IsDefault()) {
+    Angle angle = aOrientation.Angle();
+    Flip flip  = aOrientation.IsFlipped() ? Flip::Horizontal
+                                          : Flip::Unflipped;
+    img = ImageOps::Orient(img, Orientation(angle, flip));
+  }
+
+  return img.forget();
 }
 
 static bool NonZeroStyleCoord(const nsStyleCoord& aCoord)

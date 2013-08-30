@@ -18,6 +18,7 @@
 
 #include "jsapi.h"
 #include "jsatom.h"
+#include "jsautooplen.h"
 #include "jscntxt.h"
 #include "jsfun.h"
 #include "jsnum.h"
@@ -38,6 +39,7 @@
 
 #include "frontend/ParseMaps-inl.h"
 #include "frontend/ParseNode-inl.h"
+#include "vm/ScopeObject-inl.h"
 
 using namespace js;
 using namespace js::gc;
@@ -3541,7 +3543,8 @@ ParseNode::getConstantValue(ExclusiveContext *cx, bool strictChecks, MutableHand
         return true;
       }
       case PNK_OBJECT: {
-        JS_ASSERT(isOp(JSOP_NEWINIT) && !(pn_xflags & PNX_NONCONST));
+        JS_ASSERT(isOp(JSOP_NEWINIT));
+        JS_ASSERT(!(pn_xflags & PNX_NONCONST));
 
         gc::AllocKind kind = GuessObjectGCKind(pn_count);
         RootedObject obj(cx, NewBuiltinClassInstance(cx, &JSObject::class_, kind, MaybeSingletonObject));
@@ -4494,8 +4497,7 @@ EmitFunc(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
      */
     if (fun->isInterpreted()) {
         bool singleton =
-            cx->isJSContext() &&
-            cx->asJSContext()->typeInferenceEnabled() &&
+            cx->typeInferenceEnabled() &&
             bce->script->compileAndGo &&
             fun->isInterpreted() &&
             (bce->checkSingletonContext() ||
@@ -5665,7 +5667,8 @@ frontend::EmitTree(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
                 }
             }
         }
-        if (fun->hasDefaults()) {
+        bool hasDefaults = bce->sc->asFunctionBox()->hasDefaults();
+        if (hasDefaults) {
             ParseNode *rest = NULL;
             bool restIsDefn = false;
             if (fun->hasRest()) {
@@ -5714,7 +5717,7 @@ frontend::EmitTree(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
                 continue;
             if (!BindNameToSlot(cx, bce, pn2))
                 return false;
-            if (pn2->pn_next == pnlast && fun->hasRest() && !fun->hasDefaults()) {
+            if (pn2->pn_next == pnlast && fun->hasRest() && !hasDefaults) {
                 // Fill rest parameter. We handled the case with defaults above.
                 JS_ASSERT(!bce->sc->asFunctionBox()->argumentsHasLocalBinding());
                 bce->switchToProlog();

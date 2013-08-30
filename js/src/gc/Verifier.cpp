@@ -10,7 +10,6 @@
 
 #include "jsapi.h"
 #include "jscntxt.h"
-#include "jscompartment.h"
 #include "jsgc.h"
 #include "jsprf.h"
 
@@ -69,7 +68,7 @@ CheckStackRoot(JSRuntime *rt, uintptr_t *w, Rooter *begin, Rooter *end)
         return;
 
     /* Don't check atoms as these will never be subject to generational collection. */
-    if (static_cast<Cell *>(thing)->tenuredZone() == rt->atomsCompartment->zone())
+    if (rt->isAtomsZone(static_cast<Cell *>(thing)->tenuredZone()))
         return;
 
     /*
@@ -126,7 +125,7 @@ CheckStackRootsRangeAndSkipJit(JSRuntime *rt, uintptr_t *begin, uintptr_t *end, 
     uintptr_t *i = begin;
 
 #if defined(JS_ION)
-    for (ion::JitActivationIterator iter(rt); !iter.done(); ++iter) {
+    for (jit::JitActivationIterator iter(rt); !iter.done(); ++iter) {
         uintptr_t *jitMin, *jitEnd;
         iter.jitStackRange(jitMin, jitEnd);
 

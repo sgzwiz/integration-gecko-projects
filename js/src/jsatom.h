@@ -9,16 +9,11 @@
 
 #include "mozilla/HashFunctions.h"
 
-#include <stddef.h>
-
-#include "jsalloc.h"
-#include "jsapi.h"
-#include "jsprvtd.h"
-#include "jspubtd.h"
-
 #include "gc/Barrier.h"
-#include "js/HashTable.h"
+#include "gc/Rooting.h"
 #include "vm/CommonPropertyNames.h"
+
+class JSAtom;
 
 struct JSIdArray {
     int length;
@@ -97,6 +92,7 @@ struct AtomHasher
 
     static HashNumber hash(const Lookup &l) { return mozilla::HashString(l.chars, l.length); }
     static inline bool match(const AtomStateEntry &entry, const Lookup &lookup);
+    static void rekey(AtomStateEntry &k, const AtomStateEntry& newKey) { k = newKey; }
 };
 
 typedef HashSet<AtomStateEntry, AtomHasher, SystemAllocPolicy> AtomSet;
@@ -158,7 +154,6 @@ extern const char js_typeof_str[];
 extern const char js_void_str[];
 extern const char js_while_str[];
 extern const char js_with_str[];
-extern const char js_yield_str[];
 
 namespace js {
 
@@ -217,6 +212,14 @@ AtomizeString(ExclusiveContext *cx, JSString *str, js::InternBehavior ib = js::D
 template <AllowGC allowGC>
 extern JSAtom *
 ToAtom(ExclusiveContext *cx, typename MaybeRooted<Value, allowGC>::HandleType v);
+
+enum XDRMode {
+    XDR_ENCODE,
+    XDR_DECODE
+};
+
+template <XDRMode mode>
+class XDRState;
 
 template<XDRMode mode>
 bool

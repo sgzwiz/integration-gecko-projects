@@ -264,8 +264,6 @@ partial interface Navigator {
   readonly attribute MozMobileConnection mozMobileConnection;
 };
 
-// nsIMozNavigatorCellBroadcast
-interface MozCellBroadcast;
 partial interface Navigator {
   [Throws, Func="Navigator::HasCellBroadcastSupport"]
   readonly attribute MozCellBroadcast mozCellBroadcast;
@@ -295,11 +293,9 @@ partial interface Navigator {
 #endif // MOZ_GAMEPAD
 
 #ifdef MOZ_B2G_BT
-// nsIDOMNavigatorBluetooth
-interface MozBluetoothManager;
 partial interface Navigator {
   [Throws, Func="Navigator::HasBluetoothSupport"]
-  readonly attribute MozBluetoothManager mozBluetooth;
+  readonly attribute BluetoothManager mozBluetooth;
 };
 #endif // MOZ_B2G_BT
 

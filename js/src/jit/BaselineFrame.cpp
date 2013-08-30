@@ -12,11 +12,13 @@
 #include "vm/Debugger.h"
 #include "vm/ScopeObject.h"
 
+#include "jsobjinlines.h"
+
 #include "jit/IonFrames-inl.h"
 #include "vm/Stack-inl.h"
 
 using namespace js;
-using namespace js::ion;
+using namespace js::jit;
 
 void
 BaselineFrame::trace(JSTracer *trc)

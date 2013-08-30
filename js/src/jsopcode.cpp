@@ -12,6 +12,7 @@
 
 #include "mozilla/Util.h"
 
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -257,11 +258,11 @@ PCCounts::countName(JSOp op, size_t which)
 
 #ifdef JS_ION
 void
-js::DumpIonScriptCounts(Sprinter *sp, ion::IonScriptCounts *ionCounts)
+js::DumpIonScriptCounts(Sprinter *sp, jit::IonScriptCounts *ionCounts)
 {
     Sprint(sp, "IonScript [%lu blocks]:\n", ionCounts->numBlocks());
     for (size_t i = 0; i < ionCounts->numBlocks(); i++) {
-        const ion::IonBlockCounts &block = ionCounts->block(i);
+        const jit::IonBlockCounts &block = ionCounts->block(i);
         if (block.hitCount() < 10)
             continue;
         Sprint(sp, "BB #%lu [%05u]", block.id(), block.offset());
@@ -311,7 +312,7 @@ js_DumpPCCounts(JSContext *cx, HandleScript script, js::Sprinter *sp)
 #endif
 
 #ifdef JS_ION
-    ion::IonScriptCounts *ionCounts = script->getIonCounts();
+    jit::IonScriptCounts *ionCounts = script->getIonCounts();
 
     while (ionCounts) {
         DumpIonScriptCounts(sp, ionCounts);
@@ -720,9 +721,11 @@ bool
 Sprinter::realloc_(size_t newSize)
 {
     JS_ASSERT(newSize > (size_t) offset);
-    char *newBuf = (char *) context->realloc_(base, newSize);
-    if (!newBuf)
+    char *newBuf = (char *) js_realloc(base, newSize);
+    if (!newBuf) {
+        reportOutOfMemory();
         return false;
+    }
     base = newBuf;
     size = newSize;
     base[size - 1] = 0;
@@ -750,9 +753,11 @@ bool
 Sprinter::init()
 {
     JS_ASSERT(!initialized);
-    base = (char *) context->malloc_(DefaultSize);
-    if (!base)
+    base = (char *) js_malloc(DefaultSize);
+    if (!base) {
+        reportOutOfMemory();
         return false;
+    }
 #ifdef DEBUG
     initialized = true;
 #endif
@@ -796,12 +801,6 @@ Sprinter::operator[](size_t off)
     return *(base + off);
 }
 
-bool
-Sprinter::empty() const
-{
-    return *base == 0;
-}
-
 char *
 Sprinter::reserve(size_t len)
 {
@@ -814,15 +813,6 @@ Sprinter::reserve(size_t len)
 
     char *sb = base + offset;
     offset += len;
-    return sb;
-}
-
-char *
-Sprinter::reserveAndClear(size_t len)
-{
-    char *sb = reserve(len);
-    if (sb)
-        memset(sb, 0, len);
     return sb;
 }
 
@@ -903,43 +893,25 @@ Sprinter::printf(const char *fmt, ...)
     return -1;
 }
 
-void
-Sprinter::setOffset(const char *end)
-{
-    JS_ASSERT(end >= base && end < base + size);
-    offset = end - base;
-}
-
-void
-Sprinter::setOffset(ptrdiff_t off)
-{
-    JS_ASSERT(off >= 0 && (size_t) off < size);
-    offset = off;
-}
-
 ptrdiff_t
 Sprinter::getOffset() const
 {
     return offset;
 }
 
-ptrdiff_t
-Sprinter::getOffsetOf(const char *string) const
-{
-    JS_ASSERT(string >= base && string < base + size);
-    return string - base;
-}
-
 void
-Sprinter::reportOutOfMemory() {
+Sprinter::reportOutOfMemory()
+{
     if (reportedOOM)
         return;
-    js_ReportOutOfMemory(context);
+    if (context)
+        js_ReportOutOfMemory(context);
     reportedOOM = true;
 }
 
 bool
-Sprinter::hadOutOfMemory() const {
+Sprinter::hadOutOfMemory() const
+{
     return reportedOOM;
 }
 
@@ -2189,7 +2161,7 @@ js::GetPCCountScriptSummary(JSContext *cx, size_t index)
                               JS_ARRAY_LENGTH(arithTotals), comma);
 
     uint64_t ionActivity = 0;
-    ion::IonScriptCounts *ionCounts = sac.getIonCounts();
+    jit::IonScriptCounts *ionCounts = sac.getIonCounts();
     while (ionCounts) {
         for (size_t i = 0; i < ionCounts->numBlocks(); i++)
             ionActivity += ionCounts->block(i).hitCount();
@@ -2301,7 +2273,7 @@ GetPCCountJSON(JSContext *cx, const ScriptAndCounts &sac, StringBuffer &buf)
 
     buf.append(']');
 
-    ion::IonScriptCounts *ionCounts = sac.getIonCounts();
+    jit::IonScriptCounts *ionCounts = sac.getIonCounts();
     if (ionCounts) {
         AppendJSONProperty(buf, "ion");
         buf.append('[');
@@ -2315,7 +2287,7 @@ GetPCCountJSON(JSContext *cx, const ScriptAndCounts &sac, StringBuffer &buf)
             for (size_t i = 0; i < ionCounts->numBlocks(); i++) {
                 if (i)
                     buf.append(',');
-                const ion::IonBlockCounts &block = ionCounts->block(i);
+                const jit::IonBlockCounts &block = ionCounts->block(i);
 
                 buf.append('{');
                 AppendJSONProperty(buf, "id", NO_COMMA);

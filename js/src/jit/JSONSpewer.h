@@ -9,14 +9,10 @@
 
 #include <stdio.h>
 
-#include "jsscript.h"
-
-#include "js/RootingAPI.h"
-
 class JSScript;
 
 namespace js {
-namespace ion {
+namespace jit {
 
 class MDefinition;
 class MInstruction;
@@ -73,7 +69,7 @@ class JSONSpewer
     void finish();
 };
 
-} // namespace ion
+} // namespace jit
 } // namespace js
 
 #endif /* jit_JSONSpewer_h */

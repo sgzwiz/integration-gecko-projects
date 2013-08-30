@@ -61,7 +61,8 @@ static const uint16_t WAVE_FORMAT_CHUNK_SIZE = 16;
 // supported by AudioStream.
 static const uint16_t WAVE_FORMAT_ENCODING_PCM = 1;
 
-// Maximum number of channels supported
+// We reject files with more than this number of channels if we're decoding for
+// playback.
 static const uint8_t MAX_CHANNELS = 2;
 
 namespace {
@@ -202,11 +203,14 @@ bool WaveReader::DecodeAudioData()
   int64_t readSize = std::min(BLOCK_SIZE, remaining);
   int64_t frames = readSize / mFrameSize;
 
-  PR_STATIC_ASSERT(uint64_t(BLOCK_SIZE) < UINT_MAX / sizeof(AudioDataValue) / MAX_CHANNELS);
+  static_assert(uint64_t(BLOCK_SIZE) < UINT_MAX /
+                sizeof(AudioDataValue) / MAX_CHANNELS,
+                "bufferSize calculation could overflow.");
   const size_t bufferSize = static_cast<size_t>(frames * mChannels);
   nsAutoArrayPtr<AudioDataValue> sampleBuffer(new AudioDataValue[bufferSize]);
 
-  PR_STATIC_ASSERT(uint64_t(BLOCK_SIZE) < UINT_MAX / sizeof(char));
+  static_assert(uint64_t(BLOCK_SIZE) < UINT_MAX / sizeof(char),
+                "BLOCK_SIZE too large for enumerator.");
   nsAutoArrayPtr<char> dataBuffer(new char[static_cast<size_t>(readSize)]);
 
   if (!ReadAll(dataBuffer, readSize)) {
@@ -334,14 +338,15 @@ WaveReader::LoadRIFFChunk()
     return false;
   }
 
-  PR_STATIC_ASSERT(sizeof(uint32_t) * 2 <= RIFF_INITIAL_SIZE);
+  static_assert(sizeof(uint32_t) * 3 <= RIFF_INITIAL_SIZE,
+                "Reads would overflow riffHeader buffer.");
   if (ReadUint32BE(&p) != RIFF_CHUNK_MAGIC) {
     NS_WARNING("resource data not in RIFF format");
     return false;
   }
 
   // Skip over RIFF size field.
-  p += 4;
+  p += sizeof(uint32_t);
 
   if (ReadUint32BE(&p) != WAVE_CHUNK_MAGIC) {
     NS_WARNING("Expected WAVE chunk");
@@ -366,12 +371,13 @@ WaveReader::LoadFormatChunk(uint32_t aChunkSize)
     return false;
   }
 
-  PR_STATIC_ASSERT(sizeof(uint16_t) +
-                   sizeof(uint16_t) +
-                   sizeof(uint32_t) +
-                   4 +
-                   sizeof(uint16_t) +
-                   sizeof(uint16_t) <= sizeof(waveFormat));
+  static_assert(sizeof(uint16_t) +
+                sizeof(uint16_t) +
+                sizeof(uint32_t) +
+                4 +
+                sizeof(uint16_t) +
+                sizeof(uint16_t) <= sizeof(waveFormat),
+                "Reads would overflow waveFormat buffer.");
   if (ReadUint16LE(&p) != WAVE_FORMAT_ENCODING_PCM) {
     NS_WARNING("WAVE is not uncompressed PCM, compressed encodings are not supported");
     return false;
@@ -400,7 +406,8 @@ WaveReader::LoadFormatChunk(uint32_t aChunkSize)
       return false;
     }
 
-    PR_STATIC_ASSERT(sizeof(uint16_t) <= sizeof(extLength));
+    static_assert(sizeof(uint16_t) <= sizeof(extLength),
+                  "Reads would overflow extLength buffer.");
     uint16_t extra = ReadUint16LE(&p);
     if (aChunkSize - (WAVE_FORMAT_CHUNK_SIZE + 2) != extra) {
       NS_WARNING("Invalid extended format chunk size");
@@ -409,7 +416,8 @@ WaveReader::LoadFormatChunk(uint32_t aChunkSize)
     extra += extra % 2;
 
     if (extra > 0) {
-      PR_STATIC_ASSERT(UINT16_MAX + (UINT16_MAX % 2) < UINT_MAX / sizeof(char));
+      static_assert(UINT16_MAX + (UINT16_MAX % 2) < UINT_MAX / sizeof(char),
+                    "chunkExtension array too large for iterator.");
       nsAutoArrayPtr<char> chunkExtension(new char[extra]);
       if (!ReadAll(chunkExtension.get(), extra)) {
         return false;
@@ -423,12 +431,14 @@ WaveReader::LoadFormatChunk(uint32_t aChunkSize)
 
   // Make sure metadata is fairly sane.  The rate check is fairly arbitrary,
   // but the channels check is intentionally limited to mono or stereo
-  // because that's what the audio backend currently supports.
+  // when the media is intended for direct playback because that's what the
+  // audio backend currently supports.
   unsigned int actualFrameSize = sampleFormat == 8 ? 1 : 2 * channels;
   if (rate < 100 || rate > 96000 ||
-      channels < 1 || channels > MAX_CHANNELS ||
-      (frameSize != 1 && frameSize != 2 && frameSize != 4) ||
-      (sampleFormat != 8 && sampleFormat != 16) ||
+      (((channels < 1 || channels > MAX_CHANNELS) ||
+       (frameSize != 1 && frameSize != 2 && frameSize != 4)) &&
+       !mIgnoreAudioOutputFormat) ||
+       (sampleFormat != 8 && sampleFormat != 16) ||
       frameSize != actualFrameSize) {
     NS_WARNING("Invalid WAVE metadata");
     return false;
@@ -522,7 +532,8 @@ WaveReader::GetNextChunk(uint32_t* aChunk, uint32_t* aChunkSize)
     return false;
   }
 
-  PR_STATIC_ASSERT(sizeof(uint32_t) * 2 <= CHUNK_HEADER_SIZE);
+  static_assert(sizeof(uint32_t) * 2 <= CHUNK_HEADER_SIZE,
+                "Reads would overflow chunkHeader buffer.");
   *aChunk = ReadUint32BE(&p);
   *aChunkSize = ReadUint32LE(&p);
 
@@ -538,7 +549,8 @@ WaveReader::LoadListChunk(uint32_t aChunkSize,
                     "LoadListChunk called with unaligned resource");
 
   static const unsigned int MAX_CHUNK_SIZE = 1 << 16;
-  PR_STATIC_ASSERT(MAX_CHUNK_SIZE < UINT_MAX / sizeof(char));
+  static_assert(uint64_t(MAX_CHUNK_SIZE) < UINT_MAX / sizeof(char),
+                "MAX_CHUNK_SIZE too large for enumerator.");
 
   if (aChunkSize > MAX_CHUNK_SIZE) {
     return false;
@@ -625,7 +637,8 @@ WaveReader::LoadAllChunks(nsAutoPtr<HTMLMediaElement::MetadataTags> &aTags)
       return false;
     }
 
-    PR_STATIC_ASSERT(sizeof(uint32_t) * 2 <= CHUNK_HEADER_SIZE);
+    static_assert(sizeof(uint32_t) * 2 <= CHUNK_HEADER_SIZE,
+                  "Reads would overflow chunkHeader buffer.");
 
     uint32_t magic = ReadUint32BE(&p);
     uint32_t chunkSize = ReadUint32LE(&p);
@@ -664,7 +677,8 @@ WaveReader::LoadAllChunks(nsAutoPtr<HTMLMediaElement::MetadataTags> &aTags)
     }
 
     static const int64_t MAX_CHUNK_SIZE = 1 << 16;
-    PR_STATIC_ASSERT(uint64_t(MAX_CHUNK_SIZE) < UINT_MAX / sizeof(char));
+    static_assert(uint64_t(MAX_CHUNK_SIZE) < UINT_MAX / sizeof(char),
+                  "MAX_CHUNK_SIZE too large for enumerator.");
     nsAutoArrayPtr<char> chunk(new char[MAX_CHUNK_SIZE]);
     while (forward.value() > 0) {
       int64_t size = std::min(forward.value(), MAX_CHUNK_SIZE);

@@ -9,7 +9,7 @@
 #include "jsprf.h"
 
 using namespace js;
-using namespace js::ion;
+using namespace js::jit;
 
 using mozilla::DebugOnly;
 
@@ -1189,7 +1189,7 @@ BacktrackingAllocator::dumpLiveness()
         LBlock *block = graph.getBlock(blockIndex);
         MBasicBlock *mir = block->mir();
 
-        printf("\nBlock %lu", blockIndex);
+        printf("\nBlock %lu", static_cast<unsigned long>(blockIndex));
         for (size_t i = 0; i < mir->numSuccessors(); i++)
             printf(" [successor %u]", mir->getSuccessor(i)->id());
         printf("\n");
@@ -1234,7 +1234,7 @@ BacktrackingAllocator::dumpLiveness()
         printf("reg %s: %s\n", AnyRegister::FromCode(i).name(), IntervalString(fixedIntervals[i]));
 
     for (size_t i = 0; i < graph.numVirtualRegisters(); i++) {
-        printf("v%lu:", i);
+        printf("v%lu:", static_cast<unsigned long>(i));
         VirtualRegister &vreg = vregs[i];
         for (size_t j = 0; j < vreg.numIntervals(); j++) {
             if (j)
@@ -1269,7 +1269,7 @@ BacktrackingAllocator::dumpAllocations()
     printf("Allocations:\n");
 
     for (size_t i = 0; i < graph.numVirtualRegisters(); i++) {
-        printf("v%lu:", i);
+        printf("v%lu:", static_cast<unsigned long>(i));
         VirtualRegister &vreg = vregs[i];
         for (size_t j = 0; j < vreg.numIntervals(); j++) {
             if (j)
@@ -1328,23 +1328,6 @@ BacktrackingAllocator::computePriority(const VirtualRegisterGroup *group)
         priority += computePriority(vregs[vreg].getInterval(0));
     }
     return priority;
-}
-
-CodePosition
-BacktrackingAllocator::minimalDefEnd(LInstruction *ins)
-{
-    // Compute the shortest interval that captures vregs defined by ins.
-    // Watch for instructions that are followed by an OSI point and/or Nop.
-    // If moves are introduced between the instruction and the OSI point then
-    // safepoint information for the instruction may be incorrect. This is
-    // pretty disgusting and should be fixed somewhere else in the compiler.
-    while (true) {
-        LInstruction *next = insData[outputOf(ins).next()].ins();
-        if (!next->isNop() && !next->isOsiPoint())
-            break;
-        ins = next;
-    }
-    return outputOf(ins);
 }
 
 bool

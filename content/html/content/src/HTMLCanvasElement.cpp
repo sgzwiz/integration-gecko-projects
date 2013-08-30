@@ -653,6 +653,8 @@ HTMLCanvasElement::MozGetAsFile(const nsAString& aName,
                                 const nsAString& aType,
                                 nsIDOMFile** aResult)
 {
+  OwnerDoc()->WarnOnceAbout(nsIDocument::eMozGetAsFile);
+
   // do a trust check if this is a write-only canvas
   if ((mWriteOnly) &&
       !nsContentUtils::IsCallerChrome()) {
@@ -802,6 +804,7 @@ HTMLCanvasElement::GetContext(JSContext* aCx,
 
     rv = UpdateContext(aCx, aContextOptions);
     if (rv.Failed()) {
+      rv = NS_OK; // See bug 645792
       return nullptr;
     }
     mCurrentContextId.Assign(aContextId);

@@ -11,18 +11,12 @@
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Util.h"
 
-#include "jsalloc.h"
-#include "jsclass.h"
+#include "jsapi.h"
 #include "jslock.h"
-#include "jspubtd.h"
-#include "jsscript.h"
-#include "jstypes.h"
+#include "jsobj.h"
 
-#include "gc/Heap.h"
 #include "js/GCAPI.h"
-#include "js/HashTable.h"
 #include "js/Vector.h"
 
 class JSAtom;
@@ -40,12 +34,15 @@ class BaseShape;
 class DebugScopeObject;
 class GCHelperThread;
 class GlobalObject;
+class LazyScript;
 class Nursery;
 class PropertyName;
 class ScopeObject;
 class Shape;
 class UnownedBaseShape;
 struct SliceBudget;
+
+unsigned GetCPUCount();
 
 enum HeapState {
     Idle,             // doing nothing with the GC heap
@@ -54,7 +51,7 @@ enum HeapState {
     MinorCollecting   // doing a GC of the minor heap (nursery)
 };
 
-namespace ion {
+namespace jit {
     class IonCode;
 }
 
@@ -149,7 +146,7 @@ template <> struct MapTypeToTraceKind<JSString>         { const static JSGCTrace
 template <> struct MapTypeToTraceKind<JSFlatString>     { const static JSGCTraceKind kind = JSTRACE_STRING; };
 template <> struct MapTypeToTraceKind<JSLinearString>   { const static JSGCTraceKind kind = JSTRACE_STRING; };
 template <> struct MapTypeToTraceKind<PropertyName>     { const static JSGCTraceKind kind = JSTRACE_STRING; };
-template <> struct MapTypeToTraceKind<ion::IonCode>     { const static JSGCTraceKind kind = JSTRACE_IONCODE; };
+template <> struct MapTypeToTraceKind<jit::IonCode>     { const static JSGCTraceKind kind = JSTRACE_IONCODE; };
 
 #if defined(JSGC_GENERATIONAL) || defined(DEBUG)
 static inline bool
@@ -412,7 +409,7 @@ class ArenaLists
     /* For each arena kind, a list of arenas remaining to be swept. */
     ArenaHeader *arenaListsToSweep[FINALIZE_LIMIT];
 
-    /* Shape areneas to be swept in the foreground. */
+    /* Shape arenas to be swept in the foreground. */
     ArenaHeader *gcShapeArenasToSweep;
 
   public:
@@ -666,6 +663,9 @@ extern bool
 AddObjectRoot(JSContext *cx, JSObject **rp, const char *name);
 
 extern bool
+AddObjectRoot(JSRuntime *rt, JSObject **rp, const char *name);
+
+extern bool
 AddScriptRoot(JSContext *cx, JSScript **rp, const char *name);
 
 } /* namespace js */
@@ -677,6 +677,8 @@ extern void
 js_FinishGC(JSRuntime *rt);
 
 namespace js {
+
+class StackFrame;
 
 extern void
 MarkCompartmentActive(js::StackFrame *fp);
@@ -1142,7 +1144,7 @@ struct GCMarker : public JSTracer {
         pushTaggedPtr(TypeTag, type);
     }
 
-    void pushIonCode(ion::IonCode *code) {
+    void pushIonCode(jit::IonCode *code) {
         pushTaggedPtr(IonCodeTag, code);
     }
 
@@ -1336,6 +1338,13 @@ SetFullCompartmentChecks(JSContext *cx, bool enabled);
 void
 FinishBackgroundFinalize(JSRuntime *rt);
 
+/*
+ * Merge all contents of source into target. This can only be used if source is
+ * the only compartment in its zone.
+ */
+void
+MergeCompartments(JSCompartment *source, JSCompartment *target);
+
 const int ZealPokeValue = 1;
 const int ZealAllocValue = 2;
 const int ZealFrameGCValue = 3;
@@ -1350,8 +1359,7 @@ const int ZealIncrementalMarkAllThenFinish = 9;
 const int ZealIncrementalMultipleSlices = 10;
 const int ZealVerifierPostValue = 11;
 const int ZealFrameVerifierPostValue = 12;
-const int ZealPurgeAnalysisValue = 13;
-const int ZealLimit = 13;
+const int ZealLimit = 12;
 
 enum VerifierType {
     PreBarrierVerifier,
@@ -1392,7 +1400,7 @@ class AutoSuppressGC
     int32_t &suppressGC_;
 
   public:
-    AutoSuppressGC(JSContext *cx);
+    AutoSuppressGC(ExclusiveContext *cx);
     AutoSuppressGC(JSCompartment *comp);
 
     ~AutoSuppressGC()

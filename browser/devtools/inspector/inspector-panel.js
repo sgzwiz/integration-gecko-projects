@@ -45,12 +45,8 @@ InspectorPanel.prototype = {
    */
   open: function InspectorPanel_open() {
     return this.target.makeRemote().then(() => {
-      return this.target.inspector.getWalker();
-    }).then(walker => {
-      if (this._destroyPromise) {
-        walker.release().then(null, console.error);
-      }
-      this.walker = walker;
+      return this._getWalker();
+    }).then(() => {
       return this._getDefaultNodeForSelection();
     }).then(defaultSelection => {
       return this._deferredOpen(defaultSelection);
@@ -147,6 +143,16 @@ InspectorPanel.prototype = {
     this.setupSidebar();
 
     return deferred.promise;
+  },
+
+  _getWalker: function() {
+    let inspector = this.target.inspector;
+    return inspector.getWalker().then(walker => {
+      this.walker = walker;
+      return inspector.getPageStyle();
+    }).then(pageStyle => {
+      this.pageStyle = pageStyle;
+    });
   },
 
   /**
@@ -262,7 +268,7 @@ InspectorPanel.prototype = {
                         "chrome://browser/content/devtools/computedview.xhtml",
                         "computedview" == defaultTab);
 
-    if (Services.prefs.getBoolPref("devtools.fontinspector.enabled")) {
+    if (Services.prefs.getBoolPref("devtools.fontinspector.enabled") && !this.target.isRemote) {
       this.sidebar.addTab("fontinspector",
                           "chrome://browser/content/devtools/fontinspector/font-inspector.xhtml",
                           "fontinspector" == defaultTab);
@@ -317,7 +323,7 @@ InspectorPanel.prototype = {
       try {
         selfUpdate(selection);
       } catch(ex) {
-        console.error(ex);
+        console.error(ex)
       }
     }, Ci.nsIThread.DISPATCH_NORMAL);
   },
@@ -403,6 +409,7 @@ InspectorPanel.prototype = {
     if (this.walker) {
       this._destroyPromise = this.walker.release().then(null, console.error);
       delete this.walker;
+      delete this.pageStyle;
     } else {
       this._destroyPromise = promise.resolve(null);
     }

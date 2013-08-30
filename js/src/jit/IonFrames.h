@@ -24,7 +24,7 @@ class JSFunction;
 class JSScript;
 
 namespace js {
-namespace ion {
+namespace jit {
 
 typedef void * CalleeToken;
 
@@ -103,7 +103,7 @@ ScriptFromCalleeToken(CalleeToken token)
 // dependent.
 //
 // Two special frame types exist. Entry frames begin an ion activation, and
-// therefore there is exactly one per activation of ion::Cannon. Exit frames
+// therefore there is exactly one per activation of jit::Cannon. Exit frames
 // are necessary to leave JIT code and enter C++, and thus, C++ code will
 // always begin iterating from the topmost exit frame.
 
@@ -293,15 +293,11 @@ MakeFrameDescriptor(uint32_t frameSize, FrameType type)
 
 // Returns the JSScript associated with the topmost Ion frame.
 inline JSScript *
-GetTopIonJSScript(PerThreadData *pt, const SafepointIndex **safepointIndexOut, void **returnAddrOut)
+GetTopIonJSScript(PerThreadData *pt, void **returnAddrOut)
 {
     IonFrameIterator iter(pt->ionTop);
     JS_ASSERT(iter.type() == IonFrame_Exit);
     ++iter;
-
-    // If needed, grab the safepoint index.
-    if (safepointIndexOut)
-        *safepointIndexOut = iter.safepoint();
 
     JS_ASSERT(iter.returnAddressToFp() != NULL);
     if (returnAddrOut)
@@ -317,12 +313,12 @@ GetTopIonJSScript(PerThreadData *pt, const SafepointIndex **safepointIndexOut, v
 }
 
 inline JSScript *
-GetTopIonJSScript(JSContext *cx, const SafepointIndex **safepointIndexOut, void **returnAddrOut)
+GetTopIonJSScript(ThreadSafeContext *cx, void **returnAddrOut = NULL)
 {
-    return GetTopIonJSScript(&cx->mainThread(), safepointIndexOut, returnAddrOut);
+    return GetTopIonJSScript(cx->perThreadData, returnAddrOut);
 }
 
-} // namespace ion
+} // namespace jit
 } // namespace js
 
 #if defined(JS_CPU_X86) || defined (JS_CPU_X64)
@@ -334,12 +330,7 @@ GetTopIonJSScript(JSContext *cx, const SafepointIndex **safepointIndexOut, void 
 #endif
 
 namespace js {
-namespace ion {
-
-JSScript *
-GetTopIonJSScript(JSContext *cx,
-                  const SafepointIndex **safepointIndexOut = NULL,
-                  void **returnAddrOut = NULL);
+namespace jit {
 
 void
 GetPcScript(JSContext *cx, JSScript **scriptRes, jsbytecode **pcRes);
@@ -370,7 +361,7 @@ ReadFrameDoubleSlot(IonJSFrameLayout *fp, int32_t slot)
 CalleeToken
 MarkCalleeToken(JSTracer *trc, CalleeToken token);
 
-} /* namespace ion */
+} /* namespace jit */
 } /* namespace js */
 
 #endif // JS_ION

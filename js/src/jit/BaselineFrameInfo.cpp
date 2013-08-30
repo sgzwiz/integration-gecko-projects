@@ -6,13 +6,11 @@
 
 #include "jit/BaselineFrameInfo.h"
 
-#include "jsanalyze.h"
-
 #include "jit/IonSpewer.h"
 #include "jit/shared/BaselineCompiler-shared.h"
 
 using namespace js;
-using namespace js::ion;
+using namespace js::jit;
 
 bool
 FrameInfo::init() {

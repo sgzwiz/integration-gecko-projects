@@ -11,7 +11,6 @@ NO_PROFILE_GUIDED_OPTIMIZE = 1
 
 include $(DEPTH)/config/autoconf.mk
 
-LIBRARY_NAME	= xptcmd
 EXPORT_LIBRARY	= ../..
 MOZILLA_INTERNAL_API = 1
 
@@ -25,8 +24,6 @@ ifneq (86,$(findstring 86,$(OS_TEST)))
 NO_PROFILE_GUIDED_OPTIMIZE = 1
 endif
 endif
-
-include $(topsrcdir)/config/config.mk
 
 ######################################################################
 # i386 and beyond

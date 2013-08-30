@@ -12,9 +12,9 @@
 #include "mozilla/Util.h"
 
 #include "jsapi.h"
-#include "jsdbgapi.h"
 #include "jsfriendapi.h"
 #include "jsprf.h"
+#include "js/OldDebugAPI.h"
 #include "nsXULAppAPI.h"
 #include "nsServiceManagerUtils.h"
 #include "nsComponentManagerUtils.h"
@@ -747,7 +747,7 @@ Blob(JSContext *cx, unsigned argc, jsval *vp)
   }
 
   nsCOMPtr<nsIJSNativeInitializer> initializer = do_QueryInterface(native);
-  NS_ASSERTION(initializer, "what?");
+  MOZ_ASSERT(initializer);
 
   nsresult rv = initializer->Initialize(nullptr, cx, nullptr, args);
   if (NS_FAILED(rv)) {
@@ -786,7 +786,7 @@ File(JSContext *cx, unsigned argc, jsval *vp)
   }
 
   nsCOMPtr<nsIJSNativeInitializer> initializer = do_QueryInterface(native);
-  NS_ASSERTION(initializer, "what?");
+  MOZ_ASSERT(initializer);
 
   nsresult rv = initializer->Initialize(nullptr, cx, nullptr, args);
   if (NS_FAILED(rv)) {
@@ -1466,10 +1466,8 @@ XPCShellErrorReporter(JSContext *cx, const char *message, JSErrorReport *rep)
 static bool
 ContextCallback(JSContext *cx, unsigned contextOp)
 {
-    if (contextOp == JSCONTEXT_NEW) {
+    if (contextOp == JSCONTEXT_NEW)
         JS_SetErrorReporter(cx, XPCShellErrorReporter);
-        JS_SetOperationCallback(cx, XPCShellOperationCallback);
-    }
     return true;
 }
 
@@ -1603,6 +1601,13 @@ main(int argc, char **argv, char **envp)
         argv += 2;
     }
 
+#ifdef MOZ_CRASHREPORTER
+    // This is needed during startup and also shutdown, so keep it out
+    // of the nested scope.
+    // Special exception: will remain usable after NS_ShutdownXPCOM
+    nsCOMPtr<nsICrashReporter> crashReporter;
+#endif
+
     {
         if (argc > 1 && !strcmp(argv[1], "--greomni")) {
             nsCOMPtr<nsIFile> greOmni;
@@ -1628,6 +1633,14 @@ main(int argc, char **argv, char **envp)
             return 1;
         }
 
+#ifdef MOZ_CRASHREPORTER
+        const char *val = getenv("MOZ_CRASHREPORTER");
+        crashReporter = do_GetService("@mozilla.org/toolkit/crash-reporter;1");
+        if (val && *val) {
+            crashReporter->SetEnabled(true);
+        }
+#endif
+
         nsCOMPtr<nsIJSRuntimeService> rtsvc = do_GetService("@mozilla.org/js/xpc/RuntimeService;1");
         // get the JSRuntime from the runtime svc
         if (!rtsvc) {
@@ -1641,6 +1654,11 @@ main(int argc, char **argv, char **envp)
         }
 
         rtsvc->RegisterContextCallback(ContextCallback);
+
+        // Override the default XPConnect operation callback. We could store the
+        // old one and restore it before shutting down, but there's not really a
+        // reason to bother.
+        JS_SetOperationCallback(rt, XPCShellOperationCallback);
 
         cx = JS_NewContext(rt, 8192);
         if (!cx) {
@@ -1681,7 +1699,7 @@ main(int argc, char **argv, char **envp)
         }
 
         const JSSecurityCallbacks *scb = JS_GetSecurityCallbacks(rt);
-        NS_ASSERTION(scb, "We are assuming that nsScriptSecurityManager::Init() has been run");
+        MOZ_ASSERT(scb, "We are assuming that nsScriptSecurityManager::Init() has been run");
         shellSecurityCallbacks = *scb;
         JS_SetSecurityCallbacks(rt, &shellSecurityCallbacks);
 
@@ -1768,16 +1786,9 @@ main(int argc, char **argv, char **envp)
     if (!XRE_ShutdownTestShell())
         NS_ERROR("problem shutting down testshell");
 
-#ifdef MOZ_CRASHREPORTER
-    // Get the crashreporter service while XPCOM is still active.
-    // This is a special exception: it will remain usable after NS_ShutdownXPCOM().
-    nsCOMPtr<nsICrashReporter> crashReporter =
-        do_GetService("@mozilla.org/toolkit/crash-reporter;1");
-#endif
-
     // no nsCOMPtrs are allowed to be alive when you call NS_ShutdownXPCOM
     rv = NS_ShutdownXPCOM( NULL );
-    NS_ASSERTION(NS_SUCCEEDED(rv), "NS_ShutdownXPCOM failed");
+    MOZ_ASSERT(NS_SUCCEEDED(rv), "NS_ShutdownXPCOM failed");
 
 #ifdef TEST_CALL_ON_WRAPPED_JS_AFTER_SHUTDOWN
     // test of late call and release (see above)

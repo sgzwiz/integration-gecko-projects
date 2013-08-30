@@ -163,6 +163,7 @@ MetroWidget::MetroWidget() :
   mWnd(NULL),
   mMetroWndProc(NULL),
   mTempBasicLayerInUse(false),
+  mRootLayerTreeId(),
   nsWindowBase()
 {
   // Global initialization
@@ -270,6 +271,14 @@ MetroWidget::Destroy()
   mOnDestroyCalled = true;
 
   nsCOMPtr<nsIWidget> kungFuDeathGrip(this);
+
+  if (ShouldUseAPZC()) {
+    nsresult rv;
+    nsCOMPtr<nsIObserverService> observerService = do_GetService("@mozilla.org/observer-service;1", &rv);
+    if (NS_SUCCEEDED(rv)) {
+      observerService->RemoveObserver(this, "scroll-offset-changed");
+    }
+  }
 
   RemoveSubclass();
   NotifyWindowDestroyed();
@@ -686,16 +695,17 @@ MetroWidget::WindowProcedure(HWND aWnd, UINT aMsg, WPARAM aWParam, LPARAM aLPara
       // UiaReturnRawElementProvider passing the return result from FrameworkView
       // OnAutomationProviderRequested as the hwnd (me scratches head) which results in
       // GetLastError always being set to invalid handle (6) after CallWindowProc returns.
-      if (dwObjId == UiaRootObjectId) {
-        NS_ASSERTION(gProviderRoot.Get(), "gProviderRoot is null??");
+      if (dwObjId == UiaRootObjectId && gProviderRoot) {
         ComPtr<IRawElementProviderSimple> simple;
         gProviderRoot.As(&simple);
-        LRESULT res = UiaReturnRawElementProvider(aWnd, aWParam, aLParam, simple.Get());
-        if (res) {
-          return res;
+        if (simple) {
+          LRESULT res = UiaReturnRawElementProvider(aWnd, aWParam, aLParam, simple.Get());
+          if (res) {
+            return res;
+          }
+          NS_ASSERTION(res, "UiaReturnRawElementProvider failed!");
+          Log("UiaReturnRawElementProvider failed! GetLastError=%X", GetLastError());
         }
-        NS_ASSERTION(res, "UiaReturnRawElementProvider failed!");
-        Log("UiaReturnRawElementProvider failed! GetLastError=%X", GetLastError());
       }
       break;
     }
@@ -826,8 +836,17 @@ CompositorParent* MetroWidget::NewCompositorParent(int aSurfaceWidth, int aSurfa
   CompositorParent *compositor = nsBaseWidget::NewCompositorParent(aSurfaceWidth, aSurfaceHeight);
 
   if (ShouldUseAPZC()) {
-    CompositorParent::SetControllerForLayerTree(compositor->RootLayerTreeId(), this);
+    mRootLayerTreeId = compositor->RootLayerTreeId();
+    CompositorParent::SetControllerForLayerTree(mRootLayerTreeId, this);
+
     MetroWidget::sAPZC = CompositorParent::GetAPZCTreeManager(compositor->RootLayerTreeId());
+    MetroWidget::sAPZC->SetDPI(GetDPI());
+
+    nsresult rv;
+    nsCOMPtr<nsIObserverService> observerService = do_GetService("@mozilla.org/observer-service;1", &rv);
+    if (NS_SUCCEEDED(rv)) {
+      observerService->AddObserver(this, "scroll-offset-changed", false);
+    }
   }
 
   return compositor;
@@ -997,16 +1016,16 @@ void MetroWidget::UserActivity()
   }
 }
 
+// InitEvent assumes physical coordinates and is used by shared win32 code. Do
+// not hand winrt event coordinates to this routine.
 void
 MetroWidget::InitEvent(nsGUIEvent& event, nsIntPoint* aPoint)
 {
   if (!aPoint) {
     event.refPoint.x = event.refPoint.y = 0;
   } else {
-    CSSIntPoint cssPoint(aPoint->x, aPoint->y);
-    LayoutDeviceIntPoint layoutDeviceIntPoint = CSSIntPointToLayoutDeviceIntPoint(cssPoint);
-    event.refPoint.x = layoutDeviceIntPoint.x;
-    event.refPoint.y = layoutDeviceIntPoint.y;
+    event.refPoint.x = aPoint->x;
+    event.refPoint.y = aPoint->y;
   }
   event.time = ::GetMessageTime();
 }
@@ -1330,14 +1349,6 @@ MetroWidget::HasPendingInputEvent()
 
 // GeckoContentController interface impl
 
-#include "nsIBrowserDOMWindow.h"
-#include "nsIWebNavigation.h"
-#include "nsIDocShellTreeItem.h"
-#include "nsIDOMWindow.h"
-#include "nsIDOMChromeWindow.h"
-#include "nsIWindowMediator.h"
-#include "nsIInterfaceRequestorUtils.h"
-
 class RequestContentRepaintEvent : public nsRunnable
 {
 public:
@@ -1349,7 +1360,7 @@ public:
         // This event shuts down the worker thread and so must be main thread.
         MOZ_ASSERT(NS_IsMainThread());
 
-        CSSToScreenScale resolution = mFrameMetrics.CalculateResolution();
+        CSSToScreenScale resolution = mFrameMetrics.mZoom;
         CSSRect compositedRect = mFrameMetrics.CalculateCompositedRectInCssPixels();
 
         NS_ConvertASCIItoUTF16 data(nsPrintfCString("{ " \
@@ -1452,4 +1463,31 @@ MetroWidget::HandlePanEnd()
 {
   LogFunction();
   MetroUtils::FireObserver("apzc-handle-pan-end", L"");
+}
+
+NS_IMETHODIMP
+MetroWidget::Observe(nsISupports *subject, const char *topic, const PRUnichar *data)
+{
+  NS_ENSURE_ARG_POINTER(topic);
+  if (!strcmp(topic, "scroll-offset-changed")) {
+    uint64_t scrollId;
+    int32_t presShellId;
+    CSSIntPoint scrollOffset;
+    int matched = sscanf(NS_LossyConvertUTF16toASCII(data).get(),
+                         "%llu %d (%d, %d)",
+                         &scrollId,
+                         &presShellId,
+                         &scrollOffset.x,
+                         &scrollOffset.y);
+    if (matched != 4) {
+      NS_WARNING("Malformed scroll-offset-changed message");
+      return NS_ERROR_UNEXPECTED;
+    }
+    if (MetroWidget::sAPZC) {
+      MetroWidget::sAPZC->UpdateScrollOffset(
+          ScrollableLayerGuid(mRootLayerTreeId, presShellId, scrollId),
+          scrollOffset);
+    }
+  }
+  return NS_OK;
 }

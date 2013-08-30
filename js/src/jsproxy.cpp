@@ -12,7 +12,6 @@
 #include "jscntxt.h"
 #include "jsfun.h"
 #include "jsgc.h"
-#include "jsprvtd.h"
 #include "jswrapper.h"
 
 #include "gc/Marking.h"
@@ -27,8 +26,11 @@ using namespace js::gc;
 using mozilla::ArrayLength;
 
 void
-js::AutoEnterPolicy::reportError(JSContext *cx, jsid id)
+js::AutoEnterPolicy::reportErrorIfExceptionIsNotPending(JSContext *cx, jsid id)
 {
+    if (JS_IsExceptionPending(cx))
+        return;
+
     if (JSID_IS_VOID(id)) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
                              JSMSG_OBJECT_ACCESS_DENIED);
@@ -371,7 +373,7 @@ DirectProxyHandler::getPropertyDescriptor(JSContext *cx, HandleObject proxy, Han
     assertEnteredPolicy(cx, proxy, id);
     JS_ASSERT(!hasPrototype()); // Should never be called if there's a prototype.
     RootedObject target(cx, proxy->as<ProxyObject>().target());
-    return JS_GetPropertyDescriptorById(cx, target, id, 0, desc.address());
+    return JS_GetPropertyDescriptorById(cx, target, id, 0, desc);
 }
 
 static bool
@@ -383,7 +385,7 @@ GetOwnPropertyDescriptor(JSContext *cx, HandleObject obj, HandleId id, unsigned 
     if (obj->is<ProxyObject>())
         return Proxy::getOwnPropertyDescriptor(cx, obj, id, desc, flags);
 
-    if (!JS_GetPropertyDescriptorById(cx, obj, id, flags, desc.address()))
+    if (!JS_GetPropertyDescriptorById(cx, obj, id, flags, desc))
         return false;
     if (desc.object() != obj)
         desc.object().set(NULL);
@@ -554,7 +556,7 @@ DirectProxyHandler::hasOwn(JSContext *cx, HandleObject proxy, HandleId id, bool 
     assertEnteredPolicy(cx, proxy, id);
     RootedObject target(cx, proxy->as<ProxyObject>().target());
     Rooted<PropertyDescriptor> desc(cx);
-    if (!JS_GetPropertyDescriptorById(cx, target, id, 0, desc.address()))
+    if (!JS_GetPropertyDescriptorById(cx, target, id, 0, &desc))
         return false;
     *bp = (desc.object() == target);
     return true;
@@ -1322,7 +1324,7 @@ static bool
 HasOwn(JSContext *cx, HandleObject obj, HandleId id, bool *bp)
 {
     Rooted<PropertyDescriptor> desc(cx);
-    if (!JS_GetPropertyDescriptorById(cx, obj, id, 0, desc.address()))
+    if (!JS_GetPropertyDescriptorById(cx, obj, id, 0, &desc))
         return false;
     *bp = (desc.object() == obj);
     return true;
@@ -1717,7 +1719,7 @@ ScriptedDirectProxyHandler::getPropertyDescriptor(JSContext *cx, HandleObject pr
         JS_ASSERT(!desc.object());
         return true;
     }
-    return JS_GetPropertyDescriptorById(cx, proto, id, 0, desc.address());
+    return JS_GetPropertyDescriptorById(cx, proto, id, 0, desc);
 }
 
 bool
@@ -2311,8 +2313,7 @@ Proxy::getPropertyDescriptor(JSContext *cx, HandleObject proxy, HandleId id,
         return false;
     if (desc.object())
         return true;
-    INVOKE_ON_PROTOTYPE(cx, handler, proxy,
-                        JS_GetPropertyDescriptorById(cx, proto, id, 0, desc.address()));
+    INVOKE_ON_PROTOTYPE(cx, handler, proxy, JS_GetPropertyDescriptorById(cx, proto, id, 0, desc));
 }
 
 bool
@@ -2545,7 +2546,7 @@ Proxy::set(JSContext *cx, HandleObject proxy, HandleObject receiver, HandleId id
                 return false;
             if (proto) {
                 Rooted<PropertyDescriptor> desc(cx);
-                if (!JS_GetPropertyDescriptorById(cx, proto, id, 0, desc.address()))
+                if (!JS_GetPropertyDescriptorById(cx, proto, id, 0, &desc))
                     return false;
                 if (desc.object() && desc.setter())
                     return JSObject::setGeneric(cx, proto, receiver, id, vp, strict);
@@ -2683,7 +2684,7 @@ Proxy::className(JSContext *cx, HandleObject proxy)
     // Check for unbounded recursion, but don't signal an error; className
     // needs to be infallible.
     int stackDummy;
-    if (!JS_CHECK_STACK_SIZE(cx->mainThread().nativeStackLimit, &stackDummy))
+    if (!JS_CHECK_STACK_SIZE(GetNativeStackLimit(cx), &stackDummy))
         return "too much recursion";
 
     BaseProxyHandler *handler = proxy->as<ProxyObject>().handler();

@@ -9,8 +9,6 @@
 #include "mozilla/DebugOnly.h"
 
 #include "jsanalyze.h"
-#include "jsbool.h"
-#include "jsnum.h"
 
 #include "jit/IonSpewer.h"
 #include "jit/LIR.h"
@@ -23,7 +21,7 @@
 #include "jit/shared/Lowering-shared-inl.h"
 
 using namespace js;
-using namespace ion;
+using namespace jit;
 
 bool
 LIRGenerator::visitParameter(MParameter *param)
@@ -58,20 +56,6 @@ bool
 LIRGenerator::visitCallee(MCallee *ins)
 {
     return define(new LCallee(), ins);
-}
-
-bool
-LIRGenerator::visitForceUse(MForceUse *ins)
-{
-    if (ins->input()->type() == MIRType_Value) {
-        LForceUseV *lir = new LForceUseV();
-        if (!useBox(lir, 0, ins->input()))
-            return false;
-        return add(lir);
-    }
-
-    LForceUseT *lir = new LForceUseT(useAnyOrConstant(ins->input()));
-    return add(lir);
 }
 
 bool
@@ -453,7 +437,7 @@ LIRGenerator::visitCall(MCall *call)
     // Call anything, using the most generic code.
     LCallGeneric *lir = new LCallGeneric(useFixed(call->getFunction(), CallTempReg0),
         argslot, tempFixed(ArgumentsRectifierReg), tempFixed(CallTempReg2));
-    return (assignSnapshot(lir) && defineReturn(lir, call) && assignSafepoint(lir, call));
+    return defineReturn(lir, call) && assignSafepoint(lir, call);
 }
 
 bool
@@ -769,16 +753,6 @@ LIRGenerator::visitTypeObjectDispatch(MTypeObjectDispatch *ins)
     return add(lir, ins);
 }
 
-bool
-LIRGenerator::visitPolyInlineDispatch(MPolyInlineDispatch *ins)
-{
-    LDefinition tempDef = LDefinition::BogusTemp();
-    if (ins->propTable())
-        tempDef = temp();
-    LPolyInlineDispatch *lir = new LPolyInlineDispatch(useRegister(ins->input()), tempDef);
-    return add(lir, ins);
-}
-
 static inline bool
 CanEmitCompareAtUses(MInstruction *ins)
 {
@@ -990,15 +964,19 @@ CanEmitBitAndAtUses(MInstruction *ins)
     if (ins->getOperand(0)->type() != MIRType_Int32 || ins->getOperand(1)->type() != MIRType_Int32)
         return false;
 
-    MUseDefIterator iter(ins);
-    if (!iter)
+    MUseIterator iter(ins->usesBegin());
+    if (iter == ins->usesEnd())
         return false;
 
-    if (!iter.def()->isTest())
+    MNode *node = iter->consumer();
+    if (!node->isDefinition())
+        return false;
+
+    if (!node->toDefinition()->isTest())
         return false;
 
     iter++;
-    return !iter;
+    return iter == ins->usesEnd();
 }
 
 bool
@@ -1777,6 +1755,23 @@ LIRGenerator::visitGuardThreadLocalObject(MGuardThreadLocalObject *ins)
 }
 
 bool
+LIRGenerator::visitInterruptCheck(MInterruptCheck *ins)
+{
+    // Implicit interrupt checks require asm.js signal handlers to be
+    // installed. ARM does not yet use implicit interrupt checks, see
+    // bug 864220.
+#ifndef JS_CPU_ARM
+    if (GetIonContext()->runtime->signalHandlersInstalled()) {
+        LInterruptCheckImplicit *lir = new LInterruptCheckImplicit();
+        return add(lir) && assignSafepoint(lir, ins);
+    }
+#endif
+
+    LInterruptCheck *lir = new LInterruptCheck();
+    return add(lir) && assignSafepoint(lir, ins);
+}
+
+bool
 LIRGenerator::visitCheckInterruptPar(MCheckInterruptPar *ins)
 {
     LCheckInterruptPar *lir =
@@ -2073,6 +2068,8 @@ LIRGenerator::visitLoadElementHole(MLoadElementHole *ins)
     LLoadElementHole *lir = new LLoadElementHole(useRegister(ins->elements()),
                                                  useRegisterOrConstant(ins->index()),
                                                  useRegister(ins->initLength()));
+    if (ins->needsNegativeIntCheck() && !assignSnapshot(lir))
+        return false;
     return defineBox(lir, ins);
 }
 
@@ -2217,7 +2214,7 @@ LIRGenerator::visitLoadTypedArrayElement(MLoadTypedArrayElement *ins)
 
     // We need a temp register for Uint32Array with known double result.
     LDefinition tempDef = LDefinition::BogusTemp();
-    if (ins->arrayType() == TypedArrayObject::TYPE_UINT32 && ins->type() == MIRType_Double)
+    if (ins->arrayType() == ScalarTypeRepresentation::TYPE_UINT32 && ins->type() == MIRType_Double)
         tempDef = temp();
 
     LLoadTypedArrayElement *lir = new LLoadTypedArrayElement(elements, index, tempDef);
@@ -2448,6 +2445,36 @@ LIRGenerator::visitGuardString(MGuardString *ins)
     // is guaranteed to be a string.
     JS_ASSERT(ins->input()->type() == MIRType_String);
     return redefine(ins, ins->input());
+}
+
+bool
+LIRGenerator::visitAssertRange(MAssertRange *ins)
+{
+    MDefinition *input = ins->input();
+    LInstruction *lir = NULL;
+
+    switch (input->type()) {
+      case MIRType_Int32:
+          lir = new LAssertRangeI(useRegisterAtStart(input));
+        break;
+
+      case MIRType_Double:
+        lir = new LAssertRangeD(useRegister(input), tempFloat());
+        break;
+
+      case MIRType_Value:
+        lir = new LAssertRangeV(tempToUnbox(), tempFloat(), tempFloat());
+        if (!useBox(lir, LAssertRangeV::Input, input))
+            return false;
+        break;
+
+      default:
+        MOZ_ASSUME_UNREACHABLE("Unexpected Range for MIRType");
+        break;
+    }
+
+    lir->setMir(ins);
+    return add(lir);
 }
 
 bool

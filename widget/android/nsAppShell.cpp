@@ -118,7 +118,7 @@ class WakeLockListener MOZ_FINAL : public nsIDOMMozWakeLockListener {
 
 NS_IMPL_ISUPPORTS1(WakeLockListener, nsIDOMMozWakeLockListener)
 nsCOMPtr<nsIPowerManagerService> sPowerManagerService = nullptr;
-nsCOMPtr<nsIDOMMozWakeLockListener> sWakeLockListener = nullptr;
+StaticRefPtr<WakeLockListener> sWakeLockListener;
 
 nsAppShell::nsAppShell()
     : mQueueLock("nsAppShell.mQueueLock"),
@@ -563,6 +563,11 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
         }
         break;
     }
+
+    case AndroidGeckoEvent::TELEMETRY_HISTOGRAM_ADD:
+        Telemetry::Accumulate(NS_ConvertUTF16toUTF8(curEvent->Characters()).get(),
+                              curEvent->Count());
+        break;
 
     case AndroidGeckoEvent::NOOP:
         break;

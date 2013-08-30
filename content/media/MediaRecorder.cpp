@@ -124,7 +124,7 @@ MediaRecorder::~MediaRecorder()
 }
 
 void
-MediaRecorder::Init(JSContext* aCx, nsPIDOMWindow* aOwnerWindow)
+MediaRecorder::Init(nsPIDOMWindow* aOwnerWindow)
 {
   MOZ_ASSERT(aOwnerWindow);
   MOZ_ASSERT(aOwnerWindow->IsInnerWindow());
@@ -228,6 +228,7 @@ MediaRecorder::Stop(ErrorResult& aResult)
     aResult.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }
+  mState = RecordingState::Inactive;
   mTrackUnionStream->RemoveListener(mEncoder);
 }
 
@@ -261,12 +262,8 @@ MediaRecorder::RequestData(ErrorResult& aResult)
     aResult.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }
-
-  nsresult rv = CreateAndDispatchBlobEvent();
-  if (NS_FAILED(rv)) {
-    aResult.Throw(rv);
-    return;
-  }
+  NS_DispatchToMainThread(NS_NewRunnableMethod(this, &MediaRecorder::CreateAndDispatchBlobEvent),
+                                               NS_DISPATCH_NORMAL);
 }
 
 JSObject*
@@ -276,23 +273,23 @@ MediaRecorder::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 }
 
 /* static */ already_AddRefed<MediaRecorder>
-MediaRecorder::Constructor(const GlobalObject& aGlobal, JSContext* aCx,
+MediaRecorder::Constructor(const GlobalObject& aGlobal,
                            DOMMediaStream& aStream, ErrorResult& aRv)
 {
-  nsCOMPtr<nsIScriptGlobalObject> sgo = do_QueryInterface(aGlobal.Get());
+  nsCOMPtr<nsIScriptGlobalObject> sgo = do_QueryInterface(aGlobal.GetAsSupports());
   if (!sgo) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
   }
 
-  nsCOMPtr<nsPIDOMWindow> ownerWindow = do_QueryInterface(aGlobal.Get());
+  nsCOMPtr<nsPIDOMWindow> ownerWindow = do_QueryInterface(aGlobal.GetAsSupports());
   if (!ownerWindow) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
   }
 
   nsRefPtr<MediaRecorder> object = new MediaRecorder(aStream);
-  object->Init(aCx, ownerWindow);
+  object->Init(ownerWindow);
   return object.forget();
 }
 

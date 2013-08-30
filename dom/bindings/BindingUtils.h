@@ -11,6 +11,7 @@
 
 #include "jsfriendapi.h"
 #include "jswrapper.h"
+#include "mozilla/Alignment.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/CallbackObject.h"
 #include "mozilla/dom/DOMJSClass.h"
@@ -20,8 +21,10 @@
 #include "mozilla/dom/workers/Workers.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Likely.h"
+#include "mozilla/Util.h"
 #include "nsCycleCollector.h"
 #include "nsIXPConnect.h"
+#include "nsThreadUtils.h" // Hacky work around for some bindings needing NS_IsMainThread.
 #include "nsTraceRefcnt.h"
 #include "qsObjectHelper.h"
 #include "xpcpublic.h"
@@ -60,8 +63,6 @@ UnwrapArg(JSContext* cx, jsval v, Interface** ppArg,
   return rv;
 }
 
-bool
-ThrowErrorMessage(JSContext* aCx, const ErrNum aErrorNumber, ...);
 bool
 ThrowInvalidThis(JSContext* aCx, const JS::CallArgs& aArgs,
                  const ErrNum aErrorNumber,
@@ -181,6 +182,10 @@ IsDOMObject(JSObject* obj)
   return IsDOMClass(clasp) || IsDOMProxy(obj, clasp);
 }
 
+#define UNWRAP_OBJECT(Interface, cx, obj, value)                             \
+  UnwrapObject<prototypes::id::Interface,                                    \
+               mozilla::dom::Interface##Binding::NativeType>(cx, obj, value)
+
 // Some callers don't want to set an exception when unwrapping fails
 // (for example, overload resolution uses unwrapping to tell what sort
 // of thing it's looking at).
@@ -255,15 +260,6 @@ MOZ_ALWAYS_INLINE bool
 IsConvertibleToCallbackInterface(JSContext* cx, JS::Handle<JSObject*> obj)
 {
   return IsNotDateOrRegExp(cx, obj);
-}
-
-// U must be something that a T* can be assigned to (e.g. T* or an nsRefPtr<T>).
-template <class T, typename U>
-inline nsresult
-UnwrapObject(JSContext* cx, JSObject* obj, U& value)
-{
-  return UnwrapObject<static_cast<prototypes::ID>(
-           PrototypeIDMap<T>::PrototypeID), T>(cx, obj, value);
 }
 
 // The items in the protoAndIfaceArray are indexed by the prototypes::id::ID and
@@ -1417,6 +1413,8 @@ WantsQueryInterface<T, true>
 bool
 ThrowingConstructor(JSContext* cx, unsigned argc, JS::Value* vp);
 
+// vp is allowed to be null; in that case no get will be attempted,
+// and *found will simply indicate whether the property exists.
 bool
 GetPropertyOnPrototype(JSContext* cx, JS::Handle<JSObject*> proxy,
                        JS::Handle<jsid> id, bool* found,
@@ -1424,8 +1422,17 @@ GetPropertyOnPrototype(JSContext* cx, JS::Handle<JSObject*> proxy,
 
 bool
 HasPropertyOnPrototype(JSContext* cx, JS::Handle<JSObject*> proxy,
-                       DOMProxyHandler* handler,
                        JS::Handle<jsid> id);
+
+
+// Append the property names in "names" to "props". If
+// shadowPrototypeProperties is false then skip properties that are also
+// present on the proto chain of proxy.  If shadowPrototypeProperties is true,
+// then the "proxy" argument is ignored.
+bool
+AppendNamedPropertyIds(JSContext* cx, JS::Handle<JSObject*> proxy,
+                       nsTArray<nsString>& names,
+                       bool shadowPrototypeProperties, JS::AutoIdVector& props);
 
 template<class T>
 class OwningNonNull
@@ -1615,6 +1622,12 @@ class UnionMember {
 public:
     T& SetValue() {
       new (storage.addr()) T();
+      return *storage.addr();
+    }
+    template <typename T1>
+    T& SetValue(const T1 &t1)
+    {
+      new (storage.addr()) T(t1);
       return *storage.addr();
     }
     template <typename T1, typename T2>
@@ -1913,7 +1926,7 @@ XrayResolveOwnProperty(JSContext* cx, JS::Handle<JSObject*> wrapper,
 bool
 XrayResolveNativeProperty(JSContext* cx, JS::Handle<JSObject*> wrapper,
                           JS::Handle<JSObject*> obj,
-                          JS::Handle<jsid> id, JSPropertyDescriptor* desc);
+                          JS::Handle<jsid> id, JS::MutableHandle<JSPropertyDescriptor> desc);
 
 /**
  * Define a property on obj through an Xray wrapper.
@@ -2287,21 +2300,21 @@ class GetCCParticipant
 {
   // Helper for GetCCParticipant for classes that participate in CC.
   template<class U>
-  static nsCycleCollectionParticipant*
+  static MOZ_CONSTEXPR nsCycleCollectionParticipant*
   GetHelper(int, typename U::NS_CYCLE_COLLECTION_INNERCLASS* dummy=nullptr)
   {
     return T::NS_CYCLE_COLLECTION_INNERCLASS::GetParticipant();
   }
   // Helper for GetCCParticipant for classes that don't participate in CC.
   template<class U>
-  static nsCycleCollectionParticipant*
+  static MOZ_CONSTEXPR nsCycleCollectionParticipant*
   GetHelper(double)
   {
     return nullptr;
   }
 
 public:
-  static nsCycleCollectionParticipant*
+  static MOZ_CONSTEXPR nsCycleCollectionParticipant*
   Get()
   {
     // Passing int() here will try to call the GetHelper that takes an int as

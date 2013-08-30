@@ -7,7 +7,7 @@
 #include "jit/RegisterAllocator.h"
 
 using namespace js;
-using namespace js::ion;
+using namespace js::jit;
 
 bool
 AllocationIntegrityState::record()
@@ -366,7 +366,7 @@ AllocationIntegrityState::dump()
         LBlock *block = graph.getBlock(blockIndex);
         MBasicBlock *mir = block->mir();
 
-        printf("\nBlock %lu", blockIndex);
+        printf("\nBlock %lu", static_cast<unsigned long>(blockIndex));
         for (size_t i = 0; i < mir->numSuccessors(); i++)
             printf(" [successor %u]", mir->getSuccessor(i)->id());
         printf("\n");

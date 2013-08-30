@@ -18,8 +18,6 @@
     _(Value)                        \
     _(Parameter)                    \
     _(Callee)                       \
-    _(ForceUseV)                    \
-    _(ForceUseT)                    \
     _(TableSwitch)                  \
     _(TableSwitchV)                 \
     _(Goto)                         \
@@ -74,7 +72,6 @@
     _(TestOAndBranch)               \
     _(FunctionDispatch)             \
     _(TypeObjectDispatch)           \
-    _(PolyInlineDispatch)           \
     _(Compare)                      \
     _(CompareAndBranch)             \
     _(CompareD)                     \
@@ -229,6 +226,7 @@
     _(InstanceOfV)                  \
     _(CallInstanceOf)               \
     _(InterruptCheck)               \
+    _(InterruptCheckImplicit)       \
     _(FunctionBoundary)             \
     _(GetDOMProperty)               \
     _(SetDOMProperty)               \
@@ -246,7 +244,10 @@
     _(AsmJSPassStackArg)            \
     _(AsmJSCall)                    \
     _(AsmJSCheckOverRecursed)       \
-    _(CheckInterruptPar)
+    _(CheckInterruptPar)            \
+    _(AssertRangeI)                 \
+    _(AssertRangeD)                 \
+    _(AssertRangeV)
 
 #if defined(JS_CPU_X86)
 # include "jit/x86/LOpcodes-x86.h"

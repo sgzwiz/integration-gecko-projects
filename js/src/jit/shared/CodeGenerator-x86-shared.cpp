@@ -9,10 +9,6 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MathAlgorithms.h"
 
-#include "jscntxt.h"
-#include "jscompartment.h"
-#include "jsmath.h"
-
 #include "jit/IonCompartment.h"
 #include "jit/IonFrames.h"
 #include "jit/ParallelFunctions.h"
@@ -21,12 +17,12 @@
 #include "jit/shared/CodeGenerator-shared-inl.h"
 
 using namespace js;
-using namespace js::ion;
+using namespace js::jit;
 
 using mozilla::FloorLog2;
 
 namespace js {
-namespace ion {
+namespace jit {
 
 CodeGeneratorX86Shared::CodeGeneratorX86Shared(MIRGenerator *gen, LIRGraph *graph, MacroAssembler *masm)
   : CodeGeneratorShared(gen, graph, masm)
@@ -69,20 +65,16 @@ void
 CodeGeneratorX86Shared::emitBranch(Assembler::Condition cond, MBasicBlock *mirTrue,
                                    MBasicBlock *mirFalse, Assembler::NaNCond ifNaN)
 {
-    LBlock *ifTrue = mirTrue->lir();
-    LBlock *ifFalse = mirFalse->lir();
-
     if (ifNaN == Assembler::NaN_IsFalse)
-        masm.j(Assembler::Parity, ifFalse->label());
+        jumpToBlock(mirFalse, Assembler::Parity);
     else if (ifNaN == Assembler::NaN_IsTrue)
-        masm.j(Assembler::Parity, ifTrue->label());
+        jumpToBlock(mirTrue, Assembler::Parity);
 
-    if (isNextBlock(ifFalse)) {
-        masm.j(cond, ifTrue->label());
+    if (isNextBlock(mirFalse->lir())) {
+        jumpToBlock(mirTrue, cond);
     } else {
-        masm.j(Assembler::InvertCondition(cond), ifFalse->label());
-        if (!isNextBlock(ifTrue))
-            masm.jmp(ifTrue->label());
+        jumpToBlock(mirFalse, Assembler::InvertCondition(cond));
+        jumpToBlock(mirTrue);
     }
 }
 
@@ -1536,5 +1528,5 @@ CodeGeneratorX86Shared::visitNegD(LNegD *ins)
 }
 
 
-} // namespace ion
+} // namespace jit
 } // namespace js

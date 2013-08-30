@@ -134,7 +134,7 @@ RTCIceCandidate.prototype = {
   __init: function(dict) {
     this.candidate = dict.candidate;
     this.sdpMid = dict.sdpMid;
-    this.sdpMLineIndex = ("sdpMLineIndex" in dict)? dict.sdpMLineIndex+1 : null;
+    this.sdpMLineIndex = ("sdpMLineIndex" in dict)? dict.sdpMLineIndex : null;
   }
 };
 
@@ -370,7 +370,17 @@ RTCPeerConnection.prototype = {
     }
     function mustValidateServer(server) {
       let url = nicerNewURI(server.url, errorMsg);
-      if (!(url.scheme in { stun:1, stuns:1, turn:1, turns:1 })) {
+      if (url.scheme in { turn:1, turns:1 }) {
+        if (!server.username) {
+          throw new Components.Exception(errorMsg + " - missing username: " +
+                                         server.url, Cr.NS_ERROR_MALFORMED_URI);
+        }
+        if (!server.credential) {
+          throw new Components.Exception(errorMsg + " - missing credential: " +
+                                         server.url, Cr.NS_ERROR_MALFORMED_URI);
+        }
+      }
+      else if (!(url.scheme in { stun:1, stuns:1 })) {
         throw new Components.Exception(errorMsg + " - improper scheme: " + url.scheme,
                                        Cr.NS_ERROR_MALFORMED_URI);
       }
@@ -681,7 +691,8 @@ RTCPeerConnection.prototype = {
 
     this._queueOrRun({
       func: this._getPC().addIceCandidate,
-      args: [cand.candidate, cand.sdpMid || "", cand.sdpMLineIndex],
+      args: [cand.candidate, cand.sdpMid || "",
+             (cand.sdpMLineIndex === null)? 0 : cand.sdpMLineIndex + 1],
       wait: true
     });
   },
@@ -1004,6 +1015,7 @@ PeerConnectionObserver.prototype = {
   },
 
   handleIceStateChanges: function(iceState) {
+    var histogram = Services.telemetry.getHistogramById("WEBRTC_ICE_SUCCESS_RATE");
     switch (iceState) {
       case Ci.IPeerConnection.kIceWaiting:
         this._dompc.changeIceConnectionState("new");
@@ -1022,10 +1034,12 @@ PeerConnectionObserver.prototype = {
         break;
       case Ci.IPeerConnection.kIceConnected:
         // ICE gathering complete.
+        histogram.add(true);
         this._dompc.changeIceConnectionState("connected");
         this.callCB(this._onicechange, "connected");
         break;
       case Ci.IPeerConnection.kIceFailed:
+        histogram.add(false);
         this._dompc.changeIceConnectionState("failed");
         this.callCB(this._onicechange, "failed");
         break;

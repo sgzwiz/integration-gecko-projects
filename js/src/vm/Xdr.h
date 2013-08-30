@@ -10,10 +10,7 @@
 #include "mozilla/Endian.h"
 
 #include "jsapi.h"
-#include "jsnum.h"
-#include "jsprvtd.h"
-
-#include "vm/NumericConversions.h"
+#include "jsatom.h"
 
 namespace js {
 
@@ -26,7 +23,7 @@ namespace js {
  * and saved versions. If deserialization fails, the data should be
  * invalidated if possible.
  */
-static const uint32_t XDR_BYTECODE_VERSION = uint32_t(0xb973c0de - 150);
+static const uint32_t XDR_BYTECODE_VERSION = uint32_t(0xb973c0de - 151);
 
 class XDRBuffer {
   public:

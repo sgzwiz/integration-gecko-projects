@@ -7,9 +7,7 @@
 #ifndef mozilla_dom_TabChild_h
 #define mozilla_dom_TabChild_h
 
-#ifndef _IMPL_NS_LAYOUT
 #include "mozilla/dom/PBrowserChild.h"
-#endif
 #ifdef DEBUG
 #include "PCOMContentPermissionRequestChild.h"
 #endif /* DEBUG */
@@ -24,7 +22,6 @@
 #include "nsIDOMEventListener.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIWindowProvider.h"
-#include "jsapi.h"
 #include "nsIDOMWindow.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
@@ -303,7 +300,7 @@ public:
     void GetDPI(float* aDPI);
     void GetDefaultScale(double *aScale);
 
-    ScreenToScreenScale GetZoom() { return mLastMetrics.mZoom; }
+    CSSToScreenScale GetZoom() { return mLastMetrics.mZoom; }
 
     ScreenOrientation GetOrientation() { return mOrientation; }
 
@@ -342,12 +339,17 @@ public:
 
     ContentChild* Manager() { return mManager; }
 
+    bool GetUpdateHitRegion() { return mUpdateHitRegion; }
+
+    void UpdateHitRegion(const nsRegion& aRegion);
+
 protected:
     virtual PRenderFrameChild* AllocPRenderFrameChild(ScrollingBehavior* aScrolling,
                                                       TextureFactoryIdentifier* aTextureFactoryIdentifier,
                                                       uint64_t* aLayersId) MOZ_OVERRIDE;
     virtual bool DeallocPRenderFrameChild(PRenderFrameChild* aFrame) MOZ_OVERRIDE;
     virtual bool RecvDestroy() MOZ_OVERRIDE;
+    virtual bool RecvSetUpdateHitRegion(const bool& aEnabled) MOZ_OVERRIDE;
 
     nsEventStatus DispatchWidgetEvent(nsGUIEvent& event);
 
@@ -433,9 +435,6 @@ private:
 
     // Get the DOMWindowUtils for the top-level window in this tab.
     already_AddRefed<nsIDOMWindowUtils> GetDOMWindowUtils();
-    // Get the DOMWindowUtils for the window corresponding to the givent content
-    // element. This might be an iframe inside the tab, for instance.
-    already_AddRefed<nsIDOMWindowUtils> GetDOMWindowUtils(nsIContent* aContent);
 
     class CachedFileDescriptorInfo;
     class CachedFileDescriptorCallbackRunnable;
@@ -473,6 +472,7 @@ private:
     bool mContentDocumentIsDisplayed;
     bool mTriedBrowserInit;
     ScreenOrientation mOrientation;
+    bool mUpdateHitRegion;
 
     DISALLOW_EVIL_CONSTRUCTORS(TabChild);
 };

@@ -20,7 +20,6 @@
 #include "jscompartmentinlines.h"
 #include "jsinferinlines.h"
 
-#include "vm/ObjectImpl-inl.h"
 #include "vm/Shape-inl.h"
 
 /* static */ inline bool
@@ -477,17 +476,15 @@ JSObject::ensureDenseElements(js::ExclusiveContext *cx, uint32_t index, uint32_t
 }
 
 /* static */ inline bool
-JSObject::setSingletonType(js::ExclusiveContext *cxArg, js::HandleObject obj)
+JSObject::setSingletonType(js::ExclusiveContext *cx, js::HandleObject obj)
 {
-    if (!cxArg->typeInferenceEnabled())
+    if (!cx->typeInferenceEnabled())
         return true;
 
-    JSContext *cx = cxArg->asJSContext();
+    JS_ASSERT_IF(cx->isJSContext(),
+                 !IsInsideNursery(cx->asJSContext()->runtime(), obj.get()));
 
-    JS_ASSERT(!IsInsideNursery(cx->runtime(), obj.get()));
-
-    js::types::TypeObject *type =
-        cx->compartment()->getLazyType(cx, obj->getClass(), obj->getTaggedProto());
+    js::types::TypeObject *type = cx->getLazyType(obj->getClass(), obj->getTaggedProto());
     if (!type)
         return false;
 
@@ -930,34 +927,6 @@ class AutoPropDescArrayRooter : private AutoGCRooter
   private:
     PropDescArray descriptors;
     SkipRoot skip;
-};
-
-class AutoPropertyDescriptorRooter : private AutoGCRooter, public PropertyDescriptor
-{
-    SkipRoot skip;
-
-  public:
-    AutoPropertyDescriptorRooter(JSContext *cx)
-      : AutoGCRooter(cx, DESCRIPTOR), skip(cx, MOZ_THIS_IN_INITIALIZER_LIST())
-    {
-        obj = NULL;
-        attrs = 0;
-        getter = (PropertyOp) NULL;
-        setter = (StrictPropertyOp) NULL;
-        value.setUndefined();
-    }
-
-    AutoPropertyDescriptorRooter(JSContext *cx, PropertyDescriptor *desc)
-      : AutoGCRooter(cx, DESCRIPTOR), skip(cx, MOZ_THIS_IN_INITIALIZER_LIST())
-    {
-        obj = desc->obj;
-        attrs = desc->attrs;
-        getter = desc->getter;
-        setter = desc->setter;
-        value = desc->value;
-    }
-
-    friend void AutoGCRooter::trace(JSTracer *trc);
 };
 
 /*

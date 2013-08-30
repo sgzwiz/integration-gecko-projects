@@ -9,6 +9,7 @@
 EXPORTS_NAMESPACES += mozilla
 
 EXPORTS_mozilla += \
+  Alignment.h \
   AllocPolicy.h \
   Array.h \
   Assertions.h \
@@ -30,6 +31,7 @@ EXPORTS_mozilla += \
   Likely.h \
   LinkedList.h \
   MathAlgorithms.h \
+  Maybe.h \
   MemoryChecking.h \
   MemoryReporting.h \
   Move.h \

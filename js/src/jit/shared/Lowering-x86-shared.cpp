@@ -14,7 +14,7 @@
 #include "jit/shared/Lowering-shared-inl.h"
 
 using namespace js;
-using namespace js::ion;
+using namespace js::jit;
 
 using mozilla::FloorLog2;
 
@@ -29,17 +29,6 @@ LTableSwitchV *
 LIRGeneratorX86Shared::newLTableSwitchV(MTableSwitch *tableswitch)
 {
     return new LTableSwitchV(temp(), tempFloat(), temp(), tableswitch);
-}
-
-bool
-LIRGeneratorX86Shared::visitInterruptCheck(MInterruptCheck *ins)
-{
-    LInterruptCheck *lir = new LInterruptCheck();
-    if (!add(lir, ins))
-        return false;
-    if (!assignSafepoint(lir, ins))
-        return false;
-    return true;
 }
 
 bool

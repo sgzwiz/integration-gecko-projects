@@ -8,6 +8,7 @@
 #include "AbstractMediaDecoder.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ReentrantMonitor.h"
+#include "mozilla/dom/AudioContextBinding.h"
 #include <speex/speex_resampler.h>
 #include "nsXPCOMCIDInternal.h"
 #include "nsComponentManagerUtils.h"
@@ -16,8 +17,6 @@
 #include "DecoderTraits.h"
 #include "AudioContext.h"
 #include "AudioBuffer.h"
-#include "nsIScriptGlobalObject.h"
-#include "nsIScriptContext.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIScriptError.h"
 #include "nsMimeTypes.h"
@@ -509,6 +508,11 @@ MediaDecodeTask::Decode()
 
   mBufferDecoder->BeginDecoding(NS_GetCurrentThread());
 
+  // Tell the decoder reader that we are not going to play the data directly,
+  // and that we should not reject files with more channels than the audio
+  // bakend support.
+  mDecoderReader->SetIgnoreAudioOutputFormat();
+
   mDecoderReader->OnDecodeThreadStart();
 
   VideoInfo videoInfo;
@@ -903,7 +907,7 @@ WebAudioDecodeJob::OnFailure(ErrorCode aErrorCode)
     doc = pWindow->GetExtantDoc();
   }
   nsContentUtils::ReportToConsole(nsIScriptError::errorFlag,
-                                  "Media",
+                                  NS_LITERAL_CSTRING("Media"),
                                   doc,
                                   nsContentUtils::eDOM_PROPERTIES,
                                   errorMessage);

@@ -17,7 +17,7 @@
 #include "jit/VMFunctions.h"
 
 using namespace js;
-using namespace js::ion;
+using namespace js::jit;
 
 static const FloatRegisterSet NonVolatileFloatRegs =
     FloatRegisterSet((1 << FloatRegisters::d8) |
@@ -103,16 +103,10 @@ struct EnterJITStack
 IonCode *
 IonRuntime::generateEnterJIT(JSContext *cx, EnterJitType type)
 {
-
-    const Register reg_code  = r0;
-    const Register reg_argc  = r1;
-    const Register reg_argv  = r2;
-    const Register reg_frame = r3;
-
     const Address slot_token(sp, offsetof(EnterJITStack, token));
     const Address slot_vp(sp, offsetof(EnterJITStack, vp));
 
-    JS_ASSERT(OsrFrameReg == reg_frame);
+    JS_ASSERT(OsrFrameReg == r3);
 
     MacroAssembler masm(cx);
     AutoFlushCache afc("GenerateEnterJIT", cx->runtime()->ionRuntime());
@@ -261,7 +255,7 @@ IonRuntime::generateEnterJIT(JSContext *cx, EnterJitType type)
         masm.passABIArg(r11); // BaselineFrame
         masm.passABIArg(OsrFrameReg); // StackFrame
         masm.passABIArg(numStackValues);
-        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, ion::InitBaselineFrameForOsr));
+        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, jit::InitBaselineFrameForOsr));
 
         Register jitcode = regs.takeAny();
         masm.pop(jitcode);

@@ -19,9 +19,10 @@
 
 #include <algorithm>
 #include "GeckoProfiler.h"
-#include "jsdbgapi.h"
+#include "js/OldDebugAPI.h"
 #include "jsfriendapi.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
+#include "mozilla/dom/AtomList.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/EventTargetBinding.h"
 #include "mozilla/DebugOnly.h"
@@ -292,9 +293,6 @@ LoadJSContextOptions(const char* aPrefName, void* /* aClosure */)
   if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("werror"))) {
     commonOptions |= JSOPTION_WERROR;
   }
-  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("typeinference"))) {
-    commonOptions |= JSOPTION_TYPE_INFERENCE;
-  }
   if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("asmjs"))) {
     commonOptions |= JSOPTION_ASMJS;
   }
@@ -307,6 +305,9 @@ LoadJSContextOptions(const char* aPrefName, void* /* aClosure */)
   if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("ion.content"))) {
     contentOptions |= JSOPTION_ION;
   }
+  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("typeinference.content"))) {
+    contentOptions |= JSOPTION_TYPE_INFERENCE;
+  }
 
   // Chrome options.
   uint32_t chromeOptions = commonOptions;
@@ -315,6 +316,9 @@ LoadJSContextOptions(const char* aPrefName, void* /* aClosure */)
   }
   if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("ion.chrome"))) {
     chromeOptions |= JSOPTION_ION;
+  }
+  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("typeinference.chrome"))) {
+    chromeOptions |= JSOPTION_TYPE_INFERENCE;
   }
 #ifdef DEBUG
   if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("strict.debug"))) {
@@ -505,12 +509,6 @@ LoadJSGCMemoryOptions(const char* aPrefName, void* /* aClosure */)
     if (memPrefName == matchName || (!rts && index == 7)) {
       UpdateCommonJSGCMemoryOption(rts, matchName,
                                    JSGC_HIGH_FREQUENCY_HIGH_LIMIT);
-      continue;
-    }
-
-    matchName.RebindLiteral(PREF_MEM_OPTIONS_PREFIX "analysis_purge_mb");
-    if (memPrefName == matchName || (!rts && index == 8)) {
-      UpdateCommonJSGCMemoryOption(rts, matchName, JSGC_ANALYSIS_PURGE_TRIGGER);
       continue;
     }
 
@@ -749,6 +747,11 @@ CTypesActivityCallback(JSContext* aCx,
   }
 }
 
+struct WorkerThreadRuntimePrivate : public PerThreadAtomCache
+{
+  WorkerPrivate* mWorkerPrivate;
+};
+
 JSContext*
 CreateJSContextForWorker(WorkerPrivate* aWorkerPrivate, JSRuntime* aRuntime)
 {
@@ -797,11 +800,14 @@ CreateJSContextForWorker(WorkerPrivate* aWorkerPrivate, JSRuntime* aRuntime)
     return nullptr;
   }
 
-  JS_SetRuntimePrivate(aRuntime, aWorkerPrivate);
+  auto rtPrivate = new WorkerThreadRuntimePrivate();
+  memset(rtPrivate, 0, sizeof(WorkerThreadRuntimePrivate));
+  rtPrivate->mWorkerPrivate = aWorkerPrivate;
+  JS_SetRuntimePrivate(aRuntime, rtPrivate);
 
   JS_SetErrorReporter(workerCx, ErrorReporter);
 
-  JS_SetOperationCallback(workerCx, OperationCallback);
+  JS_SetOperationCallback(aRuntime, OperationCallback);
 
   js::SetCTypesActivityCallback(aRuntime, CTypesActivityCallback);
 
@@ -826,7 +832,8 @@ public:
   WorkerJSRuntime(WorkerPrivate* aWorkerPrivate)
   : CycleCollectedJSRuntime(WORKER_DEFAULT_RUNTIME_HEAPSIZE,
                             JS_NO_HELPER_THREADS,
-                            false)
+                            false),
+    mWorkerPrivate(aWorkerPrivate)
   {
     // We need to ensure that a JSContext outlives the cycle collector, and
     // that the internal JSContext created by ctypes is not the last JSContext
@@ -839,13 +846,20 @@ public:
 
   ~WorkerJSRuntime()
   {
+    auto rtPrivate = static_cast<WorkerThreadRuntimePrivate*>(JS_GetRuntimePrivate(Runtime()));
+    delete rtPrivate;
+    JS_SetRuntimePrivate(Runtime(), nullptr);
+
     // All JSContexts except mLastJSContext should be destroyed now.  The
     // worker global will be unrooted and the shutdown cycle collection
     // should break all remaining cycles.  Destroying mLastJSContext will run
     // the GC the final time and finalize any JSObjects that were participating
     // in cycles that were broken during CC shutdown.
-    nsCycleCollector_shutdownThreads();
     nsCycleCollector_shutdown();
+
+    // The CC is shutdown, and this will GC, so make sure we don't try to CC
+    // again.
+    mWorkerPrivate = nullptr;
     JS_DestroyContext(mLastJSContext);
     mLastJSContext = nullptr;
   }
@@ -866,7 +880,22 @@ public:
     nsCycleCollector_doDeferredDeletion();
   }
 
+  virtual void CustomGCCallback(JSGCStatus aStatus) MOZ_OVERRIDE
+  {
+    if (!mWorkerPrivate) {
+      // We're shutting down, no need to do anything.
+      return;
+    }
+
+    mWorkerPrivate->AssertIsOnWorkerThread();
+
+    if (aStatus == JSGC_END) {
+      nsCycleCollector_collect(true, nullptr, nullptr);
+    }
+  }
+
 private:
+  WorkerPrivate* mWorkerPrivate;
   JSContext* mLastJSContext;
 };
 
@@ -890,7 +919,7 @@ public:
     workerPrivate->AssertIsOnWorkerThread();
 
     {
-      nsCycleCollector_startup(CCSingleThread);
+      nsCycleCollector_startup();
 
       WorkerJSRuntime runtime(workerPrivate);
       JSRuntime* rt = runtime.Runtime();
@@ -1082,6 +1111,13 @@ WorkerCrossThreadDispatcher::PostTask(WorkerTask* aTask)
   nsRefPtr<WorkerTaskRunnable> runnable = new WorkerTaskRunnable(mPrivate, aTask);
   runnable->Dispatch(nullptr);
   return true;
+}
+
+WorkerPrivate*
+GetWorkerPrivateFromContext(JSContext* aCx)
+{
+  NS_ASSERTION(!NS_IsMainThread(), "Wrong thread!");
+  return static_cast<WorkerThreadRuntimePrivate*>(JS_GetRuntimePrivate(JS_GetRuntime(aCx)))->mWorkerPrivate;
 }
 
 END_WORKERS_NAMESPACE

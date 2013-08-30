@@ -21,7 +21,6 @@
 #include "jsarray.h"
 #include "jsatom.h"
 #include "jscntxt.h"
-#include "jsdbgapi.h"
 #include "jsfun.h"
 #include "jsgc.h"
 #include "jsiter.h"
@@ -38,10 +37,12 @@
 
 #include "frontend/BytecodeCompiler.h"
 #include "gc/Marking.h"
+#include "jit/AsmJSModule.h"
 #include "jit/BaselineJIT.h"
 #include "js/MemoryMetrics.h"
+#include "js/OldDebugAPI.h"
+#include "vm/ArgumentsObject.h"
 #include "vm/Interpreter.h"
-#include "vm/RegExpStatics.h"
 #include "vm/RegExpStaticsObject.h"
 #include "vm/Shape.h"
 
@@ -128,61 +129,6 @@ js::InformalValueTypeName(const Value &v)
         return "undefined";
     return "value";
 }
-
-template <AllowGC allowGC>
-bool
-js::HasOwnProperty(JSContext *cx, LookupGenericOp lookup,
-                   typename MaybeRooted<JSObject*, allowGC>::HandleType obj,
-                   typename MaybeRooted<jsid, allowGC>::HandleType id,
-                   typename MaybeRooted<JSObject*, allowGC>::MutableHandleType objp,
-                   typename MaybeRooted<Shape*, allowGC>::MutableHandleType propp)
-{
-    JSAutoResolveFlags rf(cx, 0);
-    if (lookup) {
-        if (!allowGC)
-            return false;
-        if (!lookup(cx,
-                    MaybeRooted<JSObject*, allowGC>::toHandle(obj),
-                    MaybeRooted<jsid, allowGC>::toHandle(id),
-                    MaybeRooted<JSObject*, allowGC>::toMutableHandle(objp),
-                    MaybeRooted<Shape*, allowGC>::toMutableHandle(propp)))
-        {
-            return false;
-        }
-    } else {
-        if (!baseops::LookupProperty<allowGC>(cx, obj, id, objp, propp))
-            return false;
-    }
-    if (!propp)
-        return true;
-
-    if (objp == obj)
-        return true;
-
-    JSObject *outer = NULL;
-    if (JSObjectOp op = objp->getClass()->ext.outerObject) {
-        if (!allowGC)
-            return false;
-        RootedObject inner(cx, objp);
-        outer = op(cx, inner);
-        if (!outer)
-            return false;
-    }
-
-    if (outer != objp)
-        propp.set(NULL);
-    return true;
-}
-
-template bool
-js::HasOwnProperty<CanGC>(JSContext *cx, LookupGenericOp lookup,
-                          HandleObject obj, HandleId id,
-                          MutableHandleObject objp, MutableHandleShape propp);
-
-template bool
-js::HasOwnProperty<NoGC>(JSContext *cx, LookupGenericOp lookup,
-                         JSObject *obj, jsid id,
-                         FakeMutableHandle<JSObject*> objp, FakeMutableHandle<Shape*> propp);
 
 bool
 js::NewPropertyDescriptorObject(JSContext *cx, Handle<PropertyDescriptor> desc,
@@ -1186,7 +1132,7 @@ JSObject::sealOrFreeze(JSContext *cx, HandleObject obj, ImmutabilityType it)
             if (!JSID_IS_EMPTY(child.propid))
                 MarkTypePropertyConfigured(cx, obj, child.propid);
 
-            last = cx->propertyTree().getChild(cx, last, obj->numFixedSlots(), child);
+            last = cx->compartment()->propertyTree.getChild(cx, last, obj->numFixedSlots(), child);
             if (!last)
                 return false;
         }
@@ -1237,6 +1183,18 @@ JSObject::isSealedOrFrozen(JSContext *cx, HandleObject obj, ImmutabilityType it,
         return false;
     if (extensible) {
         *resultp = false;
+        return true;
+    }
+
+    if (obj->is<TypedArrayObject>()) {
+        if (it == SEAL) {
+            // Typed arrays are always sealed.
+            *resultp = true;
+        } else {
+            // Typed arrays cannot be frozen, but an empty typed array is
+            // trivially frozen.
+            *resultp = (obj->as<TypedArrayObject>().length() == 0);
+        }
         return true;
     }
 
@@ -1585,18 +1543,18 @@ static inline JSObject *
 CreateThisForFunctionWithType(JSContext *cx, HandleTypeObject type, JSObject *parent,
                               NewObjectKind newKind)
 {
-    if (type->newScript) {
+    if (type->hasNewScript()) {
         /*
          * Make an object with the type's associated finalize kind and shape,
          * which reflects any properties that will definitely be added to the
          * object before it is read from.
          */
-        gc::AllocKind kind = type->newScript->allocKind;
+        gc::AllocKind kind = type->newScript()->allocKind;
         RootedObject res(cx, NewObjectWithType(cx, type, parent, kind, newKind));
         if (!res)
             return NULL;
         RootedObject metadata(cx, res->getMetadata());
-        RootedShape shape(cx, type->newScript->shape);
+        RootedShape shape(cx, type->newScript()->shape);
         JS_ALWAYS_TRUE(JSObject::setLastProperty(cx, res, shape));
         if (metadata && !JSObject::setMetadata(cx, res, metadata))
             return NULL;
@@ -2580,8 +2538,8 @@ JSObject::growSlots(ExclusiveContext *cx, HandleObject obj, uint32_t oldCount, u
      * type to give these objects a larger number of fixed slots when future
      * objects are constructed.
      */
-    if (!obj->hasLazyType() && !oldCount && obj->type()->newScript) {
-        gc::AllocKind kind = obj->type()->newScript->allocKind;
+    if (!obj->hasLazyType() && !oldCount && obj->type()->hasNewScript()) {
+        gc::AllocKind kind = obj->type()->newScript()->allocKind;
         uint32_t newScriptSlots = gc::GetGCKindSlots(kind);
         if (newScriptSlots == obj->numFixedSlots() &&
             gc::TryIncrementAllocKind(&kind) &&
@@ -2591,13 +2549,13 @@ JSObject::growSlots(ExclusiveContext *cx, HandleObject obj, uint32_t oldCount, u
             AutoEnterAnalysis enter(ncx);
 
             Rooted<TypeObject*> typeObj(cx, obj->type());
-            RootedShape shape(cx, typeObj->newScript->shape);
+            RootedShape shape(cx, typeObj->newScript()->shape);
             JSObject *reshapedObj = NewReshapedObject(ncx, typeObj, obj->getParent(), kind, shape);
             if (!reshapedObj)
                 return false;
 
-            typeObj->newScript->allocKind = kind;
-            typeObj->newScript->shape = reshapedObj->lastProperty();
+            typeObj->newScript()->allocKind = kind;
+            typeObj->newScript()->shape = reshapedObj->lastProperty();
             typeObj->markStateChange(ncx);
         }
     }
@@ -2980,7 +2938,7 @@ js_InitNullClass(JSContext *cx, HandleObject obj)
 JS_FOR_EACH_PROTOTYPE(DECLARE_PROTOTYPE_CLASS_INIT)
 #undef DECLARE_PROTOTYPE_CLASS_INIT
 
-static JSClassInitializerOp lazy_prototype_init[JSProto_LIMIT] = {
+static ClassInitializerOp lazy_prototype_init[JSProto_LIMIT] = {
 #define LAZY_PROTOTYPE_INIT(name,code,init) init,
     JS_FOR_EACH_PROTOTYPE(LAZY_PROTOTYPE_INIT)
 #undef LAZY_PROTOTYPE_INIT
@@ -3104,7 +3062,7 @@ js_GetClassObject(ExclusiveContext *cxArg, JSObject *obj, JSProtoKey key, Mutabl
     }
 
     RootedObject cobj(cx, NULL);
-    if (JSClassInitializerOp init = lazy_prototype_init[key]) {
+    if (ClassInitializerOp init = lazy_prototype_init[key]) {
         if (!init(cx, global))
             return false;
         v = global->getReservedSlot(key);
@@ -3540,7 +3498,6 @@ DefinePropertyOrElement(ExclusiveContext *cx, HandleObject obj, HandleId id,
         }
     }
 
-
     AutoRooterGetterSetter gsRoot(cx, attrs, &getter, &setter);
 
     RootedShape shape(cx, JSObject::putProperty(cx, obj, id, getter, setter, SHAPE_INVALID_SLOT,
@@ -3764,6 +3721,66 @@ CallResolveOp(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
 
 template <AllowGC allowGC>
 static JS_ALWAYS_INLINE bool
+LookupOwnPropertyWithFlagsInline(ExclusiveContext *cx,
+                                 typename MaybeRooted<JSObject*, allowGC>::HandleType obj,
+                                 typename MaybeRooted<jsid, allowGC>::HandleType id,
+                                 unsigned flags,
+                                 typename MaybeRooted<JSObject*, allowGC>::MutableHandleType objp,
+                                 typename MaybeRooted<Shape*, allowGC>::MutableHandleType propp,
+                                 bool *donep)
+{
+    // Check for a native dense element.
+    if (JSID_IS_INT(id) && obj->containsDenseElement(JSID_TO_INT(id))) {
+        objp.set(obj);
+        MarkDenseElementFound<allowGC>(propp);
+        *donep = true;
+        return true;
+    }
+
+    // Check for a native property.
+    if (Shape *shape = obj->nativeLookup(cx, id)) {
+        objp.set(obj);
+        propp.set(shape);
+        *donep = true;
+        return true;
+    }
+
+    // id was not found in obj. Try obj's resolve hook, if any.
+    if (obj->getClass()->resolve != JS_ResolveStub) {
+        if (!cx->shouldBeJSContext() || !allowGC)
+            return false;
+
+        bool recursed;
+        if (!CallResolveOp(cx->asJSContext(),
+                           MaybeRooted<JSObject*, allowGC>::toHandle(obj),
+                           MaybeRooted<jsid, allowGC>::toHandle(id),
+                           flags,
+                           MaybeRooted<JSObject*, allowGC>::toMutableHandle(objp),
+                           MaybeRooted<Shape*, allowGC>::toMutableHandle(propp),
+                           &recursed))
+        {
+            return false;
+        }
+
+        if (recursed) {
+            objp.set(NULL);
+            propp.set(NULL);
+            *donep = true;
+            return true;
+        }
+
+        if (propp) {
+            *donep = true;
+            return true;
+        }
+    }
+
+    *donep = false;
+    return true;
+}
+
+template <AllowGC allowGC>
+static JS_ALWAYS_INLINE bool
 LookupPropertyWithFlagsInline(ExclusiveContext *cx,
                               typename MaybeRooted<JSObject*, allowGC>::HandleType obj,
                               typename MaybeRooted<jsid, allowGC>::HandleType id,
@@ -3780,49 +3797,11 @@ LookupPropertyWithFlagsInline(ExclusiveContext *cx,
     typename MaybeRooted<JSObject*, allowGC>::RootType current(cx, obj);
 
     while (true) {
-        /* Search for a native dense element or property. */
-        {
-            if (JSID_IS_INT(id) && current->containsDenseElement(JSID_TO_INT(id))) {
-                objp.set(current);
-                MarkDenseElementFound<allowGC>(propp);
-                return true;
-            }
-
-            Shape *shape = current->nativeLookup(cx, id);
-            if (shape) {
-                objp.set(current);
-                propp.set(shape);
-                return true;
-            }
-        }
-
-        /* Try obj's class resolve hook if id was not found in obj's scope. */
-        if (current->getClass()->resolve != JS_ResolveStub) {
-            if (!cx->shouldBeJSContext() || !allowGC)
-                return false;
-
-            bool recursed;
-            if (!CallResolveOp(cx->asJSContext(),
-                               MaybeRooted<JSObject*, allowGC>::toHandle(current),
-                               MaybeRooted<jsid, allowGC>::toHandle(id),
-                               flags,
-                               MaybeRooted<JSObject*, allowGC>::toMutableHandle(objp),
-                               MaybeRooted<Shape*, allowGC>::toMutableHandle(propp),
-                               &recursed))
-            {
-                return false;
-            }
-
-            if (recursed)
-                break;
-            if (propp) {
-                /*
-                 * For stats we do not recalculate protoIndex even if it was
-                 * resolved on some other object.
-                 */
-                return true;
-            }
-        }
+        bool done;
+        if (!LookupOwnPropertyWithFlagsInline<allowGC>(cx, current, id, flags, objp, propp, &done))
+            return false;
+        if (done)
+            return true;
 
         typename MaybeRooted<JSObject*, allowGC>::RootType proto(cx, current->getProto());
 
@@ -3971,6 +3950,69 @@ js::LookupNameWithGlobalDefault(JSContext *cx, HandlePropertyName name, HandleOb
     objp.set(scope);
     return true;
 }
+
+template <AllowGC allowGC>
+bool
+js::HasOwnProperty(JSContext *cx, LookupGenericOp lookup,
+                   typename MaybeRooted<JSObject*, allowGC>::HandleType obj,
+                   typename MaybeRooted<jsid, allowGC>::HandleType id,
+                   typename MaybeRooted<JSObject*, allowGC>::MutableHandleType objp,
+                   typename MaybeRooted<Shape*, allowGC>::MutableHandleType propp)
+{
+    if (lookup) {
+        JSAutoResolveFlags rf(cx, 0);
+
+        if (!allowGC)
+            return false;
+        if (!lookup(cx,
+                    MaybeRooted<JSObject*, allowGC>::toHandle(obj),
+                    MaybeRooted<jsid, allowGC>::toHandle(id),
+                    MaybeRooted<JSObject*, allowGC>::toMutableHandle(objp),
+                    MaybeRooted<Shape*, allowGC>::toMutableHandle(propp)))
+        {
+            return false;
+        }
+    } else {
+        bool done;
+        if (!LookupOwnPropertyWithFlagsInline<allowGC>(cx, obj, id, 0, objp, propp, &done))
+            return false;
+        if (!done) {
+            objp.set(NULL);
+            propp.set(NULL);
+            return true;
+        }
+    }
+
+    if (!propp)
+        return true;
+
+    if (objp == obj)
+        return true;
+
+    JSObject *outer = NULL;
+    if (JSObjectOp op = objp->getClass()->ext.outerObject) {
+        if (!allowGC)
+            return false;
+        RootedObject inner(cx, objp);
+        outer = op(cx, inner);
+        if (!outer)
+            return false;
+    }
+
+    if (outer != objp)
+        propp.set(NULL);
+    return true;
+}
+
+template bool
+js::HasOwnProperty<CanGC>(JSContext *cx, LookupGenericOp lookup,
+                          HandleObject obj, HandleId id,
+                          MutableHandleObject objp, MutableHandleShape propp);
+
+template bool
+js::HasOwnProperty<NoGC>(JSContext *cx, LookupGenericOp lookup,
+                         JSObject *obj, jsid id,
+                         FakeMutableHandle<JSObject*> objp, FakeMutableHandle<Shape*> propp);
 
 template <AllowGC allowGC>
 static JS_ALWAYS_INLINE bool
@@ -5105,6 +5147,21 @@ js::IsDelegate(JSContext *cx, HandleObject obj, const js::Value &v, bool *result
     }
 }
 
+JSObject *
+js::GetClassPrototypePure(GlobalObject *global, JSProtoKey protoKey)
+{
+    JS_ASSERT(JSProto_Null <= protoKey);
+    JS_ASSERT(protoKey < JSProto_LIMIT);
+
+    if (protoKey != JSProto_Null) {
+        const Value &v = global->getReservedSlot(JSProto_LIMIT + protoKey);
+        if (v.isObject())
+            return &v.toObject();
+    }
+
+    return NULL;
+}
+
 /*
  * The first part of this function has been hand-expanded and optimized into
  * NewBuiltinClassInstance in jsobjinlines.h.
@@ -5113,15 +5170,9 @@ bool
 js_GetClassPrototype(ExclusiveContext *cx, JSProtoKey protoKey,
                      MutableHandleObject protop, Class *clasp)
 {
-    JS_ASSERT(JSProto_Null <= protoKey);
-    JS_ASSERT(protoKey < JSProto_LIMIT);
-
-    if (protoKey != JSProto_Null) {
-        const Value &v = cx->global()->getReservedSlot(JSProto_LIMIT + protoKey);
-        if (v.isObject()) {
-            protop.set(&v.toObject());
-            return true;
-        }
+    if (JSObject *proto = GetClassPrototypePure(cx->global(), protoKey)) {
+        protop.set(proto);
+        return true;
     }
 
     RootedValue v(cx);
@@ -5624,6 +5675,11 @@ JSObject::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf, JS::ObjectsExt
         sizes->regExpStatics = as<RegExpStaticsObject>().sizeOfData(mallocSizeOf);
     } else if (is<PropertyIteratorObject>()) {
         sizes->propertyIteratorData = as<PropertyIteratorObject>().sizeOfMisc(mallocSizeOf);
+#ifdef JS_ION
+    } else if (is<AsmJSModuleObject>()) {
+        as<AsmJSModuleObject>().sizeOfMisc(mallocSizeOf, &sizes->asmJSModuleCode,
+                                           &sizes->asmJSModuleData);
+#endif
 #ifdef JS_HAS_CTYPES
     } else {
         // This must be the last case.

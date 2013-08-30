@@ -11,6 +11,7 @@
 #include "jscompartment.h"
 #include "jsiter.h"
 
+#include "vm/ArgumentsObject.h"
 #include "vm/GlobalObject.h"
 #include "vm/ProxyObject.h"
 #include "vm/Shape.h"
@@ -18,6 +19,7 @@
 
 #include "jsatominlines.h"
 #include "jsobjinlines.h"
+#include "jsscriptinlines.h"
 
 #include "gc/Barrier-inl.h"
 #include "vm/Stack-inl.h"
@@ -921,17 +923,6 @@ CallObjectLambdaName(JSFunction &fun)
     return fun.isNamedLambda() ? fun.atom() : NULL;
 }
 
-ScopeIter::ScopeIter(JSContext *cx
-                     MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
-  : cx(cx),
-    frame_(NullFramePtr()),
-    cur_(cx, reinterpret_cast<JSObject *>(-1)),
-    block_(cx, reinterpret_cast<StaticBlockObject *>(-1)),
-    type_(Type(-1))
-{
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-}
-
 ScopeIter::ScopeIter(const ScopeIter &si, JSContext *cx
                      MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
   : cx(cx),
@@ -949,7 +940,7 @@ ScopeIter::ScopeIter(JSObject &enclosingScope, JSContext *cx
   : cx(cx),
     frame_(NullFramePtr()),
     cur_(cx, &enclosingScope),
-    block_(cx, reinterpret_cast<StaticBlockObject *>(-1)),
+    block_(cx, NULL),
     type_(Type(-1))
 {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
@@ -1413,7 +1404,7 @@ class DebugScopeProxy : public BaseProxyHandler
             return true;
         }
 
-        return JS_GetPropertyDescriptorById(cx, scope, id, 0, desc.address());
+        return JS_GetPropertyDescriptorById(cx, scope, id, 0, desc);
     }
 
     bool get(JSContext *cx, HandleObject proxy, HandleObject receiver,  HandleId id,

@@ -1,4 +1,5 @@
-/* -*- Mode: c++; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40; -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* vim: set ts=8 sts=4 et sw=4 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,6 +41,7 @@
 #include "nsHashKeys.h"
 #include "nsRegion.h"
 #include "nsAutoPtr.h"
+#include "nsIMemoryReporter.h"
 #include "nsThreadUtils.h"
 #include "GLContextTypes.h"
 #include "GLTextureImage.h"
@@ -82,6 +84,42 @@ namespace mozilla {
 
 namespace mozilla {
 namespace gl {
+
+/** GLFeature::Enum
+ * We don't use typed enum to keep the implicit integer conversion.
+ * This enum should be sorted by name.
+ */
+namespace GLFeature {
+    enum Enum {
+        bind_buffer_offset,
+        blend_minmax,
+        depth_texture,
+        draw_buffers,
+        draw_instanced,
+        element_index_uint,
+        ES2_compatibility,
+        ES3_compatibility,
+        framebuffer_blit,
+        framebuffer_multisample,
+        framebuffer_object,
+        get_query_object_iv,
+        instanced_arrays,
+        occlusion_query,
+        occlusion_query_boolean,
+        occlusion_query2,
+        packed_depth_stencil,
+        query_objects,
+        robustness,
+        standard_derivatives,
+        texture_float,
+        texture_float_linear,
+        texture_non_power_of_two,
+        transform_feedback,
+        vertex_array_object,
+        EnumMax
+    };
+}
+
 typedef uintptr_t SharedTextureHandle;
 
 MOZ_BEGIN_ENUM_CLASS(ContextProfile, uint8_t)
@@ -273,14 +311,6 @@ public:
         return IsAtLeast(ContextProfile::OpenGLES, 200);
     }
 
-    /**
-     * Returns true if either this is the GLES2 API, or had the GL_ARB_ES2_compatibility extension
-     * We would like to introduce a XXX_ES2_compatibility
-     */
-    bool HasES2Compatibility() const {
-        return IsGLES2() || IsExtensionSupported(ARB_ES2_compatibility);
-    }
-
 
 protected:
 
@@ -337,6 +367,7 @@ public:
         OES_depth32,
         OES_stencil8,
         OES_texture_npot,
+        ARB_depth_texture,
         OES_depth_texture,
         OES_packed_depth_stencil,
         IMG_read_format,
@@ -345,6 +376,7 @@ public:
         ARB_texture_non_power_of_two,
         ARB_pixel_buffer_object,
         ARB_ES2_compatibility,
+        ARB_ES3_compatibility,
         OES_texture_float,
         OES_texture_float_linear,
         ARB_texture_float,
@@ -384,6 +416,9 @@ public:
         NV_instanced_arrays,
         ANGLE_instanced_arrays,
         EXT_occlusion_query_boolean,
+        ARB_occlusion_query2,
+        EXT_transform_feedback,
+        NV_transform_feedback,
         Extensions_Max,
         Extensions_End
     };
@@ -466,45 +501,32 @@ protected:
 
 
 // -----------------------------------------------------------------------------
-// XXX_* Extension group queries
+// Feature queries
 /*
- * This mecahnism introduces a new way to check if an extension is supported,
- * regardless if it is an ARB, EXT, OES, etc.
+ * This mecahnism introduces a new way to check if a OpenGL feature is
+ * supported, regardless of whether it is supported by an extension or natively
+ * by the context version/profile
  */
 public:
+    bool IsSupported(GLFeature::Enum feature) const {
+        return mAvailableFeatures[feature];
+    }
 
-    /**
-     * This enum should be sorted by name.
-     */
-    enum GLExtensionGroup {
-        XXX_draw_buffers,
-        XXX_draw_instanced,
-        XXX_framebuffer_blit,
-        XXX_framebuffer_multisample,
-        XXX_framebuffer_object,
-        XXX_instanced_arrays,
-        XXX_robustness,
-        XXX_texture_float,
-        XXX_texture_non_power_of_two,
-        XXX_vertex_array_object,
-        ExtensionGroup_Max
-    };
-
-    bool IsExtensionSupported(GLExtensionGroup extensionGroup) const;
-
-    static const char* GetExtensionGroupName(GLExtensionGroup extensionGroup);
+    static const char* GetFeatureName(GLFeature::Enum feature);
 
 
 private:
+    ExtensionBitset<GLFeature::EnumMax> mAvailableFeatures;
 
     /**
-     * Mark all extensions of this group as unsupported.
-     *
-     * Returns false if marking this extension group as unsupported contradicts
-     * the OpenGL version and profile. Returns true otherwise.
+     * Init features regarding OpenGL extension and context version and profile
      */
-    bool MarkExtensionGroupUnsupported(GLExtensionGroup extensionGroup);
+    void InitFeatures();
 
+    /**
+     * Mark the feature and associated extensions as unsupported
+     */
+    void MarkUnsupported(GLFeature::Enum feature);
 
 // -----------------------------------------------------------------------------
 // Robustness handling
@@ -1044,27 +1066,6 @@ public:
         return retval;
     }
 
-    void fGetQueryiv(GLenum target, GLenum pname, GLint* params) {
-        BEFORE_GL_CALL;
-        ASSERT_SYMBOL_PRESENT(fGetQueryiv);
-        mSymbols.fGetQueryiv(target, pname, params);
-        AFTER_GL_CALL;
-    }
-
-    void fGetQueryObjectiv(GLuint id, GLenum pname, GLint* params) {
-        BEFORE_GL_CALL;
-        ASSERT_SYMBOL_PRESENT(fGetQueryObjectiv);
-        mSymbols.fGetQueryObjectiv(id, pname, params);
-        AFTER_GL_CALL;
-    }
-
-    void fGetQueryObjectuiv(GLuint id, GLenum pname, GLuint* params) {
-        BEFORE_GL_CALL;
-        ASSERT_SYMBOL_PRESENT(fGetQueryObjectuiv);
-        mSymbols.fGetQueryObjectuiv(id, pname, params);
-        AFTER_GL_CALL;
-    }
-
 private:
     void raw_fGetIntegerv(GLenum pname, GLint *params) {
         BEFORE_GL_CALL;
@@ -1269,14 +1270,6 @@ public:
     realGLboolean fIsProgram(GLuint program) {
         BEFORE_GL_CALL;
         realGLboolean retval = mSymbols.fIsProgram(program);
-        AFTER_GL_CALL;
-        return retval;
-    }
-
-    realGLboolean fIsQuery(GLuint query) {
-        BEFORE_GL_CALL;
-        ASSERT_SYMBOL_PRESENT(fIsQuery);
-        realGLboolean retval = mSymbols.fIsQuery(query);
         AFTER_GL_CALL;
         return retval;
     }
@@ -1841,13 +1834,6 @@ private:
         AFTER_GL_CALL;
     }
 
-    void GLAPIENTRY raw_fGenQueries(GLsizei n, GLuint* names) {
-        BEFORE_GL_CALL;
-        ASSERT_SYMBOL_PRESENT(fGenQueries);
-        mSymbols.fGenQueries(n, names);
-        AFTER_GL_CALL;
-    }
-
     void GLAPIENTRY raw_fGenRenderbuffers(GLsizei n, GLuint* names) {
         BEFORE_GL_CALL;
         mSymbols.fGenRenderbuffers(n, names);
@@ -1881,11 +1867,6 @@ public:
     void fGenFramebuffers(GLsizei n, GLuint* names) {
         raw_fGenFramebuffers(n, names);
         TRACKING_CONTEXT(CreatedFramebuffers(this, n, names));
-    }
-
-    void fGenQueries(GLsizei n, GLuint* names) {
-        raw_fGenQueries(n, names);
-        TRACKING_CONTEXT(CreatedQueries(this, n, names));
     }
 
     void fGenRenderbuffers(GLsizei n, GLuint* names) {
@@ -1935,18 +1916,7 @@ private:
         AFTER_GL_CALL;
     }
 
-    void GLAPIENTRY raw_fDeleteQueries(GLsizei n, GLuint* names) {
-        BEFORE_GL_CALL;
-        ASSERT_SYMBOL_PRESENT(fDeleteQueries);
-        mSymbols.fDeleteQueries(n, names);
-        AFTER_GL_CALL;
-    }
-
 public:
-    void GLAPIENTRY fDeleteQueries(GLsizei n, GLuint* names) {
-        raw_fDeleteQueries(n, names);
-        TRACKING_CONTEXT(DeletedQueries(this, n, names));
-    }
 
     void fDeleteProgram(GLuint program) {
         raw_fDeleteProgram(program);
@@ -2077,6 +2047,18 @@ public:
 
 
 // -----------------------------------------------------------------------------
+// Package XXX_bind_buffer_offset
+public:
+    void fBindBufferOffset(GLenum target, GLuint index, GLuint buffer, GLintptr offset)
+    {
+        BEFORE_GL_CALL;
+        ASSERT_SYMBOL_PRESENT(fBindBufferOffset);
+        mSymbols.fBindBufferOffset(target, index, buffer, offset);
+        AFTER_GL_CALL;
+    }
+
+
+// -----------------------------------------------------------------------------
 // Package XXX_draw_buffers
 public:
     void fDrawBuffers(GLsizei n, const GLenum* bufs) {
@@ -2151,6 +2133,140 @@ public:
         BEFORE_GL_CALL;
         ASSERT_SYMBOL_PRESENT(fVertexAttribDivisor);
         mSymbols.fVertexAttribDivisor(index, divisor);
+        AFTER_GL_CALL;
+    }
+
+
+// -----------------------------------------------------------------------------
+// Package XXX_query_objects
+/**
+ * XXX_query_objects:
+ *  - provide all followed entry points
+ *
+ * XXX_occlusion_query2:
+ *  - depends on XXX_query_objects
+ *  - provide ANY_SAMPLES_PASSED
+ *
+ * XXX_occlusion_query_boolean:
+ *  - depends on XXX_occlusion_query2
+ *  - provide ANY_SAMPLES_PASSED_CONSERVATIVE
+ */
+public:
+    void fDeleteQueries(GLsizei n, const GLuint* names) {
+        BEFORE_GL_CALL;
+        ASSERT_SYMBOL_PRESENT(fDeleteQueries);
+        mSymbols.fDeleteQueries(n, names);
+        AFTER_GL_CALL;
+        TRACKING_CONTEXT(DeletedQueries(this, n, names));
+    }
+
+    void fGenQueries(GLsizei n, GLuint* names) {
+        BEFORE_GL_CALL;
+        ASSERT_SYMBOL_PRESENT(fGenQueries);
+        mSymbols.fGenQueries(n, names);
+        AFTER_GL_CALL;
+        TRACKING_CONTEXT(CreatedQueries(this, n, names));
+    }
+
+    void fGetQueryiv(GLenum target, GLenum pname, GLint* params) {
+        BEFORE_GL_CALL;
+        ASSERT_SYMBOL_PRESENT(fGetQueryiv);
+        mSymbols.fGetQueryiv(target, pname, params);
+        AFTER_GL_CALL;
+    }
+
+    void fGetQueryObjectuiv(GLuint id, GLenum pname, GLuint* params) {
+        BEFORE_GL_CALL;
+        ASSERT_SYMBOL_PRESENT(fGetQueryObjectuiv);
+        mSymbols.fGetQueryObjectuiv(id, pname, params);
+        AFTER_GL_CALL;
+    }
+
+    realGLboolean fIsQuery(GLuint query) {
+        BEFORE_GL_CALL;
+        ASSERT_SYMBOL_PRESENT(fIsQuery);
+        realGLboolean retval = mSymbols.fIsQuery(query);
+        AFTER_GL_CALL;
+        return retval;
+    }
+
+
+// -----------------------------------------------------------------------------
+// Package XXX_get_query_object_iv
+/**
+ * XXX_get_query_object_iv:
+ *  - depends on XXX_query_objects
+ *  - provide the followed entry point
+ *
+ * XXX_occlusion_query:
+ *  - depends on XXX_get_query_object_iv
+ *  - provide LOCAL_GL_SAMPLES_PASSED
+ */
+public:
+    void fGetQueryObjectiv(GLuint id, GLenum pname, GLint* params) {
+        BEFORE_GL_CALL;
+        ASSERT_SYMBOL_PRESENT(fGetQueryObjectiv);
+        mSymbols.fGetQueryObjectiv(id, pname, params);
+        AFTER_GL_CALL;
+    }
+
+
+// -----------------------------------------------------------------------------
+// Package XXX_transform_feedback
+public:
+    void fBindBufferBase(GLenum target, GLuint index, GLuint buffer)
+    {
+        BEFORE_GL_CALL;
+        ASSERT_SYMBOL_PRESENT(fBindBufferBase);
+        mSymbols.fBindBufferBase(target, index, buffer);
+        AFTER_GL_CALL;
+    }
+
+    void fBindBufferRange(GLenum target, GLuint index, GLuint buffer, GLintptr offset, GLsizeiptr size)
+    {
+        BEFORE_GL_CALL;
+        ASSERT_SYMBOL_PRESENT(fBindBufferRange);
+        mSymbols.fBindBufferRange(target, index, buffer, offset, size);
+        AFTER_GL_CALL;
+    }
+
+    void fBeginTransformFeedback(GLenum primitiveMode)
+    {
+        BEFORE_GL_CALL;
+        ASSERT_SYMBOL_PRESENT(fBeginTransformFeedback);
+        mSymbols.fBeginTransformFeedback(primitiveMode);
+        AFTER_GL_CALL;
+    }
+
+    void fEndTransformFeedback()
+    {
+        BEFORE_GL_CALL;
+        ASSERT_SYMBOL_PRESENT(fEndTransformFeedback);
+        mSymbols.fEndTransformFeedback();
+        AFTER_GL_CALL;
+    }
+
+    void fTransformFeedbackVaryings(GLuint program, GLsizei count, const GLchar* const* varyings, GLenum bufferMode)
+    {
+        BEFORE_GL_CALL;
+        ASSERT_SYMBOL_PRESENT(fTransformFeedbackVaryings);
+        mSymbols.fTransformFeedbackVaryings(program, count, varyings, bufferMode);
+        AFTER_GL_CALL;
+    }
+
+    void fGetTransformFeedbackVarying(GLuint program, GLuint index, GLsizei bufSize, GLsizei* length, GLsizei* size, GLenum* type, GLchar* name)
+    {
+        BEFORE_GL_CALL;
+        ASSERT_SYMBOL_PRESENT(fGetTransformFeedbackVarying);
+        mSymbols.fGetTransformFeedbackVarying(program, index, bufSize, length, size, type, name);
+        AFTER_GL_CALL;
+    }
+
+    void fGetIntegeri_v(GLenum param, GLuint index, GLint* values)
+    {
+        BEFORE_GL_CALL;
+        ASSERT_SYMBOL_PRESENT(fGetIntegeri_v);
+        mSymbols.fGetIntegeri_v(param, index, values);
         AFTER_GL_CALL;
     }
 
@@ -2582,7 +2698,7 @@ public:
         if (mScreen)
             return mScreen->GetReadFB();
 
-        GLenum bindEnum = IsExtensionSupported(XXX_framebuffer_blit)
+        GLenum bindEnum = IsSupported(GLFeature::framebuffer_blit)
                             ? LOCAL_GL_READ_FRAMEBUFFER_BINDING_EXT
                             : LOCAL_GL_FRAMEBUFFER_BINDING;
 
@@ -3286,7 +3402,7 @@ public:
     void DeletedProgram(GLContext *aOrigin, GLuint aName);
     void DeletedShader(GLContext *aOrigin, GLuint aName);
     void DeletedBuffers(GLContext *aOrigin, GLsizei aCount, GLuint *aNames);
-    void DeletedQueries(GLContext *aOrigin, GLsizei aCount, GLuint *aNames);
+    void DeletedQueries(GLContext *aOrigin, GLsizei aCount, const GLuint *aNames);
     void DeletedTextures(GLContext *aOrigin, GLsizei aCount, GLuint *aNames);
     void DeletedFramebuffers(GLContext *aOrigin, GLsizei aCount, GLuint *aNames);
     void DeletedRenderbuffers(GLContext *aOrigin, GLsizei aCount, GLuint *aNames);
@@ -3330,8 +3446,24 @@ public:
     nsTArray<NamedResource> mTrackedBuffers;
     nsTArray<NamedResource> mTrackedQueries;
 #endif
+};
 
+class GfxTexturesReporter MOZ_FINAL : public MemoryReporterBase
+{
 public:
+    GfxTexturesReporter()
+      : MemoryReporterBase("gfx-textures", KIND_OTHER, UNITS_BYTES,
+                           "Memory used for storing GL textures.")
+    {
+#ifdef DEBUG
+        // There must be only one instance of this class, due to |sAmount|
+        // being static.  Assert this.
+        static bool hasRun = false;
+        MOZ_ASSERT(!hasRun);
+        hasRun = true;
+#endif
+    }
+
     enum MemoryUse {
         // when memory being allocated is reported to a memory reporter
         MemoryAllocated,
@@ -3339,12 +3471,15 @@ public:
         MemoryFreed
     };
 
-    // When memory is used/freed for tile textures, call this method
-    // to update the value reported by the memory reporter.
-    static void UpdateTextureMemoryUsage(MemoryUse action,
-                                         GLenum format,
-                                         GLenum type,
-                                         uint16_t tileSize);
+    // When memory is used/freed for tile textures, call this method to update
+    // the value reported by this memory reporter.
+    static void UpdateAmount(MemoryUse action, GLenum format, GLenum type,
+                             uint16_t tileSize);
+
+private:
+    int64_t Amount() MOZ_OVERRIDE { return sAmount; }
+
+    static int64_t sAmount;
 };
 
 inline bool

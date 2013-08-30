@@ -239,6 +239,9 @@ BrowserElementChild.prototype = {
     els.addSystemEventListener(global, 'DOMWindowCreated',
                                this._windowCreatedHandler.bind(this),
                                /* useCapture = */ true);
+    els.addSystemEventListener(global, 'DOMWindowResize',
+                               this._windowResizeHandler.bind(this),
+                               /* useCapture = */ false);
     els.addSystemEventListener(global, 'contextmenu',
                                this._contextmenuHandler.bind(this),
                                /* useCapture = */ false);
@@ -346,12 +349,7 @@ BrowserElementChild.prototype = {
     debug("Entering modal state (outerWindowID=" + outerWindowID + ", " +
                                 "innerWindowID=" + innerWindowID + ")");
 
-    // In theory, we're supposed to pass |modalStateWin| back to
-    // leaveModalStateWithWindow.  But in practice, the window is always null,
-    // because it's the window associated with this script context, which
-    // doesn't have a window.  But we'll play along anyway in case this
-    // changes.
-    var modalStateWin = utils.enterModalStateWithWindow();
+    utils.enterModalState();
 
     // We'll decrement win.modalDepth when we receive a unblock-modal-prompt message
     // for the window.
@@ -388,7 +386,7 @@ BrowserElementChild.prototype = {
     delete win.modalReturnValue;
 
     if (!this._shuttingDown) {
-      utils.leaveModalStateWithWindow(modalStateWin);
+      utils.leaveModalState();
     }
 
     debug("Leaving modal state (outerID=" + outerWindowID + ", " +
@@ -553,6 +551,19 @@ BrowserElementChild.prototype = {
         sendAsyncMsg('documentfirstpaint');
       });
     }
+  },
+
+  _windowResizeHandler: function(e) {
+    let win = e.target;
+    if (win != content || e.defaultPrevented) {
+      return;
+    }
+
+    debug("resizing window " + win);
+    sendAsyncMsg('resize', { width: e.detail.width, height: e.detail.height });
+
+    // Inform the window implementation that we handled this resize ourselves.
+    e.preventDefault();
   },
 
   _contextmenuHandler: function(e) {

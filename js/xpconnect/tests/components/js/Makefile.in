@@ -10,7 +10,6 @@ VPATH = @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-LIBRARY_NAME = xpctest
 IS_COMPONENT = 1
 MODULE_NAME = xpconnect_test
 
@@ -20,8 +19,6 @@ JS_FILES = \
   xpctest_interfaces.js \
   xpctest_params.js \
   $(NULL)
-
-include $(topsrcdir)/config/config.mk
 
 MANIFEST_FILE = xpctest.manifest
 

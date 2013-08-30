@@ -24,15 +24,12 @@
 #include "nsIURI.h"
 #include "nsIURL.h"
 #include "nsIXPConnect.h"
-#include "nsIXPCScriptNotify.h"
 #include "nsPrintfCString.h"
 #include "nsHostObjectProtocolHandler.h"
 
 #include <algorithm>
 #include "jsfriendapi.h"
-#include "jsdbgapi.h"
-#include "jsfriendapi.h"
-#include "jsprf.h"
+#include "js/OldDebugAPI.h"
 #include "js/MemoryMetrics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
@@ -259,7 +256,7 @@ struct WorkerStructuredCloneCallbacks
     // See if this is an ImageData object.
     {
       ImageData* imageData = nullptr;
-      if (NS_SUCCEEDED(UnwrapObject<ImageData>(aCx, aObj, imageData))) {
+      if (NS_SUCCEEDED(UNWRAP_OBJECT(ImageData, aCx, aObj, imageData))) {
         // Prepare the ImageData internals.
         uint32_t width = imageData->Width();
         uint32_t height = imageData->Height();
@@ -842,8 +839,6 @@ public:
 
   void PostRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate, bool aRunResult)
   {
-    // Notify before WorkerRunnable::PostRun, since that can kill aWorkerPrivate
-    NotifyScriptExecutedIfNeeded();
     WorkerRunnable::PostRun(aCx, aWorkerPrivate, aRunResult);
   }
 };
@@ -990,8 +985,6 @@ public:
 
   void PostRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate, bool aRunResult)
   {
-    // Notify before WorkerRunnable::PostRun, since that can kill aWorkerPrivate
-    NotifyScriptExecutedIfNeeded();
     WorkerRunnable::PostRun(aCx, aWorkerPrivate, aRunResult);
   }
 
@@ -1738,18 +1731,6 @@ WorkerRunnable::PostRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
   }
 }
 
-void
-WorkerRunnable::NotifyScriptExecutedIfNeeded() const
-{
-  // if we're on the main thread notify about the end of our script execution.
-  if (mTarget == ParentThread && !mWorkerPrivate->GetParent()) {
-    AssertIsOnMainThread();
-    if (mWorkerPrivate->GetScriptNotify()) {
-      mWorkerPrivate->GetScriptNotify()->ScriptExecuted();
-    }
-  }
-}
-
 struct WorkerPrivate::TimeoutInfo
 {
   TimeoutInfo()
@@ -1939,7 +1920,6 @@ WorkerPrivateParent<Derived>::WorkerPrivateParent(
 
   mWindow.swap(aWindow);
   mScriptContext.swap(aScriptContext);
-  mScriptNotify = do_QueryInterface(mScriptContext);
   mBaseURI.swap(aBaseURI);
   mPrincipal.swap(aPrincipal);
   mChannel.swap(aChannel);
@@ -2248,7 +2228,6 @@ WorkerPrivateParent<Derived>::ForgetMainThreadObjects(
 
   SwapToISupportsArray(mWindow, aDoomed);
   SwapToISupportsArray(mScriptContext, aDoomed);
-  SwapToISupportsArray(mScriptNotify, aDoomed);
   SwapToISupportsArray(mBaseURI, aDoomed);
   SwapToISupportsArray(mScriptURI, aDoomed);
   SwapToISupportsArray(mPrincipal, aDoomed);
@@ -4419,13 +4398,6 @@ BEGIN_WORKERS_NAMESPACE
 
 // Force instantiation.
 template class WorkerPrivateParent<WorkerPrivate>;
-
-WorkerPrivate*
-GetWorkerPrivateFromContext(JSContext* aCx)
-{
-  NS_ASSERTION(!NS_IsMainThread(), "Wrong thread!");
-  return static_cast<WorkerPrivate*>(JS_GetRuntimePrivate(JS_GetRuntime(aCx)));
-}
 
 JSStructuredCloneCallbacks*
 WorkerStructuredCloneCallbacks(bool aMainRuntime)

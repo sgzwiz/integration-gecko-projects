@@ -6,14 +6,7 @@
 
 /*
  * JS date methods.
- */
-
-#include "jsdate.h"
-
-#include "mozilla/FloatingPoint.h"
-#include "mozilla/Util.h"
-
-/*
+ *
  * "For example, OS/360 devotes 26 bytes of the permanently
  *  resident date-turnover routine to the proper handling of
  *  December 31 on leap years (when it is Day 366).  That
@@ -21,6 +14,11 @@
  *
  * Frederick Brooks, 'The Second-System Effect'.
  */
+
+#include "jsdate.h"
+
+#include "mozilla/FloatingPoint.h"
+#include "mozilla/Util.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -36,6 +34,7 @@
 #include "jsutil.h"
 #include "prmjtime.h"
 
+#include "js/Date.h"
 #include "vm/DateTime.h"
 #include "vm/GlobalObject.h"
 #include "vm/Interpreter.h"
@@ -1387,7 +1386,7 @@ DateObject::cachedLocalTime(DateTimeInfo *dtInfo)
 }
 
 JS_ALWAYS_INLINE bool
-IsDate(const Value &v)
+IsDate(HandleValue v)
 {
     return v.isObject() && v.toObject().is<DateObject>();
 }
@@ -2702,7 +2701,7 @@ ToLocaleFormatHelper(JSContext *cx, HandleObject obj, const char *format, Mutabl
     return true;
 }
 
-#if !ENABLE_INTL_API
+#if !EXPOSE_INTL_API
 static bool
 ToLocaleStringHelper(JSContext *cx, Handle<DateObject*> dateObj, MutableHandleValue rval)
 {
@@ -2775,7 +2774,7 @@ date_toLocaleTimeString(JSContext *cx, unsigned argc, Value *vp)
     CallArgs args = CallArgsFromVp(argc, vp);
     return CallNonGenericMethod<IsDate, date_toLocaleTimeString_impl>(cx, args);
 }
-#endif
+#endif /* !EXPOSE_INTL_API */
 
 JS_ALWAYS_INLINE bool
 date_toLocaleFormat_impl(JSContext *cx, CallArgs args)
@@ -2945,7 +2944,7 @@ static const JSFunctionSpec date_methods[] = {
     JS_FN("setUTCMilliseconds",  date_setUTCMilliseconds, 1,0),
     JS_FN("toUTCString",         date_toGMTString,        0,0),
     JS_FN("toLocaleFormat",      date_toLocaleFormat,     0,0),
-#if ENABLE_INTL_API
+#if EXPOSE_INTL_API
          {js_toLocaleString_str, {NULL, NULL},            0,0, "Date_toLocaleString"},
          {"toLocaleDateString",  {NULL, NULL},            0,0, "Date_toLocaleDateString"},
          {"toLocaleTimeString",  {NULL, NULL},            0,0, "Date_toLocaleTimeString"},

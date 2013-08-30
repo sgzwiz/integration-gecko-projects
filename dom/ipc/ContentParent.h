@@ -25,7 +25,6 @@
 #include "nsNetUtil.h"
 #include "nsIPermissionManager.h"
 #include "nsIDOMGeoPositionCallback.h"
-#include "nsIMemoryReporter.h"
 #include "nsCOMArray.h"
 #include "nsDataHashtable.h"
 #include "nsHashKeys.h"
@@ -36,6 +35,7 @@
 class mozIApplication;
 class nsConsoleService;
 class nsIDOMBlob;
+class nsIMemoryReporter;
 
 namespace mozilla {
 
@@ -55,6 +55,7 @@ class PCompositorParent;
 
 namespace dom {
 
+class Element;
 class TabParent;
 class PStorageParent;
 class ClonedMessageData;
@@ -143,6 +144,7 @@ public:
     bool IsForApp();
 
     void SetChildMemoryReporters(const InfallibleTArray<MemoryReport>& report);
+    void ClearChildMemoryReporters();
 
     GeckoChildProcessHost* Process() {
         return mSubprocess;
@@ -177,6 +179,8 @@ public:
 protected:
     void OnChannelConnected(int32_t pid) MOZ_OVERRIDE;
     virtual void ActorDestroy(ActorDestroyReason why);
+
+    bool ShouldContinueFromReplyTimeout() MOZ_OVERRIDE;
 
 private:
     static nsDataHashtable<nsStringHashKey, ContentParent*> *sAppContentParents;
@@ -370,10 +374,6 @@ private:
 
     virtual bool RecvCloseAlert(const nsString& aName);
 
-    virtual bool RecvTestPermissionFromPrincipal(const IPC::Principal& aPrincipal,
-                                                 const nsCString& aType,
-                                                 uint32_t* permission);
-
     virtual bool RecvLoadURIExternal(const URIParams& uri);
 
     virtual bool RecvSyncMessage(const nsString& aMsg,
@@ -428,6 +428,9 @@ private:
 
     virtual bool RecvSetFakeVolumeState(const nsString& fsName, const int32_t& fsState) MOZ_OVERRIDE;
 
+    virtual bool RecvKeywordToURI(const nsCString& aKeyword, OptionalInputStreamParams* aPostData,
+                                  OptionalURIParams* aURI);
+
     virtual void ProcessingError(Result what) MOZ_OVERRIDE;
 
     // If you add strong pointers to cycle collected objects here, be sure to
@@ -475,10 +478,11 @@ private:
     bool mSendPermissionUpdates;
     bool mIsForBrowser;
 
-    // These variables track whether we've called Close() and CloseWithError()
-    // on our channel.
+    // These variables track whether we've called Close(), CloseWithError()
+    // and KillHard() on our channel.
     bool mCalledClose;
     bool mCalledCloseWithError;
+    bool mCalledKillHard;
 
     friend class CrashReporterParent;
 
