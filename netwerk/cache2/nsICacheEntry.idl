@@ -16,7 +16,7 @@ interface nsICacheListener;
 interface nsIFile;
 interface nsICacheMetaDataVisitor;
 
-[scriptable, uuid(faaf16c8-b2d2-42de-91e9-7d2f44c4cb1e)]
+[scriptable, uuid(4057dc9d-2919-4451-94c2-19f8b96badf3)]
 interface nsICacheEntry : nsISupports
 {
   /**
@@ -60,10 +60,9 @@ interface nsICacheEntry : nsISupports
   void setExpirationTime(in uint32_t expirationTime);
 
   /**
-   * Open blocking input stream to cache data.  This will fail if the cache
-   * entry IS NOT stream based.  Use the stream transport service to
-   * asynchronously read this stream on a background thread.  The returned
-   * stream MAY implement nsISeekableStream.
+   * Open blocking input stream to cache data.  Use the stream transport
+   * service to asynchronously read this stream on a background thread.
+   * The returned stream MAY implement nsISeekableStream.
    *
    * @param offset
    *        read starting from this offset into the cached data.  an offset
@@ -74,10 +73,8 @@ interface nsICacheEntry : nsISupports
   nsIInputStream openInputStream(in long long offset);
 
   /**
-   * Open blocking output stream to cache data.  This will fail if the cache
-   * entry IS NOT stream based.  Use the stream transport service to
-   * asynchronously write to this stream on a background thread.  The returned
-   * stream MAY implement nsISeekableStream.
+   * Open non-blocking output stream to cache data.  The returned stream
+   * MAY implement nsISeekableStream.
    *
    * If opening an output stream to existing cached data, the data will be
    * truncated to the specified offset.
@@ -99,8 +96,7 @@ interface nsICacheEntry : nsISupports
   attribute int64_t predictedDataSize;
 
   /**
-   * Get/set security info on the cache entry for this descriptor.  This fails
-   * if the storage policy is not STORE_IN_MEMORY.
+   * Get/set security info on the cache entry for this descriptor.
    */
   attribute nsISupports securityInfo;
 
@@ -126,7 +122,7 @@ interface nsICacheEntry : nsISupports
   void   setMetaDataElement(in string key, in string value);
 
   /**
-   * Claims that all metadata on this entry up-to-date and this entry
+   * Claims that all metadata on this entry are up-to-date and this entry
    * now can be delivered to other waiting consumers.
    *
    * We need such method since metadata must be delivered synchronously.
@@ -171,9 +167,14 @@ interface nsICacheEntry : nsISupports
    */
   void close();
 
+  /**
+   * FOR BACKWARD COMPATIBILITY ONLY
+   * Marks the entry as valid so that others can use it and get only readonly
+   * access when the entry is held by the 1st writer.
+   */
+  void markValid();
 
   // *************** GET RID OF THESE ??? ***************
   void setDataSize(in unsigned long size);
-  void markValid();
   attribute nsCacheStoragePolicy storagePolicy;
 };
