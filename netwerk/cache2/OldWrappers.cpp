@@ -205,22 +205,30 @@ NS_IMETHODIMP VisitCallbackWrapper::VisitEntry(const char * deviceID,
 _OldCacheEntryWrapper::_OldCacheEntryWrapper(nsICacheEntryDescriptor* desc)
 : mOldDesc(desc), mOldInfo(desc)
 {
+  MOZ_COUNT_CTOR(_OldCacheEntryWrapper);
+  LOG(("Creating _OldCacheEntryWrapper %p for descriptor %p", this, desc));
 }
 
 _OldCacheEntryWrapper::_OldCacheEntryWrapper(nsICacheEntryInfo* info)
 : mOldInfo(info)
 {
+  MOZ_COUNT_CTOR(_OldCacheEntryWrapper);
+  LOG(("Creating _OldCacheEntryWrapper %p for info %p", this, info));
 }
 
 _OldCacheEntryWrapper::~_OldCacheEntryWrapper()
 {
+  MOZ_COUNT_DTOR(_OldCacheEntryWrapper);
+  LOG(("Destroying _OldCacheEntryWrapper %p for descriptor %p", this, mOldInfo.get()));
 }
 
 NS_IMPL_ISUPPORTS1(_OldCacheEntryWrapper, nsICacheEntry)
 
 NS_IMETHODIMP _OldCacheEntryWrapper::AsyncDoom(nsICacheEntryDoomCallback* listener)
 {
-  nsRefPtr<DoomCallbackWrapper> cb = new DoomCallbackWrapper(listener);
+  nsRefPtr<DoomCallbackWrapper> cb = listener
+    ? new DoomCallbackWrapper(listener)
+    : nullptr;
   return AsyncDoom(cb);
 }
 
@@ -281,13 +289,14 @@ NS_IMETHODIMP _OldCacheEntryWrapper::SetPersistToDisk(bool aPersistToDisk)
 
 NS_IMETHODIMP _OldCacheEntryWrapper::Recreate(nsICacheEntry** aResult)
 {
-#ifdef DEBUG
-  if (mOldDesc) {
-    nsCacheAccessMode mode;
-    nsresult rv = mOldDesc->GetAccessGranted(&mode);
-    MOZ_ASSERT(NS_SUCCEEDED(rv) && (mode & nsICache::ACCESS_WRITE));
-  }
-#endif
+  NS_ENSURE_TRUE(mOldDesc, NS_ERROR_NOT_AVAILABLE);
+
+  nsCacheAccessMode mode;
+  nsresult rv = mOldDesc->GetAccessGranted(&mode);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (!(mode & nsICache::ACCESS_WRITE))
+    return NS_ERROR_NOT_AVAILABLE;
 
   nsCOMPtr<nsICacheEntry> self(this);
   self.forget(aResult);
@@ -436,6 +445,7 @@ _OldCacheLoad::~_OldCacheLoad()
 
 nsresult _OldCacheLoad::Start()
 {
+  LOG(("_OldCacheLoad::Start [this=%p, key=%s]", this, mCacheKey.get()));
   MOZ_ASSERT(NS_IsMainThread());
 
   bool mainThreadOnly;
@@ -472,7 +482,7 @@ nsresult _OldCacheLoad::Start()
 NS_IMETHODIMP
 _OldCacheLoad::Run()
 {
-  LOG(("_OldCacheLoad::Run [this=%p, cb=%p]", this, mCallback.get()));
+  LOG(("_OldCacheLoad::Run [this=%p, key=%s, cb=%p]", this, mCacheKey.get(), mCallback.get()));
 
   nsresult rv;
 
@@ -493,8 +503,7 @@ _OldCacheLoad::Run()
       else
         cacheAccess = nsICache::ACCESS_READ_WRITE;
 
-
-      LOG(("  AsyncOpenCacheEntry with access=%d", cacheAccess));
+      LOG(("  session->AsyncOpenCacheEntry with access=%d", cacheAccess));
 
       bool bypassBusy = mFlags & nsICacheStorage::OPEN_BYPASS_IF_BUSY;
       rv = session->AsyncOpenCacheEntry(mCacheKey, cacheAccess, this, bypassBusy);
@@ -516,7 +525,7 @@ _OldCacheLoad::Run()
     rv = cb->OnCacheEntryAvailable(entry, mNew, mAppCache, mStatus);
 
     if (NS_FAILED(rv) && entry) {
-      LOG(("  OnCacheEntryAvailable failed with rv=0x%08x", rv));
+      LOG(("  cb->OnCacheEntryAvailable failed with rv=0x%08x", rv));
       if (mNew)
         entry->AsyncDoom(nullptr);
       else
@@ -532,8 +541,8 @@ _OldCacheLoad::OnCacheEntryAvailable(nsICacheEntryDescriptor *entry,
                                      nsCacheAccessMode access,
                                      nsresult status)
 {
-  LOG(("_OldCacheLoad::OnCacheEntryAvailable ent=%p, cb=%p, appcache=%p, access=%x",
-    entry, mCallback.get(), mAppCache.get(), access));
+  LOG(("_OldCacheLoad::OnCacheEntryAvailable [this=%p, ent=%p, cb=%p, appcache=%p, access=%x]",
+    this, entry, mCallback.get(), mAppCache.get(), access));
 
   // XXX Bug 759805: Sometimes we will call this method directly from
   // HttpCacheQuery::Run when AsyncOpenCacheEntry fails, but
@@ -564,14 +573,11 @@ _OldCacheLoad::Check()
   if (mCacheEntry && !mNew) {
     uint32_t valid;
     nsresult rv = mCallback->OnCacheEntryCheck(mCacheEntry, mAppCache, &valid);
-    LOG(("OnCacheEntryCheck result ent=%p, cb=%p, appcache=%p, rv=0x%08x",
+    LOG(("  OnCacheEntryCheck result ent=%p, cb=%p, appcache=%p, rv=0x%08x",
       mCacheEntry.get(), mCallback.get(), mAppCache.get(), rv));
 
     if (NS_FAILED(rv)) {
       NS_WARNING("cache check failed");
-    }
-    if (!valid) {
-      NS_WARNING("not valid");
     }
   }
 }
@@ -610,10 +616,15 @@ NS_IMETHODIMP _OldStorage::AsyncOpenURI(nsIURI *aURI,
                                         uint32_t aFlags,
                                         nsICacheEntryOpenCallback *aCallback)
 {
-  LOG(("_OldStorage::AsyncOpenURI"));
-
   NS_ENSURE_ARG(aURI);
   NS_ENSURE_ARG(aCallback);
+
+#ifdef MOZ_LOGGING
+  nsAutoCString uriSpec;
+  aURI->GetAsciiSpec(uriSpec);
+  LOG(("_OldStorage::AsyncOpenURI [this=%p, uri=%s, ide=%s, flags=%x]",
+    this, uriSpec.get(), aIdExtension.BeginReading(), aFlags));
+#endif
 
   nsresult rv;
 
