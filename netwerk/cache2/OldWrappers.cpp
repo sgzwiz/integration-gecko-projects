@@ -511,10 +511,16 @@ _OldCacheLoad::Run()
     }
 
     // Opening failed, propagate the error to the consumer
+    LOG(("  Opening cache entry failed with rv=0x%08x", rv));
     mStatus = rv;
     mNew = false;
     NS_DispatchToMainThread(this);
   } else {
+    if (!mCallback) {
+      LOG(("  duplicate call, bypassed"));
+      return NS_OK;
+    }
+
     if (mMainThreadOnly)
       Check();
 
