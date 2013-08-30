@@ -20,11 +20,10 @@ function test() {
 
   sanitizeCache();
 
-  let nrEntriesR1 = getStorageEntryCount("regular", function(nrEntriesR1) {
-    is (nrEntriesR1, 0, "Disk cache reports 0KB and has no entries");
+  let nrEntriesR1 = get_device_entry_count("disk");
+  is (nrEntriesR1, 0, "Disk cache reports 0KB and has no entries");
 
-    get_cache_for_private_window();
-  });
+  get_cache_for_private_window();
 }
 
 function cleanup() {
@@ -62,62 +61,29 @@ function sanitizeCache() {
 }
 
 function get_cache_service() {
-  return Components.classes["@mozilla.org/netwerk/cache-storage-service;1"]
-                   .getService(Components.interfaces.nsICacheStorageService);
+  return Components.classes["@mozilla.org/network/cache-service;1"]
+                   .getService(Components.interfaces.nsICacheService);
 }
 
-function getStorageEntryCount(device, goon) {
+function get_device_entry_count(device) {
   var cs = get_cache_service();
-  
-  function LoadContextInfo(isprivate, anonymous, appid, inbrowser)
-  {
-    this.isPrivate = isprivate || false;
-    this.isAnonymous = anonymous || false;
-    this.appId = appid || 0;
-    this.isInBrowserElement = inbrowser || false;
-  }
-
-  LoadContextInfo.prototype = {
-    QueryInterface: function(iid) {
-      if (iid.equals(Ci.nsILoadContextInfo))
-        return this;
-      throw Cr.NS_ERROR_NO_INTERFACE;
-    },
-    isPrivate : false,
-    isAnonymous : false,
-    isInBrowserElement : false,
-    appId : 0
-  };
-
-  var storage;
-  switch (device) {
-  case "anon":
-    storage = cs.diskCacheStorage(new LoadContextInfo(true), false);
-    break;
-  case "regular":
-    storage = cs.diskCacheStorage(new LoadContextInfo(false), false);
-    break;
-  default:
-    throw "Unknown device " + device + " at getStorageEntryCount";
-  }
+  var entry_count = -1;
 
   var visitor = {
-    entryCount: 0,
-    onCacheStorageInfo: function (aEntryCount, aConsumption) {
+    visitDevice: function (deviceID, deviceInfo) {
+      if (device == deviceID) {
+        entry_count = deviceInfo.entryCount;
+      }
+      return false;
     },
-    onCacheEntryInfo: function(entry)
-    {
-      dump(device + ":" + entry.key + "\n");
-      if (entry.key.match(/^http:\/\/example.org\//))
-        ++this.entryCount;
-    },
-    onCacheEntryVisitCompleted: function()
-    {
-      goon(this.entryCount);
+    visitEntry: function (deviceID, entryInfo) {
+      do_throw("nsICacheVisitor.visitEntry should not be called " +
+               "when checking the availability of devices");
     }
   };
 
-  storage.asyncVisitStorage(visitor, true);
+  cs.visitEntries(visitor);
+  return entry_count;
 }
 
 function get_cache_for_private_window () {
@@ -138,18 +104,16 @@ function get_cache_for_private_window () {
 
         executeSoon(function() {
 
-          getStorageEntryCount("anon", function(nrEntriesP) {
-            ok (nrEntriesP >= 1, "Memory cache reports some entries from example.org domain");
+          let nrEntriesP = get_device_entry_count("memory");
+          is (nrEntriesP, 1, "Memory cache reports some entries from example.org domain");
 
-            getStorageEntryCount("regular", function(nrEntriesR2) {
-              is (nrEntriesR2, 0, "Disk cache reports 0KB and has no entries");
+          let nrEntriesR2 = get_device_entry_count("disk");
+          is (nrEntriesR2, 0, "Disk cache reports 0KB and has no entries");
 
-              cleanup();
+          cleanup();
 
-              win.close();
-              finish();
-            });
-          });
+          win.close();
+          finish();
         });
       }, true);
     });

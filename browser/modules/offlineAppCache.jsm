@@ -9,7 +9,6 @@ const Ci = Components.interfaces;
 
 this.OfflineAppCacheHelper = {
   clear: function() {
-    // TODO mayhemer: migrate to new cache api when implemete for appcache
     var cacheService = Cc["@mozilla.org/network/cache-service;1"].
                        getService(Ci.nsICacheService);
     try {
