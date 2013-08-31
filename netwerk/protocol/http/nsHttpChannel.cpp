@@ -136,25 +136,6 @@ WillRedirect(const nsHttpResponseHead * response)
            response->PeekHeader(nsHttp::Location);
 }
 
-void
-MaybeMarkCacheEntryValid(const void * channel,
-                         nsICacheEntry * cacheEntry,
-                         bool newEntry)
-{
-    // Mark the cache entry as valid in order to allow others access to it.
-    // XXX: Is it really necessary to check for write acccess to the entry?
-    if (newEntry) {
-        nsresult rv = cacheEntry->MarkValid();
-        LOG(("Marking cache entry valid "
-             "[channel=%p, entry=%p, new=%d, result=%d]",
-             channel, cacheEntry, newEntry, int(rv)));
-    } else {
-        LOG(("Not marking read-only cache entry valid "
-             "[channel=%p, entry=%p, new=%d]",
-             channel, cacheEntry, newEntry));
-    }
-}
-
 } // unnamed namespace
 
 class AutoRedirectVetoNotifier
@@ -2710,8 +2691,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
         rv = OpenCacheInputStream(entry, true);
         if (NS_SUCCEEDED(rv)) {
             mCachedContentIsValid = true;
-            // XXX: Isn't the cache entry already valid?
-            MaybeMarkCacheEntryValid(this, entry, mCacheEntryIsWriteOnly);
+            entry->MaybeMarkValid();
         }
         return rv;
     }
@@ -2949,8 +2929,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
         *aResult = ENTRY_WANTED;
 
     if (mCachedContentIsValid) {
-        // XXX: Isn't the cache entry already valid?
-        MaybeMarkCacheEntryValid(this, entry, mCacheEntryIsWriteOnly);
+        entry->MaybeMarkValid();
     }
 
     LOG(("nsHTTPChannel::OnCacheEntryCheck exit [this=%p doValidation=%d result=%d]\n",
@@ -3482,7 +3461,7 @@ nsHttpChannel::ReadFromCache(bool alreadyMarkedValid)
         //
         // TODO: This should be done asynchronously so we don't take the cache
         // service lock on the main thread.
-        MaybeMarkCacheEntryValid(this, mCacheEntry, mCacheEntryIsWriteOnly);
+        mCacheEntry->MaybeMarkValid();
     }
 
     nsresult rv;
