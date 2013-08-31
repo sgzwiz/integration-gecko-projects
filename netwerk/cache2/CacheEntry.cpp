@@ -1087,9 +1087,9 @@ NS_IMETHODIMP CacheEntry::MaybeMarkValid()
   return NS_OK;
 }
 
-NS_IMETHODIMP CacheEntry::HasWriteAccess(bool aWriteOnly, bool *aWriteAccess)
+NS_IMETHODIMP CacheEntry::HasWriteAccess(bool aWriteAllowed, bool *aWriteAccess)
 {
-  *aWriteAccess = aWriteOnly;
+  *aWriteAccess = aWriteAllowed;
   return NS_OK;
 }
 

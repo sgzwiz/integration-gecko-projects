@@ -341,7 +341,7 @@ NS_IMETHODIMP _OldCacheEntryWrapper::MaybeMarkValid()
   return NS_OK;
 }
 
-NS_IMETHODIMP _OldCacheEntryWrapper::HasWriteAccess(bool aWriteOnly, bool *aWriteAccess)
+NS_IMETHODIMP _OldCacheEntryWrapper::HasWriteAccess(bool aWriteAllowed_unused, bool *aWriteAccess)
 {
   NS_ENSURE_TRUE(mOldDesc, NS_ERROR_NULL_POINTER);
   NS_ENSURE_ARG(aWriteAccess);

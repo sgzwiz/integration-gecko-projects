@@ -5130,9 +5130,9 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
     // perform any final cache operations before we close the cache entry.
     if (mCacheEntry && mRequestTimeInitialized) {
         bool writeAccess;
-        // New implementation just returns value of the mCacheEntryIsWriteOnly flag passed in.
+        // New implementation just returns value of the !mCacheEntryIsReadOnly flag passed in.
         // Old implementation checks on nsICache::ACCESS_WRITE flag.
-        mCacheEntry->HasWriteAccess(mCacheEntryIsWriteOnly, &writeAccess);
+        mCacheEntry->HasWriteAccess(!mCacheEntryIsReadOnly, &writeAccess);
         if (writeAccess) {
             FinalizeCacheEntry();
         }
