@@ -333,9 +333,26 @@ NS_IMETHODIMP _OldCacheEntryWrapper::MaybeMarkValid()
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (mode & nsICache::ACCESS_WRITE) {
-    LOG(("  marking valid"));
+    LOG(("Marking cache entry valid [entry=%p, descr=%p]", this, mOldDesc));
     return mOldDesc->MarkValid();
   }
+
+  LOG(("Not marking read-only cache entry valid [entry=%p, descr=%p]", this, mOldDesc));
+  return NS_OK;
+}
+
+NS_IMETHODIMP _OldCacheEntryWrapper::HasWriteAccess(bool aWriteOnly, bool *aWriteAccess)
+{
+  NS_ENSURE_TRUE(mOldDesc, NS_ERROR_NULL_POINTER);
+  NS_ENSURE_ARG(aWriteAccess);
+
+  nsCacheAccessMode mode;
+  nsresult rv = mOldDesc->GetAccessGranted(&mode);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  *aWriteAccess = !!(mode & nsICache::ACCESS_WRITE);
+
+  LOG(("_OldCacheEntryWrapper::HasWriteAccess [this=%p, write-access=%d]", this, *aWriteAccess));
 
   return NS_OK;
 }
