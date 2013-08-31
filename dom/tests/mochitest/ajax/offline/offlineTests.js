@@ -337,6 +337,23 @@ loadContext: function()
                                    .getInterface(Components.interfaces.nsILoadContext);
 },
 
+loadContextInfo: function()
+{
+  function LoadContextInfo(loadContext)
+  {
+    this._loadContext = loadContext;
+  }
+
+  LoadContextInfo.prototype = {
+    get isPrivate() { return this._loadContext.isPrivate },
+    get isAnonymous() { return this._loadContext.isAnonymous },
+    get isInBrowserElement() { return this._loadContext.isInBrowserElement },
+    get appId() { return this._loadContext.appId }
+  };
+
+  return new LoadContextInfo(this.loadContext());
+},
+
 getActiveCache: function(overload)
 {
   // Note that this is the current active cache in the cache stack, not the
