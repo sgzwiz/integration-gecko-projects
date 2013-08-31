@@ -38,6 +38,7 @@ public:
   NS_IMETHOD OpenInputStream(int64_t offset, nsIInputStream * *_retval);
   NS_IMETHOD OpenOutputStream(int64_t offset, nsIOutputStream * *_retval);
   NS_IMETHOD MaybeMarkValid();
+  NS_IMETHOD HasWriteAccess(bool aWriteOnly, bool *aWriteAccess);
 
   _OldCacheEntryWrapper(nsICacheEntryDescriptor* desc);
   _OldCacheEntryWrapper(nsICacheEntryInfo* info);

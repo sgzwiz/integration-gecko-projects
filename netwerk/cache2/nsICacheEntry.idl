@@ -16,7 +16,7 @@ interface nsICacheListener;
 interface nsIFile;
 interface nsICacheMetaDataVisitor;
 
-[scriptable, uuid(D37DDF69-2866-4bf7-AB59-E06FAE0F751F)]
+[scriptable, uuid(1785f6f1-18b3-4cb4-ae99-6c5545c1de19)]
 interface nsICacheEntry : nsISupports
 {
   /**
@@ -174,11 +174,28 @@ interface nsICacheEntry : nsISupports
    */
   void markValid();
 
+  /****************************************************************************
+   * The following methods might be added to some nsICacheEntryInternal
+   * interface since we want to remove them as soon as the old cache backend is
+   * completely removed.
+   */
+
   /**
    * FOR BACKWARD COMPATIBILITY ONLY
    * Marks the entry as valid when write access is acquired.
    */
   void maybeMarkValid();
+
+  /**
+   * FOR BACKWARD COMPATIBILITY ONLY / KINDA HACK
+   * @param aWriteOnly
+   *    consumer passes it's write-only decision flag on the entry
+   *    depends on implementation how the flag is handled
+   * @returns
+   *    true when write access is acquired for this entry
+   *    false otherwise
+   */
+  boolean hasWriteAccess(in boolean aWriteOnly);
 
   // *************** GET RID OF THESE ??? ***************
   void setDataSize(in unsigned long size);
