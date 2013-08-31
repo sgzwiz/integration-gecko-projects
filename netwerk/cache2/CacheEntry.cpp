@@ -1081,6 +1081,12 @@ NS_IMETHODIMP CacheEntry::MarkValid()
   return NS_OK;
 }
 
+NS_IMETHODIMP CacheEntry::MaybeMarkValid()
+{
+  // NOT IMPLEMENTED ACTUALLY
+  return NS_OK;
+}
+
 NS_IMETHODIMP CacheEntry::Close()
 {
   // NOT IMPLEMENTED ACTUALLY

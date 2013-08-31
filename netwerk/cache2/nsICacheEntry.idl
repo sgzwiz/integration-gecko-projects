@@ -16,7 +16,7 @@ interface nsICacheListener;
 interface nsIFile;
 interface nsICacheMetaDataVisitor;
 
-[scriptable, uuid(4057dc9d-2919-4451-94c2-19f8b96badf3)]
+[scriptable, uuid(D37DDF69-2866-4bf7-AB59-E06FAE0F751F)]
 interface nsICacheEntry : nsISupports
 {
   /**
@@ -173,6 +173,12 @@ interface nsICacheEntry : nsISupports
    * access when the entry is held by the 1st writer.
    */
   void markValid();
+
+  /**
+   * FOR BACKWARD COMPATIBILITY ONLY
+   * Marks the entry as valid when write access is acquired.
+   */
+  void maybeMarkValid();
 
   // *************** GET RID OF THESE ??? ***************
   void setDataSize(in unsigned long size);

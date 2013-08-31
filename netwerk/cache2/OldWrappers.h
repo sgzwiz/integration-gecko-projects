@@ -37,6 +37,7 @@ public:
   NS_IMETHOD GetDataSize(int64_t *size);
   NS_IMETHOD OpenInputStream(int64_t offset, nsIInputStream * *_retval);
   NS_IMETHOD OpenOutputStream(int64_t offset, nsIOutputStream * *_retval);
+  NS_IMETHOD MaybeMarkValid();
 
   _OldCacheEntryWrapper(nsICacheEntryDescriptor* desc);
   _OldCacheEntryWrapper(nsICacheEntryInfo* info);

@@ -298,6 +298,8 @@ NS_IMETHODIMP _OldCacheEntryWrapper::Recreate(nsICacheEntry** aResult)
   if (!(mode & nsICache::ACCESS_WRITE))
     return NS_ERROR_NOT_AVAILABLE;
 
+  LOG(("_OldCacheEntryWrapper::Recreate [this=%p]", this));
+
   nsCOMPtr<nsICacheEntry> self(this);
   self.forget(aResult);
   return NS_OK;
@@ -318,6 +320,24 @@ NS_IMETHODIMP _OldCacheEntryWrapper::OpenOutputStream(int64_t offset,
     return NS_ERROR_INVALID_ARG;
 
   return OpenOutputStream(uint32_t(offset), _retval);
+}
+
+NS_IMETHODIMP _OldCacheEntryWrapper::MaybeMarkValid()
+{
+  LOG(("_OldCacheEntryWrapper::MaybeMarkValid [this=%p]", this));
+
+  NS_ENSURE_TRUE(mOldDesc, NS_ERROR_NULL_POINTER);
+
+  nsCacheAccessMode mode;
+  nsresult rv = mOldDesc->GetAccessGranted(&mode);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (mode & nsICache::ACCESS_WRITE) {
+    LOG(("  marking valid"));
+    return mOldDesc->MarkValid();
+  }
+
+  return NS_OK;
 }
 
 
