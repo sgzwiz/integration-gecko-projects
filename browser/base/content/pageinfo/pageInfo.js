@@ -234,10 +234,10 @@ function LoadContextInfo()
                             .QueryInterface(Components.interfaces.nsILoadContext)
 }
 LoadContextInfo.prototype = {
-  isPrivate : function() { return this._loadContext.isPrivate },
-  isAnonymous : function() { return this._loadContext.isAnonymous },
-  isInBrowserElement : function() { return this._loadContext.isInBrowserElement },
-  appId : function() { return this._loadContext.appId }
+  get isPrivate() { return this._loadContext.isPrivate },
+  get isAnonymous() { return this._loadContext.isAnonymous },
+  get isInBrowserElement() { return this._loadContext.isInBrowserElement },
+  get appId() { return this._loadContext.appId }
 };
 
 var diskStorage = cacheService.diskCacheStorage(new LoadContextInfo(), false);
