@@ -188,14 +188,14 @@ interface nsICacheEntry : nsISupports
 
   /**
    * FOR BACKWARD COMPATIBILITY ONLY / KINDA HACK
-   * @param aWriteOnly
-   *    consumer passes it's write-only decision flag on the entry
+   * @param aWriteAllowed
+   *    consumer indicates whether write to the entry is allowed for it
    *    depends on implementation how the flag is handled
    * @returns
    *    true when write access is acquired for this entry
    *    false otherwise
    */
-  boolean hasWriteAccess(in boolean aWriteOnly);
+  boolean hasWriteAccess(in boolean aWriteAllowed);
 
   // *************** GET RID OF THESE ??? ***************
   void setDataSize(in unsigned long size);
