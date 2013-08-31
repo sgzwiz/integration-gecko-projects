@@ -121,8 +121,17 @@ function asyncOpenCacheEntry(key, where, flags, lci, callback, appcache)
 
 function syncWithCacheIOThread(callback)
 {
-  // remove this API
-  callback();
+  if (!newCacheBackEndUsed()) {
+    asyncOpenCacheEntry(
+      "http://nonexistententry/", "disk", Ci.nsICacheStorage.OPEN_READONLY, null,
+      function(status, entry) {
+        do_check_eq(status, Components.results.NS_ERROR_CACHE_KEY_NOT_FOUND);
+        callback();
+      });
+  }
+  else {
+    callback();
+  }
 }
 
 function get_device_entry_count(where, lci, continuation) {
