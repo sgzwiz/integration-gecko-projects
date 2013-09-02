@@ -498,7 +498,7 @@ CacheFile::OnChunkRead(nsresult aResult, CacheFileChunk *aChunk)
   uint32_t index = aChunk->Index();
 
   LOG(("CacheFile::OnChunkRead() [this=%p, rv=0x%08x, chunk=%p, idx=%d]",
-       this, aResult, index));
+       this, aResult, aChunk, index));
 
   // TODO handle ERROR state
 
