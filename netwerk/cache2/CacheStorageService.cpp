@@ -109,12 +109,8 @@ CacheStorageService::~CacheStorageService()
   LOG(("CacheStorageService::~CacheStorageService"));
   sSelf = nullptr;
 
-  // This assertion is not actually critical, it's here to just confirm
-  // that memory occupation inc/dec code works well.  If the value here
-  // is not significantly different from 0 (or overflow of ~0) then when
-  // a quick solution is needed to fix this assertion failure, just disable
-  // it and file a bug.
-  MOZ_ASSERT(mMemorySize == 0);
+  if (mMemorySize != 0)
+    NS_ERROR("Network cache reported memory consumption is not at 0, probably leaking?");
 }
 
 void CacheStorageService::Shutdown()
