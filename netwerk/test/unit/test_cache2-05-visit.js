@@ -4,17 +4,21 @@ function run_test()
 
   var storage = getCacheStorage("disk");
   var mc = new MultipleCallbacks(4, function() {
-    storage.asyncVisitStorage(
-      // Previous tests should store 4 entries
-      new VisitCallback(4, 48, ["http://a/", "http://b/", "http://c/", "http://d/"], function() {
-        storage.asyncVisitStorage(
-          // Previous tests should store 4 entries, now don't walk them
-          new VisitCallback(4, 48, null, function() {
-            finish_cache2_test();
-          }),
-        false);
-      }),
-    true);
+    syncWithCacheIOThread(function() {
+      storage.asyncVisitStorage(
+        // Test should store 4 entries
+        new VisitCallback(4, 48, ["http://a/", "http://b/", "http://c/", "http://d/"], function() {
+          storage.asyncVisitStorage(
+            // Still 4 entries expected, now don't walk them
+            new VisitCallback(4, 48, null, function() {
+              finish_cache2_test();
+            }),
+            false
+          );
+        }),
+        true
+      );
+    });
   }, !newCacheBackEndUsed());
 
   asyncOpenCacheEntry("http://a/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
