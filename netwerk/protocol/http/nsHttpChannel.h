@@ -269,8 +269,6 @@ private:
     nsresult InstallCacheListener(int64_t offset = 0);
     nsresult InstallOfflineCacheListener(int64_t offset = 0);
     void     MaybeInvalidateCacheEntryForSubsequentGet();
-    nsCacheStoragePolicy DetermineStoragePolicy();
-    nsresult DetermineCacheAccess(nsCacheAccessMode *_retval);
     void     AsyncOnExamineCachedResponse();
 
     // Handle the bogus Content-Encoding Apache sometimes sends
