@@ -895,16 +895,16 @@ RemoveExactEntry(CacheEntryTable* aEntries,
 {
   nsRefPtr<CacheEntry> existingEntry;
   if (!aEntries->Get(aKey, getter_AddRefs(existingEntry))) {
-    LOG(("RemoveExactEntry [entry=%p already gone]"));
+    LOG(("RemoveExactEntry [entry=%p already gone]", aEntry));
     return false; // Already removed...
   }
 
   if (!aOverwrite && existingEntry != aEntry) {
-    LOG(("RemoveExactEntry [entry=%p already replaced]"));
+    LOG(("RemoveExactEntry [entry=%p already replaced]", aEntry));
     return false; // Already replaced...
   }
 
-  LOG(("RemoveExactEntry [entry=%p removed]"));
+  LOG(("RemoveExactEntry [entry=%p removed]", aEntry));
   aEntries->Remove(aKey);
   return true;
 }

@@ -578,7 +578,7 @@ CacheFileInputStream::MaybeNotifyListener()
   mFile->AssertOwnsLock();
 
   LOG(("CacheFileInputStream::MaybeNotifyListener() [this=%p, mCallback=%p, "
-       "mClosed=%d, mStatus=0x%08x, mChunk=%p, mListeningForChunk=%d, "
+       "mClosed=%d, mStatus=0x%08x, mChunk=%p, mListeningForChunk=%lld, "
        "mWaitingForUpdate=%d]", this, mCallback.get(), mClosed, mStatus,
        mChunk.get(), mListeningForChunk, mWaitingForUpdate));
 
