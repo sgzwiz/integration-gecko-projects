@@ -483,6 +483,14 @@ class XPCShellTestThread(Thread):
             for part in output:
                 # For multi-line output, such as a stack trace
                 for line in part.splitlines():
+                    try:
+                        line = line.decode('utf-8')
+                    except UnicodeDecodeError:
+                        self.log.info("TEST-INFO | %s | Detected non UTF-8 output."\
+                                      " Please modify the test to only print UTF-8." %
+                                      self.test_object['name'])
+                        # add '?' instead of funky bytes
+                        line = line.decode('utf-8', 'replace')
                     self.log.info(line)
         self.log.info("<<<<<<<")
 
@@ -578,7 +586,8 @@ class XPCShellTestThread(Thread):
             if testTimer:
                 testTimer.cancel()
 
-            self.parse_output(stdout)
+            if stdout:
+                self.parse_output(stdout)
             result = not (self.has_failure_output or
                           (self.getReturnCode(proc) != 0))
 
