@@ -342,14 +342,6 @@ xpc_TryUnmarkWrappedGrayObject(nsISupports* aWrappedJS)
     }
 }
 
-NS_IMETHODIMP_(void)
-nsXPConnect::NoteJSContext(JSContext *aJSContext,
-                           nsCycleCollectionTraversalCallback &aCb)
-{
-    aCb.NoteNativeChild(aJSContext, mozilla::CycleCollectedJSRuntime::JSContextParticipant());
-}
-
-
 /***************************************************************************/
 /***************************************************************************/
 // nsIXPConnect interface methods...
@@ -1323,8 +1315,7 @@ xpc_ActivateDebugMode()
 JSContext*
 nsXPConnect::GetCurrentJSContext()
 {
-    JSContext *cx = GetRuntime()->GetJSContextStack()->Peek();
-    return xpc_UnmarkGrayContext(cx);
+    return GetRuntime()->GetJSContextStack()->Peek();
 }
 
 /* virtual */
@@ -1719,9 +1710,15 @@ bool
 IsChromeOrXBL(JSContext* cx, JSObject* /* unused */)
 {
     MOZ_ASSERT(NS_IsMainThread());
-    JSCompartment* compartment = js::GetContextCompartment(cx);
-    return AccessCheck::isChrome(compartment) ||
-           IsXBLScope(compartment);
+    JSCompartment* c = js::GetContextCompartment(cx);
+
+    // For remote XUL, we run XBL in the XUL scope. Given that we care about
+    // compat and not security for remote XUL, we just always claim to be XBL.
+    //
+    // Note that, for performance, we don't check AllowXULXBLForPrincipal here,
+    // and instead rely on the fact that AllowXBLScope() only returns false in
+    // remote XUL situations.
+    return AccessCheck::isChrome(c) || IsXBLScope(c) || !AllowXBLScope(c);
 }
 
 } // namespace dom

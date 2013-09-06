@@ -2528,6 +2528,17 @@ LIRGenerator::visitDeleteProperty(MDeleteProperty *ins)
 }
 
 bool
+LIRGenerator::visitDeleteElement(MDeleteElement *ins)
+{
+    LCallDeleteElement *lir = new LCallDeleteElement();
+    if(!useBoxAtStart(lir, LCallDeleteElement::Value, ins->value()))
+        return false;
+    if(!useBoxAtStart(lir, LCallDeleteElement::Index, ins->index()))
+        return false;
+    return defineReturn(lir, ins) && assignSafepoint(lir, ins);
+}
+
+bool
 LIRGenerator::visitSetPropertyCache(MSetPropertyCache *ins)
 {
     LUse obj = useRegisterAtStart(ins->obj());
@@ -2776,13 +2787,6 @@ LIRGenerator::visitHaveSameClass(MHaveSameClass *ins)
     JS_ASSERT(rhs->type() == MIRType_Object);
 
     return define(new LHaveSameClass(useRegister(lhs), useRegister(rhs), temp()), ins);
-}
-
-bool
-LIRGenerator::visitAsmJSLoadHeap(MAsmJSLoadHeap *ins)
-{
-    LAsmJSLoadHeap *lir = new LAsmJSLoadHeap(useRegisterAtStart(ins->ptr()));
-    return define(lir, ins);
 }
 
 bool

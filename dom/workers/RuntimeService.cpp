@@ -831,8 +831,7 @@ public:
   // call to JS_SetGCParameter inside CreateJSContextForWorker.
   WorkerJSRuntime(WorkerPrivate* aWorkerPrivate)
   : CycleCollectedJSRuntime(WORKER_DEFAULT_RUNTIME_HEAPSIZE,
-                            JS_NO_HELPER_THREADS,
-                            false),
+                            JS_NO_HELPER_THREADS),
     mWorkerPrivate(aWorkerPrivate)
   {
     // We need to ensure that a JSContext outlives the cycle collector, and
@@ -1493,9 +1492,6 @@ RuntimeService::Init()
   mIdleThreadTimer = do_CreateInstance(NS_TIMER_CONTRACTID);
   NS_ENSURE_STATE(mIdleThreadTimer);
 
-  mDomainMap.Init();
-  mWindowMap.Init();
-
   nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
   NS_ENSURE_TRUE(obs, NS_ERROR_FAILURE);
 
@@ -1616,7 +1612,7 @@ RuntimeService::Cleanup()
     mIdleThreadTimer = nullptr;
   }
 
-  if (mDomainMap.IsInitialized()) {
+  {
     MutexAutoLock lock(mMutex);
 
     nsAutoTArray<WorkerPrivate*, 100> workers;
@@ -1678,9 +1674,7 @@ RuntimeService::Cleanup()
     }
   }
 
-  if (mWindowMap.IsInitialized()) {
-    NS_ASSERTION(!mWindowMap.Count(), "All windows should have been released!");
-  }
+  NS_ASSERTION(!mWindowMap.Count(), "All windows should have been released!");
 
   if (mObserved) {
     if (NS_FAILED(Preferences::UnregisterCallback(LoadJSContextOptions,

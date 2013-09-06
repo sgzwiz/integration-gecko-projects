@@ -89,14 +89,19 @@ template<bool mainThread>
 inline bool
 ThrowMethodFailedWithDetails(JSContext* cx, ErrorResult& rv,
                              const char* ifaceName,
-                             const char* memberName)
+                             const char* memberName,
+                             bool reportJSContentExceptions = false)
 {
   if (rv.IsTypeError()) {
     rv.ReportTypeError(cx);
     return false;
   }
   if (rv.IsJSException()) {
-    rv.ReportJSException(cx);
+    if (reportJSContentExceptions) {
+      rv.ReportJSExceptionFromJSImplementation(cx);
+    } else {
+      rv.ReportJSException(cx);
+    }
     return false;
   }
   if (rv.IsNotEnoughArgsError()) {
@@ -183,8 +188,8 @@ IsDOMObject(JSObject* obj)
 }
 
 #define UNWRAP_OBJECT(Interface, cx, obj, value)                             \
-  UnwrapObject<prototypes::id::Interface,                                    \
-               mozilla::dom::Interface##Binding::NativeType>(cx, obj, value)
+  mozilla::dom::UnwrapObject<mozilla::dom::prototypes::id::Interface,        \
+    mozilla::dom::Interface##Binding::NativeType>(cx, obj, value)
 
 // Some callers don't want to set an exception when unwrapping fails
 // (for example, overload resolution uses unwrapping to tell what sort
@@ -1511,6 +1516,16 @@ struct FakeDependentString {
   void SetNull() {
     Truncate();
     mFlags |= nsDependentString::F_VOIDED;
+  }
+
+  const nsDependentString::char_type* Data() const
+  {
+    return mData;
+  }
+
+  nsDependentString::size_type Length() const
+  {
+    return mLength;
   }
 
   // If this ever changes, change the corresponding code in the
