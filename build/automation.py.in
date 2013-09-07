@@ -649,7 +649,8 @@ class Automation(object):
 
     # Run the capture tool to file the screenshot in the MOZ_UPLOAD_DIR
     try:
-        tmpfd, imgfilename = tempfile.mkstemp(prefix='mozilla-test-fail-screenshot_',
+        tmpfd, imgfilename = tempfile.mkstemp(suffix='.png',
+                                              prefix='mozilla-test-fail-screenshot_',
                                               dir=parent_dir)
         os.close(tmpfd)
         dumper = self.Process(utility + [imgfilename])
