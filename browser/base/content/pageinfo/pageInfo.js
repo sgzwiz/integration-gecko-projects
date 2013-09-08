@@ -2,6 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+const Cu = Components.utils;
+Cu.import("resource://gre/modules/LoadContextInfo.jsm");
+
 //******** define a js object to implement nsITreeView
 function pageInfoTreeView(treeid, copycol)
 {
@@ -227,20 +230,11 @@ const nsICacheStorageService = Components.interfaces.nsICacheStorageService;
 const nsICacheStorage = Components.interfaces.nsICacheStorage;
 const cacheService = Components.classes["@mozilla.org/netwerk/cache-storage-service;1"].getService(nsICacheStorageService);
 
-function LoadContextInfo()
-{
-  this._loadContext = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-                            .getInterface(Components.interfaces.nsIWebNavigation)
-                            .QueryInterface(Components.interfaces.nsILoadContext)
-}
-LoadContextInfo.prototype = {
-  get isPrivate() { return this._loadContext.isPrivate },
-  get isAnonymous() { return this._loadContext.isAnonymous },
-  get isInBrowserElement() { return this._loadContext.isInBrowserElement },
-  get appId() { return this._loadContext.appId }
-};
-
-var diskStorage = cacheService.diskCacheStorage(new LoadContextInfo(), false);
+var loadContextInfo = LoadContextInfo.fromLoadContext(
+  window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
+        .getInterface(Components.interfaces.nsIWebNavigation)
+        .QueryInterface(Components.interfaces.nsILoadContext), false);
+var diskStorage = cacheService.diskCacheStorage(loadContextInfo, false);
 
 const nsICookiePermission  = Components.interfaces.nsICookiePermission;
 const nsIPermissionManager = Components.interfaces.nsIPermissionManager;
@@ -336,8 +330,6 @@ function onLoadPageInfo()
 
   if (!args || !args.doc) {
     gWindow = window.opener.content;
-    /*for (__key in window)
-      dump(__key + " = " + window[__key] + "\n");*/
     gDocument = gWindow.document;
   }
 

@@ -1,4 +1,5 @@
 Components.utils.import('resource://gre/modules/XPCOMUtils.jsm');
+Components.utils.import('resource://gre/modules/LoadContextInfo.jsm');
 
 var _CSvc;
 function get_cache_service() {
@@ -8,28 +9,6 @@ function get_cache_service() {
   return _CSvc = Components.classes["@mozilla.org/netwerk/cache-storage-service;1"]
                            .getService(Components.interfaces.nsICacheStorageService);
 }
-
-const PRIVATE = true;
-
-function LoadContextInfo(isprivate, anonymous, appid, inbrowser)
-{
-  this.isPrivate = isprivate || false;
-  this.isAnonymous = anonymous || false;
-  this.appId = appid || 0;
-  this.isInBrowserElement = inbrowser || false;
-}
-
-LoadContextInfo.prototype = {
-  QueryInterface: function(iid) {
-    if (iid.equals(Ci.nsILoadContextInfo))
-      return this;
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
-  isPrivate : false,
-  isAnonymous : false,
-  isInBrowserElement : false,
-  appId : 0
-};
 
 function evict_cache_entries(where)
 {
@@ -41,17 +20,17 @@ function evict_cache_entries(where)
   var storage;
 
   if (clearMem) {
-    storage = svc.memoryCacheStorage(new LoadContextInfo());
+    storage = svc.memoryCacheStorage(LoadContextInfo.default);
     storage.asyncEvictStorage(null);
   }
 
   if (clearDisk) {
-    storage = svc.diskCacheStorage(new LoadContextInfo(), false);
+    storage = svc.diskCacheStorage(LoadContextInfo.default, false);
     storage.asyncEvictStorage(null);
   }
 
   if (clearAppCache) {
-    storage = svc.appCacheStorage(new LoadContextInfo(), null);
+    storage = svc.appCacheStorage(LoadContextInfo.default, null);
     storage.asyncEvictStorage(null);
   }
 }
@@ -65,7 +44,7 @@ function createURI(urispec)
 
 function getCacheStorage(where, lci, appcache)
 {
-  if (!lci) lci = new LoadContextInfo();
+  if (!lci) lci = LoadContextInfo.default;
   var svc = get_cache_service();
   switch (where) {
     case "disk": return svc.diskCacheStorage(lci, false);

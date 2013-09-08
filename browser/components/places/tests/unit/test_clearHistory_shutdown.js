@@ -143,7 +143,7 @@ function getDistinctNotifications() {
 function storeCache(aURL, aContent) {
   let cache = Cc["@mozilla.org/netwerk/cache-storage-service;1"].
               getService(Ci.nsICacheStorageService);
-  let storage = cache.diskCacheStorage(new LoadContextInfo(), false);
+  let storage = cache.diskCacheStorage(LoadContextInfo.default, false);
 
   var storeCacheListener = {
     onCacheEntryCheck: function (entry, appcache) {
@@ -177,7 +177,7 @@ function storeCache(aURL, aContent) {
 function checkCache(aURL) {
   let cache = Cc["@mozilla.org/netwerk/cache-storage-service;1"].
               getService(Ci.nsICacheStorageService);
-  let storage = cache.diskCacheStorage(new LoadContextInfo(), false);
+  let storage = cache.diskCacheStorage(LoadContextInfo.default, false);
 
   var checkCacheListener = {
     onCacheEntryAvailable: function (entry, isnew, appcache, status) {

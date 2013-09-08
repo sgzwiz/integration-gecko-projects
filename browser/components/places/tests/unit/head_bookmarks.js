@@ -9,6 +9,7 @@ const Cr = Components.results;
 const Cu = Components.utils;
 
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/LoadContextInfo.jsm");
 
 // Import common head.
 let (commonFile = do_get_file("../../../../../toolkit/components/places/tests/head_common.js", false)) {
@@ -69,23 +70,3 @@ const SMART_BOOKMARKS_ON_MENU = 3; // Takes in count the additional separator.
 // Default bookmarks constants.
 const DEFAULT_BOOKMARKS_ON_TOOLBAR = 1;
 const DEFAULT_BOOKMARKS_ON_MENU = 1;
-
-function LoadContextInfo(isprivate, anonymous, appid, inbrowser)
-{
-  this.isPrivate = isprivate || false;
-  this.isAnonymous = anonymous || false;
-  this.appId = appid || 0;
-  this.isInBrowserElement = inbrowser || false;
-}
-
-LoadContextInfo.prototype = {
-  QueryInterface: function(iid) {
-    if (iid.equals(Ci.nsILoadContextInfo))
-      return this;
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
-  isPrivate : false,
-  isAnonymous : false,
-  isInBrowserElement : false,
-  appId : 0
-};

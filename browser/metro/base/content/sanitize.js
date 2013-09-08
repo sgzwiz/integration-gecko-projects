@@ -4,6 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "LoadContextInfo",
+                                  "resource://gre/modules/LoadContextInfo.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
                                   "resource://gre/modules/PlacesUtils.jsm");
 
@@ -136,10 +138,10 @@ Sanitizer.prototype = {
     offlineApps: {
       clear: function ()
       {
-        // TODO mayhemer: migrate to new cache api when implemete for appcache
-        var cacheService = Cc["@mozilla.org/network/cache-service;1"].getService(Ci.nsICacheService);
+        var cacheService = Cc["@mozilla.org/netwerk/cache-storage-service;1"].getService(Ci.nsICacheStorageService);
+        var appCacheStorage = cacheService.appCacheStorage(LoadContextInfo.default, null);
         try {
-          cacheService.evictEntries(Ci.nsICache.STORE_OFFLINE);
+          appCacheStorage.asyncEvictStorage(null);
         } catch(er) {}
       },
 
