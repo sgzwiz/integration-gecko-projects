@@ -1,6 +1,11 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+let tempScope = {};
+Cu.import("resource://gre/modules/LoadContextInfo.jsm", tempScope);
+let LoadContextInfo = tempScope.LoadContextInfo;
+
 function test() {
   // initialization
   waitForExplicitFinish();
@@ -29,15 +34,7 @@ function test() {
     };
     function Visitor() {}
 
-    LoadContextInfo.prototype = {
-      isPrivate : false,
-      isAnonymous : false,
-      isInBrowserElement : false,
-      appId : 0
-    };
-    function LoadContextInfo() {}
-
-    var storage = cache.diskCacheStorage(new LoadContextInfo, false);
+    var storage = cache.diskCacheStorage(LoadContextInfo.default, false);
     storage.asyncVisitStorage(new Visitor(), true /* Do walk entries */);
   }
 

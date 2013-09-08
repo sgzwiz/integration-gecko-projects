@@ -1803,8 +1803,6 @@ nsHttpChannel::ResolveProxy()
 bool
 nsHttpChannel::ResponseWouldVary(nsICacheEntry* entry) const
 {
-    //AssertOnCacheThread();
-
     nsresult rv;
     nsAutoCString buf, metaKey;
     mCachedResponseHead->GetHeader(nsHttp::Vary, buf);
@@ -2509,7 +2507,7 @@ nsHttpChannel::OpenCacheEntry(bool usingSSL)
     }
     else if (mLoadFlags & INHIBIT_PERSISTENT_CACHING) {
         rv = cacheStorageService->MemoryCacheStorage(info, // ? choose app cache as well...
-          getter_AddRefs(cacheStorage));
+            getter_AddRefs(cacheStorage));
     }
     else {
         rv = cacheStorageService->DiskCacheStorage(info,
@@ -2607,7 +2605,7 @@ nsHttpChannel::CheckPartial(nsICacheEntry* aEntry, int64_t *aSize, int64_t *aCon
         : mResponseHead;
 
     if (!responseHead)
-      return NS_ERROR_UNEXPECTED;
+        return NS_ERROR_UNEXPECTED;
 
     *aContentLength = responseHead->ContentLength();
 
@@ -3254,8 +3252,6 @@ nsHttpChannel::HasQueryString(nsHttpAtom method, nsIURI * uri)
 bool
 nsHttpChannel::MustValidateBasedOnQueryUrl() const
 {
-    //AssertOnCacheThread();
-
     // RFC 2616, section 13.9 states that GET-requests with a query-url
     // MUST NOT be treated as fresh unless the server explicitly provides
     // an expiration-time in the response. See bug #468594
@@ -3313,8 +3309,6 @@ nsHttpChannel::ShouldUpdateOfflineCacheEntry()
 nsresult
 nsHttpChannel::OpenCacheInputStream(nsICacheEntry* cacheEntry, bool startBuffering)
 {
-    //AssertOnCacheThread();
-
     nsresult rv;
 
     bool usingSSL = false;

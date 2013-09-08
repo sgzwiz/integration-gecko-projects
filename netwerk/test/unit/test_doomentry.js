@@ -9,7 +9,7 @@
 function doom(url, callback)
 {
   get_cache_service()
-      .diskCacheStorage(new LoadContextInfo(), false)
+      .diskCacheStorage(LoadContextInfo.default, false)
       .asyncDoomURI(createURI(url), "", {
         onCacheEntryDoomed: function(result) {
           callback(result);
