@@ -167,7 +167,7 @@ function check_bug() {
     kHttpLocation + "pages/foo1",
     "appcache", Ci.nsICacheStorage.OPEN_READONLY, null,
     function(status, entry, appcache) {
-      let storage = get_cache_service().appCacheStorage(new LoadContextInfo(), appcache);
+      let storage = get_cache_service().appCacheStorage(LoadContextInfo.default, appcache);
 
       // Doom foo1 & foo2
       storage.asyncDoomURI(createURI(kHttpLocation + "pages/foo1"), "", { onCacheEntryDoomed: function() {
@@ -204,7 +204,7 @@ function check_evict_cache(appcache) {
       hold_entry_foo3 = entry;
 
       // evict all documents.
-      let storage = get_cache_service().appCacheStorage(new LoadContextInfo(), appcache);
+      let storage = get_cache_service().appCacheStorage(LoadContextInfo.default, appcache);
       storage.asyncEvictStorage();
 
       // All documents are removed except foo1 & foo3.

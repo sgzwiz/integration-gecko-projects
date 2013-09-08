@@ -6,6 +6,10 @@
 // This test covers MozTrap test 6047
 // bug 880621
 
+let tempScope = {};
+Cu.import("resource://gre/modules/LoadContextInfo.jsm", tempScope);
+let LoadContextInfo = tempScope.LoadContextInfo;
+
 let tmp = {};
 
 Cc["@mozilla.org/moz/jssubscript-loader;1"]
@@ -69,33 +73,13 @@ function get_cache_service() {
 function getStorageEntryCount(device, goon) {
   var cs = get_cache_service();
   
-  function LoadContextInfo(isprivate, anonymous, appid, inbrowser)
-  {
-    this.isPrivate = isprivate || false;
-    this.isAnonymous = anonymous || false;
-    this.appId = appid || 0;
-    this.isInBrowserElement = inbrowser || false;
-  }
-
-  LoadContextInfo.prototype = {
-    QueryInterface: function(iid) {
-      if (iid.equals(Ci.nsILoadContextInfo))
-        return this;
-      throw Cr.NS_ERROR_NO_INTERFACE;
-    },
-    isPrivate : false,
-    isAnonymous : false,
-    isInBrowserElement : false,
-    appId : 0
-  };
-
   var storage;
   switch (device) {
-  case "anon":
-    storage = cs.diskCacheStorage(new LoadContextInfo(true), false);
+  case "private":
+    storage = cs.diskCacheStorage(LoadContextInfo.private, false);
     break;
   case "regular":
-    storage = cs.diskCacheStorage(new LoadContextInfo(false), false);
+    storage = cs.diskCacheStorage(LoadContextInfo.default, false);
     break;
   default:
     throw "Unknown device " + device + " at getStorageEntryCount";
@@ -138,7 +122,7 @@ function get_cache_for_private_window () {
 
         executeSoon(function() {
 
-          getStorageEntryCount("anon", function(nrEntriesP) {
+          getStorageEntryCount("private", function(nrEntriesP) {
             ok (nrEntriesP >= 1, "Memory cache reports some entries from example.org domain");
 
             getStorageEntryCount("regular", function(nrEntriesR2) {

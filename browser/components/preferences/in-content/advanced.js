@@ -4,6 +4,7 @@
 
 // Load DownloadUtils module for convertByteUnits
 Components.utils.import("resource://gre/modules/DownloadUtils.jsm");
+Components.utils.import("resource://gre/modules/LoadContextInfo.jsm");
 
 var gAdvancedPane = {
   _inited: false,
@@ -303,7 +304,6 @@ var gAdvancedPane = {
       onCacheStorageInfo: function(num, consumption)
       {
         this.sum += consumption;
-        this.sum += 1234; // mayhemer: only a testing this code works!  visiting is broken now.
         if (!--this.expect)
           updateUI(this.sum);
       },
@@ -315,28 +315,13 @@ var gAdvancedPane = {
       this.expexted = callbacksExpected;
     }
     
-    LoadContextInfo.prototype = {
-      QueryInterface: function(iid) {
-        if (iid.equals(Ci.nsILoadContextInfo))
-          return this;
-        throw Cr.NS_ERROR_NO_INTERFACE;
-      },
-      isPrivate : false,
-      isAnonymous : false,
-      isInBrowserElement : false,
-      appId : 0
-    };
-    function LoadContextInfo(isAnonymous) {
-      this.isAnonymous = isAnonymous;
-    }
-    
     var cacheService =
       Components.classes["@mozilla.org/netwerk/cache-storage-service;1"]
                 .getService(Components.interfaces.nsICacheStorageService);
     // non-anonymous
-    var storage1 = cacheService.diskCacheStorage(new LoadContextInfo(false), false); 
+    var storage1 = cacheService.diskCacheStorage(LoadContextInfo.default, false);
     // anonymous
-    var storage2 = cacheService.diskCacheStorage(new LoadContextInfo(true), false);
+    var storage2 = cacheService.diskCacheStorage(LoadContextInfo.anonymous, false);
 
     // expect 2 callbacks
     var visitor = new Visitor(2);

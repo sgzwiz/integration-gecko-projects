@@ -808,7 +808,7 @@ nsresult _OldStorage::AssembleCacheKey(nsIURI *aURI,
 
   aCacheKey.Truncate();
 
-  if (mLoadInfo->IsAnonymous()) { // if we add (&& !mAppCache), we fix 687758
+  if (mLoadInfo->IsAnonymous()) {
     aCacheKey.AssignLiteral("anon&");
   }
 

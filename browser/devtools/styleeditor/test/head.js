@@ -9,7 +9,9 @@ const TEST_HOST = 'mochi.test:8888';
 let tempScope = {};
 Cu.import("resource://gre/modules/devtools/Loader.jsm", tempScope);
 let TargetFactory = tempScope.devtools.TargetFactory;
-Components.utils.import("resource://gre/modules/devtools/Console.jsm", tempScope);
+Cu.import("resource://gre/modules/LoadContextInfo.jsm", tempScope);
+let LoadContextInfo = tempScope.LoadContextInfo;
+Cu.import("resource://gre/modules/devtools/Console.jsm", tempScope);
 let console = tempScope.console;
 
 let gPanelWindow;
@@ -106,15 +108,7 @@ function checkDiskCacheFor(host, done)
   };
   function Visitor() {}
 
-  LoadContextInfo.prototype = {
-    isPrivate : false,
-    isAnonymous : false,
-    isInBrowserElement : false,
-    appId : 0
-  };
-  function LoadContextInfo() {}
-
-  var storage = cache.diskCacheStorage(new LoadContextInfo(), false);
+  var storage = cache.diskCacheStorage(LoadContextInfo.default, false);
   storage.asyncVisitStorage(new Visitor(), true /* Do walk entries */);
 }
 
