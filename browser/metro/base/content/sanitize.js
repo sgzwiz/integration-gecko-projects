@@ -4,8 +4,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "LoadContextInfo",
-                                  "resource://gre/modules/LoadContextInfo.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
                                   "resource://gre/modules/PlacesUtils.jsm");
 
@@ -80,9 +78,9 @@ Sanitizer.prototype = {
     cache: {
       clear: function ()
       {
-        var cache = Cc["@mozilla.org/netwerk/cache-storage-service;1"].getService(Ci.nsICacheStorageService);
+        var cacheService = Cc["@mozilla.org/network/cache-service;1"].getService(Ci.nsICacheService);
         try {
-          cache.clear();
+          cacheService.evictEntries(Ci.nsICache.STORE_ANYWHERE);
         } catch(er) {}
 
         let imageCache = Cc["@mozilla.org/image/cache;1"].getService(Ci.imgICache);
@@ -138,10 +136,9 @@ Sanitizer.prototype = {
     offlineApps: {
       clear: function ()
       {
-        var cacheService = Cc["@mozilla.org/netwerk/cache-storage-service;1"].getService(Ci.nsICacheStorageService);
-        var appCacheStorage = cacheService.appCacheStorage(LoadContextInfo.default, null);
+        var cacheService = Cc["@mozilla.org/network/cache-service;1"].getService(Ci.nsICacheService);
         try {
-          appCacheStorage.asyncEvictStorage(null);
+          cacheService.evictEntries(Ci.nsICache.STORE_OFFLINE);
         } catch(er) {}
       },
 

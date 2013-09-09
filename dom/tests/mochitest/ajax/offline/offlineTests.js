@@ -1,7 +1,6 @@
 // Utility functions for offline tests.
 netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
 
-Components.utils.import("resource://gre/modules/LoadContextInfo.jsm");
 var Cc = Components.classes;
 var Ci = Components.interfaces;
 
@@ -336,11 +335,6 @@ loadContext: function()
                                    .getInterface(Components.interfaces.nsIWebNavigation)
                                    .QueryInterface(Components.interfaces.nsIInterfaceRequestor)
                                    .getInterface(Components.interfaces.nsILoadContext);
-},
-
-loadContextInfo: function()
-{
-  return LoadContextInfo.fromLoadContext(this.loadContext(), false);
 },
 
 getActiveCache: function(overload)

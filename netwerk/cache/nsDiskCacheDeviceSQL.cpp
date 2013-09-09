@@ -25,7 +25,6 @@
 #include "nsArrayUtils.h"
 #include "nsIArray.h"
 #include "nsIVariant.h"
-#include "nsILoadContextInfo.h"
 #include "nsThreadUtils.h"
 #include "nsISerializable.h"
 #include "nsSerializationHelper.h"
@@ -2469,7 +2468,7 @@ nsOfflineCacheDevice::DiscardByAppId(int32_t appID, bool browserEntriesOnly)
 bool
 nsOfflineCacheDevice::CanUseCache(nsIURI *keyURI,
                                   const nsACString &clientID,
-                                  nsILoadContextInfo *loadContextInfo)
+                                  nsILoadContext *loadContext)
 {
   {
     MutexAutoLock lock(mLock);
@@ -2500,9 +2499,12 @@ nsOfflineCacheDevice::CanUseCache(nsIURI *keyURI,
   uint32_t appId = NECKO_NO_APP_ID;
   bool isInBrowserElement = false;
 
-  if (loadContextInfo) {
-      appId = loadContextInfo->AppId();
-      isInBrowserElement = loadContextInfo->IsInBrowserElement();
+  if (loadContext) {
+      rv = loadContext->GetAppId(&appId);
+      NS_ENSURE_SUCCESS(rv, false);
+
+      rv = loadContext->GetIsInBrowserElement(&isInBrowserElement);
+      NS_ENSURE_SUCCESS(rv, false);
   }
 
   // Check the groupID we found is equal to groupID based
@@ -2522,7 +2524,7 @@ nsOfflineCacheDevice::CanUseCache(nsIURI *keyURI,
 
 nsresult
 nsOfflineCacheDevice::ChooseApplicationCache(const nsACString &key,
-                                             nsILoadContextInfo *loadContextInfo,
+                                             nsILoadContext *loadContext,
                                              nsIApplicationCache **out)
 {
   *out = nullptr;
@@ -2550,7 +2552,7 @@ nsOfflineCacheDevice::ChooseApplicationCache(const nsACString &key,
       rv = statement->GetUTF8String(0, clientID);
       NS_ENSURE_SUCCESS(rv, rv);
 
-      if (CanUseCache(keyURI, clientID, loadContextInfo)) {
+      if (CanUseCache(keyURI, clientID, loadContext)) {
         return GetApplicationCache(clientID, out);
       }
     }
@@ -2582,7 +2584,7 @@ nsOfflineCacheDevice::ChooseApplicationCache(const nsACString &key,
       rv = nsstatement->GetUTF8String(0, clientID);
       NS_ENSURE_SUCCESS(rv, rv);
 
-      if (CanUseCache(keyURI, clientID, loadContextInfo)) {
+      if (CanUseCache(keyURI, clientID, loadContext)) {
         return GetApplicationCache(clientID, out);
       }
     }

@@ -1,7 +1,6 @@
 Components.utils.import("resource://testing-common/httpd.js");
 const Cc = Components.classes;
 const Ci = Components.interfaces;
-const Cr = Components.results;
 
 var server = new HttpServer();
 server.registerPathHandler('/image.png', imageHandler);
@@ -79,9 +78,8 @@ function loadImage(isPrivate, callback) {
 }
 
 function run_loadImage_tests() {
-  let cs = Cc["@mozilla.org/netwerk/cache-storage-service;1"]
-             .getService(Ci.nsICacheStorageService);
-  cs.clear();
+  let cs = Cc["@mozilla.org/network/cache-service;1"].getService(Ci.nsICacheService);
+  cs.evictEntries(Ci.nsICache.STORE_ANYWHERE);
 
   gHits = 0;
   loadImage(false, function() {
