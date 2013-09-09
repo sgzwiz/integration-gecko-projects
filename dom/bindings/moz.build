@@ -21,7 +21,7 @@ EXPORTS.mozilla.dom += [
     'DOMJSProxyHandler.h',
     'Date.h',
     'Errors.msg',
-    'GeneratedAtomList.h',
+    'Exceptions.h',
     'JSSlots.h',
     'NonRefcountedDOMObject.h',
     'Nullable.h',

@@ -831,8 +831,7 @@ js_ReportErrorNumberVA(JSContext *cx, unsigned flags, JSErrorCallback callback,
 
     ReportError(cx, message, &report, callback, userRef);
 
-    if (message)
-        js_free(message);
+    js_free(message);
     if (report.messageArgs) {
         /*
          * js_ExpandErrorArguments owns its messageArgs only if it had to
@@ -845,8 +844,7 @@ js_ReportErrorNumberVA(JSContext *cx, unsigned flags, JSErrorCallback callback,
         }
         js_free((void *)report.messageArgs);
     }
-    if (report.ucmessage)
-        js_free((void *)report.ucmessage);
+    js_free((void *)report.ucmessage);
 
     return warning;
 }
@@ -876,10 +874,8 @@ js_ReportErrorNumberUCArray(JSContext *cx, unsigned flags, JSErrorCallback callb
 
     ReportError(cx, message, &report, callback, userRef);
 
-    if (message)
-        js_free(message);
-    if (report.ucmessage)
-        js_free((void *)report.ucmessage);
+    js_free(message);
+    js_free((void *)report.ucmessage);
 
     return warning;
 }
@@ -1289,7 +1285,7 @@ JSContext::mark(JSTracer *trc)
     /* Stack frames and slots are traced by StackSpace::mark. */
 
     /* Mark other roots-by-definition in the JSContext. */
-    if (defaultCompartmentObject_ && !hasOption(JSOPTION_UNROOTED_GLOBAL))
+    if (defaultCompartmentObject_)
         MarkObjectRoot(trc, &defaultCompartmentObject_, "default compartment object");
     if (isExceptionPending())
         MarkValueRoot(trc, &exception, "exception");

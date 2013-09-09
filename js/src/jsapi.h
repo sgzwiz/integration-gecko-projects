@@ -9,11 +9,9 @@
 #ifndef jsapi_h
 #define jsapi_h
 
-#include "mozilla/Compiler.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/RangedPtr.h"
-#include "mozilla/TypeTraits.h"
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -24,7 +22,6 @@
 #include "jspubtd.h"
 
 #include "js/CallArgs.h"
-#include "js/CallNonGenericMethod.h"
 #include "js/Class.h"
 #include "js/HashTable.h"
 #include "js/Id.h"
@@ -1358,7 +1355,7 @@ JS_EndRequest(JSContext *cx);
 extern JS_PUBLIC_API(bool)
 JS_IsInRequest(JSRuntime *rt);
 
-namespace JS {
+namespace js {
 
 inline bool
 IsPoisonedId(jsid iden)
@@ -1370,15 +1367,11 @@ IsPoisonedId(jsid iden)
     return false;
 }
 
-} /* namespace JS */
-
-namespace js {
-
 template <> struct GCMethods<jsid>
 {
     static jsid initial() { return JSID_VOID; }
     static ThingRootKind kind() { return THING_ROOT_ID; }
-    static bool poisoned(jsid id) { return JS::IsPoisonedId(id); }
+    static bool poisoned(jsid id) { return IsPoisonedId(id); }
     static bool needsPostBarrier(jsid id) { return false; }
 #ifdef JSGC_GENERATIONAL
     static void postBarrier(jsid *idp) {}
@@ -1533,16 +1526,18 @@ JS_StringToVersion(const char *string);
 
 /* JS_BIT(10) is currently unused. */
 
-/* JS_BIT(11) is currently unused. */
+#define JSOPTION_NO_DEFAULT_COMPARTMENT_OBJECT JS_BIT(11)     /* This JSContext does not use a
+                                                                 default compartment object. Such
+                                                                 an object will not be set implicitly,
+                                                                 and attempts to get or set it will
+                                                                 assert. */
 
 #define JSOPTION_NO_SCRIPT_RVAL JS_BIT(12)      /* A promise to the compiler
                                                    that a null rval out-param
                                                    will be passed to each call
                                                    to JS_ExecuteScript. */
-#define JSOPTION_UNROOTED_GLOBAL JS_BIT(13)     /* The GC will not root the
-                                                   contexts' default compartment
-                                                   object, leaving that up to the
-                                                   embedding. */
+
+/* JS_BIT(13) is currently unused. */
 
 #define JSOPTION_BASELINE       JS_BIT(14)      /* Baseline compiler. */
 
@@ -2217,6 +2212,12 @@ JS_SetFinalizeCallback(JSRuntime *rt, JSFinalizeCallback cb);
 extern JS_PUBLIC_API(bool)
 JS_IsGCMarkingTracer(JSTracer *trc);
 
+/* For assertions only. */
+#ifdef DEBUG
+extern JS_PUBLIC_API(bool)
+JS_IsMarkingGray(JSTracer *trc);
+#endif
+
 /*
  * JS_IsAboutToBeFinalized checks if the given object is going to be finalized
  * at the end of the current GC. When called outside of the context of a GC,
@@ -2790,45 +2791,6 @@ JS_DefinePropertyById(JSContext *cx, JSObject *obj, jsid id, jsval value,
 extern JS_PUBLIC_API(bool)
 JS_DefineOwnProperty(JSContext *cx, JSObject *obj, jsid id, jsval descriptor, bool *bp);
 
-/*
- * Determine the attributes (JSPROP_* flags) of a property on a given object.
- *
- * If the object does not have a property by that name, *foundp will be
- * false and the value of *attrsp is undefined.
- */
-extern JS_PUBLIC_API(bool)
-JS_GetPropertyAttributes(JSContext *cx, JSObject *obj, const char *name,
-                         unsigned *attrsp, bool *foundp);
-
-/*
- * The same, but if the property is native, return its getter and setter via
- * *getterp and *setterp, respectively (and only if the out parameter pointer
- * is not null).
- */
-extern JS_PUBLIC_API(bool)
-JS_GetPropertyAttrsGetterAndSetter(JSContext *cx, JSObject *obj,
-                                   const char *name,
-                                   unsigned *attrsp, bool *foundp,
-                                   JSPropertyOp *getterp,
-                                   JSStrictPropertyOp *setterp);
-
-extern JS_PUBLIC_API(bool)
-JS_GetPropertyAttrsGetterAndSetterById(JSContext *cx, JSObject *obj,
-                                       jsid id,
-                                       unsigned *attrsp, bool *foundp,
-                                       JSPropertyOp *getterp,
-                                       JSStrictPropertyOp *setterp);
-
-/*
- * Set the attributes of a property on a given object.
- *
- * If the object does not have a property by that name, *foundp will be
- * false and nothing will be altered.
- */
-extern JS_PUBLIC_API(bool)
-JS_SetPropertyAttributes(JSContext *cx, JSObject *obj, const char *name,
-                         unsigned attrs, bool *foundp);
-
 extern JS_PUBLIC_API(bool)
 JS_DefinePropertyWithTinyId(JSContext *cx, JSObject *obj, const char *name,
                             int8_t tinyid, jsval value,
@@ -3012,9 +2974,17 @@ class MutableHandleBase<JSPropertyDescriptor>
 
 } /* namespace js */
 
+extern JS_PUBLIC_API(bool)
+JS_GetOwnPropertyDescriptorById(JSContext *cx, JSObject *objArg, jsid id, unsigned flags,
+                                JS::MutableHandle<JSPropertyDescriptor> desc);
+
+extern JS_PUBLIC_API(bool)
+JS_GetOwnPropertyDescriptor(JSContext *cx, JSObject *objArg, const char *name, unsigned flags,
+                            JS::MutableHandle<JSPropertyDescriptor> desc);
+
 /*
- * Like JS_GetPropertyAttrsGetterAndSetterById but will return a property on
- * an object on the prototype chain (returned in objp). If data->obj is null,
+ * Like JS_GetOwnPropertyDescriptorById but will return a property on
+ * an object on the prototype chain (returned in desc->obj). If desc->obj is null,
  * then this property was not found on the prototype chain.
  */
 extern JS_PUBLIC_API(bool)
@@ -3022,21 +2992,14 @@ JS_GetPropertyDescriptorById(JSContext *cx, JSObject *obj, jsid id, unsigned fla
                              JS::MutableHandle<JSPropertyDescriptor> desc);
 
 extern JS_PUBLIC_API(bool)
-JS_GetOwnPropertyDescriptor(JSContext *cx, JSObject *obj, jsid id, JS::MutableHandle<JS::Value> vp);
+JS_GetPropertyDescriptor(JSContext *cx, JSObject *obj, const char *name, unsigned flags,
+                         JS::MutableHandle<JSPropertyDescriptor> desc);
 
 extern JS_PUBLIC_API(bool)
 JS_GetProperty(JSContext *cx, JSObject *obj, const char *name, JS::MutableHandle<JS::Value> vp);
 
 extern JS_PUBLIC_API(bool)
-JS_GetPropertyDefault(JSContext *cx, JSObject *obj, const char *name, jsval def,
-                      JS::MutableHandle<JS::Value> vp);
-
-extern JS_PUBLIC_API(bool)
 JS_GetPropertyById(JSContext *cx, JSObject *obj, jsid id, JS::MutableHandle<JS::Value> vp);
-
-extern JS_PUBLIC_API(bool)
-JS_GetPropertyByIdDefault(JSContext *cx, JSObject *obj, jsid id, jsval def,
-                          JS::MutableHandle<JS::Value> vp);
 
 extern JS_PUBLIC_API(bool)
 JS_ForwardGetPropertyTo(JSContext *cx, JSObject *obj, jsid id, JSObject *onBehalfOf,
@@ -3065,41 +3028,6 @@ JS_DefineUCProperty(JSContext *cx, JSObject *obj,
                     const jschar *name, size_t namelen, jsval value,
                     JSPropertyOp getter, JSStrictPropertyOp setter,
                     unsigned attrs);
-
-/*
- * Determine the attributes (JSPROP_* flags) of a property on a given object.
- *
- * If the object does not have a property by that name, *foundp will be
- * false and the value of *attrsp is undefined.
- */
-extern JS_PUBLIC_API(bool)
-JS_GetUCPropertyAttributes(JSContext *cx, JSObject *obj,
-                           const jschar *name, size_t namelen,
-                           unsigned *attrsp, bool *foundp);
-
-/*
- * The same, but if the property is native, return its getter and setter via
- * *getterp and *setterp, respectively (and only if the out parameter pointer
- * is not null).
- */
-extern JS_PUBLIC_API(bool)
-JS_GetUCPropertyAttrsGetterAndSetter(JSContext *cx, JSObject *obj,
-                                     const jschar *name, size_t namelen,
-                                     unsigned *attrsp, bool *foundp,
-                                     JSPropertyOp *getterp,
-                                     JSStrictPropertyOp *setterp);
-
-/*
- * Set the attributes of a property on a given object.
- *
- * If the object does not have a property by that name, *foundp will be
- * false and nothing will be altered.
- */
-extern JS_PUBLIC_API(bool)
-JS_SetUCPropertyAttributes(JSContext *cx, JSObject *obj,
-                           const jschar *name, size_t namelen,
-                           unsigned attrs, bool *foundp);
-
 
 extern JS_PUBLIC_API(bool)
 JS_DefineUCPropertyWithTinyId(JSContext *cx, JSObject *obj,
@@ -4578,91 +4506,5 @@ JS_DecodeScript(JSContext *cx, const void *data, uint32_t length,
 extern JS_PUBLIC_API(JSObject *)
 JS_DecodeInterpretedFunction(JSContext *cx, const void *data, uint32_t length,
                              JSPrincipals *principals, JSPrincipals *originPrincipals);
-
-namespace JS {
-
-extern JS_PUBLIC_DATA(const Handle<jsid>) JSID_VOIDHANDLE;
-extern JS_PUBLIC_DATA(const Handle<jsid>) JSID_EMPTYHANDLE;
-
-} /* namespace JS */
-
-namespace js {
-
-/*
- * Import some JS:: names into the js namespace so we can make unqualified
- * references to them.
- */
-
-using JS::Value;
-using JS::IsPoisonedValue;
-using JS::NullValue;
-using JS::UndefinedValue;
-using JS::Int32Value;
-using JS::DoubleValue;
-using JS::StringValue;
-using JS::BooleanValue;
-using JS::ObjectValue;
-using JS::MagicValue;
-using JS::NumberValue;
-using JS::ObjectOrNullValue;
-using JS::PrivateValue;
-using JS::PrivateUint32Value;
-
-using JS::IsPoisonedPtr;
-using JS::IsPoisonedId;
-
-using JS::StableCharPtr;
-using JS::TwoByteChars;
-using JS::Latin1CharsZ;
-
-using JS::AutoIdVector;
-using JS::AutoValueVector;
-using JS::AutoObjectVector;
-using JS::AutoFunctionVector;
-using JS::AutoScriptVector;
-using JS::AutoIdArray;
-
-using JS::AutoGCRooter;
-using JS::AutoArrayRooter;
-using JS::AutoVectorRooter;
-using JS::AutoHashMapRooter;
-using JS::AutoHashSetRooter;
-
-using JS::CallArgs;
-using JS::IsAcceptableThis;
-using JS::NativeImpl;
-using JS::CallReceiver;
-using JS::CompileOptions;
-using JS::CallNonGenericMethod;
-
-using JS::Rooted;
-using JS::RootedObject;
-using JS::RootedModule;
-using JS::RootedFunction;
-using JS::RootedScript;
-using JS::RootedString;
-using JS::RootedId;
-using JS::RootedValue;
-
-using JS::Handle;
-using JS::HandleObject;
-using JS::HandleModule;
-using JS::HandleFunction;
-using JS::HandleScript;
-using JS::HandleString;
-using JS::HandleId;
-using JS::HandleValue;
-
-using JS::MutableHandle;
-using JS::MutableHandleObject;
-using JS::MutableHandleFunction;
-using JS::MutableHandleScript;
-using JS::MutableHandleString;
-using JS::MutableHandleId;
-using JS::MutableHandleValue;
-
-using JS::Zone;
-
-} /* namespace js */
 
 #endif /* jsapi_h */

@@ -96,8 +96,10 @@
 
 #include "mozilla/dom/indexedDB/PIndexedDBChild.h"
 #include "mozilla/dom/mobilemessage/SmsChild.h"
+#include "mozilla/dom/telephony/TelephonyChild.h"
 #include "mozilla/dom/devicestorage/DeviceStorageRequestChild.h"
 #include "mozilla/dom/bluetooth/PBluetoothChild.h"
+#include "mozilla/dom/PFMRadioChild.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 
 #ifdef MOZ_WEBSPEECH
@@ -125,6 +127,7 @@ using namespace mozilla::dom::devicestorage;
 using namespace mozilla::dom::ipc;
 using namespace mozilla::dom::mobilemessage;
 using namespace mozilla::dom::indexedDB;
+using namespace mozilla::dom::telephony;
 using namespace mozilla::hal_sandbox;
 using namespace mozilla::ipc;
 using namespace mozilla::layers;
@@ -918,6 +921,19 @@ ContentChild::DeallocPSmsChild(PSmsChild* aSms)
     return true;
 }
 
+PTelephonyChild*
+ContentChild::AllocPTelephonyChild()
+{
+    MOZ_CRASH("No one should be allocating PTelephonyChild actors");
+}
+
+bool
+ContentChild::DeallocPTelephonyChild(PTelephonyChild* aActor)
+{
+    delete aActor;
+    return true;
+}
+
 PStorageChild*
 ContentChild::AllocPStorageChild()
 {
@@ -951,6 +967,30 @@ ContentChild::DeallocPBluetoothChild(PBluetoothChild* aActor)
     return true;
 #else
     MOZ_CRASH("No support for bluetooth on this platform!");
+#endif
+}
+
+PFMRadioChild*
+ContentChild::AllocPFMRadioChild()
+{
+#ifdef MOZ_B2G_FM
+    NS_RUNTIMEABORT("No one should be allocating PFMRadioChild actors");
+    return nullptr;
+#else
+    NS_RUNTIMEABORT("No support for FMRadio on this platform!");
+    return nullptr;
+#endif
+}
+
+bool
+ContentChild::DeallocPFMRadioChild(PFMRadioChild* aActor)
+{
+#ifdef MOZ_B2G_FM
+    delete aActor;
+    return true;
+#else
+    NS_RUNTIMEABORT("No support for FMRadio on this platform!");
+    return false;
 #endif
 }
 
@@ -1311,7 +1351,6 @@ ContentChild::RecvNotifyProcessPriorityChanged(
     NS_ENSURE_TRUE(os, true);
 
     nsRefPtr<nsHashPropertyBag> props = new nsHashPropertyBag();
-    props->Init();
     props->SetPropertyAsInt32(NS_LITERAL_STRING("priority"),
                               static_cast<int32_t>(aPriority));
 

@@ -11,8 +11,8 @@
  * JS bytecode definitions.
  */
 
-#include "jsapi.h"
 #include "jsbytecode.h"
+#include "NamespaceImports.h"
 
 #include "frontend/SourceNotes.h"
 

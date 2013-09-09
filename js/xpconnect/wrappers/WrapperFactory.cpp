@@ -20,6 +20,7 @@
 #include "mozilla/Likely.h"
 #include "nsContentUtils.h"
 
+using namespace JS;
 using namespace js;
 using namespace mozilla;
 
@@ -58,7 +59,12 @@ WrapperFactory::GetXrayWaiver(JSObject *obj)
 
     if (!scope->mWaiverWrapperMap)
         return NULL;
-    return xpc_UnmarkGrayObject(scope->mWaiverWrapperMap->Find(obj));
+
+    JSObject* xrayWaiver = scope->mWaiverWrapperMap->Find(obj);
+    if (xrayWaiver)
+        JS::ExposeObjectToActiveJS(xrayWaiver);
+
+    return xrayWaiver;
 }
 
 JSObject *

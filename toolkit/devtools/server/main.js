@@ -10,7 +10,37 @@
  * debugging global.
  */
 
-const { Ci, Cc, CC, Cu, Cr, components: Components } = require("chrome");
+// |this.require| is used to test if this file was loaded via the devtools
+// loader (as it is in DebuggerProcess.jsm) or via loadSubScript (as it is from
+// dbg-server.jsm).  Note that testing |require| is not safe in either
+// situation, as it causes a ReferenceError.
+var Ci, Cc, CC, Cu, Cr, Components;
+if (this.require) {
+  ({ Ci, Cc, CC, Cu, Cr, components: Components }) = require("chrome");
+} else {
+  ({
+    interfaces: Ci,
+    classes: Cc,
+    Constructor: CC,
+    utils: Cu,
+    results: Cr
+  }) = Components;
+}
+
+// On B2G, if |this.require| is undefined at this point, it remains undefined
+// later on when |DebuggerServer.registerModule| is called.  On desktop (and
+// perhaps other places), if |this.require| starts out undefined, it ends up
+// being set to some native code by the time we get to |registerModule|.  Here
+// we perform a test early on, and then cache the correct require function for
+// later use.
+var localRequire;
+if (this.require) {
+  localRequire = id => require(id);
+} else {
+  let { devtools } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+  localRequire = id => devtools.require(id);
+}
+
 const DBG_STRINGS_URI = "chrome://global/locale/devtools/debugger.properties";
 
 Cu.import("resource://gre/modules/Services.jsm");
@@ -35,7 +65,7 @@ function loadSubScript(aURL)
   }
 }
 
-let loaderRequire = require;
+let loaderRequire = this.require;
 this.require = null;
 loadSubScript.call(this, "resource://gre/modules/commonjs/sdk/core/promise.js");
 this.require = loaderRequire;
@@ -148,6 +178,19 @@ var DebuggerServer = {
   chromeWindowType: null,
 
   /**
+   * Set that to a function that will be called anytime a new connection
+   * is opened or one is closed.
+   */
+  onConnectionChange: null,
+
+  _fireConnectionChange: function(aWhat) {
+    if (this.onConnectionChange &&
+        typeof this.onConnectionChange === "function") {
+      this.onConnectionChange(aWhat);
+    }
+  },
+
+  /**
    * Prompt the user to accept or decline the incoming connection. This is the
    * default implementation that products embedding the debugger server may
    * choose to override.
@@ -245,6 +288,9 @@ var DebuggerServer = {
     delete this._allowConnection;
     this._transportInitialized = false;
     this._initialized = false;
+
+    this._fireConnectionChange("closed");
+
     dumpn("Debugger server is shut down.");
   },
 
@@ -272,7 +318,7 @@ var DebuggerServer = {
     }
 
     let moduleAPI = ModuleAPI();
-    let mod = require(id);
+    let mod = localRequire(id);
     mod.register(moduleAPI);
     gRegisteredModules[id] = { module: mod, api: moduleAPI };
   },
@@ -516,6 +562,7 @@ var DebuggerServer = {
     }
     aTransport.ready();
 
+    this._fireConnectionChange("opened");
     return conn;
   },
 
@@ -524,6 +571,7 @@ var DebuggerServer = {
    */
   _connectionClosed: function DS_connectionClosed(aConnection) {
     delete this._connections[aConnection.prefix];
+    this._fireConnectionChange("closed");
   },
 
   // DebuggerServer extension API.
@@ -618,7 +666,9 @@ var DebuggerServer = {
   }
 };
 
-exports.DebuggerServer = DebuggerServer;
+if (this.exports) {
+  exports.DebuggerServer = DebuggerServer;
+}
 
 /**
  * Construct an ActorPool.
@@ -634,7 +684,9 @@ function ActorPool(aConnection)
   this._actors = {};
 }
 
-exports.ActorPool = ActorPool;
+if (this.exports) {
+  exports.ActorPool = ActorPool;
+}
 
 ActorPool.prototype = {
   /**

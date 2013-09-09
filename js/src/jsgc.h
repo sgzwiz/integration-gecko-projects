@@ -12,7 +12,6 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MemoryReporting.h"
 
-#include "jsapi.h"
 #include "jslock.h"
 #include "jsobj.h"
 
@@ -21,7 +20,6 @@
 
 class JSAtom;
 struct JSCompartment;
-class JSFunction;
 class JSFlatString;
 class JSLinearString;
 

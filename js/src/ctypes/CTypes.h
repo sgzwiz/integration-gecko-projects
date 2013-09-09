@@ -7,7 +7,6 @@
 #define ctypes_CTypes_h
 
 #include "ffi.h"
-#include "jsapi.h"
 #include "jscntxt.h"
 #include "prlink.h"
 
@@ -298,8 +297,7 @@ struct ClosureInfo
   ~ClosureInfo() {
     if (closure)
       ffi_closure_free(closure);
-    if (errResult)
-      js_free(errResult);
+    js_free(errResult);
   }
 };
 

@@ -9,11 +9,11 @@
 #ifndef js_Class_h
 #define js_Class_h
 
-#include "jspubtd.h"
 #include "jstypes.h"
 
 #include "js/CallArgs.h"
 #include "js/Id.h"
+#include "js/TypeDecls.h"
 
 /*
  * A JSClass acts as a vtable for JS objects that allows JSAPI clients to
@@ -23,18 +23,6 @@
  */
 
 class JSFreeOp;
-
-namespace JS {
-template <typename T> class Handle;
-template <typename T> class MutableHandle;
-class Value;
-
-typedef JS::Handle<JSObject*> HandleObject;
-typedef JS::Handle<jsid> HandleId;
-typedef JS::Handle<JS::Value> HandleValue;
-typedef JS::MutableHandle<JSObject*> MutableHandleObject;
-typedef JS::MutableHandle<JS::Value> MutableHandleValue;
-}
 
 namespace js {
 
@@ -385,10 +373,6 @@ typedef bool
 (* PropertyAttributesOp)(JSContext *cx, JS::HandleObject obj, JS::Handle<PropertyName*> name,
                          unsigned *attrsp);
 typedef bool
-(* ElementAttributesOp)(JSContext *cx, JS::HandleObject obj, uint32_t index, unsigned *attrsp);
-typedef bool
-(* SpecialAttributesOp)(JSContext *cx, JS::HandleObject obj, HandleSpecialId sid, unsigned *attrsp);
-typedef bool
 (* DeletePropertyOp)(JSContext *cx, JS::HandleObject obj, JS::Handle<PropertyName*> name,
                      bool *succeeded);
 typedef bool
@@ -480,13 +464,7 @@ struct ObjectOps
     StrictElementIdOp   setElement;
     StrictSpecialIdOp   setSpecial;
     GenericAttributesOp getGenericAttributes;
-    PropertyAttributesOp getPropertyAttributes;
-    ElementAttributesOp getElementAttributes;
-    SpecialAttributesOp getSpecialAttributes;
     GenericAttributesOp setGenericAttributes;
-    PropertyAttributesOp setPropertyAttributes;
-    ElementAttributesOp setElementAttributes;
-    SpecialAttributesOp setSpecialAttributes;
     DeletePropertyOp    deleteProperty;
     DeleteElementOp     deleteElement;
     DeleteSpecialOp     deleteSpecial;
@@ -497,8 +475,7 @@ struct ObjectOps
 
 #define JS_NULL_OBJECT_OPS                                                    \
     {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,   \
-     NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,        \
-     NULL,NULL,NULL}
+     NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL}
 
 } // namespace js
 

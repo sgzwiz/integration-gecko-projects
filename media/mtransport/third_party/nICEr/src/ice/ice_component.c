@@ -415,6 +415,9 @@ static int nr_ice_component_process_incoming_check(nr_ice_component *comp, nr_tr
 
     r_log(LOG_ICE,LOG_DEBUG,"ICE-PEER(%s)/STREAM(%s)(%d): received request from %s",comp->stream->pctx->label,comp->stream->label,comp->component_id,req->src_addr.as_string);
 
+    if (comp->state == NR_ICE_COMPONENT_DISABLED)
+      ABORT(R_REJECTED);
+
     /* Check for role conficts (7.2.1.1) */
     if(comp->stream->pctx->controlling){
       if(nr_stun_message_has_attribute(sreq,NR_STUN_ATTR_ICE_CONTROLLING,&attr)){
@@ -799,10 +802,13 @@ int nr_ice_component_nominated_pair(nr_ice_component *comp, nr_ice_cand_pair *pa
 
     r_log(LOG_ICE,LOG_DEBUG,"ICE-PEER(%s)/STREAM(%s)/comp(%d): cancelling all pairs but %s (0x%p)",comp->stream->pctx->label,comp->stream->label,comp->component_id,pair->as_string,pair);
 
-    /* OK, we need to cancel off everything on this component */
+    /* Cancel checks in WAITING and FROZEN per ICE S 8.1.2 */
     p2=TAILQ_FIRST(&comp->stream->check_list);
     while(p2){
-      if((p2 != pair) && (p2->remote->component->component_id == comp->component_id)){
+      if((p2 != pair) &&
+         (p2->remote->component->component_id == comp->component_id) &&
+         ((p2->state == NR_ICE_PAIR_STATE_FROZEN) ||
+	  (p2->state == NR_ICE_PAIR_STATE_WAITING))) {
         r_log(LOG_ICE,LOG_DEBUG,"ICE-PEER(%s)/STREAM(%s)/comp(%d): cancelling pair %s (0x%p)",comp->stream->pctx->label,comp->stream->label,comp->component_id,p2->as_string,p2);
 
         if(r=nr_ice_candidate_pair_cancel(pair->pctx,p2))

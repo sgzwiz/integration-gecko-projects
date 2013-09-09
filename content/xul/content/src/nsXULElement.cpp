@@ -2638,7 +2638,9 @@ nsXULPrototypeScript::Compile(const PRUnichar* aText,
     options.setSourcePolicy(mOutOfLine ? JS::CompileOptions::LAZY_SOURCE
                                        : JS::CompileOptions::SAVE_SOURCE);
     JS::RootedObject scope(cx, JS::CurrentGlobalOrNull(cx));
-    xpc_UnmarkGrayObject(scope);
+    if (scope) {
+      JS::ExposeObjectToActiveJS(scope);
+    }
 
     if (aOffThreadReceiver && JS::CanCompileOffThread(cx, options)) {
         if (!JS::CompileOffThread(cx, scope, options,
@@ -2664,7 +2666,7 @@ nsXULPrototypeScript::UnlinkJSObjects()
 {
     if (mScriptObject) {
         mScriptObject = nullptr;
-        nsContentUtils::DropJSObjects(this);
+        mozilla::DropJSObjects(this);
     }
 }
 
@@ -2678,8 +2680,7 @@ nsXULPrototypeScript::Set(JSScript* aObject)
     }
 
     mScriptObject = aObject;
-    nsContentUtils::HoldJSObjects(
-        this, NS_CYCLE_COLLECTION_PARTICIPANT(nsXULPrototypeNode));
+    mozilla::HoldJSObjects(this);
 }
 
 //----------------------------------------------------------------------

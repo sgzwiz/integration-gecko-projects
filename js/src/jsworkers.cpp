@@ -202,6 +202,9 @@ ParseTask::~ParseTask()
 
     // ParseTask takes over ownership of its input exclusive context.
     js_delete(cx);
+
+    for (size_t i = 0; i < errors.length(); i++)
+        js_delete(errors[i]);
 }
 
 bool
@@ -550,7 +553,7 @@ WorkerThreadState::finishParseTask(JSContext *maybecx, JSRuntime *rt, void *toke
     if (maybecx) {
         AutoCompartment ac(maybecx, parseTask->scopeChain);
         for (size_t i = 0; i < parseTask->errors.length(); i++)
-            parseTask->errors[i].throwError(maybecx);
+            parseTask->errors[i]->throwError(maybecx);
     }
 
     JSScript *script = parseTask->script;
@@ -647,6 +650,13 @@ WorkerThread::handleIonWorkload(WorkerThreadState &state)
     DebugOnly<jit::ExecutionMode> executionMode = ionBuilder->info().executionMode();
     JS_ASSERT(GetIonScript(ionBuilder->script(), executionMode) == ION_COMPILING_SCRIPT);
 
+#if JS_TRACE_LOGGING
+    AutoTraceLog logger(TraceLogging::getLogger(TraceLogging::ION_BACKGROUND_COMPILER),
+                        TraceLogging::ION_COMPILE_START,
+                        TraceLogging::ION_COMPILE_STOP,
+                        ionBuilder->script());
+#endif
+
     state.unlock();
     {
         jit::IonContext ictx(runtime, ionBuilder->script()->compartment(), &ionBuilder->temp());
@@ -677,9 +687,12 @@ ExclusiveContext::setWorkerThread(WorkerThread *workerThread)
 frontend::CompileError &
 ExclusiveContext::addPendingCompileError()
 {
-    if (!workerThread->parseTask->errors.append(frontend::CompileError()))
+    frontend::CompileError *error = js_new<frontend::CompileError>();
+    if (!error)
         MOZ_CRASH();
-    return workerThread->parseTask->errors.back();
+    if (!workerThread->parseTask->errors.append(error))
+        MOZ_CRASH();
+    return *error;
 }
 
 void

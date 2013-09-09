@@ -314,8 +314,15 @@ let AdbController = {
       }
       return;
     }
+
+    // Check if we have a remote debugging session going on. If so, we won't
+    // disable adb even if the screen is locked.
+    let isDebugging = Object.keys(DebuggerServer._connections).length > 0;
+    debug("isDebugging=" + isDebugging);
+
     let enableAdb = this.remoteDebuggerEnabled &&
-      !(this.lockEnabled && this.locked);
+      (!(this.lockEnabled && this.locked) || isDebugging);
+
     let useDisableAdbTimer = true;
     try {
       if (Services.prefs.getBoolPref("marionette.defaultPrefs.enabled")) {
@@ -366,7 +373,7 @@ let AdbController = {
       }
     }
     if (useDisableAdbTimer) {
-      if (enableAdb) {
+      if (enableAdb && !isDebugging) {
         this.startDisableAdbTimer();
       } else {
         this.stopDisableAdbTimer();
@@ -415,6 +422,10 @@ SettingsListener.observe('privacy.donottrackheader.enabled', false, function(val
   Services.prefs.setBoolPref('privacy.donottrackheader.enabled', value);
 });
 
+SettingsListener.observe('privacy.donottrackheader.value', 1, function(value) {
+  Services.prefs.setIntPref('privacy.donottrackheader.value', value);
+});
+
 // =================== Crash Reporting ====================
 SettingsListener.observe('app.reportCrashes', 'ask', function(value) {
   if (value == 'always') {
@@ -424,6 +435,8 @@ SettingsListener.observe('app.reportCrashes', 'ask', function(value) {
   } else {
     Services.prefs.clearUserPref('app.reportCrashes');
   }
+  // This preference is consulted during startup.
+  Services.prefs.savePrefFile(null);
 });
 
 // ================ Updates ================
