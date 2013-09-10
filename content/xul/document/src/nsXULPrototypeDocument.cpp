@@ -52,7 +52,12 @@ public:
     NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsXULPDGlobalObject)
 
     JSObject* GetCompilationGlobal();
-    void UnmarkCompilationGlobal() { xpc_UnmarkGrayObject(mJSObject); }
+    void UnmarkCompilationGlobal()
+    {
+        if (mJSObject) {
+            JS::ExposeObjectToActiveJS(mJSObject);
+        }
+    }
     void Destroy();
     nsIPrincipal* GetPrincipal();
     void ClearGlobalObjectOwner();
@@ -730,9 +735,14 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(nsXULPDGlobalObject)
 JSObject *
 nsXULPDGlobalObject::GetCompilationGlobal()
 {
-  if (mJSObject || mDestroyed) {
+  if (mJSObject) {
     // We've been initialized before. This is what we get.
-    return xpc_UnmarkGrayObject(mJSObject);
+    JS::ExposeObjectToActiveJS(mJSObject);
+    return mJSObject;
+  }
+
+  if (mDestroyed) {
+    return nullptr;
   }
 
   AutoSafeJSContext cx;
@@ -744,7 +754,7 @@ nsXULPDGlobalObject::GetCompilationGlobal()
                                  JS::DontFireOnNewGlobalHook, options);
   NS_ENSURE_TRUE(mJSObject, nullptr);
 
-  NS_HOLD_JS_OBJECTS(this, nsXULPDGlobalObject);
+  mozilla::HoldJSObjects(this);
 
   // Add an owning reference from JS back to us. This'll be
   // released when the JSObject is finalized.
@@ -779,7 +789,7 @@ nsXULPDGlobalObject::Destroy()
     return;
   }
   mJSObject = nullptr;
-  NS_DROP_JS_OBJECTS(this, nsXULPDGlobalObject);
+  mozilla::DropJSObjects(this);
 }
 
 nsIPrincipal*

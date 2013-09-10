@@ -16,11 +16,7 @@ if CONFIG['JS_NATIVE_EDITLINE']:
 if not CONFIG['JS_DISABLE_SHELL']:
     DIRS += ['shell']
 
-# FIXME: bug 530688 covers getting these working on Android
-if CONFIG['OS_ARCH'] != 'ANDROID':
-    TEST_DIRS += ['jsapi-tests']
-
-TEST_DIRS += ['tests', 'gdb']
+TEST_DIRS += ['jsapi-tests', 'tests', 'gdb']
 
 MODULE = 'js'
 
@@ -35,7 +31,6 @@ CONFIGURE_SUBST_FILES += ['devtools/rootAnalysis/Makefile']
 # browser builds.  Don't add new files here unless you know what you're
 # doing!
 EXPORTS += [
-    'js-config.h',
     'js.msg',
     'jsalloc.h',
     'jsapi.h',
@@ -53,11 +48,6 @@ EXPORTS += [
     'perf/jsperf.h',
 ]
 
-if CONFIG['HAVE_DTRACE']:
-    EXPORTS += [
-        '$(CURDIR)/javascript-trace.h',
-    ]
-
 # If you add a header here, add it to js/src/jsapi-tests/testIntTypesABI.cpp so
 # that we ensure we don't over-expose our internal integer typedefs.  Note that
 # LegacyIntTypes.h below is deliberately exempted from this requirement.
@@ -72,7 +62,6 @@ EXPORTS.js += [
     '../public/HashTable.h',
     '../public/HeapAPI.h',
     '../public/Id.h',
-    '../public/IdForward.h',
     '../public/LegacyIntTypes.h',
     '../public/MemoryMetrics.h',
     '../public/OldDebugAPI.h',
@@ -81,6 +70,8 @@ EXPORTS.js += [
     '../public/RequiredDefines.h',
     '../public/RootingAPI.h',
     '../public/StructuredClone.h',
+    '../public/Tracer.h',
+    '../public/TypeDecls.h',
     '../public/Utility.h',
     '../public/Value.h',
     '../public/Vector.h',
@@ -88,7 +79,7 @@ EXPORTS.js += [
 
 CPP_SOURCES += [
     'ArgumentsObject.cpp',
-    'BinaryData.cpp',
+    'Barrier.cpp',
     'BytecodeCompiler.cpp',
     'BytecodeEmitter.cpp',
     'CallNonGenericMethod.cpp',
@@ -142,8 +133,10 @@ CPP_SOURCES += [
     'TestingFunctions.cpp',
     'ThreadPool.cpp',
     'TokenStream.cpp',
+    'Tracer.cpp',
     'TypeRepresentation.cpp',
     'TypedArrayObject.cpp',
+    'TypedObject.cpp',
     'Unicode.cpp',
     'Value.cpp',
     'Verifier.cpp',

@@ -358,12 +358,12 @@ Range::unionWith(const Range *other)
    if (lower_infinite_ || other->lower_infinite_)
        makeLowerInfinite();
    else
-       setLower(Min(lower_, other->lower_));
+       setLowerInit(Min(lower_, other->lower_));
 
    if (upper_infinite_ || other->upper_infinite_)
        makeUpperInfinite();
    else
-       setUpper(Max(upper_, other->upper_));
+       setUpperInit(Max(upper_, other->upper_));
 
    decimal_ = decimal;
    max_exponent_ = max_exponent;
@@ -800,7 +800,7 @@ MBeta::computeRange()
 {
     bool emptyRange = false;
 
-    Range *range = Range::intersect(val_->range(), comparison_, &emptyRange);
+    Range *range = Range::intersect(getOperand(0)->range(), comparison_, &emptyRange);
     if (emptyRange) {
         IonSpew(IonSpew_Range, "Marking block for inst %d unexitable", id());
         block()->setEarlyAbort();
@@ -1075,7 +1075,13 @@ MMod::computeRange()
     int64_t b = Abs<int64_t>(rhs.upper());
     if (a == 0 && b == 0)
         return;
-    int64_t rhsAbsBound = Max(a-1, b-1);
+    int64_t rhsAbsBound = Max(a, b);
+
+    // If the value is known to be integer, less-than abs(rhs) is equivalent
+    // to less-than-or-equal abs(rhs)-1. This is important for being able to
+    // say that the result of x%256 is an 8-bit unsigned number.
+    if (!lhs.isDecimal() && !rhs.isDecimal())
+        --rhsAbsBound;
 
     // Next, the absolute value of the result will never be greater than the
     // absolute value of lhs.
@@ -1095,6 +1101,12 @@ MMod::computeRange()
 
 void
 MToDouble::computeRange()
+{
+    setRange(new Range(getOperand(0)));
+}
+
+void
+MToFloat32::computeRange()
 {
     setRange(new Range(getOperand(0)));
 }
@@ -1613,6 +1625,26 @@ RangeAnalysis::analyze()
 
         if (block->isLoopHeader())
             analyzeLoop(block);
+
+        if (mir->compilingAsmJS()) {
+            for (MInstructionIterator i = block->begin(); i != block->end(); i++) {
+                if (i->isAsmJSLoadHeap()) {
+                    MAsmJSLoadHeap *ins = i->toAsmJSLoadHeap();
+                    Range *range = ins->ptr()->range();
+                    if (range && !range->isLowerInfinite() && range->lower() >= 0 &&
+                        !range->isUpperInfinite() &&
+                        (uint32_t) range->upper() < mir->minAsmJSHeapLength())
+                        ins->setSkipBoundsCheck(true);
+                } else if (i->isAsmJSStoreHeap()) {
+                    MAsmJSStoreHeap *ins = i->toAsmJSStoreHeap();
+                    Range *range = ins->ptr()->range();
+                    if (range && !range->isLowerInfinite() && range->lower() >= 0 &&
+                        !range->isUpperInfinite() &&
+                        (uint32_t) range->upper() < mir->minAsmJSHeapLength())
+                        ins->setSkipBoundsCheck(true);
+                }
+            }
+        }
     }
 
     return true;
@@ -1804,6 +1836,20 @@ MToDouble::truncate()
 }
 
 bool
+MToFloat32::truncate()
+{
+    JS_ASSERT(type() == MIRType_Float32);
+
+    // We use the return type to flag that this MToFloat32 sould be replaced by a
+    // MTruncateToInt32 when modifying the graph.
+    setResultType(MIRType_Int32);
+    if (range())
+        range()->wrapAroundToInt32();
+
+    return true;
+}
+
+bool
 MLoadTypedArrayElementStatic::truncate()
 {
     setInfallible();
@@ -1850,6 +1896,14 @@ bool
 MToDouble::isOperandTruncated(size_t index) const
 {
     // The return type is used to flag that we are replacing this Double by a
+    // Truncate of its operand if needed.
+    return type() == MIRType_Int32;
+}
+
+bool
+MToFloat32::isOperandTruncated(size_t index) const
+{
+    // The return type is used to flag that we are replacing this Float32 by a
     // Truncate of its operand if needed.
     return type() == MIRType_Int32;
 }

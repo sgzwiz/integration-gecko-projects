@@ -334,7 +334,6 @@ var BrowserApp = {
     Reader.init();
     UserAgentOverrides.init();
     DesktopUserAgent.init();
-    ExternalApps.init();
     Distribution.init();
     Tabs.init();
 #ifdef ACCESSIBILITY
@@ -368,6 +367,9 @@ var BrowserApp = {
       SearchEngines.init();
       this.initContextMenu();
     }
+    // The order that context menu items are added is important
+    // Make sure the "Open in App" context menu item appears at the bottom of the list
+    ExternalApps.init();
 
     // XXX maybe we don't do this if the launch was kicked off from external
     Services.io.offline = false;
@@ -6703,16 +6705,14 @@ var WebappsUI = {
 
     Services.obs.addObserver(this, "webapps-ask-install", false);
     Services.obs.addObserver(this, "webapps-launch", false);
-    Services.obs.addObserver(this, "webapps-sync-install", false);
-    Services.obs.addObserver(this, "webapps-sync-uninstall", false);
+    Services.obs.addObserver(this, "webapps-uninstall", false);
     Services.obs.addObserver(this, "webapps-install-error", false);
   },
 
   uninit: function unint() {
     Services.obs.removeObserver(this, "webapps-ask-install");
     Services.obs.removeObserver(this, "webapps-launch");
-    Services.obs.removeObserver(this, "webapps-sync-install");
-    Services.obs.removeObserver(this, "webapps-sync-uninstall");
+    Services.obs.removeObserver(this, "webapps-uninstall");
     Services.obs.removeObserver(this, "webapps-install-error");
   },
 
@@ -6748,27 +6748,7 @@ var WebappsUI = {
       case "webapps-launch":
         this.openURL(data.manifestURL, data.origin);
         break;
-      case "webapps-sync-install":
-        // Create a system notification allowing the user to launch the app
-        DOMApplicationRegistry.getManifestFor(data.manifestURL, (function(aManifest) {
-          if (!aManifest)
-            return;
-          let manifest = new ManifestHelper(aManifest, data.origin);
-
-          let observer = {
-            observe: function (aSubject, aTopic) {
-              if (aTopic == "alertclickcallback") {
-                WebappsUI.openURL(data.manifestURL, data.origin);
-              }
-            }
-          };
-
-          let message = Strings.browser.GetStringFromName("webapps.alertSuccess");
-          let alerts = Cc["@mozilla.org/alerts-service;1"].getService(Ci.nsIAlertsService);
-          alerts.showAlertNotification("drawable://alert_app", manifest.name, message, true, "", observer, "webapp");
-        }).bind(this));
-        break;
-      case "webapps-sync-uninstall":
+      case "webapps-uninstall":
         sendMessageToJava({
           type: "WebApps:Uninstall",
           origin: data.origin
@@ -6829,7 +6809,7 @@ var WebappsUI = {
         file.initWithPath(profilePath);
 
         let self = this;
-        DOMApplicationRegistry.confirmInstall(aData, file, null,
+        DOMApplicationRegistry.confirmInstall(aData, file,
           function (aManifest) {
             let localeManifest = new ManifestHelper(aManifest, aData.app.origin);
 
@@ -6868,6 +6848,19 @@ var WebappsUI = {
                       }
                     }, "webapp");
                   }
+
+                  // Create a system notification allowing the user to launch the app
+                  let observer = {
+                    observe: function (aSubject, aTopic) {
+                      if (aTopic == "alertclickcallback") {
+                        WebappsUI.openURL(aData.app.manifestURL, origin);
+                      }
+                    }
+                  };
+
+                  let message = Strings.browser.GetStringFromName("webapps.alertSuccess");
+                  let alerts = Cc["@mozilla.org/alerts-service;1"].getService(Ci.nsIAlertsService);
+                  alerts.showAlertNotification("drawable://alert_app", localeManifest.name, message, true, "", observer, "webapp");
                 } catch(ex) {
                   console.log(ex);
                 }

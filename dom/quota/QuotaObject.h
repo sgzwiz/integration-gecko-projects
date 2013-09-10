@@ -70,7 +70,6 @@ public:
     mAccessTime(aAccessTime)
   {
     MOZ_COUNT_CTOR(OriginInfo);
-    mQuotaObjects.Init();
   }
 
   ~OriginInfo()

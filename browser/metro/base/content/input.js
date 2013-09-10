@@ -94,6 +94,7 @@ var TouchModule = {
     // capture phase events
     window.addEventListener("CancelTouchSequence", this, true);
     window.addEventListener("dblclick", this, true);
+    window.addEventListener("keydown", this, true);
 
     // bubble phase
     window.addEventListener("contextmenu", this, false);
@@ -156,8 +157,38 @@ var TouchModule = {
               }, 50);
             }
             break;
+          case "keydown":
+            this._handleKeyDown(aEvent);
+            break;
         }
       }
+    }
+  },
+
+  _handleKeyDown: function _handleKeyDown(aEvent) {
+    const TABKEY = 9;
+    if (aEvent.keyCode == TABKEY && !InputSourceHelper.isPrecise) {
+      if (Util.isEditable(aEvent.target) &&
+          aEvent.target.selectionStart != aEvent.target.selectionEnd) {
+        SelectionHelperUI.closeEditSession(false);
+      }
+      setTimeout(function() {
+        let element = Browser.selectedBrowser.contentDocument.activeElement;
+        // We only want to attach monocles if we have an input, text area,
+        // there is selection, and the target element changed.
+        // Sometimes the target element won't change even though selection is
+        // cleared because of focus outside the browser.
+        if (Util.isEditable(element) &&
+            !SelectionHelperUI.isActive &&
+            element.selectionStart != element.selectionEnd &&
+            // not e10s friendly
+            aEvent.target != element) {
+              let rect = element.getBoundingClientRect();
+              SelectionHelperUI.attachEditSession(Browser.selectedBrowser,
+                                                  rect.left + rect.width / 2,
+                                                  rect.top + rect.height / 2);
+        }
+      }, 50);
     }
   },
 
@@ -280,8 +311,15 @@ var TouchModule = {
     if (this._isCancellable) {
       // only the first touchmove is cancellable.
       this._isCancellable = false;
-      if (aEvent.defaultPrevented)
+      if (aEvent.defaultPrevented) {
         this._isCancelled = true;
+      }
+      // Help out chrome ui elements that want input.js vs. apz scrolling: call
+      // preventDefault when apz is enabled on anything that isn't in the
+      // browser.
+      if (APZCObserver.enabled && aEvent.target.ownerDocument == document) {
+        aEvent.preventDefault();
+      }
     }
 
     if (this._isCancelled)
@@ -321,8 +359,6 @@ var TouchModule = {
 
         // Let everyone know when mousemove begins a pan
         if (!oldIsPan && dragData.isPan()) {
-          //this._longClickTimeout.clear();
-
           let event = document.createEvent("Events");
           event.initEvent("PanBegin", true, false);
           this._targetScrollbox.dispatchEvent(event);

@@ -17,8 +17,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/EventTarget.h"
 
-class nsDOMEvent;
-
 #define NS_DOMEVENTTARGETHELPER_IID \
 { 0xda0e6d40, 0xc17b, 0x4937, \
   { 0x8e, 0xa2, 0x99, 0xca, 0x1c, 0x81, 0xea, 0xbe } }
@@ -122,6 +120,8 @@ public:
   nsIGlobalObject* GetParentObject() const { return mParentObject; }
   bool HasOrHasHadOwner() { return mHasOrHasHadOwnerWindow; }
 protected:
+  nsresult WantsUntrusted(bool* aRetVal);
+
   nsRefPtr<nsEventListenerManager> mListenerManager;
   // Dispatch a trusted, non-cancellable and non-bubbling event to |this|.
   nsresult DispatchTrustedEvent(const nsAString& aEventName);

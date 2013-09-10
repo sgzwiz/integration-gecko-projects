@@ -69,7 +69,6 @@ DatabaseInfoSync::Put(DatabaseInfoSync* aInfo)
 
   if (!gDatabaseHash) {
     nsAutoPtr<DatabaseHash> databaseHash(new DatabaseHash());
-    databaseHash->Init();
     gDatabaseHash = databaseHash.forget();
   }
 
@@ -114,7 +113,6 @@ DatabaseInfoSync::Clone()
 
   if (objectStoreHash) {
     dbInfo->objectStoreHash = new ObjectStoreInfoHash();
-    dbInfo->objectStoreHash->Init();
     objectStoreHash->EnumerateRead(CloneObjectStoreInfo,
                                    dbInfo->objectStoreHash);
   }

@@ -16,9 +16,7 @@
 #include "gc/Marking.h"
 #include "jit/AsmJS.h"
 #include "jit/IonMacroAssembler.h"
-#if defined(JS_ION_PERF)
-# include "jit/PerfSpewer.h"
-#endif
+#include "jit/PerfSpewer.h"
 #include "jit/RegisterSets.h"
 
 namespace js {
@@ -183,11 +181,7 @@ class AsmJSModule
             ionCodeOffset_ = off;
         }
     };
-#ifdef JS_CPU_ARM
     typedef int32_t (*CodePtr)(uint64_t *args, uint8_t *global);
-#else
-    typedef int32_t (*CodePtr)(uint64_t *args);
-#endif
 
     typedef Vector<AsmJSCoercion, 0, SystemAllocPolicy> ArgCoercionVector;
 
@@ -228,7 +222,7 @@ class AsmJSModule
         ExportedFunction(mozilla::MoveRef<ExportedFunction> rhs) {
             name_ = rhs->name_;
             maybeFieldName_ = rhs->maybeFieldName_;
-            argCoercions_ = mozilla::Move(rhs->argCoercions_);
+            argCoercions_ = mozilla::OldMove(rhs->argCoercions_);
             pod = rhs->pod;
         }
 
@@ -284,16 +278,20 @@ class AsmJSModule
 #if defined(JS_ION_PERF)
     struct ProfiledBlocksFunction : public ProfiledFunction
     {
-        jit::PerfSpewer::BasicBlocksVector blocks;
+        unsigned endInlineCodeOffset;
+        jit::BasicBlocksVector blocks;
 
-        ProfiledBlocksFunction(JSAtom *name, unsigned start, unsigned end,
-                               jit::PerfSpewer::BasicBlocksVector &blocksVector)
-          : ProfiledFunction(name, start, end), blocks(mozilla::Move(blocksVector))
-        { }
+        ProfiledBlocksFunction(JSAtom *name, unsigned start, unsigned endInline, unsigned end,
+                               jit::BasicBlocksVector &blocksVector)
+          : ProfiledFunction(name, start, end), endInlineCodeOffset(endInline),
+            blocks(mozilla::OldMove(blocksVector))
+        {
+            JS_ASSERT(name->isTenured());
+        }
 
         ProfiledBlocksFunction(const ProfiledBlocksFunction &copy)
           : ProfiledFunction(copy.name, copy.startCodeOffset, copy.endCodeOffset),
-            blocks(mozilla::Move(copy.blocks))
+            endInlineCodeOffset(copy.endInlineCodeOffset), blocks(mozilla::OldMove(copy.blocks))
         { }
     };
 #endif
@@ -320,6 +318,7 @@ class AsmJSModule
     ExitVector                            exits_;
     ExportedFunctionVector                exports_;
     HeapAccessVector                      heapAccesses_;
+    uint32_t                              minHeapLength_;
 #if defined(MOZ_VTUNE) or defined(JS_ION_PERF)
     ProfiledFunctionVector                profiledFunctions_;
 #endif
@@ -351,6 +350,7 @@ class AsmJSModule
       : globalArgumentName_(NULL),
         importArgumentName_(NULL),
         bufferArgumentName_(NULL),
+        minHeapLength_(AsmJSAllocationGranularity),
         code_(NULL),
         operationCallbackExit_(NULL),
         linked_(false)
@@ -457,7 +457,7 @@ class AsmJSModule
                              ReturnType returnType)
     {
         ExportedFunction func(name, maybeFieldName, argCoercions, returnType);
-        return exports_.append(mozilla::Move(func));
+        return exports_.append(mozilla::OldMove(func));
     }
     unsigned numExportedFunctions() const {
         return exports_.length();
@@ -480,7 +480,7 @@ class AsmJSModule
     unsigned numProfiledFunctions() const {
         return profiledFunctions_.length();
     }
-    const ProfiledFunction &profiledFunction(unsigned i) const {
+    ProfiledFunction &profiledFunction(unsigned i) {
         return profiledFunctions_[i];
     }
 #endif
@@ -494,18 +494,19 @@ class AsmJSModule
     unsigned numPerfFunctions() const {
         return profiledFunctions_.length();
     }
-    const ProfiledFunction &perfProfiledFunction(unsigned i) const {
+    ProfiledFunction &perfProfiledFunction(unsigned i) {
         return profiledFunctions_[i];
     }
 
-    bool trackPerfProfiledBlocks(JSAtom *name, unsigned startCodeOffset, unsigned endCodeOffset, jit::PerfSpewer::BasicBlocksVector &basicBlocks) {
-        ProfiledBlocksFunction func(name, startCodeOffset, endCodeOffset, basicBlocks);
+    bool trackPerfProfiledBlocks(JSAtom *name, unsigned startCodeOffset, unsigned endInlineCodeOffset,
+                                 unsigned endCodeOffset, jit::BasicBlocksVector &basicBlocks) {
+        ProfiledBlocksFunction func(name, startCodeOffset, endInlineCodeOffset, endCodeOffset, basicBlocks);
         return perfProfiledBlocksFunctions_.append(func);
     }
     unsigned numPerfBlocksFunctions() const {
         return perfProfiledBlocksFunctions_.length();
     }
-    const ProfiledBlocksFunction perfProfiledBlocksFunction(unsigned i) const {
+    ProfiledBlocksFunction &perfProfiledBlocksFunction(unsigned i) {
         return perfProfiledBlocksFunctions_[i];
     }
 #endif
@@ -629,7 +630,15 @@ class AsmJSModule
     const jit::AsmJSHeapAccess &heapAccess(unsigned i) const {
         return heapAccesses_[i];
     }
-    void patchHeapAccesses(ArrayBufferObject *heap, JSContext *cx);
+    void initHeap(Handle<ArrayBufferObject*> heap, JSContext *cx);
+
+    void requireHeapLengthToBeAtLeast(uint32_t len) {
+        if (len > minHeapLength_)
+            minHeapLength_ = len;
+    }
+    uint32_t minHeapLength() const {
+        return minHeapLength_;
+    }
 
     uint8_t *allocateCodeAndGlobalSegment(ExclusiveContext *cx, size_t bytesNeeded);
 
@@ -646,11 +655,9 @@ class AsmJSModule
         return operationCallbackExit_;
     }
 
-    void setIsLinked(Handle<ArrayBufferObject*> maybeHeap) {
+    void setIsLinked() {
         JS_ASSERT(!linked_);
         linked_ = true;
-        maybeHeap_ = maybeHeap;
-        heapDatum() = maybeHeap_ ? maybeHeap_->dataPointer() : NULL;
     }
     bool isLinked() const {
         return linked_;

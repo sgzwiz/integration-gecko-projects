@@ -10,6 +10,7 @@
 #include "nsIClassInfo.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIConsoleService.h"
+#include "nsIDOMDOMException.h"
 #include "nsIDOMFile.h"
 #include "nsIDocument.h"
 #include "nsIDocShell.h"
@@ -56,7 +57,7 @@
 #endif
 
 #include "Events.h"
-#include "Exceptions.h"
+#include "mozilla/dom/Exceptions.h"
 #include "File.h"
 #include "IPCThreadUtils.h"
 #include "Principal.h"
@@ -87,7 +88,7 @@
 using mozilla::MutexAutoLock;
 using mozilla::TimeDuration;
 using mozilla::TimeStamp;
-using mozilla::dom::workers::exceptions::ThrowDOMExceptionForNSResult;
+using mozilla::dom::Throw;
 using mozilla::AutoPushJSContext;
 using mozilla::AutoSafeJSContext;
 
@@ -291,7 +292,7 @@ struct WorkerStructuredCloneCallbacks
   static void
   Error(JSContext* aCx, uint32_t /* aErrorId */)
   {
-    ThrowDOMExceptionForNSResult(aCx, NS_ERROR_DOM_DATA_CLONE_ERR);
+    Throw(aCx, NS_ERROR_DOM_DATA_CLONE_ERR);
   }
 };
 
@@ -336,7 +337,7 @@ struct MainThreadWorkerStructuredCloneCallbacks
                                                  &NS_GET_IID(nsIDOMFile),
                                                  wrappedFile.address());
         if (NS_FAILED(rv)) {
-          Error(aCx, DATA_CLONE_ERR);
+          Error(aCx, nsIDOMDOMException::DATA_CLONE_ERR);
           return nullptr;
         }
 
@@ -370,7 +371,7 @@ struct MainThreadWorkerStructuredCloneCallbacks
                                                  &NS_GET_IID(nsIDOMBlob),
                                                  wrappedBlob.address());
         if (NS_FAILED(rv)) {
-          Error(aCx, DATA_CLONE_ERR);
+          Error(aCx, nsIDOMDOMException::DATA_CLONE_ERR);
           return nullptr;
         }
 

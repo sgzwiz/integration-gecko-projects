@@ -18,6 +18,7 @@ from mozbuild.frontend.data import (
     Program,
     XpcshellManifests,
     IPDLFile,
+    LocalInclude,
 )
 from mozbuild.frontend.emitter import TreeMetadataEmitter
 from mozbuild.frontend.reader import BuildReader
@@ -132,17 +133,21 @@ class TestEmitterBasic(unittest.TestCase):
             CSRCS=['fans.c', 'tans.c'],
             CPP_UNIT_TESTS=['foo.cpp'],
             DEFINES=['-Dfans', '-Dtans'],
+            EXPORT_LIBRARY=True,
             EXTRA_COMPONENTS=['fans.js', 'tans.js'],
             EXTRA_PP_COMPONENTS=['fans.pp.js', 'tans.pp.js'],
             EXTRA_JS_MODULES=['bar.jsm', 'foo.jsm'],
             EXTRA_PP_JS_MODULES=['bar.pp.jsm', 'foo.pp.jsm'],
             FAIL_ON_WARNINGS=True,
+            FORCE_SHARED_LIB=True,
+            FORCE_STATIC_LIB=True,
             GTEST_CSRCS=['test1.c', 'test2.c'],
             GTEST_CMMSRCS=['test1.mm', 'test2.mm'],
             GTEST_CPPSRCS=['test1.cpp', 'test2.cpp'],
             HOST_CPPSRCS=['fans.cpp', 'tans.cpp'],
             HOST_CSRCS=['fans.c', 'tans.c'],
             HOST_LIBRARY_NAME='host_fans',
+            IS_COMPONENT=True,
             LIBRARY_NAME='lib_name',
             LIBS=['fans.lib', 'tans.lib'],
             LIBXUL_LIBRARY=True,
@@ -246,6 +251,19 @@ class TestEmitterBasic(unittest.TestCase):
         ]
 
         self.assertEqual(ipdls, expected)
+
+    def test_local_includes(self):
+        """Test that LOCAL_INCLUDES is emitted correctly."""
+        reader = self.reader('local_includes')
+        objs = self.read_topsrcdir(reader)
+
+        local_includes = [o.path for o in objs if isinstance(o, LocalInclude)]
+        expected = [
+            '/bar/baz',
+            'foo',
+        ]
+
+        self.assertEqual(local_includes, expected)
 
 if __name__ == '__main__':
     main()

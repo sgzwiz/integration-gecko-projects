@@ -5,7 +5,7 @@
 
 #include "mozilla/dom/HTMLCanvasElement.h"
 
-#include "BasicLayers.h"
+#include "Layers.h"
 #include "imgIEncoder.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
@@ -780,6 +780,14 @@ HTMLCanvasElement::GetContext(const nsAString& aContextId,
   return rv.ErrorCode();
 }
 
+static bool
+IsContextIdWebGL(const nsAString& str)
+{
+  return str.EqualsLiteral("webgl") ||
+         str.EqualsLiteral("experimental-webgl") ||
+         str.EqualsLiteral("moz-webgl");
+}
+
 already_AddRefed<nsISupports>
 HTMLCanvasElement::GetContext(JSContext* aCx,
                               const nsAString& aContextId,
@@ -804,12 +812,27 @@ HTMLCanvasElement::GetContext(JSContext* aCx,
 
     rv = UpdateContext(aCx, aContextOptions);
     if (rv.Failed()) {
+      rv = NS_OK; // See bug 645792
       return nullptr;
     }
     mCurrentContextId.Assign(aContextId);
   }
 
   if (!mCurrentContextId.Equals(aContextId)) {
+    if (IsContextIdWebGL(aContextId) &&
+        IsContextIdWebGL(mCurrentContextId))
+    {
+      // Warn when we get a request for a webgl context with an id that differs
+      // from the id it was created with.
+      nsCString creationId = NS_LossyConvertUTF16toASCII(mCurrentContextId);
+      nsCString requestId = NS_LossyConvertUTF16toASCII(aContextId);
+      JS_ReportWarning(aCx, "WebGL: Retrieving a WebGL context from a canvas "
+                            "via a request id ('%s') different from the id used "
+                            "to create the context ('%s') is not allowed.",
+                            requestId.get(),
+                            creationId.get());
+    }
+    
     //XXX eventually allow for more than one active context on a given canvas
     return nullptr;
   }

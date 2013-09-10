@@ -164,11 +164,12 @@ class MozbuildObject(ProcessExecutionMixin):
         # not another one. This prevents accidental usage of the wrong objdir
         # when the current objdir is ambiguous.
         if topobjdir and config_topobjdir \
-            and not samepath(topobjdir, config_topobjdir):
+            and not samepath(topobjdir, config_topobjdir) \
+            and not samepath(topobjdir, os.path.join(config_topobjdir, "mozilla")):
 
             raise ObjdirMismatchException(topobjdir, config_topobjdir)
 
-        topobjdir = config_topobjdir or topobjdir
+        topobjdir = topobjdir or config_topobjdir
         if topobjdir:
             topobjdir = os.path.normpath(topobjdir)
 
@@ -487,6 +488,8 @@ class MachCommandBase(MozbuildObject):
     def __init__(self, context):
         MozbuildObject.__init__(self, context.topdir, context.settings,
             context.log_manager)
+
+        self._mach_context = context
 
         # Incur mozconfig processing so we have unified error handling for
         # errors. Otherwise, the exceptions could bubble back to mach's error

@@ -349,8 +349,6 @@ public:
   ~UpdateRefcountFunction()
   { }
 
-  nsresult Init();
-
   void ClearFileInfoEntries()
   {
     mFileInfoEntries.Clear();

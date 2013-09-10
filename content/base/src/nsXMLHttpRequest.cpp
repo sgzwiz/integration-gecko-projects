@@ -67,6 +67,7 @@
 #include "nsCharSeparatedTokenizer.h"
 #include "nsFormData.h"
 #include "nsStreamListenerWrapper.h"
+#include "xpcjsid.h"
 
 #include "nsWrapperCacheInlines.h"
 
@@ -289,7 +290,7 @@ nsXMLHttpRequest::nsXMLHttpRequest()
     mProgressSinceLastProgressEvent(false),
     mRequestSentTime(0), mTimeoutMilliseconds(0),
     mErrorLoad(false), mWaitingForOnStopRequest(false),
-    mProgressTimerIsActive(false), mProgressEventWasDelayed(false),
+    mProgressTimerIsActive(false),
     mIsHtml(false),
     mWarnAboutSyncHtml(false),
     mLoadLengthComputable(false), mLoadTotal(0),
@@ -301,8 +302,6 @@ nsXMLHttpRequest::nsXMLHttpRequest()
     mResultArrayBuffer(nullptr),
     mXPCOMifier(nullptr)
 {
-  mAlreadySetHeaders.Init();
-
   SetIsDOMBinding();
 #ifdef DEBUG
   StaticAssertions();
@@ -323,13 +322,13 @@ nsXMLHttpRequest::~nsXMLHttpRequest()
 
   mResultJSON = JSVAL_VOID;
   mResultArrayBuffer = nullptr;
-  NS_DROP_JS_OBJECTS(this, nsXMLHttpRequest);
+  mozilla::DropJSObjects(this);
 }
 
 void
 nsXMLHttpRequest::RootJSResultObjects()
 {
-  NS_HOLD_JS_OBJECTS(this, nsXMLHttpRequest);
+  mozilla::HoldJSObjects(this);
 }
 
 /**
@@ -447,7 +446,8 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(nsXMLHttpRequest)
       tmp->mListenerManager->MarkForCC();
     }
     if (!isBlack && tmp->PreservingWrapper()) {
-      xpc_UnmarkGrayObject(tmp->GetWrapperPreserveColor());
+      // This marks the wrapper black.
+      tmp->GetWrapper();
     }
     return true;
   }
@@ -3752,7 +3752,6 @@ nsXMLHttpRequest::StartProgressEventTimer()
     mProgressNotifier = do_CreateInstance(NS_TIMER_CONTRACTID);
   }
   if (mProgressNotifier) {
-    mProgressEventWasDelayed = false;
     mProgressTimerIsActive = true;
     mProgressNotifier->Cancel();
     mProgressNotifier->InitWithCallback(this, NS_PROGRESS_EVENT_INTERVAL,

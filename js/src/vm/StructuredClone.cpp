@@ -966,12 +966,14 @@ JSStructuredCloneReader::checkDouble(double d)
     return true;
 }
 
+namespace {
+
 class Chars {
     JSContext *cx;
     jschar *p;
   public:
     Chars(JSContext *cx) : cx(cx), p(NULL) {}
-    ~Chars() { if (p) js_free(p); }
+    ~Chars() { js_free(p); }
 
     bool allocate(size_t len) {
         JS_ASSERT(!p);
@@ -986,6 +988,8 @@ class Chars {
     jschar *get() { return p; }
     void forget() { p = NULL; }
 };
+
+} /* anonymous namespace */
 
 JSString *
 JSStructuredCloneReader::readString(uint32_t nchars)
@@ -1484,15 +1488,35 @@ JS_StructuredClone(JSContext *cx, JS::Value valueArg, JS::Value *vp,
     RootedValue value(cx, valueArg);
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
-    assertSameCompartment(cx, value);
+
+    // Strings are associated with zones, not compartments,
+    // so we copy the string by wrapping it.
+    if (value.isString()) {
+      RootedString strValue(cx, value.toString());
+      if (!cx->compartment()->wrap(cx, strValue.address())) {
+        return false;
+      }
+      *vp = JS::StringValue(strValue);
+      return true;
+    }
 
     const JSStructuredCloneCallbacks *callbacks =
         optionalCallbacks ?
         optionalCallbacks :
         cx->runtime()->structuredCloneCallbacks;
+
     JSAutoStructuredCloneBuffer buf;
-    return buf.write(cx, value, callbacks, closure) &&
-           buf.read(cx, vp, callbacks, closure);
+    {
+        mozilla::Maybe<AutoCompartment> ac;
+        if (value.isObject()) {
+            ac.construct(cx, &value.toObject());
+        }
+
+        if (!buf.write(cx, value, callbacks, closure))
+            return false;
+    }
+
+    return buf.read(cx, vp, callbacks, closure);
 }
 
 void

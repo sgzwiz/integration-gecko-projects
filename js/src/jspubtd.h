@@ -15,21 +15,14 @@
 
 #include "jsprototypes.h"
 #include "jstypes.h"
-#include "jsversion.h"  // #include here so it's seen everywhere
 
-#include "js/IdForward.h"
+#include "js/TypeDecls.h"
 
 #if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING) || defined(DEBUG)
 # define JSGC_TRACK_EXACT_ROOTS
 #endif
 
 namespace JS {
-
-/*
- * Allow headers to reference JS::Value without #including the whole jsapi.h.
- * Unfortunately, typedefs (hence jsval) cannot be declared.
- */
-class Value;
 
 class AutoIdVector;
 class CallArgs;
@@ -45,12 +38,6 @@ class JS_PUBLIC_API(CompartmentOptions);
 struct Zone;
 
 } /* namespace JS */
-
-#ifdef WIN32
-typedef wchar_t   jschar;
-#else
-typedef uint16_t  jschar;
-#endif
 
 /*
  * Run-time version enumeration.  For compile-time version checking, please use
@@ -150,7 +137,6 @@ typedef enum {
 typedef struct JSClass                      JSClass;
 typedef struct JSCompartment                JSCompartment;
 typedef struct JSConstDoubleSpec            JSConstDoubleSpec;
-typedef struct JSContext                    JSContext;
 typedef struct JSCrossCompartmentCall       JSCrossCompartmentCall;
 typedef struct JSErrorReport                JSErrorReport;
 typedef struct JSExceptionState             JSExceptionState;
@@ -170,11 +156,7 @@ typedef struct JSStructuredCloneWriter      JSStructuredCloneWriter;
 typedef struct JSTracer                     JSTracer;
 
 class                                       JSFlatString;
-class                                       JSFunction;
-class                                       JSObject;
-class                                       JSScript;
 class                                       JSStableString;  // long story
-class                                       JSString;
 
 #ifdef JS_THREADSAFE
 typedef struct PRCallOnceType   JSCallOnceType;
@@ -190,9 +172,15 @@ typedef bool                    (*JSInitCallback)(void);
 typedef void
 (* JSTraceDataOp)(JSTracer *trc, void *data);
 
+namespace js {
+namespace gc {
+class StoreBuffer;
+}
+}
+
 namespace JS {
 
-typedef void (*OffThreadCompileCallback)(JSScript *script, void *callbackData);
+typedef void (*OffThreadCompileCallback)(void *token, void *callbackData);
 
 namespace shadow {
 
@@ -205,15 +193,36 @@ struct Runtime
     /* Allow inlining of Nursery::isInside. */
     uintptr_t gcNurseryStart_;
     uintptr_t gcNurseryEnd_;
+
+  private:
+    js::gc::StoreBuffer *gcStoreBufferPtr_;
 #endif
 
-    Runtime()
+  public:
+    Runtime(
+#ifdef JSGC_GENERATIONAL
+        js::gc::StoreBuffer *gcStoreBufferPtr
+#endif
+    )
       : needsBarrier_(false)
 #ifdef JSGC_GENERATIONAL
       , gcNurseryStart_(0)
       , gcNurseryEnd_(0)
+      , gcStoreBufferPtr_(gcStoreBufferPtr)
 #endif
     {}
+
+    bool needsBarrier() const {
+        return needsBarrier_;
+    }
+
+#ifdef JSGC_GENERATIONAL
+    js::gc::StoreBuffer *gcStoreBufferPtr() { return gcStoreBufferPtr_; }
+#endif
+
+    static JS::shadow::Runtime *asShadowRuntime(JSRuntime *rt) {
+        return reinterpret_cast<JS::shadow::Runtime*>(rt);
+    }
 };
 
 } /* namespace shadow */

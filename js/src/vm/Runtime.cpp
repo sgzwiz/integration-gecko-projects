@@ -98,7 +98,12 @@ PerThreadData::removeFromThreadList()
 }
 
 JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
-  : mainThread(this),
+  : JS::shadow::Runtime(
+#ifdef JSGC_GENERATIONAL
+        &gcStoreBuffer
+#endif
+    ),
+    mainThread(this),
     interrupt(0),
     handlingSignal(false),
     operationCallback(NULL),
@@ -109,6 +114,7 @@ JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
 #endif
 #endif
 #ifdef JS_WORKER_THREADS
+    workerThreadState(NULL),
     exclusiveAccessLock(NULL),
     exclusiveAccessOwner(NULL),
     mainThreadHasExclusiveAccess(false),
@@ -235,9 +241,6 @@ JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
     gcLock(NULL),
     gcHelperThread(thisFromCtor()),
     signalHandlersInstalled_(false),
-#ifdef JS_WORKER_THREADS
-    workerThreadState(NULL),
-#endif
     defaultFreeOp_(thisFromCtor(), false),
     debuggerMutations(0),
     securityCallbacks(const_cast<JSSecurityCallbacks *>(&NullSecurityCallbacks)),
@@ -392,8 +395,7 @@ JSRuntime::~JSRuntime()
     mainThread.removeFromThreadList();
 
 #ifdef JS_WORKER_THREADS
-    if (workerThreadState)
-        js_delete(workerThreadState);
+    js_delete(workerThreadState);
 
     JS_ASSERT(!exclusiveAccessOwner);
     if (exclusiveAccessLock)
@@ -453,8 +455,7 @@ JSRuntime::~JSRuntime()
 #endif
     js_delete(execAlloc_);  /* Delete after ionRuntime_. */
 
-    if (ionPcScriptCache)
-        js_delete(ionPcScriptCache);
+    js_delete(ionPcScriptCache);
 
 #ifdef JSGC_GENERATIONAL
     gcStoreBuffer.disable();

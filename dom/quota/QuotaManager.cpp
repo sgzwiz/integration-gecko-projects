@@ -8,6 +8,8 @@
 
 #include "mozIApplicationClearPrivateDataParams.h"
 #include "nsIAtom.h"
+#include "nsIBinaryInputStream.h"
+#include "nsIBinaryOutputStream.h"
 #include "nsIFile.h"
 #include "nsIObserverService.h"
 #include "nsIOfflineStorage.h"
@@ -1135,10 +1137,6 @@ QuotaManager::Init()
     NS_WARNING("Unable to respond to testing pref changes!");
     gTestingEnabled = false;
   }
-
-  mGroupInfoPairs.Init();
-  mCheckQuotaHelpers.Init();
-  mLiveStorages.Init();
 
   static_assert(Client::IDB == 0 && Client::TYPE_MAX == 1,
                 "Fix the registration!");

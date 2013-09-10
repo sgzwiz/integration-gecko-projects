@@ -19,8 +19,6 @@ namespace JSC {
     class ExecutablePool;
 }
 
-class JSScript;
-
 namespace js {
 
 class AsmJSModule;
@@ -586,10 +584,8 @@ struct IonBlockCounts
     }
 
     void destroy() {
-        if (successors_)
-            js_free(successors_);
-        if (code_)
-            js_free(code_);
+        js_free(successors_);
+        js_free(code_);
     }
 
     uint32_t id() const {
@@ -673,8 +669,7 @@ struct IonScriptCounts
         for (size_t i = 0; i < numBlocks_; i++)
             blocks_[i].destroy();
         js_free(blocks_);
-        if (previous_)
-            js_delete(previous_);
+        js_delete(previous_);
     }
 
     bool init(size_t numBlocks) {
@@ -719,7 +714,7 @@ struct AutoFlushCache
     void update(uintptr_t p, size_t len);
     static void updateTop(uintptr_t p, size_t len);
     ~AutoFlushCache();
-    AutoFlushCache(const char *nonce, IonRuntime *rt = NULL);
+    AutoFlushCache(const char *nonce, IonRuntime *rt);
     void flushAnyway();
 };
 
@@ -731,12 +726,13 @@ struct AutoFlushCache
 //   2) the called function can re-enter a compilation/modification path which
 //       will use your AFC, and thus not flush when his compilation is done
 
-struct AutoFlushInhibitor {
+struct AutoFlushInhibitor
+{
   private:
-    IonCompartment *ic_;
+    IonRuntime *runtime_;
     AutoFlushCache *afc;
   public:
-    AutoFlushInhibitor(IonCompartment *ic);
+    AutoFlushInhibitor(IonRuntime *rt);
     ~AutoFlushInhibitor();
 };
 } // namespace jit

@@ -265,6 +265,9 @@ private:
   Init();
 
   void
+  Shutdown();
+
+  void
   Cleanup();
 
   static PLDHashOperator

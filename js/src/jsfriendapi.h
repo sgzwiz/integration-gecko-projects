@@ -266,6 +266,15 @@ IsAtomsCompartment(JSCompartment *comp);
 extern JS_FRIEND_API(bool)
 ReportIfUndeclaredVarAssignment(JSContext *cx, JS::HandleString propname);
 
+/*
+ * Returns whether we're in a non-strict property set (in that we're in a
+ * non-strict script and the bytecode we're on is a property set).  The return
+ * value does NOT indicate any sort of exception was thrown: it's just a
+ * boolean.
+ */
+extern JS_FRIEND_API(bool)
+IsInNonStrictPropertySet(JSContext *cx);
+
 struct WeakMapTracer;
 
 /*
@@ -666,9 +675,6 @@ GetPCCountScriptContents(JSContext *cx, size_t script);
 JS_FRIEND_API(bool)
 ContextHasOutstandingRequests(const JSContext *cx);
 #endif
-
-JS_FRIEND_API(bool)
-HasUnrootedGlobal(const JSContext *cx);
 
 typedef void
 (* ActivityCallback)(void *arg, bool active);

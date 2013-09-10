@@ -6,9 +6,6 @@
 
 Cu.import('resource://gre/modules/ContactService.jsm');
 Cu.import('resource://gre/modules/SettingsChangeNotifier.jsm');
-#ifdef MOZ_B2G_FM
-Cu.import('resource://gre/modules/DOMFMRadioParent.jsm');
-#endif
 Cu.import('resource://gre/modules/AlarmService.jsm');
 Cu.import('resource://gre/modules/ActivitiesService.jsm');
 Cu.import('resource://gre/modules/PermissionPromptHelper.jsm');
@@ -281,7 +278,11 @@ var shell = {
     systemAppFrame.setAttribute('allowfullscreen', 'true');
     systemAppFrame.setAttribute('style', "overflow: hidden; height: 100%; width: 100%; border: none;");
     systemAppFrame.setAttribute('src', "data:text/html;charset=utf-8,%3C!DOCTYPE html>%3Cbody style='background:black;");
-    document.getElementById('container').appendChild(systemAppFrame);
+    let container = document.getElementById('container');
+#ifdef MOZ_WIDGET_COCOA
+    container.removeChild(document.getElementById('placeholder'));
+#endif
+    container.appendChild(systemAppFrame);
 
     systemAppFrame.contentWindow
                   .QueryInterface(Ci.nsIInterfaceRequestor)
@@ -299,6 +300,7 @@ var shell = {
     window.addEventListener('keyup', this, true);
     window.addEventListener('MozApplicationManifest', this);
     window.addEventListener('mozfullscreenchange', this);
+    window.addEventListener('MozAfterPaint', this);
     window.addEventListener('sizemodechange', this);
     this.contentBrowser.addEventListener('mozbrowserloadstart', this, true);
 
@@ -510,6 +512,12 @@ var shell = {
         } catch (e) {
           dump('Error while creating offline cache: ' + e + '\n');
         }
+        break;
+      case 'MozAfterPaint':
+        window.removeEventListener('MozAfterPaint', this);
+        this.sendChromeEvent({
+          type: 'system-first-paint'
+        });
         break;
     }
   },
@@ -1017,6 +1025,10 @@ let RemoteDebugger = {
       DebuggerServer.addActors('chrome://browser/content/dbg-browser-actors.js');
       DebuggerServer.addActors("resource://gre/modules/devtools/server/actors/webapps.js");
       DebuggerServer.registerModule("devtools/server/actors/device");
+
+      DebuggerServer.onConnectionChange = function(what) {
+        AdbController.updateState();
+      }
     }
 
     let port = Services.prefs.getIntPref('devtools.debugger.remote-port') || 6000;

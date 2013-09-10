@@ -17,6 +17,7 @@
 
 #include "nsIMemoryReporter.h"
 #include "nsIObserverService.h"
+#include "nsIDebug2.h"
 #include "amIAddonManager.h"
 #include "nsPIDOMWindow.h"
 #include "nsPrintfCString.h"
@@ -1186,7 +1187,12 @@ WatchdogMain(void *arg)
         if (manager->IsRuntimeActive() &&
             manager->TimeSinceLastRuntimeStateChange() >= PRTime(PR_USEC_PER_SEC))
         {
-            JS_TriggerOperationCallback(manager->Runtime()->Runtime());
+            bool debuggerAttached = false;
+            nsCOMPtr<nsIDebug2> dbg = do_GetService("@mozilla.org/xpcom/debug;1");
+            if (dbg)
+                dbg->GetIsDebuggerAttached(&debuggerAttached);
+            if (!debuggerAttached)
+                JS_TriggerOperationCallback(manager->Runtime()->Runtime());
         }
     }
 
@@ -1387,6 +1393,10 @@ void XPCJSRuntime::SystemIsBeingShutDown()
 
 XPCJSRuntime::~XPCJSRuntime()
 {
+    // Clear any pending exception.  It might be an XPCWrappedJS, and if we try
+    // to destroy it later we will crash.
+    SetPendingException(nullptr);
+
     JS::SetGCSliceCallback(Runtime(), mPrevGCSliceCallback);
 
     xpc_DelocalizeRuntime(Runtime());
@@ -2425,7 +2435,6 @@ class OrphanReporter : public JS::ObjectPrivateVisitor
     OrphanReporter(GetISupportsFun aGetISupports)
       : JS::ObjectPrivateVisitor(aGetISupports)
     {
-        mAlreadyMeasuredOrphanTrees.Init();
     }
 
     virtual size_t sizeOfIncludingThis(nsISupports *aSupports) {
@@ -2868,7 +2877,7 @@ SourceHook(JSContext *cx, JS::Handle<JSScript*> script, jschar **src,
 }
 
 XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
-   : CycleCollectedJSRuntime(32L * 1024L * 1024L, JS_USE_HELPER_THREADS, true),
+   : CycleCollectedJSRuntime(32L * 1024L * 1024L, JS_USE_HELPER_THREADS),
    mJSContextStack(new XPCJSContextStack()),
    mCallContext(nullptr),
    mAutoRoots(nullptr),
@@ -2893,8 +2902,7 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
    mObjectHolderRoots(nullptr),
    mWatchdogManager(new WatchdogManager(this)),
    mJunkScope(nullptr),
-   mAsyncSnowWhiteFreer(new AsyncFreeSnowWhite()),
-   mExceptionManagerNotAvailable(false)
+   mAsyncSnowWhiteFreer(new AsyncFreeSnowWhite())
 {
 #ifdef XPC_CHECK_WRAPPERS_AT_SHUTDOWN
     DEBUG_WrappedNativeHashtable =

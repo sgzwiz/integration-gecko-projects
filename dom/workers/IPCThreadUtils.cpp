@@ -7,13 +7,14 @@
 #include "IPCThreadUtils.h"
 
 #include "base/thread.h"
+#include "mozilla/dom/Exceptions.h"
 
 #include "RuntimeService.h"
 #include "WorkerPrivate.h"
 
 USING_WORKERS_NAMESPACE
 
-using mozilla::dom::workers::exceptions::ThrowDOMExceptionForNSResult;
+using mozilla::dom::Throw;
 
 namespace {
 
@@ -46,7 +47,7 @@ public:
   WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
   {
     if (NS_FAILED(mErrorCode)) {
-      ThrowDOMExceptionForNSResult(aCx, mErrorCode);
+      Throw(aCx, mErrorCode);
       aWorkerPrivate->StopSyncLoop(mSyncQueueKey, false);
     }
     else {

@@ -466,6 +466,33 @@ interface TestInterface {
   void passUnionWithObject((object or long) arg);
   //void passUnionWithDict((Dict or long) arg);
 
+  void passUnionWithDefaultValue1(optional (double or DOMString) arg = "");
+  void passUnionWithDefaultValue2(optional (double or DOMString) arg = 1);
+  void passUnionWithDefaultValue3(optional (double or DOMString) arg = 1.5);
+  void passUnionWithDefaultValue4(optional (float or DOMString) arg = "");
+  void passUnionWithDefaultValue5(optional (float or DOMString) arg = 1);
+  void passUnionWithDefaultValue6(optional (float or DOMString) arg = 1.5);
+  void passUnionWithDefaultValue7(optional (unrestricted double or DOMString) arg = "");
+  void passUnionWithDefaultValue8(optional (unrestricted double or DOMString) arg = 1);
+  void passUnionWithDefaultValue9(optional (unrestricted double or DOMString) arg = 1.5);
+  void passUnionWithDefaultValue10(optional (unrestricted double or DOMString) arg = Infinity);
+  void passUnionWithDefaultValue11(optional (unrestricted float or DOMString) arg = "");
+  void passUnionWithDefaultValue12(optional (unrestricted float or DOMString) arg = 1);
+  void passUnionWithDefaultValue13(optional (unrestricted float or DOMString) arg = Infinity);
+
+  void passNullableUnionWithDefaultValue1(optional (double or DOMString)? arg = "");
+  void passNullableUnionWithDefaultValue2(optional (double or DOMString)? arg = 1);
+  void passNullableUnionWithDefaultValue3(optional (double or DOMString)? arg = null);
+  void passNullableUnionWithDefaultValue4(optional (float or DOMString)? arg = "");
+  void passNullableUnionWithDefaultValue5(optional (float or DOMString)? arg = 1);
+  void passNullableUnionWithDefaultValue6(optional (float or DOMString)? arg = null);
+  void passNullableUnionWithDefaultValue7(optional (unrestricted double or DOMString)? arg = "");
+  void passNullableUnionWithDefaultValue8(optional (unrestricted double or DOMString)? arg = 1);
+  void passNullableUnionWithDefaultValue9(optional (unrestricted double or DOMString)? arg = null);
+  void passNullableUnionWithDefaultValue10(optional (unrestricted float or DOMString)? arg = "");
+  void passNullableUnionWithDefaultValue11(optional (unrestricted float or DOMString)? arg = 1);
+  void passNullableUnionWithDefaultValue12(optional (unrestricted float or DOMString)? arg = null);
+
   (CanvasPattern or CanvasGradient) receiveUnion();
   (CanvasPattern? or CanvasGradient) receiveUnionContainingNull();
   (CanvasPattern or CanvasGradient)? receiveNullableUnion();
@@ -509,6 +536,8 @@ interface TestInterface {
   void dontEnforceRangeOrClamp(byte arg);
   void doEnforceRange([EnforceRange] byte arg);
   void doClamp([Clamp] byte arg);
+  [EnforceRange] attribute byte enforcedByte;
+  [Clamp] attribute byte clampedByte;
 
   // Typedefs
   const myLong myLongConstant = 5;
@@ -680,6 +709,8 @@ dictionary Dict : ParentDict {
   long a;
   long b = 8;
   long z = 9;
+  [EnforceRange] unsigned long enforcedUnsignedLong;
+  [Clamp] unsigned long clampedUnsignedLong;
   DOMString str;
   DOMString empty = "";
   TestEnum otherEnum = "b";
@@ -709,6 +740,8 @@ dictionary Dict : ParentDict {
   unrestricted double  negativeInfUrDouble = -Infinity;
   unrestricted double  nanUrDouble = NaN;
 
+  (float or DOMString) floatOrString = "str";
+
   ArrayBuffer arrayBuffer;
   ArrayBuffer? nullableArrayBuffer;
   Uint8Array uint8Array;
@@ -737,6 +770,7 @@ dictionary DictContainingSequence {
   sequence<object?>? ourSequence7;
   sequence<object>? ourSequence8 = null;
   sequence<object?>? ourSequence9 = null;
+  sequence<(float or DOMString)> ourSequence10;
 };
 
 dictionary DictForConstructor {

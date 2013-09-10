@@ -7,6 +7,7 @@
 #include "mozilla/dom/Promise.h"
 
 #include "jsfriendapi.h"
+#include "mozilla/dom/OwningNonNull.h"
 #include "mozilla/dom/PromiseBinding.h"
 #include "mozilla/dom/PromiseResolver.h"
 #include "mozilla/Preferences.h"
@@ -94,7 +95,7 @@ Promise::Promise(nsPIDOMWindow* aWindow)
   , mHadRejectCallback(false)
 {
   MOZ_COUNT_CTOR(Promise);
-  NS_HOLD_JS_OBJECTS(this, Promise);
+  mozilla::HoldJSObjects(this);
   SetIsDOMBinding();
 
   mResolver = new PromiseResolver(this);
@@ -104,7 +105,7 @@ Promise::~Promise()
 {
   MaybeReportRejected();
   mResult = JS::UndefinedValue();
-  NS_DROP_JS_OBJECTS(this, Promise);
+  mozilla::DropJSObjects(this);
   MOZ_COUNT_DTOR(Promise);
 }
 

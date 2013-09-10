@@ -20,7 +20,6 @@
 #include "nsEventDispatcher.h"
 #include "nsError.h"
 #include "nsIScriptObjectPrincipal.h"
-#include "nsDOMClassInfoID.h"
 #include "nsIURL.h"
 #include "nsICharsetConverterManager.h"
 #include "nsIUnicodeEncoder.h"
@@ -45,6 +44,7 @@
 #include "nsWrapperCacheInlines.h"
 #include "nsDOMEventTargetHelper.h"
 #include "nsIObserverService.h"
+#include "nsIWebSocketChannel.h"
 #include "GeneratedEvents.h"
 
 namespace mozilla {
@@ -485,29 +485,26 @@ WebSocket::WrapObject(JSContext* cx, JS::Handle<JSObject*> scope)
 // Constructor:
 already_AddRefed<WebSocket>
 WebSocket::Constructor(const GlobalObject& aGlobal,
-                       JSContext* aCx,
                        const nsAString& aUrl,
                        ErrorResult& aRv)
 {
   Sequence<nsString> protocols;
-  return WebSocket::Constructor(aGlobal, aCx, aUrl, protocols, aRv);
+  return WebSocket::Constructor(aGlobal, aUrl, protocols, aRv);
 }
 
 already_AddRefed<WebSocket>
 WebSocket::Constructor(const GlobalObject& aGlobal,
-                       JSContext* aCx,
                        const nsAString& aUrl,
                        const nsAString& aProtocol,
                        ErrorResult& aRv)
 {
   Sequence<nsString> protocols;
   protocols.AppendElement(aProtocol);
-  return WebSocket::Constructor(aGlobal, aCx, aUrl, protocols, aRv);
+  return WebSocket::Constructor(aGlobal, aUrl, protocols, aRv);
 }
 
 already_AddRefed<WebSocket>
 WebSocket::Constructor(const GlobalObject& aGlobal,
-                       JSContext* aCx,
                        const nsAString& aUrl,
                        const Sequence<nsString>& aProtocols,
                        ErrorResult& aRv)
@@ -565,7 +562,8 @@ WebSocket::Constructor(const GlobalObject& aGlobal,
   }
 
   nsRefPtr<WebSocket> webSocket = new WebSocket();
-  nsresult rv = webSocket->Init(aCx, principal, ownerWindow, aUrl, protocolArray);
+  nsresult rv = webSocket->Init(aGlobal.GetContext(), principal, ownerWindow,
+                                aUrl, protocolArray);
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
     return nullptr;
@@ -583,7 +581,8 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(WebSocket)
       tmp->mListenerManager->MarkForCC();
     }
     if (!isBlack && tmp->PreservingWrapper()) {
-      xpc_UnmarkGrayObject(tmp->GetWrapperPreserveColor());
+      // This marks the wrapper black.
+      tmp->GetWrapper();
     }
     return true;
   }

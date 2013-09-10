@@ -19,7 +19,10 @@
 using namespace js;
 using namespace js::jit;
 
+using mozilla::DoubleSignificandBits;
 using mozilla::FloorLog2;
+using mozilla::NegativeInfinity;
+using mozilla::SpecificNaN;
 
 namespace js {
 namespace jit {
@@ -83,6 +86,14 @@ CodeGeneratorX86Shared::visitDouble(LDouble *ins)
 {
     const LDefinition *out = ins->getDef(0);
     masm.loadConstantDouble(ins->getDouble(), ToFloatRegister(out));
+    return true;
+}
+
+bool
+CodeGeneratorX86Shared::visitFloat32(LFloat32 *ins)
+{
+    const LDefinition *out = ins->getDef(0);
+    masm.loadConstantFloat32(ins->getFloat(), ToFloatRegister(out));
     return true;
 }
 
@@ -420,9 +431,9 @@ CodeGeneratorX86Shared::visitAbsD(LAbsD *ins)
 {
     FloatRegister input = ToFloatRegister(ins->input());
     JS_ASSERT(input == ToFloatRegister(ins->output()));
-    masm.xorpd(ScratchFloatReg, ScratchFloatReg);
-    masm.subsd(input, ScratchFloatReg); // negate the sign bit.
-    masm.andpd(ScratchFloatReg, input); // s & ~s
+    // Load a value which is all ones except for the sign bit.
+    masm.loadConstantDouble(SpecificNaN(0, DoubleSignificandBits), ScratchFloatReg);
+    masm.andpd(ScratchFloatReg, input);
     return true;
 }
 
@@ -430,8 +441,8 @@ bool
 CodeGeneratorX86Shared::visitSqrtD(LSqrtD *ins)
 {
     FloatRegister input = ToFloatRegister(ins->input());
-    JS_ASSERT(input == ToFloatRegister(ins->output()));
-    masm.sqrtsd(input, input);
+    FloatRegister output = ToFloatRegister(ins->output());
+    masm.sqrtsd(input, output);
     return true;
 }
 
@@ -439,15 +450,12 @@ bool
 CodeGeneratorX86Shared::visitPowHalfD(LPowHalfD *ins)
 {
     FloatRegister input = ToFloatRegister(ins->input());
-    Register scratch = ToRegister(ins->temp());
     JS_ASSERT(input == ToFloatRegister(ins->output()));
 
-    const uint32_t NegInfinityFloatBits = 0xFF800000;
     Label done, sqrt;
 
     // Branch if not -Infinity.
-    masm.move32(Imm32(NegInfinityFloatBits), scratch);
-    masm.loadFloatAsDouble(scratch, ScratchFloatReg);
+    masm.loadConstantDouble(NegativeInfinity(), ScratchFloatReg);
     masm.branchDouble(Assembler::DoubleNotEqualOrUnordered, input, ScratchFloatReg, &sqrt);
 
     // Math.pow(-Infinity, 0.5) == Infinity.
@@ -1277,6 +1285,34 @@ CodeGeneratorX86Shared::visitMathD(LMathD *math)
 }
 
 bool
+CodeGeneratorX86Shared::visitMathF(LMathF *math)
+{
+    FloatRegister lhs = ToFloatRegister(math->lhs());
+    Operand rhs = ToOperand(math->rhs());
+
+    JS_ASSERT(ToFloatRegister(math->output()) == lhs);
+
+    switch (math->jsop()) {
+      case JSOP_ADD:
+        masm.addss(rhs, lhs);
+        break;
+      case JSOP_SUB:
+        masm.subss(rhs, lhs);
+        break;
+      case JSOP_MUL:
+        masm.mulss(rhs, lhs);
+        break;
+      case JSOP_DIV:
+        masm.divss(rhs, lhs);
+        break;
+      default:
+        MOZ_ASSUME_UNREACHABLE("unexpected opcode");
+        return false;
+    }
+    return true;
+}
+
+bool
 CodeGeneratorX86Shared::visitFloor(LFloor *lir)
 {
     FloatRegister input = ToFloatRegister(lir->input());
@@ -1524,6 +1560,16 @@ CodeGeneratorX86Shared::visitNegD(LNegD *ins)
     JS_ASSERT(input == ToFloatRegister(ins->output()));
 
     masm.negateDouble(input);
+    return true;
+}
+
+bool
+CodeGeneratorX86Shared::visitNegF(LNegF *ins)
+{
+    FloatRegister input = ToFloatRegister(ins->input());
+    JS_ASSERT(input == ToFloatRegister(ins->output()));
+
+    masm.negateFloat(input);
     return true;
 }
 

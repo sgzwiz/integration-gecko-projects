@@ -162,15 +162,23 @@ CodeGeneratorShared::encodeSlots(LSnapshot *snapshot, MResumePoint *resumePoint,
           case MIRType_Object:
           case MIRType_Boolean:
           case MIRType_Double:
+          case MIRType_Float32:
           {
             LAllocation *payload = snapshot->payloadOfSlot(i);
-            JSValueType type = ValueTypeFromMIRType(mir->type());
+            JSValueType valueType = ValueTypeFromMIRType(type);
             if (payload->isMemory()) {
-                snapshots_.addSlot(type, ToStackIndex(payload));
+                if (type == MIRType_Float32)
+                    snapshots_.addFloat32Slot(ToStackIndex(payload));
+                else
+                    snapshots_.addSlot(valueType, ToStackIndex(payload));
             } else if (payload->isGeneralReg()) {
-                snapshots_.addSlot(type, ToRegister(payload));
+                snapshots_.addSlot(valueType, ToRegister(payload));
             } else if (payload->isFloatReg()) {
-                snapshots_.addSlot(ToFloatRegister(payload));
+                FloatRegister reg = ToFloatRegister(payload);
+                if (type == MIRType_Float32)
+                    snapshots_.addFloat32Slot(reg);
+                else
+                    snapshots_.addSlot(reg);
             } else {
                 MConstant *constant = mir->toConstant();
                 const Value &v = constant->value();
@@ -486,7 +494,7 @@ StoreAllLiveRegs(MacroAssembler &masm, RegisterSet liveRegs)
     masm.loadJitActivation(scratch);
 
     Address checkRegs(scratch, JitActivation::offsetOfCheckRegs());
-    masm.store32(Imm32(1), checkRegs);
+    masm.add32(Imm32(1), checkRegs);
 
     StoreOp op(masm);
     HandleRegisterDump<StoreOp>(op, masm, liveRegs, scratch, allRegs.getAny());
@@ -538,6 +546,13 @@ CodeGeneratorShared::verifyOsiPointRegs(LSafepoint *safepoint)
     Label failure, done;
     Address checkRegs(scratch, JitActivation::offsetOfCheckRegs());
     masm.branch32(Assembler::Equal, checkRegs, Imm32(0), &done);
+
+    // Having more than one VM function call made in one visit function at
+    // runtime is a sec-ciritcal error, because if we conservatively assume that
+    // one of the function call can re-enter Ion, then the invalidation process
+    // will potentially add a call at a random location, by patching the code
+    // before the return address.
+    masm.branch32(Assembler::NotEqual, checkRegs, Imm32(1), &failure);
 
     // Ignore temp registers. Some instructions (like LValueToInt32) modify
     // temps after calling into the VM. This is fine because no other

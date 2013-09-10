@@ -19,11 +19,6 @@ BEGIN_QUOTA_NAMESPACE
 class OriginCollection
 {
 public:
-  OriginCollection()
-  {
-    mOrigins.Init();
-  }
-
   bool
   ContainsPattern(const nsACString& aPattern)
   {
