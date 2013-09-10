@@ -681,8 +681,6 @@ NS_IMETHODIMP _OldStorage::AsyncOpenURI(nsIURI *aURI,
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!mAppCache && (mLookupAppCache || mOfflineStorage)) {
-    MOZ_ASSERT(!(aFlags & nsICacheStorage::OPEN_TRUNCATE));
-
     rv = ChooseApplicationCache(cacheKey, getter_AddRefs(mAppCache));
     NS_ENSURE_SUCCESS(rv, rv);
   }

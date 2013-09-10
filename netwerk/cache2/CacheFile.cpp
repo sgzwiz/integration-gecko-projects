@@ -386,9 +386,6 @@ CacheFile::CacheFile()
 
   NS_ADDREF(this);
   MOZ_COUNT_CTOR(CacheFile);
-  mChunks.Init();
-  mCachedChunks.Init();
-  mChunkListeners.Init();
 }
 
 CacheFile::~CacheFile()

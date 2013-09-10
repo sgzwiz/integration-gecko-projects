@@ -99,7 +99,6 @@ CacheStorageService::CacheStorageService()
 
   sSelf = this;
   sGlobalEntryTables = new GlobalEntryTables();
-  sGlobalEntryTables->Init();
 
   NS_NewNamedThread("Cache Mngmnt", getter_AddRefs(mThread));
 }
@@ -975,7 +974,6 @@ CacheStorageService::RecordMemoryOnlyEntry(CacheEntry* aEntry,
     }
 
     entries = new CacheEntryTable();
-    entries->Init();
     sGlobalEntryTables->Put(memoryStorageID, entries);
     LOG(("  new memory-only storage table for %s", memoryStorageID.get()));
   }
@@ -1193,7 +1191,6 @@ CacheStorageService::AddStorageEntry(nsCSubstring const& aContextKey,
     CacheEntryTable* entries;
     if (!sGlobalEntryTables->Get(aContextKey, &entries)) {
       entries = new CacheEntryTable();
-      entries->Init();
       sGlobalEntryTables->Put(aContextKey, entries);
       LOG(("  new storage entries table for context %s", aContextKey.BeginReading()));
     }
