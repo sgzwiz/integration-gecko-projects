@@ -3,24 +3,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
- * The origin of this IDL file is http://www.w3.org/TR/IndexedDB/
+ * The origin of this IDL file is
+ * http://www.w3.org/TR/2012/WD-IndexedDB-20120524/#idl-def-IDBTransactionSync
  */
 
 interface IDBTransactionSync {
-  [Throws]
-  readonly attribute IDBTransactionMode mode;
+    [Throws]
+    readonly    attribute IDBTransactionMode mode;
 
-  readonly attribute IDBDatabaseSync db;
+    readonly    attribute IDBDatabaseSync    db;
 
-  [Throws]
-  IDBObjectStoreSync
-  objectStore(DOMString name);
+    [Throws]
+    IDBObjectStoreSync objectStore (DOMString name);
 
-  [Throws]
-  void
-  abort();
+    [Throws]
+    void               abort ();
 };
 
 partial interface IDBTransactionSync {
-  readonly attribute DOMStringList objectStoreNames;
+    readonly    attribute DOMStringList      objectStoreNames;
 };

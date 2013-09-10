@@ -3,37 +3,35 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
- * The origin of this IDL file is http://www.w3.org/TR/IndexedDB/
+ * The origin of this IDL file is
+ * http://www.w3.org/TR/2012/WD-IndexedDB-20120524/#idl-def-IDBCursorSync
+ * http://www.w3.org/TR/2012/WD-IndexedDB-20120524/#idl-def-IDBCursorWithValueSync
  */
 
 interface IDBCursorSync {
-  readonly attribute object source;
+    readonly    attribute object             source;
 
-  [Throws]
-  readonly attribute IDBCursorDirection direction;
+    [Throws]
+    readonly    attribute IDBCursorDirection direction;
 
-  readonly attribute any key;
+    readonly    attribute any                key;
 
-  readonly attribute any primaryKey;
+    readonly    attribute any                primaryKey;
 
-  [Throws]
-  void
-  update(any value);
+    [Throws]
+    void    update (any value);
 
-  [Throws]
-  boolean
-  advance([EnforceRange] unsigned long count);
+    [Throws]
+    boolean advance ([EnforceRange] unsigned long count);
 
-  [Throws]
-  boolean
-  continue(optional any key);
+    [Throws]
+    boolean continue (optional any key);
 
-  [Throws]
-  boolean
-  delete();
+    [Throws]
+    boolean delete ();
 };
 
 interface IDBCursorWithValueSync : IDBCursorSync {
-  [Throws]
-  readonly attribute any value;
+    [Throws]
+    readonly    attribute any                value;
 };

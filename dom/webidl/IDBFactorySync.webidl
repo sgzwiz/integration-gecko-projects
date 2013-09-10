@@ -3,31 +3,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
- * The origin of this IDL file is http://www.w3.org/TR/IndexedDB/
+ * The origin of this IDL file is
+ * http://www.w3.org/TR/2012/WD-IndexedDB-20120524/#idl-def-IDBFactorySync
  */
 
 interface IDBFactorySync {
-  [Throws]
-  IDBDatabaseSync
-  open(DOMString name,
-       [EnforceRange] unsigned long long version,
-       optional IDBVersionChangeCallback upgradeCallback,
-       optional unsigned long timeout);
+    [Throws]
+    IDBDatabaseSync open (DOMString name, [EnforceRange] unsigned long long version, optional IDBVersionChangeCallback upgradeCallback, optional unsigned long timeout);
 
-  [Throws]
-  IDBDatabaseSync
-  open(DOMString name,
-       optional IDBOpenDBOptions options,
-       optional IDBVersionChangeCallback upgradeCallback,
-       optional unsigned long timeout);
+    [Throws]
+    IDBDatabaseSync open (DOMString name, optional IDBOpenDBOptions options, optional IDBVersionChangeCallback upgradeCallback, optional unsigned long timeout);
 
-  [Throws]
-  void
-  deleteDatabase(DOMString name,
-                 optional IDBOpenDBOptions options);
+    [Throws]
+    void            deleteDatabase (DOMString name, optional IDBOpenDBOptions options);
 
-  [Throws]
-  short
-  cmp(any first,
-      any second);
+    [Throws]
+    short           cmp (any first, any second);
 };

@@ -143,7 +143,7 @@ public:
   Get(JSContext* aCx, JS::Value aKey, ErrorResult& aRv);
 
   JS::Value
-  MozGetAll(JSContext* aCx, const Optional<JS::Handle<JS::Value> >& aKey,
+  GetAll(JSContext* aCx, const Optional<JS::Handle<JS::Value> >& aKey,
             const Optional<uint32_t>& aLimit, ErrorResult& aRv);
 
   void

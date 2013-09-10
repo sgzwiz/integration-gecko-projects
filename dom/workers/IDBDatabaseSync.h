@@ -121,7 +121,7 @@ public:
   }
 
   void
-  GetMozStorage(nsString& aStorage, ErrorResult& aRv)
+  GetStorage(nsString& aStorage)
   {
     PersistenceTypeToText(mPersistenceType, aStorage);
   }

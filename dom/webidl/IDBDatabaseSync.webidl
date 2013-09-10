@@ -3,59 +3,45 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
- * The origin of this IDL file is http://www.w3.org/TR/IndexedDB/
+ * The origin of this IDL file is
+ * http://www.w3.org/TR/2012/WD-IndexedDB-20120524/#idl-def-IDBDatabaseSync
  */
 
 interface IDBDatabaseSync : EventTarget {
-  readonly attribute DOMString name;
+    readonly    attribute DOMString          name;
 
-  readonly attribute unsigned long long version;
+    readonly    attribute unsigned long long version;
 
-  [Throws]
-  readonly attribute DOMString mozStorage;
+    [Throws]
+    readonly    attribute DOMStringList      objectStoreNames;
 
-  [Throws]
-  readonly attribute DOMStringList objectStoreNames;
+    [Throws]
+    IDBObjectStoreSync createObjectStore (DOMString name, optional IDBObjectStoreParameters optionalParameters);
 
-  [Throws]
-  IDBObjectStoreSync
-  createObjectStore(DOMString name,
-                    optional IDBObjectStoreParameters optionalParameters);
+    [Throws]
+    void               deleteObjectStore (DOMString name);
 
-  [Throws]
-  void
-  deleteObjectStore(DOMString name);
+    // Bug 899972 Unions are currently not supported.
+    // void transaction ((DOMString or sequence<DOMString>) storeNames, IDBTransactionCallback callback, optional IDBTransactionMode mode = "readonly", optional unsigned long timeout);
 
-  // This should be:
-  // void
-  // transaction((DOMString or sequence<DOMString>) storeNames,
-  //            IDBTransactionCallback callback,
-  //            optional IDBTransactionMode mode = "readonly",
-  //            optional unsigned long timeout);
-  // but unions are not currently supported.
+    [Throws]
+    void               transaction (DOMString storeName, IDBTransactionCallback callback, optional IDBTransactionMode mode = "readonly", optional unsigned long timeout);
 
-  [Throws]
-  void
-  transaction(DOMString storeName,
-              IDBTransactionCallback callback,
-              optional IDBTransactionMode mode = "readonly",
-              optional unsigned long timeout);
-  [Throws]
-  void
-  transaction(sequence<DOMString> storeNames,
-              IDBTransactionCallback callback,
-              optional IDBTransactionMode mode = "readonly",
-              optional unsigned long timeout);
+    [Throws]
+    void               transaction (sequence<DOMString> storeNames, IDBTransactionCallback callback, optional IDBTransactionMode mode = "readonly", optional unsigned long timeout);
 
-  [Throws]
-  /* FileHandleSync */ any
-  mozCreateFileHandle(DOMString name,
-                      optional DOMString type);
+    [Throws]
+    void               close ();
 
-  [Throws]
-  void
-  close();
+    [Throws]
+                attribute EventHandler       onversionchange;
+};
 
-  [Throws]
-  attribute EventHandler onversionchange;
+partial interface IDBDatabaseSync {
+    //[Pref="dom.indexedDB.experimental.enabled"]
+    readonly    attribute DOMString          storage;
+
+    [Throws]
+    /* FileHandleSync */
+    any                mozCreateFileHandle (DOMString name, optional DOMString type);
 };

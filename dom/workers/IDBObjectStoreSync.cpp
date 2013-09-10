@@ -717,7 +717,7 @@ IDBObjectStoreSync::Get(JSContext* aCx, JS::Value aKey, ErrorResult& aRv)
 }
 
 JS::Value
-IDBObjectStoreSync::MozGetAll(JSContext* aCx,
+IDBObjectStoreSync::GetAll(JSContext* aCx,
                               const Optional<JS::Handle<JS::Value> >& aKey,
                               const Optional<uint32_t>& aLimit,
                               ErrorResult& aRv)

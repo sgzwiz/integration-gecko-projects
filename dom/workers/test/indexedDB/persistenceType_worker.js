@@ -33,7 +33,7 @@ onmessage = function(event) {
   ok(upgradeneededcalled, "Expected upgradeneeded callback");
   is(db.name, name, "Correct name");
   is(db.version, version, "Correct version");
-  is(db.mozStorage, "persistent", "Correct persistence type");
+  is(db.storage, "persistent", "Correct persistence type");
 
   db.transaction(objectStoreName,  function(trans) {
     var objectStore = trans.objectStore(objectStoreName);
@@ -57,7 +57,7 @@ onmessage = function(event) {
   ok(upgradeneededcalled, "Expected upgradeneeded callback");
   is(db.name, name, "Correct name");
   is(db.version, version, "Correct version");
-  is(db.mozStorage, "temporary", "Correct persistence type");
+  is(db.storage, "temporary", "Correct persistence type");
 
   db.transaction(objectStoreName,  function(trans) {
     var objectStore = trans.objectStore(objectStoreName);

@@ -607,7 +607,7 @@ IDBIndexSync::GetKey(JSContext* aCx, JS::Value aKey, ErrorResult& aRv)
 }
 
 JS::Value
-IDBIndexSync::MozGetAll(JSContext* aCx,
+IDBIndexSync::GetAll(JSContext* aCx,
                         const Optional<JS::Handle<JS::Value> >& aKey,
                         const Optional<uint32_t>& aLimit, ErrorResult& aRv)
 {
@@ -653,7 +653,7 @@ IDBIndexSync::MozGetAll(JSContext* aCx,
 }
 
 JS::Value
-IDBIndexSync::MozGetAllKeys(JSContext* aCx,
+IDBIndexSync::GetAllKeys(JSContext* aCx,
                             const Optional<JS::Handle<JS::Value> >& aKey,
                             const Optional<uint32_t>& aLimit, ErrorResult& aRv)
 {
