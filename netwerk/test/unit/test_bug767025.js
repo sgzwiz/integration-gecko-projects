@@ -205,7 +205,7 @@ function check_evict_cache(appcache) {
 
       // evict all documents.
       let storage = get_cache_service().appCacheStorage(LoadContextInfo.default, appcache);
-      storage.asyncEvictStorage();
+      storage.asyncEvictStorage(null);
 
       // All documents are removed except foo1 & foo3.
       syncWithCacheIOThread(function () {
