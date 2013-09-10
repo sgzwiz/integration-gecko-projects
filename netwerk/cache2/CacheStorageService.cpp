@@ -1254,7 +1254,8 @@ public:
 
   CacheEntryDoomByKeyCallback(nsICacheEntryDoomCallback* aCallback)
     : mCallback(aCallback) { }
-  virtual ~CacheEntryDoomByKeyCallback() { }
+  virtual ~CacheEntryDoomByKeyCallback();
+
 private:
   NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult) { return NS_OK; }
   NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, const char *aBuf, nsresult aResult) { return NS_OK; }
@@ -1264,6 +1265,12 @@ private:
 
   nsCOMPtr<nsICacheEntryDoomCallback> mCallback;
 };
+
+CacheEntryDoomByKeyCallback::~CacheEntryDoomByKeyCallback()
+{
+  if (mCallback)
+    ProxyReleaseMainThread(mCallback);
+}
 
 NS_IMETHODIMP CacheEntryDoomByKeyCallback::OnFileDoomed(CacheFileHandle *aHandle,
                                                         nsresult aResult)
