@@ -275,7 +275,7 @@ nsLayoutStatics::Initialize()
   nsApplicationCacheService::AppClearDataObserverInit();
 
   InitializeDateCacheCleaner();
-  
+
   HTMLVideoElement::Init();
 
   CacheObserver::Init();
