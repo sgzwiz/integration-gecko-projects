@@ -13,7 +13,7 @@
 #include "mozilla/dom/indexedDB/IDBDatabaseBase.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 
-#include "DatabaseInfoSync.h"
+#include "DatabaseInfoMT.h"
 #include "IDBObjectSync.h"
 
 namespace mozilla {
@@ -74,7 +74,7 @@ public:
     return mPersistenceType;
   }
 
-  DatabaseInfoSync*
+  DatabaseInfoMT*
   Info() const
   {
     return mDatabaseInfo;
@@ -84,7 +84,7 @@ public:
   void ExitSetVersionTransaction();
 
   // Called when a versionchange transaction is aborted to reset the
-  // DatabaseInfoSync.
+  // DatabaseInfoMT.
   void RevertToPreviousState();
 
   // Methods called on the IPC thread.
@@ -184,11 +184,11 @@ private:
   Open(JSContext* aCx, JSObject* aUpgradeCallback);
 
   IDBFactorySync* mFactory;
-  nsRefPtr<DatabaseInfoSync> mDatabaseInfo;
+  nsRefPtr<DatabaseInfoMT> mDatabaseInfo;
 
   // Set to a copy of the existing DatabaseInfo when starting a versionchange
   // transaction.
-  nsRefPtr<DatabaseInfoSync> mPreviousDatabaseInfo;
+  nsRefPtr<DatabaseInfoMT> mPreviousDatabaseInfo;
 
   nsCString mDatabaseId;
   uint64_t mVersion;

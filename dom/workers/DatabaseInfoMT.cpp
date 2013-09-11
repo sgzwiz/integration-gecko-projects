@@ -4,16 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "DatabaseInfoSync.h"
+#include "DatabaseInfoMT.h"
 
 #include "nsDataHashtable.h"
+#include "mozilla/StaticMutex.h"
 
 USING_WORKERS_NAMESPACE
 using namespace mozilla::dom::indexedDB;
 
 namespace {
 
-typedef nsDataHashtable<nsCStringHashKey, DatabaseInfoSync*>
+typedef nsDataHashtable<nsCStringHashKey, DatabaseInfoMT*>
         DatabaseHash;
 
 DatabaseHash* gDatabaseHash = nullptr;
@@ -34,25 +35,29 @@ CloneObjectStoreInfo(const nsAString& aKey,
 
 }
 
-DatabaseInfoSync::DatabaseInfoSync()
+DatabaseInfoMT::DatabaseInfoMT()
 {
 }
 
-DatabaseInfoSync::~DatabaseInfoSync()
+DatabaseInfoMT::~DatabaseInfoMT()
 {
   // Clones are never in the hash.
   if (!cloned) {
-    DatabaseInfoSync::Remove(id);
+    DatabaseInfoMT::Remove(id);
   }
 }
 
+// static 
+mozilla::StaticMutex DatabaseInfoMT::sDatabaseInfoMutex;
+
 // static
 bool
-DatabaseInfoSync::Get(nsCString& aId,
-                      DatabaseInfoSync** aInfo)
+DatabaseInfoMT::Get(nsCString& aId,
+                      DatabaseInfoMT** aInfo)
 {
   NS_ASSERTION(!aId.IsEmpty(), "Bad id!");
-
+  
+  StaticMutexAutoLock lock(sDatabaseInfoMutex);
   if (gDatabaseHash &&
       gDatabaseHash->Get(aId, aInfo)) {
     NS_IF_ADDREF(*aInfo);
@@ -63,9 +68,11 @@ DatabaseInfoSync::Get(nsCString& aId,
 
 // static
 bool
-DatabaseInfoSync::Put(DatabaseInfoSync* aInfo)
+DatabaseInfoMT::Put(DatabaseInfoMT* aInfo)
 {
   NS_ASSERTION(aInfo, "Null pointer!");
+
+  StaticMutexAutoLock lock(sDatabaseInfoMutex);
 
   if (!gDatabaseHash) {
     nsAutoPtr<DatabaseHash> databaseHash(new DatabaseHash());
@@ -84,9 +91,9 @@ DatabaseInfoSync::Put(DatabaseInfoSync* aInfo)
 
 // static
 void
-DatabaseInfoSync::Remove(const nsACString& aId)
+DatabaseInfoMT::Remove(const nsACString& aId)
 {
-
+  StaticMutexAutoLock lock(sDatabaseInfoMutex);
   if (gDatabaseHash) {
     gDatabaseHash->Remove(aId);
 
@@ -97,10 +104,10 @@ DatabaseInfoSync::Remove(const nsACString& aId)
   }
 }
 
-already_AddRefed<DatabaseInfoSync>
-DatabaseInfoSync::Clone()
+already_AddRefed<DatabaseInfoMT>
+DatabaseInfoMT::Clone()
 {
-  nsRefPtr<DatabaseInfoSync> dbInfo(new DatabaseInfoSync());
+  nsRefPtr<DatabaseInfoMT> dbInfo(new DatabaseInfoMT());
 
   dbInfo->cloned = true;
   dbInfo->name = name;

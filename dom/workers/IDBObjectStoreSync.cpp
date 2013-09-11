@@ -862,7 +862,7 @@ IDBObjectStoreSync::CreateIndex(
     return nullptr;
   }
 
-  DatabaseInfoSync* databaseInfo = mTransaction->DBInfo();
+  DatabaseInfoMT* databaseInfo = mTransaction->DBInfo();
 
   IndexInfo* info = mInfo->indexes.AppendElement();
 

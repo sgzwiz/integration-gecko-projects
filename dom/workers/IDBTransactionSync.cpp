@@ -8,7 +8,7 @@
 
 #include "mozilla/dom/indexedDB/DatabaseInfo.h"
 
-#include "DatabaseInfoSync.h"
+#include "DatabaseInfoMT.h"
 #include "DOMBindingInlines.h"
 #include "DOMStringList.h"
 #include "IDBDatabaseSync.h"
@@ -281,7 +281,7 @@ IDBTransactionSync::Abort(JSContext* aCx, ErrorResult& aRv)
     // back to its previous state.
     mDatabase->RevertToPreviousState();
 
-    DatabaseInfoSync* dbInfo = mDatabase->Info();
+    DatabaseInfoMT* dbInfo = mDatabase->Info();
 
     for (uint32_t i = 0; i < mCreatedObjectStores.Length(); i++) {
       nsRefPtr<IDBObjectStoreSync>& objectStore = mCreatedObjectStores[i];

@@ -11,7 +11,7 @@
 
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/indexedDB/IDBObjectStoreBase.h"
-#include "DatabaseInfoSync.h"
+#include "DatabaseInfoMT.h"
 
 #include "IDBObjectSync.h"
 #include "IDBTransactionSync.h"

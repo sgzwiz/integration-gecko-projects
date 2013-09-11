@@ -7,7 +7,7 @@
 #include "mozilla/dom/quota/QuotaManager.h"
 
 #include "BlockingHelperBase.h"
-#include "DatabaseInfoSync.h"
+#include "DatabaseInfoMT.h"
 #include "IDBCursorSync.h"
 #include "IDBDatabaseSync.h"
 #include "IDBFactorySync.h"
@@ -135,18 +135,18 @@ IndexedDBDatabaseWorkerChild::EnsureDatabaseInfo(
                              aDBInfo.name, databaseId);
   NS_ENSURE_TRUE(!databaseId.IsEmpty(), false);
 
-  // Get existing DatabaseInfoSync or create a new one
-  nsRefPtr<DatabaseInfoSync> dbInfo;
-  if (DatabaseInfoSync::Get(databaseId, getter_AddRefs(dbInfo))) {
+  // Get existing DatabaseInfoMT or create a new one
+  nsRefPtr<DatabaseInfoMT> dbInfo;
+  if (DatabaseInfoMT::Get(databaseId, getter_AddRefs(dbInfo))) {
     dbInfo->version = aDBInfo.version;
   }
   else {
-    nsRefPtr<DatabaseInfoSync> newInfo = new DatabaseInfoSync();
+    nsRefPtr<DatabaseInfoMT> newInfo = new DatabaseInfoMT();
 
     *static_cast<DatabaseInfoGuts*>(newInfo.get()) = aDBInfo;
     newInfo->id = databaseId;
 
-    if (!DatabaseInfoSync::Put(newInfo)) {
+    if (!DatabaseInfoMT::Put(newInfo)) {
       NS_WARNING("Out of memory!");
       return false;
     }
@@ -358,7 +358,7 @@ IndexedDBTransactionWorkerChild::RecvComplete(const CompleteParams& aParams)
       ErrorResult rv;
       mTransaction->Db()->Close(nullptr, rv);
       // Then remove the info from the hash as it contains invalid data.
-      DatabaseInfoSync::Remove(mTransaction->Db()->Id());
+      DatabaseInfoMT::Remove(mTransaction->Db()->Id());
     }
   }
   else {
@@ -902,7 +902,7 @@ bool
 IndexedDBDeleteDatabaseRequestWorkerChild::Recv__delete__(const nsresult& aRv)
 {
   if (NS_SUCCEEDED(aRv)) {
-    DatabaseInfoSync::Remove(mDatabaseId);
+    DatabaseInfoMT::Remove(mDatabaseId);
   }
 
   mHelper->OnRequestComplete(aRv);

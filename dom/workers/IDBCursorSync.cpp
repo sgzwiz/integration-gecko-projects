@@ -10,7 +10,7 @@
 #include "mozilla/dom/indexedDB/Key.h"
 
 #include "BlockingHelperBase.h"
-#include "DatabaseInfoSync.h"
+#include "DatabaseInfoMT.h"
 #include "DOMBindingInlines.h"
 #include "IDBIndexSync.h"
 #include "IDBKeyRange.h"

@@ -165,7 +165,7 @@ MOZ_STACK_CLASS
 class AutoRemoveObjectStore
 {
 public:
-  AutoRemoveObjectStore(DatabaseInfoSync* aInfo, const nsAString& aName)
+  AutoRemoveObjectStore(DatabaseInfoMT* aInfo, const nsAString& aName)
   : mInfo(aInfo), mName(aName)
   { }
 
@@ -182,7 +182,7 @@ public:
   }
 
 private:
-  DatabaseInfoSync* mInfo;
+  DatabaseInfoMT* mInfo;
   nsString mName;
 };
 
@@ -375,7 +375,7 @@ IDBDatabaseSync::DeleteObjectStore(JSContext* aCx,
     return;
   }
 
-  DatabaseInfoSync* info = mTransaction->DBInfo();
+  DatabaseInfoMT* info = mTransaction->DBInfo();
   ObjectStoreInfo* objectStoreInfo = info->GetObjectStore(aName);
   if (!objectStoreInfo) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_NOT_FOUND_ERR);
@@ -490,10 +490,10 @@ IDBDatabaseSync::Close(JSContext* aCx, ErrorResult& aRv)
     mClosed = true;
 
     {
-      nsRefPtr<DatabaseInfoSync> previousInfo;
+      nsRefPtr<DatabaseInfoMT> previousInfo;
       mDatabaseInfo.swap(previousInfo);
 
-      nsRefPtr<DatabaseInfoSync> clonedInfo = previousInfo->Clone();
+      nsRefPtr<DatabaseInfoMT> clonedInfo = previousInfo->Clone();
       clonedInfo.swap(mDatabaseInfo);
     }
 

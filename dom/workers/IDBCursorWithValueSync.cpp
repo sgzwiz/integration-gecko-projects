@@ -7,7 +7,7 @@
 #include "IDBCursorWithValueSync.h"
 
 #include "BlockingHelperBase.h"
-#include "DatabaseInfoSync.h"
+#include "DatabaseInfoMT.h"
 #include "DOMBindingInlines.h"
 #include "IDBIndexSync.h"
 #include "IDBKeyRange.h"

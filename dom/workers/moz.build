@@ -20,7 +20,7 @@ EXPORTS.mozilla.dom.workers.bindings += [
     'BlockingHelperBase.h',
     'DOMBindingBase.h',
     'DOMStringList.h',
-    'DatabaseInfoSync.h',
+    'DatabaseInfoMT.h',
     'EventListenerManager.h',
     'EventTarget.h',
     'FileReaderSync.h',
@@ -44,7 +44,7 @@ EXPORTS.mozilla.dom.workers.bindings += [
 CPP_SOURCES += [
     'BlockingHelperBase.cpp',
     'ChromeWorkerScope.cpp',
-    'DatabaseInfoSync.cpp',
+    'DatabaseInfoMT.cpp',
     'DOMBindingBase.cpp',
     'DOMStringList.cpp',
     'EventListenerManager.cpp',

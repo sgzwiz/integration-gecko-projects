@@ -24,7 +24,7 @@ struct ObjectStoreInfo;
 
 BEGIN_WORKERS_NAMESPACE
 
-struct DatabaseInfoSync;
+struct DatabaseInfoMT;
 class DOMStringList;
 class IDBDatabaseSync;
 class IDBObjectStoreSync;
@@ -49,7 +49,7 @@ public:
   virtual void
   _finalize(JSFreeOp* aFop) MOZ_OVERRIDE;
 
-  DatabaseInfoSync*
+  DatabaseInfoMT*
   DBInfo() const
   {
     return mDatabaseInfo;
@@ -78,7 +78,7 @@ public:
   }
 
   void
-  SetDBInfo(DatabaseInfoSync* aDBInfo)
+  SetDBInfo(DatabaseInfoMT* aDBInfo)
   {
     NS_ASSERTION(aDBInfo != mDatabaseInfo, "This is nonsense");
     mDatabaseInfo = aDBInfo;
@@ -136,7 +136,7 @@ private:
   Finish(JSContext* aCx);
 
   IDBDatabaseSync* mDatabase;
-  nsRefPtr<DatabaseInfoSync> mDatabaseInfo;
+  nsRefPtr<DatabaseInfoMT> mDatabaseInfo;
   nsTArray<nsRefPtr<IDBObjectStoreSync> > mCreatedObjectStores;
   nsTArray<nsRefPtr<IDBObjectStoreSync> > mDeletedObjectStores;
 
