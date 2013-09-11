@@ -149,8 +149,7 @@ QuotaObject::MaybeAllocateMoreSpace(int64_t aOffset, int32_t aCount)
 
     mOriginInfo->mUsage = newUsage;
 
-    uint64_t newGroupUsage = groupInfo->mUsage - mSize + end;
-    groupInfo->mUsage = newGroupUsage;
+    groupInfo->mUsage = groupInfo->mUsage - mSize + end;
 
     mSize = end;
 
@@ -181,7 +180,7 @@ QuotaObject::MaybeAllocateMoreSpace(int64_t aOffset, int32_t aCount)
   if (newTemporaryStorageUsage > quotaManager->mTemporaryStorageLimit) {
     // This will block the thread without holding the lock while waitting.
 
-    nsTArray<OriginInfo*> originInfos;
+    nsAutoTArray<OriginInfo*, 10> originInfos;
     uint64_t sizeToBeFreed =
       quotaManager->LockedCollectOriginsForEviction(delta, originInfos);
 

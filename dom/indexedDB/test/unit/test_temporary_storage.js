@@ -48,12 +48,11 @@ function testSteps()
 
   function setLimit(limit) {
     if (limit) {
-      SpecialPowers.setIntPref("dom.quotaManager.temporaryStorage.limit",
+      SpecialPowers.setIntPref("dom.quotaManager.temporaryStorage.fixedLimit",
                                limit);
+      return;
     }
-    else {
-      SpecialPowers.clearUserPref("dom.quotaManager.temporaryStorage.limit");
-    }
+    SpecialPowers.clearUserPref("dom.quotaManager.temporaryStorage.fixedLimit");
   }
 
   function getPrincipal(url) {
@@ -97,8 +96,8 @@ function testSteps()
 
   // Enable clear() and test()
   let testingEnabled =
-    SpecialPowers.getBoolPref("dom.quotaManager.testing.enabled");
-  SpecialPowers.setBoolPref("dom.quotaManager.testing.enabled", true)
+    SpecialPowers.getBoolPref("dom.quotaManager.testing");
+  SpecialPowers.setBoolPref("dom.quotaManager.testing", true)
 
   // Calibration
   let request = indexedDB.openForPrincipal(getPrincipal(lastUrl), name,
@@ -219,7 +218,7 @@ function testSteps()
   setLimit();
   quotaManager.reset();
 
-  SpecialPowers.setBoolPref("dom.quotaManager.testing.enabled", testingEnabled);
+  SpecialPowers.setBoolPref("dom.quotaManager.testing", testingEnabled);
 
   finishTest();
   yield undefined;

@@ -38,8 +38,8 @@ interface IDBDatabaseSync : EventTarget {
 };
 
 partial interface IDBDatabaseSync {
-    //[Pref="dom.indexedDB.experimental.enabled"]
-    readonly    attribute DOMString          storage;
+    //[Pref="dom.indexedDB.experimental"]
+    readonly    attribute StorageType        storage;
 
     [Throws]
     /* FileHandleSync */

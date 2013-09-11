@@ -191,13 +191,6 @@ private:
        const Optional<mozilla::dom::StorageType>& aStorageType, bool aDelete,
        ErrorResult& aRv);
 
-  // Temp helper, [EnforceRange] is not yet supported in dictionaries.
-  already_AddRefed<IDBOpenDBRequest>
-  Open(nsIPrincipal* aPrincipal, const nsAString& aName,
-       const Optional<int64_t>& aVersion,
-       const Optional<mozilla::dom::StorageType>& aStorageType, bool aDelete,
-       ErrorResult& aRv);
-
   StoragePrivilege mPrivilege;
 
   // If this factory lives on a window then mWindow must be non-null. Otherwise

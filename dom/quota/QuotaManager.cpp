@@ -61,23 +61,22 @@
 // transactions on shutdown before aborting them.
 #define DEFAULT_SHUTDOWN_TIMER_MS 30000
 
-// Amount of space that storages may use by default in megabytes.
-#define DEFAULT_QUOTA_MB 50
-
 // Preference that users can set to override DEFAULT_QUOTA_MB
 #define PREF_STORAGE_QUOTA "dom.indexedDB.warningQuota"
 
-// Preference that users can set to override temporary storage limit calculation
-#define PREF_TEMPORARY_STORAGE_LIMIT "dom.quotaManager.temporaryStorage.limit"
+// Preference that users can set to override temporary storage smart limit
+// calculation.
+#define PREF_FIXED_LIMIT "dom.quotaManager.temporaryStorage.fixedLimit"
 
-// Preferences that are used during temporary storage limit calculation
-#define PREF_TEMPORARY_STORAGE_LIMIT_MIN   PREF_TEMPORARY_STORAGE_LIMIT ".min"
-#define PREF_TEMPORARY_STORAGE_LIMIT_MAX   PREF_TEMPORARY_STORAGE_LIMIT ".max"
-#define PREF_TEMPORARY_STORAGE_LIMIT_CHUNK PREF_TEMPORARY_STORAGE_LIMIT ".chunk"
-#define PREF_TEMPORARY_STORAGE_LIMIT_RATIO PREF_TEMPORARY_STORAGE_LIMIT ".ratio"
+// Preferences that are used during temporary storage smart limit calculation
+#define PREF_SMART_LIMIT_PREFIX "dom.quotaManager.temporaryStorage.smartLimit."
+#define PREF_SMART_LIMIT_MIN PREF_SMART_LIMIT_PREFIX "min"
+#define PREF_SMART_LIMIT_MAX PREF_SMART_LIMIT_PREFIX "max"
+#define PREF_SMART_LIMIT_CHUNK PREF_SMART_LIMIT_PREFIX "chunk"
+#define PREF_SMART_LIMIT_RATIO PREF_SMART_LIMIT_PREFIX "ratio"
 
 // Preference that is used to enable testing features
-#define PREF_TESTING_FEATURES "dom.quotaManager.testing.enabled"
+#define PREF_TESTING_FEATURES "dom.quotaManager.testing"
 
 // profile-before-change, when we need to shut down quota manager
 #define PROFILE_BEFORE_CHANGE_OBSERVER_ID "profile-before-change"
@@ -86,28 +85,21 @@
 // origin.
 #define METADATA_FILE_NAME ".metadata"
 
-// Constants for temporary storage limit computing.
-static const int32_t  gDefaultTemporaryStorageLimitKB =        -1;
-#ifdef ANDROID
-// On Android, smaller/older devices may have very little storage and
-// device owners may be sensitive to storage footprint: Use a smaller
-// percentage of available space and a smaller minimum/maximum.
-static const uint32_t gDefaultTemporaryStorageLimitMinKB =     10 * 1024;
-static const uint32_t gDefaultTemporaryStorageLimitMaxKB =    200 * 1024;
-static const uint32_t gDefaultTemporaryStorageLimitChunkKB =    2 * 1024;
-static const float    gDefaultTemporaryStorageLimitRatio =     .2f;
-#else
-static const uint64_t gDefaultTemporaryStorageLimitMinKB =     50 * 1024;
-static const uint64_t gDefaultTemporaryStorageLimitMaxKB =   1024 * 1024;
-static const uint32_t gDefaultTemporaryStorageLimitChunkKB =   10 * 1024;
-static const float    gDefaultTemporaryStorageLimitRatio =     .4f;
-#endif
-
 #define PERMISSION_DEFAUT_PERSISTENT_STORAGE "default-persistent-storage"
 
 USING_QUOTA_NAMESPACE
 using namespace mozilla::dom;
 using mozilla::dom::file::FileService;
+
+static_assert(
+  static_cast<uint32_t>(StorageType::Persistent) ==
+  static_cast<uint32_t>(PERSISTENCE_TYPE_PERSISTENT),
+  "Enum values should match.");
+
+static_assert(
+  static_cast<uint32_t>(StorageType::Temporary) ==
+  static_cast<uint32_t>(PERSISTENCE_TYPE_TEMPORARY),
+  "Enum values should match.");
 
 BEGIN_QUOTA_NAMESPACE
 
@@ -140,22 +132,29 @@ struct SynchronizedOp
   ArrayCluster<nsIOfflineStorage*> mStorages;
 };
 
-class CollectOriginsHelper MOZ_FINAL : public nsIRunnable
+class CollectOriginsHelper MOZ_FINAL : public nsRunnable
 {
 public:
   CollectOriginsHelper(mozilla::Mutex& aMutex, uint64_t aMinSizeToBeFreed);
 
-  NS_DECL_THREADSAFE_ISUPPORTS
-  NS_DECL_NSIRUNNABLE
+  NS_IMETHOD
+  Run();
 
+  // Blocks the current thread until origins are collected on the main thread.
+  // The returned value contains an aggregate size of those origins.
   int64_t
-  WaitAndReturnOriginsForEviction(nsTArray<OriginInfo*>& aOriginInfos);
+  BlockAndReturnOriginsForEviction(nsTArray<OriginInfo*>& aOriginInfos);
 
 private:
+  ~CollectOriginsHelper()
+  { }
+
   uint64_t mMinSizeToBeFreed;
 
   mozilla::Mutex& mMutex;
   mozilla::CondVar mCondVar;
+
+  // The members below are protected by mMutex.
   nsTArray<OriginInfo*> mOriginInfos;
   uint64_t mSizeToBeFreed;
   bool mWaiting;
@@ -427,7 +426,7 @@ public:
         mCallbackState = Complete;
         return;
       default:
-        NS_NOTREACHED("Can't advance past Complete!");
+        MOZ_ASSUME_UNREACHABLE("Can't advance past Complete!");
     }
   }
 
@@ -474,16 +473,36 @@ END_QUOTA_NAMESPACE
 
 namespace {
 
+// Amount of space that storages may use by default in megabytes.
+static const int32_t  kDefaultQuotaMB =             50;
+
+// Constants for temporary storage limit computing.
+static const int32_t  kDefaultFixedLimitKB =        -1;
+#ifdef ANDROID
+// On Android, smaller/older devices may have very little storage and
+// device owners may be sensitive to storage footprint: Use a smaller
+// percentage of available space and a smaller minimum/maximum.
+static const uint32_t kDefaultSmartLimitMinKB =     10 * 1024;
+static const uint32_t kDefaultSmartLimitMaxKB =    200 * 1024;
+static const uint32_t kDefaultSmartLimitChunkKB =    2 * 1024;
+static const float    kDefaultSmartLimitRatio =     .2f;
+#else
+static const uint64_t kDefaultSmartLimitMinKB =     50 * 1024;
+static const uint64_t kDefaultSmartLimitMaxKB =   1024 * 1024;
+static const uint32_t kDefaultSmartLimitChunkKB =   10 * 1024;
+static const float    kDefaultSmartLimitRatio =     .4f;
+#endif
+
 QuotaManager* gInstance = nullptr;
 mozilla::Atomic<uint32_t> gShutdown(0);
 
-int32_t gStorageQuotaMB = DEFAULT_QUOTA_MB;
+int32_t gStorageQuotaMB = kDefaultQuotaMB;
 
-int32_t gTemporaryStorageLimitKB = gDefaultTemporaryStorageLimitKB;
-uint32_t gTemporaryStorageLimitMinKB = gDefaultTemporaryStorageLimitMinKB;
-uint32_t gTemporaryStorageLimitMaxKB = gDefaultTemporaryStorageLimitMaxKB;
-uint32_t gTemporaryStorageLimitChunkKB = gDefaultTemporaryStorageLimitChunkKB;
-float gTemporaryStorageLimitRatio = gDefaultTemporaryStorageLimitRatio;
+int32_t gFixedLimitKB = kDefaultFixedLimitKB;
+uint32_t gSmartLimitMinKB = kDefaultSmartLimitMinKB;
+uint32_t gSmartLimitMaxKB = kDefaultSmartLimitMaxKB;
+uint32_t gSmartLimitChunkKB = kDefaultSmartLimitChunkKB;
+float gSmartLimitRatio = kDefaultSmartLimitRatio;
 
 bool gTestingEnabled = false;
 
@@ -566,11 +585,11 @@ struct MOZ_STACK_CLASS InactiveOriginsInfo
 {
   InactiveOriginsInfo(OriginCollection& aCollection,
                       nsTArray<OriginInfo*>& aOrigins)
-  : mCollection(aCollection), mOrigins(aOrigins)
+  : collection(aCollection), origins(aOrigins)
   { }
 
-  OriginCollection& mCollection;
-  nsTArray<OriginInfo*>& mOrigins;
+  OriginCollection& collection;
+  nsTArray<OriginInfo*>& origins;
 };
 
 bool
@@ -857,8 +876,7 @@ GetTemporaryStorageLimit(nsIFile* aDirectory, uint64_t aCurrentUsage,
   // Grow/shrink in gTemporaryStorageLimitChunkKB units, deliberately, so that
   // in the common case we don't shrink temporary storage and evict origin data
   // every time we initialize.
-  availableKB = (availableKB / gTemporaryStorageLimitChunkKB) *
-                gTemporaryStorageLimitChunkKB;
+  availableKB = (availableKB / gSmartLimitChunkKB) * gSmartLimitChunkKB;
 
   // The tier scheme:
   // .5 % of space above 25 GB
@@ -866,9 +884,9 @@ GetTemporaryStorageLimit(nsIFile* aDirectory, uint64_t aCurrentUsage,
   // 5 % of space between 500 MB -> 7 GB
   // gTemporaryStorageLimitRatio of space up to 500 MB
 
-#define _25GB (25 * 1024 * 1024)
-#define _7GB (7 * 1024 * 1024)
-#define _500MB (500 * 1024)
+  static const uint64_t _25GB = 25 * 1024 * 1024;
+  static const uint64_t _7GB = 7 * 1024 * 1024;
+  static const uint64_t _500MB = 500 * 1024;
 
 #define PERCENTAGE(a, b, c) ((a - b) * c)
 
@@ -878,42 +896,32 @@ GetTemporaryStorageLimit(nsIFile* aDirectory, uint64_t aCurrentUsage,
       PERCENTAGE(availableKB, _25GB, .005) +
       PERCENTAGE(_25GB, _7GB, .01) +
       PERCENTAGE(_7GB, _500MB, .05) +
-      PERCENTAGE(_500MB, 0, gTemporaryStorageLimitRatio)
+      PERCENTAGE(_500MB, 0, gSmartLimitRatio)
     );
   }
   else if (availableKB > _7GB) {
     resultKB = static_cast<uint64_t>(
       PERCENTAGE(availableKB, _7GB, .01) +
       PERCENTAGE(_7GB, _500MB, .05) +
-      PERCENTAGE(_500MB, 0, gTemporaryStorageLimitRatio)
+      PERCENTAGE(_500MB, 0, gSmartLimitRatio)
     );
   }
-
   else if (availableKB > _500MB) {
     resultKB = static_cast<uint64_t>(
       PERCENTAGE(availableKB, _500MB, .05) +
-      PERCENTAGE(_500MB, 0, gTemporaryStorageLimitRatio)
+      PERCENTAGE(_500MB, 0, gSmartLimitRatio)
     );
   }
   else {
     resultKB = static_cast<uint64_t>(
-      PERCENTAGE(availableKB, 0, gTemporaryStorageLimitRatio)
+      PERCENTAGE(availableKB, 0, gSmartLimitRatio)
     );
   }
 
-#undef _25GB
-#undef _7GB
-#undef _500MB
 #undef PERCENTAGE
 
-  if (resultKB < gTemporaryStorageLimitMinKB) {
-    resultKB = gTemporaryStorageLimitMinKB;
-  }
-  else if (resultKB > gTemporaryStorageLimitMaxKB) {
-    resultKB = gTemporaryStorageLimitMaxKB;
-  }
-
-  *aLimit = resultKB * 1024;
+  *aLimit = 1024 * mozilla::clamped<uint64_t>(resultKB, gSmartLimitMinKB,
+                                              gSmartLimitMaxKB);
   return NS_OK;
 }
 
@@ -1084,58 +1092,32 @@ QuotaManager::Init()
     NS_ENSURE_TRUE(mShutdownTimer, NS_ERROR_FAILURE);
   }
 
-  rv = Preferences::AddIntVarCache(&gStorageQuotaMB, PREF_STORAGE_QUOTA,
-                                   DEFAULT_QUOTA_MB);
-  if (NS_FAILED(rv)) {
+  if (NS_FAILED(Preferences::AddIntVarCache(&gStorageQuotaMB,
+                                            PREF_STORAGE_QUOTA,
+                                            kDefaultQuotaMB))) {
     NS_WARNING("Unable to respond to quota pref changes!");
-    gStorageQuotaMB = DEFAULT_QUOTA_MB;
   }
 
-  rv = Preferences::AddIntVarCache(&gTemporaryStorageLimitKB,
-                                   PREF_TEMPORARY_STORAGE_LIMIT,
-                                   gDefaultTemporaryStorageLimitKB);
-  if (NS_FAILED(rv)) {
+  if (NS_FAILED(Preferences::AddIntVarCache(&gFixedLimitKB, PREF_FIXED_LIMIT,
+                                             kDefaultFixedLimitKB)) ||
+      NS_FAILED(Preferences::AddUintVarCache(&gSmartLimitMinKB,
+                                             PREF_SMART_LIMIT_MIN,
+                                             kDefaultSmartLimitMinKB)) ||
+      NS_FAILED(Preferences::AddUintVarCache(&gSmartLimitMaxKB,
+                                             PREF_SMART_LIMIT_MAX,
+                                             kDefaultSmartLimitMaxKB)) ||
+      NS_FAILED(Preferences::AddUintVarCache(&gSmartLimitChunkKB,
+                                             PREF_SMART_LIMIT_CHUNK,
+                                             kDefaultSmartLimitChunkKB)) ||
+      NS_FAILED(Preferences::AddFloatVarCache(&gSmartLimitRatio,
+                                              PREF_SMART_LIMIT_RATIO,
+                                              kDefaultSmartLimitRatio))) {
     NS_WARNING("Unable to respond to temp storage pref changes!");
-    gTemporaryStorageLimitKB = gDefaultTemporaryStorageLimitKB;
   }
 
-  rv = Preferences::AddUintVarCache(&gTemporaryStorageLimitMinKB,
-                                    PREF_TEMPORARY_STORAGE_LIMIT_MIN,
-                                    gDefaultTemporaryStorageLimitMinKB);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Unable to respond to temp storage pref changes!");
-    gTemporaryStorageLimitMinKB = gDefaultTemporaryStorageLimitMinKB;
-  }
-
-  rv = Preferences::AddUintVarCache(&gTemporaryStorageLimitMaxKB,
-                                    PREF_TEMPORARY_STORAGE_LIMIT_MAX,
-                                    gDefaultTemporaryStorageLimitMaxKB);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Unable to respond to temp storage pref changes!");
-    gTemporaryStorageLimitMaxKB = gDefaultTemporaryStorageLimitMaxKB;
-  }
-
-  rv = Preferences::AddUintVarCache(&gTemporaryStorageLimitChunkKB,
-                                    PREF_TEMPORARY_STORAGE_LIMIT_CHUNK,
-                                    gDefaultTemporaryStorageLimitChunkKB);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Unable to respond to temp storage pref changes!");
-    gTemporaryStorageLimitChunkKB = gDefaultTemporaryStorageLimitChunkKB;
-  }
-
-  rv = Preferences::AddFloatVarCache(&gTemporaryStorageLimitRatio,
-                                     PREF_TEMPORARY_STORAGE_LIMIT_RATIO,
-                                     gDefaultTemporaryStorageLimitRatio);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Unable to respond to temp storage pref changes!");
-    gTemporaryStorageLimitRatio = gDefaultTemporaryStorageLimitRatio;
-  }
-
-  rv = Preferences::AddBoolVarCache(&gTestingEnabled, PREF_TESTING_FEATURES,
-                                    false);
-  if (NS_FAILED(rv)) {
+  if (NS_FAILED(Preferences::AddBoolVarCache(&gTestingEnabled,
+                                             PREF_TESTING_FEATURES, false))) {
     NS_WARNING("Unable to respond to testing pref changes!");
-    gTestingEnabled = false;
   }
 
   static_assert(Client::IDB == 0 && Client::TYPE_MAX == 1,
@@ -1793,7 +1775,7 @@ QuotaManager::InitializeOrigin(PersistenceType aPersistenceType,
 }
 
 nsresult
-QuotaManager::EnsureStorageAreaIsInitialized()
+QuotaManager::MaybeUpgradeIndexedDBDirectory()
 {
   AssertIsOnIOThread();
 
@@ -1816,6 +1798,8 @@ QuotaManager::EnsureStorageAreaIsInitialized()
 
   if (!exists) {
     // Nothing to upgrade.
+    mStorageAreaInitialized = true;
+
     return NS_OK;
   }
 
@@ -1874,7 +1858,7 @@ QuotaManager::EnsureOriginIsInitialized(PersistenceType aPersistenceType,
 {
   AssertIsOnIOThread();
 
-  nsresult rv = EnsureStorageAreaIsInitialized();
+  nsresult rv = MaybeUpgradeIndexedDBDirectory();
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Get directory for this origin and persistence type.
@@ -1956,8 +1940,8 @@ QuotaManager::EnsureOriginIsInitialized(PersistenceType aPersistenceType,
       }
     }
 
-    if (gTemporaryStorageLimitKB >= 0) {
-      mTemporaryStorageLimit = gTemporaryStorageLimitKB * 1024;
+    if (gFixedLimitKB >= 0) {
+      mTemporaryStorageLimit = gFixedLimitKB * 1024;
     }
     else {
       rv = GetTemporaryStorageLimit(parentDirectory, mTemporaryStorageUsage,
@@ -2262,7 +2246,10 @@ QuotaManager::GetUsageForURI(nsIURI* aURI,
 NS_IMETHODIMP
 QuotaManager::Clear()
 {
+  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+
   if (!gTestingEnabled) {
+    NS_WARNING("Testing features are not enabled!");
     return NS_OK;
   }
 
@@ -2354,7 +2341,10 @@ QuotaManager::ClearStoragesForURI(nsIURI* aURI,
 NS_IMETHODIMP
 QuotaManager::Reset()
 {
+  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+
   if (!gTestingEnabled) {
+    NS_WARNING("Testing features are not enabled!");
     return NS_OK;
   }
 
@@ -2619,7 +2609,7 @@ QuotaManager::LockedCollectOriginsForEviction(
     }
   }
 
-  return helper->WaitAndReturnOriginsForEviction(aOriginInfos);
+  return helper->BlockAndReturnOriginsForEviction(aOriginInfos);
 }
 
 void
@@ -3068,10 +3058,10 @@ QuotaManager::GetInactiveTemporaryStorageOrigins(const nsACString& aKey,
     for (uint32_t i = 0; i < originInfos.Length(); i++) {
       OriginInfo* originInfo = originInfos[i];
 
-      if (!info->mCollection.ContainsOrigin(originInfo->mOrigin)) {
+      if (!info->collection.ContainsOrigin(originInfo->mOrigin)) {
         NS_ASSERTION(!originInfo->mQuotaObjects.Count(),
                      "Inactive origin shouldn't have open files!");
-        info->mOrigins.AppendElement(originInfo);
+        info->origins.AppendElement(originInfo);
       }
     }
   }
@@ -3131,7 +3121,7 @@ QuotaManager::CollectOriginsForEviction(uint64_t aMinSizeToBeFreed,
   inactiveOrigins.Sort(OriginInfoLRUComparator());
 
   // Create a list of inactive and the least recently used origins
-  // whose agregate size is greater or equals the minimal size to be freed.
+  // whose aggregate size is greater or equals the minimal size to be freed.
   uint64_t sizeToBeFreed = 0;
   for(index = 0; index < inactiveOrigins.Length(); index++) {
     if (sizeToBeFreed >= aMinSizeToBeFreed) {
@@ -3356,15 +3346,15 @@ CollectOriginsHelper::CollectOriginsHelper(mozilla::Mutex& aMutex,
   mSizeToBeFreed(0),
   mWaiting(true)
 {
-  NS_ASSERTION(!NS_IsMainThread(), "Wrong thread!");
+  MOZ_ASSERT(!NS_IsMainThread(), "Wrong thread!");
   mMutex.AssertCurrentThreadOwns();
 }
 
 int64_t
-CollectOriginsHelper::WaitAndReturnOriginsForEviction(
+CollectOriginsHelper::BlockAndReturnOriginsForEviction(
                                             nsTArray<OriginInfo*>& aOriginInfos)
 {
-  NS_ASSERTION(!NS_IsMainThread(), "Wrong thread!");
+  MOZ_ASSERT(!NS_IsMainThread(), "Wrong thread!");
   mMutex.AssertCurrentThreadOwns();
 
   while (mWaiting) {
@@ -3375,12 +3365,10 @@ CollectOriginsHelper::WaitAndReturnOriginsForEviction(
   return mSizeToBeFreed;
 }
 
-NS_IMPL_ISUPPORTS1(CollectOriginsHelper, nsIRunnable)
-
 NS_IMETHODIMP
 CollectOriginsHelper::Run()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
 
   QuotaManager* quotaManager = QuotaManager::Get();
   NS_ASSERTION(quotaManager, "Shouldn't be null!");
@@ -3398,7 +3386,7 @@ CollectOriginsHelper::Run()
   mOriginInfos.SwapElements(originInfos);
   mSizeToBeFreed = sizeToBeFreed;
   mWaiting = false;
-  mCondVar.NotifyAll();
+  mCondVar.Notify();
 
   return NS_OK;
 }

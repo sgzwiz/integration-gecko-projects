@@ -23,25 +23,6 @@ enum PersistenceType
 };
 
 inline void
-PersistenceTypeToText(PersistenceType aPersistenceType, nsAString& aText)
-{
-  switch (aPersistenceType) {
-    case PERSISTENCE_TYPE_PERSISTENT:
-      aText.AssignLiteral("persistent");
-      return;
-    case PERSISTENCE_TYPE_TEMPORARY:
-      aText.AssignLiteral("temporary");
-      return;
-
-    case PERSISTENCE_TYPE_INVALID:
-    default:
-      MOZ_CRASH("Bad persistence type value!");
-  }
-
-  MOZ_CRASH("Should never get here!");
-}
-
-inline void
 PersistenceTypeToText(PersistenceType aPersistenceType, nsACString& aText)
 {
   switch (aPersistenceType) {
@@ -57,30 +38,27 @@ PersistenceTypeToText(PersistenceType aPersistenceType, nsACString& aText)
       MOZ_CRASH("Bad persistence type value!");
   }
 
-  MOZ_CRASH("Should never get here!");
+  MOZ_ASSUME_UNREACHABLE("Should never get here!");
 }
 
-inline bool
-PersistenceTypeFromText(const nsACString& aText,
-                        PersistenceType& aPersistenceType)
+inline PersistenceType
+PersistenceTypeFromText(const nsACString& aText)
 {
   if (aText.EqualsLiteral("persistent")) {
-    aPersistenceType = PERSISTENCE_TYPE_PERSISTENT;
-  }
-  else if (aText.EqualsLiteral("temporary")) {
-    aPersistenceType = PERSISTENCE_TYPE_TEMPORARY;
-  }
-  else {
-    return false;
+    return PERSISTENCE_TYPE_PERSISTENT;
   }
 
-  return true;
+  if (aText.EqualsLiteral("temporary")) {
+    return PERSISTENCE_TYPE_TEMPORARY;
+  }
+
+  MOZ_ASSUME_UNREACHABLE("Should never get here!");
 }
 
-inline bool
-PersistenceTypeFromText(const char* aText, PersistenceType& aPersistenceType)
+inline mozilla::dom::StorageType
+PersistenceTypeToStorage(PersistenceType aPersistenceType)
 {
-  return PersistenceTypeFromText(nsDependentCString(aText), aPersistenceType);
+  return mozilla::dom::StorageType(static_cast<int>(aPersistenceType));
 }
 
 inline PersistenceType
@@ -88,15 +66,6 @@ PersistenceTypeFromStorage(const Optional<mozilla::dom::StorageType>& aStorage,
                            PersistenceType aDefaultPersistenceType)
 {
   if (aStorage.WasPassed()) {
-    static_assert(
-      static_cast<uint32_t>(mozilla::dom::StorageType::Persistent) ==
-      static_cast<uint32_t>(PERSISTENCE_TYPE_PERSISTENT),
-      "Enum values should match.");
-    static_assert(
-      static_cast<uint32_t>(mozilla::dom::StorageType::Temporary) ==
-      static_cast<uint32_t>(PERSISTENCE_TYPE_TEMPORARY),
-      "Enum values should match.");
-
     return PersistenceType(static_cast<int>(aStorage.Value()));
   }
 

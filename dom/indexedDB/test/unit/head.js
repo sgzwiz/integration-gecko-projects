@@ -7,10 +7,6 @@ const { 'classes': Cc, 'interfaces': Ci } = Components;
 
 const DOMException = Ci.nsIDOMDOMException;
 
-const experimentalPref = "dom.indexedDB.experimental.enabled";
-
-var experimentalEnabled = false;
-
 function is(a, b, msg) {
   dump("is(" + a + ", " + b + ", \"" + msg + "\")");
   do_check_eq(a, b, Components.stack.caller);
@@ -189,13 +185,12 @@ function disallowUnlimitedQuota(url)
 
 function enableExperimental()
 {
-  experimentalEnabled = SpecialPowers.getBoolPref(experimentalPref);
-  SpecialPowers.setBoolPref(experimentalPref, true);
+  SpecialPowers.setBoolPref("dom.indexedDB.experimental", true);
 }
 
 function resetExperimental()
 {
-  SpecialPowers.setBoolPref(experimentalPref, experimentalEnabled);
+  SpecialPowers.clearUserPref("dom.indexedDB.experimental");
 }
 
 function gc()

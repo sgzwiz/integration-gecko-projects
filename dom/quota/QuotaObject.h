@@ -79,7 +79,8 @@ public:
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(OriginInfo)
 
-  int64_t AccessTime() const
+  int64_t
+  AccessTime() const
   {
     return mAccessTime;
   }
@@ -120,12 +121,16 @@ private:
 class OriginInfoLRUComparator
 {
 public:
-  bool Equals(const OriginInfo* a, const OriginInfo* b) const {
+  bool
+  Equals(const OriginInfo* a, const OriginInfo* b) const
+  {
     return
       a && b ? a->AccessTime() == b->AccessTime() : !a && !b ? true : false;
   }
 
-  bool LessThan(const OriginInfo* a, const OriginInfo* b) const {
+  bool
+  LessThan(const OriginInfo* a, const OriginInfo* b) const
+  {
     return a && b ? a->AccessTime() < b->AccessTime() : b ? true : false;
   }
 };
@@ -152,13 +157,13 @@ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GroupInfo)
 
   bool
-  IsForPersistentStorage()
+  IsForPersistentStorage() const
   {
     return mPersistenceType == PERSISTENCE_TYPE_PERSISTENT;
   }
 
   bool
-  IsForTemporaryStorage()
+  IsForTemporaryStorage() const
   {
     return mPersistenceType == PERSISTENCE_TYPE_TEMPORARY;
   }

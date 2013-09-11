@@ -150,7 +150,7 @@ protected:
   // State variables
   enum OpenDatabaseState {
     eCreated = 0, // Not yet dispatched to the DB thread
-    eOpenAllowed, // Waiting for open allowed/open allowed
+    eOpenPending, // Waiting for open allowed/open allowed
     eDBWork, // Waiting to do/doing work on the DB thread
     eFiringEvents, // Waiting to fire/firing events on the main thread
     eSetVersionPending, // Waiting on a SetVersionHelper

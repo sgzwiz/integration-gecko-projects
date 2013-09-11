@@ -120,10 +120,10 @@ public:
     return mDatabaseInfo->version;
   }
 
-  void
-  GetStorage(nsString& aStorage)
+  mozilla::dom::StorageType
+  Storage() const
   {
-    PersistenceTypeToText(mPersistenceType, aStorage);
+    return PersistenceTypeToStorage(mPersistenceType);
   }
 
   DOMStringList*

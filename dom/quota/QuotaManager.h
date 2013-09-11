@@ -278,7 +278,7 @@ public:
   }
 
   uint64_t
-  GetGroupLimit()
+  GetGroupLimit() const
   {
     return mTemporaryStorageLimit / 5;
   }
@@ -388,7 +388,7 @@ private:
                      nsISupports* aId);
 
   nsresult
-  EnsureStorageAreaIsInitialized();
+  MaybeUpgradeIndexedDBDirectory();
 
   nsresult
   InitializeOrigin(PersistenceType aPersistenceType,

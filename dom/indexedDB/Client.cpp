@@ -122,6 +122,8 @@ Client::InitOrigin(PersistenceType aPersistenceType, const nsACString& aGroup,
       rv = file->GetFileSize(&fileSize);
       NS_ENSURE_SUCCESS(rv, rv);
 
+      NS_ASSERTION(fileSize >= 0, "Negative size?!");
+
       aUsageInfo->AppendToDatabaseUsage(uint64_t(fileSize));
 
       uint64_t usage;

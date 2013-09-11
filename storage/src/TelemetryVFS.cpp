@@ -353,26 +353,17 @@ xOpen(sqlite3_vfs* vfs, const char *zName, sqlite3_file* pFile,
   const char* persistenceType;
   const char* group;
   const char* origin;
-  nsRefPtr<QuotaObject> quotaObject;
   if ((flags & SQLITE_OPEN_URI) &&
       (persistenceType = sqlite3_uri_parameter(zName, "persistenceType")) &&
       (group = sqlite3_uri_parameter(zName, "group")) &&
       (origin = sqlite3_uri_parameter(zName, "origin"))) {
-    PersistenceType type;
-    if (PersistenceTypeFromText(persistenceType, type)) {
-      QuotaManager* quotaManager = QuotaManager::Get();
-      MOZ_ASSERT(quotaManager);
+    QuotaManager* quotaManager = QuotaManager::Get();
+    MOZ_ASSERT(quotaManager);
 
-      quotaObject = quotaManager->GetQuotaObject(type,
-                                                 nsDependentCString(group),
-                                                 nsDependentCString(origin),
-                                                 NS_ConvertUTF8toUTF16(zName));
-    }
-    else {
-      NS_WARNING("Passed wrong persistence type!");
-    }
+    p->quotaObject = quotaManager->GetQuotaObject(PersistenceTypeFromText(
+      nsDependentCString(persistenceType)), nsDependentCString(group),
+      nsDependentCString(origin), NS_ConvertUTF8toUTF16(zName));
   }
-  quotaObject.swap(p->quotaObject);
 
   rc = orig_vfs->xOpen(orig_vfs, zName, p->pReal, flags, pOutFlags);
   if( rc != SQLITE_OK )

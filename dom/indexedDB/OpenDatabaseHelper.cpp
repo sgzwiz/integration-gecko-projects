@@ -1703,7 +1703,7 @@ OpenDatabaseHelper::WaitForOpenAllowed()
   NS_ASSERTION(mState == eCreated, "We've already been dispatched?");
   NS_ASSERTION(NS_IsMainThread(), "All hell is about to break lose!");
 
-  mState = eOpenAllowed;
+  mState = eOpenPending;
 
   QuotaManager* quotaManager = QuotaManager::Get();
   NS_ASSERTION(quotaManager, "This should never be null!");
@@ -1717,7 +1717,7 @@ OpenDatabaseHelper::WaitForOpenAllowed()
 nsresult
 OpenDatabaseHelper::Dispatch(nsIEventTarget* aTarget)
 {
-  NS_ASSERTION(mState == eCreated || mState == eOpenAllowed,
+  NS_ASSERTION(mState == eCreated || mState == eOpenPending,
                "We've already been dispatched?");
 
   mState = eDBWork;
@@ -2167,7 +2167,7 @@ OpenDatabaseHelper::Run()
   if (NS_IsMainThread()) {
     PROFILER_MAIN_THREAD_LABEL("IndexedDB", "OpenDatabaseHelper::Run");
 
-    if (mState == eOpenAllowed) {
+    if (mState == eOpenPending) {
       return DispatchToIOThread();
     }
 

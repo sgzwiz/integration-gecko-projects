@@ -3,10 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-const experimentalPref = "dom.indexedDB.experimental.enabled";
-
 var testGenerator = testSteps();
-var experimentalEnabled = false;
 var archiveReaderEnabled = false;
 
 // The test js is shared between xpcshell (which has no SpecialPowers object)
@@ -260,13 +257,12 @@ function resetArchiveReader()
 
 function enableExperimental()
 {
-  experimentalEnabled = SpecialPowers.getBoolPref(experimentalPref);
-  SpecialPowers.setBoolPref(experimentalPref, true);
+  SpecialPowers.setBoolPref("dom.indexedDB.experimental", true);
 }
 
 function resetExperimental()
 {
-  SpecialPowers.setBoolPref(experimentalPref, experimentalEnabled);
+  SpecialPowers.clearUserPref("dom.indexedDB.experimental");
 }
 
 function gc()

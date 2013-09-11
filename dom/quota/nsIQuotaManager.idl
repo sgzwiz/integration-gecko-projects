@@ -34,8 +34,8 @@ interface nsIQuotaManager : nsISupports
    * on prohibitive concurrent operations.
    * Be careful, this removes *all* the data that has ever been stored!
    *
-   * If the dom.quotaManager.testing.enabled preference is not true the call
-   * will be a no-op.
+   * If the dom.quotaManager.testing preference is not true the call will be
+   * a no-op.
    */
   void
   clear();
@@ -59,8 +59,8 @@ interface nsIQuotaManager : nsISupports
    * overriding the temp storage limit has changed.
    * Be carefull, this invalidates all live storages!
    *
-   * If the dom.quotaManager.testing.enabled preference is not true the call
-   * will be a no-op.
+   * If the dom.quotaManager.testing preference is not true the call will be
+   * a no-op.
    */
   void
   reset();

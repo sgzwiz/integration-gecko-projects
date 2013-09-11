@@ -776,22 +776,3 @@ IDBFactory::Open(nsIPrincipal* aPrincipal, const nsAString& aName,
 
   return request.forget();
 }
-
-already_AddRefed<IDBOpenDBRequest>
-IDBFactory::Open(nsIPrincipal* aPrincipal, const nsAString& aName,
-                 const Optional<int64_t>& aVersion,
-                 const Optional<mozilla::dom::StorageType>& aStorageType,
-                 bool aDelete, ErrorResult& aRv)
-{
-  Optional<uint64_t> version;
-  if (aVersion.WasPassed()) {
-    if (aVersion.Value() < 0) {
-      aRv.ThrowTypeError(MSG_INVALID_VERSION);
-      return nullptr;
-    }
-    version.Construct();
-    version.Value() = aVersion.Value();
-  }
-
-  return Open(aPrincipal, aName, version, aStorageType, aDelete, aRv);
-}

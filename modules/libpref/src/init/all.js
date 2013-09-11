@@ -79,14 +79,14 @@ pref("offline-apps.quota.warn",        51200);
 pref("browser.cache.compression_level", 0);
 
 // Whether or not testing features are enabled.
-pref("dom.quotaManager.testing.enabled", false);
+pref("dom.quotaManager.testing", false);
 
 // Whether or not indexedDB is enabled.
 pref("dom.indexedDB.enabled", true);
 // Space to allow indexedDB databases before prompting (in MB).
 pref("dom.indexedDB.warningQuota", 50);
 // Whether or not indexedDB experimental features are enabled.
-pref("dom.indexedDB.experimental.enabled", false);
+pref("dom.indexedDB.experimental", false);
 
 // Whether or not Web Workers are enabled.
 pref("dom.workers.enabled", true);

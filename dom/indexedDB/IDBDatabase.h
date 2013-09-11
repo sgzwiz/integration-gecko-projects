@@ -208,10 +208,10 @@ public:
   IMPL_EVENT_HANDLER(error)
   IMPL_EVENT_HANDLER(versionchange)
 
-  void
-  GetStorage(nsString& aStorage) const
+  mozilla::dom::StorageType
+  Storage() const
   {
-    PersistenceTypeToText(mPersistenceType, aStorage);
+    return PersistenceTypeToStorage(mPersistenceType);
   }
 
   already_AddRefed<IDBRequest>

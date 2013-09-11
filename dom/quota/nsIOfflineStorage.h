@@ -33,13 +33,6 @@ public:
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_OFFLINESTORAGE_IID)
 
-  nsIOfflineStorage()
-  : mPersistenceType(mozilla::dom::quota::PERSISTENCE_TYPE_INVALID)
-  { }
-
-  virtual ~nsIOfflineStorage()
-  { }
-
   NS_IMETHOD_(Client*)
   GetClient() = 0;
 
@@ -76,6 +69,13 @@ public:
   Invalidate() = 0;
 
 protected:
+  nsIOfflineStorage()
+  : mPersistenceType(mozilla::dom::quota::PERSISTENCE_TYPE_INVALID)
+  { }
+
+  virtual ~nsIOfflineStorage()
+  { }
+
   PersistenceType mPersistenceType;
   nsCString mGroup;
 };
