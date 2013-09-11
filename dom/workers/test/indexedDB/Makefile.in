@@ -109,8 +109,8 @@ MOCHITEST_FILES = \
   nested_access_subworker.js \
   nested_access_worker.js \
   test_nested_access.html \
-  dbInfoMT_isolation_worker.js \
-  test_dbInfoMT_isolation.html \
+  concurrent_access_worker.js \
+  test_concurrent_access.html \
   $(NULL)
 
 include $(topsrcdir)/config/rules.mk
