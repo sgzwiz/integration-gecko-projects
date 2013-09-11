@@ -17,7 +17,6 @@
 #include "nsIHttpEventSink.h"
 #include "nsICachingChannel.h"
 #include "nsICacheEntry.h"
-//#include "nsICacheListener.h"
 #include "nsICacheEntryOpenCallback.h"
 #include "nsIApplicationCacheChannel.h"
 #include "nsIPrompt.h"
