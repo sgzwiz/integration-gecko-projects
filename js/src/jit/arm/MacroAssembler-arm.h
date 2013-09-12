@@ -720,6 +720,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void unboxDouble(const Address &src, const FloatRegister &dest);
     void unboxString(const ValueOperand &operand, const Register &dest);
     void unboxString(const Address &src, const Register &dest);
+    void unboxObject(const ValueOperand &src, const Register &dest);
     void unboxValue(const ValueOperand &src, AnyRegister dest);
     void unboxPrivate(const ValueOperand &src, Register dest);
 
@@ -1263,13 +1264,12 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         ma_vstr(VFPRegister(src).singleOverlay(), addr.base, addr.index, scale);
     }
 
-    void clampIntToUint8(Register src, Register dest) {
-        // look at (src >> 8) if it is 0, then src shouldn't be clamped
+    void clampIntToUint8(Register reg) {
+        // look at (reg >> 8) if it is 0, then reg shouldn't be clamped
         // if it is <0, then we want to clamp to 0, otherwise, we wish to clamp to 255
-        as_mov(ScratchRegister, asr(src, 8), SetCond);
-        ma_mov(src, dest);
-        ma_mov(Imm32(0xff), dest, NoSetCond, NotEqual);
-        ma_mov(Imm32(0), dest, NoSetCond, Signed);
+        as_mov(ScratchRegister, asr(reg, 8), SetCond);
+        ma_mov(Imm32(0xff), reg, NoSetCond, NotEqual);
+        ma_mov(Imm32(0), reg, NoSetCond, Signed);
     }
 
     void cmp32(const Register &lhs, const Imm32 &rhs);

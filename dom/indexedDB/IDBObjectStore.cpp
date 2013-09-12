@@ -481,7 +481,7 @@ class ThreadLocalJSRuntime
   JSContext* mContext;
   JSObject* mGlobal;
 
-  static JSClass sGlobalClass;
+  static const JSClass sGlobalClass;
   static const unsigned sRuntimeHeapSize = 768 * 1024;
 
   ThreadLocalJSRuntime()
@@ -552,7 +552,7 @@ class ThreadLocalJSRuntime
   }
 };
 
-JSClass ThreadLocalJSRuntime::sGlobalClass = {
+const JSClass ThreadLocalJSRuntime::sGlobalClass = {
   "IndexedDBTransactionThreadGlobal",
   JSCLASS_GLOBAL_FLAGS,
   JS_PropertyStub, JS_DeletePropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
@@ -822,7 +822,7 @@ public:
 
 } // anonymous namespace
 
-JSClass IDBObjectStore::sDummyPropJSClass = {
+const JSClass IDBObjectStore::sDummyPropJSClass = {
   "dummy", 0,
   JS_PropertyStub,  JS_DeletePropertyStub,
   JS_PropertyStub,  JS_StrictPropertyStub,

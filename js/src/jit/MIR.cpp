@@ -24,8 +24,6 @@
 #include "jsatominlines.h"
 #include "jsinferinlines.h"
 
-#include "vm/Shape-inl.h"
-
 using namespace js;
 using namespace js::jit;
 
@@ -213,6 +211,19 @@ MaybeEmulatesUndefined(JSContext *cx, MDefinition *op)
     if (!types->maybeObject())
         return false;
     return types->hasObjectFlags(cx, types::OBJECT_FLAG_EMULATES_UNDEFINED);
+}
+
+static bool
+MaybeCallable(JSContext *cx, MDefinition *op)
+{
+    if (!op->mightBeType(MIRType_Object))
+        return false;
+
+    types::StackTypeSet *types = op->resultTypeSet();
+    if (!types)
+        return true;
+
+    return types->maybeCallable();
 }
 
 void
@@ -1875,12 +1886,29 @@ MTypeOf::foldsTo(bool useValueNumbers)
       case MIRType_Boolean:
         type = JSTYPE_BOOLEAN;
         break;
+      case MIRType_Object:
+        if (!inputMaybeCallableOrEmulatesUndefined()) {
+            // Object is not callable and does not emulate undefined, so it's
+            // safe to fold to "object".
+            type = JSTYPE_OBJECT;
+            break;
+        }
+        // FALL THROUGH
       default:
         return this;
     }
 
     JSRuntime *rt = GetIonContext()->runtime;
     return MConstant::New(StringValue(TypeName(type, rt)));
+}
+
+void
+MTypeOf::infer(JSContext *cx)
+{
+    JS_ASSERT(inputMaybeCallableOrEmulatesUndefined());
+
+    if (!MaybeEmulatesUndefined(cx, input()) && !MaybeCallable(cx, input()))
+        markInputNotCallableOrEmulatesUndefined();
 }
 
 MBitAnd *
@@ -2612,7 +2640,7 @@ jit::ElementAccessIsDenseNative(MDefinition *obj, MDefinition *id)
     if (!types)
         return false;
 
-    Class *clasp = types->getKnownClass();
+    const Class *clasp = types->getKnownClass();
     return clasp && clasp->isNative();
 }
 

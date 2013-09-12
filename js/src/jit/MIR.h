@@ -1853,6 +1853,28 @@ class MBail : public MNullaryInstruction
 
 };
 
+class MAssertFloat32 : public MUnaryInstruction
+{
+  protected:
+    bool mustBeFloat32_;
+
+    MAssertFloat32(MDefinition *value, bool mustBeFloat32)
+      : MUnaryInstruction(value), mustBeFloat32_(mustBeFloat32)
+    {
+    }
+
+  public:
+    INSTRUCTION_HEADER(AssertFloat32)
+
+    static MAssertFloat32 *New(MDefinition *value, bool mustBeFloat32) {
+        return new MAssertFloat32(value, mustBeFloat32);
+    }
+
+    bool canConsumeFloat32() const { return true; }
+
+    bool mustBeFloat32() { return mustBeFloat32_; }
+};
+
 class MGetDynamicName
   : public MAryInstruction<2>,
     public MixPolicy<ObjectPolicy<0>, StringPolicy<1> >
@@ -2895,9 +2917,11 @@ class MTypeOf
     public BoxInputsPolicy
 {
     MIRType inputType_;
+    bool inputMaybeCallableOrEmulatesUndefined_;
 
     MTypeOf(MDefinition *def, MIRType inputType)
-      : MUnaryInstruction(def), inputType_(inputType)
+      : MUnaryInstruction(def), inputType_(inputType),
+        inputMaybeCallableOrEmulatesUndefined_(true)
     {
         setResultType(MIRType_String);
         setMovable();
@@ -2916,14 +2940,19 @@ class MTypeOf
     MIRType inputType() const {
         return inputType_;
     }
+
     MDefinition *foldsTo(bool useValueNumbers);
+    void infer(JSContext *cx);
+
+    bool inputMaybeCallableOrEmulatesUndefined() const {
+        return inputMaybeCallableOrEmulatesUndefined_;
+    }
+    void markInputNotCallableOrEmulatesUndefined() {
+        inputMaybeCallableOrEmulatesUndefined_ = false;
+    }
 
     AliasSet getAliasSet() const {
-        if (inputType_ <= MIRType_String)
-            return AliasSet::None();
-
-        // For objects, typeof may invoke an effectful typeof hook.
-        return AliasSet::Store(AliasSet::Any);
+        return AliasSet::None();
     }
 };
 
@@ -3927,6 +3956,39 @@ class MFromCharCode
     virtual AliasSet getAliasSet() const {
         return AliasSet::None();
     }
+};
+
+// Returns an object to use as |this| value. See also ComputeThis and
+// BoxNonStrictThis in Interpreter.h.
+class MComputeThis
+  : public MUnaryInstruction,
+    public BoxPolicy<0>
+{
+    MComputeThis(MDefinition *def)
+      : MUnaryInstruction(def)
+    {
+        setResultType(MIRType_Object);
+    }
+
+  public:
+    INSTRUCTION_HEADER(ComputeThis)
+
+    static MComputeThis *New(MDefinition *def) {
+        return new MComputeThis(def);
+    }
+
+    MDefinition *input() const {
+        return getOperand(0);
+    }
+    TypePolicy *typePolicy() {
+        return this;
+    }
+    bool possiblyCalls() const {
+        return true;
+    }
+
+    // Note: don't override getAliasSet: the thisObject hook can be
+    // effectful.
 };
 
 class MPhi MOZ_FINAL : public MDefinition, public InlineForwardListNode<MPhi>

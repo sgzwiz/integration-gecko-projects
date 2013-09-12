@@ -28,6 +28,7 @@
 #ifdef XP_MACOSX
 #include "SharedSurfaceIO.h"
 #endif
+#include "GeckoProfiler.h"
 
 using namespace mozilla::gl;
 using namespace mozilla::gfx;
@@ -1076,10 +1077,6 @@ GrallocDeprecatedTextureHostOGL::SwapTexturesImpl(const SurfaceDescriptor& aImag
 
   DeleteTextures();
 
-  // only done for hacky fix in gecko 23 for bug 862324.
-  // Doing this in SetBuffer is not enough, as DeprecatedImageHostBuffered::SwapTextures can
-  // change the value of *mBuffer without calling SetBuffer again.
-  RegisterDeprecatedTextureHostAtGrallocBufferActor(this, aImage);
 }
 
 gl::GLContext*
@@ -1090,6 +1087,7 @@ GrallocDeprecatedTextureHostOGL::gl() const
 
 void GrallocDeprecatedTextureHostOGL::BindTexture(GLenum aTextureUnit)
 {
+  PROFILER_LABEL("Gralloc", "BindTexture");
   /*
    * The job of this function is to ensure that the texture is tied to the
    * android::GraphicBuffer, so that texturing will source the GraphicBuffer.
