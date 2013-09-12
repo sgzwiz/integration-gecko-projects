@@ -54,6 +54,19 @@ class MacroAssemblerARM : public Assembler
     void convertDoubleToInt32(const FloatRegister &src, const Register &dest, Label *fail,
                               bool negativeZeroCheck = true);
 
+    void convertFloatToDouble(const FloatRegister &src, const FloatRegister &dest) {
+        MOZ_ASSUME_UNREACHABLE("NYI");
+    }
+    void branchTruncateFloat32(const FloatRegister &src, const Register &dest, Label *fail) {
+        MOZ_ASSUME_UNREACHABLE("NYI");
+    }
+    void convertInt32ToFloat32(const Register &src, const FloatRegister &dest) {
+        MOZ_ASSUME_UNREACHABLE("NYI");
+    }
+    void convertInt32ToFloat32(const Address &src, FloatRegister dest) {
+        MOZ_ASSUME_UNREACHABLE("NYI");
+    }
+
     void addDouble(FloatRegister src, FloatRegister dest);
     void subDouble(FloatRegister src, FloatRegister dest);
     void mulDouble(FloatRegister src, FloatRegister dest);
@@ -705,6 +718,9 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void unboxBoolean(const Address &src, const Register &dest);
     void unboxDouble(const ValueOperand &operand, const FloatRegister &dest);
     void unboxDouble(const Address &src, const FloatRegister &dest);
+    void unboxString(const ValueOperand &operand, const Register &dest);
+    void unboxString(const Address &src, const Register &dest);
+    void unboxObject(const ValueOperand &src, const Register &dest);
     void unboxValue(const ValueOperand &src, AnyRegister dest);
     void unboxPrivate(const ValueOperand &src, Register dest);
 
@@ -747,6 +763,16 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     Condition testBooleanTruthy(bool truthy, const ValueOperand &operand);
     Condition testDoubleTruthy(bool truthy, const FloatRegister &reg);
     Condition testStringTruthy(bool truthy, const ValueOperand &value);
+
+    void boolValueToFloat32(const ValueOperand &operand, const FloatRegister &dest) {
+        MOZ_ASSUME_UNREACHABLE("NYI");
+    }
+    void int32ValueToFloat32(const ValueOperand &operand, const FloatRegister &dest) {
+        MOZ_ASSUME_UNREACHABLE("NYI");
+    }
+    void loadStaticFloat32(const float *dp, const FloatRegister &dest) {
+        MOZ_ASSUME_UNREACHABLE("NYI");
+    }
 
     template<typename T>
     void branchTestInt32(Condition cond, const T & t, Label *label) {
@@ -1153,6 +1179,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void addPtr(const Address &src, Register dest);
 
     void move32(const Imm32 &imm, const Register &dest);
+    void move32(const Register &src, const Register &dest);
 
     void movePtr(const Register &src, const Register &dest);
     void movePtr(const ImmWord &imm, const Register &dest);
@@ -1186,6 +1213,13 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     // Load a float value into a register, then expand it to a double.
     void loadFloatAsDouble(const Address &addr, const FloatRegister &dest);
     void loadFloatAsDouble(const BaseIndex &src, const FloatRegister &dest);
+
+    void loadFloat(const Address &addr, const FloatRegister &dest) {
+        MOZ_ASSUME_UNREACHABLE("NYI");
+    }
+    void loadFloat(const BaseIndex &src, const FloatRegister &dest) {
+        MOZ_ASSUME_UNREACHABLE("NYI");
+    }
 
     void store8(const Register &src, const Address &address);
     void store8(const Imm32 &imm, const Address &address);
@@ -1230,13 +1264,12 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         ma_vstr(VFPRegister(src).singleOverlay(), addr.base, addr.index, scale);
     }
 
-    void clampIntToUint8(Register src, Register dest) {
-        // look at (src >> 8) if it is 0, then src shouldn't be clamped
+    void clampIntToUint8(Register reg) {
+        // look at (reg >> 8) if it is 0, then reg shouldn't be clamped
         // if it is <0, then we want to clamp to 0, otherwise, we wish to clamp to 255
-        as_mov(ScratchRegister, asr(src, 8), SetCond);
-        ma_mov(src, dest);
-        ma_mov(Imm32(0xff), dest, NoSetCond, NotEqual);
-        ma_mov(Imm32(0), dest, NoSetCond, Signed);
+        as_mov(ScratchRegister, asr(reg, 8), SetCond);
+        ma_mov(Imm32(0xff), reg, NoSetCond, NotEqual);
+        ma_mov(Imm32(0), reg, NoSetCond, Signed);
     }
 
     void cmp32(const Register &lhs, const Imm32 &rhs);
@@ -1268,6 +1301,11 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void compareDouble(FloatRegister lhs, FloatRegister rhs);
     void branchDouble(DoubleCondition cond, const FloatRegister &lhs, const FloatRegister &rhs,
                       Label *label);
+
+    void branchFloat(DoubleCondition cond, const FloatRegister &lhs, const FloatRegister &rhs,
+                      Label *label) {
+        MOZ_ASSUME_UNREACHABLE("NYI");
+    }
 
     void checkStackAlignment();
 

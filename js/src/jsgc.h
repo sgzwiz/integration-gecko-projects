@@ -16,6 +16,7 @@
 #include "jsobj.h"
 
 #include "js/GCAPI.h"
+#include "js/Tracer.h"
 #include "js/Vector.h"
 
 class JSAtom;
@@ -211,7 +212,7 @@ IsBackgroundFinalized(AllocKind kind)
 }
 
 static inline bool
-CanBeFinalizedInBackground(gc::AllocKind kind, Class *clasp)
+CanBeFinalizedInBackground(gc::AllocKind kind, const Class *clasp)
 {
     JS_ASSERT(kind <= gc::FINALIZE_OBJECT_LAST);
     /* If the class has no finalizer or a finalizer that is safe to call on
@@ -317,7 +318,7 @@ GetGCKindSlots(AllocKind thingKind)
 }
 
 static inline size_t
-GetGCKindSlots(AllocKind thingKind, Class *clasp)
+GetGCKindSlots(AllocKind thingKind, const Class *clasp)
 {
     size_t nslots = GetGCKindSlots(thingKind);
 

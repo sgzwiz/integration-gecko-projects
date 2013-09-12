@@ -980,7 +980,8 @@ nsJSContext::EvaluateString(const nsAString& aScript,
                             JS::Handle<JSObject*> aScopeObject,
                             JS::CompileOptions& aCompileOptions,
                             bool aCoerceToString,
-                            JS::Value* aRetValue)
+                            JS::Value* aRetValue,
+                            void **aOffThreadToken)
 {
   NS_ENSURE_TRUE(mIsInitialized, NS_ERROR_NOT_INITIALIZED);
   if (!mScriptsEnabled) {
@@ -991,7 +992,8 @@ nsJSContext::EvaluateString(const nsAString& aScript,
   nsJSUtils::EvaluateOptions evalOptions;
   evalOptions.setCoerceToString(aCoerceToString);
   return nsJSUtils::EvaluateString(mContext, aScript, aScopeObject,
-                                   aCompileOptions, evalOptions, aRetValue);
+                                   aCompileOptions, evalOptions, aRetValue,
+                                   aOffThreadToken);
 }
 
 #ifdef DEBUG
@@ -1044,11 +1046,14 @@ nsJSContext::JSObjectFromInterface(nsISupports* aTarget,
   NS_ASSERTION(native == targetSupp, "Native should be the target!");
 #endif
 
-  *aRet = xpc_UnmarkGrayObject(JSVAL_TO_OBJECT(v));
+  JSObject* obj = v.toObjectOrNull();
+  if (obj) {
+    JS::ExposeObjectToActiveJS(obj);
+  }
 
+  *aRet = obj;
   return NS_OK;
 }
-
 
 nsresult
 nsJSContext::BindCompiledEventHandler(nsISupports* aTarget,
@@ -1060,8 +1065,10 @@ nsJSContext::BindCompiledEventHandler(nsISupports* aTarget,
   NS_ENSURE_TRUE(mIsInitialized, NS_ERROR_NOT_INITIALIZED);
   NS_PRECONDITION(!aBoundHandler, "Shouldn't already have a bound handler!");
 
-  xpc_UnmarkGrayObject(aScope);
-  xpc_UnmarkGrayObject(aHandler);
+  if (aScope) {
+    JS::ExposeObjectToActiveJS(aScope);
+  }
+  JS::ExposeObjectToActiveJS(aHandler);
   AutoPushJSContext cx(mContext);
 
   // Get the jsobject associated with this target
@@ -1119,7 +1126,7 @@ nsJSContext::GetGlobalObject()
   }
 #endif
 
-  JSClass *c = JS_GetClass(global);
+  const JSClass *c = JS_GetClass(global);
 
   // Whenever we end up with globals that are JSCLASS_IS_DOMJSCLASS
   // and have an nsISupports DOM object, we will need to modify this
@@ -2602,7 +2609,12 @@ nsJSContext::SetWindowProxy(JS::Handle<JSObject*> aWindowProxy)
 JSObject*
 nsJSContext::GetWindowProxy()
 {
-  return xpc_UnmarkGrayObject(GetWindowProxyPreserveColor());
+  JSObject* windowProxy = GetWindowProxyPreserveColor();
+  if (windowProxy) {
+    JS::ExposeObjectToActiveJS(windowProxy);
+  }
+
+  return windowProxy;
 }
 
 JSObject*

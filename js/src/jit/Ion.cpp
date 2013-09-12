@@ -53,9 +53,6 @@
 #include "jscompartmentinlines.h"
 #include "jsgcinlines.h"
 #include "jsinferinlines.h"
-#include "jsscriptinlines.h"
-
-#include "vm/Shape-inl.h"
 
 using namespace js;
 using namespace js::jit;
@@ -1599,12 +1596,6 @@ IonCompile(JSContext *cx, JSScript *script,
     if (!script->ensureRanAnalysis(cx))
         return AbortReason_Alloc;
 
-    // Try-finally is not yet supported.
-    if (script->analysis()->hasTryFinally()) {
-        IonSpew(IonSpew_Abort, "Has try-finally.");
-        return AbortReason_Disable;
-    }
-
     LifoAlloc *alloc = cx->new_<LifoAlloc>(BUILDER_LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
     if (!alloc)
         return AbortReason_Alloc;
@@ -2596,7 +2587,7 @@ jit::UsesBeforeIonRecompile(JSScript *script, jsbytecode *pc)
 void
 AutoFlushCache::updateTop(uintptr_t p, size_t len)
 {
-    IonContext *ictx = GetIonContext();
+    IonContext *ictx = MaybeGetIonContext();
     IonRuntime *irt = (ictx != NULL) ? ictx->runtime->ionRuntime() : NULL;
     if (!irt || !irt->flusher())
         JSC::ExecutableAllocator::cacheFlush((void*)p, len);

@@ -1112,18 +1112,30 @@ GetWorkerPrivateFromContext(JSContext* aCx)
   return static_cast<WorkerThreadRuntimePrivate*>(JS_GetRuntimePrivate(JS_GetRuntime(aCx)))->mWorkerPrivate;
 }
 
-bool
-IsCurrentThreadRunningChromeWorker()
+WorkerPrivate*
+GetCurrentThreadWorkerPrivate()
 {
-  NS_ASSERTION(!NS_IsMainThread(), "Wrong thread!");
-  CycleCollectedJSRuntime* ccrt = nsCycleCollector_currentJSRuntime();
+  MOZ_ASSERT(!NS_IsMainThread(), "Wrong thread!");
+  CycleCollectedJSRuntime* ccrt = CycleCollectedJSRuntime::Get();
   if (!ccrt) {
-    return false;
+    return nullptr;
   }
 
   JSRuntime* rt = ccrt->Runtime();
   return static_cast<WorkerThreadRuntimePrivate*>(JS_GetRuntimePrivate(rt))->
-    mWorkerPrivate->UsesSystemPrincipal();
+    mWorkerPrivate;
+}
+
+bool
+IsCurrentThreadRunningChromeWorker()
+{
+  return GetCurrentThreadWorkerPrivate()->UsesSystemPrincipal();
+}
+
+JSContext*
+GetCurrentThreadJSContext()
+{
+  return GetCurrentThreadWorkerPrivate()->GetJSContext();
 }
 
 END_WORKERS_NAMESPACE
@@ -1499,6 +1511,9 @@ RuntimeService::Init()
     obs->AddObserver(this, NS_XPCOM_SHUTDOWN_THREADS_OBSERVER_ID, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  rv = obs->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
+  NS_ENSURE_SUCCESS(rv, rv);
+
   mObserved = true;
 
   if (NS_FAILED(obs->AddObserver(this, GC_REQUEST_OBSERVER_TOPIC, false))) {
@@ -1586,12 +1601,14 @@ RuntimeService::Init()
   return NS_OK;
 }
 
-// This spins the event loop until all workers are finished and their threads
-// have been joined.
 void
-RuntimeService::Cleanup()
+RuntimeService::Shutdown()
 {
   AssertIsOnMainThread();
+
+  MOZ_ASSERT(!mShuttingDown);
+  // That's it, no more workers.
+  mShuttingDown = true;
 
   nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
   NS_WARN_IF_FALSE(obs, "Failed to get observer service?!");
@@ -1602,8 +1619,40 @@ RuntimeService::Cleanup()
     NS_WARNING("NotifyObservers failed!");
   }
 
-  // That's it, no more workers.
-  mShuttingDown = true;
+  {
+    MutexAutoLock lock(mMutex);
+
+    nsAutoTArray<WorkerPrivate*, 100> workers;
+    mDomainMap.EnumerateRead(AddAllTopLevelWorkersToArray, &workers);
+
+    if (!workers.IsEmpty()) {
+
+      // Cancel all top-level workers.
+      {
+        MutexAutoUnlock unlock(mMutex);
+
+        AutoSafeJSContext cx;
+        JSAutoRequest ar(cx);
+
+        for (uint32_t index = 0; index < workers.Length(); index++) {
+          if (!workers[index]->Kill(cx)) {
+            NS_WARNING("Failed to cancel worker!");
+          }
+        }
+      }
+    }
+  }
+}
+
+// This spins the event loop until all workers are finished and their threads
+// have been joined.
+void
+RuntimeService::Cleanup()
+{
+  AssertIsOnMainThread();
+
+  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+  NS_WARN_IF_FALSE(obs, "Failed to get observer service?!");
 
   if (mIdleThreadTimer) {
     if (NS_FAILED(mIdleThreadTimer->Cancel())) {
@@ -1619,24 +1668,8 @@ RuntimeService::Cleanup()
     mDomainMap.EnumerateRead(AddAllTopLevelWorkersToArray, &workers);
 
     if (!workers.IsEmpty()) {
-      nsIThread* currentThread;
-
-      // Cancel all top-level workers.
-      {
-        MutexAutoUnlock unlock(mMutex);
-
-        currentThread = NS_GetCurrentThread();
-        NS_ASSERTION(currentThread, "This should never be null!");
-
-        AutoSafeJSContext cx;
-        JSAutoRequest ar(cx);
-
-        for (uint32_t index = 0; index < workers.Length(); index++) {
-          if (!workers[index]->Kill(cx)) {
-            NS_WARNING("Failed to cancel worker!");
-          }
-        }
-      }
+      nsIThread* currentThread = NS_GetCurrentThread();
+      NS_ASSERTION(currentThread, "This should never be null!");
 
       // Shut down any idle threads.
       if (!mIdleThreadArray.IsEmpty()) {
@@ -1722,9 +1755,9 @@ RuntimeService::Cleanup()
         NS_WARNING("Failed to unregister for memory pressure notifications!");
       }
 
-      nsresult rv =
-        obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_THREADS_OBSERVER_ID);
-      mObserved = NS_FAILED(rv);
+      obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_THREADS_OBSERVER_ID);
+      obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
+      mObserved = false;
     }
   }
 
@@ -1923,6 +1956,10 @@ RuntimeService::Observe(nsISupports* aSubject, const char* aTopic,
 {
   AssertIsOnMainThread();
 
+  if (!strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {
+    Shutdown();
+    return NS_OK;
+  }
   if (!strcmp(aTopic, NS_XPCOM_SHUTDOWN_THREADS_OBSERVER_ID)) {
     Cleanup();
     return NS_OK;

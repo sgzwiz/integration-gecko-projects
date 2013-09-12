@@ -15,6 +15,7 @@
 #include "jit/BaselineJIT.h"
 #include "jit/IonLinker.h"
 #include "jit/IonSpewer.h"
+#include "jit/Lowering.h"
 #include "jit/PerfSpewer.h"
 #include "jit/VMFunctions.h"
 
@@ -1600,10 +1601,11 @@ DoThisFallback(JSContext *cx, ICThis_Fallback *stub, HandleValue thisv, MutableH
 {
     FallbackICSpew(cx, stub, "This");
 
-    ret.set(thisv);
-    bool modified;
-    if (!BoxNonStrictThis(cx, ret, &modified))
+    JSObject *thisObj = BoxNonStrictThis(cx, thisv);
+    if (!thisObj)
         return false;
+
+    ret.setObject(*thisObj);
     return true;
 }
 
@@ -4432,7 +4434,7 @@ ICGetElem_Arguments::Compiler::generateStubCode(MacroAssembler &masm)
               which_ == ICGetElem_Arguments::Normal);
 
     bool isStrict = which_ == ICGetElem_Arguments::Strict;
-    Class *clasp = isStrict ? &StrictArgumentsObject::class_ : &NormalArgumentsObject::class_;
+    const Class *clasp = isStrict ? &StrictArgumentsObject::class_ : &NormalArgumentsObject::class_;
 
     GeneralRegisterSet regs(availableGeneralRegs(2));
     Register scratchReg = regs.takeAny();
@@ -5168,13 +5170,20 @@ ICSetElem_TypedArray::Compiler::generateStubCode(MacroAssembler &masm)
 
     if (type_ == ScalarTypeRepresentation::TYPE_FLOAT32 || type_ == ScalarTypeRepresentation::TYPE_FLOAT64) {
         masm.ensureDouble(value, FloatReg0, &failure);
-        masm.storeToTypedFloatArray(type_, FloatReg0, dest);
+        if (LIRGenerator::allowFloat32Optimizations() &&
+            type_ == ScalarTypeRepresentation::TYPE_FLOAT32)
+        {
+            masm.convertDoubleToFloat(FloatReg0, ScratchFloatReg);
+            masm.storeToTypedFloatArray(type_, ScratchFloatReg, dest);
+        } else {
+            masm.storeToTypedFloatArray(type_, FloatReg0, dest);
+        }
         EmitReturnFromIC(masm);
     } else if (type_ == ScalarTypeRepresentation::TYPE_UINT8_CLAMPED) {
         Label notInt32;
         masm.branchTestInt32(Assembler::NotEqual, value, &notInt32);
         masm.unboxInt32(value, secondScratch);
-        masm.clampIntToUint8(secondScratch, secondScratch);
+        masm.clampIntToUint8(secondScratch);
 
         Label clamped;
         masm.bind(&clamped);
@@ -6629,7 +6638,7 @@ ICGetProp_ArgumentsLength::Compiler::generateStubCode(MacroAssembler &masm)
               which_ == ICGetProp_ArgumentsLength::Normal);
 
     bool isStrict = which_ == ICGetProp_ArgumentsLength::Strict;
-    Class *clasp = isStrict ? &StrictArgumentsObject::class_ : &NormalArgumentsObject::class_;
+    const Class *clasp = isStrict ? &StrictArgumentsObject::class_ : &NormalArgumentsObject::class_;
 
     Register scratchReg = R1.scratchReg();
 
@@ -8821,8 +8830,8 @@ DoTypeOfFallback(JSContext *cx, BaselineFrame *frame, ICTypeOf_Fallback *stub, H
                  MutableHandleValue res)
 {
     FallbackICSpew(cx, stub, "TypeOf");
-    JSType type = JS_TypeOfValue(cx, val);
-    RootedString string(cx, TypeName(type, cx));
+    JSType type = js::TypeOfValue(val);
+    RootedString string(cx, TypeName(type, cx->runtime()));
 
     res.setString(string);
 

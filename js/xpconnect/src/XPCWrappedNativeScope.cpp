@@ -6,8 +6,6 @@
 /* Class used to manage the wrapped native objects within a JS scope. */
 
 #include "xpcprivate.h"
-#include "XPCWrapper.h"
-#include "jsproxy.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionNoteRootCallback.h"
 #include "nsPrincipal.h"
@@ -174,7 +172,7 @@ XPCWrappedNativeScope::XPCWrappedNativeScope(JSContext *cx,
     // Determine whether to use an XBL scope.
     mUseXBLScope = mAllowXBLScope;
     if (mUseXBLScope) {
-      js::Class *clasp = js::GetObjectClass(mGlobalJSObject);
+      const js::Class *clasp = js::GetObjectClass(mGlobalJSObject);
       mUseXBLScope = !strcmp(clasp->name, "Window") ||
                      !strcmp(clasp->name, "ChromeWindow") ||
                      !strcmp(clasp->name, "ModalContentWindow");
@@ -291,7 +289,7 @@ JSObject *GetXBLScope(JSContext *cx, JSObject *contentScopeArg)
     JSObject *scope = EnsureCompartmentPrivate(contentScope)->scope->EnsureXBLScope(cx);
     NS_ENSURE_TRUE(scope, nullptr); // See bug 858642.
     scope = js::UncheckedUnwrap(scope);
-    xpc_UnmarkGrayObject(scope);
+    JS::ExposeObjectToActiveJS(scope);
     return scope;
 }
 

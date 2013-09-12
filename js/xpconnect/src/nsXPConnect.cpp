@@ -10,22 +10,15 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Likely.h"
-#include "mozilla/Util.h"
 
 #include "xpcprivate.h"
 #include "XPCWrapper.h"
-#include "nsBaseHashtable.h"
-#include "nsHashKeys.h"
 #include "jsfriendapi.h"
 #include "js/OldDebugAPI.h"
-#include "dom_quickstubs.h"
-#include "nsNullPrincipal.h"
-#include "nsIURI.h"
 #include "nsJSEnvironment.h"
 #include "nsThreadUtils.h"
 #include "nsDOMJSUtils.h"
 
-#include "XrayWrapper.h"
 #include "WrapperFactory.h"
 #include "AccessCheck.h"
 
@@ -36,6 +29,7 @@
 #include "XPCQuickStubs.h"
 
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/IDBIndexBinding.h"
 #include "mozilla/dom/IDBObjectStoreBinding.h"
 #include "mozilla/dom/IDBOpenDBRequestBinding.h"
@@ -46,9 +40,6 @@
 #include "mozilla/dom/TextEncoderBinding.h"
 #include "mozilla/dom/DOMErrorBinding.h"
 
-#include "nsWrapperCacheInlines.h"
-#include "nsCycleCollectionNoteRootCallback.h"
-#include "nsCycleCollector.h"
 #include "nsDOMMutationObserver.h"
 #include "nsICycleCollectorListener.h"
 #include "nsThread.h"
@@ -413,7 +404,7 @@ TraceXPCGlobal(JSTracer *trc, JSObject *obj)
 #include "mozilla/Preferences.h"
 #include "nsIXULRuntime.h"
 static void
-CheckTypeInference(JSContext *cx, JSClass *clasp, nsIPrincipal *principal)
+CheckTypeInference(JSContext *cx, const JSClass *clasp, nsIPrincipal *principal)
 {
     // Check that the global class isn't whitelisted.
     if (strcmp(clasp->name, "Sandbox") ||
@@ -452,7 +443,7 @@ CheckTypeInference(JSContext *cx, JSClass *clasp, nsIPrincipal *principal)
 namespace xpc {
 
 JSObject*
-CreateGlobalObject(JSContext *cx, JSClass *clasp, nsIPrincipal *principal,
+CreateGlobalObject(JSContext *cx, const JSClass *clasp, nsIPrincipal *principal,
                    JS::CompartmentOptions& aOptions)
 {
     // Make sure that Type Inference is enabled for everything non-chrome.
@@ -476,7 +467,7 @@ CreateGlobalObject(JSContext *cx, JSClass *clasp, nsIPrincipal *principal,
     // Verify that the right trace hook is called. Note that this doesn't
     // work right for wrapped globals, since the tracing situation there is
     // more complicated. Manual inspection shows that they do the right thing.
-    if (!((js::Class*)clasp)->ext.isWrappedNative)
+    if (!((const js::Class*)clasp)->ext.isWrappedNative)
     {
         VerifyTraceXPCGlobalCalledTracer trc;
         JS_TracerInit(&trc.base, JS_GetRuntime(cx), VerifyTraceXPCGlobalCalled);
@@ -863,12 +854,14 @@ nsXPConnect::CreateStackFrameLocation(uint32_t aLanguage,
 {
     MOZ_ASSERT(_retval, "bad param");
 
-    return XPCJSStack::CreateStackFrameLocation(aLanguage,
-                                                aFilename,
-                                                aFunctionName,
-                                                aLineNumber,
-                                                aCaller,
-                                                _retval);
+    nsCOMPtr<nsIStackFrame> stackFrame =
+        exceptions::CreateStackFrameLocation(aLanguage,
+                                             aFilename,
+                                             aFunctionName,
+                                             aLineNumber,
+                                             aCaller);
+    stackFrame.forget(_retval);
+    return NS_OK;
 }
 
 /* readonly attribute nsIStackFrame CurrentJSStack; */
@@ -876,26 +869,10 @@ NS_IMETHODIMP
 nsXPConnect::GetCurrentJSStack(nsIStackFrame * *aCurrentJSStack)
 {
     MOZ_ASSERT(aCurrentJSStack, "bad param");
-    *aCurrentJSStack = nullptr;
 
-    // is there a current context available?
-    if (JSContext *cx = GetCurrentJSContext()) {
-        nsCOMPtr<nsIStackFrame> stack;
-        XPCJSStack::CreateStack(cx, getter_AddRefs(stack));
-        if (stack) {
-            // peel off native frames...
-            uint32_t language;
-            nsCOMPtr<nsIStackFrame> caller;
-            while (stack &&
-                   NS_SUCCEEDED(stack->GetLanguage(&language)) &&
-                   language != nsIProgrammingLanguage::JAVASCRIPT &&
-                   NS_SUCCEEDED(stack->GetCaller(getter_AddRefs(caller))) &&
-                   caller) {
-                stack = caller;
-            }
-            NS_IF_ADDREF(*aCurrentJSStack = stack);
-        }
-    }
+    nsCOMPtr<nsIStackFrame> currentStack = dom::GetCurrentJSStack();
+    currentStack.forget(aCurrentJSStack);
+
     return NS_OK;
 }
 

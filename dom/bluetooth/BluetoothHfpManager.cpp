@@ -54,8 +54,6 @@
 #define CR_LF "\xd\xa";
 
 #define MOZSETTINGS_CHANGED_ID               "mozsettings-changed"
-#define MOBILE_CONNECTION_ICCINFO_CHANGED_ID "mobile-connection-iccinfo-changed"
-#define MOBILE_CONNECTION_VOICE_CHANGED_ID   "mobile-connection-voice-changed"
 #define AUDIO_VOLUME_BT_SCO_ID               "audio.volume.bt_sco"
 
 using namespace mozilla;
@@ -203,10 +201,6 @@ BluetoothHfpManager::Observe(nsISupports* aSubject,
     HandleVolumeChanged(nsDependentString(aData));
   } else if (!strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {
     HandleShutdown();
-  } else if (!strcmp(aTopic, MOBILE_CONNECTION_ICCINFO_CHANGED_ID)) {
-    HandleIccInfoChanged();
-  } else if (!strcmp(aTopic, MOBILE_CONNECTION_VOICE_CHANGED_ID)) {
-    HandleVoiceConnectionChanged();
   } else {
     MOZ_ASSERT(false, "BluetoothHfpManager got unexpected topic!");
     return NS_ERROR_UNEXPECTED;
@@ -372,16 +366,14 @@ BluetoothHfpManager::Init()
   NS_ENSURE_TRUE(obs, false);
 
   if (NS_FAILED(obs->AddObserver(this, MOZSETTINGS_CHANGED_ID, false)) ||
-      NS_FAILED(obs->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false)) ||
-      NS_FAILED(obs->AddObserver(this, MOBILE_CONNECTION_ICCINFO_CHANGED_ID, false)) ||
-      NS_FAILED(obs->AddObserver(this, MOBILE_CONNECTION_VOICE_CHANGED_ID, false))) {
+      NS_FAILED(obs->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false))) {
     BT_WARNING("Failed to add observers!");
     return false;
   }
 
   hal::RegisterBatteryObserver(this);
 
-  mListener = new BluetoothTelephonyListener();
+  mListener = new BluetoothRilListener();
   if (!mListener->StartListening()) {
     NS_WARNING("Failed to start listening RIL");
     return false;
@@ -421,9 +413,7 @@ BluetoothHfpManager::~BluetoothHfpManager()
   NS_ENSURE_TRUE_VOID(obs);
 
   if (NS_FAILED(obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) ||
-      NS_FAILED(obs->RemoveObserver(this, MOZSETTINGS_CHANGED_ID)) ||
-      NS_FAILED(obs->RemoveObserver(this, MOBILE_CONNECTION_ICCINFO_CHANGED_ID)) ||
-      NS_FAILED(obs->RemoveObserver(this, MOBILE_CONNECTION_VOICE_CHANGED_ID))) {
+      NS_FAILED(obs->RemoveObserver(this, MOZSETTINGS_CHANGED_ID))) {
     BT_WARNING("Failed to remove observers!");
   }
 
@@ -453,48 +443,9 @@ BluetoothHfpManager::Get()
 }
 
 void
-BluetoothHfpManager::DispatchConnectionStatusChanged(const nsAString& aType)
-{
-  MOZ_ASSERT(NS_IsMainThread());
-
-  bool status = false;
-  if (aType.EqualsLiteral(HFP_STATUS_CHANGED_ID)) {
-    status = IsConnected();
-  } else if (aType.EqualsLiteral(SCO_STATUS_CHANGED_ID)) {
-    status = IsScoConnected();
-  } else {
-    BT_WARNING("Wrong type for DispatchConnectionStatusChanged");
-    return;
-  }
-
-  DispatchStatusChangedEvent(aType, mDeviceAddress, status);
-}
-
-void
 BluetoothHfpManager::NotifyConnectionStatusChanged(const nsAString& aType)
 {
   MOZ_ASSERT(NS_IsMainThread());
-
-  BluetoothValue v;
-  InfallibleTArray<BluetoothNamedValue> parameters;
-  nsString name = NS_LITERAL_STRING("connected");
-  if (aType.EqualsLiteral(BLUETOOTH_HFP_STATUS_CHANGED_ID)) {
-    v = IsConnected();
-  } else if (aType.EqualsLiteral(BLUETOOTH_SCO_STATUS_CHANGED_ID)) {
-    v = IsScoConnected();
-  } else {
-    BT_WARNING("Wrong type for NotifyConnectionStatusChanged");
-    return;
-  }
-  parameters.AppendElement(BluetoothNamedValue(name, v));
-
-  name.AssignLiteral("address");
-  v = mDeviceAddress;
-  parameters.AppendElement(BluetoothNamedValue(name, v));
-
-  if (!BroadcastSystemMessage(aType, parameters)) {
-    NS_WARNING("Failed to broadcast system message to settings");
-  }
 
   // Notify Gecko observers
   nsCOMPtr<nsIObserverService> obs =
@@ -505,6 +456,22 @@ BluetoothHfpManager::NotifyConnectionStatusChanged(const nsAString& aType)
                                      mDeviceAddress.get()))) {
     NS_WARNING("Failed to notify observsers!");
   }
+
+  // Dispatch an event of status change
+  bool status;
+  nsAutoString eventName;
+  if (aType.EqualsLiteral(BLUETOOTH_HFP_STATUS_CHANGED_ID)) {
+    status = IsConnected();
+    eventName.AssignLiteral(HFP_STATUS_CHANGED_ID);
+  } else if (aType.EqualsLiteral(BLUETOOTH_SCO_STATUS_CHANGED_ID)) {
+    status = IsScoConnected();
+    eventName.AssignLiteral(SCO_STATUS_CHANGED_ID);
+  } else {
+    MOZ_ASSERT(false);
+    return;
+  }
+
+  DispatchStatusChangedEvent(eventName, mDeviceAddress, status);
 }
 
 void
@@ -1454,6 +1421,7 @@ void
 BluetoothHfpManager::OnSocketConnectSuccess(BluetoothSocket* aSocket)
 {
   MOZ_ASSERT(aSocket);
+  MOZ_ASSERT(mListener);
 
   // Success to create a SCO socket
   if (aSocket == mScoSocket) {
@@ -1482,18 +1450,16 @@ BluetoothHfpManager::OnSocketConnectSuccess(BluetoothSocket* aSocket)
     mHandsfreeSocket = nullptr;
   }
 
-  nsCOMPtr<nsITelephonyProvider> provider =
-    do_GetService(TELEPHONY_PROVIDER_CONTRACTID);
-  NS_ENSURE_TRUE_VOID(provider);
-  provider->EnumerateCalls(mListener->GetListener());
+  // Enumerate current calls
+  mListener->EnumerateCalls();
 
   mFirstCKPD = true;
 
   // Cache device path for NotifySettings() since we can't get socket address
   // when a headset disconnect with us
   mSocket->GetAddress(mDeviceAddress);
-  NotifyConnectionStatusChanged(NS_LITERAL_STRING(BLUETOOTH_HFP_STATUS_CHANGED_ID));
-  DispatchConnectionStatusChanged(NS_LITERAL_STRING(HFP_STATUS_CHANGED_ID));
+  NotifyConnectionStatusChanged(
+    NS_LITERAL_STRING(BLUETOOTH_HFP_STATUS_CHANGED_ID));
 
   ListenSco();
 
@@ -1533,8 +1499,8 @@ BluetoothHfpManager::OnSocketDisconnect(BluetoothSocket* aSocket)
 
   DisconnectSco();
 
-  NotifyConnectionStatusChanged(NS_LITERAL_STRING(BLUETOOTH_HFP_STATUS_CHANGED_ID));
-  DispatchConnectionStatusChanged(NS_LITERAL_STRING(HFP_STATUS_CHANGED_ID));
+  NotifyConnectionStatusChanged(
+    NS_LITERAL_STRING(BLUETOOTH_HFP_STATUS_CHANGED_ID));
   OnDisconnect(EmptyString());
 
   Reset();
@@ -1603,8 +1569,8 @@ BluetoothHfpManager::OnScoConnectSuccess()
     mScoRunnable = nullptr;
   }
 
-  NotifyConnectionStatusChanged(NS_LITERAL_STRING(BLUETOOTH_SCO_STATUS_CHANGED_ID));
-  DispatchConnectionStatusChanged(NS_LITERAL_STRING(SCO_STATUS_CHANGED_ID));
+  NotifyConnectionStatusChanged(
+    NS_LITERAL_STRING(BLUETOOTH_SCO_STATUS_CHANGED_ID));
 
   mScoSocketStatus = mScoSocket->GetConnectionStatus();
 }
@@ -1627,8 +1593,8 @@ BluetoothHfpManager::OnScoDisconnect()
 {
   if (mScoSocketStatus == SocketConnectionStatus::SOCKET_CONNECTED) {
     ListenSco();
-    NotifyConnectionStatusChanged(NS_LITERAL_STRING(BLUETOOTH_SCO_STATUS_CHANGED_ID));
-    DispatchConnectionStatusChanged(NS_LITERAL_STRING(SCO_STATUS_CHANGED_ID));
+    NotifyConnectionStatusChanged(
+      NS_LITERAL_STRING(BLUETOOTH_SCO_STATUS_CHANGED_ID));
   }
 }
 

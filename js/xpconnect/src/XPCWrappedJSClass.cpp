@@ -12,10 +12,12 @@
 #include "nsArrayEnumerator.h"
 #include "nsContentUtils.h"
 #include "nsWrapperCache.h"
-#include "XPCWrapper.h"
 #include "AccessCheck.h"
 #include "nsJSUtils.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/DOMException.h"
+#include "mozilla/dom/DOMExceptionBinding.h"
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
@@ -261,21 +263,14 @@ nsXPCWrappedJSClass::CallQueryInterfaceOnJSObject(JSContext* cx,
                 if (jsexception.isObject()) {
                     // XPConnect may have constructed an object to represent a
                     // C++ QI failure. See if that is the case.
-                    nsCOMPtr<nsIXPConnectWrappedNative> wrapper;
+                    using namespace mozilla::dom;
+                    Exception *e = nullptr;
+                    UNWRAP_OBJECT(Exception, cx, &jsexception.toObject(), e);
 
-                    nsXPConnect::XPConnect()->
-                        GetWrappedNativeOfJSObject(cx,
-                                                   &jsexception.toObject(),
-                                                   getter_AddRefs(wrapper));
-
-                    if (wrapper) {
-                        nsCOMPtr<nsIException> exception =
-                            do_QueryWrappedNative(wrapper);
-                        if (exception &&
-                            NS_SUCCEEDED(exception->GetResult(&rv)) &&
-                            rv == NS_NOINTERFACE) {
-                            JS_ClearPendingException(cx);
-                        }
+                    if (e &&
+                        NS_SUCCEEDED(e->GetResult(&rv)) &&
+                        rv == NS_NOINTERFACE) {
+                        JS_ClearPendingException(cx);
                     }
                 } else if (JSVAL_IS_NUMBER(jsexception)) {
                     // JS often throws an nsresult.
@@ -1663,7 +1658,7 @@ FinalizeStub(JSFreeOp *fop, JSObject *obj)
 {
 }
 
-static JSClass XPCOutParamClass = {
+static const JSClass XPCOutParamClass = {
     "XPCOutParam",
     0,
     JS_PropertyStub,

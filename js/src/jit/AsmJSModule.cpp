@@ -22,8 +22,13 @@
 using namespace js;
 
 void
-AsmJSModule::patchHeapAccesses(ArrayBufferObject *heap, JSContext *cx)
+AsmJSModule::initHeap(Handle<ArrayBufferObject*> heap, JSContext *cx)
 {
+    JS_ASSERT(linked_);
+    JS_ASSERT(!maybeHeap_);
+    maybeHeap_ = heap;
+    heapDatum() = heap->dataPointer();
+
     JS_ASSERT(IsPowerOfTwo(heap->byteLength()));
 #if defined(JS_CPU_X86)
     uint8_t *heapOffset = heap->dataPointer();
@@ -160,7 +165,7 @@ AsmJSModuleObject_trace(JSTracer *trc, JSObject *obj)
     obj->as<AsmJSModuleObject>().module().trace(trc);
 }
 
-Class AsmJSModuleObject::class_ = {
+const Class AsmJSModuleObject::class_ = {
     "AsmJSModuleObject",
     JSCLASS_IS_ANONYMOUS | JSCLASS_IMPLEMENTS_BARRIERS |
     JSCLASS_HAS_RESERVED_SLOTS(AsmJSModuleObject::RESERVED_SLOTS),

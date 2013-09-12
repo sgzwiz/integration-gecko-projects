@@ -6,7 +6,7 @@
 
 #include "mozilla/dom/HTMLAllCollection.h"
 
-#include "nsCycleCollectionHoldDrop.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "nsDOMClassInfo.h"
 #include "nsHTMLDocument.h"
 
@@ -67,7 +67,8 @@ HTMLAllCollection::GetObject(JSContext* aCx, ErrorResult& aRv)
     NS_ADDREF(mDocument);
   }
 
-  return xpc_UnmarkGrayObject(mObject);
+  JS::ExposeObjectToActiveJS(mObject);
+  return mObject;
 }
 
 } // namespace dom
