@@ -292,7 +292,7 @@ var gAdvancedPane = {
     }
     
     Visitor.prototype = {
-      expexted: 0,
+      expected: 0,
       sum: 0,
       QueryInterface: function listener_qi(iid) {
         if (iid.equals(Ci.nsISupports) ||
@@ -304,7 +304,7 @@ var gAdvancedPane = {
       onCacheStorageInfo: function(num, consumption)
       {
         this.sum += consumption;
-        if (!--this.expect)
+        if (!--this.expected)
           updateUI(this.sum);
       },
       onCacheEntryInfo: function(entry)
@@ -312,7 +312,7 @@ var gAdvancedPane = {
       }
     };
     function Visitor(callbacksExpected) {
-      this.expexted = callbacksExpected;
+      this.expected = callbacksExpected;
     }
     
     var cacheService =
