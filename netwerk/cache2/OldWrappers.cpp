@@ -773,6 +773,21 @@ NS_IMETHODIMP _OldStorage::AsyncVisitStorage(nsICacheStorageVisitor* aVisitor,
 {
   LOG(("_OldStorage::AsyncVisitStorage"));
 
+  NS_ENSURE_ARG(aVisitor);
+
+  if (mLoadInfo->IsAnonymous()) {
+    // There is no concept of 'anonymous' storage in the old cache
+    // since anon cache entries are stored in 'non-anon' storage
+    // with a special prefix.
+    // Just fake we have 0 items with 0 consumption.  This at least
+    // prevents displaying double size in the advanced section of
+    // the Options dialog.
+    aVisitor->OnCacheStorageInfo(0, 0);
+    if (aVisitEntries)
+      aVisitor->OnCacheEntryVisitCompleted();
+    return NS_OK;
+  }
+
   nsresult rv;
 
   nsCOMPtr<nsICacheService> serv =
