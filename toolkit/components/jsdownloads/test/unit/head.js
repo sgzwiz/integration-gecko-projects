@@ -364,10 +364,7 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
 
   let deferred = Promise.defer();
 
-  let isPrivate = aOptions && aOptions.isPrivate;
-  let promise = isPrivate ? Downloads.getPrivateDownloadList()
-                          : Downloads.getPublicDownloadList();
-  promise.then(function (aList) {
+  Downloads.getList(Downloads.ALL).then(function (aList) {
     // Temporarily register a view that will get notified when the download we
     // are controlling becomes visible in the list of downloads.
     aList.addView({
@@ -382,6 +379,8 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
         deferred.resolve(aDownload);
       },
     });
+
+    let isPrivate = aOptions && aOptions.isPrivate;
 
     // Initialize the components so they reference each other.  This will cause
     // the Download object to be created and added to the public downloads.
@@ -417,7 +416,7 @@ function promiseStartExternalHelperAppServiceDownload(aSourceUrl) {
 
   let deferred = Promise.defer();
 
-  Downloads.getPublicDownloadList().then(function (aList) {
+  Downloads.getList(Downloads.PUBLIC).then(function (aList) {
     // Temporarily register a view that will get notified when the download we
     // are controlling becomes visible in the list of downloads.
     aList.addView({
@@ -465,29 +464,54 @@ function promiseStartExternalHelperAppServiceDownload(aSourceUrl) {
 }
 
 /**
- * Returns a new public DownloadList object.
+ * Waits for a download to reach half of its progress, in case it has not
+ * reached the expected progress already.
+ *
+ * @param aDownload
+ *        The Download object to wait upon.
  *
  * @return {Promise}
- * @resolves The newly created DownloadList object.
- * @rejects JavaScript exception.
+ * @resolves When the download has reached half of its progress.
+ * @rejects Never.
  */
-function promiseNewDownloadList() {
-  // Force the creation of a new public download list.
-  Downloads._promisePublicDownloadList = null;
-  return Downloads.getPublicDownloadList();
+function promiseDownloadMidway(aDownload) {
+  let deferred = Promise.defer();
+
+  // Wait for the download to reach half of its progress.
+  let onchange = function () {
+    if (!aDownload.stopped && !aDownload.canceled && aDownload.progress == 50) {
+      aDownload.onchange = null;
+      deferred.resolve();
+    }
+  };
+
+  // Register for the notification, but also call the function directly in
+  // case the download already reached the expected progress.
+  aDownload.onchange = onchange;
+  onchange();
+
+  return deferred.promise;
 }
 
 /**
- * Returns a new private DownloadList object.
+ * Returns a new public or private DownloadList object.
+ *
+ * @param aIsPrivate
+ *        True for the private list, false or undefined for the public list.
  *
  * @return {Promise}
  * @resolves The newly created DownloadList object.
  * @rejects JavaScript exception.
  */
-function promiseNewPrivateDownloadList() {
-  // Force the creation of a new public download list.
-  Downloads._promisePrivateDownloadList = null;
-  return Downloads.getPrivateDownloadList();
+function promiseNewList(aIsPrivate)
+{
+  // We need to clear all the internal state for the list and summary objects,
+  // since all the objects are interdependent internally.
+  Downloads._promiseListsInitialized = null;
+  Downloads._lists = {};
+  Downloads._summaries = {};
+
+  return Downloads.getList(aIsPrivate ? Downloads.PRIVATE : Downloads.PUBLIC);
 }
 
 /**
