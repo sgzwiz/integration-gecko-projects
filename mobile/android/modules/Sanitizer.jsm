@@ -126,10 +126,10 @@ Sanitizer.prototype = {
     offlineApps: {
       clear: function ()
       {
-        // TODO mayhemer: migrate to new cache api when implemete for appcache
-        var cacheService = Cc["@mozilla.org/network/cache-service;1"].getService(Ci.nsICacheService);
+        var cacheService = Cc["@mozilla.org/netwerk/cache-storage-service;1"].getService(Ci.nsICacheStorageService);
+        var appCacheStorage = cacheService.appCacheStorage(LoadContextInfo.default, null);
         try {
-          cacheService.evictEntries(Ci.nsICache.STORE_OFFLINE);
+          appCacheStorage.asyncEvictStorage(null);
         } catch(er) {}
       },
 
