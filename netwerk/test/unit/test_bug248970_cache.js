@@ -24,12 +24,14 @@ const entries = [
 // key       content       device          should exist after leaving PB
   [kCacheA,  kTestContent, kMemoryDevice,  true],
   [kCacheA2, kTestContent, kDiskDevice,    false],
-  [kCacheB,  kTestContent, kDiskDevice,    true]
-  // TODO [kCacheC,  kTestContent, kOfflineDevice, true]
+  [kCacheB,  kTestContent, kDiskDevice,    true],
+  [kCacheC,  kTestContent, kOfflineDevice, true]
 ]
 
 var store_idx;
 var store_cb = null;
+var appCache = null;
+
 function store_entries(cb)
 {
   if (cb) {
@@ -44,9 +46,10 @@ function store_entries(cb)
 
   asyncOpenCacheEntry(entries[store_idx][0],
                       entries[store_idx][2],
-                      Ci.nsICacheStorage.OPEN_NORMALLY,
+                      Ci.nsICacheStorage.OPEN_TRUNCATE,
                       LoadContextInfo.custom(!entries[store_idx][3]),
-                      store_data);
+                      store_data,
+                      appCache);
 }
 
 var store_data = function(status, entry) {
@@ -85,7 +88,8 @@ function check_entries(cb, pbExited)
                       entries[check_idx][2],
                       Ci.nsICacheStorage.OPEN_READONLY,
                       LoadContextInfo.custom(!entries[check_idx][3]),
-                      check_data);
+                      check_data,
+                      appCache);
 }
 
 var check_data = function (status, entry) {
@@ -111,6 +115,10 @@ var check_data = function (status, entry) {
 function run_test() {
   // Simulate a profile dir for xpcshell
   do_get_profile();
+
+  appCache = Cc["@mozilla.org/network/application-cache-service;1"].
+             getService(Ci.nsIApplicationCacheService).
+             getApplicationCache("fake-client-id|fake-group-id");
 
   // Start off with an empty cache
   evict_cache_entries();
