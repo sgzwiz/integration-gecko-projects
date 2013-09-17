@@ -6,9 +6,7 @@
 // This test covers MozTrap test 6047
 // bug 880621
 
-let tempScope = {};
-Cu.import("resource://gre/modules/LoadContextInfo.jsm", tempScope);
-let LoadContextInfo = tempScope.LoadContextInfo;
+let {LoadContextInfo} = Cu.import("resource://gre/modules/LoadContextInfo.jsm", null);
 
 let tmp = {};
 
@@ -25,7 +23,7 @@ function test() {
   sanitizeCache();
 
   let nrEntriesR1 = getStorageEntryCount("regular", function(nrEntriesR1) {
-    is (nrEntriesR1, 0, "Disk cache reports 0KB and has no entries");
+    is(nrEntriesR1, 0, "Disk cache reports 0KB and has no entries");
 
     get_cache_for_private_window();
   });
@@ -91,7 +89,7 @@ function getStorageEntryCount(device, goon) {
     },
     onCacheEntryInfo: function(entry)
     {
-      dump(device + ":" + entry.key + "\n");
+      info(device + ":" + entry.key + "\n");
       if (entry.key.match(/^http:\/\/example.org\//))
         ++this.entryCount;
     },
@@ -123,10 +121,10 @@ function get_cache_for_private_window () {
         executeSoon(function() {
 
           getStorageEntryCount("private", function(nrEntriesP) {
-            ok (nrEntriesP >= 1, "Memory cache reports some entries from example.org domain");
+            ok(nrEntriesP >= 1, "Memory cache reports some entries from example.org domain");
 
             getStorageEntryCount("regular", function(nrEntriesR2) {
-              is (nrEntriesR2, 0, "Disk cache reports 0KB and has no entries");
+              is(nrEntriesR2, 0, "Disk cache reports 0KB and has no entries");
 
               cleanup();
 
