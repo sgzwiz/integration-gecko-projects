@@ -30,13 +30,6 @@ const UNEXPECTED_NOTIFICATIONS = [
 
 const URL = "ftp://localhost/clearHistoryOnShutdown/";
 
-function createURI(urispec)
-{
-  var ioServ = Components.classes["@mozilla.org/network/io-service;1"]
-                         .getService(Components.interfaces.nsIIOService);
-  return ioServ.newURI(urispec, null, null);
-}
-
 // Send the profile-after-change notification to the form history component to ensure
 // that it has been initialized.
 var formHistoryStartup = Cc["@mozilla.org/satchel/form-history-startup;1"].
@@ -141,8 +134,7 @@ function getDistinctNotifications() {
 }
 
 function storeCache(aURL, aContent) {
-  let cache = Cc["@mozilla.org/netwerk/cache-storage-service;1"].
-              getService(Ci.nsICacheStorageService);
+  let cache = Services.cache2;
   let storage = cache.diskCacheStorage(LoadContextInfo.default, false);
 
   var storeCacheListener = {
@@ -168,15 +160,14 @@ function storeCache(aURL, aContent) {
     }
   };
 
-  storage.asyncOpenURI(createURI(aURL), "", 
+  storage.asyncOpenURI(Services.io.newURI(aURL), "",
                        Ci.nsICacheStorage.OPEN_NORMALLY,
                        storeCacheListener);
 }
 
 
 function checkCache(aURL) {
-  let cache = Cc["@mozilla.org/netwerk/cache-storage-service;1"].
-              getService(Ci.nsICacheStorageService);
+  let cache = Services.cache2;
   let storage = cache.diskCacheStorage(LoadContextInfo.default, false);
 
   var checkCacheListener = {
@@ -186,7 +177,7 @@ function checkCache(aURL) {
     }
   };
 
-  storage.asyncOpenURI(createURI(aURL), "", 
+  storage.asyncOpenURI(Services.io.newURI(aURL), "",
                        Ci.nsICacheStorage.OPEN_READONLY,
                        checkCacheListener);
 }
