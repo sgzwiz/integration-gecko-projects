@@ -160,7 +160,7 @@ function storeCache(aURL, aContent) {
     }
   };
 
-  storage.asyncOpenURI(Services.io.newURI(aURL), "",
+  storage.asyncOpenURI(Services.io.newURI(aURL, null, null), "",
                        Ci.nsICacheStorage.OPEN_NORMALLY,
                        storeCacheListener);
 }
@@ -177,7 +177,7 @@ function checkCache(aURL) {
     }
   };
 
-  storage.asyncOpenURI(Services.io.newURI(aURL), "",
+  storage.asyncOpenURI(Services.io.newURI(aURL, null, null), "",
                        Ci.nsICacheStorage.OPEN_READONLY,
                        checkCacheListener);
 }
