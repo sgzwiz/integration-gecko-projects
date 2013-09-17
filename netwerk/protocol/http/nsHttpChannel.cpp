@@ -2094,8 +2094,8 @@ nsHttpChannel::ProcessPartialContent()
     nsresult rv;
 
     if (mConcurentCacheAccess) {
-        // We started to read cached data sooner then its write has been done.
-        // But the concurrent write has not finished completely, so we had
+        // We started to read cached data sooner than its write has been done.
+        // But the concurrent write has not finished completely, so we had to
         // do a range request.  Now let the content coming from the network
         // be presented to consumers and also stored to the cache entry.
 
@@ -2678,8 +2678,8 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
     NS_ENSURE_TRUE((mCachedResponseHead->Status() / 100 != 3) ||
                    isCachedRedirect, NS_ERROR_ABORT);
 
-    // Don't bother to validate items that are
-    // or because
+    // Don't bother to validate items that are read-only,
+    // unless they are read-only because of INHIBIT_CACHING or because
     // we're updating the offline cache.
     // Don't bother to validate if this is a fallback entry.
     if (!mApplicationCacheForWrite &&
@@ -3378,7 +3378,18 @@ nsHttpChannel::OpenCacheInputStream(nsICacheEntry* cacheEntry, bool startBufferi
         return rv;
     }
 
-    if (1) {
+    if (startBuffering) {
+        bool nonBlocking;
+        rv = stream->IsNonBlocking(&nonBlocking);
+        if (NS_SUCCEEDED(rv) && nonBlocking)
+            startBuffering = false;
+    }
+
+    if (!startBuffering) {
+        // Bypass wrapping the input stream for the new cache back-end since
+        // nsIStreamTransportService expects a blocking stream.  Preloading of
+        // the data must be done on the level of the cache backend, internally.
+        //
         // We do not connect the stream to the stream transport service if we
         // have to validate the entry with the server. If we did, we would get
         // into a race condition between the stream transport service reading
