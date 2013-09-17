@@ -72,7 +72,7 @@ function asyncOpenCacheEntry(key, where, flags, lci, callback, appcache)
     onCacheEntryCheck: function(entry, appCache) {
       if (typeof callback === "object")
         return callback.onCacheEntryCheck(entry, appCache);
-      return Ci.nsICacheEntryOpenCallback.ENTRY_VALID;
+      return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED;
     },
 
     onCacheEntryAvailable: function (entry, isnew, appCache, status) {
