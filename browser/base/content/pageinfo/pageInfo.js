@@ -4,6 +4,7 @@
 
 const Cu = Components.utils;
 Cu.import("resource://gre/modules/LoadContextInfo.jsm");
+Cu.import("resource://gre/modules/Services.jsm");
 
 //******** define a js object to implement nsITreeView
 function pageInfoTreeView(treeid, copycol)
@@ -148,13 +149,6 @@ const COL_IMAGE_BG      = 6;
 const COPYCOL_NONE = -1;
 const COPYCOL_META_CONTENT = 1;
 const COPYCOL_IMAGE = COL_IMAGE_ADDRESS;
-
-function createURI(urispec)
-{
-  var ioServ = Components.classes["@mozilla.org/network/io-service;1"]
-                         .getService(Components.interfaces.nsIIOService);
-  return ioServ.newURI(urispec, null, null);
-}
 
 // one nsITreeView for each tree in the window
 var gMetaView = new pageInfoTreeView('metatree', COPYCOL_META_CONTENT);
@@ -484,7 +478,7 @@ function openCacheEntry(key, cb)
     },
     get mainThreadOnly() { return true; }
   };
-  diskStorage.asyncOpenURI(createURI(key), "", nsICacheStorage.OPEN_READONLY, checkCacheListener);
+  diskStorage.asyncOpenURI(Services.io.newURI(key, null, null), "", nsICacheStorage.OPEN_READONLY, checkCacheListener);
 }
 
 function makeGeneralTab()
