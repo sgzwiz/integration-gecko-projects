@@ -126,10 +126,12 @@ CacheFileInputStream::Read(char *aBuf, uint32_t aCount, uint32_t *_retval)
   EnsureCorrectChunk(false);
   if (!mChunk) {
     if (mListeningForChunk == -1) {
+      LOG(("  no chunk, returning 0 read and NS_OK"));
       *_retval = 0;
       return NS_OK;
     }
     else {
+      LOG(("  waiting for chuck, returning WOULD_BLOCK"));
       return NS_BASE_STREAM_WOULD_BLOCK;
     }
   }
