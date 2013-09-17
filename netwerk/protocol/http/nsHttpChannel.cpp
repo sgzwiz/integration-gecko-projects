@@ -2616,8 +2616,6 @@ NS_IMETHODIMP
 nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appCache,
                                  uint32_t* aResult)
 {
-    //AssertOnCacheThread();
-
     nsresult rv = NS_OK;
 
     LOG(("nsHttpChannel::OnCacheEntryCheck enter [channel=%p entry=%p]",
