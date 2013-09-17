@@ -368,7 +368,6 @@ var gAdvancedPane = {
       }
     };
 
-    // TODO - migrate to the new cache API (see updateActualCacheSize above)
     var cacheService =
       Components.classes["@mozilla.org/network/cache-service;1"]
                 .getService(Components.interfaces.nsICacheService);
