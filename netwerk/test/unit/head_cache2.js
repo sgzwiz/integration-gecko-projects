@@ -19,7 +19,7 @@ var callbacks = new Array();
 const NORMAL =               0;
 // Expect a new entry
 const NEW =             1 << 0;
-// Return ENTRY_NOT_VALID from onCacheEntryCheck
+// Return early from onCacheEntryCheck and set the callback to state it expects onCacheEntryCheck to happen
 const NOTVALID =        1 << 1;
 // Throw from onCacheEntryAvailable
 const THROWAVAIL =      1 << 2;
