@@ -8,7 +8,7 @@ function run_test()
       // Open for read and check
       do_check_eq(entry.dataSize, 3);
       asyncOpenCacheEntry("http://a/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
-        new OpenCallback(NORMAL|WAITFORWRITE, "a1m", "a1d", function(entry) {
+        new OpenCallback(NORMAL, "a1m", "a1d", function(entry) {
           // Open for rewrite (truncate), write different meta and data
           do_check_eq(entry.dataSize, 3);
           asyncOpenCacheEntry("http://a/", "disk", Ci.nsICacheStorage.OPEN_TRUNCATE, null,
@@ -16,7 +16,7 @@ function run_test()
               // Open for read and check
               do_check_eq(entry.dataSize, 3);
               asyncOpenCacheEntry("http://a/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
-                new OpenCallback(NORMAL|WAITFORWRITE, "a2m", "a2d", function(entry) {
+                new OpenCallback(NORMAL, "a2m", "a2d", function(entry) {
                   do_check_eq(entry.dataSize, 3);
                   finish_cache2_test();
                 })
