@@ -396,8 +396,11 @@ AudioContext::CreatePeriodicWave(const Float32Array& aRealData,
   }
 
   nsRefPtr<PeriodicWave> periodicWave =
-    new PeriodicWave(this, aRealData.Data(), aRealData.Length(),
-                     aImagData.Data(), aImagData.Length());
+    new PeriodicWave(this, aRealData.Data(), aImagData.Data(),
+                     aImagData.Length(), aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
   return periodicWave.forget();
 }
 
@@ -511,7 +514,10 @@ AudioContext::Graph() const
 MediaStream*
 AudioContext::DestinationStream() const
 {
-  return Destination()->Stream();
+  if (Destination()) {
+    return Destination()->Stream();
+  }
+  return nullptr;
 }
 
 double
@@ -577,7 +583,7 @@ AudioContext::Shutdown()
   }
 
   // For offline contexts, we can destroy the MediaStreamGraph at this point.
-  if (mIsOffline) {
+  if (mIsOffline && mDestination) {
     mDestination->OfflineShutdown();
   }
 }
