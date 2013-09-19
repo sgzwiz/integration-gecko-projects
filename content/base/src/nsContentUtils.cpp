@@ -251,17 +251,16 @@ bool nsContentUtils::sDOMWindowDumpEnabled;
 
 namespace {
 
-static const char kJSStackContractID[] = "@mozilla.org/js/xpc/ContextStack;1";
 static NS_DEFINE_CID(kParserServiceCID, NS_PARSERSERVICE_CID);
 static NS_DEFINE_CID(kCParserCID, NS_PARSER_CID);
 
 static PLDHashTable sEventListenerManagersHash;
 
-class DOMEventListenerManagersHashReporter MOZ_FINAL : public MemoryReporterBase
+class DOMEventListenerManagersHashReporter MOZ_FINAL : public MemoryUniReporter
 {
 public:
   DOMEventListenerManagersHashReporter()
-    : MemoryReporterBase(
+    : MemoryUniReporter(
         "explicit/dom/event-listener-managers-hash",
         KIND_HEAP,
         UNITS_BYTES,
@@ -1766,6 +1765,7 @@ namespace mozilla {
 namespace dom {
 namespace workers {
 extern bool IsCurrentThreadRunningChromeWorker();
+extern JSContext* GetCurrentThreadJSContext();
 }
 }
 }
@@ -2217,13 +2217,6 @@ static inline void KeyAppendInt(int32_t aInt, nsACString& aKey)
   KeyAppendSep(aKey);
 
   aKey.Append(nsPrintfCString("%d", aInt));
-}
-
-static inline void KeyAppendAtom(nsIAtom* aAtom, nsACString& aKey)
-{
-  NS_PRECONDITION(aAtom, "KeyAppendAtom: aAtom can not be null!\n");
-
-  KeyAppendString(nsAtomCString(aAtom), aKey);
 }
 
 static inline bool IsAutocompleteOff(const nsIContent* aElement)
@@ -5198,6 +5191,17 @@ nsContentUtils::GetSafeJSContext()
 }
 
 /* static */
+JSContext *
+nsContentUtils::GetDefaultJSContextForThread()
+{
+  if (MOZ_LIKELY(NS_IsMainThread())) {
+    return GetSafeJSContext();
+  } else {
+    return workers::GetCurrentThreadJSContext();
+  }
+}
+
+/* static */
 nsresult
 nsContentUtils::ASCIIToLower(nsAString& aStr)
 {
@@ -5908,6 +5912,27 @@ nsContentUtils::PlatformToDOMLineBreaks(nsString &aString)
     aString.ReplaceSubstring(NS_LITERAL_STRING("\r").get(),
                              NS_LITERAL_STRING("\n").get());
   }
+}
+
+void
+nsContentUtils::PopulateStringFromStringBuffer(nsStringBuffer* aBuf,
+                                               nsAString& aResultString)
+{
+  MOZ_ASSERT(aBuf, "Expecting a non-null string buffer");
+
+  uint32_t stringLen = NS_strlen(static_cast<PRUnichar*>(aBuf->Data()));
+
+  // SANITY CHECK: In case the nsStringBuffer isn't correctly
+  // null-terminated, let's clamp its length using the allocated size, to be
+  // sure the resulting string doesn't sample past the end of the the buffer.
+  // (Note that StorageSize() is in units of bytes, so we have to convert that
+  // to units of PRUnichars, and subtract 1 for the null-terminator.)
+  uint32_t allocStringLen = (aBuf->StorageSize() / sizeof(PRUnichar)) - 1;
+  MOZ_ASSERT(stringLen <= allocStringLen,
+             "string buffer lacks null terminator!");
+  stringLen = std::min(stringLen, allocStringLen);
+
+  aBuf->ToString(stringLen, aResultString);
 }
 
 nsIPresShell*

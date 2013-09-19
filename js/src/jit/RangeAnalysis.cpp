@@ -124,9 +124,9 @@ RangeAnalysis::replaceDominatedUsesWith(MDefinition *orig, MDefinition *dom,
 }
 
 bool
-RangeAnalysis::addBetaNobes()
+RangeAnalysis::addBetaNodes()
 {
-    IonSpew(IonSpew_Range, "Adding beta nobes");
+    IonSpew(IonSpew_Range, "Adding beta nodes");
 
     for (PostorderIterator i(graph_.poBegin()); i != graph_.poEnd(); i++) {
         MBasicBlock *block = *i;
@@ -230,9 +230,9 @@ RangeAnalysis::addBetaNobes()
 }
 
 bool
-RangeAnalysis::removeBetaNobes()
+RangeAnalysis::removeBetaNodes()
 {
-    IonSpew(IonSpew_Range, "Removing beta nobes");
+    IonSpew(IonSpew_Range, "Removing beta nodes");
 
     for (PostorderIterator i(graph_.poBegin()); i != graph_.poEnd(); i++) {
         MBasicBlock *block = *i;
@@ -1106,6 +1106,12 @@ MToDouble::computeRange()
 }
 
 void
+MToFloat32::computeRange()
+{
+    setRange(new Range(getOperand(0)));
+}
+
+void
 MTruncateToInt32::computeRange()
 {
     Range *output = new Range(getOperand(0));
@@ -1162,6 +1168,42 @@ MLoadTypedArrayElementStatic::computeRange()
 {
     if (Range *range = GetTypedArrayRange(typedArray_->type()))
         setRange(range);
+}
+
+void
+MArrayLength::computeRange()
+{
+    Range *r = new Range(0, UINT32_MAX);
+    r->extendUInt32ToInt32Min();
+    setRange(r);
+}
+
+void
+MInitializedLength::computeRange()
+{
+    Range *r = new Range(0, UINT32_MAX);
+    r->extendUInt32ToInt32Min();
+    setRange(r);
+}
+
+void
+MTypedArrayLength::computeRange()
+{
+    setRange(new Range(0, INT32_MAX));
+}
+
+void
+MStringLength::computeRange()
+{
+    setRange(new Range(0, JSString::MAX_LENGTH));
+}
+
+void
+MArgumentsLength::computeRange()
+{
+    // This is is a conservative upper bound on what |TooManyArguments| checks.
+    // If exceeded, Ion will not be entered in the first place.
+    setRange(new Range(0, SNAPSHOT_MAX_NARGS));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1246,33 +1288,35 @@ RangeAnalysis::analyzeLoop(MBasicBlock *header)
     for (MPhiIterator iter(header->phisBegin()); iter != header->phisEnd(); iter++)
         analyzeLoopPhi(header, iterationBound, *iter);
 
-    // Try to hoist any bounds checks from the loop using symbolic bounds.
+    if (!mir->compilingAsmJS()) {
+        // Try to hoist any bounds checks from the loop using symbolic bounds.
 
-    Vector<MBoundsCheck *, 0, IonAllocPolicy> hoistedChecks;
+        Vector<MBoundsCheck *, 0, IonAllocPolicy> hoistedChecks;
 
-    for (ReversePostorderIterator iter(graph_.rpoBegin(header)); iter != graph_.rpoEnd(); iter++) {
-        MBasicBlock *block = *iter;
-        if (!block->isMarked())
-            continue;
+        for (ReversePostorderIterator iter(graph_.rpoBegin(header)); iter != graph_.rpoEnd(); iter++) {
+            MBasicBlock *block = *iter;
+            if (!block->isMarked())
+                continue;
 
-        for (MDefinitionIterator iter(block); iter; iter++) {
-            MDefinition *def = *iter;
-            if (def->isBoundsCheck() && def->isMovable()) {
-                if (tryHoistBoundsCheck(header, def->toBoundsCheck()))
-                    hoistedChecks.append(def->toBoundsCheck());
+            for (MDefinitionIterator iter(block); iter; iter++) {
+                MDefinition *def = *iter;
+                if (def->isBoundsCheck() && def->isMovable()) {
+                    if (tryHoistBoundsCheck(header, def->toBoundsCheck()))
+                        hoistedChecks.append(def->toBoundsCheck());
+                }
             }
         }
-    }
 
-    // Note: replace all uses of the original bounds check with the
-    // actual index. This is usually done during bounds check elimination,
-    // but in this case it's safe to do it here since the load/store is
-    // definitely not loop-invariant, so we will never move it before
-    // one of the bounds checks we just added.
-    for (size_t i = 0; i < hoistedChecks.length(); i++) {
-        MBoundsCheck *ins = hoistedChecks[i];
-        ins->replaceAllUsesWith(ins->index());
-        ins->block()->discard(ins);
+        // Note: replace all uses of the original bounds check with the
+        // actual index. This is usually done during bounds check elimination,
+        // but in this case it's safe to do it here since the load/store is
+        // definitely not loop-invariant, so we will never move it before
+        // one of the bounds checks we just added.
+        for (size_t i = 0; i < hoistedChecks.length(); i++) {
+            MBoundsCheck *ins = hoistedChecks[i];
+            ins->replaceAllUsesWith(ins->index());
+            ins->block()->discard(ins);
+        }
     }
 
     graph_.unmarkBlocks();
@@ -1830,6 +1874,20 @@ MToDouble::truncate()
 }
 
 bool
+MToFloat32::truncate()
+{
+    JS_ASSERT(type() == MIRType_Float32);
+
+    // We use the return type to flag that this MToFloat32 sould be replaced by a
+    // MTruncateToInt32 when modifying the graph.
+    setResultType(MIRType_Int32);
+    if (range())
+        range()->wrapAroundToInt32();
+
+    return true;
+}
+
+bool
 MLoadTypedArrayElementStatic::truncate()
 {
     setInfallible();
@@ -1876,6 +1934,14 @@ bool
 MToDouble::isOperandTruncated(size_t index) const
 {
     // The return type is used to flag that we are replacing this Double by a
+    // Truncate of its operand if needed.
+    return type() == MIRType_Int32;
+}
+
+bool
+MToFloat32::isOperandTruncated(size_t index) const
+{
+    // The return type is used to flag that we are replacing this Float32 by a
     // Truncate of its operand if needed.
     return type() == MIRType_Int32;
 }
