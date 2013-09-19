@@ -1,3 +1,7 @@
+const Cc = Components.classes;
+const Ci = Components.interfaces;
+const Cr = Components.results;
+
 var _PSvc;
 function get_pref_service() {
   if (_PSvc)
@@ -44,8 +48,10 @@ function write_datafile(status, entry)
   get_pref_service().setIntPref("browser.cache.disk.max_entry_size", 1024);
 
   // append to entry
-  asyncOpenCacheEntry("http://data/",
-                      "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+  asyncOpenCacheEntry("data",
+                      "HTTP",
+                      Ci.nsICache.STORE_ON_DISK,
+                      Ci.nsICache.ACCESS_READ_WRITE,
                       append_datafile);
 }
 
@@ -80,8 +86,10 @@ function run_test() {
   // clear the cache
   evict_cache_entries();
 
-  asyncOpenCacheEntry("http://data/",
-                      "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
+  asyncOpenCacheEntry("data",
+                      "HTTP",
+                      Ci.nsICache.STORE_ON_DISK,
+                      Ci.nsICache.ACCESS_WRITE,
                       write_datafile);
 
   do_test_pending();
