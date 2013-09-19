@@ -31,9 +31,9 @@ function make_channel(url) {
 }
 
 function clearCache() {
-    var service = Components.classes["@mozilla.org/network/cache-service;1"]
-        .getService(Ci.nsICacheService);
-    service.evictEntries(Ci.nsICache.STORE_ANYWHERE);
+    var service = Components.classes["@mozilla.org/netwerk/cache-storage-service;1"]
+        .getService(Ci.nsICacheStorageService);
+    service.clear();
 }
 
 function alwaysReturn304Handler(metadata, response) {

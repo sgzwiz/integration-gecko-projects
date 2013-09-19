@@ -30,7 +30,6 @@
 #include "nsEscape.h"
 #include "nsStreamUtils.h"
 #include "nsIOService.h"
-#include "nsICacheService.h"
 #include "nsDNSPrefetch.h"
 #include "nsChannelClassifier.h"
 #include "nsIRedirectResultListener.h"
