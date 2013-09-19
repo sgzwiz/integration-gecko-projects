@@ -647,6 +647,12 @@ bool CacheEntry::SetUsingDisk(bool aUsingDisk)
 {
   // Called by the service when this entry is reopen to reflect
   // demanded storage target.
+
+  if (mState >= READY) {
+    // Don't modify after this entry has been filled.
+    return false;
+  }
+
   CacheStorageService::Self()->Lock().AssertCurrentThreadOwns();
 
   bool changed = mUseDisk != aUsingDisk;
@@ -677,6 +683,13 @@ NS_IMETHODIMP CacheEntry::GetPersistToDisk(bool *aPersistToDisk)
 }
 NS_IMETHODIMP CacheEntry::SetPersistToDisk(bool aPersistToDisk)
 {
+  LOG(("CacheEntry::SetPersistToDisk [this=%p, persist=%d]", this, aPersistToDisk));
+
+  if (mState >= READY) {
+    LOG(("  failed, called after filling the entry"));
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
   if (mUseDisk == aPersistToDisk)
     return NS_OK;
 

@@ -196,6 +196,12 @@ public:
   }
 
 private:
+  virtual ~EvictionRunnable()
+  {
+    if (mCallback)
+      ProxyReleaseMainThread(mCallback);
+  }
+
   static PLDHashOperator EvictEntry(const nsACString& aKey,
                                     nsRefPtr<CacheEntry>& aEntry,
                                     void* aClosure)
