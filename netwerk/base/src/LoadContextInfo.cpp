@@ -99,5 +99,17 @@ GetLoadContextInfo(nsILoadContextInfo* aInfo)
                              aInfo->IsAnonymous());
 }
 
+LoadContextInfo *
+GetLoadContextInfo(bool const aIsPrivate,
+                   uint32_t const aAppId,
+                   bool const aIsInBrowserElement,
+                   bool const aIsAnonymous)
+{
+  return new LoadContextInfo(aIsPrivate,
+                             aAppId,
+                             aIsInBrowserElement,
+                             aIsAnonymous);
+}
+
 } // net
 } // mozilla

@@ -41,6 +41,12 @@ GetLoadContextInfo(nsILoadContext * aLoadContext,
 LoadContextInfo *
 GetLoadContextInfo(nsILoadContextInfo* aInfo);
 
+LoadContextInfo *
+GetLoadContextInfo(bool const aIsPrivate = false,
+                   uint32_t const aAppId = nsILoadContextInfo::NO_APP_ID,
+                   bool const aIsInBrowserElement = false,
+                   bool const aIsAnonymous = false);
+
 } // net
 } // mozilla
 

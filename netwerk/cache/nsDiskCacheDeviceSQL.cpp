@@ -2424,31 +2424,33 @@ nsOfflineCacheDevice::DiscardByAppId(int32_t appID, bool browserEntriesOnly)
   rv = AppendJARIdentifier(jaridsuffix, appID, browserEntriesOnly);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  AutoResetStatement statement(mStatement_EnumerateApps);
-  rv = statement->BindUTF8StringByIndex(0, jaridsuffix);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  bool hasRows;
-  rv = statement->ExecuteStep(&hasRows);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  while (hasRows) {
-    nsAutoCString group;
-    rv = statement->GetUTF8String(0, group);
+  {
+    AutoResetStatement statement(mStatement_EnumerateApps);
+    rv = statement->BindUTF8StringByIndex(0, jaridsuffix);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    nsCString clientID;
-    rv = statement->GetUTF8String(1, clientID);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    nsCOMPtr<nsIRunnable> ev =
-      new nsOfflineCacheDiscardCache(this, group, clientID);
-
-    rv = nsCacheService::DispatchToCacheIOThread(ev);
-    NS_ENSURE_SUCCESS(rv, rv);
-
+    bool hasRows;
     rv = statement->ExecuteStep(&hasRows);
     NS_ENSURE_SUCCESS(rv, rv);
+
+    while (hasRows) {
+      nsAutoCString group;
+      rv = statement->GetUTF8String(0, group);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      nsCString clientID;
+      rv = statement->GetUTF8String(1, clientID);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      nsCOMPtr<nsIRunnable> ev =
+        new nsOfflineCacheDiscardCache(this, group, clientID);
+
+      rv = nsCacheService::DispatchToCacheIOThread(ev);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      rv = statement->ExecuteStep(&hasRows);
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
   }
 
   if (!browserEntriesOnly) {
