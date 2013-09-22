@@ -21,8 +21,10 @@
 #include "ipc/IndexedDBWorkerChild.h"
 
 USING_WORKERS_NAMESPACE
-using mozilla::dom::indexedDB::IDBTransactionBase;
+using mozilla::dom::IDBTransactionCallbackWorkers;
 using mozilla::dom::IDBTransactionMode;
+using mozilla::dom::IDBVersionChangeCallbackWorkers;
+using mozilla::dom::indexedDB::IDBTransactionBase;
 using mozilla::dom::NonNull;
 using mozilla::dom::Optional;
 using mozilla::dom::Sequence;
