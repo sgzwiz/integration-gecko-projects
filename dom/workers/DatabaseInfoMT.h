@@ -12,10 +12,20 @@
 #include "mozilla/dom/indexedDB/DatabaseInfo.h"
 #include "mozilla/StaticMutex.h"
 
+namespace mozilla {
+namespace dom {
+namespace indexedDB {
+struct ObjectStoreInfo;
+} // namespace indexedDB
+} // namespace dom
+} // namespace mozilla
+
 BEGIN_WORKERS_NAMESPACE
 
 struct DatabaseInfoMT : public indexedDB::DatabaseInfoBase
 {
+  typedef mozilla::dom::indexedDB::ObjectStoreInfo ObjectStoreInfo;
+
   DatabaseInfoMT();
 
   ~DatabaseInfoMT();
@@ -25,6 +35,16 @@ struct DatabaseInfoMT : public indexedDB::DatabaseInfoBase
   static bool Put(DatabaseInfoMT* aInfo);
 
   static void Remove(const nsACString& aId);
+
+  bool GetObjectStoreNames(nsTArray<nsString>& aNames);
+
+  bool ContainsStoreName(const nsAString& aName);
+
+  ObjectStoreInfo* GetObjectStore(const nsAString& aName);
+
+  bool PutObjectStore(ObjectStoreInfo* aInfo);
+
+  void RemoveObjectStore(const nsAString& aName);
 
   already_AddRefed<DatabaseInfoMT> Clone();
 

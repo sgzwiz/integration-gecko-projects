@@ -73,7 +73,6 @@ DatabaseInfoMT::Put(DatabaseInfoMT* aInfo)
   NS_ASSERTION(aInfo, "Null pointer!");
 
   StaticMutexAutoLock lock(sDatabaseInfoMutex);
-
   if (!gDatabaseHash) {
     nsAutoPtr<DatabaseHash> databaseHash(new DatabaseHash());
     gDatabaseHash = databaseHash.forget();
@@ -104,6 +103,46 @@ DatabaseInfoMT::Remove(const nsACString& aId)
   }
 }
 
+bool
+DatabaseInfoMT::GetObjectStoreNames(nsTArray<nsString>& aNames)
+{
+  StaticMutexAutoLock lock(sDatabaseInfoMutex);
+
+  return DatabaseInfoBase::GetObjectStoreNames(aNames);
+}
+
+bool
+DatabaseInfoMT::ContainsStoreName(const nsAString& aName)
+{
+  StaticMutexAutoLock lock(sDatabaseInfoMutex);
+
+  return DatabaseInfoBase::ContainsStoreName(aName);
+}
+
+ObjectStoreInfo*
+DatabaseInfoMT::GetObjectStore(const nsAString& aName)
+{
+  StaticMutexAutoLock lock(sDatabaseInfoMutex);
+
+  return DatabaseInfoBase::GetObjectStore(aName);
+}
+
+bool
+DatabaseInfoMT::PutObjectStore(ObjectStoreInfo* aInfo)
+{
+  StaticMutexAutoLock lock(sDatabaseInfoMutex);
+
+  return DatabaseInfoBase::PutObjectStore(aInfo);
+}
+
+void
+DatabaseInfoMT::RemoveObjectStore(const nsAString& aName)
+{
+  StaticMutexAutoLock lock(sDatabaseInfoMutex);
+
+  DatabaseInfoBase::RemoveObjectStore(aName);
+}
+
 already_AddRefed<DatabaseInfoMT>
 DatabaseInfoMT::Clone()
 {
@@ -118,6 +157,7 @@ DatabaseInfoMT::Clone()
   dbInfo->nextObjectStoreId = nextObjectStoreId;
   dbInfo->nextIndexId = nextIndexId;
 
+  StaticMutexAutoLock lock(sDatabaseInfoMutex);
   if (objectStoreHash) {
     dbInfo->objectStoreHash = new ObjectStoreInfoHash();
     objectStoreHash->EnumerateRead(CloneObjectStoreInfo,

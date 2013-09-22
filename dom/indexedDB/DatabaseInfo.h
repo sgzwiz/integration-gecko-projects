@@ -61,6 +61,7 @@ struct DatabaseInfoBase : public DatabaseInfoGuts
   { }
 
   bool GetObjectStoreNames(nsTArray<nsString>& aNames);
+
   bool ContainsStoreName(const nsAString& aName);
 
   ObjectStoreInfo* GetObjectStore(const nsAString& aName);
