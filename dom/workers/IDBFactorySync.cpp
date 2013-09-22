@@ -127,7 +127,7 @@ NS_IMPL_ISUPPORTS_INHERITED0(IDBFactorySync, IDBObjectSync)
 
 IDBDatabaseSync*
 IDBFactorySync::Open(JSContext* aCx, const nsAString& aName, uint64_t aVersion,
-                     const Optional<JS::Handle<JSObject*> >& aUpgradeCallback,
+                     const Optional<OwningNonNull<IDBVersionChangeCallbackWorkers> >& aUpgradeCallback,
                      const Optional<uint32_t>& aTimeout, ErrorResult& aRv)
 {
   IDBOpenDBOptions options;
@@ -140,7 +140,7 @@ IDBFactorySync::Open(JSContext* aCx, const nsAString& aName, uint64_t aVersion,
 IDBDatabaseSync*
 IDBFactorySync::Open(JSContext* aCx, const nsAString& aName,
                      const IDBOpenDBOptions& aOptions,
-                     const Optional<JS::Handle<JSObject*> >& aUpgradeCallback,
+                     const Optional<OwningNonNull<IDBVersionChangeCallbackWorkers> >& aUpgradeCallback,
                      const Optional<uint32_t>& aTimeout, ErrorResult& aRv)
 {
   uint64_t version = 0;
@@ -163,8 +163,8 @@ IDBFactorySync::Open(JSContext* aCx, const nsAString& aName,
     return nullptr;
   }
 
-  JSObject* upgradeCallback =
-    aUpgradeCallback.WasPassed() ? aUpgradeCallback.Value().get() : nullptr;
+  IDBVersionChangeCallbackWorkers* upgradeCallback =
+    aUpgradeCallback.WasPassed() ? &aUpgradeCallback.Value() : nullptr;
 
   if (!database->Open(aCx, upgradeCallback)) {
     aRv.Throw(NS_ERROR_FAILURE);

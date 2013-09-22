@@ -7,4 +7,10 @@
  * http://www.w3.org/TR/2012/WD-IndexedDB-20120524/#idl-def-IDBVersionChangeCallback
  */
 
+/*
+callback interface IDBVersionChangeCallback {
+    void transactionStarted (IDBTransactionSync transaction, unsigned long long oldVersion);
+};
+*/
+
 callback IDBVersionChangeCallback = void (IDBTransactionSync transaction, unsigned long long oldVersion);

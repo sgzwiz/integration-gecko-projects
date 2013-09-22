@@ -17,6 +17,7 @@
 namespace mozilla {
 namespace dom {
 class EventListener;
+class EventHandlerNonNullWorkers;
 } // namespace mozilla
 } // namespace dom
 
@@ -56,12 +57,12 @@ public:
     return mListenerManager.DispatchEvent(GetJSContext(), *this, aEvent, aRv);
   }
 
-  JSObject*
+  already_AddRefed<EventHandlerNonNullWorkers>
   GetEventListener(const nsAString& aType, ErrorResult& aRv) const;
 
   void
-  SetEventListener(const nsAString& aType, JS::Handle<JSObject*> aListener,
-                   ErrorResult& aRv);
+  SetEventListener(const nsAString& aType,
+                   EventHandlerNonNullWorkers* aListener, ErrorResult& aRv);
 
   bool
   HasListeners() const
@@ -69,13 +70,15 @@ public:
     return mListenerManager.HasListeners();
   }
 
-  void SetEventHandler(JSContext*, const nsAString& aType, JSObject* aHandler,
+  void SetEventHandler(const nsAString& aType,
+                       EventHandlerNonNullWorkers* aHandler,
                        ErrorResult& rv)
   {
     rv.Throw(NS_ERROR_NOT_IMPLEMENTED);
   }
 
-  JSObject* GetEventHandler(JSContext*, const nsAString& aType)
+  EventHandlerNonNullWorkers*
+  GetEventHandler(const nsAString& aType)
   {
     return nullptr;
   }

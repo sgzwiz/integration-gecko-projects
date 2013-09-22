@@ -25,7 +25,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Telemetry.h"
 #include "BatteryManager.h"
-#include "PowerManager.h"
+#include "mozilla/dom/PowerManager.h"
 #include "nsIDOMWakeLock.h"
 #include "nsIPowerManagerService.h"
 #include "mozilla/dom/MobileMessageManager.h"
@@ -75,11 +75,6 @@
 #include "nsScriptNameSpaceManager.h"
 
 #include "mozilla/dom/NavigatorBinding.h"
-
-using namespace mozilla::dom::power;
-
-// This should not be in the namespace.
-DOMCI_DATA(Navigator, mozilla::dom::Navigator)
 
 namespace mozilla {
 namespace dom {
@@ -988,18 +983,19 @@ Navigator::GetGeolocation(ErrorResult& aRv)
 
 #ifdef MOZ_MEDIA_NAVIGATOR
 void
-Navigator::MozGetUserMedia(nsIMediaStreamOptions* aParams,
-                           MozDOMGetUserMediaSuccessCallback* aOnSuccess,
-                           MozDOMGetUserMediaErrorCallback* aOnError,
+Navigator::MozGetUserMedia(JSContext* aCx,
+                           const MediaStreamConstraints& aConstraints,
+                           NavigatorUserMediaSuccessCallback& aOnSuccess,
+                           NavigatorUserMediaErrorCallback& aOnError,
                            ErrorResult& aRv)
 {
-  CallbackObjectHolder<MozDOMGetUserMediaSuccessCallback,
-                       nsIDOMGetUserMediaSuccessCallback> holder1(aOnSuccess);
+  CallbackObjectHolder<NavigatorUserMediaSuccessCallback,
+                       nsIDOMGetUserMediaSuccessCallback> holder1(&aOnSuccess);
   nsCOMPtr<nsIDOMGetUserMediaSuccessCallback> onsuccess =
     holder1.ToXPCOMCallback();
 
-  CallbackObjectHolder<MozDOMGetUserMediaErrorCallback,
-                       nsIDOMGetUserMediaErrorCallback> holder2(aOnError);
+  CallbackObjectHolder<NavigatorUserMediaErrorCallback,
+                       nsIDOMGetUserMediaErrorCallback> holder2(&aOnError);
   nsCOMPtr<nsIDOMGetUserMediaErrorCallback> onerror = holder2.ToXPCOMCallback();
 
   if (!mWindow || !mWindow->GetOuterWindow() ||
@@ -1011,21 +1007,23 @@ Navigator::MozGetUserMedia(nsIMediaStreamOptions* aParams,
   bool privileged = nsContentUtils::IsChromeDoc(mWindow->GetExtantDoc());
 
   MediaManager* manager = MediaManager::Get();
-  aRv = manager->GetUserMedia(privileged, mWindow, aParams, onsuccess, onerror);
+  aRv = manager->GetUserMedia(aCx, privileged, mWindow, aConstraints,
+                              onsuccess, onerror);
 }
 
 void
-Navigator::MozGetUserMediaDevices(MozGetUserMediaDevicesSuccessCallback* aOnSuccess,
-                                  MozDOMGetUserMediaErrorCallback* aOnError,
+Navigator::MozGetUserMediaDevices(const MediaStreamConstraintsInternal& aConstraints,
+                                  MozGetUserMediaDevicesSuccessCallback& aOnSuccess,
+                                  NavigatorUserMediaErrorCallback& aOnError,
                                   ErrorResult& aRv)
 {
   CallbackObjectHolder<MozGetUserMediaDevicesSuccessCallback,
-                       nsIGetUserMediaDevicesSuccessCallback> holder1(aOnSuccess);
+                       nsIGetUserMediaDevicesSuccessCallback> holder1(&aOnSuccess);
   nsCOMPtr<nsIGetUserMediaDevicesSuccessCallback> onsuccess =
     holder1.ToXPCOMCallback();
 
-  CallbackObjectHolder<MozDOMGetUserMediaErrorCallback,
-                       nsIDOMGetUserMediaErrorCallback> holder2(aOnError);
+  CallbackObjectHolder<NavigatorUserMediaErrorCallback,
+                       nsIDOMGetUserMediaErrorCallback> holder2(&aOnError);
   nsCOMPtr<nsIDOMGetUserMediaErrorCallback> onerror = holder2.ToXPCOMCallback();
 
   if (!mWindow || !mWindow->GetOuterWindow() ||
@@ -1035,7 +1033,7 @@ Navigator::MozGetUserMediaDevices(MozGetUserMediaDevicesSuccessCallback* aOnSucc
   }
 
   MediaManager* manager = MediaManager::Get();
-  aRv = manager->GetUserMediaDevices(mWindow, onsuccess, onerror);
+  aRv = manager->GetUserMediaDevices(mWindow, aConstraints, onsuccess, onerror);
 }
 #endif
 
@@ -1100,7 +1098,7 @@ Navigator::GetBattery(ErrorResult& aRv)
   return mBatteryManager;
 }
 
-power::PowerManager*
+PowerManager*
 Navigator::GetMozPower(ErrorResult& aRv)
 {
   if (!mPowerManager) {

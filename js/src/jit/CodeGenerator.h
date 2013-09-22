@@ -30,7 +30,7 @@ class CheckOverRecursedFailure;
 class CheckOverRecursedFailurePar;
 class OutOfLineCheckInterruptPar;
 class OutOfLineInterruptCheckImplicit;
-class OutOfLineUnboxDouble;
+class OutOfLineUnboxFloatingPoint;
 class OutOfLineStoreElementHole;
 class OutOfLineTypeOfV;
 class OutOfLineLoadTypedArray;
@@ -100,6 +100,7 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool visitMonitorTypes(LMonitorTypes *lir);
     bool visitPostWriteBarrierO(LPostWriteBarrierO *lir);
     bool visitPostWriteBarrierV(LPostWriteBarrierV *lir);
+    bool visitPostWriteBarrierAllSlots(LPostWriteBarrierAllSlots *lir);
     bool visitOutOfLineCallPostWriteBarrier(OutOfLineCallPostWriteBarrier *ool);
     bool visitCallNative(LCallNative *call);
     bool emitCallInvokeFunction(LInstruction *call, Register callereg,
@@ -272,8 +273,8 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool visitInterruptCheckImplicit(LInterruptCheckImplicit *ins);
     bool visitOutOfLineInterruptCheckImplicit(OutOfLineInterruptCheckImplicit *ins);
 
-    bool visitUnboxDouble(LUnboxDouble *lir);
-    bool visitOutOfLineUnboxDouble(OutOfLineUnboxDouble *ool);
+    bool visitUnboxFloatingPoint(LUnboxFloatingPoint *lir);
+    bool visitOutOfLineUnboxFloatingPoint(OutOfLineUnboxFloatingPoint *ool);
     bool visitOutOfLineStoreElementHole(OutOfLineStoreElementHole *ool);
 
     bool visitOutOfLineNewGCThingPar(OutOfLineNewGCThingPar *ool);
@@ -335,7 +336,8 @@ class CodeGenerator : public CodeGeneratorSpecific
 
     bool emitCallToUncompiledScriptPar(LInstruction *lir, Register calleeReg);
 
-    void emitLambdaInit(const Register &resultReg, const Register &scopeChainReg, JSFunction *fun);
+    void emitLambdaInit(const Register &resultReg, const Register &scopeChainReg,
+                        const LambdaFunctionInfo &info);
 
     IonScriptCounts *maybeCreateScriptCounts();
 
@@ -363,8 +365,8 @@ class CodeGenerator : public CodeGeneratorSpecific
     // Bailout if an element about to be written to is a hole.
     bool emitStoreHoleCheck(Register elements, const LAllocation *index, LSnapshot *snapshot);
 
-    bool emitAssertRangeI(Range *r, Register input);
-    bool emitAssertRangeD(Range *r, FloatRegister input, FloatRegister temp);
+    bool emitAssertRangeI(const Range *r, Register input);
+    bool emitAssertRangeD(const Range *r, FloatRegister input, FloatRegister temp);
 
     // Script counts created when compiling code with no associated JSScript.
     IonScriptCounts *unassociatedScriptCounts_;

@@ -24,7 +24,7 @@ class nsPIDOMWindow;
 
 namespace mozilla {
 namespace dom {
-class IDBObjectStoreOrIDBIndexReturnValue;
+class OwningIDBObjectStoreOrIDBIndex;
 }
 }
 
@@ -146,7 +146,7 @@ public:
   }
 
   void
-  GetSource(IDBObjectStoreOrIDBIndexReturnValue& aSource) const;
+  GetSource(OwningIDBObjectStoreOrIDBIndex& aSource) const;
 
   IDBCursorDirection
   GetDirection(ErrorResult& aRv) const

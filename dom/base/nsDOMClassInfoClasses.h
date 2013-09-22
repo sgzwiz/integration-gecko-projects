@@ -19,7 +19,6 @@ DOMCI_CLASS(CSSImportRule)
 DOMCI_CLASS(CSSMediaRule)
 DOMCI_CLASS(CSSNameSpaceRule)
 DOMCI_CLASS(CSSRuleList)
-DOMCI_CLASS(CSSGroupRuleRuleList)
 DOMCI_CLASS(MediaList)
 DOMCI_CLASS(StyleSheetList)
 DOMCI_CLASS(CSSStyleSheet)
@@ -64,9 +63,6 @@ DOMCI_CLASS(CSSSupportsRule)
 // other SVG classes
 DOMCI_CLASS(SVGLength)
 DOMCI_CLASS(SVGNumber)
-
-// Canvas
-DOMCI_CLASS(MozCanvasPrintState)
 
 // WindowUtils
 DOMCI_CLASS(WindowUtils)

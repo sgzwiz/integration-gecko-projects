@@ -7,4 +7,10 @@
  * http://www.w3.org/TR/2012/WD-IndexedDB-20120524/#idl-def-IDBTransactionCallback
  */
 
+/*
+callback interface IDBTransactionCallback {
+    void transactionStarted (IDBTransactionSync transaction);
+};
+*/
+
 callback IDBTransactionCallback = void (IDBTransactionSync transaction);

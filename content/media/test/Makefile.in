@@ -25,6 +25,10 @@
 # make the test first check canPlayType for the type, and if it's not
 # supported, just do ok(true, "Type not supported") and stop the test.
 
+
+# Disabled for too many intermittent failures (bug 897108)
+#		test_playback_rate_playpause.html \
+
 MOCHITEST_FILES = \
 		allowed.sjs \
 		can_play_type_ogg.js \
@@ -89,7 +93,6 @@ MOCHITEST_FILES = \
 		test_paused_after_ended.html \
 		test_play_events.html \
 		test_play_events_2.html \
-		$(filter disabled-temporarily--bug-751539, test_played.html) \
 		test_playback_errors.html \
 		test_seekable1.html \
 		test_preload_actions.html \
@@ -142,8 +145,8 @@ MOCHITEST_FILES = \
 		test_VideoPlaybackQuality.html \
 		test_VideoPlaybackQuality_disabled.html \
 		test_webvtt_disabled.html \
-		test_playback_rate_playpause.html \
 		test_bug895305.html \
+		test_bug895091.html \
 		$(NULL)
 
 # Don't run in suite
@@ -165,7 +168,7 @@ endif
 # Disabled since we don't play Wave files standalone, for now
 #		test_audioDocumentTitle.html
 
-# The below tests are disabled due to frequent timeouts.
+# The below tests are disabled on Windows due to frequent timeouts.
 # Bug 832768 and Bug 864682:
 #		test_buffered.html
 #		test_bug465498.html
@@ -175,6 +178,18 @@ endif
 #		test_seek.html
 # Bug 832768, bug 814533, bug 840742
 #		test_playback_rate.html
+# Bug 751539
+#		test_played.html
+ifneq ($(OS_ARCH), WINNT)
+MOCHITEST_FILES += \
+		test_buffered.html \
+		test_bug465498.html \
+		test_bug493187.html \
+		test_seek.html \
+		test_playback_rate.html \
+		test_played.html \
+		$(NULL)
+endif
 
 # sample files
 MOCHITEST_FILES += \
@@ -257,6 +272,7 @@ MOCHITEST_FILES += \
 		notags.mp3 \
 		id3tags.mp3 \
 		basic.vtt \
+		long.vtt \
 		$(NULL)
 
 # Wave sample files

@@ -84,3 +84,10 @@ LIBXUL_LIBRARY = True
 
 MSVC_ENABLE_PGO = True
 
+#LOCAL_INCLUDES += [
+#    '../base',
+#    '../system',
+#    '/content/base/src',
+#    '/content/events/src',
+#    '/xpcom/build',
+#]

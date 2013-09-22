@@ -209,8 +209,6 @@ struct PrefTraits<int32_t>
 {
   typedef int32_t PrefValueType;
 
-  static const PrefValueType kDefaultValue = 0;
-
   static inline PrefValueType
   Get(const char* aPref)
   {
@@ -681,8 +679,10 @@ public:
     if (csp) {
       NS_NAMED_LITERAL_STRING(scriptSample,
          "Call to eval() or related function blocked by CSP.");
-      csp->LogViolationDetails(nsIContentSecurityPolicy::VIOLATION_TYPE_EVAL,
-                               mFileName, scriptSample, mLineNum);
+      if (mWorkerPrivate->GetReportCSPViolations()) {
+        csp->LogViolationDetails(nsIContentSecurityPolicy::VIOLATION_TYPE_EVAL,
+                                 mFileName, scriptSample, mLineNum);
+      }
     }
 
     nsRefPtr<LogViolationDetailsResponseRunnable> response =
@@ -705,7 +705,7 @@ ContentSecurityPolicyAllows(JSContext* aCx)
     nsString fileName;
     uint32_t lineNum = 0;
 
-    JSScript* script;
+    JS::RootedScript script(aCx);
     const char* file;
     if (JS_DescribeScriptedCaller(aCx, &script, &lineNum) &&
         (file = JS_GetScriptFilename(aCx, script))) {

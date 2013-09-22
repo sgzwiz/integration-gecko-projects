@@ -513,7 +513,7 @@ mozJSComponentLoader::LoadModule(FileLocation &aFile)
     }
 
     RootedObject jsGetFactoryObj(cx);
-    if (!JS_ValueToObject(cx, NSGetFactory_val, jsGetFactoryObj.address()) ||
+    if (!JS_ValueToObject(cx, NSGetFactory_val, &jsGetFactoryObj) ||
         !jsGetFactoryObj) {
         /* XXX report error properly */
         return NULL;
@@ -776,8 +776,7 @@ mozJSComponentLoader::ObjectForLocation(nsIFile *aComponentFile,
 
     if (cache) {
         if (!mReuseLoaderGlobal) {
-            rv = ReadCachedScript(cache, cachePath, cx, mSystemPrincipal,
-                                  script.address());
+            rv = ReadCachedScript(cache, cachePath, cx, mSystemPrincipal, &script);
         } else {
             rv = ReadCachedFunction(cache, cachePath, cx, mSystemPrincipal,
                                     function.address());
@@ -967,7 +966,7 @@ mozJSComponentLoader::ObjectForLocation(nsIFile *aComponentFile,
         // exception on this context.
         JS_SetOptions(cx, oldopts);
         if (!script && !function && aPropagateExceptions) {
-            JS_GetPendingException(cx, aException.address());
+            JS_GetPendingException(cx, aException);
             JS_ClearPendingException(cx);
         }
     }
@@ -1020,7 +1019,7 @@ mozJSComponentLoader::ObjectForLocation(nsIFile *aComponentFile,
 
     if (!ok) {
         if (aPropagateExceptions) {
-            JS_GetPendingException(cx, aException.address());
+            JS_GetPendingException(cx, aException);
             JS_ClearPendingException(cx);
         }
         *aObject = nullptr;

@@ -165,6 +165,13 @@ IDBTransactionSync::RemoveObjectStore(const nsAString& aName)
 }
 
 void
+IDBTransactionSync::SetDBInfo(DatabaseInfoMT* aDBInfo)
+{
+  NS_ASSERTION(aDBInfo != mDatabaseInfo, "This is nonsense");
+  mDatabaseInfo = aDBInfo;
+}
+
+void
 IDBTransactionSync::_trace(JSTracer* aTrc)
 {
   IDBObjectSync::_trace(aTrc);

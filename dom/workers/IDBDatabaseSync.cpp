@@ -7,6 +7,8 @@
 #include "IDBDatabaseSync.h"
 
 #include "mozilla/dom/IDBDatabaseBinding.h"
+#include "mozilla/dom/IDBTransactionCallbackBinding.h"
+#include "mozilla/dom/IDBVersionChangeCallbackBinding.h"
 
 #include "DOMBindingInlines.h"
 #include "DOMStringList.h"
@@ -398,7 +400,7 @@ IDBDatabaseSync::DeleteObjectStore(JSContext* aCx,
 void
 IDBDatabaseSync::Transaction(JSContext* aCx,
                              const Sequence<nsString>& aStoreNames,
-                             JS::Handle<JSObject*> aCallback,
+                             IDBTransactionCallbackWorkers& aCallback,
                              IDBTransactionMode aMode,
                              const Optional<uint32_t>& aTimeout,
                              ErrorResult& aRv)
@@ -449,29 +451,10 @@ IDBDatabaseSync::Transaction(JSContext* aCx,
     return;
   }
 
-  JSObject* thisObj = GetJSObject();
-  JS::Rooted<JS::Value> callable(aCx, JS::ObjectValue(*aCallback));
-
-  JS::Rooted<JS::Value> wrappedVal(aCx);
-  if (!WrapNewBindingObject(aCx, aCallback, trans, &wrappedVal)) {
-    MOZ_ASSERT(JS_IsExceptionPending(aCx));
-    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
-    return;
-  }
-
-  unsigned argc = 1;
-
-  JS::Value argv[1];
-  argv[0] = wrappedVal;
-
-  JS::Value rval = JSVAL_VOID;
-
-  if (!JS_CallFunctionValue(aCx, thisObj, callable, argc,
-                            argv, &rval)) {
+  aCallback.Call(this, *trans, aRv);
+  if (aRv.Failed()) {
     ErrorResult rv;
     trans->Abort(aCx, rv);
-
-    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
     return;
   }
 
@@ -514,7 +497,8 @@ IDBDatabaseSync::Close(JSContext* aCx, ErrorResult& aRv)
 }
 
 bool
-IDBDatabaseSync::Open(JSContext* aCx, JSObject* aUpgradeCallback)
+IDBDatabaseSync::Open(JSContext* aCx,
+                      IDBVersionChangeCallbackWorkers* aUpgradeCallback)
 {
   Sequence<nsString> storeNames;
 
@@ -538,25 +522,9 @@ IDBDatabaseSync::Open(JSContext* aCx, JSObject* aUpgradeCallback)
 
   if (mUpgradeNeeded) {
     if (aUpgradeCallback) {
-      JSObject* thisObj = mFactory->GetJSObject();
-      JS::Rooted<JS::Value> callable(aCx, JS::ObjectValue(*aUpgradeCallback));
-
-      JS::Rooted<JSObject*> callback(aCx, aUpgradeCallback);
-      JS::Rooted<JS::Value> wrappedVal(aCx);
-      if (!WrapNewBindingObject(aCx, callback, mTransaction, &wrappedVal)) {
-        MOZ_ASSERT(JS_IsExceptionPending(aCx));
-        return false;
-      }
-
-      unsigned argc = 2;
-
-      JS::Value argv[2];
-      argv[0] = wrappedVal;
-      argv[1] = JS_NumberValue(99);
-
-      JS::Value rval = JSVAL_VOID;
-
-      if (!JS_CallFunctionValue(aCx, thisObj, callable, argc, argv, &rval)) {
+      ErrorResult rv;
+      aUpgradeCallback->Call(mFactory, *mTransaction, 99, rv);
+      if (rv.Failed()) {
         return false;
       }
     }

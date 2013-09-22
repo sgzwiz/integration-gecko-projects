@@ -78,11 +78,7 @@ public:
   }
 
   void
-  SetDBInfo(DatabaseInfoMT* aDBInfo)
-  {
-    NS_ASSERTION(aDBInfo != mDatabaseInfo, "This is nonsense");
-    mDatabaseInfo = aDBInfo;
-   }
+  SetDBInfo(DatabaseInfoMT* aDBInfo);
 
   // Methods called on the IPC thread.
   virtual void

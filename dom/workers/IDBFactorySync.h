@@ -19,6 +19,7 @@
 namespace mozilla {
 namespace dom {
 struct IDBOpenDBOptions;
+class IDBVersionChangeCallbackWorkers;
 } // namespace dom
 } // namespace mozilla
 
@@ -75,14 +76,14 @@ public:
   // WebIDL
   IDBDatabaseSync*
   Open(JSContext* aCx, const nsAString& aName, uint64_t aVersion,
-       const Optional<JS::Handle<JSObject*> >& aUpgradeCallback,
+       const Optional<OwningNonNull<IDBVersionChangeCallbackWorkers> >& aUpgradeCallback,
        const Optional<uint32_t>& aTimeout,
        ErrorResult& aRv);
 
   IDBDatabaseSync*
   Open(JSContext* aCx, const nsAString& aName,
        const IDBOpenDBOptions& aOptions,
-       const Optional<JS::Handle<JSObject*> >& aUpgradeCallback,
+       const Optional<OwningNonNull<IDBVersionChangeCallbackWorkers> >& aUpgradeCallback,
        const Optional<uint32_t>& aTimeout, ErrorResult& aRv);
 
   void

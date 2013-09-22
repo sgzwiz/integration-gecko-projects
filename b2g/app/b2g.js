@@ -25,6 +25,8 @@ pref("browser.cache.disk.smart_size.first_run", false);
 pref("browser.cache.memory.enable", true);
 pref("browser.cache.memory.capacity", 1024); // kilobytes
 
+pref("browser.cache.memory_limit", 2048); // 2 MB
+
 /* image cache prefs */
 pref("image.cache.size", 1048576); // bytes
 pref("image.high_quality_downscaling.enabled", false);
@@ -134,6 +136,11 @@ pref("browser.search.suggest.enabled", true);
 
 // tell the search service that we don't really expose the "current engine"
 pref("browser.search.noCurrentEngine", true);
+
+// Enable sparse localization by setting a few package locale overrides
+pref("chrome.override_package.global", "b2g-l10n");
+pref("chrome.override_package.mozapps", "b2g-l10n");
+pref("chrome.override_package.passwordmgr", "b2g-l10n");
 
 // enable xul error pages
 pref("browser.xul.error_pages.enabled", true);
@@ -252,6 +259,8 @@ pref("layers.acceleration.disabled", false);
 pref("layers.offmainthreadcomposition.async-animations", true);
 pref("layers.async-video.enabled", true);
 pref("layers.async-pan-zoom.enabled", true);
+pref("gfx.content.azure.enabled", true);
+pref("gfx.content.azure.backends", "cairo");
 #endif
 
 // Web Notifications
@@ -384,6 +393,9 @@ pref("dom.sms.strict7BitEncoding", false); // Disabled by default.
 pref("dom.sms.requestStatusReport", true); // Enabled by default.
 pref("dom.mms.requestStatusReport", true); // Enabled by default.
 
+//The waiting time in network manager.
+pref("network.gonk.ms-release-mms-connection", 30000);
+
 // WebContacts
 pref("dom.mozContacts.enabled", true);
 pref("dom.navigator-property.disable.mozContacts", false);
@@ -400,6 +412,8 @@ pref("dom.mozAlarms.enabled", true);
 
 // SimplePush
 pref("services.push.enabled", true);
+// Debugging enabled.
+pref("services.push.debug", false);
 // Is the network connection allowed to be up?
 // This preference should be used in UX to enable/disable push.
 pref("services.push.connection.enabled", true);
@@ -424,6 +438,7 @@ pref("services.push.udp.port", 2442);
 #ifdef MOZ_B2G_RIL
 pref("dom.mozNetworkStats.enabled", true);
 pref("ril.cellbroadcast.disabled", false);
+pref("dom.webapps.firstRunWithSIM", false);
 #endif
 
 // WebSettings
@@ -553,6 +568,7 @@ pref("dom.disable_window_showModalDialog", true);
 
 // Enable new experimental html forms
 pref("dom.experimental_forms", true);
+pref("dom.forms.number", true);
 
 // Turns on gralloc-based direct texturing for Gonk
 pref("gfx.gralloc.enabled", false);
@@ -706,6 +722,8 @@ pref("wap.UAProf.url", "");
 pref("wap.UAProf.tagname", "x-wap-profile");
 
 pref("layout.imagevisibility.enabled", false);
+pref("layout.imagevisibility.numscrollportwidths", 1);
+pref("layout.imagevisibility.numscrollportheights", 1);
 
 // Enable native identity (persona/browserid)
 pref("dom.identity.enabled", true);
@@ -723,6 +741,11 @@ pref("memory_info_dumper.watch_fifo.enabled", true);
 pref("memory_info_dumper.watch_fifo.directory", "/data/local");
 
 pref("general.useragent.enable_overrides", true);
+// See ua-update.json.in for the packaged UA override list
+pref("general.useragent.updates.enabled", true);
+pref("general.useragent.updates.url", "");
+pref("general.useragent.updates.interval", 604800); // 1 week
+pref("general.useragent.updates.retry", 86400); // 1 day
 
 // Make <audio> and <video> talk to the AudioChannelService.
 pref("media.useAudioChannelService", true);
@@ -747,8 +770,22 @@ pref("ping.manifestURL", "https://marketplace.firefox.com/packaged.webapp");
 // Enable the disk space watcher
 pref("disk_space_watcher.enabled", true);
 
+// SNTP preferences.
+pref("network.sntp.maxRetryCount", 10);
+pref("network.sntp.refreshPeriod", 86400); // In seconds.
+pref("network.sntp.pools", // Servers separated by ';'.
+     "0.pool.ntp.org;1.pool.ntp.org;2.pool.ntp.org;3.pool.ntp.org");
+pref("network.sntp.port", 123);
+pref("network.sntp.timeout", 30); // In seconds.
+
 // Enable promise
 pref("dom.promise.enabled", false);
+
+// DOM Inter-App Communication API.
+#ifdef MOZ_WIDGET_GONK
+// Enable this only for gonk-specific build but not for desktop build.
+pref("dom.inter-app-communication-api.enabled", true);
+#endif
 
 // Allow ADB to run for this many hours before disabling
 // (only applies when marionette is disabled)
@@ -763,3 +800,6 @@ pref("devtools.debugger.unix-domain-socket", "/data/local/debugger-socket");
 // falling back to Skia/software for smaller canvases
 pref("gfx.canvas.azure.backends", "skia");
 pref("gfx.canvas.azure.accelerated", true);
+
+// Enable Telephony API
+pref("dom.telephony.enabled", true);

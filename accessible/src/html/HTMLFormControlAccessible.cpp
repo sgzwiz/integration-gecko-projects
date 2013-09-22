@@ -12,7 +12,6 @@
 #include "Relation.h"
 #include "Role.h"
 #include "States.h"
-#include "TreeWalker.h"
 
 #include "nsContentList.h"
 #include "nsCxPusher.h"
@@ -23,6 +22,7 @@
 #include "nsIEditor.h"
 #include "nsIFormControl.h"
 #include "nsINameSpaceManager.h"
+#include "nsIPersistentProperties2.h"
 #include "nsISelectionController.h"
 #include "jsapi.h"
 #include "nsIServiceManager.h"

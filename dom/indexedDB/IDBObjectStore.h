@@ -13,7 +13,7 @@
 #include "mozilla/dom/IDBIndexBinding.h"
 #include "mozilla/dom/IDBObjectStoreBinding.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsThreadUtils.h"
+#include "MainThreadUtils.h"
 
 #include "mozilla/dom/indexedDB/IDBObjectStoreBase.h"
 #include "mozilla/dom/indexedDB/IDBRequest.h"

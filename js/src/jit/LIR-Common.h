@@ -7,13 +7,14 @@
 #ifndef jit_LIR_Common_h
 #define jit_LIR_Common_h
 
-#include "jit/RangeAnalysis.h"
 #include "jit/shared/Assembler-shared.h"
 
 // This file declares LIR instructions that are common to every platform.
 
 namespace js {
 namespace jit {
+
+class Range;
 
 template <size_t Temps, size_t ExtraUses = 0>
 class LBinaryMath : public LInstructionHelper<1, 2 + ExtraUses, Temps>
@@ -4679,6 +4680,24 @@ class LPostWriteBarrierV : public LInstructionHelper<0, 1 + BOX_PIECES, 1>
     }
 };
 
+// Generational write barrier used when writing to multiple slots in an object.
+class LPostWriteBarrierAllSlots : public LInstructionHelper<0, 1, 0>
+{
+  public:
+    LIR_HEADER(PostWriteBarrierAllSlots)
+
+    LPostWriteBarrierAllSlots(const LAllocation &obj) {
+        setOperand(0, obj);
+    }
+
+    const MPostWriteBarrier *mir() const {
+        return mir_->toPostWriteBarrier();
+    }
+    const LAllocation *object() {
+        return getOperand(0);
+    }
+};
+
 // Guard against an object's class.
 class LGuardClass : public LInstructionHelper<0, 1, 1>
 {
@@ -5097,7 +5116,7 @@ class LAssertRangeI : public LInstructionHelper<0, 1, 0>
     MAssertRange *mir() {
         return mir_->toAssertRange();
     }
-    Range *range() {
+    const Range *range() {
         return mir()->range();
     }
 };
@@ -5123,7 +5142,7 @@ class LAssertRangeD : public LInstructionHelper<0, 1, 1>
     MAssertRange *mir() {
         return mir_->toAssertRange();
     }
-    Range *range() {
+    const Range *range() {
         return mir()->range();
     }
 };
@@ -5149,7 +5168,7 @@ class LAssertRangeF : public LInstructionHelper<0, 1, 1>
     MAssertRange *mir() {
         return mir_->toAssertRange();
     }
-    Range *range() {
+    const Range *range() {
         return mir()->range();
     }
 };
@@ -5182,7 +5201,7 @@ class LAssertRangeV : public LInstructionHelper<0, BOX_PIECES, 3>
     MAssertRange *mir() {
         return mir_->toAssertRange();
     }
-    Range *range() {
+    const Range *range() {
         return mir()->range();
     }
 };

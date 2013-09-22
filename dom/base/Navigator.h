@@ -22,7 +22,6 @@ class nsPIDOMWindow;
 class nsIDOMMozConnection;
 class nsIDOMMozMobileMessageManager;
 class nsIDOMNavigatorSystemMessages;
-class nsIMediaStreamOptions;
 class nsDOMCameraManager;
 class nsDOMDeviceStorage;
 
@@ -30,6 +29,8 @@ namespace mozilla {
 namespace dom {
 class Geolocation;
 class systemMessageCallback;
+class MediaStreamConstraints;
+class MediaStreamConstraintsInternal;
 }
 }
 
@@ -62,8 +63,8 @@ class MozIdleObserver;
 class Gamepad;
 #endif // MOZ_GAMEPAD
 #ifdef MOZ_MEDIA_NAVIGATOR
-class MozDOMGetUserMediaSuccessCallback;
-class MozDOMGetUserMediaErrorCallback;
+class NavigatorUserMediaSuccessCallback;
+class NavigatorUserMediaErrorCallback;
 class MozGetUserMediaDevicesSuccessCallback;
 #endif // MOZ_MEDIA_NAVIGATOR
 
@@ -92,9 +93,7 @@ class Telephony;
 class Voicemail;
 #endif
 
-namespace power {
 class PowerManager;
-} // namespace power
 
 namespace time {
 class TimeManager;
@@ -194,7 +193,7 @@ public:
   {
     aRv = GetBuildID(aBuildID);
   }
-  power::PowerManager* GetMozPower(ErrorResult& aRv);
+  PowerManager* GetMozPower(ErrorResult& aRv);
   bool JavaEnabled(ErrorResult& aRv);
   bool TaintEnabled()
   {
@@ -242,12 +241,14 @@ public:
   system::AudioChannelManager* GetMozAudioChannelManager(ErrorResult& aRv);
 #endif // MOZ_AUDIO_CHANNEL_MANAGER
 #ifdef MOZ_MEDIA_NAVIGATOR
-  void MozGetUserMedia(nsIMediaStreamOptions* aParams,
-                       MozDOMGetUserMediaSuccessCallback* aOnSuccess,
-                       MozDOMGetUserMediaErrorCallback* aOnError,
+  void MozGetUserMedia(JSContext* aCx,
+                       const MediaStreamConstraints& aConstraints,
+                       NavigatorUserMediaSuccessCallback& aOnSuccess,
+                       NavigatorUserMediaErrorCallback& aOnError,
                        ErrorResult& aRv);
-  void MozGetUserMediaDevices(MozGetUserMediaDevicesSuccessCallback* aOnSuccess,
-                              MozDOMGetUserMediaErrorCallback* aOnError,
+  void MozGetUserMediaDevices(const MediaStreamConstraintsInternal& aConstraints,
+                              MozGetUserMediaDevicesSuccessCallback& aOnSuccess,
+                              NavigatorUserMediaErrorCallback& aOnError,
                               ErrorResult& aRv);
 #endif // MOZ_MEDIA_NAVIGATOR
   bool DoNewResolve(JSContext* aCx, JS::Handle<JSObject*> aObject,
@@ -322,7 +323,7 @@ private:
 #ifdef MOZ_B2G_FM
   nsRefPtr<FMRadio> mFMRadio;
 #endif
-  nsRefPtr<power::PowerManager> mPowerManager;
+  nsRefPtr<PowerManager> mPowerManager;
   nsRefPtr<MobileMessageManager> mMobileMessageManager;
 #ifdef MOZ_B2G_RIL
   nsRefPtr<Telephony> mTelephony;

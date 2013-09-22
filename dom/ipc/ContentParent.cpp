@@ -668,6 +668,7 @@ ContentParent::Init()
         obs->AddObserver(this, "file-watcher-update", false);
 #ifdef MOZ_WIDGET_GONK
         obs->AddObserver(this, NS_VOLUME_STATE_CHANGED, false);
+        obs->AddObserver(this, "phone-state-changed", false);
 #endif
 #ifdef ACCESSIBILITY
         obs->AddObserver(this, "a11y-init-or-shutdown", false);
@@ -1580,40 +1581,42 @@ ContentParent::RecvFirstIdle()
 }
 
 bool
-ContentParent::RecvAudioChannelGetMuted(const AudioChannelType& aType,
+ContentParent::RecvAudioChannelGetState(const AudioChannelType& aType,
                                         const bool& aElementHidden,
                                         const bool& aElementWasHidden,
-                                        bool* aValue)
+                                        AudioChannelState* aState)
 {
     nsRefPtr<AudioChannelService> service =
         AudioChannelService::GetAudioChannelService();
-    *aValue = false;
+    *aState = AUDIO_CHANNEL_STATE_NORMAL;
     if (service) {
-        *aValue = service->GetMutedInternal(aType, mChildID,
+        *aState = service->GetStateInternal(aType, mChildID,
                                             aElementHidden, aElementWasHidden);
     }
     return true;
 }
 
 bool
-ContentParent::RecvAudioChannelRegisterType(const AudioChannelType& aType)
+ContentParent::RecvAudioChannelRegisterType(const AudioChannelType& aType,
+                                            const bool& aWithVideo)
 {
     nsRefPtr<AudioChannelService> service =
         AudioChannelService::GetAudioChannelService();
     if (service) {
-        service->RegisterType(aType, mChildID);
+        service->RegisterType(aType, mChildID, aWithVideo);
     }
     return true;
 }
 
 bool
 ContentParent::RecvAudioChannelUnregisterType(const AudioChannelType& aType,
-                                              const bool& aElementHidden)
+                                              const bool& aElementHidden,
+                                              const bool& aWithVideo)
 {
     nsRefPtr<AudioChannelService> service =
         AudioChannelService::GetAudioChannelService();
     if (service) {
-        service->UnregisterType(aType, aElementHidden, mChildID);
+        service->UnregisterType(aType, aElementHidden, mChildID, aWithVideo);
     }
     return true;
 }
@@ -1625,6 +1628,19 @@ ContentParent::RecvAudioChannelChangedNotification()
         AudioChannelService::GetAudioChannelService();
     if (service) {
        service->SendAudioChannelChangedNotification(ChildID());
+    }
+    return true;
+}
+
+bool
+ContentParent::RecvAudioChannelChangeDefVolChannel(
+  const AudioChannelType& aType, const bool& aHidden)
+{
+    nsRefPtr<AudioChannelService> service =
+        AudioChannelService::GetAudioChannelService();
+    if (service) {
+       service->SetDefaultVolumeControlChannelInternal(aType,
+                                                       aHidden, mChildID);
     }
     return true;
 }
@@ -1749,6 +1765,9 @@ ContentParent::Observe(nsISupports* aSubject,
         unused << SendFileSystemUpdate(volName, mountPoint, state,
                                        mountGeneration, isMediaPresent,
                                        isSharing);
+    } else if (!strcmp(aTopic, "phone-state-changed")) {
+        nsString state(aData);
+        unused << SendNotifyPhoneStateChange(state);
     }
 #endif
 #ifdef ACCESSIBILITY
@@ -1913,13 +1932,11 @@ ContentParent::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
   // If the blob represents a remote blob for this ContentParent then we can
   // simply pass its actor back here.
   if (nsCOMPtr<nsIRemoteBlob> remoteBlob = do_QueryInterface(aBlob)) {
-    BlobParent* actor =
-      static_cast<BlobParent*>(
-        static_cast<PBlobParent*>(remoteBlob->GetPBlob()));
-    MOZ_ASSERT(actor);
-
-    if (static_cast<ContentParent*>(actor->Manager()) == this) {
-      return actor;
+    if (BlobParent* actor = static_cast<BlobParent*>(
+          static_cast<PBlobParent*>(remoteBlob->GetPBlob()))) {
+      if (static_cast<ContentParent*>(actor->Manager()) == this) {
+        return actor;
+      }
     }
   }
 
@@ -2218,11 +2235,12 @@ ContentParent::AllocPExternalHelperAppParent(const OptionalURIParams& uri,
                                              const nsCString& aContentDisposition,
                                              const bool& aForceSave,
                                              const int64_t& aContentLength,
-                                             const OptionalURIParams& aReferrer)
+                                             const OptionalURIParams& aReferrer,
+                                             PBrowserParent* aBrowser)
 {
     ExternalHelperAppParent *parent = new ExternalHelperAppParent(uri, aContentLength);
     parent->AddRef();
-    parent->Init(this, aMimeContentType, aContentDisposition, aForceSave, aReferrer);
+    parent->Init(this, aMimeContentType, aContentDisposition, aForceSave, aReferrer, aBrowser);
     return parent;
 }
 
@@ -2493,8 +2511,8 @@ ContentParent::RecvShowFilePicker(const int16_t& mode,
     nsCOMPtr<nsIFile> file;
     filePicker->GetFile(getter_AddRefs(file));
 
-    // even with NS_OK file can be null if nothing was selected 
-    if (file) {                                 
+    // Even with NS_OK file can be null if nothing was selected.
+    if (file) {
         nsAutoString filePath;
         file->GetPath(filePath);
         files->AppendElement(filePath);
@@ -2508,6 +2526,9 @@ ContentParent::RecvGetRandomValues(const uint32_t& length,
                                    InfallibleTArray<uint8_t>* randomValues)
 {
     uint8_t* buf = Crypto::GetRandomValues(length);
+    if (!buf) {
+        return true;
+    }
 
     randomValues->SetCapacity(length);
     randomValues->SetLength(length);

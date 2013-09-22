@@ -31,6 +31,7 @@ _MOZBUILD_EXTERNAL_VARIABLES := \
   GTEST_CSRCS \
   HOST_CSRCS \
   HOST_LIBRARY_NAME \
+  IS_COMPONENT \
   LIBRARY_NAME \
   LIBXUL_LIBRARY \
   MODULE \
@@ -47,6 +48,8 @@ _MOZBUILD_EXTERNAL_VARIABLES := \
 
 _DEPRECATED_VARIABLES := \
   XPIDL_FLAGS \
+  MOCHITEST_FILES_PARTS \
+  MOCHITEST_BROWSER_FILES_PARTS \
   $(NULL)
 
 ifndef EXTERNALLY_MANAGED_MAKE_FILE
@@ -54,11 +57,11 @@ ifndef EXTERNALLY_MANAGED_MAKE_FILE
 # scenarios.
 _current_makefile = $(CURDIR)/$(firstword $(MAKEFILE_LIST))
 
-$(foreach var,$(_MOZBUILD_EXTERNAL_VARIABLES),$(if $($(var)),\
+$(foreach var,$(_MOZBUILD_EXTERNAL_VARIABLES),$(if $(filter file override,$(subst $(NULL) ,_,$(origin $(var)))),\
     $(error Variable $(var) is defined in $(_current_makefile). It should only be defined in moz.build files),\
     ))
 
-$(foreach var,$(_DEPRECATED_VARIABLES),$(if $($(var)),\
+$(foreach var,$(_DEPRECATED_VARIABLES),$(if $(filter file override,$(subst $(NULL) ,_,$(origin $(var)))),\
     $(error Variable $(var) is defined in $(_current_makefile). This variable has been deprecated. It does nothing. It must be removed in order to build)\
     ))
 
@@ -692,7 +695,9 @@ SUBMAKEFILES += $(addsuffix /Makefile, $(DIRS) $(TOOL_DIRS) $(PARALLEL_DIRS))
 ifndef SUPPRESS_DEFAULT_RULES
 default all::
 	$(MAKE) export
+ifdef MOZ_PSEUDO_DERECURSE
 	$(MAKE) compile
+endif
 	$(MAKE) libs
 	$(MAKE) tools
 endif # SUPPRESS_DEFAULT_RULES
@@ -734,6 +739,13 @@ endif
 compile:: $(OBJS) $(HOST_OBJS)
 
 include $(topsrcdir)/config/makefiles/target_libs.mk
+
+ifdef IS_TOOL_DIR
+# One would think "tools:: libs" would work, but it turns out that combined with
+# bug 907365, this makes make forget to run some rules sometimes.
+tools::
+	@$(MAKE) libs
+endif
 
 ##############################################
 ifndef NO_PROFILE_GUIDED_OPTIMIZE
@@ -1487,7 +1499,7 @@ PP_TARGETS += DIST_CHROME_FILES
 endif
 
 ifneq ($(XPI_PKGNAME),)
-libs realchrome::
+tools realchrome::
 ifdef STRIP_XPI
 ifndef MOZ_DEBUG
 	@echo "Stripping $(XPI_PKGNAME) package directory..."
@@ -1526,7 +1538,7 @@ ifndef XPI_NAME
 $(error XPI_NAME must be set for INSTALL_EXTENSION_ID)
 endif
 
-libs::
+tools::
 	$(RM) -r "$(DIST)/bin$(DIST_SUBDIR:%=/%)/extensions/$(INSTALL_EXTENSION_ID)"
 	$(NSINSTALL) -D "$(DIST)/bin$(DIST_SUBDIR:%=/%)/extensions/$(INSTALL_EXTENSION_ID)"
 	$(call copy_dir,$(FINAL_TARGET),$(DIST)/bin$(DIST_SUBDIR:%=/%)/extensions/$(INSTALL_EXTENSION_ID))
@@ -1739,10 +1751,8 @@ FREEZE_VARIABLES = \
   EXTRA_COMPONENTS \
   EXTRA_PP_COMPONENTS \
   MOCHITEST_FILES \
-  MOCHITEST_FILES_PARTS \
   MOCHITEST_CHROME_FILES \
   MOCHITEST_BROWSER_FILES \
-  MOCHITEST_BROWSER_FILES_PARTS \
   MOCHITEST_A11Y_FILES \
   MOCHITEST_METRO_FILES \
   MOCHITEST_ROBOCOP_FILES \

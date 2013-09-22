@@ -84,10 +84,16 @@ CodeGeneratorX64::visitBox(LBox *box)
     const LAllocation *in = box->getOperand(0);
     const LDefinition *result = box->getDef(0);
 
-    if (box->type() != MIRType_Double)
+    if (IsFloatingPointType(box->type())) {
+        FloatRegister reg = ToFloatRegister(in);
+        if (box->type() == MIRType_Float32) {
+            masm.convertFloatToDouble(reg, ScratchFloatReg);
+            reg = ScratchFloatReg;
+        }
+        masm.movq(reg, ToRegister(result));
+    } else {
         masm.boxValue(ValueTypeFromMIRType(box->type()), ToRegister(in), ToRegister(result));
-    else
-        masm.movq(ToFloatRegister(in), ToRegister(result));
+    }
     return true;
 }
 
@@ -241,7 +247,7 @@ CodeGeneratorX64::visitLoadElementT(LLoadElementT *load)
 
     if (load->mir()->loadDoubles()) {
         FloatRegister fpreg = ToFloatRegister(load->output());
-        if (source.kind() == Operand::REG_DISP)
+        if (source.kind() == Operand::MEM_REG_DISP)
             masm.loadDouble(source.toAddress(), fpreg);
         else
             masm.loadDouble(source.toBaseIndex(), fpreg);
@@ -287,10 +293,9 @@ CodeGeneratorX64::visitInterruptCheck(LInterruptCheck *lir)
     if (!ool)
         return false;
 
-    void *interrupt = (void*)&GetIonContext()->runtime->interrupt;
-    masm.movq(ImmWord(interrupt), ScratchReg);
-    masm.cmpl(Operand(ScratchReg, 0), Imm32(0));
-    masm.j(Assembler::NonZero, ool->entry());
+    masm.branch32(Assembler::NotEqual,
+                  AbsoluteAddress(&GetIonContext()->runtime->interrupt), Imm32(0),
+                  ool->entry());
     masm.bind(ool->rejoin());
     return true;
 }
@@ -371,7 +376,7 @@ CodeGeneratorX64::visitCompareVAndBranch(LCompareVAndBranch *lir)
 }
 
 bool
-CodeGeneratorX64::visitUInt32ToDouble(LUInt32ToDouble *lir)
+CodeGeneratorX64::visitAsmJSUInt32ToDouble(LAsmJSUInt32ToDouble *lir)
 {
     masm.convertUInt32ToDouble(ToRegister(lir->input()), ToFloatRegister(lir->output()));
     return true;

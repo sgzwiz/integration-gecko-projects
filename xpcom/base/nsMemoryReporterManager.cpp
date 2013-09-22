@@ -8,18 +8,14 @@
 #include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsCOMArray.h"
-#include "nsDirectoryServiceUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsMemoryReporterManager.h"
-#include "nsArrayEnumerator.h"
 #include "nsISimpleEnumerator.h"
-#include "nsIFile.h"
-#include "nsIFileStreams.h"
-#include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
 #include "nsIObserverService.h"
-#include "nsThread.h"
+#if defined(XP_LINUX)
 #include "nsMemoryInfoDumper.h"
+#endif
 #include "mozilla/Telemetry.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Services.h"
@@ -37,7 +33,6 @@ using namespace mozilla;
 
 #if defined(XP_LINUX)
 
-#include <unistd.h>
 static nsresult GetProcSelfStatmField(int aField, int64_t* aN)
 {
     // There are more than two fields, but we're only interested in the first
@@ -72,6 +67,49 @@ static nsresult GetResidentFast(int64_t* aN)
 {
     return GetResident(aN);
 }
+
+#define HAVE_RESIDENT_UNIQUE_REPORTER
+class ResidentUniqueReporter MOZ_FINAL : public MemoryUniReporter
+{
+public:
+  ResidentUniqueReporter()
+    : MemoryUniReporter("resident-unique", KIND_OTHER, UNITS_BYTES,
+"Memory mapped by the process that is present in physical memory and not "
+"shared with any other processes.  This is also known as the process's unique "
+"set size (USS).  This is the amount of RAM we'd expect to be freed if we "
+"closed this process.")
+  {}
+
+private:
+  NS_IMETHOD GetAmount(int64_t *aAmount)
+  {
+    // You might be tempted to calculate USS by subtracting the "shared" value
+    // from the "resident" value in /proc/<pid>/statm.  But at least on Linux,
+    // statm's "shared" value actually counts pages backed by files, which has
+    // little to do with whether the pages are actually shared.
+    // /proc/self/smaps on the other hand appears to give us the correct
+    // information.
+
+    *aAmount = 0;
+
+    FILE *f = fopen("/proc/self/smaps", "r");
+    NS_ENSURE_STATE(f);
+
+    int64_t total = 0;
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+      long long val = 0;
+      if (sscanf(line, "Private_Dirty: %lld kB", &val) == 1 ||
+          sscanf(line, "Private_Clean: %lld kB", &val) == 1) {
+        total += val * 1024; // convert from kB to bytes
+      }
+    }
+    *aAmount = total;
+
+    fclose(f);
+    return NS_OK;
+  }
+};
 
 #elif defined(__DragonFly__) || defined(__FreeBSD__) \
     || defined(__NetBSD__) || defined(__OpenBSD__)
@@ -389,11 +427,16 @@ public:
     NS_IMETHOD GetAmount(int64_t* aAmount) { return GetResident(aAmount); }
 };
 
+// This is a "redundant/"-prefixed reporter, which means it's ignored by
+// about:memory.  This is good because the "resident" reporter can purge pages
+// on MacOS, which affects the "resident-fast" results, and we don't want the
+// measurements shown in about:memory to be affected by the (arbitrary) order
+// of memory reporter execution.  This reporter is used by telemetry.
 class ResidentFastReporter MOZ_FINAL : public MemoryUniReporter
 {
 public:
     ResidentFastReporter()
-      : MemoryUniReporter("resident-fast", KIND_OTHER, UNITS_BYTES,
+      : MemoryUniReporter("redundant/resident-fast", KIND_OTHER, UNITS_BYTES,
 "This is the same measurement as 'resident', but it tries to be as fast as "
 "possible at the expense of accuracy.  On most platforms this is identical to "
 "the 'resident' measurement, but on Mac it may over-count.  You should use "
@@ -407,7 +450,6 @@ public:
 
 #ifdef XP_UNIX
 
-#include <sys/time.h>
 #include <sys/resource.h>
 
 #define HAVE_PAGE_FAULT_REPORTERS 1
@@ -713,6 +755,10 @@ nsMemoryReporterManager::Init()
     RegisterReporter(new ResidentFastReporter);
 #endif
 
+#ifdef HAVE_RESIDENT_UNIQUE_REPORTER
+    RegisterReporter(new ResidentUniqueReporter);
+#endif
+
 #ifdef HAVE_PAGE_FAULT_REPORTERS
     RegisterReporter(new PageFaultsSoftReporter);
     RegisterReporter(new PageFaultsHardReporter);
@@ -970,7 +1016,6 @@ nsMemoryReporterManager::GetExplicit(int64_t* aExplicit)
 #ifndef HAVE_JEMALLOC_STATS
     return NS_ERROR_NOT_AVAILABLE;
 #else
-    nsresult rv;
     bool more;
 
     // For each reporter we call CollectReports and filter out the

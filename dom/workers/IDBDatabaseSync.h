@@ -19,7 +19,9 @@
 namespace mozilla {
 namespace dom {
 struct IDBObjectStoreParameters;
-struct IDBOpenDBOptionsWorkers;
+//struct IDBOpenDBOptionsWorkers;
+class IDBTransactionCallbackWorkers;
+class IDBVersionChangeCallbackWorkers;
 namespace indexedDB {
 struct ObjectStoreInfo;
 } // namespace indexedDB
@@ -139,8 +141,9 @@ public:
 
   void
   Transaction(JSContext* aCx, const nsAString& aStoreName,
-              JS::Handle<JSObject*> aCallback, IDBTransactionMode aMode,
-              const Optional<uint32_t>& aTimeout, ErrorResult& aRv)
+              IDBTransactionCallbackWorkers& aCallback,
+              IDBTransactionMode aMode, const Optional<uint32_t>& aTimeout,
+              ErrorResult& aRv)
   {
     Sequence<nsString> list;
     list.AppendElement(aStoreName);
@@ -149,8 +152,9 @@ public:
 
   void
   Transaction(JSContext* aCx, const Sequence<nsString>& aStoreNames,
-              JS::Handle<JSObject*> aCallback, IDBTransactionMode aMode,
-              const Optional<uint32_t>& aTimeout, ErrorResult& aRv);
+              IDBTransactionCallbackWorkers& aCallback,
+              IDBTransactionMode aMode, const Optional<uint32_t>& aTimeout,
+              ErrorResult& aRv);
 
   JS::Value
   MozCreateFileHandle(JSContext* aCx, const nsAString& aName,
@@ -163,15 +167,14 @@ public:
   void
   Close(JSContext* aCx, ErrorResult& aRv);
 
-  JSObject*
-  GetOnversionchange(JSContext* aCx, ErrorResult& aRv)
+  already_AddRefed<EventHandlerNonNullWorkers>
+  GetOnversionchange(ErrorResult& aRv)
   {
     return GetEventListener(NS_LITERAL_STRING("versionchange"), aRv);
   }
 
   void
-  SetOnversionchange(JSContext* aCx, JS::Handle<JSObject*> aListener,
-                     ErrorResult& aRv)
+  SetOnversionchange(EventHandlerNonNullWorkers* aListener, ErrorResult& aRv)
   {
     SetEventListener(NS_LITERAL_STRING("versionchange"), aListener, aRv);
   }
@@ -181,7 +184,7 @@ private:
   ~IDBDatabaseSync();
 
   bool
-  Open(JSContext* aCx, JSObject* aUpgradeCallback);
+  Open(JSContext* aCx, IDBVersionChangeCallbackWorkers* aUpgradeCallback);
 
   IDBFactorySync* mFactory;
   nsRefPtr<DatabaseInfoMT> mDatabaseInfo;

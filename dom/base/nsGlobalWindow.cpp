@@ -78,9 +78,8 @@
 #include "nsIDocShell.h"
 #include "nsIDocCharset.h"
 #include "nsIDocument.h"
-#ifdef MOZ_DISABLE_CRYPTOLEGACY
 #include "Crypto.h"
-#else
+#ifndef MOZ_DISABLE_CRYPTOLEGACY
 #include "nsIDOMCryptoLegacy.h"
 #endif
 #include "nsIDOMDocument.h"
@@ -1387,6 +1386,11 @@ nsGlobalWindow::CleanUp()
 
   CleanupCachedXBLHandlers(this);
 
+  for (uint32_t i = 0; i < mAudioContexts.Length(); ++i) {
+    mAudioContexts[i]->Shutdown();
+  }
+  mAudioContexts.Clear();
+
   if (mIdleTimer) {
     mIdleTimer->Cancel();
     mIdleTimer = nullptr;
@@ -1651,7 +1655,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindow)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParentTarget)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFrameElement)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFocusedNode)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAudioContexts)
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMenubar)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mToolbar)
@@ -1706,7 +1709,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindow)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mParentTarget)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFrameElement)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFocusedNode)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mAudioContexts)
 
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mMenubar)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mToolbar)
@@ -3259,6 +3261,12 @@ nsPIDOMWindow::AddAudioContext(AudioContext* aAudioContext)
 }
 
 void
+nsPIDOMWindow::RemoveAudioContext(AudioContext* aAudioContext)
+{
+  mAudioContexts.RemoveElement(aAudioContext);
+}
+
+void
 nsPIDOMWindow::MuteAudioContexts()
 {
   for (uint32_t i = 0; i < mAudioContexts.Length(); ++i) {
@@ -3848,12 +3856,16 @@ nsGlobalWindow::GetCrypto(nsIDOMCrypto** aCrypto)
 
   if (!mCrypto) {
 #ifndef MOZ_DISABLE_CRYPTOLEGACY
-    nsresult rv;
-    mCrypto = do_CreateInstance(NS_CRYPTO_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-#else
-    mCrypto = new Crypto();
+    if (XRE_GetProcessType() != GeckoProcessType_Content) {
+      nsresult rv;
+      mCrypto = do_CreateInstance(NS_CRYPTO_CONTRACTID, &rv);
+      NS_ENSURE_SUCCESS(rv, rv);
+    } else
 #endif
+    {
+      mCrypto = new Crypto();
+    }
+
     mCrypto->Init(this);
   }
   NS_IF_ADDREF(*aCrypto = mCrypto);
@@ -7256,22 +7268,14 @@ nsGlobalWindow::FinalClose()
   // broken addons. The chrome tests in toolkit/mozapps/downloads are a good
   // testing ground.
   //
-  // Here are some quirks that the test suite depends on:
-  //
-  // * When chrome code executes |win|.close(), that close happens immediately,
-  //   along with the accompanying "domwindowclosed" notification. But _only_ if
-  //   |win|'s JSContext is not at the top of the stack. If it is, the close
-  //   _must not_ happen immediately.
-  //
-  // * If |win|'s JSContext is at the top of the stack, we must complete _two_
-  //   round-trips to the event loop before the call to ReallyCloseWindow. This
-  //   allows setTimeout handlers that are set after FinalClose() is called to
-  //   run before the window is torn down.
+  // In particular, if |win|'s JSContext is at the top of the stack, we must
+  // complete _two_ round-trips to the event loop before the call to
+  // ReallyCloseWindow. This allows setTimeout handlers that are set after
+  // FinalClose() is called to run before the window is torn down.
   bool indirect = GetContextInternal() && // Occasionally null. See bug 877390.
                   (nsContentUtils::GetCurrentJSContext() ==
                    GetContextInternal()->GetNativeContext());
-  if ((!indirect && nsContentUtils::IsCallerChrome()) ||
-      NS_FAILED(nsCloseEvent::PostCloseEvent(this, indirect))) {
+  if (NS_FAILED(nsCloseEvent::PostCloseEvent(this, indirect))) {
     ReallyCloseWindow();
   } else {
     mHavePendingClose = true;
@@ -9433,7 +9437,7 @@ nsGlobalWindow::ShowSlowScriptDialog()
   // Check if we should offer the option to debug
   JS::RootedScript script(cx);
   unsigned lineno;
-  bool hasFrame = JS_DescribeScriptedCaller(cx, script.address(), &lineno);
+  bool hasFrame = JS_DescribeScriptedCaller(cx, &script, &lineno);
 
   bool debugPossible = hasFrame && js::CanCallContextDebugHandler(cx);
 #ifdef MOZ_JSDEBUGGER
@@ -12047,9 +12051,8 @@ nsGlobalWindow::DisableNetworkEvent(uint32_t aType)
         JS_ObjectIsCallable(cx, callable = &v.toObject())) {                 \
       handler = new EventHandlerNonNull(callable);                           \
     }                                                                        \
-    ErrorResult rv;                                                          \
-    SetOn##name_(handler, rv);                                               \
-    return rv.ErrorCode();                                                   \
+    SetOn##name_(handler);                                                   \
+    return NS_OK;                                                            \
   }
 #define ERROR_EVENT(name_, id_, type_, struct_)                              \
   NS_IMETHODIMP nsGlobalWindow::GetOn##name_(JSContext *cx,                  \
@@ -12078,7 +12081,8 @@ nsGlobalWindow::DisableNetworkEvent(uint32_t aType)
         JS_ObjectIsCallable(cx, callable = &v.toObject())) {                 \
       handler = new OnErrorEventHandlerNonNull(callable);                    \
     }                                                                        \
-    return elm->SetEventHandler(handler);                                    \
+    elm->SetEventHandler(handler);                                           \
+    return NS_OK;                                                            \
   }
 #define BEFOREUNLOAD_EVENT(name_, id_, type_, struct_)                       \
   NS_IMETHODIMP nsGlobalWindow::GetOn##name_(JSContext *cx,                  \
@@ -12108,7 +12112,8 @@ nsGlobalWindow::DisableNetworkEvent(uint32_t aType)
         JS_ObjectIsCallable(cx, callable = &v.toObject())) {                 \
       handler = new BeforeUnloadEventHandlerNonNull(callable);               \
     }                                                                        \
-    return elm->SetEventHandler(handler);                                    \
+    elm->SetEventHandler(handler);                                           \
+    return NS_OK;                                                            \
   }
 #define WINDOW_ONLY_EVENT EVENT
 #define TOUCH_EVENT EVENT

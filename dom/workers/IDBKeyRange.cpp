@@ -44,19 +44,21 @@ nsresult
 IDBKeyRange::FromJSVal(JSContext* aCx, const jsval& aVal,
                        IDBKeyRange** aKeyRange)
 {
-  nsresult rv;
   nsRefPtr<IDBKeyRange> keyRange;
 
   if (aVal.isNullOrUndefined()) {
     // undefined and null returns no IDBKeyRange.
+    keyRange.forget(aKeyRange);
+    return NS_OK;
   }
-  else if (aVal.isPrimitive() ||
-           JS_IsArrayObject(aCx, &aVal.toObject()) ||
-           JS_ObjectIsDate(aCx, &aVal.toObject())) {
+
+  JS::RootedObject obj(aCx, aVal.isObject() ? &aVal.toObject() : NULL);
+  if (aVal.isPrimitive() || JS_IsArrayObject(aCx, obj) ||
+      JS_ObjectIsDate(aCx, obj)) {
     // A valid key returns an 'only' IDBKeyRange.
     keyRange = new IDBKeyRange(aCx, false, false, true);
 
-    rv = GetKeyFromJSVal(aCx, aVal, keyRange->Lower());
+    nsresult rv = GetKeyFromJSVal(aCx, aVal, keyRange->Lower());
     if (NS_FAILED(rv)) {
       return rv;
     }
@@ -64,8 +66,7 @@ IDBKeyRange::FromJSVal(JSContext* aCx, const jsval& aVal,
   else {
     MOZ_ASSERT(aVal.isObject());
     // An object is not permitted unless it's another IDBKeyRange.
-    if (NS_FAILED(UNWRAP_WORKER_OBJECT(IDBKeyRange, aCx, &aVal.toObject(),
-                                       keyRange))) {
+    if (NS_FAILED(UNWRAP_WORKER_OBJECT(IDBKeyRange, aCx, obj, keyRange))) {
       return NS_ERROR_DOM_INDEXEDDB_DATA_ERR;
     }
   }

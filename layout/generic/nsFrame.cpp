@@ -511,8 +511,14 @@ nsFrame::Init(nsIContent*      aContent,
     // property, so we can set this bit here and then ignore it.
     mState |= NS_FRAME_MAY_BE_TRANSFORMED;
   }
-  if (disp->mPosition == NS_STYLE_POSITION_STICKY) {
-    StickyScrollContainer::StickyScrollContainerForFrame(this)->AddFrame(this);
+  if (disp->mPosition == NS_STYLE_POSITION_STICKY &&
+      !aPrevInFlow &&
+      !(mState & NS_FRAME_IS_NONDISPLAY)) {
+    StickyScrollContainer* ssc =
+      StickyScrollContainer::GetStickyScrollContainerForFrame(this);
+    if (ssc) {
+      ssc->AddFrame(this);
+    }
   }
 
   if (nsLayoutUtils::FontSizeInflationEnabled(PresContext()) || !GetParent()
@@ -593,8 +599,11 @@ nsFrame::DestroyFrom(nsIFrame* aDestructRoot)
   nsSVGEffects::InvalidateDirectRenderingObservers(this);
 
   if (StyleDisplay()->mPosition == NS_STYLE_POSITION_STICKY) {
-    StickyScrollContainer::StickyScrollContainerForFrame(this)->
-      RemoveFrame(this);
+    StickyScrollContainer* ssc =
+      StickyScrollContainer::GetStickyScrollContainerForFrame(this);
+    if (ssc) {
+      ssc->RemoveFrame(this);
+    }
   }
 
   // Get the view pointer now before the frame properties disappear
@@ -1729,6 +1738,12 @@ WrapPreserve3DListInternal(nsIFrame* aFrame, nsDisplayListBuilder *aBuilder, nsD
   return NS_OK;
 }
 
+static bool
+IsScrollFrameActive(nsIScrollableFrame* aScrollableFrame)
+{
+  return aScrollableFrame && aScrollableFrame->IsScrollingActive();
+}
+
 static nsresult
 WrapPreserve3DList(nsIFrame* aFrame, nsDisplayListBuilder* aBuilder, nsDisplayList *aList)
 {
@@ -1744,6 +1759,21 @@ WrapPreserve3DList(nsIFrame* aFrame, nsDisplayListBuilder* aBuilder, nsDisplayLi
   aList->AppendToTop(&output);
   return rv;
 }
+
+class AutoSaveRestoreBlendMode
+{
+  nsDisplayListBuilder& mBuilder;
+  bool                  AutoResetContainsBlendMode;
+public:
+  AutoSaveRestoreBlendMode(nsDisplayListBuilder& aBuilder)
+    : mBuilder(aBuilder),
+      AutoResetContainsBlendMode(aBuilder.ContainsBlendMode()) {
+  }
+
+  ~AutoSaveRestoreBlendMode() {
+    mBuilder.SetContainsBlendMode(AutoResetContainsBlendMode);
+  }
+};
 
 void
 nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
@@ -1773,6 +1803,12 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
 
   bool inTransform = aBuilder->IsInTransform();
   bool isTransformed = IsTransformed();
+  // reset blend mode so we can keep track if this stacking context needs have
+  // a nsDisplayBlendContainer. Set the blend mode back when the routine exits
+  // so we keep track if the parent stacking context needs a container too.
+  AutoSaveRestoreBlendMode autoRestoreBlendMode(*aBuilder);
+  aBuilder->SetContainsBlendMode(false);
+ 
   if (isTransformed) {
     if (aBuilder->IsForPainting() &&
         nsDisplayTransform::ShouldPrerenderTransformedContent(aBuilder, this)) {
@@ -1805,11 +1841,16 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
   }
 
   bool useOpacity = HasOpacity() && !nsSVGUtils::CanOptimizeOpacity(this);
+  bool useBlendMode = disp->mMixBlendMode != NS_STYLE_BLEND_NORMAL;
   bool usingSVGEffects = nsSVGIntegrationUtils::UsingEffectsForFrame(this);
+  bool useStickyPosition = disp->mPosition == NS_STYLE_POSITION_STICKY &&
+    IsScrollFrameActive(nsLayoutUtils::GetNearestScrollableFrame(GetParent(),
+                        nsLayoutUtils::SCROLLABLE_SAME_DOC |
+                        nsLayoutUtils::SCROLLABLE_INCLUDE_HIDDEN));
 
   DisplayListClipState::AutoSaveRestore clipState(aBuilder);
 
-  if (isTransformed || useOpacity || usingSVGEffects) {
+  if (isTransformed || useOpacity || useBlendMode || usingSVGEffects || useStickyPosition) {
     // We don't need to pass ancestor clipping down to our children;
     // everything goes inside a display item's child list, and the display
     // item itself will be clipped.
@@ -1928,6 +1969,13 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
     resultList.AppendNewToTop(
         new (aBuilder) nsDisplayOpacity(aBuilder, this, &resultList));
   }
+  /* If we have sticky positioning, wrap it in a sticky position item.
+   */
+  if (useStickyPosition) {
+    resultList.AppendNewToTop(
+        new (aBuilder) nsDisplayStickyPosition(aBuilder, this, this,
+                                               &resultList));
+  }
 
   /* If we're going to apply a transformation and don't have preserve-3d set, wrap 
    * everything in an nsDisplayTransform. If there's nothing in the list, don't add 
@@ -1952,14 +2000,22 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
     }
   }
 
-  aList->AppendToTop(&resultList);
-}
+  /* If there's blending, wrap up the list in a blend-mode item. Note
+   * that opacity can be applied before blending as the blend color is
+   * not affected by foreground opacity (only background alpha).
+   */
 
-static bool
-IsRootScrollFrameActive(nsIPresShell* aPresShell)
-{
-  nsIScrollableFrame* sf = aPresShell->GetRootScrollFrameAsScrollable();
-  return sf && sf->IsScrollingActive();
+  if (useBlendMode && !resultList.IsEmpty()) {
+    resultList.AppendNewToTop(
+        new (aBuilder) nsDisplayMixBlendMode(aBuilder, this, &resultList));
+  }
+  
+  if (aBuilder->ContainsBlendMode()) {
+      resultList.AppendNewToTop(
+        new (aBuilder) nsDisplayBlendContainer(aBuilder, this, &resultList));
+  }
+
+  aList->AppendToTop(&resultList);
 }
 
 static nsDisplayItem*
@@ -2089,11 +2145,12 @@ nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder*   aBuilder,
     return;
 
   // Child is composited if it's transformed, partially transparent, or has
-  // SVG effects.
+  // SVG effects or a blend mode..
   const nsStyleDisplay* disp = child->StyleDisplay();
   const nsStylePosition* pos = child->StylePosition();
   bool isVisuallyAtomic = child->HasOpacity()
     || child->IsTransformed()
+    || disp->mMixBlendMode != NS_STYLE_BLEND_NORMAL
     || nsSVGIntegrationUtils::UsingEffectsForFrame(child);
 
   bool isPositioned = disp->IsPositioned(child);
@@ -2120,7 +2177,8 @@ nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder*   aBuilder,
   // active, that's pointless and the extra layer(s) created may be wasteful.
   bool buildFixedPositionItem = disp->mPosition == NS_STYLE_POSITION_FIXED &&
     !child->GetParent()->GetParent() && !aBuilder->IsInFixedPosition() &&
-    IsRootScrollFrameActive(PresContext()->PresShell()) && !isSVG;
+    IsScrollFrameActive(PresContext()->PresShell()->GetRootScrollFrameAsScrollable()) &&
+    !isSVG;
 
   nsDisplayListBuilder::AutoBuildingDisplayList
     buildingForChild(aBuilder, child, pseudoStackingContext, buildFixedPositionItem);
@@ -2147,6 +2205,9 @@ nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder*   aBuilder,
   nsDisplayList list;
   nsDisplayList extraPositionedDescendants;
   if (isStackingContext) {
+    if (disp->mMixBlendMode != NS_STYLE_BLEND_NORMAL) {
+      aBuilder->SetContainsBlendMode(true);
+    }
     // True stacking context.
     // For stacking contexts, BuildDisplayListForStackingContext handles
     // clipping and MarkAbsoluteFramesForDisplayList.
@@ -5061,6 +5122,26 @@ ComputeOutlineAndEffectsRect(nsIFrame* aFrame,
   }
 
   return r;
+}
+
+void
+nsIFrame::MovePositionBy(const nsPoint& aTranslation)
+{
+  nsPoint position = GetNormalPosition() + aTranslation;
+
+  const nsMargin* computedOffsets = nullptr;
+  if (IsRelativelyPositioned()) {
+    computedOffsets = static_cast<nsMargin*>
+      (Properties().Get(nsIFrame::ComputedOffsetProperty()));
+  }
+  nsHTMLReflowState::ApplyRelativePositioning(this, computedOffsets ?
+                                              *computedOffsets : nsMargin(),
+                                              &position);
+  NS_ASSERTION(StyleDisplay()->mPosition == NS_STYLE_POSITION_STICKY ||
+               GetPosition() + aTranslation == position,
+               "MovePositionBy should always lead to the movement "
+               "specified, unless the frame is position:sticky");
+  SetPosition(position);
 }
 
 nsPoint
