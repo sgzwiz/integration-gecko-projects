@@ -713,32 +713,6 @@ IonCode::togglePreBarriers(bool enabled)
     }
 }
 
-void
-IonCode::readBarrier(IonCode *code)
-{
-#ifdef JSGC_INCREMENTAL
-    if (!code)
-        return;
-
-    Zone *zone = code->zone();
-    if (zone->needsBarrier())
-        MarkIonCodeUnbarriered(zone->barrierTracer(), &code, "ioncode read barrier");
-#endif
-}
-
-void
-IonCode::writeBarrierPre(IonCode *code)
-{
-#ifdef JSGC_INCREMENTAL
-    if (!code || !code->runtimeFromMainThread()->needsBarrier())
-        return;
-
-    Zone *zone = code->zone();
-    if (zone->needsBarrier())
-        MarkIonCodeUnbarriered(zone->barrierTracer(), &code, "ioncode write barrier");
-#endif
-}
-
 IonScript::IonScript()
   : method_(NULL),
     deoptTable_(NULL),
@@ -1726,12 +1700,6 @@ CheckScript(JSContext *cx, JSScript *script, bool osr)
 
     if (!script->analyzedArgsUsage() && !script->ensureRanAnalysis(cx)) {
         IonSpew(IonSpew_Abort, "OOM under ensureRanAnalysis");
-        return false;
-    }
-
-    if (osr && script->needsArgsObj()) {
-        // OSR-ing into functions with arguments objects is not supported.
-        IonSpew(IonSpew_Abort, "OSR script has argsobj");
         return false;
     }
 

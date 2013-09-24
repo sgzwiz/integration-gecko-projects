@@ -558,6 +558,12 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         j(cond, label);
     }
 
+    // Specialization for AsmJSAbsoluteAddress.
+    void branchPtr(Condition cond, AsmJSAbsoluteAddress lhs, Register ptr, Label *label) {
+        cmpl(lhs, ptr);
+        j(cond, label);
+    }
+
     template <typename T, typename S>
     void branchPtr(Condition cond, T lhs, S ptr, Label *label) {
         cmpl(Operand(lhs), ptr);
@@ -623,6 +629,9 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
     }
     void movePtr(ImmPtr imm, Register dest) {
         movl(imm, dest);
+    }
+    void movePtr(AsmJSImmPtr imm, Register dest) {
+        mov(imm, dest);
     }
     void movePtr(ImmGCPtr imm, Register dest) {
         movl(imm, dest);
@@ -1028,6 +1037,7 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
   public:
     // Emits a call to a C/C++ function, resolving all argument moves.
     void callWithABI(void *fun, Result result = GENERAL);
+    void callWithABI(AsmJSImmPtr fun, Result result = GENERAL);
     void callWithABI(const Address &fun, Result result = GENERAL);
 
     // Used from within an Exit frame to handle a pending exception.
@@ -1064,16 +1074,6 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         push(Imm32(MakeFrameDescriptor(0, IonFrame_Osr)));
         call(code);
         addl(Imm32(sizeof(uintptr_t) * 2), esp);
-    }
-
-    // See CodeGeneratorX86 calls to noteAsmJSGlobalAccess.
-    void patchAsmJSGlobalAccess(unsigned offset, uint8_t *code, uint8_t *globalData,
-                                unsigned globalDataOffset)
-    {
-        uint8_t *nextInsn = code + offset;
-        JS_ASSERT(nextInsn <= globalData);
-        uint8_t *target = globalData + globalDataOffset;
-        ((int32_t *)nextInsn)[-1] = uintptr_t(target);
     }
 };
 

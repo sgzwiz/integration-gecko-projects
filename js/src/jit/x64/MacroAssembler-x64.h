@@ -57,6 +57,16 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
     typedef HashMap<double, size_t, DefaultHasher<double>, SystemAllocPolicy> DoubleMap;
     DoubleMap doubleMap_;
 
+    struct Float {
+        float value;
+        NonAssertingLabel uses;
+        Float(float value) : value(value) {}
+    };
+    Vector<Float, 0, SystemAllocPolicy> floats_;
+
+    typedef HashMap<float, size_t, DefaultHasher<float>, SystemAllocPolicy> FloatMap;
+    FloatMap floatMap_;
+
     void setupABICall(uint32_t arg);
 
   protected:
@@ -100,6 +110,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
     }
     void call(ImmPtr target) {
         call(ImmWord(uintptr_t(target.value)));
+    }
+    void call(AsmJSImmPtr target) {
+        mov(target, rax);
+        call(rax);
     }
 
     // Refers to the upper 32 bits of a 64-bit Value operand.
@@ -535,6 +549,11 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
             branchPtr(cond, Operand(ScratchReg, 0x0), ptr, label);
         }
     }
+    void branchPtr(Condition cond, const AsmJSAbsoluteAddress &addr, const Register &ptr, Label *label) {
+        JS_ASSERT(ptr != ScratchReg);
+        mov(AsmJSImmPtr(addr.kind()), ScratchReg);
+        branchPtr(cond, Operand(ScratchReg, 0x0), ptr, label);
+    }
 
     void branchPrivatePtr(Condition cond, Address lhs, ImmPtr ptr, Label *label) {
         branchPtr(cond, lhs, ImmWord(uintptr_t(ptr.value) >> 1), label);
@@ -599,6 +618,9 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
         mov(imm, dest);
     }
     void movePtr(ImmPtr imm, Register dest) {
+        mov(imm, dest);
+    }
+    void movePtr(AsmJSImmPtr imm, const Register &dest) {
         mov(imm, dest);
     }
     void movePtr(ImmGCPtr imm, Register dest) {
@@ -1010,15 +1032,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
     }
 
     void loadConstantDouble(double d, const FloatRegister &dest);
-    void loadConstantFloat32(float f, const FloatRegister &dest) {
-        union FloatPun {
-            uint32_t u;
-            float f;
-        } pun;
-        pun.f = f;
-        mov(ImmWord(pun.u), ScratchReg);
-        movq(ScratchReg, dest);
-    }
+    void loadConstantFloat32(float f, const FloatRegister &dest);
 
     void branchTruncateDouble(const FloatRegister &src, const Register &dest, Label *fail) {
         const uint64_t IndefiniteIntegerValue = 0x8000000000000000;
@@ -1135,6 +1149,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
   public:
     // Emits a call to a C/C++ function, resolving all argument moves.
     void callWithABI(void *fun, Result result = GENERAL);
+    void callWithABI(AsmJSImmPtr imm, Result result = GENERAL);
     void callWithABI(Address fun, Result result = GENERAL);
 
     void handleFailureWithHandler(void *handler);
@@ -1148,8 +1163,8 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
     // Save an exit frame (which must be aligned to the stack pointer) to
     // ThreadData::ionTop of the main thread.
     void linkExitFrame() {
-        mov(ImmPtr(GetIonContext()->runtime), ScratchReg);
-        mov(StackPointer, Operand(ScratchReg, offsetof(JSRuntime, mainThread.ionTop)));
+        storePtr(StackPointer,
+                 AbsoluteAddress(&GetIonContext()->runtime->mainThread.ionTop));
     }
 
     void callWithExitFrame(IonCode *target, Register dynStack) {
@@ -1174,10 +1189,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
     }
 
     // See CodeGeneratorX64 calls to noteAsmJSGlobalAccess.
-    void patchAsmJSGlobalAccess(unsigned offset, uint8_t *code, uint8_t *globalData,
+    void patchAsmJSGlobalAccess(CodeOffsetLabel patchAt, uint8_t *code, uint8_t *globalData,
                                 unsigned globalDataOffset)
     {
-        uint8_t *nextInsn = code + offset;
+        uint8_t *nextInsn = code + patchAt.offset();
         JS_ASSERT(nextInsn <= globalData);
         uint8_t *target = globalData + globalDataOffset;
         ((int32_t *)nextInsn)[-1] = target - nextInsn;
