@@ -11,7 +11,7 @@ USING_WORKERS_NAMESPACE
 using mozilla::ErrorResult;
 using mozilla::dom::EventListener;
 using mozilla::dom::Nullable;
-using mozilla::dom::EventHandlerNonNullWorkers;
+using mozilla::dom::EventHandlerNonNull;
 
 void
 EventTarget::_trace(JSTracer* aTrc)
@@ -27,7 +27,7 @@ EventTarget::_finalize(JSFreeOp* aFop)
   DOMBindingBase::_finalize(aFop);
 }
 
-already_AddRefed<EventHandlerNonNullWorkers>
+already_AddRefed<EventHandlerNonNull>
 EventTarget::GetEventListener(const nsAString& aType, ErrorResult& aRv) const
 {
   JSContext* cx = GetJSContext();
@@ -45,14 +45,13 @@ EventTarget::GetEventListener(const nsAString& aType, ErrorResult& aRv) const
     return nullptr;
   }
 
-  nsRefPtr<EventHandlerNonNullWorkers> handler =
-    new EventHandlerNonNullWorkers(listener);
+  nsRefPtr<EventHandlerNonNull> handler = new EventHandlerNonNull(listener);
   return handler.forget();
 }
 
 void
 EventTarget::SetEventListener(const nsAString& aType,
-                              EventHandlerNonNullWorkers* aListener,
+                              EventHandlerNonNull* aListener,
                               ErrorResult& aRv)
 {
   JSContext* cx = GetJSContext();

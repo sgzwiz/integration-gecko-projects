@@ -3508,8 +3508,6 @@ for (uint32_t i = 0; i < length; ++i) {
         assert not type.treatNonCallableAsNull() or type.nullable()
 
         name = type.unroll().identifier.name
-        if descriptorProvider.workers:
-            name += "Workers"
         if type.nullable():
             declType = CGGeneric("nsRefPtr<%s>" % name);
         else:
@@ -4439,8 +4437,6 @@ def getRetvalDeclarationForType(returnType, descriptorProvider,
         return result, False, None, None
     if returnType.isCallback():
         name = returnType.unroll().identifier.name
-        if descriptorProvider.workers:
-            name += "Workers"
         return CGGeneric("nsRefPtr<%s>" % name), False, None, None
     if returnType.isAny():
         return CGGeneric("JS::Value"), False, None, None
@@ -8939,13 +8935,12 @@ class CGBindingRoot(CGThing):
                         for c in mainCallbacks)
 
         cgthings.extend(CGCallbackFunction(c, config.getDescriptorProvider(True))
-                        for c in workerCallbacks)
+                        for c in workerCallbacks if c not in mainCallbacks)
 
         # Do codegen for all the descriptors
         cgthings.extend([CGDescriptor(x) for x in descriptors])
 
-        # Do codegen for all the callback interfaces.  Again, skip
-        # worker callbacks.
+        # Do codegen for all the callback interfaces.  Skip worker callbacks.
         cgthings.extend([CGCallbackInterface(x) for x in callbackDescriptors if
                          not x.workers])
 
@@ -9940,8 +9935,6 @@ class CGCallback(CGClass):
         self.baseName = baseName
         self._deps = idlObject.getDeps()
         name = idlObject.identifier.name
-        if descriptorProvider.workers:
-            name += "Workers"
         if isJSImplementedDescriptor(descriptorProvider):
             name = jsImplName(name)
         # For our public methods that needThisHandling we want most of the

@@ -21,9 +21,9 @@
 #include "ipc/IndexedDBWorkerChild.h"
 
 USING_WORKERS_NAMESPACE
-using mozilla::dom::IDBTransactionCallbackWorkers;
+using mozilla::dom::IDBTransactionCallback;
 using mozilla::dom::IDBTransactionMode;
-using mozilla::dom::IDBVersionChangeCallbackWorkers;
+using mozilla::dom::IDBVersionChangeCallback;
 using mozilla::dom::indexedDB::IDBTransactionBase;
 using mozilla::dom::NonNull;
 using mozilla::dom::Optional;
@@ -402,7 +402,7 @@ IDBDatabaseSync::DeleteObjectStore(JSContext* aCx,
 void
 IDBDatabaseSync::Transaction(JSContext* aCx,
                              const Sequence<nsString>& aStoreNames,
-                             IDBTransactionCallbackWorkers& aCallback,
+                             IDBTransactionCallback& aCallback,
                              IDBTransactionMode aMode,
                              const Optional<uint32_t>& aTimeout,
                              ErrorResult& aRv)
@@ -500,7 +500,7 @@ IDBDatabaseSync::Close(JSContext* aCx, ErrorResult& aRv)
 
 bool
 IDBDatabaseSync::Open(JSContext* aCx,
-                      IDBVersionChangeCallbackWorkers* aUpgradeCallback)
+                      IDBVersionChangeCallback* aUpgradeCallback)
 {
   Sequence<nsString> storeNames;
 

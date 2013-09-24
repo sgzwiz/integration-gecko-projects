@@ -28,14 +28,14 @@ public:
   _finalize(JSFreeOp* aFop) MOZ_OVERRIDE;
 
 #define IMPL_GETTER_AND_SETTER(_type)                                          \
-  already_AddRefed<EventHandlerNonNullWorkers>                                 \
+  already_AddRefed<EventHandlerNonNull>                                        \
   GetOn##_type(ErrorResult& aRv)                                               \
   {                                                                            \
     return GetEventListener(NS_LITERAL_STRING(#_type), aRv);                   \
   }                                                                            \
                                                                                \
   void                                                                         \
-  SetOn##_type(EventHandlerNonNullWorkers* aListener, ErrorResult& aRv)        \
+  SetOn##_type(EventHandlerNonNull* aListener,  ErrorResult& aRv)              \
   {                                                                            \
     SetEventListener(NS_LITERAL_STRING(#_type), aListener, aRv);               \
   }

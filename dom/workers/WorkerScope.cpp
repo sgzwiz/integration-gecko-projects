@@ -176,7 +176,7 @@ private:
     MOZ_ASSERT(scope);
 
     ErrorResult rv;
-    nsRefPtr<EventHandlerNonNullWorkers> handler =
+    nsRefPtr<EventHandlerNonNull> handler =
       scope->GetEventListener(NS_ConvertASCIItoUTF16(name + 2), rv);
 
     if (rv.Failed()) {
@@ -214,9 +214,9 @@ private:
 
     ErrorResult rv;
     JS::Rooted<JSObject*> listenerObj(aCx, aArgs[0].toObjectOrNull());
-    nsRefPtr<EventHandlerNonNullWorkers> handler;
+    nsRefPtr<EventHandlerNonNull> handler;
     if (listenerObj && JS_ObjectIsCallable(aCx, listenerObj)) {
-      handler = new EventHandlerNonNullWorkers(listenerObj);
+      handler = new EventHandlerNonNull(listenerObj);
     } else {
       handler = nullptr;
     }
@@ -341,7 +341,7 @@ private:
     MOZ_ASSERT(scope);
 
     ErrorResult rv;
-    nsRefPtr<EventHandlerNonNullWorkers> adaptor =
+    nsRefPtr<EventHandlerNonNull> adaptor =
       scope->GetEventListener(NS_ConvertASCIItoUTF16(name + 2), rv);
 
     if (rv.Failed()) {
@@ -397,8 +397,7 @@ private:
     js::SetFunctionNativeReserved(listener, SLOT_wrappedFunction, aArgs[0]);
 
     ErrorResult rv;
-    nsRefPtr<EventHandlerNonNullWorkers> handler =
-      new EventHandlerNonNullWorkers(listener);
+    nsRefPtr<EventHandlerNonNull> handler = new EventHandlerNonNull(listener);
     scope->SetEventListener(NS_ConvertASCIItoUTF16(name + 2), handler, rv);
 
     if (rv.Failed()) {
@@ -810,7 +809,7 @@ private:
     MOZ_ASSERT(scope);
 
     ErrorResult rv;
-    nsRefPtr<EventHandlerNonNullWorkers> handler =
+    nsRefPtr<EventHandlerNonNull> handler =
       scope->GetEventListener(NS_ConvertASCIItoUTF16(name + 2), rv);
 
     if (rv.Failed()) {
@@ -849,9 +848,9 @@ private:
     ErrorResult rv;
 
     JS::Rooted<JSObject*> listenerObj(aCx, aArgs[0].toObjectOrNull());
-    nsRefPtr<EventHandlerNonNullWorkers> handler;
+    nsRefPtr<EventHandlerNonNull> handler;
     if (listenerObj && JS_ObjectIsCallable(aCx, listenerObj)) {
-      handler = new EventHandlerNonNullWorkers(listenerObj);
+      handler = new EventHandlerNonNull(listenerObj);
     } else {
       handler = nullptr;
     }

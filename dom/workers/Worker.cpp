@@ -180,7 +180,7 @@ private:
     MOZ_ASSERT(worker);
 
     ErrorResult rv;
-    nsRefPtr<EventHandlerNonNullWorkers> handler =
+    nsRefPtr<EventHandlerNonNull> handler =
       worker->GetEventListener(Substring(aNameStr, 2), rv);
 
     if (rv.Failed()) {
@@ -236,9 +236,9 @@ private:
       return false;
     }
 
-    nsRefPtr<EventHandlerNonNullWorkers> handler;
+    nsRefPtr<EventHandlerNonNull> handler;
     if (listener && JS_ObjectIsCallable(aCx, listener)) {
-      handler = new EventHandlerNonNullWorkers(listener);
+      handler = new EventHandlerNonNull(listener);
     } else {
       handler = nullptr;
     }
