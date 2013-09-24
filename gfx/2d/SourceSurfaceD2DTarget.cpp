@@ -138,9 +138,13 @@ SourceSurfaceD2DTarget::GetBitmap(ID2D1RenderTarget *aRT)
     return nullptr;
   }
 
-  D2D1_BITMAP_PROPERTIES props =
-    D2D1::BitmapProperties(D2D1::PixelFormat(DXGIFormat(mFormat), AlphaMode(mFormat)));
-  hr = aRT->CreateSharedBitmap(IID_IDXGISurface, surf, &props, byRef(mBitmap));
+  if (DXGIFormat(mFormat) != DXGI_FORMAT_A8_UNORM) {
+    D2D1_BITMAP_PROPERTIES props =
+      D2D1::BitmapProperties(D2D1::PixelFormat(DXGIFormat(mFormat), AlphaMode(mFormat)));
+    hr = aRT->CreateSharedBitmap(IID_IDXGISurface, surf, &props, byRef(mBitmap));
+  } else {
+    hr = 0x80004005;
+  }
 
   if (FAILED(hr)) {
     // This seems to happen for FORMAT_A8 sometimes...

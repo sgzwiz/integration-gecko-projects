@@ -1211,6 +1211,11 @@ DrawTargetD2D::CreatePathBuilder(FillRule aFillRule) const
 TemporaryRef<GradientStops>
 DrawTargetD2D::CreateGradientStops(GradientStop *rawStops, uint32_t aNumStops, ExtendMode aExtendMode) const
 {
+  if (aNumStops == 0) {
+    gfxWarning() << "CreateGradientStops with 0 stops!";
+    return nullptr;
+  }
+
   D2D1_GRADIENT_STOP *stops = new D2D1_GRADIENT_STOP[aNumStops];
 
   for (uint32_t i = 0; i < aNumStops; i++) {

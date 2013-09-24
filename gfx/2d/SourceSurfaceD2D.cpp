@@ -99,6 +99,11 @@ SourceSurfaceD2D::InitFromTexture(ID3D10Texture2D *aTexture,
     return false;
   }
 
+  if (DXGIFormat(aFormat) == DXGI_FORMAT_A8_UNORM) {
+    gfxDebug() << "Can't create a D2D SharedBitmap for a DXGI_FORMAT_A8_UNORM surface.";
+    return false;
+  }
+
   D3D10_TEXTURE2D_DESC desc;
   aTexture->GetDesc(&desc);
 
