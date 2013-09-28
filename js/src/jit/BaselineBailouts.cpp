@@ -4,14 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "jit/BaselineCompiler.h"
 #include "jit/BaselineIC.h"
 #include "jit/BaselineJIT.h"
 #include "jit/CompileInfo.h"
 #include "jit/IonSpewer.h"
 #include "vm/ArgumentsObject.h"
 
-#include "jsfuninlines.h"
 #include "jsscriptinlines.h"
 
 #include "jit/IonFrames-inl.h"
@@ -125,6 +123,8 @@ struct BaselineStackBuilder
 
     bool enlarge() {
         JS_ASSERT(buffer_ != NULL);
+        if (bufferTotal_ & mozilla::tl::MulOverflowMask<2>::value)
+            return false;
         size_t newSize = bufferTotal_ * 2;
         uint8_t *newBuffer = reinterpret_cast<uint8_t *>(js_calloc(newSize));
         if (!newBuffer)

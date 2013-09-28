@@ -196,13 +196,14 @@ WEBIDL_FILES = [
     'IDBVersionChangeEvent.webidl',
     'ImageData.webidl',
     'ImageDocument.webidl',
+    'InputMethod.webidl',
     'InspectorUtils.webidl',
     'InterAppConnection.webidl',
     'InterAppConnectionRequest.webidl',
-    'InterAppMessageEvent.webidl',
     'InterAppMessagePort.webidl',
     'KeyboardEvent.webidl',
     'KeyEvent.webidl',
+    'LegacyQueryInterface.webidl',
     'LinkStyle.webidl',
     'LocalMediaStream.webidl',
     'Location.webidl',
@@ -213,7 +214,6 @@ WEBIDL_FILES = [
     'MediaStream.webidl',
     'MediaStreamAudioDestinationNode.webidl',
     'MediaStreamAudioSourceNode.webidl',
-    'MediaStreamEvent.webidl',
     'MediaStreamTrack.webidl',
     'MessageChannel.webidl',
     'MessageEvent.webidl',
@@ -263,10 +263,8 @@ WEBIDL_FILES = [
     'Rect.webidl',
     'RGBColor.webidl',
     'RTCConfiguration.webidl',
-    'RTCDataChannelEvent.webidl',
     'RTCIceCandidate.webidl',
     'RTCPeerConnection.webidl',
-    'RTCPeerConnectionIceEvent.webidl',
     'RTCSessionDescription.webidl',
     'Screen.webidl',
     'ScriptProcessorNode.webidl',
@@ -391,8 +389,6 @@ WEBIDL_FILES = [
     'TextTrack.webidl',
     'TextTrackCueList.webidl',
     'TextTrackList.webidl',
-    'TextTrackRegion.webidl',
-    'TextTrackRegionList.webidl',
     'TimeEvent.webidl',
     'TimeRanges.webidl',
     'Touch.webidl',
@@ -407,6 +403,8 @@ WEBIDL_FILES = [
     'URLUtils.webidl',
     'URLUtilsReadOnly.webidl',
     'VTTCue.webidl',
+    'VTTRegion.webidl',
+    'VTTRegionList.webidl',
     'ValidityState.webidl',
     'VideoPlaybackQuality.webidl',
     'VideoStreamTrack.webidl',
@@ -534,23 +532,24 @@ if CONFIG['MOZ_B2G_FM']:
 
 if CONFIG['ENABLE_TESTS']:
     TEST_WEBIDL_FILES += [
-        'TestCodeGen.webidl',
         'TestDictionary.webidl',
-        'TestExampleGen.webidl',
-        'TestJSImplGen.webidl',
         'TestJSImplInheritanceGen.webidl',
         'TestTypedef.webidl',
     ]
-
-if CONFIG['MOZ_B2G']:
-    WEBIDL_FILES += [
-        'InputMethod.webidl',
+    PREPROCESSED_TEST_WEBIDL_FILES += [
+        'TestCodeGen.webidl',
+        'TestExampleGen.webidl',
+        'TestJSImplGen.webidl',
     ]
 
 GENERATED_EVENTS_WEBIDL_FILES = [
     'BlobEvent.webidl',
     'DeviceLightEvent.webidl',
     'DeviceProximityEvent.webidl',
+    'MediaStreamEvent.webidl',
+    'MozInterAppMessageEvent.webidl',
+    'RTCDataChannelEvent.webidl',
+    'RTCPeerConnectionIceEvent.webidl',
     'UserProximityEvent.webidl',
 ]
 

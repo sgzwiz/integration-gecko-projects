@@ -25,6 +25,8 @@ from .mozconfig import (
     MozconfigLoadException,
     MozconfigLoader,
 )
+from .virtualenv import VirtualenvManager
+
 
 def ancestors(path):
     """Emit the parent directories of a path."""
@@ -86,6 +88,7 @@ class MozbuildObject(ProcessExecutionMixin):
         self._mozconfig = None
         self._config_guess_output = None
         self._config_environment = None
+        self._virtualenv_manager = None
 
     @classmethod
     def from_environment(cls, cwd=None, detect_virtualenv_mozinfo=True):
@@ -205,6 +208,16 @@ class MozbuildObject(ProcessExecutionMixin):
                 self.topsrcdir, self.mozconfig, default='obj-@CONFIG_GUESS@')
 
         return self._topobjdir
+
+    @property
+    def virtualenv_manager(self):
+        if self._virtualenv_manager is None:
+            self._virtualenv_manager = VirtualenvManager(self.topsrcdir,
+                self.topobjdir, os.path.join(self.topobjdir, '_virtualenv'),
+                sys.stdout, os.path.join(self.topsrcdir, 'build',
+                'virtualenv_packages.txt'))
+
+        return self._virtualenv_manager
 
     @property
     def mozconfig(self):
@@ -381,7 +394,7 @@ class MozbuildObject(ProcessExecutionMixin):
         """
         self._ensure_objdir_exists()
 
-        args = [self._make_path(force_pymake=force_pymake)]
+        args = self._make_path(force_pymake=force_pymake)
 
         if directory:
             args.extend(['-C', directory])
@@ -444,12 +457,17 @@ class MozbuildObject(ProcessExecutionMixin):
 
     def _make_path(self, force_pymake=False):
         if self._is_windows() or force_pymake:
-            return os.path.join(self.topsrcdir, 'build', 'pymake',
+            make_py = os.path.join(self.topsrcdir, 'build', 'pymake',
                 'make.py').replace(os.sep, '/')
+
+            # We might want to consider invoking with the virtualenv's Python
+            # some day. But, there is a chicken-and-egg problem w.r.t. when the
+            # virtualenv is created.
+            return [sys.executable, make_py]
 
         for test in ['gmake', 'make']:
             try:
-                return which.which(test)
+                return [which.which(test)]
             except which.WhichError:
                 continue
 
@@ -474,6 +492,10 @@ class MozbuildObject(ProcessExecutionMixin):
 
         return cls(self.topsrcdir, self.settings, self.log_manager,
             topobjdir=self.topobjdir)
+
+    def _activate_virtualenv(self):
+        self.virtualenv_manager.ensure()
+        self.virtualenv_manager.activate()
 
 
 class MachCommandBase(MozbuildObject):

@@ -33,6 +33,7 @@
 #include "js/OldDebugAPI.h"
 #include "js/MemoryMetrics.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/ContentEvents.h"
 #include "mozilla/Likely.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ImageData.h"
@@ -43,7 +44,6 @@
 #include "nsCxPusher.h"
 #include "nsError.h"
 #include "nsDOMJSUtils.h"
-#include "nsGUIEvent.h"
 #include "nsJSEnvironment.h"
 #include "nsJSUtils.h"
 #include "nsNetUtil.h"
@@ -85,6 +85,7 @@
 // GC will run five seconds after the last event is processed.
 #define IDLE_GC_TIMER_DELAY_MS 5000
 
+using mozilla::InternalScriptErrorEvent;
 using mozilla::MutexAutoLock;
 using mozilla::TimeDuration;
 using mozilla::TimeStamp;
@@ -1077,8 +1078,8 @@ public:
           }
         }
         else {
-          // Icky, we have to fire an nsScriptErrorEvent...
-          nsScriptErrorEvent event(true, NS_LOAD_ERROR);
+          // Icky, we have to fire an InternalScriptErrorEvent...
+          InternalScriptErrorEvent event(true, NS_LOAD_ERROR);
           event.lineNr = aLineNumber;
           event.errorMsg = aMessage.get();
           event.fileName = aFilename.get();

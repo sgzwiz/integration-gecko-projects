@@ -14,7 +14,6 @@
 #include "jit/LIR.h"
 #include "jit/MIR.h"
 #include "jit/MIRGraph.h"
-#include "jit/RangeAnalysis.h"
 
 #include "jsinferinlines.h"
 
@@ -205,6 +204,16 @@ LIRGenerator::visitNewCallObject(MNewCallObject *ins)
         return false;
 
     return true;
+}
+
+bool
+LIRGenerator::visitNewDerivedTypedObject(MNewDerivedTypedObject *ins)
+{
+    LNewDerivedTypedObject *lir =
+        new LNewDerivedTypedObject(useRegisterAtStart(ins->type()),
+                                   useRegisterAtStart(ins->owner()),
+                                   useRegisterAtStart(ins->offset()));
+    return defineReturn(lir, ins) && assignSafepoint(lir, ins);
 }
 
 bool
@@ -502,7 +511,7 @@ bool
 LIRGenerator::visitAssertFloat32(MAssertFloat32 *assertion)
 {
     MIRType type = assertion->input()->type();
-    bool checkIsFloat32 = assertion->mustBeFloat32();
+    DebugOnly<bool> checkIsFloat32 = assertion->mustBeFloat32();
 
     if (!allowFloat32Optimizations())
         return true;
@@ -1537,6 +1546,13 @@ LIRGenerator::visitOsrScopeChain(MOsrScopeChain *object)
 }
 
 bool
+LIRGenerator::visitOsrArgumentsObject(MOsrArgumentsObject *object)
+{
+    LOsrArgumentsObject *lir = new LOsrArgumentsObject(useRegister(object->entry()));
+    return define(lir, object);
+}
+
+bool
 LIRGenerator::visitToDouble(MToDouble *convert)
 {
     MDefinition *opd = convert->input();
@@ -1655,6 +1671,12 @@ LIRGenerator::visitToInt32(MToInt32 *convert)
       case MIRType_Int32:
       case MIRType_Boolean:
         return redefine(convert, opd);
+
+      case MIRType_Float32:
+      {
+        LFloat32ToInt32 *lir = new LFloat32ToInt32(useRegister(opd));
+        return assignSnapshot(lir) && define(lir, convert);
+      }
 
       case MIRType_Double:
       {
@@ -1962,7 +1984,7 @@ LIRGenerator::visitTypeBarrier(MTypeBarrier *ins)
     bool needTemp = !types->unknownObject() && types->getObjectCount() > 0;
 
     MIRType inputType = ins->getOperand(0)->type();
-    MIRType outputType = ins->type();
+    DebugOnly<MIRType> outputType = ins->type();
 
     JS_ASSERT(inputType == outputType);
 
@@ -2066,6 +2088,13 @@ LIRGenerator::visitTypedArrayElements(MTypedArrayElements *ins)
 {
     JS_ASSERT(ins->type() == MIRType_Elements);
     return define(new LTypedArrayElements(useRegisterAtStart(ins->object())), ins);
+}
+
+bool
+LIRGenerator::visitTypedObjectElements(MTypedObjectElements *ins)
+{
+    JS_ASSERT(ins->type() == MIRType_Elements);
+    return define(new LTypedObjectElements(useRegisterAtStart(ins->object())), ins);
 }
 
 bool
@@ -2448,7 +2477,7 @@ LIRGenerator::visitStoreTypedArrayElement(MStoreTypedArrayElement *ins)
     JS_ASSERT(ins->index()->type() == MIRType_Int32);
 
     if (ins->isFloatArray()) {
-        bool optimizeFloat32 = allowFloat32Optimizations();
+        DebugOnly<bool> optimizeFloat32 = allowFloat32Optimizations();
         JS_ASSERT_IF(optimizeFloat32 && ins->arrayType() == ScalarTypeRepresentation::TYPE_FLOAT32,
                      ins->value()->type() == MIRType_Float32);
         JS_ASSERT_IF(!optimizeFloat32 || ins->arrayType() == ScalarTypeRepresentation::TYPE_FLOAT64,
@@ -2477,7 +2506,7 @@ LIRGenerator::visitStoreTypedArrayElementHole(MStoreTypedArrayElementHole *ins)
     JS_ASSERT(ins->length()->type() == MIRType_Int32);
 
     if (ins->isFloatArray()) {
-        bool optimizeFloat32 = allowFloat32Optimizations();
+        DebugOnly<bool> optimizeFloat32 = allowFloat32Optimizations();
         JS_ASSERT_IF(optimizeFloat32 && ins->arrayType() == ScalarTypeRepresentation::TYPE_FLOAT32,
                      ins->value()->type() == MIRType_Float32);
         JS_ASSERT_IF(!optimizeFloat32 || ins->arrayType() == ScalarTypeRepresentation::TYPE_FLOAT64,

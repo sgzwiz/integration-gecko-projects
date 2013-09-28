@@ -10,7 +10,6 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/MathAlgorithms.h"
 
-#include "jit/CompileInfo.h"
 #include "jit/IonAnalysis.h"
 #include "jit/MIR.h"
 
@@ -87,12 +86,12 @@ class RangeAnalysis
     bool truncate();
 
   private:
-    void analyzeLoop(MBasicBlock *header);
+    bool analyzeLoop(MBasicBlock *header);
     LoopIterationBound *analyzeLoopIterationCount(MBasicBlock *header,
                                                   MTest *test, BranchDirection direction);
     void analyzeLoopPhi(MBasicBlock *header, LoopIterationBound *loopBound, MPhi *phi);
     bool tryHoistBoundsCheck(MBasicBlock *header, MBoundsCheck *ins);
-    void markBlocksInLoopBody(MBasicBlock *header, MBasicBlock *current);
+    bool markBlocksInLoopBody(MBasicBlock *header, MBasicBlock *current);
 };
 
 class Range : public TempObject {

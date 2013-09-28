@@ -10,7 +10,6 @@
 #include "jspubtd.h"
 
 #include "jit/CompileInfo.h"
-#include "jit/Ion.h"
 #include "jit/IonFrames.h"
 
 namespace js {
@@ -641,6 +640,7 @@ bool FilterArguments(JSContext *cx, JSString *str);
 
 #ifdef JSGC_GENERATIONAL
 void PostWriteBarrier(JSRuntime *rt, JSObject *obj);
+void PostGlobalWriteBarrier(JSRuntime *rt, JSObject *obj);
 #endif
 
 uint32_t GetIndexFromString(JSString *str);
@@ -664,6 +664,9 @@ bool LeaveBlock(JSContext *cx, BaselineFrame *frame);
 
 bool InitBaselineFrameForOsr(BaselineFrame *frame, StackFrame *interpFrame,
                              uint32_t numStackValues);
+
+JSObject *CreateDerivedTypedObj(JSContext *cx, HandleObject type,
+                                HandleObject owner, int32_t offset);
 
 } // namespace jit
 } // namespace js

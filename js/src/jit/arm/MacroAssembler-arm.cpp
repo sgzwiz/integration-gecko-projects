@@ -116,6 +116,34 @@ MacroAssemblerARM::convertDoubleToInt32(const FloatRegister &src, const Register
     }
 }
 
+// Checks whether a float32 is representable as a 32-bit integer. If so, the
+// integer is written to the output register. Otherwise, a bailout is taken to
+// the given snapshot. This function overwrites the scratch float register.
+void
+MacroAssemblerARM::convertFloat32ToInt32(const FloatRegister &src, const Register &dest, Label *fail, bool negativeZeroCheck)
+{
+    // convert the floating point value to an integer, if it did not fit,
+    //     then when we convert it *back* to  a float, it will have a
+    //     different value, which we can test.
+    ma_vcvt_F32_I32(src, ScratchFloatReg);
+    // move the value into the dest register.
+    ma_vxfer(ScratchFloatReg, dest);
+    ma_vcvt_I32_F32(ScratchFloatReg, ScratchFloatReg);
+    ma_vcmp_f32(src, ScratchFloatReg);
+    as_vmrs(pc);
+    ma_b(fail, Assembler::VFP_NotEqualOrUnordered);
+
+    if (negativeZeroCheck) {
+        ma_cmp(dest, Imm32(0));
+        // Test and bail for -0.0, when integer result is 0
+        // Move the top word of the double into the output reg, if it is non-zero,
+        // then the original value was -0.0
+        as_vxfer(dest, InvalidReg, src, FloatToCore, Assembler::Equal, 0);
+        ma_cmp(dest, Imm32(0x80000000), Assembler::Equal);
+        ma_b(fail, Assembler::Equal);
+    }
+}
+
 void
 MacroAssemblerARM::convertFloatToDouble(const FloatRegister &src, const FloatRegister &dest) {
     as_vcvt(VFPRegister(dest), VFPRegister(src).singleOverlay());
@@ -376,8 +404,8 @@ NextInst(Instruction *i)
 }
 
 void
-MacroAssemblerARM::ma_movPatchable(Imm32 imm_, Register dest,
-                                   Assembler::Condition c, RelocStyle rs, Instruction *i)
+MacroAssemblerARM::ma_movPatchable(Imm32 imm_, Register dest, Assembler::Condition c,
+                                   RelocStyle rs, Instruction *i)
 {
     int32_t imm = imm_.value;
     if (i) {
@@ -1486,6 +1514,11 @@ MacroAssemblerARM::ma_vcmp(FloatRegister src1, FloatRegister src2, Condition cc)
     as_vcmp(VFPRegister(src1), VFPRegister(src2), cc);
 }
 void
+MacroAssemblerARM::ma_vcmp_f32(FloatRegister src1, FloatRegister src2, Condition cc)
+{
+    as_vcmp(VFPRegister(src1).singleOverlay(), VFPRegister(src2).singleOverlay(), cc);
+}
+void
 MacroAssemblerARM::ma_vcmpz(FloatRegister src1, Condition cc)
 {
     as_vcmpz(VFPRegister(src1), cc);
@@ -1895,6 +1928,19 @@ MacroAssemblerARMCompat::movePtr(const ImmPtr &imm, const Register &dest)
     movePtr(ImmWord(uintptr_t(imm.value)), dest);
 }
 void
+MacroAssemblerARMCompat::movePtr(const AsmJSImmPtr &imm, const Register &dest)
+{
+    RelocStyle rs;
+    if (hasMOVWT())
+        rs = L_MOVWT;
+    else
+        rs = L_LDR;
+
+    AsmJSAbsoluteLink link(nextOffset().getOffset(), imm.kind());
+    enoughMemory_ &= asmJSAbsoluteLinks_.append(link);
+    ma_movPatchable(Imm32(-1), dest, Always, rs);
+}
+void
 MacroAssemblerARMCompat::load8ZeroExtend(const Address &address, const Register &dest)
 {
     ma_dataTransferN(IsLoad, 8, false, address.base, Imm32(address.offset), dest);
@@ -2036,6 +2082,12 @@ void
 MacroAssemblerARMCompat::loadPtr(const AbsoluteAddress &address, const Register &dest)
 {
     movePtr(ImmWord(uintptr_t(address.addr)), ScratchRegister);
+    loadPtr(Address(ScratchRegister, 0x0), dest);
+}
+void
+MacroAssemblerARMCompat::loadPtr(const AsmJSAbsoluteAddress &address, const Register &dest)
+{
+    movePtr(AsmJSImmPtr(address.kind()), ScratchRegister);
     loadPtr(Address(ScratchRegister, 0x0), dest);
 }
 
@@ -3292,7 +3344,7 @@ MacroAssemblerARM::ma_callIonHalfPush(const Register r)
 }
 
 void
-MacroAssemblerARM::ma_call(void *dest)
+MacroAssemblerARM::ma_call(ImmPtr dest)
 {
     RelocStyle rs;
     if (hasMOVWT())
@@ -3300,7 +3352,7 @@ MacroAssemblerARM::ma_call(void *dest)
     else
         rs = L_LDR;
 
-    ma_movPatchable(Imm32((uint32_t) dest), CallReg, Always, rs);
+    ma_movPatchable(dest, CallReg, Always, rs);
     as_blx(CallReg);
 }
 
@@ -3561,7 +3613,16 @@ MacroAssemblerARMCompat::callWithABI(void *fun, Result result)
 {
     uint32_t stackAdjust;
     callWithABIPre(&stackAdjust);
-    ma_call(fun);
+    ma_call(ImmPtr(fun));
+    callWithABIPost(stackAdjust, result);
+}
+
+void
+MacroAssemblerARMCompat::callWithABI(AsmJSImmPtr imm, Result result)
+{
+    uint32_t stackAdjust;
+    callWithABIPre(&stackAdjust);
+    call(imm);
     callWithABIPost(stackAdjust, result);
 }
 

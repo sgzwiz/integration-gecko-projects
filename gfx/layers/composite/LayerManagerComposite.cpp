@@ -148,7 +148,7 @@ LayerManagerComposite::BeginTransaction()
 }
 
 void
-LayerManagerComposite::BeginTransactionWithTarget(gfxContext *aTarget)
+LayerManagerComposite::BeginTransactionWithDrawTarget(DrawTarget* aTarget)
 {
   mInTransaction = true;
 
@@ -344,6 +344,7 @@ LayerManagerComposite::Render()
   }
 
   if (actualBounds.IsEmpty()) {
+    mCompositor->GetWidget()->PostRender(this);
     return;
   }
 
@@ -369,6 +370,8 @@ LayerManagerComposite::Render()
     PROFILER_LABEL("LayerManagerComposite", "EndFrame");
     mCompositor->EndFrame();
   }
+
+  mCompositor->GetWidget()->PostRender(this);
 }
 
 void
@@ -759,7 +762,8 @@ LayerManagerComposite::NotifyShadowTreeTransaction()
 bool
 LayerManagerComposite::CanUseCanvasLayerForSize(const gfxIntSize &aSize)
 {
-  return mCompositor->CanUseCanvasLayerForSize(aSize);
+  return mCompositor->CanUseCanvasLayerForSize(gfx::IntSize(aSize.width,
+                                                            aSize.height));
 }
 
 TextureFactoryIdentifier

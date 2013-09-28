@@ -52,6 +52,7 @@ JSCompartment::JSCompartment(Zone *zone, const JS::CompartmentOptions &options =
     lastAnimationTime(0),
     regExps(runtime_),
     typeReprs(runtime_),
+    globalWriteBarriered(false),
     propertyTree(thisForCtor()),
     gcIncomingGrayPointers(NULL),
     gcLiveArrayBuffers(NULL),
@@ -288,6 +289,13 @@ JSCompartment::wrap(JSContext *cx, MutableHandleObject obj, HandleObject existin
     if (obj->compartment() == this)
         return WrapForSameCompartment(cx, obj);
 
+    /* Unwrap the object, but don't unwrap outer windows. */
+    unsigned flags = 0;
+    obj.set(UncheckedUnwrap(obj, /* stopAtOuter = */ true, &flags));
+
+    if (obj->compartment() == this)
+        return WrapForSameCompartment(cx, obj);
+
     /* Translate StopIteration singleton. */
     if (obj->is<StopIterationObject>()) {
         RootedValue v(cx);
@@ -296,13 +304,6 @@ JSCompartment::wrap(JSContext *cx, MutableHandleObject obj, HandleObject existin
         obj.set(&v.toObject());
         return true;
     }
-
-    /* Unwrap the object, but don't unwrap outer windows. */
-    unsigned flags = 0;
-    obj.set(UncheckedUnwrap(obj, /* stopAtOuter = */ true, &flags));
-
-    if (obj->compartment() == this)
-        return WrapForSameCompartment(cx, obj);
 
     /* Invoke the prewrap callback. We're a bit worried about infinite
      * recursion here, so we do a check - see bug 809295. */

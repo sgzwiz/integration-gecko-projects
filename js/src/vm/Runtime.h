@@ -11,6 +11,7 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/Scoped.h"
 #include "mozilla/ThreadLocal.h"
 
 #include <setjmp.h>
@@ -18,16 +19,22 @@
 #include "jsatom.h"
 #include "jsclist.h"
 #include "jsgc.h"
-#include "jsproxy.h"
+#ifdef DEBUG
+# include "jsproxy.h"
+#endif
 #include "jsscript.h"
 
 #include "ds/FixedSizeHash.h"
 #include "frontend/ParseMaps.h"
-#include "gc/Nursery.h"
+#ifdef JSGC_GENERATIONAL
+# include "gc/Nursery.h"
+#endif
 #include "gc/Statistics.h"
-#include "gc/StoreBuffer.h"
+#ifdef JSGC_GENERATIONAL
+# include "gc/StoreBuffer.h"
+#endif
 #ifdef XP_MACOSX
-#include "jit/AsmJSSignalHandlers.h"
+# include "jit/AsmJSSignalHandlers.h"
 #endif
 #include "js/HashTable.h"
 #include "js/Vector.h"
@@ -536,8 +543,8 @@ class PerThreadData : public PerThreadDataFriendFields,
     js::Activation *const *addressOfActivation() const {
         return &activation_;
     }
-    js::AsmJSActivation *const *addressOfAsmJSActivationStackReadOnly() const {
-        return &asmJSActivationStack_;
+    static unsigned offsetOfAsmJSActivationStackReadOnly() {
+        return offsetof(PerThreadData, asmJSActivationStack_);
     }
 
     js::AsmJSActivation *asmJSActivationStackFromAnyThread() const {
@@ -1275,7 +1282,7 @@ struct JSRuntime : public JS::shadow::Runtime,
         return !contextList.isEmpty();
     }
 
-    JS_SourceHook       sourceHook;
+    mozilla::ScopedDeletePtr<js::SourceHook> sourceHook;
 
     /* Per runtime debug hooks -- see js/OldDebugAPI.h. */
     JSDebugHooks        debugHooks;
@@ -1392,10 +1399,10 @@ struct JSRuntime : public JS::shadow::Runtime,
     }
 
   private:
-    JSPrincipals        *trustedPrincipals_;
+    const JSPrincipals  *trustedPrincipals_;
   public:
-    void setTrustedPrincipals(JSPrincipals *p) { trustedPrincipals_ = p; }
-    JSPrincipals *trustedPrincipals() const { return trustedPrincipals_; }
+    void setTrustedPrincipals(const JSPrincipals *p) { trustedPrincipals_ = p; }
+    const JSPrincipals *trustedPrincipals() const { return trustedPrincipals_; }
 
     // Set of all currently-living atoms, and the compartment in which they
     // reside. The atoms compartment is additionally used to hold runtime
@@ -1476,6 +1483,8 @@ struct JSRuntime : public JS::shadow::Runtime,
     js::jit::PcScriptCache *ionPcScriptCache;
 
     js::ThreadPool threadPool;
+
+    js::DefaultJSContextCallback defaultJSContextCallback;
 
     js::CTypesActivityCallback  ctypesActivityCallback;
 

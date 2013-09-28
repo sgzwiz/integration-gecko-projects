@@ -9,9 +9,6 @@
 
 #ifdef JS_ION
 
-#include "jscntxt.h"
-#include "jscompartment.h"
-
 #include "jit/IonFrames.h"
 #include "vm/Stack.h"
 
@@ -158,8 +155,8 @@ class BaselineFrame
 
     Value &unaliasedFormal(unsigned i, MaybeCheckAliasing checkAliasing = CHECK_ALIASING) const {
         JS_ASSERT(i < numFormalArgs());
-        JS_ASSERT_IF(checkAliasing, !script()->argsObjAliasesFormals());
-        JS_ASSERT_IF(checkAliasing, !script()->formalIsAliased(i));
+        JS_ASSERT_IF(checkAliasing, !script()->argsObjAliasesFormals() &&
+                                    !script()->formalIsAliased(i));
         return argv()[i];
     }
 

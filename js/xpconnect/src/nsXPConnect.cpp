@@ -30,12 +30,6 @@
 
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Exceptions.h"
-#include "mozilla/dom/IDBIndexBinding.h"
-#include "mozilla/dom/IDBObjectStoreBinding.h"
-#include "mozilla/dom/IDBOpenDBRequestBinding.h"
-#include "mozilla/dom/IDBRequestBinding.h"
-#include "mozilla/dom/IDBTransactionBinding.h"
-#include "mozilla/dom/IDBVersionChangeEventBinding.h"
 #include "mozilla/dom/TextDecoderBinding.h"
 #include "mozilla/dom/TextEncoderBinding.h"
 #include "mozilla/dom/DOMErrorBinding.h"
@@ -530,13 +524,11 @@ nsXPConnect::InitClassesWithNewWrappedGlobal(JSContext * aJSContext,
     MOZ_ASSERT(js::GetObjectClass(global)->flags & JSCLASS_DOM_GLOBAL);
 
     // Init WebIDL binding constructors wanted on all XPConnect globals.
-    if (!IDBIndexBinding::GetConstructorObject(aJSContext, global) ||
-        !IDBObjectStoreBinding::GetConstructorObject(aJSContext, global) ||
-        !IDBOpenDBRequestBinding::GetConstructorObject(aJSContext, global) ||
-        !IDBRequestBinding::GetConstructorObject(aJSContext, global) ||
-        !IDBTransactionBinding::GetConstructorObject(aJSContext, global) ||
-        !IDBVersionChangeEventBinding::GetConstructorObject(aJSContext, global) ||
-        !TextDecoderBinding::GetConstructorObject(aJSContext, global) ||
+    // Additional bindings may be created lazily, see BackstagePass::NewResolve.
+    //
+    // XXX Please do not add any additional classes here without the approval of
+    //     the XPConnect module owner.
+    if (!TextDecoderBinding::GetConstructorObject(aJSContext, global) ||
         !TextEncoderBinding::GetConstructorObject(aJSContext, global) ||
         !DOMErrorBinding::GetConstructorObject(aJSContext, global)) {
         return UnexpectedFailure(NS_ERROR_FAILURE);
@@ -1678,6 +1670,27 @@ JS_EXPORT_API(void) DumpCompleteHeap()
 
 } // extern "C"
 
+namespace xpc {
+
+bool
+Atob(JSContext *cx, unsigned argc, jsval *vp)
+{
+    if (!argc)
+        return true;
+
+    return xpc::Base64Decode(cx, JS_ARGV(cx, vp)[0], &JS_RVAL(cx, vp));
+}
+
+bool
+Btoa(JSContext *cx, unsigned argc, jsval *vp)
+{
+    if (!argc)
+        return true;
+
+    return xpc::Base64Encode(cx, JS_ARGV(cx, vp)[0], &JS_RVAL(cx, vp));
+}
+
+} // namespace xpc
 
 namespace mozilla {
 namespace dom {

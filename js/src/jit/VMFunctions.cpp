@@ -7,9 +7,9 @@
 #include "jit/VMFunctions.h"
 
 #include "builtin/ParallelArray.h"
+#include "builtin/TypedObject.h"
 #include "frontend/BytecodeCompiler.h"
 #include "jit/BaselineIC.h"
-#include "jit/Ion.h"
 #include "jit/IonCompartment.h"
 #include "jit/IonFrames.h"
 #include "vm/ArrayObject.h"
@@ -630,6 +630,16 @@ PostWriteBarrier(JSRuntime *rt, JSObject *obj)
     JS_ASSERT(!IsInsideNursery(rt, obj));
     rt->gcStoreBuffer.putWholeCell(obj);
 }
+
+void
+PostGlobalWriteBarrier(JSRuntime *rt, JSObject *obj)
+{
+    JS_ASSERT(obj->is<GlobalObject>());
+    if (!obj->compartment()->globalWriteBarriered) {
+        PostWriteBarrier(rt, obj);
+        obj->compartment()->globalWriteBarriered = true;
+    }
+}
 #endif
 
 uint32_t
@@ -871,6 +881,13 @@ InitBaselineFrameForOsr(BaselineFrame *frame, StackFrame *interpFrame, uint32_t 
 {
     return frame->initForOsr(interpFrame, numStackValues);
 }
+
+JSObject *CreateDerivedTypedObj(JSContext *cx, HandleObject type,
+                                HandleObject owner, int32_t offset)
+{
+    return BinaryBlock::createDerived(cx, type, owner, offset);
+}
+
 
 } // namespace jit
 } // namespace js

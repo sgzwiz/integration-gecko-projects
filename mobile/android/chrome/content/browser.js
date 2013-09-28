@@ -1402,7 +1402,9 @@ var BrowserApp = {
         break;
 
       case "keyword-search":
-        // This assumes that the user can only perform a keyword search on the selected tab.
+        // This event refers to a search via the URL bar, not a bookmarks
+        // keyword search. Note that this code assumes that the user can only
+        // perform a keyword search on the selected tab.
         this.selectedTab.userSearch = aData;
 
         let engine = aSubject.QueryInterface(Ci.nsISearchEngine);
@@ -4666,14 +4668,14 @@ const ElementTouchHelper = {
   anyElementFromPoint: function(aX, aY, aWindow) {
     let win = (aWindow ? aWindow : BrowserApp.selectedBrowser.contentWindow);
     let cwu = win.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
-    let elem = cwu.elementFromPoint(aX, aY, false, true);
+    let elem = cwu.elementFromPoint(aX, aY, true, true);
 
     while (elem && (elem instanceof HTMLIFrameElement || elem instanceof HTMLFrameElement)) {
       let rect = elem.getBoundingClientRect();
       aX -= rect.left;
       aY -= rect.top;
       cwu = elem.contentDocument.defaultView.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
-      elem = cwu.elementFromPoint(aX, aY, false, true);
+      elem = cwu.elementFromPoint(aX, aY, true, true);
     }
 
     return elem;
@@ -5136,10 +5138,16 @@ var FormAssistant = {
 
       // Reset invalid submit state on each pageshow
       case "pageshow":
-        let target = aEvent.originalTarget;
-        let selectedDocument = BrowserApp.selectedBrowser.contentDocument;
-        if (target == selectedDocument || target.ownerDocument == selectedDocument)
-          this._invalidSubmit = false;
+        if (!this._invalidSubmit)
+          return;
+
+        let selectedBrowser = BrowserApp.selectedBrowser;
+        if (selectedBrowser) {
+          let selectedDocument = selectedBrowser.contentDocument;
+          let target = aEvent.originalTarget;
+          if (target == selectedDocument || target.ownerDocument == selectedDocument)
+            this._invalidSubmit = false;
+        }
     }
   },
 

@@ -552,7 +552,7 @@ EnsureTrackPropertyTypes(JSContext *cx, JSObject *obj, jsid id)
 
     if (obj->hasSingletonType()) {
         AutoEnterAnalysis enter(cx);
-        obj->type()->getProperty(cx, id, true);
+        obj->type()->getProperty(cx, id);
     }
 
     JS_ASSERT(obj->type()->unknownProperties() || TrackPropertyTypes(cx, obj, id));
@@ -720,7 +720,7 @@ TypeScript::BytecodeTypes(JSScript *script, jsbytecode *pc)
     // Fall back to a binary search.
     size_t bottom = 0;
     size_t top = script->nTypeSets - 1;
-    size_t mid = (bottom + top) / 2;
+    size_t mid = bottom + (top - bottom) / 2;
     while (mid < top) {
         if (bytecodeMap[mid] < offset)
             bottom = mid + 1;
@@ -728,7 +728,7 @@ TypeScript::BytecodeTypes(JSScript *script, jsbytecode *pc)
             top = mid;
         else
             break;
-        mid = (bottom + top) / 2;
+        mid = bottom + (top - bottom) / 2;
     }
 
     // We should have have zeroed in on either the exact offset, unless there
@@ -1337,14 +1337,12 @@ TypeSet::addType(ExclusiveContext *cxArg, Type type)
 }
 
 inline void
-TypeSet::setOwnProperty(ExclusiveContext *cxArg, bool configured)
+TypeSet::setConfiguredProperty(ExclusiveContext *cxArg)
 {
-    TypeFlags nflags = TYPE_FLAG_OWN_PROPERTY | (configured ? TYPE_FLAG_CONFIGURED_PROPERTY : 0);
-
-    if ((flags & nflags) == nflags)
+    if (flags & TYPE_FLAG_CONFIGURED_PROPERTY)
         return;
 
-    flags |= nflags;
+    flags |= TYPE_FLAG_CONFIGURED_PROPERTY;
 
     /* Propagate the change to all constraints. */
     if (JSContext *cx = cxArg->maybeJSContext()) {
@@ -1417,6 +1415,16 @@ TypeSet::getTypeOrSingleObject(JSContext *cx, unsigned i, TypeObject **result) c
     return true;
 }
 
+inline const Class *
+TypeSet::getObjectClass(unsigned i) const
+{
+    if (JSObject *object = getSingleObject(i))
+        return object->getClass();
+    if (TypeObject *object = getTypeObject(i))
+        return object->clasp;
+    return NULL;
+}
+
 /////////////////////////////////////////////////////////////////////
 // TypeObject
 /////////////////////////////////////////////////////////////////////
@@ -1454,7 +1462,7 @@ TypeObject::setBasePropertyCount(uint32_t count)
 }
 
 inline HeapTypeSet *
-TypeObject::getProperty(ExclusiveContext *cx, jsid id, bool own)
+TypeObject::getProperty(ExclusiveContext *cx, jsid id)
 {
     JS_ASSERT(cx->compartment()->activeAnalysis);
 
@@ -1494,11 +1502,7 @@ TypeObject::getProperty(ExclusiveContext *cx, jsid id, bool own)
         }
     }
 
-    HeapTypeSet *types = &(*pprop)->types;
-    if (own)
-        types->setOwnProperty(cx, false);
-
-    return types;
+    return &(*pprop)->types;
 }
 
 inline HeapTypeSet *

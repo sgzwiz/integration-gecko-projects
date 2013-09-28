@@ -12,6 +12,8 @@
 #include "nsGlobalWindow.h"
 #include "nsIAppsService.h"
 #include "PCOMContentPermissionRequestChild.h"
+#include "nsIScriptSecurityManager.h"
+#include "nsServiceManagerUtils.h"
 
 namespace mozilla {
 namespace dom {

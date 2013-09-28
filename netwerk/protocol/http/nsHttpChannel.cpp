@@ -10,13 +10,11 @@
 #include "nsHttp.h"
 #include "nsHttpChannel.h"
 #include "nsHttpHandler.h"
-#include "nsStandardURL.h"
 #include "nsIApplicationCacheService.h"
 #include "nsIApplicationCacheContainer.h"
 #include "nsICacheStorageService.h"
 #include "nsICacheStorage.h"
 #include "nsICacheEntry.h"
-#include "nsIAuthInformation.h"
 #include "nsICryptoHash.h"
 #include "nsIStringBundle.h"
 #include "nsIStreamListenerTee.h"
@@ -39,7 +37,6 @@
 #include "nsAlgorithm.h"
 #include "GeckoProfiler.h"
 #include "nsIConsoleService.h"
-#include "NullHttpTransaction.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/VisualEventTracer.h"
 #include "nsISSLSocketControl.h"
@@ -47,21 +44,29 @@
 #include "nsContentUtils.h"
 #include "nsIPermissionManager.h"
 #include "nsIPrincipal.h"
-#include "nsISecurityConsoleMessage.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsISSLStatus.h"
 #include "nsISSLStatusProvider.h"
-#include "nsIDOMWindow.h"
 #include "LoadContextInfo.h"
+#include "netCore.h"
+#include "nsHttpTransaction.h"
+#include "nsICacheEntryDescriptor.h"
+#include "nsICancelable.h"
+#include "nsIHttpChannelAuthProvider.h"
+#include "nsIHttpEventSink.h"
+#include "nsIPrompt.h"
+#include "nsInputStreamPump.h"
+#include "nsURLHelper.h"
+#include "nsISocketTransport.h"
+#include "nsICacheSession.h"
+#include "nsIStreamConverterService.h"
+#include "nsISiteSecurityService.h"
+#include "nsCRT.h"
+#include "CacheObserver.h"
 
 namespace mozilla { namespace net {
 
 namespace {
-
-// Device IDs for various cache types
-const char kDiskDeviceID[] = "disk";
-const char kMemoryDeviceID[] = "memory";
-const char kOfflineDeviceID[] = "offline";
 
 // True if the local cache should be bypassed when processing a request.
 #define BYPASS_LOCAL_CACHE(loadFlags) \
@@ -79,19 +84,14 @@ enum CacheDisposition {
     kCacheMissed = 4
 };
 
-const Telemetry::ID UNKNOWN_DEVICE = static_cast<Telemetry::ID>(0);
 void
-AccumulateCacheHitTelemetry(Telemetry::ID deviceHistogram,
-                            CacheDisposition hitOrMiss)
+AccumulateCacheHitTelemetry(CacheDisposition hitOrMiss)
 {
-    // If we had a cache hit, or we revalidated an entry, then we should know
-    // the device for the entry already. But, sometimes this assertion fails!
-    // (Bug 769497).
-    // MOZ_ASSERT(deviceHistogram != UNKNOWN_DEVICE || hitOrMiss == kCacheMissed);
-
-    Telemetry::Accumulate(Telemetry::HTTP_CACHE_DISPOSITION_2, hitOrMiss);
-    if (deviceHistogram != UNKNOWN_DEVICE) {
-        Telemetry::Accumulate(deviceHistogram, hitOrMiss);
+    if (!CacheObserver::UseNewCache()) {
+        Telemetry::Accumulate(Telemetry::HTTP_CACHE_DISPOSITION_2, hitOrMiss);
+    }
+    else {
+        Telemetry::Accumulate(Telemetry::HTTP_CACHE_DISPOSITION_2_V2, hitOrMiss);
     }
 }
 
@@ -179,7 +179,6 @@ AutoRedirectVetoNotifier::ReportRedirectResult(bool succeeded)
 nsHttpChannel::nsHttpChannel()
     : HttpAsyncAborter<nsHttpChannel>(MOZ_THIS_IN_INITIALIZER_LIST())
     , mLogicalOffset(0)
-    , mCacheEntryDeviceTelemetryID(UNKNOWN_DEVICE)
     , mPostID(0)
     , mRequestTime(0)
     , mOfflineCacheLastModifiedTime(0)
@@ -339,8 +338,7 @@ nsHttpChannel::ContinueConnect()
                 event->Revoke();
             }
 
-            AccumulateCacheHitTelemetry(mCacheEntryDeviceTelemetryID,
-                                        kCacheHit);
+            AccumulateCacheHitTelemetry(kCacheHit);
 
             return rv;
         }
@@ -1333,8 +1331,7 @@ nsHttpChannel::ProcessResponse()
     else
         cacheDisposition = kCacheMissedViaReval;
 
-    AccumulateCacheHitTelemetry(mCacheEntryDeviceTelemetryID,
-                                cacheDisposition);
+    AccumulateCacheHitTelemetry(cacheDisposition);
 
     return rv;
 }

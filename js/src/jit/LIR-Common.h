@@ -501,6 +501,32 @@ public:
     }
 };
 
+class LNewDerivedTypedObject : public LCallInstructionHelper<1, 3, 0>
+{
+  public:
+    LIR_HEADER(NewDerivedTypedObject);
+
+    LNewDerivedTypedObject(const LAllocation &type,
+                           const LAllocation &owner,
+                           const LAllocation &offset) {
+        setOperand(0, type);
+        setOperand(1, owner);
+        setOperand(2, offset);
+    }
+
+    const LAllocation *type() {
+        return getOperand(0);
+    }
+
+    const LAllocation *owner() {
+        return getOperand(1);
+    }
+
+    const LAllocation *offset() {
+        return getOperand(2);
+    }
+};
+
 class LNewStringObject : public LInstructionHelper<1, 1, 1>
 {
   public:
@@ -2654,6 +2680,23 @@ class LDoubleToInt32 : public LInstructionHelper<1, 1, 0>
     }
 };
 
+// Convert a float32 to an int32.
+//   Input: floating-point register
+//   Output: 32-bit integer
+//   Bailout: if the float32 cannot be converted to an integer.
+class LFloat32ToInt32 : public LInstructionHelper<1, 1, 0>
+{
+  public:
+    LIR_HEADER(Float32ToInt32)
+
+    LFloat32ToInt32(const LAllocation &in) {
+        setOperand(0, in);
+    }
+
+    MToInt32 *mir() const {
+        return mir_->toToInt32();
+    }
+};
 
 // Convert a double to a truncated int32.
 //   Input: floating-point register
@@ -2772,6 +2815,22 @@ class LOsrScopeChain : public LInstructionHelper<1, 1, 0>
 
     const MOsrScopeChain *mir() {
         return mir_->toOsrScopeChain();
+    }
+};
+
+// Materialize a JSObject ArgumentsObject stored in an interpreter frame for OSR.
+class LOsrArgumentsObject : public LInstructionHelper<1, 1, 0>
+{
+  public:
+    LIR_HEADER(OsrArgumentsObject)
+
+    LOsrArgumentsObject(const LAllocation &entry)
+    {
+        setOperand(0, entry);
+    }
+
+    const MOsrArgumentsObject *mir() {
+        return mir_->toOsrArgumentsObject();
     }
 };
 
@@ -3035,6 +3094,20 @@ class LTypedArrayElements : public LInstructionHelper<1, 1, 0>
     LIR_HEADER(TypedArrayElements)
 
     LTypedArrayElements(const LAllocation &object) {
+        setOperand(0, object);
+    }
+    const LAllocation *object() {
+        return getOperand(0);
+    }
+};
+
+// Load a typed array's elements vector.
+class LTypedObjectElements : public LInstructionHelper<1, 1, 0>
+{
+  public:
+    LIR_HEADER(TypedObjectElements)
+
+    LTypedObjectElements(const LAllocation &object) {
         setOperand(0, object);
     }
     const LAllocation *object() {

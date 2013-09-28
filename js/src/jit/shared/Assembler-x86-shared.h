@@ -131,6 +131,7 @@ class AssemblerX86Shared
 
     Vector<CodeLabel, 0, SystemAllocPolicy> codeLabels_;
     Vector<RelativePatch, 8, SystemAllocPolicy> jumps_;
+    AsmJSAbsoluteLinkVector asmJSAbsoluteLinks_;
     CompactBufferWriter jumpRelocations_;
     CompactBufferWriter dataRelocations_;
     CompactBufferWriter preBarriers_;
@@ -290,6 +291,13 @@ class AssemblerX86Shared
     }
     CodeLabel codeLabel(size_t i) {
         return codeLabels_[i];
+    }
+
+    size_t numAsmJSAbsoluteLinks() const {
+        return asmJSAbsoluteLinks_.length();
+    }
+    const AsmJSAbsoluteLink &asmJSAbsoluteLink(size_t i) const {
+        return asmJSAbsoluteLinks_[i];
     }
 
     // Size of the instruction stream, in bytes.
@@ -687,7 +695,7 @@ class AssemblerX86Shared
     void j(Condition cond, RepatchLabel *label) { jSrc(cond, label); }
     void jmp(RepatchLabel *label) { jmpSrc(label); }
 
-    void jmp(const Operand &op){
+    void jmp(const Operand &op) {
         switch (op.kind()) {
           case Operand::MEM_REG_DISP:
             masm.jmp_m(op.disp(), op.base());
@@ -1158,6 +1166,9 @@ class AssemblerX86Shared
     void push(const Register &src) {
         masm.push_r(src.code());
     }
+    void push(const Address &src) {
+        masm.push_m(src.offset, src.base.code());
+    }
 
     void pop(const Operand &src) {
         switch (src.kind()) {
@@ -1291,6 +1302,10 @@ class AssemblerX86Shared
     void movmskpd(const FloatRegister &src, const Register &dest) {
         JS_ASSERT(HasSSE2());
         masm.movmskpd_rr(src.code(), dest.code());
+    }
+    void movmskps(const FloatRegister &src, const Register &dest) {
+        JS_ASSERT(HasSSE2());
+        masm.movmskps_rr(src.code(), dest.code());
     }
     void ptest(const FloatRegister &lhs, const FloatRegister &rhs) {
         JS_ASSERT(HasSSE41());
@@ -1582,12 +1597,15 @@ class AssemblerX86Shared
         *((int32_t *) dataLabel.raw() - 1) = toWrite.value;
     }
 
-    static void patchDataWithValueCheck(CodeLocationLabel data, ImmPtr newData,
-                                        ImmPtr expectedData) {
+    static void patchDataWithValueCheck(CodeLocationLabel data, PatchedImmPtr newData,
+                                        PatchedImmPtr expectedData) {
         // The pointer given is a pointer to *after* the data.
         uintptr_t *ptr = ((uintptr_t *) data.raw()) - 1;
         JS_ASSERT(*ptr == (uintptr_t)expectedData.value);
         *ptr = (uintptr_t)newData.value;
+    }
+    static void patchDataWithValueCheck(CodeLocationLabel data, ImmPtr newData, ImmPtr expectedData) {
+        patchDataWithValueCheck(data, PatchedImmPtr(newData.value), PatchedImmPtr(expectedData.value));
     }
     static uint32_t nopSize() {
         return 1;

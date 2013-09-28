@@ -18,6 +18,7 @@
 #include "jit/IonMacroAssembler.h"
 #include "jit/PerfSpewer.h"
 #include "jit/RegisterSets.h"
+#include "vm/TypedArrayObject.h"
 
 namespace js {
 
@@ -54,11 +55,20 @@ struct AsmJSStaticLinkData
 
     typedef Vector<RelativeLink> RelativeLinkVector;
 
+    struct AbsoluteLink
+    {
+        jit::CodeOffsetLabel patchAt;
+        jit::AsmJSImmKind target;
+    };
+
+    typedef Vector<AbsoluteLink> AbsoluteLinkVector;
+
     size_t operationCallbackExitOffset;
     RelativeLinkVector relativeLinks;
+    AbsoluteLinkVector absoluteLinks;
 
     AsmJSStaticLinkData(ExclusiveContext *cx)
-      : relativeLinks(cx)
+      : relativeLinks(cx), absoluteLinks(cx)
     {}
 };
 
@@ -396,7 +406,7 @@ class AsmJSModule
             perfProfiledBlocksFunctions_[i].trace(trc);
 #endif
         if (maybeHeap_)
-            MarkObject(trc, &maybeHeap_, "asm.js heap");
+            gc::MarkObject(trc, &maybeHeap_, "asm.js heap");
 
         if (globalArgumentName_)
             MarkStringUnbarriered(trc, &globalArgumentName_, "asm.js global argument name");
@@ -673,7 +683,7 @@ class AsmJSModule
     }
 
     bool allocateAndCopyCode(ExclusiveContext *cx, jit::MacroAssembler &masm);
-    void staticallyLink(const AsmJSStaticLinkData &linkData);
+    void staticallyLink(const AsmJSStaticLinkData &linkData, ExclusiveContext *cx);
 
     uint8_t *codeBase() const {
         JS_ASSERT(code_);

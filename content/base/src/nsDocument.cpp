@@ -39,7 +39,7 @@
 #include "nsDOMClassInfo.h"
 #include "nsCxPusher.h"
 
-#include "nsGUIEvent.h"
+#include "mozilla/BasicEvents.h"
 #include "nsAsyncDOMEvent.h"
 #include "nsIDOMNodeFilter.h"
 
@@ -120,7 +120,7 @@
 #include "nsDateTimeFormatCID.h"
 #include "nsIDateTimeFormat.h"
 #include "nsEventDispatcher.h"
-#include "nsMutationEvent.h"
+#include "mozilla/MutationEvent.h"
 #include "nsDOMCID.h"
 
 #include "jsapi.h"
@@ -2681,8 +2681,7 @@ nsDocument::InitCSP(nsIChannel* aChannel)
   if (csp) {
     // Copy into principal
     nsIPrincipal* principal = GetPrincipal();
-    rv = principal->SetCsp(csp);
-    NS_ENSURE_SUCCESS(rv, rv);
+    principal->SetCsp(csp);
 #ifdef PR_LOGGING
     PR_LOG(gCspPRLog, PR_LOG_DEBUG,
            ("Inserted CSP into principal %p", principal));
@@ -8195,7 +8194,7 @@ nsDocument::MutationEventDispatched(nsINode* aTarget)
 
     int32_t realTargetCount = realTargets.Count();
     for (int32_t k = 0; k < realTargetCount; ++k) {
-      nsMutationEvent mutation(true, NS_MUTATION_SUBTREEMODIFIED);
+      InternalMutationEvent mutation(true, NS_MUTATION_SUBTREEMODIFIED);
       (new nsAsyncDOMEvent(realTargets[k], mutation))->RunDOMEventWhenSafe();
     }
   }

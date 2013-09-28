@@ -9,28 +9,26 @@
 #include "TabChild.h"
 
 #include "Layers.h"
-#include "Blob.h"
 #include "ContentChild.h"
 #include "IndexedDBChild.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/IntentionalCrash.h"
 #include "mozilla/docshell/OfflineCacheUpdateChild.h"
-#include "mozilla/dom/PContentChild.h"
 #include "mozilla/dom/PContentDialogChild.h"
 #include "mozilla/ipc/DocumentRendererChild.h"
 #include "mozilla/ipc/FileDescriptorUtils.h"
 #include "mozilla/layers/AsyncPanZoomController.h"
 #include "mozilla/layers/CompositorChild.h"
 #include "mozilla/layers/ImageBridgeChild.h"
-#include "mozilla/layers/PLayerTransactionChild.h"
 #include "mozilla/layers/ShadowLayers.h"
 #include "mozilla/layout/RenderFrameChild.h"
+#include "mozilla/MouseEvents.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/TextEvents.h"
+#include "mozilla/TouchEvents.h"
 #include "mozilla/unused.h"
 #include "mozIApplication.h"
-#include "nsComponentManagerUtils.h"
-#include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsCxPusher.h"
 #include "nsEmbedCID.h"
@@ -40,51 +38,32 @@
 #include "nsExceptionHandler.h"
 #endif
 #include "mozilla/dom/Element.h"
-#include "nsIAppsService.h"
 #include "nsIBaseWindow.h"
 #include "nsICachedFileDescriptorListener.h"
-#include "nsIComponentManager.h"
+#include "nsIDialogParamBlock.h"
 #include "nsIDocumentInlines.h"
-#include "nsIDOMClassInfo.h"
-#include "nsIDOMElement.h"
+#include "nsIDocShellTreeOwner.h"
 #include "nsIDOMEvent.h"
 #include "nsIDOMWindow.h"
 #include "nsIDOMWindowUtils.h"
 #include "nsIDocShell.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsIJSRuntimeService.h"
-#include "nsISSLStatusProvider.h"
-#include "nsIScriptContext.h"
-#include "nsIScriptGlobalObject.h"
-#include "nsIScriptSecurityManager.h"
-#include "nsISecureBrowserUI.h"
-#include "nsIServiceManager.h"
-#include "nsISupportsImpl.h"
 #include "nsIURI.h"
 #include "nsIURIFixup.h"
 #include "nsCDefaultURIFixup.h"
-#include "nsView.h"
 #include "nsIWebBrowser.h"
 #include "nsIWebBrowserFocus.h"
 #include "nsIWebBrowserSetup.h"
 #include "nsIWebProgress.h"
-#include "nsIXPCSecurityManager.h"
 #include "nsInterfaceHashtable.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
-#include "nsGlobalWindow.h"
 #include "nsLayoutUtils.h"
-#include "nsPresContext.h"
 #include "nsPrintfCString.h"
-#include "nsScriptLoader.h"
-#include "nsSerializationHelper.h"
 #include "nsThreadUtils.h"
 #include "nsWeakReference.h"
 #include "PCOMContentPermissionRequestChild.h"
 #include "PuppetWidget.h"
 #include "StructuredCloneUtils.h"
-#include "xpcpublic.h"
 #include "nsViewportInfo.h"
 #include "JavaScriptChild.h"
 #include "APZCCallbackHelper.h"
@@ -1723,7 +1702,7 @@ TabChild::DispatchSynthesizedMouseEvent(uint32_t aMsg, uint64_t aTime,
 }
 
 static Touch*
-GetTouchForIdentifier(const nsTouchEvent& aEvent, int32_t aId)
+GetTouchForIdentifier(const WidgetTouchEvent& aEvent, int32_t aId)
 {
   for (uint32_t i = 0; i < aEvent.touches.Length(); ++i) {
     Touch* touch = static_cast<Touch*>(aEvent.touches[i].get());
@@ -1735,7 +1714,7 @@ GetTouchForIdentifier(const nsTouchEvent& aEvent, int32_t aId)
 }
 
 void
-TabChild::UpdateTapState(const nsTouchEvent& aEvent, nsEventStatus aStatus)
+TabChild::UpdateTapState(const WidgetTouchEvent& aEvent, nsEventStatus aStatus)
 {
   static bool sHavePrefs;
   static bool sClickHoldContextMenusEnabled;
@@ -1854,9 +1833,9 @@ TabChild::CancelTapTracking()
 }
 
 bool
-TabChild::RecvRealTouchEvent(const nsTouchEvent& aEvent)
+TabChild::RecvRealTouchEvent(const WidgetTouchEvent& aEvent)
 {
-  nsTouchEvent localEvent(aEvent);
+  WidgetTouchEvent localEvent(aEvent);
   nsEventStatus status = DispatchWidgetEvent(localEvent);
 
   if (IsAsyncPanZoomEnabled()) {
@@ -1874,7 +1853,7 @@ TabChild::RecvRealTouchEvent(const nsTouchEvent& aEvent)
 }
 
 bool
-TabChild::RecvRealTouchMoveEvent(const nsTouchEvent& aEvent)
+TabChild::RecvRealTouchMoveEvent(const WidgetTouchEvent& aEvent)
 {
   return RecvRealTouchEvent(aEvent);
 }

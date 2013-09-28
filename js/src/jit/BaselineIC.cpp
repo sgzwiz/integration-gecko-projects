@@ -10,13 +10,11 @@
 #include "jslibmath.h"
 
 #include "builtin/Eval.h"
-#include "jit/BaselineCompiler.h"
 #include "jit/BaselineHelpers.h"
 #include "jit/BaselineJIT.h"
 #include "jit/IonLinker.h"
 #include "jit/IonSpewer.h"
 #include "jit/Lowering.h"
-#include "jit/PerfSpewer.h"
 #include "jit/VMFunctions.h"
 
 #include "jsboolinlines.h"
@@ -468,7 +466,10 @@ ICTypeMonitor_Fallback::resetMonitorStubChain(Zone *zone)
         // We are removing edges from monitored stubs to gcthings (IonCode).
         // Perform one final trace of all monitor stubs for incremental GC,
         // as it must know about those edges.
-        this->trace(zone->barrierTracer());
+        if (hasFallbackStub_) {
+            for (ICStub *s = firstMonitorStub_; !s->isTypeMonitor_Fallback(); s = s->next())
+                s->trace(zone->barrierTracer());
+        }
     }
 
     firstMonitorStub_ = this;
@@ -847,9 +848,13 @@ PrepareOsrTempData(JSContext *cx, ICUseCount_Fallback *stub, BaselineFrame *fram
     // Copy formal args and thisv.
     memcpy(stackFrameStart, frame->argv() - 1, (numFormalArgs + 1) * sizeof(Value));
 
-    // Initialize ScopeChain, Exec, and Flags fields in StackFrame struct.
+    // Initialize ScopeChain, Exec, ArgsObj, and Flags fields in StackFrame struct.
     uint8_t *stackFrame = info->stackFrame;
     *((JSObject **) (stackFrame + StackFrame::offsetOfScopeChain())) = frame->scopeChain();
+    if (frame->script()->needsArgsObj()) {
+        JS_ASSERT(frame->hasArgsObj());
+        *((JSObject **) (stackFrame + StackFrame::offsetOfArgumentsObject())) = &frame->argsObj();
+    }
     if (frame->isFunctionFrame()) {
         // Store the function in exec field, and StackFrame::FUNCTION for flags.
         *((JSFunction **) (stackFrame + StackFrame::offsetOfExec())) = frame->fun();
@@ -5961,13 +5966,8 @@ DoGetPropFallback(JSContext *cx, BaselineFrame *frame, ICGetProp_Fallback *stub,
     if (!obj)
         return false;
 
-    if (obj->getOps()->getProperty) {
-        if (!JSObject::getGeneric(cx, obj, obj, id, res))
-            return false;
-    } else {
-        if (!GetPropertyHelper(cx, obj, id, 0, res))
-            return false;
-    }
+    if (!JSObject::getGeneric(cx, obj, obj, id, res))
+        return false;
 
 #if JS_HAS_NO_SUCH_METHOD
     // Handle objects with __noSuchMethod__.

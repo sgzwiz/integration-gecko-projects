@@ -17,37 +17,28 @@
 #include "gc/Marking.h"
 #include "jit/AliasAnalysis.h"
 #include "jit/AsmJSModule.h"
-#include "jit/AsmJSSignalHandlers.h"
 #include "jit/BacktrackingAllocator.h"
-#include "jit/BaselineCompiler.h"
+#include "jit/BaselineFrame.h"
 #include "jit/BaselineInspector.h"
 #include "jit/BaselineJIT.h"
 #include "jit/CodeGenerator.h"
-#include "jit/CompilerRoot.h"
 #include "jit/EdgeCaseAnalysis.h"
 #include "jit/EffectiveAddressAnalysis.h"
 #include "jit/ExecutionModeInlines.h"
 #include "jit/IonAnalysis.h"
 #include "jit/IonBuilder.h"
 #include "jit/IonCompartment.h"
-#include "jit/IonLinker.h"
 #include "jit/IonSpewer.h"
 #include "jit/LICM.h"
 #include "jit/LinearScan.h"
 #include "jit/LIR.h"
+#include "jit/Lowering.h"
 #include "jit/ParallelSafetyAnalysis.h"
 #include "jit/PerfSpewer.h"
 #include "jit/RangeAnalysis.h"
 #include "jit/StupidAllocator.h"
 #include "jit/UnreachableCodeElimination.h"
 #include "jit/ValueNumbering.h"
-#if defined(JS_CPU_X86)
-# include "jit/x86/Lowering-x86.h"
-#elif defined(JS_CPU_X64)
-# include "jit/x64/Lowering-x64.h"
-#elif defined(JS_CPU_ARM)
-# include "jit/arm/Lowering-arm.h"
-#endif
 #include "vm/ForkJoin.h"
 
 #include "jscompartmentinlines.h"
@@ -1700,12 +1691,6 @@ CheckScript(JSContext *cx, JSScript *script, bool osr)
 
     if (!script->analyzedArgsUsage() && !script->ensureRanAnalysis(cx)) {
         IonSpew(IonSpew_Abort, "OOM under ensureRanAnalysis");
-        return false;
-    }
-
-    if (osr && script->needsArgsObj()) {
-        // OSR-ing into functions with arguments objects is not supported.
-        IonSpew(IonSpew_Abort, "OSR script has argsobj");
         return false;
     }
 

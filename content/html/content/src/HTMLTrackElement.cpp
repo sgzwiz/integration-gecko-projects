@@ -126,7 +126,7 @@ HTMLTrackElement::Track()
   if (!mTrack) {
     // We're expected to always have an internal TextTrack so create
     // an empty object to return if we don't already have one.
-    mTrack = new TextTrack(OwnerDoc()->GetParentObject());
+    mTrack = new TextTrack(OwnerDoc()->GetParentObject(), mMediaParent);
   }
 
   return mTrack;
@@ -146,7 +146,8 @@ HTMLTrackElement::CreateTextTrack()
     kind = TextTrackKind::Subtitles;
   }
 
-  mTrack = new TextTrack(OwnerDoc()->GetParentObject(), kind, label, srcLang);
+  mTrack = new TextTrack(OwnerDoc()->GetParentObject(), mMediaParent, kind,
+                         label, srcLang);
 
   if (mMediaParent) {
     mMediaParent->AddTextTrack(mTrack);
@@ -290,8 +291,15 @@ HTMLTrackElement::BindToTree(nsIDocument* aDocument,
 void
 HTMLTrackElement::UnbindFromTree(bool aDeep, bool aNullParent)
 {
-  if (mMediaParent && aNullParent) {
-    mMediaParent = nullptr;
+  if (mMediaParent) {
+    // mTrack can be null if HTMLTrackElement::LoadResource has never been
+    // called.
+    if (mTrack) {
+      mMediaParent->RemoveTextTrack(mTrack);
+    }
+    if (aNullParent) {
+      mMediaParent = nullptr;
+    }
   }
 
   nsGenericHTMLElement::UnbindFromTree(aDeep, aNullParent);

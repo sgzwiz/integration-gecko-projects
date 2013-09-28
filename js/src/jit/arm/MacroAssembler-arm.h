@@ -53,6 +53,8 @@ class MacroAssemblerARM : public Assembler
     void branchTruncateDouble(const FloatRegister &src, const Register &dest, Label *fail);
     void convertDoubleToInt32(const FloatRegister &src, const Register &dest, Label *fail,
                               bool negativeZeroCheck = true);
+    void convertFloat32ToInt32(const FloatRegister &src, const Register &dest, Label *fail,
+                               bool negativeZeroCheck = true);
 
     void convertFloatToDouble(const FloatRegister &src, const FloatRegister &dest);
     void branchTruncateFloat32(const FloatRegister &src, const Register &dest, Label *fail);
@@ -322,6 +324,7 @@ class MacroAssemblerARM : public Assembler
     void ma_vimm_f32(float value, FloatRegister dest, Condition cc = Always);
 
     void ma_vcmp(FloatRegister src1, FloatRegister src2, Condition cc = Always);
+    void ma_vcmp_f32(FloatRegister src1, FloatRegister src2, Condition cc = Always);
     void ma_vcmpz(FloatRegister src1, Condition cc = Always);
 
     void ma_vadd_f32(FloatRegister src1, FloatRegister src2, FloatRegister dst);
@@ -374,7 +377,7 @@ class MacroAssemblerARM : public Assembler
     // calls an ion function, assuming that the stack is currently not 8 byte aligned
     void ma_callIonHalfPush(const Register reg);
 
-    void ma_call(void *dest);
+    void ma_call(ImmPtr dest);
 
     // Float registers can only be loaded/stored in continuous runs
     // when using vstm/vldm.
@@ -542,7 +545,11 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void call(ImmPtr imm) {
         BufferOffset bo = m_buffer.nextOffset();
         addPendingJump(bo, imm, Relocation::HARDCODED);
-        ma_call(imm.value);
+        ma_call(imm);
+    }
+    void call(AsmJSImmPtr imm) {
+        movePtr(imm, CallReg);
+        call(CallReg);
     }
     void call(IonCode *c) {
         BufferOffset bo = m_buffer.nextOffset();
@@ -553,7 +560,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         else
             rs = L_LDR;
 
-        ma_movPatchable(Imm32((int) c->raw()), ScratchRegister, Always, rs);
+        ma_movPatchable(ImmPtr(c->raw()), ScratchRegister, Always, rs);
         ma_callIonHalfPush(ScratchRegister);
     }
     void branch(IonCode *c) {
@@ -565,7 +572,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         else
             rs = L_LDR;
 
-        ma_movPatchable(Imm32((int) c->raw()), ScratchRegister, Always, rs);
+        ma_movPatchable(ImmPtr(c->raw()), ScratchRegister, Always, rs);
         ma_bx(ScratchRegister);
     }
     void branch(const Register reg) {
@@ -592,6 +599,10 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     }
     void push(ImmGCPtr imm) {
         ma_mov(imm, ScratchRegister);
+        ma_push(ScratchRegister);
+    }
+    void push(const Address &address) {
+        ma_ldr(Operand(address.base, address.offset), ScratchRegister);
         ma_push(ScratchRegister);
     }
     void push(const Register &reg) {
@@ -652,6 +663,10 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     }
     void jump(Register reg) {
         ma_bx(reg);
+    }
+    void jump(const Address &address) {
+        ma_ldr(Operand(address.base, address.offset), ScratchRegister);
+        ma_bx(ScratchRegister);
     }
 
     void neg32(Register reg) {
@@ -935,6 +950,10 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void branchPtr(Condition cond, Register lhs, ImmPtr imm, Label *label) {
         branchPtr(cond, lhs, ImmWord(uintptr_t(imm.value)), label);
     }
+    void branchPtr(Condition cond, Register lhs, AsmJSImmPtr imm, Label *label) {
+        movePtr(imm, ScratchRegister);
+        branchPtr(cond, lhs, ScratchRegister, label);
+    }
     void decBranchPtr(Condition cond, const Register &lhs, Imm32 imm, Label *label) {
         subPtr(imm, lhs);
         branch32(cond, lhs, Imm32(0), label);
@@ -967,8 +986,13 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         branchPtr(cond, addr, ImmWord(uintptr_t(ptr.value)), label);
     }
     void branchPtr(Condition cond, const AbsoluteAddress &addr, const Register &ptr, Label *label) {
-        loadPtr(addr, secondScratchReg_); // ma_cmp will use the scratch register.
-        ma_cmp(secondScratchReg_, ptr);
+        loadPtr(addr, ScratchRegister);
+        ma_cmp(ScratchRegister, ptr);
+        ma_b(label, cond);
+    }
+    void branchPtr(Condition cond, const AsmJSAbsoluteAddress &addr, const Register &ptr, Label *label) {
+        loadPtr(addr, ScratchRegister);
+        ma_cmp(ScratchRegister, ptr);
         ma_b(label, cond);
     }
     void branch32(Condition cond, const AbsoluteAddress &lhs, Imm32 rhs, Label *label) {
@@ -1208,6 +1232,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void movePtr(const Register &src, const Register &dest);
     void movePtr(const ImmWord &imm, const Register &dest);
     void movePtr(const ImmPtr &imm, const Register &dest);
+    void movePtr(const AsmJSImmPtr &imm, const Register &dest);
     void movePtr(const ImmGCPtr &imm, const Register &dest);
 
     void load8SignExtend(const Address &address, const Register &dest);
@@ -1229,6 +1254,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void loadPtr(const Address &address, const Register &dest);
     void loadPtr(const BaseIndex &src, const Register &dest);
     void loadPtr(const AbsoluteAddress &address, const Register &dest);
+    void loadPtr(const AsmJSAbsoluteAddress &address, const Register &dest);
 
     void loadPrivate(const Address &address, const Register &dest);
 
@@ -1383,6 +1409,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
   public:
     // Emits a call to a C/C++ function, resolving all argument moves.
     void callWithABI(void *fun, Result result = GENERAL);
+    void callWithABI(AsmJSImmPtr imm, Result result = GENERAL);
     void callWithABI(const Address &fun, Result result = GENERAL);
 
     CodeOffsetLabel labelForPatch() {

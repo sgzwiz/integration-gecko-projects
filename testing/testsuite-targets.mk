@@ -406,6 +406,7 @@ package-tests: \
   stage-marionette \
   stage-cppunittests \
   stage-jittest \
+  stage-steeplechase \
   $(NULL)
 else
 # This staging area has been built for us by universal/flight.mk
@@ -504,12 +505,22 @@ else
 endif
 	$(NSINSTALL) $(topsrcdir)/testing/runcppunittests.py $(PKG_STAGE)/cppunittests
 	$(NSINSTALL) $(topsrcdir)/testing/remotecppunittests.py $(PKG_STAGE)/cppunittests
+ifeq ($(MOZ_WIDGET_TOOLKIT),android)
+	$(NSINSTALL) $(topsrcdir)/testing/android_cppunittest_manifest.txt $(PKG_STAGE)/cppunittests
+endif
 
 stage-jittest:
 	$(NSINSTALL) -D $(PKG_STAGE)/jit-test/tests
 	cp -RL $(topsrcdir)/js/src/jsapi.h $(PKG_STAGE)/jit-test
 	cp -RL $(topsrcdir)/js/src/jit-test $(PKG_STAGE)/jit-test/jit-test
+	cp -RL $(topsrcdir)/js/src/tests/ecma_6 $(PKG_STAGE)/jit-test/tests/ecma_6
 	cp -RL $(topsrcdir)/js/src/tests/lib $(PKG_STAGE)/jit-test/tests/lib
+
+stage-steeplechase:
+	$(NSINSTALL) -D $(PKG_STAGE)/steeplechase/
+	cp -RL $(DEPTH)/_tests/steeplechase $(PKG_STAGE)/steeplechase/tests
+	cp -RL $(DIST)/xpi-stage/specialpowers $(PKG_STAGE)/steeplechase
+	cp -RL $(topsrcdir)/testing/profiles/prefs_general.js $(PKG_STAGE)/steeplechase
 
 MARIONETTE_DIR=$(PKG_STAGE)/marionette
 stage-marionette: make-stage-dir
@@ -549,5 +560,6 @@ stage-mozbase: make-stage-dir
   stage-tps \
   stage-modules \
   stage-marionette \
+  stage-steeplechase \
   $(NULL)
 

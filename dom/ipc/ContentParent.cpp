@@ -37,7 +37,6 @@
 #include "mozilla/dom/GeolocationBinding.h"
 #include "mozilla/dom/telephony/TelephonyParent.h"
 #include "SmsParent.h"
-#include "mozilla/Hal.h"
 #include "mozilla/hal_sandbox/PHalParent.h"
 #include "mozilla/ipc/TestShellParent.h"
 #include "mozilla/ipc/InputStreamUtils.h"
@@ -48,8 +47,6 @@
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/unused.h"
-#include "nsAppDirectoryServiceDefs.h"
-#include "nsAppDirectoryServiceDefs.h"
 #include "nsAppRunner.h"
 #include "nsAutoPtr.h"
 #include "nsCDefaultURIFixup.h"
@@ -59,9 +56,7 @@
 #include "nsConsoleMessage.h"
 #include "nsConsoleService.h"
 #include "nsDebugImpl.h"
-#include "nsDirectoryServiceDefs.h"
 #include "nsDOMFile.h"
-#include "nsExternalHelperAppService.h"
 #include "nsFrameMessageManager.h"
 #include "nsHashPropertyBag.h"
 #include "nsIAlertsService.h"
@@ -71,6 +66,7 @@
 #include "nsIDOMGeoGeolocation.h"
 #include "nsIDOMWakeLock.h"
 #include "nsIDOMWindow.h"
+#include "nsIExternalProtocolService.h"
 #include "nsIFilePicker.h"
 #include "nsIMemoryReporter.h"
 #include "nsIMozBrowserFrame.h"
@@ -79,14 +75,12 @@
 #include "nsIPresShell.h"
 #include "nsIRemoteBlob.h"
 #include "nsIScriptError.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIStyleSheet.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIURIFixup.h"
 #include "nsIWindowWatcher.h"
 #include "nsServiceManagerUtils.h"
 #include "nsStyleSheetService.h"
-#include "nsSystemInfo.h"
 #include "nsThreadUtils.h"
 #include "nsToolkitCompsCID.h"
 #include "nsWidgetsCID.h"
@@ -99,13 +93,12 @@
 #include "nsIWebBrowserChrome.h"
 #include "nsIDocShell.h"
 
-#ifdef ANDROID
-# include "gfxAndroidPlatform.h"
+#if defined(ANDROID) || defined(LINUX)
+#include "nsSystemInfo.h"
 #endif
 
-#ifdef MOZ_CRASHREPORTER
-# include "nsExceptionHandler.h"
-# include "nsICrashReporter.h"
+#ifdef ANDROID
+# include "gfxAndroidPlatform.h"
 #endif
 
 #ifdef MOZ_PERMISSIONS
@@ -502,14 +495,17 @@ PrivilegesForApp(mozIApplication* aApp)
 ContentParent::GetInitialProcessPriority(Element* aFrameElement)
 {
     // Frames with mozapptype == critical which are expecting a system message
-    // get FOREGROUND_HIGH priority.  All other frames get FOREGROUND priority.
+    // get FOREGROUND_HIGH priority.
 
     if (!aFrameElement) {
         return PROCESS_PRIORITY_FOREGROUND;
     }
 
-    if (!aFrameElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::mozapptype,
-                                    NS_LITERAL_STRING("critical"), eCaseMatters)) {
+    if (aFrameElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::mozapptype,
+                                   NS_LITERAL_STRING("keyboard"), eCaseMatters)) {
+        return PROCESS_PRIORITY_FOREGROUND_KEYBOARD;
+    } else if (!aFrameElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::mozapptype,
+                                           NS_LITERAL_STRING("critical"), eCaseMatters)) {
         return PROCESS_PRIORITY_FOREGROUND;
     }
 
@@ -1782,14 +1778,14 @@ ContentParent::Observe(nsISupports* aSubject,
     return NS_OK;
 }
 
-PCompositorParent*
+bool
 ContentParent::AllocPCompositorParent(mozilla::ipc::Transport* aTransport,
                                       base::ProcessId aOtherProcess)
 {
     return CompositorParent::Create(aTransport, aOtherProcess);
 }
 
-PImageBridgeParent*
+bool
 ContentParent::AllocPImageBridgeParent(mozilla::ipc::Transport* aTransport,
                                        base::ProcessId aOtherProcess)
 {

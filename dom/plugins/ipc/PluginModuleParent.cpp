@@ -30,6 +30,7 @@
 #include "nsPrintfCString.h"
 #include "PluginIdentifierParent.h"
 #include "prsystem.h"
+#include "GeckoProfiler.h"
 
 #ifdef XP_WIN
 #include "PluginHangUIParent.h"
@@ -493,19 +494,10 @@ PluginModuleParent::TerminateChildProcess(MessageLoop* aMsgLoop)
     // this must run before the error notification from the channel,
     // or not at all
     bool isFromHangUI = aMsgLoop != MessageLoop::current();
-    if (isFromHangUI) {
-        // If we're posting from a different thread we can't create
-        // the task via mTaskFactory
-        aMsgLoop->PostTask(FROM_HERE,
-                           NewRunnableMethod(this,
-                               &PluginModuleParent::CleanupFromTimeout,
-                               isFromHangUI));
-    } else {
-        aMsgLoop->PostTask(
-            FROM_HERE,
-            mTaskFactory.NewRunnableMethod(
-                &PluginModuleParent::CleanupFromTimeout, isFromHangUI));
-    }
+    aMsgLoop->PostTask(
+        FROM_HERE,
+        mTaskFactory.NewRunnableMethod(
+            &PluginModuleParent::CleanupFromTimeout, isFromHangUI));
 
     if (!KillProcess(OtherProcess(), 1, false))
         NS_WARNING("failed to kill subprocess!");
