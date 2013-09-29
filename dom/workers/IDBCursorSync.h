@@ -43,9 +43,9 @@ class IDBCursorSync : public IDBObjectSync,
   friend class IndexedDBObjectStoreWorkerChild;
   friend class OpenHelper;
 
-  typedef mozilla::dom::indexedDB::StructuredCloneReadInfo 
+  typedef mozilla::dom::indexedDB::StructuredCloneReadInfo
                                                         StructuredCloneReadInfo;
-  typedef mozilla::dom::indexedDB::SerializedStructuredCloneReadInfo 
+  typedef mozilla::dom::indexedDB::SerializedStructuredCloneReadInfo
                                               SerializedStructuredCloneReadInfo;
 
 
@@ -90,7 +90,7 @@ public:
   void
   SetActor(IndexedDBCursorWorkerChild* aActorChild)
   {
-    NS_ASSERTION(!aActorChild || !mActorChild, "Shouldn't have more than one!");
+    MOZ_ASSERT(!aActorChild || !mActorChild, "Shouldn't have more than one!");
     mActorChild = aActorChild;
   }
 

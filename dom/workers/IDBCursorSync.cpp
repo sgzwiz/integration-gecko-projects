@@ -45,7 +45,7 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    NS_ASSERTION(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
+    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
     mPrimarySyncQueueKey = mSyncQueueKey;
 
     IndexRequestParams params;
@@ -88,7 +88,7 @@ public:
   : BlockingHelperBase(aWorkerPrivate, aCursor), mSyncQueueKey(aSyncQueueKey),
     mCursor(aCursor), mCount(aCount)
   {
-    NS_ASSERTION(aCount > 0, "Must have a count!");
+    MOZ_ASSERT(aCount > 0, "Must have a count!");
   }
 
   virtual nsresult
@@ -98,7 +98,7 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    NS_ASSERTION(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
+    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
     mPrimarySyncQueueKey = mSyncQueueKey;
 
     CursorRequestParams params;
@@ -183,7 +183,7 @@ IDBCursorSync::ReleaseIPCThreadObjects()
 
   if (mActorChild) {
     mActorChild->Send__delete__(mActorChild);
-    NS_ASSERTION(!mActorChild, "Should have cleared in Send__delete__!");
+    MOZ_ASSERT(!mActorChild, "Should have cleared in Send__delete__!");
   }
 }
 
@@ -199,7 +199,7 @@ IDBCursorSync::Source(JSContext* aCx)
 JS::Value
 IDBCursorSync::Key(JSContext* aCx)
 {
-  NS_ASSERTION(!mKey.IsUnset() || !mHaveValue, "Bad key!");
+  MOZ_ASSERT(!mKey.IsUnset() || !mHaveValue, "Bad key!");
 
   if (!mHaveValue) {
     return JSVAL_VOID;
@@ -223,8 +223,8 @@ IDBCursorSync::PrimaryKey(JSContext* aCx)
   }
 
   if (!mHaveCachedPrimaryKey) {
-    NS_ASSERTION(mType == OBJECTSTORE ? !mKey.IsUnset() :
-                                        !mObjectKey.IsUnset(), "Bad key!");
+    MOZ_ASSERT(mType == OBJECTSTORE ? !mKey.IsUnset() :
+                                      !mObjectKey.IsUnset(), "Bad key!");
 
     const indexedDB::Key& key = mType == OBJECTSTORE ? mKey : mObjectKey;
 
@@ -256,9 +256,9 @@ IDBCursorSync::Update(JSContext* aCx, JS::Value aValue, ErrorResult& aRv)
     return;
   }
 
-  NS_ASSERTION(mObjectStore, "This cannot be null!");
-  NS_ASSERTION(!mKey.IsUnset() , "Bad key!");
-  NS_ASSERTION(mType != INDEXOBJECT || !mObjectKey.IsUnset(), "Bad key!");
+  MOZ_ASSERT(mObjectStore, "This cannot be null!");
+  MOZ_ASSERT(!mKey.IsUnset() , "Bad key!");
+  MOZ_ASSERT(mType != INDEXOBJECT || !mObjectKey.IsUnset(), "Bad key!");
 
   nsresult rv;
 
@@ -374,8 +374,8 @@ IDBCursorSync::Delete(JSContext* aCx, ErrorResult& aRv)
     return false;
   }
 
-  NS_ASSERTION(mObjectStore, "This cannot be null!");
-  NS_ASSERTION(!mKey.IsUnset() , "Bad key!");
+  MOZ_ASSERT(mObjectStore, "This cannot be null!");
+  MOZ_ASSERT(!mKey.IsUnset() , "Bad key!");
 
   indexedDB::Key& objectKey = (mType == OBJECTSTORE) ? mKey : mObjectKey;
 
@@ -408,12 +408,12 @@ IDBCursorSync::Open(JSContext* aCx, IDBKeyRange* aKeyRange)
 }
 
 bool
-IDBCursorSync::ContinueInternal(JSContext* aCx, 
+IDBCursorSync::ContinueInternal(JSContext* aCx,
                                 const mozilla::dom::indexedDB::Key& aKey,
                                 int32_t aCount,
                                 ErrorResult& aRv)
 {
-  NS_ASSERTION(aCount > 0, "Must have a count!");
+  MOZ_ASSERT(aCount > 0, "Must have a count!");
 
   if (mTransaction->IsInvalid()) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
@@ -475,13 +475,13 @@ OpenHelper::HandleResponse(const ResponseValue& aResponseValue)
 {
   AssertIsOnIPCThread();
 
-  NS_ASSERTION(aResponseValue.type() == ResponseValue::TOpenCursorResponse,
-               "Bad response type!");
-  NS_ASSERTION(aResponseValue.get_OpenCursorResponse().type() ==
-               OpenCursorResponse::Tvoid_t ||
-               aResponseValue.get_OpenCursorResponse().type() ==
-               OpenCursorResponse::TPIndexedDBCursorChild,
-               "Bad response union type!");
+  MOZ_ASSERT(aResponseValue.type() == ResponseValue::TOpenCursorResponse,
+             "Bad response type!");
+  MOZ_ASSERT(aResponseValue.get_OpenCursorResponse().type() ==
+             OpenCursorResponse::Tvoid_t ||
+             aResponseValue.get_OpenCursorResponse().type() ==
+             OpenCursorResponse::TPIndexedDBCursorChild,
+             "Bad response union type!");
 
   const OpenCursorResponse& response =
     aResponseValue.get_OpenCursorResponse();
@@ -507,8 +507,8 @@ OpenHelper::HandleResponse(const ResponseValue& aResponseValue)
 nsresult
 ContinueHelper::HandleResponse(const ResponseValue& aResponseValue)
 {
-  NS_ASSERTION(aResponseValue.type() == ResponseValue::TContinueResponse,
-               "Bad response type!");
+  MOZ_ASSERT(aResponseValue.type() == ResponseValue::TContinueResponse,
+             "Bad response type!");
 
   const ContinueResponse& response = aResponseValue.get_ContinueResponse();
 

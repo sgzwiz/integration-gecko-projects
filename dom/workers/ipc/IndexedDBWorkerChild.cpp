@@ -187,10 +187,10 @@ IndexedDBDatabaseWorkerChild::RecvSuccess(
                            const DatabaseInfoGuts& aDBInfo,
                            const InfallibleTArray<ObjectStoreInfoGuts>& aOSInfo)
 {
-  NS_ASSERTION(aDBInfo.origin == mDatabase->mFactory->GetASCIIOrigin(), "Huh?");
-  NS_ASSERTION(aDBInfo.name == mDatabase->mName, "Huh?");
-  NS_ASSERTION(!mDatabase->mVersion || aDBInfo.version == mDatabase->mVersion,
-               "Huh?");
+  MOZ_ASSERT(aDBInfo.origin == mDatabase->mFactory->GetASCIIOrigin(), "Huh?");
+  MOZ_ASSERT(aDBInfo.name == mDatabase->mName, "Huh?");
+  MOZ_ASSERT(!mDatabase->mVersion || aDBInfo.version == mDatabase->mVersion,
+             "Huh?");
 
   if (!EnsureDatabaseInfo(aDBInfo, aOSInfo)) {
     return false;
@@ -431,14 +431,14 @@ IndexedDBObjectStoreWorkerChild::RecvPIndexedDBCursorConstructor(
 
   IndexedDBObjectStoreRequestWorkerChild* requestActor =
     static_cast<IndexedDBObjectStoreRequestWorkerChild*>(aParams.requestChild());
-  NS_ASSERTION(requestActor, "Must have an actor here!");
+  MOZ_ASSERT(requestActor, "Must have an actor here!");
 
   IDBCursorSync* cursor =
     static_cast<IDBCursorSync*>(requestActor->GetObject());
-  NS_ASSERTION(cursor, "Must have an object here!");
+  MOZ_ASSERT(cursor, "Must have an object here!");
 
-//  NS_ASSERTION(static_cast<size_t>(aParams.direction()) ==
-//               cursor->GetDirection(), "Huh?");
+//  MOZ_ASSERT(static_cast<size_t>(aParams.direction()) ==
+//             cursor->GetDirection(), "Huh?");
 
   Key emptyKey;
   cursor->SetCurrentKeysAndValue(aParams.key(), emptyKey, aParams.cloneInfo());
@@ -541,21 +541,21 @@ IndexedDBIndexWorkerChild::RecvPIndexedDBCursorConstructor(
 
   IndexedDBIndexRequestWorkerChild* requestActor =
     static_cast<IndexedDBIndexRequestWorkerChild*>(aParams.requestChild());
-  NS_ASSERTION(requestActor, "Must have an actor here!");
+  MOZ_ASSERT(requestActor, "Must have an actor here!");
 
   IDBCursorSync* cursor =
     static_cast<IDBCursorSync*>(requestActor->GetObject());
-  NS_ASSERTION(cursor, "Must have an object here!");
+  MOZ_ASSERT(cursor, "Must have an object here!");
 
-//  NS_ASSERTION(static_cast<size_t>(aParams.direction()) ==
-//               cursor->GetDirection(), "Huh?");
+//  MOZ_ASSERT(static_cast<size_t>(aParams.direction()) ==
+//             cursor->GetDirection(), "Huh?");
 
   typedef indexedDB::ipc::OptionalStructuredCloneReadInfo CursorUnionType;
   SerializedStructuredCloneReadInfo cloneInfo;
 
   switch (aParams.optionalCloneInfo().type()) {
     case CursorUnionType::TSerializedStructuredCloneReadInfo: {
-      cloneInfo = 
+      cloneInfo =
         aParams.optionalCloneInfo().get_SerializedStructuredCloneReadInfo();
     } break;
 

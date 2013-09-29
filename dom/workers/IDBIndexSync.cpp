@@ -93,7 +93,7 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    NS_ASSERTION(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
+    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
     mPrimarySyncQueueKey = mSyncQueueKey;
 
     IndexRequestParams params;
@@ -147,7 +147,7 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    NS_ASSERTION(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
+    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
     mPrimarySyncQueueKey = mSyncQueueKey;
 
     IndexRequestParams params;
@@ -201,7 +201,7 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    NS_ASSERTION(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
+    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
     mPrimarySyncQueueKey = mSyncQueueKey;
 
     IndexRequestParams params;
@@ -263,7 +263,7 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    NS_ASSERTION(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
+    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
     mPrimarySyncQueueKey = mSyncQueueKey;
 
     IndexRequestParams params;
@@ -327,7 +327,7 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    NS_ASSERTION(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
+    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
     mPrimarySyncQueueKey = mSyncQueueKey;
 
     IndexRequestParams params;
@@ -370,7 +370,7 @@ IDBIndexSync*
 IDBIndexSync::Create(JSContext* aCx, IDBObjectStoreSync* aObjectStore,
                      IndexInfo* aIndexInfo)
 {
-  NS_ASSERTION(aIndexInfo, "Null pointer!");
+  MOZ_ASSERT(aIndexInfo, "Null pointer!");
 
   WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
   MOZ_ASSERT(workerPrivate);
@@ -399,7 +399,7 @@ IDBIndexSync::IDBIndexSync(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
 
 IDBIndexSync::~IDBIndexSync()
 {
-  NS_ASSERTION(!mActorChild, "Still have an actor object attached!");
+  MOZ_ASSERT(!mActorChild, "Still have an actor object attached!");
 }
 
 void
@@ -423,7 +423,7 @@ IDBIndexSync::ReleaseIPCThreadObjects()
 
   if (mActorChild) {
     mActorChild->Send__delete__(mActorChild);
-    NS_ASSERTION(!mActorChild, "Should have cleared in Send__delete__!");
+    MOZ_ASSERT(!mActorChild, "Should have cleared in Send__delete__!");
   }
 }
 
@@ -751,8 +751,8 @@ GetHelper::HandleResponse(const ResponseValue& aResponseValue)
 {
   AssertIsOnIPCThread();
 
-  NS_ASSERTION(aResponseValue.type() == ResponseValue::TGetResponse,
-               "Bad response type!");
+  MOZ_ASSERT(aResponseValue.type() == ResponseValue::TGetResponse,
+             "Bad response type!");
 
   const GetResponse& getResponse = aResponseValue.get_GetResponse();
   const SerializedStructuredCloneReadInfo& cloneInfo = getResponse.cloneInfo();
@@ -776,8 +776,8 @@ GetKeyHelper::HandleResponse(const ResponseValue& aResponseValue)
 {
   AssertIsOnIPCThread();
 
-  NS_ASSERTION(aResponseValue.type() == ResponseValue::TGetKeyResponse,
-               "Bad response type!");
+  MOZ_ASSERT(aResponseValue.type() == ResponseValue::TGetKeyResponse,
+             "Bad response type!");
 
   mKey = aResponseValue.get_GetKeyResponse().key();
 
@@ -789,8 +789,8 @@ GetAllHelper::HandleResponse(const ResponseValue& aResponseValue)
 {
   AssertIsOnIPCThread();
 
-  NS_ASSERTION(aResponseValue.type() == ResponseValue::TGetAllResponse,
-               "Bad response type!");
+  MOZ_ASSERT(aResponseValue.type() == ResponseValue::TGetAllResponse,
+             "Bad response type!");
 
   const GetAllResponse& getAllResponse = aResponseValue.get_GetAllResponse();
 
@@ -815,12 +815,12 @@ GetAllHelper::HandleResponse(const ResponseValue& aResponseValue)
 bool
 GetAllHelper::Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue)
 {
-  NS_ASSERTION(mCloneReadInfos.Length() <= mLimit, "Too many results!");
+  MOZ_ASSERT(mCloneReadInfos.Length() <= mLimit, "Too many results!");
 
   nsresult rv = ConvertToArrayAndCleanup(aCx, mCloneReadInfos, aValue);
 
-  NS_ASSERTION(mCloneReadInfos.IsEmpty(),
-               "Should have cleared in ConvertToArrayAndCleanup");
+  MOZ_ASSERT(mCloneReadInfos.IsEmpty(),
+             "Should have cleared in ConvertToArrayAndCleanup");
   NS_ENSURE_SUCCESS(rv, false);
 
   return true;
@@ -831,8 +831,8 @@ GetAllKeysHelper::HandleResponse(const ResponseValue& aResponseValue)
 {
   AssertIsOnIPCThread();
 
-  NS_ASSERTION(aResponseValue.type() == ResponseValue::TGetAllKeysResponse,
-               "Bad response type!");
+  MOZ_ASSERT(aResponseValue.type() == ResponseValue::TGetAllKeysResponse,
+             "Bad response type!");
 
   mKeys.AppendElements(aResponseValue.get_GetAllKeysResponse().keys());
 
@@ -842,7 +842,7 @@ GetAllKeysHelper::HandleResponse(const ResponseValue& aResponseValue)
 bool
 GetAllKeysHelper::Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue)
 {
-  NS_ASSERTION(mKeys.Length() <= mLimit, "Too many results!");
+  MOZ_ASSERT(mKeys.Length() <= mLimit, "Too many results!");
 
   nsTArray<Key> keys;
   mKeys.SwapElements(keys);
@@ -861,7 +861,7 @@ GetAllKeysHelper::Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue)
 
     for (uint32_t index = 0, count = keys.Length(); index < count; index++) {
       const Key& key = keys[index];
-      NS_ASSERTION(!key.IsUnset(), "Bad key!");
+      MOZ_ASSERT(!key.IsUnset(), "Bad key!");
 
       JS::Rooted<JS::Value> value(aCx);
       nsresult rv = key.ToJSVal(aCx, &value);
@@ -886,8 +886,8 @@ CountHelper::HandleResponse(const ResponseValue& aResponseValue)
 {
   AssertIsOnIPCThread();
 
-  NS_ASSERTION(aResponseValue.type() == ResponseValue::TCountResponse,
-               "Bad response type!");
+  MOZ_ASSERT(aResponseValue.type() == ResponseValue::TCountResponse,
+             "Bad response type!");
 
   mCount = aResponseValue.get_CountResponse().count();
 

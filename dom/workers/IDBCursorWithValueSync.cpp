@@ -59,7 +59,7 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    NS_ASSERTION(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
+    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
     mPrimarySyncQueueKey = mSyncQueueKey;
 
     IndexRequestParams params;
@@ -102,7 +102,7 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    NS_ASSERTION(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
+    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
     mPrimarySyncQueueKey = mSyncQueueKey;
 
     ObjectStoreRequestParams params;
@@ -159,7 +159,7 @@ IDBCursorWithValueSync::Create(JSContext* aCx, IDBIndexSync* aIndex,
 }
 
 // For OBJECTSTORE cursors.
-//static 
+//static
 IDBCursorWithValueSync*
 IDBCursorWithValueSync::Create(JSContext* aCx, IDBObjectStoreSync* aObjectStore,
                                Direction aDirection)
@@ -209,7 +209,7 @@ NS_IMPL_ISUPPORTS_INHERITED0(IDBCursorWithValueSync, IDBCursorSync)
 JS::Value
 IDBCursorWithValueSync::GetValue(JSContext* aCx, ErrorResult& aRv)
 {
-  NS_ASSERTION(mType != INDEXKEY, "GetValue shouldn't exist on index keys");
+  MOZ_ASSERT(mType != INDEXKEY, "GetValue shouldn't exist on index keys");
 
   if (!mHaveValue) {
     return JSVAL_VOID;
@@ -236,8 +236,8 @@ IDBCursorWithValueSync::GetValue(JSContext* aCx, ErrorResult& aRv)
 bool
 IDBCursorWithValueSync::Open(JSContext* aCx, IDBKeyRange* aKeyRange)
 {
-  NS_ASSERTION(mType != INDEXKEY,
-    "Open Value cursor shouldn't exist on index keys");
+  MOZ_ASSERT(mType != INDEXKEY,
+             "Open Value cursor shouldn't exist on index keys");
 
   DOMBindingAnchor<IDBCursorWithValueSync> selfAnchor(this);
 
@@ -267,13 +267,13 @@ OpenHelperWithValue::HandleResponse(const ResponseValue& aResponseValue)
 {
   AssertIsOnIPCThread();
 
-  NS_ASSERTION(aResponseValue.type() == ResponseValue::TOpenCursorResponse,
-               "Bad response type!");
-  NS_ASSERTION(aResponseValue.get_OpenCursorResponse().type() ==
-               OpenCursorResponse::Tvoid_t ||
-               aResponseValue.get_OpenCursorResponse().type() ==
-               OpenCursorResponse::TPIndexedDBCursorChild,
-               "Bad response union type!");
+  MOZ_ASSERT(aResponseValue.type() == ResponseValue::TOpenCursorResponse,
+             "Bad response type!");
+  MOZ_ASSERT(aResponseValue.get_OpenCursorResponse().type() ==
+             OpenCursorResponse::Tvoid_t ||
+             aResponseValue.get_OpenCursorResponse().type() ==
+             OpenCursorResponse::TPIndexedDBCursorChild,
+             "Bad response union type!");
 
   const OpenCursorResponse& response =
     aResponseValue.get_OpenCursorResponse();

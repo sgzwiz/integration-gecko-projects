@@ -23,8 +23,8 @@ GetKeyFromJSVal(JSContext* aCx,
 {
   nsresult rv = aKey.SetFromJSVal(aCx, aVal);
   if (NS_FAILED(rv)) {
-    NS_ASSERTION(NS_ERROR_GET_MODULE(rv) == NS_ERROR_MODULE_DOM_INDEXEDDB,
-                 "Bad error code!");
+    MOZ_ASSERT(NS_ERROR_GET_MODULE(rv) == NS_ERROR_MODULE_DOM_INDEXEDDB,
+               "Bad error code!");
     return rv;
   }
 

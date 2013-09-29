@@ -39,8 +39,8 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    NS_ASSERTION(mFactory->PrimarySyncQueueKey() == UINT32_MAX,
-                 "Primary sync queue key should be unset!");
+    MOZ_ASSERT(mFactory->PrimarySyncQueueKey() == UINT32_MAX,
+               "Primary sync queue key should be unset!");
     mFactory->PrimarySyncQueueKey() = mSyncQueueKey;
 
     IndexedDBWorkerChild* actor = new IndexedDBWorkerChild();
@@ -97,7 +97,7 @@ IDBFactorySync::IDBFactorySync(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
 
 IDBFactorySync::~IDBFactorySync()
 {
-  NS_ASSERTION(!mActorChild, "Still have an actor object attached!");
+  MOZ_ASSERT(!mActorChild, "Still have an actor object attached!");
 }
 
 void
@@ -119,7 +119,7 @@ IDBFactorySync::ReleaseIPCThreadObjects()
 
   if (mActorChild) {
     mActorChild->Send__delete__(mActorChild);
-    NS_ASSERTION(!mActorChild, "Should have cleared in Send__delete__!");
+    MOZ_ASSERT(!mActorChild, "Should have cleared in Send__delete__!");
   }
 }
 
@@ -215,8 +215,8 @@ DeleteDatabaseHelper::OnRequestComplete(nsresult aRv)
 nsresult
 DeleteDatabaseHelper::IPCThreadRun()
 {
-  NS_ASSERTION(mFactory->DeleteDatabaseSyncQueueKey() == UINT32_MAX,
-               "Delete database sync queue key should be unset!");
+  MOZ_ASSERT(mFactory->DeleteDatabaseSyncQueueKey() == UINT32_MAX,
+             "Delete database sync queue key should be unset!");
   mFactory->DeleteDatabaseSyncQueueKey() = mSyncQueueKey;
 
   nsCString databaseId;

@@ -116,7 +116,7 @@ IDBObjectStoreBase::InfoContainsIndexName(const nsAString &aName)
 void
 IDBObjectStoreBase::SetInfo(ObjectStoreInfo* aInfo)
 {
-  NS_ASSERTION(aInfo != mInfo, "This is nonsense");
+  MOZ_ASSERT(aInfo != mInfo, "This is nonsense");
 
   mInfo = aInfo;
 }

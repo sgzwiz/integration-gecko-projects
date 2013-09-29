@@ -90,11 +90,13 @@ protected:
   IPCThreadRun()
   {
     if (mTransaction->GetMode() == IDBTransactionBase::VERSION_CHANGE) {
-      NS_ASSERTION(mTransaction->Db()->PrimarySyncQueueKey() == UINT32_MAX, "Should be unset!");
+      MOZ_ASSERT(mTransaction->Db()->PrimarySyncQueueKey() == UINT32_MAX,
+                 "Should be unset!");
       mTransaction->Db()->PrimarySyncQueueKey() = mSyncQueueKey;
     }
     else {
-      NS_ASSERTION(mTransaction->PrimarySyncQueueKey() == UINT32_MAX, "Should be unset!");
+      MOZ_ASSERT(mTransaction->PrimarySyncQueueKey() == UINT32_MAX,
+                 "Should be unset!");
       mTransaction->PrimarySyncQueueKey() = mSyncQueueKey;
     }
 
@@ -143,14 +145,14 @@ IDBTransactionSync::IDBTransactionSync(JSContext* aCx,
 
 IDBTransactionSync::~IDBTransactionSync()
 {
-  NS_ASSERTION(!mActorChild, "Still have an actor object attached!");
+  MOZ_ASSERT(!mActorChild, "Still have an actor object attached!");
 }
 
 void
 IDBTransactionSync::RemoveObjectStore(const nsAString& aName)
 {
-  NS_ASSERTION(mMode == IDBTransaction::VERSION_CHANGE,
-               "Only remove object stores on VERSION_CHANGE transactions");
+  MOZ_ASSERT(mMode == IDBTransaction::VERSION_CHANGE,
+             "Only remove object stores on VERSION_CHANGE transactions");
 
   mDatabaseInfo->RemoveObjectStore(aName);
 
@@ -167,7 +169,7 @@ IDBTransactionSync::RemoveObjectStore(const nsAString& aName)
 void
 IDBTransactionSync::SetDBInfo(DatabaseInfoMT* aDBInfo)
 {
-  NS_ASSERTION(aDBInfo != mDatabaseInfo, "This is nonsense");
+  MOZ_ASSERT(aDBInfo != mDatabaseInfo, "This is nonsense");
   mDatabaseInfo = aDBInfo;
 }
 
@@ -190,7 +192,7 @@ IDBTransactionSync::ReleaseIPCThreadObjects()
 
   if (mActorChild) {
     mActorChild->Send__delete__(mActorChild);
-    NS_ASSERTION(!mActorChild, "Should have cleared in Send__delete__!");
+    MOZ_ASSERT(!mActorChild, "Should have cleared in Send__delete__!");
   }
 }
 
@@ -208,7 +210,7 @@ IDBTransactionSync::GetMode(nsString& aMode)
 IDBDatabaseSync*
 IDBTransactionSync::Db()
 {
-  NS_ASSERTION(mDatabase, "This should never be null!");
+  MOZ_ASSERT(mDatabase, "This should never be null!");
   return mDatabase;
 }
 
@@ -244,7 +246,7 @@ IDBTransactionSync::ObjectStore(JSContext* aCx, const nsAString& aName,
 
   if (mMode == IDBTransaction::VERSION_CHANGE ||
       mObjectStoreNames.Contains(aName)) {
-    NS_ASSERTION(mDatabaseInfo, "mDatabaseInfo is null!");
+    MOZ_ASSERT(mDatabaseInfo, "mDatabaseInfo is null!");
     info = mDatabaseInfo->GetObjectStore(aName);
   }
 
@@ -332,9 +334,9 @@ IDBTransactionSync::GetOrCreateObjectStore(JSContext* aCx,
                                            ObjectStoreInfo* aObjectStoreInfo,
                                            bool aCreating)
 {
-  NS_ASSERTION(aObjectStoreInfo, "Null pointer!");
-  NS_ASSERTION(!aCreating || GetMode() == IDBTransaction::VERSION_CHANGE,
-               "How else can we create here?!");
+  MOZ_ASSERT(aObjectStoreInfo, "Null pointer!");
+  MOZ_ASSERT(!aCreating || GetMode() == IDBTransaction::VERSION_CHANGE,
+             "How else can we create here?!");
 
   IDBObjectStoreSync* retval = nullptr;
 

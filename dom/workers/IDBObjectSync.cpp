@@ -26,7 +26,7 @@ public:
     mCondVar(mMutex, "ProxyReleaseHelper::mCondVar"),
     mWaiting(true)
   {
-    NS_ASSERTION(mObject, "Null object!");
+    MOZ_ASSERT(mObject, "Null object!");
   }
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ProxyReleaseHelper)
@@ -52,7 +52,7 @@ private:
     mObject->ReleaseIPCThreadObjects();
 
     MutexAutoLock lock(mMutex);
-    NS_ASSERTION(mWaiting, "Huh?!");
+    MOZ_ASSERT(mWaiting, "Huh?!");
 
     mObject = nullptr;
 

@@ -36,7 +36,7 @@ public:
 
   int64_t Id() const
   {
-    NS_ASSERTION(mId != INT64_MIN, "Don't ask for this yet!");
+    MOZ_ASSERT(mId != INT64_MIN, "Don't ask for this yet!");
     return mId;
   }
 

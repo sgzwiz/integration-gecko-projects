@@ -55,7 +55,7 @@ bool
 DatabaseInfoMT::Get(nsCString& aId,
                       DatabaseInfoMT** aInfo)
 {
-  NS_ASSERTION(!aId.IsEmpty(), "Bad id!");
+  MOZ_ASSERT(!aId.IsEmpty(), "Bad id!");
   
   StaticMutexAutoLock lock(sDatabaseInfoMutex);
   if (gDatabaseHash &&
@@ -70,7 +70,7 @@ DatabaseInfoMT::Get(nsCString& aId,
 bool
 DatabaseInfoMT::Put(DatabaseInfoMT* aInfo)
 {
-  NS_ASSERTION(aInfo, "Null pointer!");
+  MOZ_ASSERT(aInfo, "Null pointer!");
 
   StaticMutexAutoLock lock(sDatabaseInfoMutex);
   if (!gDatabaseHash) {

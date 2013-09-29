@@ -45,8 +45,8 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    NS_ASSERTION(mDatabase->PrimarySyncQueueKey() == UINT32_MAX,
-                 "Primary sync queue key should be unset!");
+    MOZ_ASSERT(mDatabase->PrimarySyncQueueKey() == UINT32_MAX,
+               "Primary sync queue key should be unset!");
     mDatabase->PrimarySyncQueueKey() = mSyncQueueKey;
 
     IndexedDBDatabaseWorkerChild* dbActor =
@@ -222,13 +222,13 @@ IDBDatabaseSync::IDBDatabaseSync(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
 
 IDBDatabaseSync::~IDBDatabaseSync()
 {
-  NS_ASSERTION(!mActorChild, "Still have an actor object attached!");
+  MOZ_ASSERT(!mActorChild, "Still have an actor object attached!");
 }
 
 void
 IDBDatabaseSync::EnterSetVersionTransaction()
 {
-  NS_ASSERTION(!mRunningVersionChange, "How did that happen?");
+  MOZ_ASSERT(!mRunningVersionChange, "How did that happen?");
 
   mPreviousDatabaseInfo = mDatabaseInfo->Clone();
 
@@ -238,7 +238,7 @@ IDBDatabaseSync::EnterSetVersionTransaction()
 void
 IDBDatabaseSync::ExitSetVersionTransaction()
 {
-  NS_ASSERTION(mRunningVersionChange, "How did that happen?");
+  MOZ_ASSERT(mRunningVersionChange, "How did that happen?");
 
   mPreviousDatabaseInfo = nullptr;
 
@@ -271,7 +271,7 @@ IDBDatabaseSync::ReleaseIPCThreadObjects()
 
   if (mActorChild) {
     mActorChild->Send__delete__(mActorChild);
-    NS_ASSERTION(!mActorChild, "Should have cleared in Send__delete__!");
+    MOZ_ASSERT(!mActorChild, "Should have cleared in Send__delete__!");
   }
 }
 
@@ -325,7 +325,7 @@ IDBDatabaseSync::CreateObjectStore(
     return nullptr;
   }
 
-  NS_ASSERTION(mDatabaseInfo, "Null databaseInfo!");
+  MOZ_ASSERT(mDatabaseInfo, "Null databaseInfo!");
 
   if (mDatabaseInfo->ContainsStoreName(aName)) {
     NS_WARNING("StoreName already exist!");
@@ -369,7 +369,7 @@ IDBDatabaseSync::CreateObjectStore(
 }
 
 void
-IDBDatabaseSync::DeleteObjectStore(JSContext* aCx, 
+IDBDatabaseSync::DeleteObjectStore(JSContext* aCx,
                                    const nsAString& aName,
                                    ErrorResult& aRv)
 {

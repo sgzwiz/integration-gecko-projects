@@ -40,7 +40,7 @@ public:
   virtual
   ~BlockingHelperBase()
   {
-    NS_ASSERTION(!mActorChild, "Still have an actor object attached!");
+    MOZ_ASSERT(!mActorChild, "Still have an actor object attached!");
   }
 
   IDBObjectSync*
@@ -52,7 +52,7 @@ public:
   void
   SetActor(IndexedDBRequestWorkerChildBase* aActorChild)
   {
-    NS_ASSERTION(!aActorChild || !mActorChild, "Shouldn't have more than one!");
+    MOZ_ASSERT(!aActorChild || !mActorChild, "Shouldn't have more than one!");
     mActorChild = aActorChild;
   }
 

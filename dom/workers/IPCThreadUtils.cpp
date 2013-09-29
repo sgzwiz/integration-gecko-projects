@@ -67,8 +67,8 @@ private:
 void
 mozilla::dom::workers::AssertIsOnIPCThread()
 {
-  NS_ASSERTION(MessageLoop::current() == RuntimeService::IPCMessageLoop(),
-               "Wrong thread!");
+  MOZ_ASSERT(MessageLoop::current() == RuntimeService::IPCMessageLoop(),
+             "Wrong thread!");
 }
 #endif
 

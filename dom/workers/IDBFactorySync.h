@@ -69,7 +69,7 @@ public:
   void
   SetActor(IndexedDBWorkerChild* aActorChild)
   {
-    NS_ASSERTION(!aActorChild || !mActorChild, "Shouldn't have more than one!");
+    MOZ_ASSERT(!aActorChild || !mActorChild, "Shouldn't have more than one!");
     mActorChild = aActorChild;
   }
 
@@ -114,13 +114,13 @@ public:
   virtual
   ~DeleteDatabaseHelper()
   {
-    NS_ASSERTION(!mActorChild, "Still have an actor object attached!");
+    MOZ_ASSERT(!mActorChild, "Still have an actor object attached!");
   }
 
   void
   SetActor(IndexedDBDeleteDatabaseRequestWorkerChild* aActorChild)
   {
-    NS_ASSERTION(!aActorChild || !mActorChild, "Shouldn't have more than one!");
+    MOZ_ASSERT(!aActorChild || !mActorChild, "Shouldn't have more than one!");
     mActorChild = aActorChild;
   }
 

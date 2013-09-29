@@ -70,7 +70,7 @@ BlockingHelperBase::OnRequestComplete(const ResponseValue& aResponseValue)
   nsresult rv;
 
   if (aResponseValue.type() == ResponseValue::Tnsresult) {
-    NS_ASSERTION(NS_FAILED(aResponseValue.get_nsresult()), "Huh?");
+    MOZ_ASSERT(NS_FAILED(aResponseValue.get_nsresult()), "Huh?");
     rv = aResponseValue.get_nsresult();
   }
   else {
@@ -93,8 +93,8 @@ BlockingHelperBase::ConvertToArrayAndCleanup(
                                   nsTArray<StructuredCloneReadInfo>& aReadInfos,
                                   JS::MutableHandle<JS::Value> aResult)
 {
-  NS_ASSERTION(aCx, "Null context!");
-  NS_ASSERTION(aResult.address(), "Null pointer!");
+  MOZ_ASSERT(aCx, "Null context!");
+  MOZ_ASSERT(aResult.address(), "Null pointer!");
 
   nsresult rv = ConvertCloneReadInfosToArrayInternal(aCx, aReadInfos, aResult);
 
