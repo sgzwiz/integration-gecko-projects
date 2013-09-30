@@ -8,7 +8,6 @@ DIRS += ['ipc']
 TEST_DIRS += ['test']
 
 XPIDL_SOURCES += [
-    'nsIIDBKeyRange.idl',
     'nsIIndexedDatabaseManager.idl',
 ]
 
@@ -32,7 +31,6 @@ EXPORTS.mozilla.dom.indexedDB += [
     'IDBIndex.h',
     'IDBIndexBase.h',
     'IDBKeyRange.h',
-    'IDBKeyRangeBase.h',
     'IDBObjectStore.h',
     'IDBObjectStoreBase.h',
     'IDBRequest.h',
@@ -63,7 +61,6 @@ CPP_SOURCES += [
     'IDBFileHandle.cpp',
     'IDBIndex.cpp',
     'IDBKeyRange.cpp',
-    'IDBKeyRangeBase.cpp',
     'IDBObjectStore.cpp',
     'IDBObjectStoreBase.cpp',
     'IDBRequest.cpp',

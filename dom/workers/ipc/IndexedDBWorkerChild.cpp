@@ -441,7 +441,9 @@ IndexedDBObjectStoreWorkerChild::RecvPIndexedDBCursorConstructor(
 //             cursor->GetDirection(), "Huh?");
 
   Key emptyKey;
-  cursor->SetCurrentKeysAndValue(aParams.key(), emptyKey, aParams.cloneInfo());
+  cursor->SetCurrentKeysAndValue(
+           aParams.key(), emptyKey,
+           aParams.optionalCloneInfo().get_SerializedStructuredCloneReadInfo());
 
   actor->SetCursor(cursor);
   return true;

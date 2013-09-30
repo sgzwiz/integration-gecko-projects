@@ -6,6 +6,7 @@
 
 #include "IDBIndexSync.h"
 
+#include "mozilla/dom/indexedDB/IDBKeyRange.h"
 #include "mozilla/dom/indexedDB/IndexedDatabase.h"
 #include "mozilla/dom/indexedDB/IndexedDatabaseInlines.h"
 #include "mozilla/dom/indexedDB/KeyPath.h"
@@ -14,7 +15,6 @@
 #include "DOMBindingInlines.h"
 #include "IDBCursorSync.h"
 #include "IDBCursorWithValueSync.h"
-#include "IDBKeyRange.h"
 #include "IDBObjectStoreSync.h"
 #include "IPCThreadUtils.h"
 #include "WorkerPrivate.h"
@@ -25,6 +25,7 @@ USING_WORKERS_NAMESPACE
 using namespace mozilla::dom::indexedDB;
 using namespace mozilla::dom::indexedDB::ipc;
 using mozilla::dom::IDBCursorDirection;
+using mozilla::dom::indexedDB::IDBKeyRange;
 using mozilla::dom::Optional;
 using mozilla::dom::PBlobChild;
 using mozilla::ErrorResult;
@@ -74,8 +75,6 @@ private:
 
 class GetHelper : public BlockingHelperBase
 {
-  typedef mozilla::dom::workers::IDBKeyRange IDBKeyRange;
-
 public:
   GetHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
             IDBIndexSync* aIndex, IDBKeyRange* aKeyRange)
@@ -125,8 +124,6 @@ private:
 
 class GetKeyHelper : public BlockingHelperBase
 {
-  typedef mozilla::dom::workers::IDBKeyRange IDBKeyRange;
-
 public:
   GetKeyHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
             IDBIndexSync* aIndex, IDBKeyRange* aKeyRange)
@@ -181,7 +178,6 @@ class GetAllHelper : public BlockingHelperBase
 {
   typedef mozilla::dom::indexedDB::StructuredCloneReadInfo
                                                         StructuredCloneReadInfo;
-  typedef mozilla::dom::workers::IDBKeyRange IDBKeyRange;
 
 public:
   GetAllHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
@@ -243,8 +239,6 @@ private:
 
 class GetAllKeysHelper : public BlockingHelperBase
 {
-  typedef mozilla::dom::workers::IDBKeyRange IDBKeyRange;
-
 public:
   GetAllKeysHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
                    IDBIndexSync* aIndex, IDBKeyRange* aKeyRange,
@@ -305,8 +299,6 @@ private:
 
 class CountHelper : public BlockingHelperBase
 {
-  typedef mozilla::dom::workers::IDBKeyRange IDBKeyRange;
-
 public:
   CountHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
             IDBIndexSync* aIndex, IDBKeyRange* aKeyRange)

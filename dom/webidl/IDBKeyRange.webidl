@@ -1,40 +1,29 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/.
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/*
+ * The origin of this IDL file is
+ * https://dvcs.w3.org/hg/IndexedDB/raw-file/tip/Overview.html
  *
- * The origin of this IDL file is http://www.w3.org/TR/IndexedDB/
+ * Copyright © 2012 W3C® (MIT, ERCIM, Keio), All Rights Reserved. W3C
+ * liability, trademark and document use rules apply.
  */
 
 interface IDBKeyRange {
   [Throws]
-  readonly attribute any lower;
-
+  readonly attribute any     lower;
   [Throws]
-  readonly attribute any upper;
-
+  readonly attribute any     upper;
+  [Constant]
   readonly attribute boolean lowerOpen;
-
+  [Constant]
   readonly attribute boolean upperOpen;
-
   [Creator, Throws]
-  static IDBKeyRange
-  only(any value);
-
+  static IDBKeyRange only (any value);
   [Creator, Throws]
-  static IDBKeyRange
-  lowerBound(any lower,
-             optional boolean open = false);
-
+  static IDBKeyRange lowerBound (any lower, optional boolean open = false);
   [Creator, Throws]
-  static IDBKeyRange
-  upperBound(any upper,
-             optional boolean open = false);
-
+  static IDBKeyRange upperBound (any upper, optional boolean open = false);
   [Creator, Throws]
-  static IDBKeyRange
-  bound(any lower,
-        any upper,
-        optional boolean lowerOpen = false,
-        optional boolean upperOpen = false);
+  static IDBKeyRange bound (any lower, any upper, optional boolean lowerOpen = false, optional boolean upperOpen = false);
 };

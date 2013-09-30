@@ -6,6 +6,7 @@
 
 #include "IDBCursorSync.h"
 
+#include "mozilla/dom/indexedDB/IDBKeyRange.h"
 #include "mozilla/dom/indexedDB/IndexedDatabaseInlines.h"
 #include "mozilla/dom/indexedDB/Key.h"
 
@@ -13,7 +14,6 @@
 #include "DatabaseInfoMT.h"
 #include "DOMBindingInlines.h"
 #include "IDBIndexSync.h"
-#include "IDBKeyRange.h"
 #include "IDBObjectStoreSync.h"
 #include "IPCThreadUtils.h"
 #include "WorkerPrivate.h"
@@ -22,6 +22,7 @@
 
 USING_WORKERS_NAMESPACE
 using namespace mozilla::dom::indexedDB::ipc;
+using mozilla::dom::indexedDB::IDBKeyRange;
 using mozilla::dom::Optional;
 using mozilla::ErrorResult;
 
@@ -29,8 +30,6 @@ BEGIN_WORKERS_NAMESPACE
 
 class OpenHelper : public BlockingHelperBase
 {
-  typedef mozilla::dom::workers::IDBKeyRange IDBKeyRange;
-
 public:
   OpenHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
              IDBCursorSync* aCursor, IDBKeyRange* aKeyRange)

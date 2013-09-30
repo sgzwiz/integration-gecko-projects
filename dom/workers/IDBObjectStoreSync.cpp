@@ -6,6 +6,7 @@
 
 #include "IDBObjectStoreSync.h"
 
+#include "mozilla/dom/indexedDB/IDBKeyRange.h"
 #include "mozilla/dom/indexedDB/IndexedDatabase.h"
 #include "mozilla/dom/indexedDB/IndexedDatabaseInlines.h"
 
@@ -14,7 +15,6 @@
 #include "DOMStringList.h"
 #include "IDBCursorWithValueSync.h"
 #include "IDBIndexSync.h"
-#include "IDBKeyRange.h"
 #include "IDBTransactionSync.h"
 #include "IPCThreadUtils.h"
 #include "WorkerPrivate.h"
@@ -25,6 +25,7 @@ USING_WORKERS_NAMESPACE
 using namespace mozilla::dom::indexedDB;
 using namespace mozilla::dom::indexedDB::ipc;
 using mozilla::dom::IDBCursorDirection;
+using mozilla::dom::indexedDB::IDBKeyRange;
 using mozilla::dom::NonNull;
 using mozilla::dom::Optional;
 using mozilla::dom::Sequence;
@@ -174,8 +175,6 @@ private:
 
 class DeleteHelper : public BlockingHelperBase
 {
-  typedef mozilla::dom::workers::IDBKeyRange IDBKeyRange;
-
 public:
   DeleteHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
               IDBObjectStoreSync* aObjectStore, IDBKeyRange* aKeyRange)
@@ -220,8 +219,6 @@ private:
 
 class GetHelper : public BlockingHelperBase
 {
-  typedef mozilla::dom::workers::IDBKeyRange IDBKeyRange;
-
 public:
   GetHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
             IDBObjectStoreSync* aObjectStore, IDBKeyRange* aKeyRange)
@@ -274,7 +271,6 @@ class GetAllHelper : public BlockingHelperBase
 {
   typedef mozilla::dom::indexedDB::StructuredCloneReadInfo
                                                         StructuredCloneReadInfo;
-  typedef mozilla::dom::workers::IDBKeyRange IDBKeyRange;
 
 public:
   GetAllHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
@@ -372,8 +368,6 @@ private:
 
 class CountHelper : public BlockingHelperBase
 {
-  typedef mozilla::dom::workers::IDBKeyRange IDBKeyRange;
-
 public:
   CountHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
               IDBObjectStoreSync* aObjectStore, IDBKeyRange* aKeyRange)

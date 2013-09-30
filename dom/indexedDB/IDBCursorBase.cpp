@@ -26,7 +26,7 @@ IDBCursorBase::ConvertDirection(mozilla::dom::IDBCursorDirection aDirection)
       return PREV_UNIQUE;
 
     default:
-      MOZ_CRASH("Unknown direction!");
+      MOZ_ASSUME_UNREACHABLE("Unknown direction!");
   }
 }
 
@@ -46,9 +46,7 @@ IDBCursorBase::GetDirection(mozilla::ErrorResult& aRv) const
     case PREV_UNIQUE:
       return mozilla::dom::IDBCursorDirection::Prevunique;
 
-    case DIRECTION_INVALID:
     default:
-      MOZ_CRASH("Unknown direction!");
-      return mozilla::dom::IDBCursorDirection::Next;
+      MOZ_ASSUME_UNREACHABLE("Bad direction!");
   }
 }

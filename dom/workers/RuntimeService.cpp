@@ -1613,7 +1613,7 @@ RuntimeService::Init()
   mWorkerModuleChild = new WorkerModuleChild();
 
   if (!mWorkerModuleParent->Open(mWorkerModuleChild->GetIPCChannel(),
-                                 mIPCMessageLoop, ipc::AsyncChannel::Parent)) {
+                                 mIPCMessageLoop, ipc::ParentSide)) {
     return NS_ERROR_FAILURE;
   }
 

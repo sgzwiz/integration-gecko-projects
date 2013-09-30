@@ -17,6 +17,7 @@
 namespace mozilla {
 namespace dom {
 namespace indexedDB {
+class IDBKeyRange;
 class Key;
 } // namespace indexedDB
 } // namespace dom
@@ -26,7 +27,6 @@ BEGIN_WORKERS_NAMESPACE
 
 class ContinueHelper;
 class IDBIndexSync;
-class IDBKeyRange;
 class IDBObjectStoreSync;
 class IDBTransactionSync;
 class IndexedDBCursorWorkerChild;
@@ -47,7 +47,6 @@ class IDBCursorSync : public IDBObjectSync,
                                                         StructuredCloneReadInfo;
   typedef mozilla::dom::indexedDB::SerializedStructuredCloneReadInfo
                                               SerializedStructuredCloneReadInfo;
-
 
 public:
   NS_DECL_ISUPPORTS_INHERITED
@@ -124,6 +123,8 @@ public:
   Delete(JSContext* aCx, ErrorResult& aRv);
 
 protected:
+  typedef mozilla::dom::indexedDB::IDBKeyRange IDBKeyRange;
+
   IDBCursorSync(JSContext* aCx, WorkerPrivate* aWorkerPrivate);
   virtual ~IDBCursorSync();
 

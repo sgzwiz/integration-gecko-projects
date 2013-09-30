@@ -21,6 +21,7 @@ public:
   enum Type
   {
     OBJECTSTORE = 0,
+    OBJECTSTOREKEY,
     INDEXKEY,
     INDEXOBJECT
   };

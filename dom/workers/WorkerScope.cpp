@@ -1183,7 +1183,7 @@ CreateDedicatedWorkerGlobalScope(JSContext* aCx)
       !IDBDatabaseSyncBinding_workers::GetProtoObject(aCx, global) ||
       !IDBFactorySyncBinding_workers::GetProtoObject(aCx, global) ||
       !IDBIndexSyncBinding_workers::GetProtoObject(aCx, global) ||
-      !IDBKeyRangeBinding_workers::GetProtoObject(aCx, global) ||
+      !IDBKeyRangeBinding::GetConstructorObject(aCx, global) ||
       !IDBObjectStoreSyncBinding_workers::GetProtoObject(aCx, global) ||
 //      !IDBVersionChangeEventBinding_workers::GetProtoObject(aCx, global) ||
       !IDBTransactionSyncBinding_workers::GetProtoObject(aCx, global) ||
