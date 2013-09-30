@@ -313,7 +313,7 @@ class LNewArray : public LInstructionHelper<1, 0, 0>
     LIR_HEADER(NewArray)
 
     const char *extraName() const {
-        return mir()->shouldUseVM() ? "VMCall" : NULL;
+        return mir()->shouldUseVM() ? "VMCall" : nullptr;
     }
 
     MNewArray *mir() const {
@@ -327,7 +327,7 @@ class LNewObject : public LInstructionHelper<1, 0, 0>
     LIR_HEADER(NewObject)
 
     const char *extraName() const {
-        return mir()->shouldUseVM() ? "VMCall" : NULL;
+        return mir()->shouldUseVM() ? "VMCall" : nullptr;
     }
 
     MNewObject *mir() const {
@@ -682,7 +682,7 @@ class LInterruptCheckImplicit : public LInstructionHelper<0, 0, 0>
     LIR_HEADER(InterruptCheckImplicit)
 
     LInterruptCheckImplicit()
-      : oolEntry_(NULL)
+      : oolEntry_(nullptr)
     {}
 
     Label *oolEntry() {
@@ -1018,7 +1018,7 @@ class LJSCallInstructionHelper : public LCallInstructionHelper<Defs, Operands, T
     }
 
     bool hasSingleTarget() const {
-        return getSingleTarget() != NULL;
+        return getSingleTarget() != nullptr;
     }
     JSFunction *getSingleTarget() const {
         return mir()->getSingleTarget();
@@ -1243,7 +1243,7 @@ class LApplyArgsGeneric : public LCallInstructionHelper<BOX_PIECES, BOX_PIECES +
     }
 
     bool hasSingleTarget() const {
-        return getSingleTarget() != NULL;
+        return getSingleTarget() != nullptr;
     }
     JSFunction *getSingleTarget() const {
         return mir()->getSingleTarget();
@@ -1445,7 +1445,7 @@ class LTestVAndBranch : public LControlInstructionHelper<2, BOX_PIECES, 3>
     }
 
     const char *extraName() const {
-        return mir()->operandMightEmulateUndefined() ? "MightEmulateUndefined" : NULL;
+        return mir()->operandMightEmulateUndefined() ? "MightEmulateUndefined" : nullptr;
     }
 
     static const size_t Input = 0;
@@ -2020,7 +2020,7 @@ class LBitOpI : public LInstructionHelper<1, 2, 0>
     const char *extraName() const {
         if (bitop() == JSOP_URSH && mir_->toUrsh()->canOverflow())
             return "UrshCanOverflow";
-        return NULL;
+        return nullptr;
     }
 
     JSOp bitop() const {
@@ -2327,7 +2327,7 @@ class LAddI : public LBinaryMath<0>
     { }
 
     const char *extraName() const {
-        return snapshot() ? "OverflowCheck" : NULL;
+        return snapshot() ? "OverflowCheck" : nullptr;
     }
 
     virtual bool recoversInput() const {
@@ -2351,7 +2351,7 @@ class LSubI : public LBinaryMath<0>
     { }
 
     const char *extraName() const {
-        return snapshot() ? "OverflowCheck" : NULL;
+        return snapshot() ? "OverflowCheck" : nullptr;
     }
 
     virtual bool recoversInput() const {
@@ -2436,18 +2436,19 @@ class LBinaryV : public LCallInstructionHelper<BOX_PIECES, 2 * BOX_PIECES, 0>
 };
 
 // Adds two string, returning a string.
-class LConcat : public LInstructionHelper<1, 2, 3>
+class LConcat : public LInstructionHelper<1, 2, 4>
 {
   public:
     LIR_HEADER(Concat)
 
     LConcat(const LAllocation &lhs, const LAllocation &rhs, const LDefinition &temp1,
-            const LDefinition &temp2, const LDefinition &temp3) {
+            const LDefinition &temp2, const LDefinition &temp3, const LDefinition &temp4) {
         setOperand(0, lhs);
         setOperand(1, rhs);
         setTemp(0, temp1);
         setTemp(1, temp2);
         setTemp(2, temp3);
+        setTemp(3, temp4);
     }
 
     const LAllocation *lhs() {
@@ -2465,21 +2466,25 @@ class LConcat : public LInstructionHelper<1, 2, 3>
     const LDefinition *temp3() {
         return this->getTemp(2);
     }
+    const LDefinition *temp4() {
+        return this->getTemp(3);
+    }
 };
 
-class LConcatPar : public LInstructionHelper<1, 3, 2>
+class LConcatPar : public LInstructionHelper<1, 3, 3>
 {
   public:
     LIR_HEADER(ConcatPar)
 
     LConcatPar(const LAllocation &slice, const LAllocation &lhs, const LAllocation &rhs,
-               const LDefinition &temp1, const LDefinition &temp2)
+               const LDefinition &temp1, const LDefinition &temp2, const LDefinition &temp3)
     {
         setOperand(0, slice);
         setOperand(1, lhs);
         setOperand(2, rhs);
         setTemp(0, temp1);
         setTemp(1, temp2);
+        setTemp(2, temp3);
     }
 
     const LAllocation *forkJoinSlice() {
@@ -2496,6 +2501,9 @@ class LConcatPar : public LInstructionHelper<1, 3, 2>
     }
     const LDefinition *temp2() {
         return this->getTemp(1);
+    }
+    const LDefinition *temp3() {
+        return this->getTemp(2);
     }
 };
 
@@ -3183,7 +3191,7 @@ class LLoadElementV : public LInstructionHelper<BOX_PIECES, 2, 0>
     }
 
     const char *extraName() const {
-        return mir()->needsHoleCheck() ? "HoleCheck" : NULL;
+        return mir()->needsHoleCheck() ? "HoleCheck" : nullptr;
     }
 
     const MLoadElement *mir() const {
@@ -3242,7 +3250,7 @@ class LLoadElementHole : public LInstructionHelper<BOX_PIECES, 3, 0>
     }
 
     const char *extraName() const {
-        return mir()->needsHoleCheck() ? "HoleCheck" : NULL;
+        return mir()->needsHoleCheck() ? "HoleCheck" : nullptr;
     }
 
     const MLoadElementHole *mir() const {
@@ -3274,7 +3282,8 @@ class LLoadElementT : public LInstructionHelper<1, 2, 0>
     }
 
     const char *extraName() const {
-        return mir()->needsHoleCheck() ? "HoleCheck" : (mir()->loadDoubles() ? "Doubles" : NULL);
+        return mir()->needsHoleCheck() ? "HoleCheck"
+                                       : (mir()->loadDoubles() ? "Doubles" : nullptr);
     }
 
     const MLoadElement *mir() const {
@@ -3300,7 +3309,7 @@ class LStoreElementV : public LInstructionHelper<0, 2 + BOX_PIECES, 0>
     }
 
     const char *extraName() const {
-        return mir()->needsHoleCheck() ? "HoleCheck" : NULL;
+        return mir()->needsHoleCheck() ? "HoleCheck" : nullptr;
     }
 
     static const size_t Value = 2;
@@ -3332,7 +3341,7 @@ class LStoreElementT : public LInstructionHelper<0, 3, 0>
     }
 
     const char *extraName() const {
-        return mir()->needsHoleCheck() ? "HoleCheck" : NULL;
+        return mir()->needsHoleCheck() ? "HoleCheck" : nullptr;
     }
 
     const MStoreElement *mir() const {
