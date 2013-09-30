@@ -38,7 +38,7 @@ interface IDBDatabaseSync : EventTarget {
 };
 
 partial interface IDBDatabaseSync {
-    //[Pref="dom.indexedDB.experimental"]
+    //Bug 917182 [Pref="dom.indexedDB.experimental"]
     readonly    attribute StorageType        storage;
 
     [Throws]

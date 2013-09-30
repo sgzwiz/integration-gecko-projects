@@ -59,4 +59,13 @@ interface IDBObjectStoreSync {
 partial interface IDBObjectStoreSync {
     [Throws]
     any                     mozGetAll (optional any key, optional unsigned long limit);
+
+    [Throws] //Bug 917182 [Pref="dom.indexedDB.experimental"]
+    any                     getAll (optional any key, optional unsigned long limit);
+
+    [Throws] //Bug 917182 [Pref="dom.indexedDB.experimental"]
+    any                     getAllKeys (optional any key, optional unsigned long limit);
+
+   // [Throws] //Bug 917182 [Pref="dom.indexedDB.experimental"]
+   // IDBCursorSync?          openKeyCursor (optional any range, optional IDBCursorDirection direction = "next");
 };

@@ -142,10 +142,6 @@ public:
   JS::Value
   Get(JSContext* aCx, JS::Value aKey, ErrorResult& aRv);
 
-  JS::Value
-  GetAll(JSContext* aCx, const Optional<JS::Handle<JS::Value> >& aKey,
-            const Optional<uint32_t>& aLimit, ErrorResult& aRv);
-
   void
   Clear(JSContext* aCx, ErrorResult& aRv);
 
@@ -173,6 +169,14 @@ public:
   uint64_t
   Count(JSContext* aCx, const Optional<JS::Handle<JS::Value> >& aValue,
         ErrorResult& aRv);
+
+  JS::Value
+  GetAll(JSContext* aCx, const Optional<JS::Handle<JS::Value> >& aKey,
+         const Optional<uint32_t>& aLimit, ErrorResult& aRv);
+
+  JS::Value
+  GetAllKeys(JSContext* aCx, const Optional<JS::Handle<JS::Value> >& aKey,
+             const Optional<uint32_t>& aLimit, ErrorResult& aRv);
 
 private:
   IDBObjectStoreSync(JSContext* aCx, WorkerPrivate* aWorkerPrivate);

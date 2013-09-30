@@ -740,6 +740,9 @@ IndexedDBObjectStoreRequestWorkerChild::Recv__delete__(const ResponseValue& aRes
     case ResponseValue::TGetAllResponse:
       MOZ_ASSERT(mRequestType == ParamsUnionType::TGetAllParams);
       break;
+    case ResponseValue::TGetAllKeysResponse:
+      MOZ_ASSERT(mRequestType == ParamsUnionType::TGetAllKeysParams);
+      break;
     case ResponseValue::TAddResponse:
       MOZ_ASSERT(mRequestType == ParamsUnionType::TAddParams);
       break;

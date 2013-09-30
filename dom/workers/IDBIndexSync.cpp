@@ -600,8 +600,8 @@ IDBIndexSync::GetKey(JSContext* aCx, JS::Value aKey, ErrorResult& aRv)
 
 JS::Value
 IDBIndexSync::GetAll(JSContext* aCx,
-                        const Optional<JS::Handle<JS::Value> >& aKey,
-                        const Optional<uint32_t>& aLimit, ErrorResult& aRv)
+                     const Optional<JS::Handle<JS::Value> >& aKey,
+                     const Optional<uint32_t>& aLimit, ErrorResult& aRv)
 {
   if (mObjectStore->Transaction()->IsInvalid()) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
@@ -612,6 +612,7 @@ IDBIndexSync::GetAll(JSContext* aCx,
   if (aKey.WasPassed()) {
     if (NS_FAILED(IDBKeyRange::FromJSVal(aCx, aKey.Value(),
                                          getter_AddRefs(keyRange)))) {
+      NS_WARNING("KeyRange parsing failed!");
       aRv.Throw(NS_ERROR_DOM_INDEXEDDB_DATA_ERR);
       return JSVAL_NULL;
     }
@@ -646,8 +647,8 @@ IDBIndexSync::GetAll(JSContext* aCx,
 
 JS::Value
 IDBIndexSync::GetAllKeys(JSContext* aCx,
-                            const Optional<JS::Handle<JS::Value> >& aKey,
-                            const Optional<uint32_t>& aLimit, ErrorResult& aRv)
+                         const Optional<JS::Handle<JS::Value> >& aKey,
+                         const Optional<uint32_t>& aLimit, ErrorResult& aRv)
 {
   if (mObjectStore->Transaction()->IsInvalid()) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
@@ -658,6 +659,7 @@ IDBIndexSync::GetAllKeys(JSContext* aCx,
   if (aKey.WasPassed()) {
     if (NS_FAILED(IDBKeyRange::FromJSVal(aCx, aKey.Value(),
                                          getter_AddRefs(keyRange)))) {
+      NS_WARNING("KeyRange parsing failed!");
       aRv.Throw(NS_ERROR_DOM_INDEXEDDB_DATA_ERR);
       return JSVAL_NULL;
     }

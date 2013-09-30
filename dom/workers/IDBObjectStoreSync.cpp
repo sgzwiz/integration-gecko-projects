@@ -267,70 +267,6 @@ private:
   JSAutoStructuredCloneBuffer mCloneBuffer;
 };
 
-class GetAllHelper : public BlockingHelperBase
-{
-  typedef mozilla::dom::indexedDB::StructuredCloneReadInfo
-                                                        StructuredCloneReadInfo;
-
-public:
-  GetAllHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
-               IDBObjectStoreSync* aObjectStore, IDBKeyRange* aKeyRange,
-               const uint32_t aLimit)
-  : BlockingHelperBase(aWorkerPrivate, aObjectStore),
-    mSyncQueueKey(aSyncQueueKey), mObjectStore(aObjectStore),
-    mKeyRange(aKeyRange), mLimit(aLimit)
-  { }
-
-  virtual nsresult
-  HandleResponse(const ResponseValue& aResponseValue);
-
-  bool
-  Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue);
-
-protected:
-  nsresult
-  IPCThreadRun()
-  {
-    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
-    mPrimarySyncQueueKey = mSyncQueueKey;
-
-    ObjectStoreRequestParams params;
-
-    GetAllParams getAllparams;
-
-    if (mKeyRange) {
-      KeyRange keyRange;
-      mKeyRange->ToSerializedKeyRange(keyRange);
-      getAllparams.optionalKeyRange() = keyRange;
-    }
-    else {
-      getAllparams.optionalKeyRange() = mozilla::void_t();
-    }
-
-    getAllparams.limit() = mLimit;
-
-    params = getAllparams;
-
-    IndexedDBObjectStoreRequestWorkerChild* actor =
-      new IndexedDBObjectStoreRequestWorkerChild(params.type());
-    mObjectStore->GetActor()->SendPIndexedDBRequestConstructor(actor, params);
-    actor->SetHelper(this);
-
-    return NS_OK;
-  }
-
-private:
-  uint32_t mSyncQueueKey;
-  IDBObjectStoreSync* mObjectStore;
-
-  // In-params.
-  nsRefPtr<IDBKeyRange> mKeyRange;
-  const uint32_t mLimit;
-
-  // Out-params.
-  nsTArray<StructuredCloneReadInfo> mCloneReadInfos;
-};
-
 class ClearHelper : public BlockingHelperBase
 {
 public:
@@ -423,6 +359,131 @@ private:
 
   // Out-params.
   uint64_t mCount;
+};
+
+class GetAllHelper : public BlockingHelperBase
+{
+  typedef mozilla::dom::indexedDB::StructuredCloneReadInfo
+                                                        StructuredCloneReadInfo;
+
+public:
+  GetAllHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
+               IDBObjectStoreSync* aObjectStore, IDBKeyRange* aKeyRange,
+               const uint32_t aLimit)
+  : BlockingHelperBase(aWorkerPrivate, aObjectStore),
+    mSyncQueueKey(aSyncQueueKey), mObjectStore(aObjectStore),
+    mKeyRange(aKeyRange), mLimit(aLimit)
+  { }
+
+  virtual nsresult
+  HandleResponse(const ResponseValue& aResponseValue);
+
+  bool
+  Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue);
+
+protected:
+  nsresult
+  IPCThreadRun()
+  {
+    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
+    mPrimarySyncQueueKey = mSyncQueueKey;
+
+    ObjectStoreRequestParams params;
+
+    GetAllParams getAllparams;
+
+    if (mKeyRange) {
+      KeyRange keyRange;
+      mKeyRange->ToSerializedKeyRange(keyRange);
+      getAllparams.optionalKeyRange() = keyRange;
+    }
+    else {
+      getAllparams.optionalKeyRange() = mozilla::void_t();
+    }
+
+    getAllparams.limit() = mLimit;
+
+    params = getAllparams;
+
+    IndexedDBObjectStoreRequestWorkerChild* actor =
+      new IndexedDBObjectStoreRequestWorkerChild(params.type());
+    mObjectStore->GetActor()->SendPIndexedDBRequestConstructor(actor, params);
+    actor->SetHelper(this);
+
+    return NS_OK;
+  }
+
+private:
+  uint32_t mSyncQueueKey;
+  IDBObjectStoreSync* mObjectStore;
+
+  // In-params.
+  nsRefPtr<IDBKeyRange> mKeyRange;
+  const uint32_t mLimit;
+
+  // Out-params.
+  nsTArray<StructuredCloneReadInfo> mCloneReadInfos;
+};
+
+class GetAllKeysHelper : public BlockingHelperBase
+{
+public:
+  GetAllKeysHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
+                   IDBObjectStoreSync* aObjectStore, IDBKeyRange* aKeyRange,
+                   const uint32_t aLimit)
+  : BlockingHelperBase(aWorkerPrivate, aObjectStore),
+    mSyncQueueKey(aSyncQueueKey), mObjectStore(aObjectStore),
+    mKeyRange(aKeyRange), mLimit(aLimit)
+  { }
+
+  virtual nsresult
+  HandleResponse(const ResponseValue& aResponseValue);
+
+  bool
+  Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue);
+
+protected:
+  nsresult
+  IPCThreadRun()
+  {
+    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
+    mPrimarySyncQueueKey = mSyncQueueKey;
+
+    ObjectStoreRequestParams params;
+
+    GetAllKeysParams getAllKeyParams;
+
+    if (mKeyRange) {
+      KeyRange keyRange;
+      mKeyRange->ToSerializedKeyRange(keyRange);
+      getAllKeyParams.optionalKeyRange() = keyRange;
+    }
+    else {
+      getAllKeyParams.optionalKeyRange() = mozilla::void_t();
+    }
+
+    getAllKeyParams.limit() = mLimit;
+
+    params = getAllKeyParams;
+
+    IndexedDBObjectStoreRequestWorkerChild* actor =
+      new IndexedDBObjectStoreRequestWorkerChild(params.type());
+    mObjectStore->GetActor()->SendPIndexedDBRequestConstructor(actor, params);
+    actor->SetHelper(this);
+
+    return NS_OK;
+  }
+
+private:
+  uint32_t mSyncQueueKey;
+  IDBObjectStoreSync* mObjectStore;
+
+  // In-params.
+  nsRefPtr<IDBKeyRange> mKeyRange;
+  const uint32_t mLimit;
+
+  // Out-params.
+  nsTArray<Key> mKeys;
 };
 
 struct MOZ_STACK_CLASS GetAddInfoClosure
@@ -703,55 +764,6 @@ IDBObjectStoreSync::Get(JSContext* aCx, JS::Value aKey, ErrorResult& aRv)
   JS::Rooted<JS::Value> value(aCx);
   if (!helper->Read(aCx, &value)) {
     NS_WARNING("Read failed!");
-    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
-    return JSVAL_NULL;
-  }
-
-  return value;
-}
-
-JS::Value
-IDBObjectStoreSync::GetAll(JSContext* aCx,
-                              const Optional<JS::Handle<JS::Value> >& aKey,
-                              const Optional<uint32_t>& aLimit,
-                              ErrorResult& aRv)
-{
-  if (mTransaction->IsInvalid()) {
-    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
-    return JSVAL_NULL;
-  }
-
-  nsRefPtr<IDBKeyRange> keyRange;
-  if (aKey.WasPassed()) {
-    nsresult rv =
-      IDBKeyRange::FromJSVal(aCx, aKey.Value(), getter_AddRefs(keyRange));
-    if (NS_FAILED(rv)) {
-      NS_WARNING("KeyRange parsing failed!");
-      aRv.Throw(rv);
-      return JSVAL_NULL;
-    }
-  }
-
-  uint32_t limit = UINT32_MAX;
-  if (aLimit.WasPassed() && aLimit.Value() != 0) {
-    limit = aLimit.Value();
-  }
-
-  DOMBindingAnchor<IDBObjectStoreSync> selfAnchor(this);
-
-  AutoSyncLoopHolder syncLoop(mWorkerPrivate);
-
-  nsRefPtr<GetAllHelper> helper =
-    new GetAllHelper(mWorkerPrivate, syncLoop.SyncQueueKey(), this, keyRange,
-                     limit);
-
-  if (!helper->Dispatch(aCx) || !syncLoop.RunAndForget(aCx)) {
-    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
-    return JSVAL_NULL;
-  }
-
-  JS::Rooted<JS::Value> value(aCx);
-  if (!helper->Read(aCx, &value)) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
     return JSVAL_NULL;
   }
@@ -1076,6 +1088,101 @@ IDBObjectStoreSync::Count(JSContext* aCx,
   return helper->Count();
 }
 
+JS::Value
+IDBObjectStoreSync::GetAll(JSContext* aCx,
+                           const Optional<JS::Handle<JS::Value> >& aKey,
+                           const Optional<uint32_t>& aLimit, ErrorResult& aRv)
+{
+  if (mTransaction->IsInvalid()) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
+    return JSVAL_NULL;
+  }
+
+  nsRefPtr<IDBKeyRange> keyRange;
+  if (aKey.WasPassed()) {
+    if (NS_FAILED(IDBKeyRange::FromJSVal(aCx, aKey.Value(),
+                                         getter_AddRefs(keyRange)))) {
+      NS_WARNING("KeyRange parsing failed!");
+      aRv.Throw(NS_ERROR_DOM_INDEXEDDB_DATA_ERR);
+      return JSVAL_NULL;
+    }
+  }
+
+  uint32_t limit = UINT32_MAX;
+  if (aLimit.WasPassed() && aLimit.Value() != 0) {
+    limit = aLimit.Value();
+  }
+
+  DOMBindingAnchor<IDBObjectStoreSync> selfAnchor(this);
+
+  AutoSyncLoopHolder syncLoop(mWorkerPrivate);
+
+  nsRefPtr<GetAllHelper> helper =
+    new GetAllHelper(mWorkerPrivate, syncLoop.SyncQueueKey(), this, keyRange,
+                     limit);
+
+  if (!helper->Dispatch(aCx) || !syncLoop.RunAndForget(aCx)) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+    return JSVAL_NULL;
+  }
+
+  JS::Rooted<JS::Value> value(aCx);
+  if (!helper->Read(aCx, &value)) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+    return JSVAL_NULL;
+  }
+
+  return value;
+}
+
+JS::Value
+IDBObjectStoreSync::GetAllKeys(JSContext* aCx,
+                               const Optional<JS::Handle<JS::Value> >& aKey,
+                               const Optional<uint32_t>& aLimit,
+                               ErrorResult& aRv)
+{
+  if (mTransaction->IsInvalid()) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
+    return JSVAL_NULL;
+  }
+
+  nsRefPtr<IDBKeyRange> keyRange;
+  if (aKey.WasPassed()) {
+    if (NS_FAILED(IDBKeyRange::FromJSVal(aCx, aKey.Value(),
+                                         getter_AddRefs(keyRange)))) {
+      NS_WARNING("KeyRange parsing failed!");
+      aRv.Throw(NS_ERROR_DOM_INDEXEDDB_DATA_ERR);
+      return JSVAL_NULL;
+    }
+  }
+
+  uint32_t limit = UINT32_MAX;
+  if (aLimit.WasPassed() && aLimit.Value() != 0) {
+    limit = aLimit.Value();
+  }
+
+  DOMBindingAnchor<IDBObjectStoreSync> selfAnchor(this);
+
+  AutoSyncLoopHolder syncLoop(mWorkerPrivate);
+
+  nsRefPtr<GetAllKeysHelper> helper =
+    new GetAllKeysHelper(mWorkerPrivate, syncLoop.SyncQueueKey(), this,
+                         keyRange, limit);
+
+  if (!helper->Dispatch(aCx) || !syncLoop.RunAndForget(aCx)) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+    return JSVAL_NULL;
+  }
+
+  JS::Rooted<JS::Value> value(aCx);
+  if (!helper->Read(aCx, &value)) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+    return JSVAL_NULL;
+  }
+
+  return value;
+}
+
 bool
 IDBObjectStoreSync::Init(JSContext* aCx, bool aCreating)
 {
@@ -1261,6 +1368,30 @@ GetHelper::Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue)
 }
 
 nsresult
+ClearHelper::HandleResponse(const ResponseValue& aResponseValue)
+{
+  AssertIsOnIPCThread();
+
+  MOZ_ASSERT(aResponseValue.type() == ResponseValue::TClearResponse,
+             "Bad response type!");
+
+  return NS_OK;
+}
+
+nsresult
+CountHelper::HandleResponse(const ResponseValue& aResponseValue)
+{
+  AssertIsOnIPCThread();
+
+  MOZ_ASSERT(aResponseValue.type() == ResponseValue::TCountResponse,
+             "Bad response type!");
+
+  mCount = aResponseValue.get_CountResponse().count();
+
+  return NS_OK;
+}
+
+nsresult
 GetAllHelper::HandleResponse(const ResponseValue& aResponseValue)
 {
   AssertIsOnIPCThread();
@@ -1303,25 +1434,56 @@ GetAllHelper::Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue)
 }
 
 nsresult
-ClearHelper::HandleResponse(const ResponseValue& aResponseValue)
+GetAllKeysHelper::HandleResponse(const ResponseValue& aResponseValue)
 {
   AssertIsOnIPCThread();
 
-  MOZ_ASSERT(aResponseValue.type() == ResponseValue::TClearResponse,
+  MOZ_ASSERT(aResponseValue.type() == ResponseValue::TGetAllKeysResponse,
              "Bad response type!");
+
+  mKeys.AppendElements(aResponseValue.get_GetAllKeysResponse().keys());
 
   return NS_OK;
 }
 
-nsresult
-CountHelper::HandleResponse(const ResponseValue& aResponseValue)
+bool
+GetAllKeysHelper::Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue)
 {
-  AssertIsOnIPCThread();
+  MOZ_ASSERT(mKeys.Length() <= mLimit, "Too many results!");
 
-  MOZ_ASSERT(aResponseValue.type() == ResponseValue::TCountResponse,
-             "Bad response type!");
+  nsTArray<Key> keys;
+  mKeys.SwapElements(keys);
 
-  mCount = aResponseValue.get_CountResponse().count();
+  JS::Rooted<JSObject*> array(aCx, JS_NewArrayObject(aCx, 0, NULL));
+  if (!array) {
+    NS_WARNING("Failed to make array!");
+    return false;
+  }
 
-  return NS_OK;
+  if (!keys.IsEmpty()) {
+    if (!JS_SetArrayLength(aCx, array, uint32_t(keys.Length()))) {
+      NS_WARNING("Failed to set array length!");
+      return false;
+    }
+
+    for (uint32_t index = 0, count = keys.Length(); index < count; index++) {
+      const Key& key = keys[index];
+      MOZ_ASSERT(!key.IsUnset(), "Bad key!");
+
+      JS::Rooted<JS::Value> value(aCx);
+      nsresult rv = key.ToJSVal(aCx, &value);
+      if (NS_FAILED(rv)) {
+        NS_WARNING("Failed to get jsval for key!");
+        return false;
+      }
+
+      if (!JS_SetElement(aCx, array, index, &value)) {
+        NS_WARNING("Failed to set array element!");
+        return false;
+      }
+    }
+  }
+
+  aValue.setObject(*array);
+  return true;
 }
