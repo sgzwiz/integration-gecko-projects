@@ -52,7 +52,7 @@ onmessage = function(event) {
   is(objectStore.keyPath, null, "Correct keyPath");
 
   is(objectStore.indexNames.length, 1, "Correct indexNames length");
-  todo_is(objectStore.indexNames[0], "fooindex", "Correct indexNames name");
+  is(objectStore.indexNames[0], "fooindex", "Correct indexNames name");
 
   try {
     objectStore.add({});

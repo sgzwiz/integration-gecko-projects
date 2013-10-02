@@ -6,11 +6,11 @@
 
 #include "IDBTransactionSync.h"
 
+#include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/indexedDB/DatabaseInfo.h"
 
 #include "DatabaseInfoMT.h"
 #include "DOMBindingInlines.h"
-#include "DOMStringList.h"
 #include "IDBDatabaseSync.h"
 #include "IDBObjectStoreSync.h"
 #include "IPCThreadUtils.h"
@@ -21,6 +21,7 @@
 USING_WORKERS_NAMESPACE
 using namespace mozilla::dom::indexedDB;
 using namespace mozilla::dom::indexedDB::ipc;
+using mozilla::dom::DOMStringList;
 using mozilla::dom::NonNull;
 using mozilla::dom::Sequence;
 using mozilla::ErrorResult;
@@ -214,23 +215,21 @@ IDBTransactionSync::Db()
   return mDatabase;
 }
 
-DOMStringList*
+already_AddRefed<DOMStringList>
 IDBTransactionSync::ObjectStoreNames(JSContext* aCx)
 {
-  nsAutoTArray<nsString, 10> stackArray;
-  nsTArray<nsString>* arrayOfNames;
+  nsRefPtr<DOMStringList> list(new DOMStringList());
 
   if (mMode == IDBTransactionBase::VERSION_CHANGE) {
     if(mDatabaseInfo) {
-      mDatabaseInfo->GetObjectStoreNames(stackArray);
+      mDatabaseInfo->GetObjectStoreNames(list->Names());
     }
-    arrayOfNames = &stackArray;
   }
   else {
-    arrayOfNames = &mObjectStoreNames;
+    list->Names() = mObjectStoreNames;
   }
 
-  return DOMStringList::Create(aCx, *arrayOfNames);
+  return list.forget();
 }
 
 IDBObjectStoreSync*

@@ -16,6 +16,7 @@
 
 namespace mozilla {
 namespace dom {
+class DOMStringList;
 namespace indexedDB {
 struct ObjectStoreInfo;
 } // namespace indexedDB
@@ -25,7 +26,6 @@ struct ObjectStoreInfo;
 BEGIN_WORKERS_NAMESPACE
 
 struct DatabaseInfoMT;
-class DOMStringList;
 class IDBDatabaseSync;
 class IDBObjectStoreSync;
 class IndexedDBTransactionWorkerChild;
@@ -107,7 +107,7 @@ public:
   IDBDatabaseSync*
   Db();
 
-  DOMStringList*
+  already_AddRefed<DOMStringList>
   ObjectStoreNames(JSContext* aCx);
 
   IDBObjectStoreSync*

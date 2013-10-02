@@ -6,12 +6,12 @@
 
 #include "IDBDatabaseSync.h"
 
+#include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/IDBDatabaseBinding.h"
 #include "mozilla/dom/IDBTransactionCallbackBinding.h"
 #include "mozilla/dom/IDBVersionChangeCallbackBinding.h"
 
 #include "DOMBindingInlines.h"
-#include "DOMStringList.h"
 #include "Events.h"
 #include "IDBFactorySync.h"
 #include "IDBTransactionSync.h"
@@ -21,6 +21,7 @@
 #include "ipc/IndexedDBWorkerChild.h"
 
 USING_WORKERS_NAMESPACE
+using mozilla::dom::DOMStringList;
 using mozilla::dom::IDBTransactionCallback;
 using mozilla::dom::IDBTransactionMode;
 using mozilla::dom::IDBVersionChangeCallback;
@@ -290,20 +291,17 @@ IDBDatabaseSync::OnVersionChange(uint64_t aOldVersion, uint64_t aNewVersion)
 
 NS_IMPL_ISUPPORTS_INHERITED0(IDBDatabaseSync, IDBObjectSyncEventTarget)
 
-DOMStringList*
+already_AddRefed<DOMStringList>
 IDBDatabaseSync::GetObjectStoreNames(JSContext* aCx, ErrorResult& aRv)
 {
-  nsAutoTArray<nsString, 10> objectStoreNames;
-  if(mDatabaseInfo) {
-    if (!mDatabaseInfo->GetObjectStoreNames(objectStoreNames)) {
-      aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
-      return nullptr;
-    }
+  nsRefPtr<DOMStringList> list(new DOMStringList());
+  if(mDatabaseInfo && !mDatabaseInfo->GetObjectStoreNames(list->Names())) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+    return nullptr;
   }
 
-  return DOMStringList::Create(aCx, objectStoreNames);
+  return list.forget();
 }
-
 
 IDBObjectStoreSync*
 IDBDatabaseSync::CreateObjectStore(

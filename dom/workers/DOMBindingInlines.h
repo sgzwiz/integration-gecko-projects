@@ -6,7 +6,6 @@
 #ifndef mozilla_dom_workers_dombindinginlines_h__
 #define mozilla_dom_workers_dombindinginlines_h__
 
-#include "mozilla/dom/DOMStringListBinding.h"
 #include "mozilla/dom/JSSlots.h"
 #include "mozilla/dom/IDBCursorSyncBinding.h"
 #include "mozilla/dom/IDBDatabaseSyncBinding.h"
@@ -52,7 +51,6 @@ struct WrapPrototypeTraits
     }                                                                          \
   };
 
-SPECIALIZE_PROTO_TRAITS(DOMStringList)
 SPECIALIZE_PROTO_TRAITS(IDBCursorSync)
 SPECIALIZE_PROTO_TRAITS(IDBCursorWithValueSync)
 SPECIALIZE_PROTO_TRAITS(IDBDatabaseSync)

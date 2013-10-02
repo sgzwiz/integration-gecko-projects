@@ -18,6 +18,7 @@
 
 namespace mozilla {
 namespace dom {
+class DOMStringList;
 struct IDBIndexParameters;
 namespace indexedDB {
 struct IndexUpdateInfo;
@@ -28,7 +29,6 @@ struct ObjectStoreInfo;
 
 BEGIN_WORKERS_NAMESPACE
 
-class DOMStringList;
 class IDBCursorWithValueSync;
 class IDBIndexSync;
 class IndexedDBObjectStoreWorkerChild;
@@ -112,7 +112,7 @@ public:
   JS::Value
   GetKeyPath(JSContext* aCx, ErrorResult& aRv);
 
-  DOMStringList*
+  already_AddRefed<DOMStringList>
   IndexNames(JSContext* aCx);
 
   IDBTransactionSync*

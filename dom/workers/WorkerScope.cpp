@@ -1185,7 +1185,7 @@ CreateDedicatedWorkerGlobalScope(JSContext* aCx)
 
   // Init other paris-bindings.
   if (!DOMExceptionBinding::GetConstructorObject(aCx, global) ||
-      !DOMStringListBinding_workers::GetProtoObject(aCx, global) ||
+      !DOMStringListBinding::GetConstructorObject(aCx, global) ||
       !EventBinding::GetConstructorObject(aCx, global) ||
       !FileReaderSyncBinding_workers::GetConstructorObject(aCx, global) ||
       !IDBCursorSyncBinding_workers::GetProtoObject(aCx, global) ||

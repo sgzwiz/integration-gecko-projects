@@ -6,13 +6,13 @@
 
 #include "IDBObjectStoreSync.h"
 
+#include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/indexedDB/IDBKeyRange.h"
 #include "mozilla/dom/indexedDB/IndexedDatabase.h"
 #include "mozilla/dom/indexedDB/IndexedDatabaseInlines.h"
 
 #include "BlockingHelperBase.h"
 #include "DOMBindingInlines.h"
-#include "DOMStringList.h"
 #include "IDBCursorWithValueSync.h"
 #include "IDBIndexSync.h"
 #include "IDBTransactionSync.h"
@@ -24,6 +24,7 @@
 USING_WORKERS_NAMESPACE
 using namespace mozilla::dom::indexedDB;
 using namespace mozilla::dom::indexedDB::ipc;
+using mozilla::dom::DOMStringList;
 using mozilla::dom::IDBCursorDirection;
 using mozilla::dom::indexedDB::IDBKeyRange;
 using mozilla::dom::NonNull;
@@ -657,10 +658,12 @@ IDBObjectStoreSync::GetKeyPath(JSContext* aCx, ErrorResult& aRv)
   return mCachedKeyPath;
 }
 
-DOMStringList*
+already_AddRefed<DOMStringList>
 IDBObjectStoreSync::IndexNames(JSContext* aCx)
 {
-  nsAutoTArray<nsString, 10> names;
+  nsRefPtr<DOMStringList> list(new DOMStringList());
+
+  nsTArray<nsString>& names = list->Names();
   uint32_t count = mInfo->indexes.Length();
   names.SetCapacity(count);
 
@@ -668,7 +671,7 @@ IDBObjectStoreSync::IndexNames(JSContext* aCx)
     names.InsertElementSorted(mInfo->indexes[index].name);
   }
 
-  return DOMStringList::Create(aCx, names);
+  return list.forget();
 }
 
 JS::Value

@@ -18,6 +18,7 @@
 
 namespace mozilla {
 namespace dom {
+class DOMStringList;
 struct IDBObjectStoreParameters;
 //struct IDBOpenDBOptionsWorkers;
 class IDBTransactionCallback;
@@ -30,7 +31,6 @@ struct ObjectStoreInfo;
 
 BEGIN_WORKERS_NAMESPACE
 
-class DOMStringList;
 class IDBFactorySync;
 class IDBObjectStoreSync;
 class IDBTransactionSync;
@@ -128,7 +128,7 @@ public:
     return PersistenceTypeToStorage(mPersistenceType);
   }
 
-  DOMStringList*
+  already_AddRefed<DOMStringList>
   GetObjectStoreNames(JSContext* aCx, ErrorResult& aRv);
 
   IDBObjectStoreSync*

@@ -19,7 +19,6 @@ EXPORTS.mozilla.dom.workers += [
 EXPORTS.mozilla.dom.workers.bindings += [
     'BlockingHelperBase.h',
     'DOMBindingBase.h',
-    'DOMStringList.h',
     'DatabaseInfoMT.h',
     'EventListenerManager.h',
     'EventTarget.h',
@@ -45,7 +44,6 @@ CPP_SOURCES += [
     'ChromeWorkerScope.cpp',
     'DatabaseInfoMT.cpp',
     'DOMBindingBase.cpp',
-    'DOMStringList.cpp',
     'EventListenerManager.cpp',
     'EventTarget.cpp',
     'Events.cpp',
