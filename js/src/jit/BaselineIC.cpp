@@ -15,6 +15,9 @@
 #include "jit/IonLinker.h"
 #include "jit/IonSpewer.h"
 #include "jit/Lowering.h"
+#ifdef JS_ION_PERF
+# include "jit/PerfSpewer.h"
+#endif
 #include "jit/VMFunctions.h"
 
 #include "jsboolinlines.h"
@@ -767,8 +770,17 @@ EnsureCanEnterIon(JSContext *cx, ICUseCount_Fallback *stub, BaselineFrame *frame
     }
 
     if (isLoopEntry) {
-        IonSpew(IonSpew_BaselineOSR, "  OSR possible!");
         IonScript *ion = script->ionScript();
+        JS_ASSERT(cx->runtime()->spsProfiler.enabled() == ion->hasSPSInstrumentation());
+
+        // If the baseline frame's SPS handling doesn't match up with the Ion code's SPS
+        // handling, don't OSR.
+        if (frame->hasPushedSPSFrame() != ion->hasSPSInstrumentation()) {
+            IonSpew(IonSpew_BaselineOSR, "  OSR crosses SPS handling boundaries, skipping!");
+            return true;
+        }
+
+        IonSpew(IonSpew_BaselineOSR, "  OSR possible!");
         *jitcodePtr = ion->method()->raw() + ion->osrEntryOffset();
     }
 
@@ -1524,7 +1536,7 @@ ICTypeUpdate_PrimitiveSet::Compiler::generateStubCode(MacroAssembler &masm)
 
     // Type matches, load true into R1.scratchReg() and return.
     masm.bind(&success);
-    masm.mov(Imm32(1), R1.scratchReg());
+    masm.mov(ImmWord(1), R1.scratchReg());
     EmitReturnFromIC(masm);
 
     return true;
@@ -1542,7 +1554,7 @@ ICTypeUpdate_SingleObject::Compiler::generateStubCode(MacroAssembler &masm)
     masm.branchPtr(Assembler::NotEqual, expectedObject, obj, &failure);
 
     // Identity matches, load true into R1.scratchReg() and return.
-    masm.mov(Imm32(1), R1.scratchReg());
+    masm.mov(ImmWord(1), R1.scratchReg());
     EmitReturnFromIC(masm);
 
     masm.bind(&failure);
@@ -1564,7 +1576,7 @@ ICTypeUpdate_TypeObject::Compiler::generateStubCode(MacroAssembler &masm)
     masm.branchPtr(Assembler::NotEqual, expectedType, R1.scratchReg(), &failure);
 
     // Type matches, load true into R1.scratchReg() and return.
-    masm.mov(Imm32(1), R1.scratchReg());
+    masm.mov(ImmWord(1), R1.scratchReg());
     EmitReturnFromIC(masm);
 
     masm.bind(&failure);
@@ -4052,7 +4064,7 @@ ICGetElemNativeCompiler::emitCallScripted(MacroAssembler &masm, Register objReg)
 
         masm.movePtr(ImmGCPtr(argumentsRectifier), code);
         masm.loadPtr(Address(code, IonCode::offsetOfCode()), code);
-        masm.mov(Imm32(0), ArgumentsRectifierReg);
+        masm.mov(ImmWord(0), ArgumentsRectifierReg);
     }
 
     masm.bind(&noUnderflow);
@@ -6280,7 +6292,7 @@ ICGetProp_CallScripted::Compiler::generateStubCode(MacroAssembler &masm)
 
         masm.movePtr(ImmGCPtr(argumentsRectifier), code);
         masm.loadPtr(Address(code, IonCode::offsetOfCode()), code);
-        masm.mov(Imm32(0), ArgumentsRectifierReg);
+        masm.mov(ImmWord(0), ArgumentsRectifierReg);
     }
 
     masm.bind(&noUnderflow);
@@ -7187,7 +7199,7 @@ ICSetProp_CallScripted::Compiler::generateStubCode(MacroAssembler &masm)
 
         masm.movePtr(ImmGCPtr(argumentsRectifier), code);
         masm.loadPtr(Address(code, IonCode::offsetOfCode()), code);
-        masm.mov(Imm32(1), ArgumentsRectifierReg);
+        masm.mov(ImmWord(1), ArgumentsRectifierReg);
     }
 
     masm.bind(&noUnderflow);

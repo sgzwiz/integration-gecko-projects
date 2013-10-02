@@ -12,6 +12,9 @@
 #include "jit/FixedList.h"
 #include "jit/IonLinker.h"
 #include "jit/IonSpewer.h"
+#ifdef JS_ION_PERF
+# include "jit/PerfSpewer.h"
+#endif
 #include "jit/VMFunctions.h"
 
 #include "jsscriptinlines.h"
@@ -1380,7 +1383,7 @@ BaselineCompiler::emit_JSOP_NEWARRAY()
 
     uint32_t length = GET_UINT24(pc);
     RootedTypeObject type(cx);
-    if (!types::UseNewTypeForInitializer(cx, script, pc, JSProto_Array)) {
+    if (!types::UseNewTypeForInitializer(script, pc, JSProto_Array)) {
         type = types::TypeScript::InitObject(cx, script, pc, JSProto_Array);
         if (!type)
             return false;
@@ -1424,7 +1427,7 @@ BaselineCompiler::emit_JSOP_NEWOBJECT()
     frame.syncStack(0);
 
     RootedTypeObject type(cx);
-    if (!types::UseNewTypeForInitializer(cx, script, pc, JSProto_Object)) {
+    if (!types::UseNewTypeForInitializer(script, pc, JSProto_Object)) {
         type = types::TypeScript::InitObject(cx, script, pc, JSProto_Object);
         if (!type)
             return false;
@@ -1460,7 +1463,7 @@ BaselineCompiler::emit_JSOP_NEWINIT()
     JSProtoKey key = JSProtoKey(GET_UINT8(pc));
 
     RootedTypeObject type(cx);
-    if (!types::UseNewTypeForInitializer(cx, script, pc, key)) {
+    if (!types::UseNewTypeForInitializer(script, pc, key)) {
         type = types::TypeScript::InitObject(cx, script, pc, key);
         if (!type)
             return false;
@@ -2254,7 +2257,7 @@ BaselineCompiler::emitCall()
     uint32_t argc = GET_ARGC(pc);
 
     frame.syncStack(0);
-    masm.mov(Imm32(argc), R0.scratchReg());
+    masm.mov(ImmWord(argc), R0.scratchReg());
 
     // Call IC
     ICCall_Fallback::Compiler stubCompiler(cx, /* isConstructing = */ JSOp(*pc) == JSOP_NEW);

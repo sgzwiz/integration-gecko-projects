@@ -200,6 +200,10 @@ public:
   bool
   CheckWritePermission(const nsAString& aDatabaseName);
 
+  mozilla::ipc::IProtocol*
+  CloneProtocol(Channel* aChannel,
+                mozilla::ipc::ProtocolCloneContext* aCtx) MOZ_OVERRIDE;
+
 protected:
   bool
   CheckPermissionInternal(const nsAString& aDatabaseName,

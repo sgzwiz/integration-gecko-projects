@@ -43,6 +43,10 @@
 #include "gfx2DGlue.h"
 #include <algorithm>
 
+#ifdef MOZ_NUWA_PROCESS
+#include "ipc/Nuwa.h"
+#endif
+
 using namespace mozilla;
 using namespace mozilla::image;
 using namespace mozilla::layers;
@@ -2449,7 +2453,7 @@ RasterImage::CanQualityScale(const gfxSize& scale)
 }
 
 bool
-RasterImage::CanScale(gfxPattern::GraphicsFilter aFilter,
+RasterImage::CanScale(GraphicsFilter aFilter,
                       gfxSize aScale, uint32_t aFlags)
 {
 // The high-quality scaler requires Skia.
@@ -2458,7 +2462,7 @@ RasterImage::CanScale(gfxPattern::GraphicsFilter aFilter,
   // bunch of work on an image that just gets thrown away.
   // We only use the scaler when drawing to the window because, if we're not
   // drawing to a window (eg a canvas), updates to that image will be ignored.
-  if (gHQDownscaling && aFilter == gfxPattern::FILTER_GOOD &&
+  if (gHQDownscaling && aFilter == GraphicsFilter::FILTER_GOOD &&
       !mAnim && mDecoded && !mMultipart && CanQualityScale(aScale) &&
       (aFlags & imgIContainer::FLAG_HIGH_QUALITY_SCALING)) {
     gfxFloat factor = gHQDownscalingMinFactor / 1000.0;
@@ -2515,7 +2519,7 @@ RasterImage::ScalingDone(ScaleRequest* request, ScaleStatus status)
 void
 RasterImage::DrawWithPreDownscaleIfNeeded(imgFrame *aFrame,
                                           gfxContext *aContext,
-                                          gfxPattern::GraphicsFilter aFilter,
+                                          GraphicsFilter aFilter,
                                           const gfxMatrix &aUserSpaceToImageSpace,
                                           const gfxRect &aFill,
                                           const nsIntRect &aSubimage,
@@ -2590,7 +2594,7 @@ RasterImage::DrawWithPreDownscaleIfNeeded(imgFrame *aFrame,
  *                      in uint32_t aFlags); */
 NS_IMETHODIMP
 RasterImage::Draw(gfxContext *aContext,
-                  gfxPattern::GraphicsFilter aFilter,
+                  GraphicsFilter aFilter,
                   const gfxMatrix &aUserSpaceToImageSpace,
                   const gfxRect &aFill,
                   const nsIntRect &aSubimage,
@@ -2631,7 +2635,7 @@ RasterImage::Draw(gfxContext *aContext,
   //
   // (We don't normally draw unlocked images, so this conditition will usually
   // be false.  But we will draw unlocked images if image locking is globally
-  // disabled via the content.image.allow_locking pref.)
+  // disabled via the image.mem.allow_locking_in_content_processes pref.)
   if (DiscardingActive()) {
     DiscardTracker::Reset(&mDiscardTrackerNode);
   }
@@ -3055,6 +3059,37 @@ RasterImage::DecodePool::GetEventTarget()
   return target.forget();
 }
 
+#ifdef MOZ_NUWA_PROCESS
+
+class RIDThreadPoolListener : public nsIThreadPoolListener
+{
+public:
+    NS_DECL_THREADSAFE_ISUPPORTS
+    NS_DECL_NSITHREADPOOLLISTENER
+
+    RIDThreadPoolListener() {}
+    ~RIDThreadPoolListener() {}
+};
+
+NS_IMPL_ISUPPORTS1(RIDThreadPoolListener, nsIThreadPoolListener)
+
+NS_IMETHODIMP
+RIDThreadPoolListener::OnThreadCreated()
+{
+    if (IsNuwaProcess()) {
+        NuwaMarkCurrentThread((void (*)(void *))nullptr, nullptr);
+    }
+    return NS_OK;
+}
+
+NS_IMETHODIMP
+RIDThreadPoolListener::OnThreadShuttingDown()
+{
+    return NS_OK;
+}
+
+#endif // MOZ_NUWA_PROCESS
+
 RasterImage::DecodePool::DecodePool()
  : mThreadPoolMutex("Thread Pool")
 {
@@ -3071,6 +3106,12 @@ RasterImage::DecodePool::DecodePool()
 
       mThreadPool->SetThreadLimit(limit);
       mThreadPool->SetIdleThreadLimit(limit);
+
+#ifdef MOZ_NUWA_PROCESS
+      if (IsNuwaProcess()) {
+        mThreadPool->SetListener(new RIDThreadPoolListener());
+      }
+#endif
 
       nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
       if (obsSvc) {
