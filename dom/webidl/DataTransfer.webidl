@@ -8,6 +8,7 @@
  */
 
 //[ChromeConstructor(DOMString eventType, boolean isExternal)]
+[Constructor(DOMString eventType, boolean isExternal)]
 interface DataTransfer {
            attribute DOMString dropEffect;
            attribute DOMString effectAllowed;
