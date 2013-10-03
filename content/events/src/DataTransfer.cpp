@@ -503,7 +503,10 @@ NS_IMETHODIMP
 DataTransfer::GetMozSourceNode(nsIDOMNode** aSourceNode)
 {
   nsCOMPtr<nsINode> sourceNode = GetMozSourceNode();
-  return sourceNode ? CallQueryInterface(sourceNode, aSourceNode) : NS_OK;
+  nsCOMPtr<nsIDOMNode> node = do_QueryInterface(sourceNode);
+//  return sourceNode ? CallQueryInterface(sourceNode, aSourceNode) : NS_OK;
+  node.forget(aSourceNode);
+  return NS_OK;
 }
 
 already_AddRefed<DOMStringList>
