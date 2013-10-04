@@ -17,8 +17,8 @@
 #include "mozilla/Attributes.h"
 
 // A native thread
-class nsThread MOZ_FINAL : public nsIThreadInternal,
-                           public nsISupportsPriority
+class nsThread : public nsIThreadInternal,
+                 public nsISupportsPriority
 {
 public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -53,17 +53,20 @@ public:
   static nsresult
   SetMainThreadObserver(nsIThreadObserver* aObserver);
 
+protected:
+  ~nsThread();
+
 private:
   static nsIThreadObserver* sMainThreadObserver;
 
   friend class nsThreadShutdownEvent;
 
-  ~nsThread();
 
   bool ShuttingDown() { return mShutdownContext != nullptr; }
 
   static void ThreadFunc(void *arg);
 
+protected:
   // Helper
   already_AddRefed<nsIThreadObserver> GetObserver() {
     nsIThreadObserver *obs;
@@ -75,7 +78,9 @@ private:
   bool GetEvent(bool mayWait, nsIRunnable **event) {
     return mEvents.GetEvent(mayWait, event);
   }
-  nsresult PutEvent(nsIRunnable *event);
+  virtual nsresult PutEvent(nsIRunnable *event);
+  // Called with mLock held.
+  nsresult PutEventInternal(nsIRunnable *event);
 
   // This lock protects access to mObserver, mEvents and mEventsAreDoomed.
   // All of those fields are only modified on the thread itself (never from
@@ -84,6 +89,7 @@ private:
   // on mEvents, we have to hold the lock to synchronize with PopEventQueue.
   mozilla::Mutex mLock;
 
+private:
   nsCOMPtr<nsIThreadObserver> mObserver;
 
   // Only accessed on the target thread.

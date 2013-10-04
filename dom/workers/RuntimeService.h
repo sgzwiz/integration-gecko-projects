@@ -33,6 +33,7 @@ class Thread;
 
 BEGIN_WORKERS_NAMESPACE
 
+class Thread;
 class WorkerPrivate;
 class WorkerModuleParent;
 class WorkerModuleChild;
@@ -57,7 +58,7 @@ class RuntimeService MOZ_FINAL : public nsIObserver
 
   struct IdleThreadInfo
   {
-    nsCOMPtr<nsIThread> mThread;
+    nsRefPtr<Thread> mThread;
     mozilla::TimeStamp mExpirationTime;
   };
 

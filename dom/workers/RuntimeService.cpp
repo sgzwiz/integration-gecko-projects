@@ -36,6 +36,7 @@
 #include "nsLayoutStatics.h"
 #include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
+#include "nsThread.h"
 #include "nsThreadUtils.h"
 #include "nsXPCOM.h"
 #include "nsXPCOMPrivate.h"
@@ -43,6 +44,7 @@
 #include "xpcpublic.h"
 
 #include "Events.h"
+#include "Thread.h"
 #include "Worker.h"
 #include "WorkerPrivate.h"
 
@@ -915,6 +917,9 @@ public:
 
     workerPrivate->AssertIsOnWorkerThread();
 
+    Thread* thread = static_cast<Thread*>(NS_GetCurrentThread());
+    thread->SetWorkerPrivate(workerPrivate);
+
     {
       nsCycleCollector_startup();
 
@@ -938,6 +943,10 @@ public:
         JSAutoRequest ar(cx);
         workerPrivate->DoRunLoop(cx);
       }
+
+      // We're no longer accepting events, so redirect events back to the
+      // regular queue.
+      thread->SetWorkerPrivate(nullptr);
 
       // Destroy the main context.  This will unroot the main worker global and
       // GC.  This is not the last JSContext (WorkerJSRuntime maintains an
@@ -1389,7 +1398,7 @@ RuntimeService::ScheduleWorker(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
     return true;
   }
 
-  nsCOMPtr<nsIThread> thread;
+  nsRefPtr<Thread> thread;
   {
     MutexAutoLock lock(mMutex);
     if (!mIdleThreadArray.IsEmpty()) {
@@ -1400,20 +1409,20 @@ RuntimeService::ScheduleWorker(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
   }
 
   if (!thread) {
-    if (NS_FAILED(NS_NewNamedThread("DOM Worker",
-                                    getter_AddRefs(thread), nullptr,
-                                    WORKER_STACK_SIZE))) {
+    thread = new Thread(WORKER_STACK_SIZE);
+    if (NS_FAILED(NS_NewCustomThread(thread))) {
       UnregisterWorker(aCx, aWorkerPrivate);
       JS_ReportError(aCx, "Could not create new thread!");
       return false;
     }
+    NS_SetThreadName(thread, "DOM Worker");
   }
 
   int32_t priority = aWorkerPrivate->IsChromeWorker() ?
                      nsISupportsPriority::PRIORITY_NORMAL :
                      nsISupportsPriority::PRIORITY_LOW;
 
-  nsCOMPtr<nsISupportsPriority> threadPriority = do_QueryInterface(thread);
+  nsCOMPtr<nsISupportsPriority> threadPriority = do_QueryObject(thread);
   if (!threadPriority || NS_FAILED(threadPriority->SetPriority(priority))) {
     NS_WARNING("Could not set the thread's priority!");
   }
@@ -1448,7 +1457,7 @@ RuntimeService::ShutdownIdleThreads(nsITimer* aTimer, void* /* aClosure */)
 
   TimeStamp nextExpiration;
 
-  nsAutoTArray<nsCOMPtr<nsIThread>, 20> expiredThreads;
+  nsAutoTArray<nsRefPtr<Thread>, 20> expiredThreads;
   {
     MutexAutoLock lock(runtime->mMutex);
 
@@ -1460,7 +1469,7 @@ RuntimeService::ShutdownIdleThreads(nsITimer* aTimer, void* /* aClosure */)
         break;
       }
 
-      nsCOMPtr<nsIThread>* thread = expiredThreads.AppendElement();
+      nsRefPtr<Thread>* thread = expiredThreads.AppendElement();
       thread->swap(info.mThread);
     }
 
@@ -1702,7 +1711,7 @@ RuntimeService::Cleanup()
 
       // Shut down any idle threads.
       if (!mIdleThreadArray.IsEmpty()) {
-        nsAutoTArray<nsCOMPtr<nsIThread>, 20> idleThreads;
+        nsAutoTArray<nsRefPtr<Thread>, 20> idleThreads;
 
         uint32_t idleThreadCount = mIdleThreadArray.Length();
         idleThreads.SetLength(idleThreadCount);
@@ -1916,7 +1925,7 @@ RuntimeService::NoteIdleThread(nsIThread* aThread)
 
     if (mIdleThreadArray.Length() < MAX_IDLE_THREADS) {
       IdleThreadInfo* info = mIdleThreadArray.AppendElement();
-      info->mThread = aThread;
+      info->mThread = static_cast<Thread*>(aThread);
       info->mExpirationTime = expirationTime;
       shutdown = false;
     }

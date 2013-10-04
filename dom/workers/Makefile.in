@@ -8,6 +8,7 @@ LOCAL_INCLUDES = \
   -I$(topsrcdir)/dom/base \
   -I$(topsrcdir)/dom/system \
   -I$(topsrcdir)/xpcom/build \
+  -I$(topsrcdir)/xpcom/threads \
   $(NULL)
 
 include $(topsrcdir)/config/rules.mk
