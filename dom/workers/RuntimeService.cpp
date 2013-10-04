@@ -60,7 +60,6 @@ using namespace mozilla::dom;
 
 USING_WORKERS_NAMESPACE
 
-using base::Thread;
 using mozilla::MutexAutoLock;
 using mozilla::MutexAutoUnlock;
 using mozilla::Preferences;
@@ -1620,7 +1619,7 @@ RuntimeService::Init()
     return rv;
   }
 
-  mIPCThread = new Thread("WorkersIPCThread");
+  mIPCThread = new base::Thread("WorkersIPCThread");
   if (!mIPCThread->Start()) {
     return NS_ERROR_FAILURE;
   }
