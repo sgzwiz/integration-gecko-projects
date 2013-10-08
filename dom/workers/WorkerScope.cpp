@@ -1188,15 +1188,15 @@ CreateDedicatedWorkerGlobalScope(JSContext* aCx)
       !DOMStringListBinding::GetConstructorObject(aCx, global) ||
       !EventBinding::GetConstructorObject(aCx, global) ||
       !FileReaderSyncBinding_workers::GetConstructorObject(aCx, global) ||
-      !IDBCursorSyncBinding_workers::GetProtoObject(aCx, global) ||
-      !IDBCursorWithValueSyncBinding_workers::GetProtoObject(aCx, global) ||
-      !IDBDatabaseSyncBinding_workers::GetProtoObject(aCx, global) ||
-      !IDBFactorySyncBinding_workers::GetProtoObject(aCx, global) ||
-      !IDBIndexSyncBinding_workers::GetProtoObject(aCx, global) ||
+      !IDBCursorSyncBinding_workers::GetConstructorObject(aCx, global) ||
+      !IDBCursorWithValueSyncBinding_workers::GetConstructorObject(aCx, global) ||
+      !IDBDatabaseSyncBinding_workers::GetConstructorObject(aCx, global) ||
+      !IDBFactorySyncBinding_workers::GetConstructorObject(aCx, global) ||
+      !IDBIndexSyncBinding_workers::GetConstructorObject(aCx, global) ||
       !IDBKeyRangeBinding::GetConstructorObject(aCx, global) ||
-      !IDBObjectStoreSyncBinding_workers::GetProtoObject(aCx, global) ||
-//      !IDBVersionChangeEventBinding_workers::GetProtoObject(aCx, global) ||
-      !IDBTransactionSyncBinding_workers::GetProtoObject(aCx, global) ||
+      !IDBObjectStoreSyncBinding_workers::GetConstructorObject(aCx, global) ||
+//      !IDBVersionChangeEventBinding_workers::GetConstructorObject(aCx, global) ||
+      !IDBTransactionSyncBinding_workers::GetConstructorObject(aCx, global) ||
       !ImageDataBinding::GetConstructorObject(aCx, global) ||
       !TextDecoderBinding::GetConstructorObject(aCx, global) ||
       !TextEncoderBinding::GetConstructorObject(aCx, global) ||
