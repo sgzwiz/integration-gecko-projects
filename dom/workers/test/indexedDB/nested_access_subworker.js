@@ -25,6 +25,6 @@ onmessage = function(event) {
     is(value, testInt.value, "Got the right value");
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

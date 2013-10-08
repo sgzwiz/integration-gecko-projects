@@ -34,7 +34,7 @@ onmessage = function(event) {
 
       var cursor = objectStore.index("").openCursor(keyRange);
       if(cursor) {
-        ok(true, "Got cursor here");
+        info("Got cursor here");
         is(cursor.value.index, 5, "Correct index value");
         cursor.value.index = 6;
         expectException( function () {
@@ -47,6 +47,6 @@ onmessage = function(event) {
     },"readwrite");
   }
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

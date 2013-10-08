@@ -12,7 +12,7 @@ onmessage = function(event) {
   const keyCount = 200;
 
   var db = indexedDBSync.open(name, version, function(trans, oldVersion) {
-    //info("Creating database");
+    info("Creating database");
     var objectStore = trans.db.createObjectStore(storeName);
     for (var i = 0; i < keyCount; i++) {
       objectStore.add(true, i);
@@ -21,7 +21,7 @@ onmessage = function(event) {
 
   db.transaction(storeName, function(trans) {
     var objectStore = trans.objectStore(storeName);
-    //info("Getting all keys");
+    info("Getting all keys");
     var result = objectStore.getAllKeys();
     is(result instanceof Array, true, "Got an array result");
     is(result.length, keyCount, "Got correct array length");
@@ -35,7 +35,7 @@ onmessage = function(event) {
     }
     ok(match, "Got correct keys");
 
-    //info("Getting all keys with key range");
+    info("Getting all keys with key range");
     var keyRange = IDBKeyRange.bound(10, 20, false, true);
     result = objectStore.getAllKeys(keyRange);
     is(result instanceof Array, true, "Got an array result");
@@ -50,13 +50,13 @@ onmessage = function(event) {
     }
     ok(match, "Got correct keys");
 
-    //info("Getting all keys with unmatched key range");
+    info("Getting all keys with unmatched key range");
     var keyRange = IDBKeyRange.bound(10000, 20000);
     result = objectStore.getAllKeys(keyRange);
     is(result instanceof Array, true, "Got an array result");
     is(result.length, 0, "Got correct array length");
 
-    //info("Getting all keys with limit");
+    info("Getting all keys with limit");
     result = objectStore.getAllKeys(null, 5);
     is(result instanceof Array, true, "Got an array result");
     is(result.length, 5, "Got correct array length");
@@ -70,7 +70,7 @@ onmessage = function(event) {
     }
     ok(match, "Got correct keys");
 
-    //info("Getting all keys with key range and limit");
+    info("Getting all keys with key range and limit");
     var keyRange = IDBKeyRange.bound(10, 20, false, true);
     result = objectStore.getAllKeys(keyRange, 5);
     is(result instanceof Array, true, "Got an array result");
@@ -85,7 +85,7 @@ onmessage = function(event) {
     }
     ok(match, "Got correct keys");
 
-    //info("Getting all keys with unmatched key range and limit");
+    info("Getting all keys with unmatched key range and limit");
     var keyRange = IDBKeyRange.bound(10000, 20000);
     result = objectStore.getAllKeys(keyRange, 5);
     is(result instanceof Array, true, "Got an array result");
@@ -93,6 +93,6 @@ onmessage = function(event) {
 
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

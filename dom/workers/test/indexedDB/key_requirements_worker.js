@@ -223,6 +223,6 @@ onmessage = function(event) {
     request = objectStore.delete(key2);
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

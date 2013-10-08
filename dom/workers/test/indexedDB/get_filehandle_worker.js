@@ -18,6 +18,6 @@ onmessage = function(event) {
     ok(true, "MozCreateFileHandle threw");
   }
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

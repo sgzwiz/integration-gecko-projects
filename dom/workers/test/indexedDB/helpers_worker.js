@@ -48,6 +48,13 @@ function todo_is(a, b, name) {
   postMessage(rtnObj);
 }
 
+function info(name) {
+  var rtnObj = new Object();
+  rtnObj.type = "info";
+  rtnObj.name = name;
+  postMessage(rtnObj);
+}
+
 function unexpectedEventHandler()
 {
   ok(false, "Got event, but did not expect it!");

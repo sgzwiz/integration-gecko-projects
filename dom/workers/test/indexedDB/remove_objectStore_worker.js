@@ -64,6 +64,6 @@ onmessage = function(event) {
     is(trans.db.objectStoreNames.length, 0, "Correct objectStoreNames list");
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

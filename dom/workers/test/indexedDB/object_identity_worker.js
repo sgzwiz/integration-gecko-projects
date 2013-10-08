@@ -43,6 +43,6 @@ onmessage = function(event) {
     ok(index4 !== index2, "Different indexes");
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

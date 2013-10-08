@@ -38,6 +38,6 @@ onmessage = function(event) {
     ok(objectStore.index(indexName) === index2, "Correct instance");
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

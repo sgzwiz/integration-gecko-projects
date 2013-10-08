@@ -26,6 +26,6 @@ onmessage = function(event) {
     is(objectStore.indexNames.length, 0, "Correct indexNames length");
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

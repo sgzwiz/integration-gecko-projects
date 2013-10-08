@@ -78,6 +78,6 @@ onmessage = function(event) {
   is(db.objectStoreNames.length, 0, "Correct objectStoreNames length still");
   is(objectStore.indexNames.length, 0, "Correct indexNames length still");
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

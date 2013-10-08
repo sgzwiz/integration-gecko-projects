@@ -22,10 +22,10 @@ onmessage = function(event) {
 
   var db = indexedDBSync.open(name, 1, function(trans, oldVersion) {
     for (var i = 0; i < objectStoreInfo.length; i++) {
-      var info = objectStoreInfo[i];
-      var objectStore = info.hasOwnProperty("options") ?
-                        trans.db.createObjectStore(info.name, info.options) :
-                        trans.db.createObjectStore(info.name);
+      var osInfo = objectStoreInfo[i];
+      var objectStore = osInfo.hasOwnProperty("options") ?
+                        trans.db.createObjectStore(osInfo.name, osInfo.options) :
+                        trans.db.createObjectStore(osInfo.name);
 
       try {
         objectStore.createIndex("Hola");
@@ -60,16 +60,16 @@ onmessage = function(event) {
       }
 
       // Test index creation, and that it ends up in indexNames.
-      var objectStoreName = info.name;
+      var objectStoreName = osInfo.name;
       for (var j = 0; j < indexInfo.length; j++) {
-        info = indexInfo[j];
+        osInfo = indexInfo[j];
         var count = objectStore.indexNames.length;
-        var index = info.hasOwnProperty("options") ?
-                    objectStore.createIndex(info.name, info.keyPath,
-                                            info.options) :
-                    objectStore.createIndex(info.name, info.keyPath);
+        var index = osInfo.hasOwnProperty("options") ?
+                    objectStore.createIndex(osInfo.name, osInfo.keyPath,
+                                            osInfo.options) :
+                    objectStore.createIndex(osInfo.name, osInfo.keyPath);
 
-        var name = info.name;
+        var name = osInfo.name;
         if (name === null) {
           name = "null";
         }
@@ -78,8 +78,8 @@ onmessage = function(event) {
         }
 
         is(index.name, name, "Correct name");
-        is(index.keyPath, info.keyPath, "Correct keyPath");
-        is(index.unique, info.options.unique, "Correct uniqueness");
+        is(index.keyPath, osInfo.keyPath, "Correct keyPath");
+        is(index.unique, osInfo.options.unique, "Correct uniqueness");
 
         is(objectStore.indexNames.length, count + 1, "List indexNames grew in size");
 
@@ -101,6 +101,6 @@ onmessage = function(event) {
     }
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

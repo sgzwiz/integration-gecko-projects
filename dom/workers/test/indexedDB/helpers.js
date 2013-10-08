@@ -19,6 +19,9 @@ function runTest(path) {
       else if (result.type == "is") {
         is(result.a, result.b, result.name);
       }
+      else if (result.type == "info") {        
+        info(result.name);
+      }
       else if (result.type == "isnot") {
         isnot(result.a, result.b, result.name);
       }

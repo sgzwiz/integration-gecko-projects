@@ -40,6 +40,6 @@ onmessage = function(event) {
     is(seenCount, 1, "Saw our entry");
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

@@ -68,22 +68,22 @@ onmessage = function(event) {
 
     // Test creating object stores and inserting data
     for (var i = 0; i < keyPaths.length; i++) {
-      var info = keyPaths[i];
+      var item = keyPaths[i];
 
-      var test = " for objectStore test " + JSON.stringify(info);
-      var indexName = JSON.stringify(info.keyPath);
+      var test = " for objectStore test " + JSON.stringify(item);
+      var indexName = JSON.stringify(item.keyPath);
       if (!stores[indexName]) {
         try {
           var objectStore = trans.db.createObjectStore(indexName,
-                                                       { keyPath: info.keyPath });
-          ok(!("exception" in info), "Shouldn't throw" + test);
-          is(JSON.stringify(objectStore.keyPath), JSON.stringify(info.keyPath),
+                                                       { keyPath: item.keyPath });
+          ok(!("exception" in item), "Shouldn't throw" + test);
+          is(JSON.stringify(objectStore.keyPath), JSON.stringify(item.keyPath),
              "correct keyPath property" + test);
           ok(objectStore.keyPath === objectStore.keyPath,
              "object identity should be preserved");
           stores[indexName] = objectStore;
         } catch (e) {
-          ok("exception" in info, "should throw" + test);
+          ok("exception" in item, "should throw" + test);
           is(e.name, "SyntaxError", "expect a SyntaxError" + test);
           ok(e instanceof DOMException, "Got a DOM Exception" + test);
           is(e.code, DOMException.SYNTAX_ERR, "expect a syntax error" + test);
@@ -94,31 +94,31 @@ onmessage = function(event) {
       var store = stores[indexName];
       var request;
       try {
-        request = store.add(info.value);
-        ok("key" in info, "successfully created request to insert value" + test);
+        request = store.add(item.value);
+        ok("key" in item, "successfully created request to insert value" + test);
       } catch (e) {
-        ok(!("key" in info), "threw when attempted to insert" + test);
+        ok(!("key" in item), "threw when attempted to insert" + test);
         ok(e instanceof DOMException, "Got a DOMException" + test);
         is(e.name, "DataError", "expect a DataError" + test);
         is(e.code, 0, "expect zero" + test);
         continue;
       }
 
-      ok(compareKeys(request, info.key), "Found correct key" + test);
-      is(indexedDBSync.cmp(request, info.key), 0,
+      ok(compareKeys(request, item.key), "Found correct key" + test);
+      is(indexedDBSync.cmp(request, item.key), 0,
          "Returned key compares correctly" + test);
 
-      request = store.get(info.key);
+      request = store.get(item.key);
       isnot(request, undefined, "Entry found");
 
       // Check that cursor.update work as expected
       var cursor = store.openCursor();
-      cursor.update(info.value);
+      cursor.update(item.value);
       ok(true, "Successfully updated cursor" + test);
 
       // Check that cursor.update throws as expected when key is changed
       var newValue = cursor.value;
-      var destProp = Array.isArray(info.keyPath) ? info.keyPath[0] : info.keyPath;
+      var destProp = Array.isArray(item.keyPath) ? item.keyPath[0] : item.keyPath;
       if (destProp) {
         eval("newValue." + destProp + " = 'newKeyValue'");
       }
@@ -138,20 +138,20 @@ onmessage = function(event) {
     var store = trans.db.createObjectStore("indexStore");
     var indexes = {};
     for (var i = 0; i < keyPaths.length; i++) {
-      var test = " For index test " + JSON.stringify(info);
-      var info = keyPaths[i];
-      var indexName = JSON.stringify(info.keyPath);
+      var test = " For index test " + JSON.stringify(item);
+      var item = keyPaths[i];
+      var indexName = JSON.stringify(item.keyPath);
       if (!indexes[indexName]) {
         try {
-          var index = store.createIndex(indexName, info.keyPath);
-          ok(!("exception" in info), "Shouldn't throw" + test);
-          is(JSON.stringify(index.keyPath), JSON.stringify(info.keyPath),
+          var index = store.createIndex(indexName, item.keyPath);
+          ok(!("exception" in item), "Shouldn't throw" + test);
+          is(JSON.stringify(index.keyPath), JSON.stringify(item.keyPath),
              "Index has correct keyPath property" + test);
           ok(index.keyPath === index.keyPath,
              "Object identity should be preserved");
           indexes[indexName] = index;
         } catch (e) {
-          ok("exception" in info, "Should throw" + test);
+          ok("exception" in item, "Should throw" + test);
           is(e.name, "SyntaxError", "Expect a SyntaxError" + test);
           ok(e instanceof DOMException, "Got a DOM Exception" + test);
           is(e.code, DOMException.SYNTAX_ERR, "Expect a syntax error" + test);
@@ -161,9 +161,9 @@ onmessage = function(event) {
 
       var index = indexes[indexName];
 
-      var request = store.add(info.value, 1);
-      if ("key" in info) {
-        var req = index.getKey(info.key);
+      var request = store.add(item.value, 1);
+      if ("key" in item) {
+        var req = index.getKey(item.key);
         is(req, 1, "Found value when reading" + test);
       }
       else {
@@ -194,34 +194,34 @@ onmessage = function(event) {
 
     store = trans.db.createObjectStore("gen", { keyPath: "foo.id", autoIncrement: true });
     for (var i = 0; i < aitests.length; ++i) {
-      var info = aitests[i];
-      var test = " For autoIncrement test " + JSON.stringify(info);
+      var item = aitests[i];
+      var test = " For autoIncrement test " + JSON.stringify(item);
 
-      var preValue = JSON.stringify(info.v);
+      var preValue = JSON.stringify(item.v);
       var req;
-      if ("k" in info) {
-        req = store.add(info.v);
-        is(JSON.stringify(info.v), preValue, "Put didn't modify value" + test);
+      if ("k" in item) {
+        req = store.add(item.v);
+        is(JSON.stringify(item.v), preValue, "Put didn't modify value" + test);
       }
       else {
         expectException( function() {
-          req = store.add(info.v);
+          req = store.add(item.v);
           ok(false, "Should have thrown" + test);
         }, "DataError", 0);
 
-        is(JSON.stringify(info.v), preValue, "Failing put didn't modify value" + test);
+        is(JSON.stringify(item.v), preValue, "Failing put didn't modify value" + test);
         continue;
       }
 
-      is(req, info.k, "Got correct return key" + test);
+      is(req, item.k, "Got correct return key" + test);
 
-      req = store.get(info.k);
-      is(JSON.stringify(req), JSON.stringify(info.res || info.v),
+      req = store.get(item.k);
+      is(JSON.stringify(req), JSON.stringify(item.res || item.v),
          "Expected value stored" + test);
     }
 
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

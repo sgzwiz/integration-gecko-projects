@@ -31,6 +31,6 @@ onmessage = function(event) {
     is(value.id, id, "The object had the id stored on it.");
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

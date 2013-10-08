@@ -28,6 +28,6 @@ onmessage = function(event) {
   is(db.version, 1, "DB has proper version");
   is(db.objectStoreNames.length, 0, "DB should have no object stores");
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

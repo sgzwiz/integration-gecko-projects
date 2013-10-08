@@ -181,6 +181,6 @@ onmessage = function(event) {
     is(index.multiEntry, true, "Index is still  multiEntry");
   }, "readwrite");
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

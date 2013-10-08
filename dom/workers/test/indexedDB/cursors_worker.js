@@ -225,6 +225,6 @@ onmessage = function(event) {
     is(keyIndex, -1, "Saw all added items");
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

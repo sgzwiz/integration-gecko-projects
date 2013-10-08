@@ -67,6 +67,6 @@ onmessage = function(event) {
     isnot(key, firstKey, "Got a different key");
   }, "readwrite");
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

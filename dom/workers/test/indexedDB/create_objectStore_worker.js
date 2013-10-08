@@ -30,10 +30,10 @@ onmessage = function(event) {
 
     try {
       trans.db.createObjectStore("foo", "bar");
-      ok(false, "createObjectStore with bad options should throw");
+      ok(false, "CreateObjectStore with bad options should have thrown");
     }
     catch(e) {
-      ok(true, "createObjectStore with bad options");
+      ok(true, "CreateObjectStore with bad options threw");
     }
 
     try {
@@ -49,16 +49,16 @@ onmessage = function(event) {
 
     for (var index in objectStoreInfo) {
       index = parseInt(index);
-      const info = objectStoreInfo[index];
+      const osInfo = objectStoreInfo[index];
 
-      var objectStore = info.hasOwnProperty("options") ?
-                        trans.db.createObjectStore(info.name, info.options) :
-                        trans.db.createObjectStore(info.name);
+      var objectStore = osInfo.hasOwnProperty("options") ?
+                        trans.db.createObjectStore(osInfo.name, osInfo.options) :
+                        trans.db.createObjectStore(osInfo.name);
 
       is(trans.db.objectStoreNames.length, index + 1,
          "Updated objectStoreNames list");
 
-      var name = info.name;
+      var name = osInfo.name;
       if (name === null) {
         name = "null";
       }
@@ -76,8 +76,8 @@ onmessage = function(event) {
       is(found, true, "objectStoreNames contains name");
 
       is(objectStore.name, name, "Correct store name");
-      is(objectStore.keyPath, info.options && info.options.keyPath ?
-                              info.options.keyPath : null,
+      is(objectStore.keyPath, osInfo.options && osInfo.options.keyPath ?
+                              osInfo.options.keyPath : null,
          "Bad keyPath");
       is(objectStore.indexNames.length, 0, "Correct indexNames list");
 
@@ -109,6 +109,6 @@ onmessage = function(event) {
 
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

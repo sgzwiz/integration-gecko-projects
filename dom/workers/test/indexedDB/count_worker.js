@@ -248,6 +248,6 @@ onmessage = function(event) {
        "Correct number of index entries for bound keyRange");
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

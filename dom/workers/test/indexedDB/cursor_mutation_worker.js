@@ -94,6 +94,6 @@ onmessage = function(event) {
   is(sawAdded, true, "Saw item that was added");
   is(sawRemoved, false, "Didn't see item that was removed");
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

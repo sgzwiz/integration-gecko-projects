@@ -22,12 +22,12 @@ onmessage = function(event) {
 
   for (var i = 0; i < objectStoreInfo.length; i++) {
     // Create our object stores.
-    var info = objectStoreInfo[i];
+    var osInfo = objectStoreInfo[i];
 
     var db = indexedDBSync.open(name, i + 1, function(trans, oldVersion) {
-      var objectStore = info.hasOwnProperty("options") ?
-                        trans.db.createObjectStore(info.name, info.options) :
-                        trans.db.createObjectStore(info.name);
+      var objectStore = osInfo.hasOwnProperty("options") ?
+                        trans.db.createObjectStore(osInfo.name, osInfo.options) :
+                        trans.db.createObjectStore(osInfo.name);
 
       // Create the indexes on 'data' on the object store.
       var index = objectStore.createIndex("data_index", "data",
@@ -35,22 +35,20 @@ onmessage = function(event) {
       var uniqueIndex = objectStore.createIndex("unique_data_index", "data",
                                                 { unique: true });
 
-      ok(true, "objectStore, index and unique index created");
+      info("ObjectStore index and unique index created");
 
       // Populate the object store with one entry of data.
-      var request = info.hasOwnProperty("key") ?
-                    objectStore.add(info.entry, info.key) :
-                    objectStore.add(info.entry);
+      var request = osInfo.hasOwnProperty("key") ?
+                    objectStore.add(osInfo.entry, osInfo.key) :
+                    objectStore.add(osInfo.entry);
 
 
       // Use a cursor to update 'data' to END_DATA.
       var cursor = objectStore.openCursor();
       if (cursor) {
-        ok(true, "4");
         var obj = cursor.value;
         obj.data = END_DATA;
         cursor.update(obj);
-        ok(true, "5");
       }
 
       // Check both indexes to make sure that they were updated.
@@ -64,6 +62,6 @@ onmessage = function(event) {
     db.close();
   }
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

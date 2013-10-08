@@ -29,6 +29,6 @@ onmessage = function(event) {
     db1.close();
   }
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

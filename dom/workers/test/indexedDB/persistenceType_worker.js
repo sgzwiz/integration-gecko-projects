@@ -66,6 +66,6 @@ onmessage = function(event) {
     is(result, null, "Got no data");
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

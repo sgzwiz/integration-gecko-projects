@@ -98,7 +98,7 @@ onmessage = function(event) {
     is(result.height, 60, "Correct height returned");
     is(result.weight, 120, "Correct weight returned");
 
-    ok(true, "Test group 1");
+    info("Test group 1");
 
     var keyIndex = 0;
 
@@ -117,7 +117,7 @@ onmessage = function(event) {
 
     is(keyIndex, objectStoreData.length, "Saw all the expected keys");
 
-    ok(true, "Test group 2");
+    info("Test group 2");
 
     keyIndex = 0;
 
@@ -147,7 +147,7 @@ onmessage = function(event) {
       objectStore.add({ name: "Bob", height: 62, weight: 170 }, "237-23-7738");
     }, "ConstraintError");
 
-    ok(true, "Test group 3");
+    info("Test group 3");
 
     var nameIndex = objectStore.index("name");
     var heightIndex = objectStore.index("height");
@@ -168,7 +168,7 @@ onmessage = function(event) {
 
     is(keyIndex, -1, "Saw all the expected keys");
 
-    ok(true, "Test group 4");
+    info("Test group 4");
 
     keyIndex = 1;
     var keyRange = IDBKeyRange.bound("Bob", "Ron");
@@ -187,7 +187,7 @@ onmessage = function(event) {
 
     is(keyIndex, 5, "Saw all the expected keys");
 
-    ok(true, "Test group 5");
+    info("Test group 5");
 
     keyIndex = 2;
     var keyRange = IDBKeyRange.bound("Bob", "Ron", true);
@@ -206,7 +206,7 @@ onmessage = function(event) {
 
     is(keyIndex, 5, "Saw all the expected keys");
 
-    ok(true, "Test group 6");
+    info("Test group 6");
 
     keyIndex = 1;
     var keyRange = IDBKeyRange.bound("Bob", "Ron", false, true);
@@ -225,7 +225,7 @@ onmessage = function(event) {
 
     is(keyIndex, 4, "Saw all the expected keys");
 
-    ok(true, "Test group 7");
+    info("Test group 7");
 
     keyIndex = 2;
     keyRange = IDBKeyRange.bound("Bob", "Ron", true, true);
@@ -244,7 +244,7 @@ onmessage = function(event) {
 
     is(keyIndex, 4, "Saw all the expected keys");
 
-    ok(true, "Test group 8");
+    info("Test group 8");
 
     keyIndex = 1;
     keyRange = IDBKeyRange.lowerBound("Bob");
@@ -263,7 +263,7 @@ onmessage = function(event) {
 
     is(keyIndex, objectStoreDataNameSort.length, "Saw all the expected keys");
 
-    ok(true, "Test group 9");
+    info("Test group 9");
 
     keyIndex = 2;
     keyRange = IDBKeyRange.lowerBound("Bob", true);
@@ -282,7 +282,7 @@ onmessage = function(event) {
 
     is(keyIndex, objectStoreDataNameSort.length, "Saw all the expected keys");
 
-    ok(true, "Test group 10");
+    info("Test group 10");
 
     keyIndex = 0;
     keyRange = IDBKeyRange.upperBound("Joe");
@@ -301,7 +301,7 @@ onmessage = function(event) {
 
     is(keyIndex, 3, "Saw all the expected keys");
 
-    ok(true, "Test group 11");
+    info("Test group 11");
 
     keyIndex = 0;
     keyRange = IDBKeyRange.upperBound("Joe", true);
@@ -320,7 +320,7 @@ onmessage = function(event) {
 
     is(keyIndex, 2, "Saw all the expected keys");
 
-    ok(true, "Test group 12");
+    info("Test group 12");
 
     keyIndex = 3;
     keyRange = IDBKeyRange.only("Pat");
@@ -339,7 +339,7 @@ onmessage = function(event) {
 
     is(keyIndex, 4, "Saw all the expected keys");
 
-    ok(true, "Test group 13");
+    info("Test group 13");
 
     keyIndex = 0;
 
@@ -367,7 +367,7 @@ onmessage = function(event) {
 
     is(keyIndex, objectStoreDataNameSort.length, "Saw all the expected keys");
 
-    ok(true, "Test group 14");
+    info("Test group 14");
 
     keyIndex = objectStoreDataNameSort.length - 1;
 
@@ -395,7 +395,7 @@ onmessage = function(event) {
 
     is(keyIndex, -1, "Saw all the expected keys");
 
-    ok(true, "Test group 15");
+    info("Test group 15");
 
     keyIndex = 1;
     keyRange = IDBKeyRange.bound("Bob", "Ron");
@@ -424,7 +424,7 @@ onmessage = function(event) {
 
     is(keyIndex, 5, "Saw all the expected keys");
 
-    ok(true, "Test group 16");
+    info("Test group 16");
 
     keyIndex = 2;
     keyRange = IDBKeyRange.bound("Bob", "Ron", true);
@@ -453,7 +453,7 @@ onmessage = function(event) {
 
     is(keyIndex, 5, "Saw all the expected keys");
 
-    ok(true, "Test group 17");
+    info("Test group 17");
 
     keyIndex = 1;
     keyRange = IDBKeyRange.bound("Bob", "Ron", false, true);
@@ -482,7 +482,7 @@ onmessage = function(event) {
 
     is(keyIndex, 4, "Saw all the expected keys");
 
-    ok(true, "Test group 18");
+    info("Test group 18");
 
     keyIndex = 2;
     keyRange = IDBKeyRange.bound("Bob", "Ron", true, true);
@@ -511,7 +511,7 @@ onmessage = function(event) {
 
     is(keyIndex, 4, "Saw all the expected keys");
 
-    ok(true, "Test group 19");
+    info("Test group 19");
 
     keyIndex = 4;
     keyRange = IDBKeyRange.bound("Bob", "Ron");
@@ -540,7 +540,7 @@ onmessage = function(event) {
 
     is(keyIndex, 0, "Saw all the expected keys");
 
-    ok(true, "Test group 20");
+    info("Test group 20");
 
     // Test "nextunique"
     keyIndex = 3;
@@ -560,7 +560,7 @@ onmessage = function(event) {
 
     is(keyIndex, 5, "Saw all the expected keys");
 
-    ok(true, "Test group 21");
+    info("Test group 21");
 
     keyIndex = 3;
     keyRange = IDBKeyRange.only(65);
@@ -579,7 +579,7 @@ onmessage = function(event) {
 
     is(keyIndex, 4, "Saw all the expected keys");
 
-    ok(true, "Test group 21.5");
+    info("Test group 21.5");
 
     keyIndex = 5;
     cursor = heightIndex.openKeyCursor(null, "prev");
@@ -596,7 +596,7 @@ onmessage = function(event) {
 
     is(keyIndex, -1, "Saw all the expected keys");
 
-    ok(true, "Test group 22");
+    info("Test group 22");
 
     keyIndex = 5;
 
@@ -617,7 +617,7 @@ onmessage = function(event) {
 
     is(keyIndex, -1, "Saw all the expected keys");
 
-    ok(true, "Test group 23");
+    info("Test group 23");
 
     keyIndex = 3;
     keyRange = IDBKeyRange.only(65);
@@ -646,7 +646,7 @@ onmessage = function(event) {
 
     is(keyIndex, 5, "Saw all the expected keys");
 
-    ok(true, "Test group 24");
+    info("Test group 24");
 
     keyIndex = 3;
     keyRange = IDBKeyRange.only(65);
@@ -675,7 +675,7 @@ onmessage = function(event) {
 
     is(keyIndex, 4, "Saw all the expected keys");
 
-    ok(true, "Test group 24.5");
+    info("Test group 24.5");
 
     keyIndex = 5;
 
@@ -703,7 +703,7 @@ onmessage = function(event) {
 
     is(keyIndex, -1, "Saw all the expected keys");
 
-    ok(true, "Test group 25");
+    info("Test group 25");
 
     keyIndex = 5;
 
@@ -734,7 +734,7 @@ onmessage = function(event) {
 
     is(keyIndex, -1, "Saw all the expected keys");
 
-    ok(true, "Test group 26");
+    info("Test group 26");
 
     keyIndex = 0;
 
@@ -759,7 +759,7 @@ onmessage = function(event) {
 
     is(keyIndex, objectStoreData.length, "Saw all the expected keys");
 
-    ok(true, "Test group 27");
+    info("Test group 27");
 
     keyIndex = 0;
 
@@ -779,7 +779,7 @@ onmessage = function(event) {
 
     is(keyIndex, objectStoreData.length, "Saw all the expected keys");
 
-    ok(true, "Test group 28");
+    info("Test group 28");
 
     keyIndex = 0;
 
@@ -815,7 +815,7 @@ onmessage = function(event) {
 
     is(keyIndex, objectStoreDataNameSort.length, "Saw all the expected keys");
 
-    ok(true, "Test group 29");
+    info("Test group 29");
 
     keyIndex = 0;
 
@@ -846,6 +846,6 @@ onmessage = function(event) {
     is(keyIndex, objectStoreDataNameSort.length, "Saw all the expected keys");
   }, "readwrite");
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

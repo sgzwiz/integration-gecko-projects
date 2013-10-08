@@ -39,10 +39,10 @@ onmessage = function(event) {
     }
   });
 
-  ok(true, "Initial setup");
+  info("Initial setup");
 
   for (var objectStoreIndex in objectStoreData) {
-    const info = objectStoreData[objectStoreIndex];
+    const item = objectStoreData[objectStoreIndex];
 
     for (var indexIndex in indexData) {
       const objectStoreName = objectStoreData[objectStoreIndex].name;
@@ -50,19 +50,19 @@ onmessage = function(event) {
 
       db.transaction(objectStoreName, function(trans) {
         var objectStore = trans.objectStore(objectStoreName);
-        ok(true, "Got objectStore " + objectStoreName);
+        info("Got objectStore " + objectStoreName);
 
         for (var dataIndex in data) {
           const obj1 = data[dataIndex];
           var key;
-          if (!info.options.keyPath && !info.options.autoIncrement) {
+          if (!item.options.keyPath && !item.options.autoIncrement) {
             key = obj1.ss;
           }
           objectStore.add(obj1, key);
         }
 
         var index = objectStore.index(indexName);
-        ok(true, "Got index " + indexName);
+        info("Got index " + indexName);
 
         var keyIndex = 0;
 
@@ -80,13 +80,13 @@ onmessage = function(event) {
               obj.updated = true;
 
               cursor.update(obj);
-              ok(true, "Object updated");
+              info("Object updated");
               keyIndex++;
               continue;
             }
 
             cursor.delete();
-            ok(true, "Object deleted");
+            info("Object deleted");
             keyIndex++;
           } while(cursor.continue());
         }
@@ -117,6 +117,6 @@ onmessage = function(event) {
     }
   }
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

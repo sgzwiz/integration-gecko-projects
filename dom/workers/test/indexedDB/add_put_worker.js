@@ -86,7 +86,7 @@ onmessage = function(event) {
 
               var valueJSON = JSON.stringify(value);
 
-              ok(true, "making call" + test);
+              info("making call" + test);
 
               // Make function call for throwing functions
               if (expected === "throw") {
@@ -178,6 +178,6 @@ onmessage = function(event) {
     return "success";
   }
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

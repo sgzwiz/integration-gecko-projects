@@ -33,6 +33,6 @@ onmessage = function(event) {
     is(db.objectStoreNames.length, 0, "Got right objectStores list");
   }
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

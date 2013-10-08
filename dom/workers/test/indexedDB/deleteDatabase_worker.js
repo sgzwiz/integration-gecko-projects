@@ -79,6 +79,6 @@ onmessage = function(event) {
     ok(false, "After deleting a non-existent database, open doesn't work");
   }
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

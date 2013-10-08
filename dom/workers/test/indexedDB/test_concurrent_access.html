@@ -28,7 +28,7 @@
   var request = window.indexedDB.open(data.name, 1);
 
   request.onupgradeneeded = function(event) {
-    ok(true,"On upgradeneeded event");
+    info("Initialization");
     var db = event.target.result;
     var objectStore = db.createObjectStore(data.objectStoreName, { autoIncrement: 0 });
     objectStore.add(data.objectStoreData.value, data.objectStoreData.key);
@@ -36,9 +36,9 @@
   };
 
   request.onsuccess = function(event) {
-    ok(true,"Init done");
+    info("Initialization was done");
 
-    /* Let's run several dbInfoMT_isolation_workers */
+    /* Let's run several Concurrent_access_workers */
     var counter = 0;
     for (var i = 0; i < data.numberOfWorkers; i++) {
 
@@ -47,9 +47,9 @@
         var result = event.data;
         if(result == undefined) {
           counter = counter + 1;
-          ok(true, counter + ". worker finished");
+          info(counter + ". worker finished");
           if (counter == data.numberOfWorkers) {
-            ok(true, "Test successfully completed");
+            info("Test successfully completed");
             SimpleTest.finish();
           }
         }

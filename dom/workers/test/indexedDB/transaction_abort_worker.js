@@ -45,7 +45,7 @@ onmessage = function(event) {
     ok(false, "Should have thrown");
   }
   catch (e) {
-    ok(true, "Out of scope transaction can't make stores");
+    ok(true, "Out of scope transaction can't make stores threw");
   }
 
   is(objectStore.name, "foo", "Correct name");
@@ -187,6 +187,6 @@ onmessage = function(event) {
     }
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

@@ -59,6 +59,6 @@ onmessage = function(event) {
     db.close();
   }
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

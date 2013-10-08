@@ -153,6 +153,6 @@ onmessage = function(event) {
     }
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

@@ -38,6 +38,6 @@ onmessage = function(event) {
     is(result.id, 1, "Correct entry in third");
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };

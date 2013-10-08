@@ -163,6 +163,6 @@ onmessage = function(event) {
     is(count, dataCount - 1, "Saw all data");
   });
 
-  ok(true, "Test successfully completed");
+  info("Test successfully completed");
   postMessage(undefined);
 };
