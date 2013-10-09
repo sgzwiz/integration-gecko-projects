@@ -1,5 +1,22 @@
-. "$topsrcdir/b2g/config/mozconfigs/common"
-. "$topsrcdir/build/unix/mozconfig.linux32"
+mk_add_options AUTOCLOBBER=1
+ac_add_options --enable-crashreporter
+
+CC="/tools/gcc-4.7.3-0moz1/bin/gcc"
+CXX="/tools/gcc-4.7.3-0moz1/bin/g++"
+
+ac_add_options --enable-elf-hack
+
+# Avoid dependency on libstdc++ 4.7
+ac_add_options --enable-stdcxx-compat
+
+if test `uname -m` = "x86_64"; then
+  # -march=pentiumpro is what our 32-bit native toolchain defaults to
+  CC="$CC -m32 -march=pentiumpro"
+  CXX="$CXX -m32 -march=pentiumpro"
+  ac_add_options --target=i686-pc-linux
+  ac_add_options --x-libraries=/usr/lib
+  export PKG_CONFIG_LIBDIR=/usr/lib/pkgconfig:/usr/share/pkgconfig
+fi
 
 ac_add_options --enable-update-channel=${MOZ_UPDATE_CHANNEL}
 ac_add_options --enable-update-packaging
