@@ -7,13 +7,15 @@
 interface nsICacheEntry;
 interface nsIApplicationCache;
 
-[scriptable, uuid(cdd8b9be-71f0-4b0a-a7f4-626fbb3d2e9b)]
+[scriptable, uuid(1fc9fe11-c6ac-4748-94bd-8555a5a12b94)]
 interface nsICacheEntryOpenCallback : nsISupports
 {
   /**
    * State of the entry determined by onCacheEntryCheck.
    *
    * ENTRY_WANTED - the consumer is interested in the entry, we will pass it.
+   * ENTRY_WANTED_COMPLETE - the consumer wants the entry, but wants to wait for
+   *    any pending writes to finish first (this prevents concurent read/write).
    * ENTRY_NEEDS_REVALIDATION - entry needs to be revalidated first with origin server,
    *    this means the loading channel will decide whether to use the entry content
    *    as is after it gets a positive response from the server about validity of the
@@ -23,8 +25,9 @@ interface nsICacheEntryOpenCallback : nsISupports
    * ENTRY_NOT_WANTED - the consumer is not interested in the entry, we will not pass it.
    */
   const unsigned long ENTRY_WANTED = 0;
-  const unsigned long ENTRY_NEEDS_REVALIDATION = 1;
-  const unsigned long ENTRY_NOT_WANTED = 2;
+  const unsigned long ENTRY_WANTED_COMPLETE = 1;
+  const unsigned long ENTRY_NEEDS_REVALIDATION = 2;
+  const unsigned long ENTRY_NOT_WANTED = 3;
 
   /**
    * Callback to perform any validity checks before the entry should be used.
@@ -74,10 +77,4 @@ interface nsICacheEntryOpenCallback : nsISupports
                              in boolean aNew,
                              in nsIApplicationCache aApplicationCache,
                              in nsresult aResult);
-
-  /**
-   * Whether this callback can be invoked on any thread, or just on the main thread
-   * when the consumer is e.g. a JS.
-   */
-  readonly attribute boolean mainThreadOnly;
 };

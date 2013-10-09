@@ -38,13 +38,15 @@ interface nsICacheStorage : nsISupports
   const uint32_t OPEN_PRIORITY = 1 << 2;
 
   /**
-   * BACKWARD COMPATIBILITY ONLY
-   *
-   * Reflects LOAD_BYPASS_LOCAL_CACHE_IF_BUSY.  Only used for the old
-   * backend compatibility.  Doesn't have any mening in the new
-   * implementation.
+   * Bypass the cache load when write is still in progress.
    */
-  const uint32_t OPEN_BYPASS_IF_BUSY = 1 << 31;
+  const uint32_t OPEN_BYPASS_IF_BUSY = 1 << 3;
+
+  /**
+   * Do cache check (onCacheEntryCHeck) on any thread for optimal
+   * perfomance optimization.
+   */
+  const uint32_t CHECK_MULTITHREADED = 1 << 4;
 
   /**
    * Asynchronously opens a cache entry for the specified URI.
