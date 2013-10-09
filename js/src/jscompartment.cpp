@@ -38,34 +38,35 @@ JSCompartment::JSCompartment(Zone *zone, const JS::CompartmentOptions &options =
   : options_(options),
     zone_(zone),
     runtime_(zone->runtimeFromMainThread()),
-    principals(NULL),
+    principals(nullptr),
     isSystem(false),
     marked(true),
 #ifdef DEBUG
     firedOnNewGlobalObject(false),
 #endif
-    global_(NULL),
+    global_(nullptr),
     enterCompartmentDepth(0),
     lastCodeRelease(0),
-    data(NULL),
-    objectMetadataCallback(NULL),
+    data(nullptr),
+    objectMetadataCallback(nullptr),
     lastAnimationTime(0),
     regExps(runtime_),
     typeReprs(runtime_),
+    globalWriteBarriered(false),
     propertyTree(thisForCtor()),
-    gcIncomingGrayPointers(NULL),
-    gcLiveArrayBuffers(NULL),
-    gcWeakMapList(NULL),
+    gcIncomingGrayPointers(nullptr),
+    gcLiveArrayBuffers(nullptr),
+    gcWeakMapList(nullptr),
     debugModeBits(runtime_->debugMode ? DebugFromC : 0),
     rngState(0),
-    watchpointMap(NULL),
-    scriptCountsMap(NULL),
-    debugScriptMap(NULL),
-    debugScopes(NULL),
-    enumerators(NULL),
-    compartmentStats(NULL)
+    watchpointMap(nullptr),
+    scriptCountsMap(nullptr),
+    debugScriptMap(nullptr),
+    debugScopes(nullptr),
+    enumerators(nullptr),
+    compartmentStats(nullptr)
 #ifdef JS_ION
-    , ionCompartment_(NULL)
+    , ionCompartment_(nullptr)
 #endif
 {
     runtime_->numCompartments++;
@@ -130,19 +131,19 @@ JSRuntime::createIonRuntime(JSContext *cx)
     ionRuntime_ = cx->new_<jit::IonRuntime>();
 
     if (!ionRuntime_)
-        return NULL;
+        return nullptr;
 
     if (!ionRuntime_->initialize(cx)) {
         js_delete(ionRuntime_);
-        ionRuntime_ = NULL;
+        ionRuntime_ = nullptr;
 
         JSCompartment *comp = cx->runtime()->atomsCompartment();
         if (comp->ionCompartment_) {
             js_delete(comp->ionCompartment_);
-            comp->ionCompartment_ = NULL;
+            comp->ionCompartment_ = nullptr;
         }
 
-        return NULL;
+        return nullptr;
     }
 
     return ionRuntime_;
@@ -167,7 +168,7 @@ JSCompartment::ensureIonCompartmentExists(JSContext *cx)
 
     if (!ionCompartment_->initialize(cx)) {
         js_delete(ionCompartment_);
-        ionCompartment_ = NULL;
+        ionCompartment_ = nullptr;
         return false;
     }
 
@@ -277,7 +278,7 @@ JSCompartment::wrap(JSContext *cx, MutableHandleObject obj, HandleObject existin
 
     /*
      * Wrappers should really be parented to the wrapped parent of the wrapped
-     * object, but in that case a wrapped global object would have a NULL
+     * object, but in that case a wrapped global object would have a nullptr
      * parent without being a proper global object (JSCLASS_IS_GLOBAL). Instead,
      * we parent all wrappers to the global object in their home compartment.
      * This loses us some transparency, and is generally very cheesy.
@@ -338,11 +339,11 @@ JSCompartment::wrap(JSContext *cx, MutableHandleObject obj, HandleObject existin
         /* Is it possible to reuse |existing|? */
         if (!existing->getTaggedProto().isLazy() ||
             // Note: don't use is<ObjectProxyObject>() here -- it also matches subclasses!
-            existing->getClass() != &ObjectProxyObject::class_ ||
+            existing->getClass() != &ProxyObject::uncallableClass_ ||
             existing->getParent() != global ||
             obj->isCallable())
         {
-            existing = NULL;
+            existing = nullptr;
         }
     }
 
@@ -517,7 +518,7 @@ JSCompartment::sweep(FreeOp *fop, bool releaseTypes)
         sweepCallsiteClones();
 
         if (global_ && IsObjectAboutToBeFinalized(global_.unsafeGet()))
-            global_ = NULL;
+            global_ = nullptr;
 
 #ifdef JS_ION
         if (ionCompartment_)
@@ -592,7 +593,7 @@ JSCompartment::purge()
 void
 JSCompartment::clearTables()
 {
-    global_ = NULL;
+    global_ = nullptr;
 
     regExps.clearTables();
 
@@ -721,7 +722,7 @@ JSCompartment::setDebugModeFromC(JSContext *cx, bool b, AutoDebugModeGC &dmgc)
     if (enabledBefore != enabledAfter) {
         onStack = hasScriptsOnStack();
         if (b && onStack) {
-            JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_DEBUG_NOT_IDLE);
+            JS_ReportErrorNumber(cx, js_GetErrorMessage, nullptr, JSMSG_DEBUG_NOT_IDLE);
             return false;
         }
         if (enabledAfter && !CreateLazyScriptsForCompartment(cx))
@@ -851,26 +852,33 @@ JSCompartment::clearTraps(FreeOp *fop)
 }
 
 void
-JSCompartment::sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf, size_t *compartmentObject,
-                                   JS::TypeInferenceSizes *tiSizes, size_t *shapesCompartmentTables,
-                                   size_t *crossCompartmentWrappersArg, size_t *regexpCompartment,
-                                   size_t *debuggeesSet, size_t *baselineStubsOptimized)
+JSCompartment::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
+                                      size_t *tiPendingArrays,
+                                      size_t *tiAllocationSiteTables,
+                                      size_t *tiArrayTypeTables,
+                                      size_t *tiObjectTypeTables,
+                                      size_t *compartmentObject,
+                                      size_t *shapesCompartmentTables,
+                                      size_t *crossCompartmentWrappersArg,
+                                      size_t *regexpCompartment,
+                                      size_t *debuggeesSet,
+                                      size_t *baselineStubsOptimized)
 {
-    *compartmentObject = mallocSizeOf(this);
-    sizeOfTypeInferenceData(tiSizes, mallocSizeOf);
-    *shapesCompartmentTables = baseShapes.sizeOfExcludingThis(mallocSizeOf)
-                             + initialShapes.sizeOfExcludingThis(mallocSizeOf)
-                             + newTypeObjects.sizeOfExcludingThis(mallocSizeOf)
-                             + lazyTypeObjects.sizeOfExcludingThis(mallocSizeOf);
-    *crossCompartmentWrappersArg = crossCompartmentWrappers.sizeOfExcludingThis(mallocSizeOf);
-    *regexpCompartment = regExps.sizeOfExcludingThis(mallocSizeOf);
-    *debuggeesSet = debuggees.sizeOfExcludingThis(mallocSizeOf);
+    *compartmentObject += mallocSizeOf(this);
+    types.addSizeOfExcludingThis(mallocSizeOf, tiPendingArrays, tiAllocationSiteTables,
+                                 tiArrayTypeTables, tiObjectTypeTables);
+    *shapesCompartmentTables += baseShapes.sizeOfExcludingThis(mallocSizeOf)
+                              + initialShapes.sizeOfExcludingThis(mallocSizeOf)
+                              + newTypeObjects.sizeOfExcludingThis(mallocSizeOf)
+                              + lazyTypeObjects.sizeOfExcludingThis(mallocSizeOf);
+    *crossCompartmentWrappersArg += crossCompartmentWrappers.sizeOfExcludingThis(mallocSizeOf);
+    *regexpCompartment += regExps.sizeOfExcludingThis(mallocSizeOf);
+    *debuggeesSet += debuggees.sizeOfExcludingThis(mallocSizeOf);
 #ifdef JS_ION
-    *baselineStubsOptimized = ionCompartment()
-        ? ionCompartment()->optimizedStubSpace()->sizeOfExcludingThis(mallocSizeOf)
-        : 0;
-#else
-    *baselineStubsOptimized = 0;
+    if (ionCompartment()) {
+        *baselineStubsOptimized +=
+            ionCompartment()->optimizedStubSpace()->sizeOfExcludingThis(mallocSizeOf);
+    }
 #endif
 }
 

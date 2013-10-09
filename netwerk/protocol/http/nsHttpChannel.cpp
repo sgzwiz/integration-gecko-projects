@@ -62,6 +62,7 @@
 #include "nsIStreamConverterService.h"
 #include "nsISiteSecurityService.h"
 #include "nsCRT.h"
+#include "CacheObserver.h"
 
 namespace mozilla { namespace net {
 
@@ -83,19 +84,14 @@ enum CacheDisposition {
     kCacheMissed = 4
 };
 
-const Telemetry::ID UNKNOWN_DEVICE = static_cast<Telemetry::ID>(0);
 void
-AccumulateCacheHitTelemetry(Telemetry::ID deviceHistogram,
-                            CacheDisposition hitOrMiss)
+AccumulateCacheHitTelemetry(CacheDisposition hitOrMiss)
 {
-    // If we had a cache hit, or we revalidated an entry, then we should know
-    // the device for the entry already. But, sometimes this assertion fails!
-    // (Bug 769497).
-    // MOZ_ASSERT(deviceHistogram != UNKNOWN_DEVICE || hitOrMiss == kCacheMissed);
-
-    Telemetry::Accumulate(Telemetry::HTTP_CACHE_DISPOSITION_2, hitOrMiss);
-    if (deviceHistogram != UNKNOWN_DEVICE) {
-        Telemetry::Accumulate(deviceHistogram, hitOrMiss);
+    if (!CacheObserver::UseNewCache()) {
+        Telemetry::Accumulate(Telemetry::HTTP_CACHE_DISPOSITION_2, hitOrMiss);
+    }
+    else {
+        Telemetry::Accumulate(Telemetry::HTTP_CACHE_DISPOSITION_2_V2, hitOrMiss);
     }
 }
 
@@ -183,7 +179,6 @@ AutoRedirectVetoNotifier::ReportRedirectResult(bool succeeded)
 nsHttpChannel::nsHttpChannel()
     : HttpAsyncAborter<nsHttpChannel>(MOZ_THIS_IN_INITIALIZER_LIST())
     , mLogicalOffset(0)
-    , mCacheEntryDeviceTelemetryID(UNKNOWN_DEVICE)
     , mPostID(0)
     , mRequestTime(0)
     , mOfflineCacheLastModifiedTime(0)
@@ -343,8 +338,7 @@ nsHttpChannel::ContinueConnect()
                 event->Revoke();
             }
 
-            AccumulateCacheHitTelemetry(mCacheEntryDeviceTelemetryID,
-                                        kCacheHit);
+            AccumulateCacheHitTelemetry(kCacheHit);
 
             return rv;
         }
@@ -1337,8 +1331,7 @@ nsHttpChannel::ProcessResponse()
     else
         cacheDisposition = kCacheMissedViaReval;
 
-    AccumulateCacheHitTelemetry(mCacheEntryDeviceTelemetryID,
-                                cacheDisposition);
+    AccumulateCacheHitTelemetry(cacheDisposition);
 
     return rv;
 }
@@ -2095,6 +2088,25 @@ nsHttpChannel::ProcessPartialContent()
     }
 
     nsresult rv;
+
+    int64_t cachedContentLength = mCachedResponseHead->ContentLength();
+    int64_t entitySize = mResponseHead->TotalEntitySize();
+
+    LOG(("nsHttpChannel::ProcessPartialContent [this=%p trans=%p] "
+         "original content-length %lld, entity-size %lld, content-range %s\n",
+         this, mTransaction.get(), cachedContentLength, entitySize,
+         mResponseHead->PeekHeader(nsHttp::Content_Range)));
+
+    if ((entitySize >= 0) && (cachedContentLength >= 0) &&
+        (entitySize != cachedContentLength)) {
+        LOG(("nsHttpChannel::ProcessPartialContent [this=%p] "
+             "206 has different total entity size than the content length "
+             "of the original partially cached entity.\n", this));
+        
+        mCacheEntry->AsyncDoom(nullptr);
+        Cancel(NS_ERROR_CORRUPTED_CONTENT);
+        return CallOnStartRequest();
+    }
 
     if (mConcurentCacheAccess) {
         // We started to read cached data sooner than its write has been done.
@@ -5244,7 +5256,10 @@ nsHttpChannel::OnDataAvailable(nsIRequest *request, nsISupports *ctxt,
 
         uint64_t progressMax(uint64_t(mResponseHead->ContentLength()));
         uint64_t progress = mLogicalOffset + uint64_t(count);
-        MOZ_ASSERT(progress <= progressMax, "unexpected progress values");
+
+        if (progress > progressMax)
+            NS_WARNING("unexpected progress values - "
+                       "is server exceeding content length?");
 
         if (NS_IsMainThread()) {
             OnTransportStatus(nullptr, transportStatus, progress, progressMax);

@@ -28,23 +28,6 @@ CountArgSlots(JSScript *script, JSFunction *fun)
     return StartArgSlot(script, fun) + (fun ? fun->nargs + 1 : 0);
 }
 
-enum ExecutionMode {
-    // Normal JavaScript execution
-    SequentialExecution,
-
-    // JavaScript code to be executed in parallel worker threads,
-    // e.g. by ParallelArray
-    ParallelExecution,
-
-    // MIR analysis performed when invoking 'new' on a script, to determine
-    // definite properties
-    DefinitePropertiesAnalysis
-};
-
-// Not as part of the enum so we don't get warnings about unhandled enum
-// values.
-static const unsigned NumExecutionModes = ParallelExecution + 1;
-
 // Contains information about the compilation source for IR being generated.
 class CompileInfo
 {
@@ -72,7 +55,7 @@ class CompileInfo
     }
 
     CompileInfo(unsigned nlocals, ExecutionMode executionMode)
-      : script_(NULL), fun_(NULL), osrPc_(NULL), constructing_(false),
+      : script_(nullptr), fun_(nullptr), osrPc_(nullptr), constructing_(false),
         executionMode_(executionMode)
     {
         nimplicit_ = 0;
@@ -237,6 +220,9 @@ class CompileInfo
 
     bool hasArguments() const {
         return script()->argumentsHasVarBinding();
+    }
+    bool argumentsAliasesFormals() const {
+        return script()->argumentsAliasesFormals();
     }
     bool needsArgsObj() const {
         return script()->needsArgsObj();

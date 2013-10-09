@@ -392,6 +392,11 @@
 
 #include popup-notifications.inc
 
+    <hbox id="downloads-animation-container" mousethrough="always">
+      <vbox id="downloads-notification-anchor">
+        <vbox id="downloads-indicator-notification"/>
+      </vbox>
+    </hbox>
   </popupset>
 
 #ifdef CAN_DRAW_IN_TITLEBAR

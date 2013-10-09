@@ -8,7 +8,8 @@
 
 #include "mozilla/MemoryReporting.h"
 #include "gfxASurface.h"
-#include "gfxPoint.h"
+#include "nsAutoPtr.h"
+#include "nsSize.h"
 
 // ARGB -- raw buffer.. wont be changed.. good for storing data.
 

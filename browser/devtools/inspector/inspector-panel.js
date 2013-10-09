@@ -168,7 +168,7 @@ InspectorPanel.prototype = {
     // as default selected, else set documentElement
     return walker.getRootNode().then(aRootNode => {
       rootNode = aRootNode;
-      return walker.querySelector(aRootNode, this.selectionCssSelector);
+      return walker.querySelector(rootNode, this.selectionCssSelector);
     }).then(front => {
       if (front) {
         return front;
@@ -399,7 +399,7 @@ InspectorPanel.prototype = {
           }
 
           self._updateProgress = null;
-          self.emit("inspector-updated");
+          self.emit("inspector-updated", name);
         },
       };
     }
@@ -432,7 +432,9 @@ InspectorPanel.prototype = {
   },
 
   /**
-   * When a node is deleted, select its parent node.
+   * When a node is deleted, select its parent node or the defaultNode if no
+   * parent is found (may happen when deleting an iframe inside which the
+   * node was selected).
    */
   onDetached: function InspectorPanel_onDetached(event, parentNode) {
     this.cancelLayoutChange();
@@ -727,15 +729,6 @@ InspectorPanel.prototype = {
       // remove the node from content
       this.walker.removeNode(this.selection.nodeFront);
     }
-  },
-
-  /**
-   * Trigger a high-priority layout change for things that need to be
-   * updated immediately
-   */
-  immediateLayoutChange: function Inspector_immediateLayoutChange()
-  {
-    this.emit("layout-change");
   },
 
   /**

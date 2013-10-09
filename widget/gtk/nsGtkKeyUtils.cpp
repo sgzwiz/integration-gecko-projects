@@ -17,7 +17,6 @@
 #include <gdk/gdkkeysyms-compat.h>
 #endif
 #include <X11/XKBlib.h>
-#include "nsGUIEvent.h"
 #include "WidgetUtils.h"
 #include "keysym2ucs.h"
 #include "nsIBidiKeyboard.h"
@@ -27,6 +26,8 @@
 PRLogModuleInfo* gKeymapWrapperLog = nullptr;
 #endif // PR_LOGGING
 
+#include "mozilla/MouseEvents.h"
+#include "mozilla/TextEvents.h"
 #include "mozilla/Util.h"
 
 namespace mozilla {
@@ -462,7 +463,7 @@ KeymapWrapper::GetCurrentModifierState()
 {
     GdkModifierType modifiers;
     gdk_display_get_pointer(gdk_display_get_default(),
-                            NULL, NULL, NULL, &modifiers);
+                            nullptr, nullptr, nullptr, &modifiers);
     return static_cast<guint>(modifiers);
 }
 
@@ -494,7 +495,7 @@ KeymapWrapper::AreModifiersActive(Modifiers aModifiers,
 }
 
 /* static */ void
-KeymapWrapper::InitInputEvent(nsInputEvent& aInputEvent,
+KeymapWrapper::InitInputEvent(WidgetInputEvent& aInputEvent,
                               guint aModifierState)
 {
     KeymapWrapper* keymapWrapper = GetInstance();
@@ -559,16 +560,17 @@ KeymapWrapper::InitInputEvent(nsInputEvent& aInputEvent,
             return;
     }
 
-    nsMouseEvent_base& mouseEvent = static_cast<nsMouseEvent_base&>(aInputEvent);
+    WidgetMouseEventBase& mouseEvent =
+      static_cast<WidgetMouseEventBase&>(aInputEvent);
     mouseEvent.buttons = 0;
     if (aModifierState & GDK_BUTTON1_MASK) {
-        mouseEvent.buttons |= nsMouseEvent::eLeftButtonFlag;
+        mouseEvent.buttons |= WidgetMouseEvent::eLeftButtonFlag;
     }
     if (aModifierState & GDK_BUTTON3_MASK) {
-        mouseEvent.buttons |= nsMouseEvent::eRightButtonFlag;
+        mouseEvent.buttons |= WidgetMouseEvent::eRightButtonFlag;
     }
     if (aModifierState & GDK_BUTTON2_MASK) {
-        mouseEvent.buttons |= nsMouseEvent::eMiddleButtonFlag;
+        mouseEvent.buttons |= WidgetMouseEvent::eMiddleButtonFlag;
     }
 
     PR_LOG(gKeymapWrapperLog, PR_LOG_DEBUG,
@@ -576,11 +578,11 @@ KeymapWrapper::InitInputEvent(nsInputEvent& aInputEvent,
          "aInputEvent.buttons=0x%04X (Left: %s, Right: %s, Middle: %s, "
          "4th (BACK): %s, 5th (FORWARD): %s)",
          keymapWrapper, mouseEvent.buttons,
-         GetBoolName(mouseEvent.buttons & nsMouseEvent::eLeftButtonFlag),
-         GetBoolName(mouseEvent.buttons & nsMouseEvent::eRightButtonFlag),
-         GetBoolName(mouseEvent.buttons & nsMouseEvent::eMiddleButtonFlag),
-         GetBoolName(mouseEvent.buttons & nsMouseEvent::e4thButtonFlag),
-         GetBoolName(mouseEvent.buttons & nsMouseEvent::e5thButtonFlag)));
+         GetBoolName(mouseEvent.buttons & WidgetMouseEvent::eLeftButtonFlag),
+         GetBoolName(mouseEvent.buttons & WidgetMouseEvent::eRightButtonFlag),
+         GetBoolName(mouseEvent.buttons & WidgetMouseEvent::eMiddleButtonFlag),
+         GetBoolName(mouseEvent.buttons & WidgetMouseEvent::e4thButtonFlag),
+         GetBoolName(mouseEvent.buttons & WidgetMouseEvent::e5thButtonFlag)));
 }
 
 /* static */ uint32_t
@@ -750,7 +752,7 @@ KeymapWrapper::ComputeDOMKeyNameIndex(const GdkEventKey* aGdkKeyEvent)
 }
 
 /* static */ void
-KeymapWrapper::InitKeyEvent(nsKeyEvent& aKeyEvent,
+KeymapWrapper::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent,
                             GdkEventKey* aGdkKeyEvent)
 {
     KeymapWrapper* keymapWrapper = GetInstance();
@@ -933,7 +935,7 @@ KeymapWrapper::GetCharCodeFor(const GdkEventKey *aGdkKeyEvent,
     if (!gdk_keymap_translate_keyboard_state(mGdkKeymap,
              aGdkKeyEvent->hardware_keycode,
              GdkModifierType(aModifierState),
-             aGroup, &keyval, NULL, NULL, NULL)) {
+             aGroup, &keyval, nullptr, nullptr, nullptr)) {
         return 0;
     }
     GdkEventKey tmpEvent = *aGdkKeyEvent;
@@ -951,7 +953,7 @@ KeymapWrapper::GetKeyLevel(GdkEventKey *aGdkKeyEvent)
     if (!gdk_keymap_translate_keyboard_state(mGdkKeymap,
              aGdkKeyEvent->hardware_keycode,
              GdkModifierType(aGdkKeyEvent->state),
-             aGdkKeyEvent->group, NULL, NULL, &level, NULL)) {
+             aGdkKeyEvent->group, nullptr, nullptr, &level, nullptr)) {
         return -1;
     }
     return level;
@@ -1017,7 +1019,7 @@ KeymapWrapper::GetGDKKeyvalWithoutModifier(const GdkEventKey *aGdkKeyEvent)
     guint keyval;
     if (!gdk_keymap_translate_keyboard_state(keymapWrapper->mGdkKeymap,
              aGdkKeyEvent->hardware_keycode, GdkModifierType(state),
-             aGdkKeyEvent->group, &keyval, NULL, NULL, NULL)) {
+             aGdkKeyEvent->group, &keyval, nullptr, nullptr, nullptr)) {
         return 0;
     }
     return keyval;
@@ -1164,7 +1166,7 @@ KeymapWrapper::GetDOMKeyCodeFromKeyPairs(guint aGdkKeyval)
 }
 
 void
-KeymapWrapper::InitKeypressEvent(nsKeyEvent& aKeyEvent,
+KeymapWrapper::InitKeypressEvent(WidgetKeyboardEvent& aKeyEvent,
                                  GdkEventKey* aGdkKeyEvent)
 {
     NS_ENSURE_TRUE_VOID(aKeyEvent.message == NS_KEY_PRESS);
@@ -1210,7 +1212,7 @@ KeymapWrapper::InitKeypressEvent(nsKeyEvent& aKeyEvent,
     // We shold send both shifted char and unshifted char, all keyboard layout
     // users can use all keys.  Don't change event.charCode. On some keyboard
     // layouts, Ctrl/Alt/Meta keys are used for inputting some characters.
-    nsAlternativeCharCode altCharCodes(0, 0);
+    AlternativeCharCode altCharCodes(0, 0);
     // unshifted charcode of current keyboard layout.
     altCharCodes.mUnshiftedCharCode =
         GetCharCodeFor(aGdkKeyEvent, baseState, aGdkKeyEvent->group);
@@ -1258,7 +1260,7 @@ KeymapWrapper::InitKeypressEvent(nsKeyEvent& aKeyEvent,
         return;
     }
 
-    nsAlternativeCharCode altLatinCharCodes(0, 0);
+    AlternativeCharCode altLatinCharCodes(0, 0);
     uint32_t unmodifiedCh =
         aKeyEvent.IsShift() ? altCharCodes.mShiftedCharCode :
                               altCharCodes.mUnshiftedCharCode;

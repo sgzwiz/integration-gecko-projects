@@ -9,20 +9,16 @@
 #include "gfxQuartzSurface.h"
 #include "gfxQuartzImageSurface.h"
 #include "mozilla/gfx/2D.h"
-#include "mozilla/gfx/QuartzSupport.h"
 
 #include "gfxMacPlatformFontList.h"
 #include "gfxMacFont.h"
 #include "gfxCoreTextShaper.h"
 #include "gfxUserFontSet.h"
 
-#include "nsCRT.h"
 #include "nsTArray.h"
-#include "nsUnicodeRange.h"
-
 #include "mozilla/Preferences.h"
-
 #include "qcms.h"
+#include "gfx2DGlue.h"
 
 #include <dlfcn.h>
 
@@ -93,7 +89,7 @@ gfxPlatformMac::CreatePlatformFontList()
 
 already_AddRefed<gfxASurface>
 gfxPlatformMac::CreateOffscreenSurface(const gfxIntSize& size,
-                                       gfxASurface::gfxContentType contentType)
+                                       gfxContentType contentType)
 {
     nsRefPtr<gfxASurface> newSurface =
       new gfxQuartzSurface(size, OptimalFormatForContent(contentType));
@@ -102,7 +98,7 @@ gfxPlatformMac::CreateOffscreenSurface(const gfxIntSize& size,
 
 already_AddRefed<gfxASurface>
 gfxPlatformMac::CreateOffscreenImageSurface(const gfxIntSize& aSize,
-                                            gfxASurface::gfxContentType aContentType)
+                                            gfxContentType aContentType)
 {
     nsRefPtr<gfxASurface> surface = CreateOffscreenSurface(aSize, aContentType);
 #ifdef DEBUG
@@ -115,7 +111,7 @@ gfxPlatformMac::CreateOffscreenImageSurface(const gfxIntSize& aSize,
 
 already_AddRefed<gfxASurface>
 gfxPlatformMac::OptimizeImage(gfxImageSurface *aSurface,
-                              gfxASurface::gfxImageFormat format)
+                              gfxImageFormat format)
 {
     const gfxIntSize& surfaceSize = aSurface->GetSize();
     nsRefPtr<gfxImageSurface> isurf = aSurface;
@@ -383,8 +379,8 @@ gfxPlatformMac::CreateThebesSurfaceAliasForDrawTarget_hack(mozilla::gfx::DrawTar
     size_t stride = CGBitmapContextGetBytesPerRow(cg);
     gfxIntSize size(aTarget->GetSize().width, aTarget->GetSize().height);
     nsRefPtr<gfxImageSurface> imageSurface = new gfxImageSurface(data, size, stride, bpp == 2
-                                                                                     ? gfxASurface::ImageFormatRGB16_565
-                                                                                     : gfxASurface::ImageFormatARGB32);
+                                                                                     ? gfxImageFormatRGB16_565
+                                                                                     : gfxImageFormatARGB32);
     // Here we should return a gfxQuartzImageSurface but quartz will assumes that image surfaces
     // don't change which wont create a proper alias to the draw target, therefore we have to
     // return a plain image surface.
@@ -402,9 +398,9 @@ gfxPlatformMac::GetThebesSurfaceForDrawTarget(DrawTarget *aTarget)
     RefPtr<DataSourceSurface> sourceData = source->GetDataSurface();
     unsigned char* data = sourceData->GetData();
     nsRefPtr<gfxImageSurface> surf = new gfxImageSurface(data, ThebesIntSize(sourceData->GetSize()), sourceData->Stride(),
-                                                         gfxImageSurface::ImageFormatARGB32);
+                                                         gfxImageFormatARGB32);
     // We could fix this by telling gfxImageSurface it owns data.
-    nsRefPtr<gfxImageSurface> cpy = new gfxImageSurface(ThebesIntSize(sourceData->GetSize()), gfxImageSurface::ImageFormatARGB32);
+    nsRefPtr<gfxImageSurface> cpy = new gfxImageSurface(ThebesIntSize(sourceData->GetSize()), gfxImageFormatARGB32);
     cpy->CopyFrom(surf);
     return cpy.forget();
   } else if (aTarget->GetType() == BACKEND_COREGRAPHICS) {

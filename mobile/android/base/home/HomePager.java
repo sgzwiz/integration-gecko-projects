@@ -52,6 +52,7 @@ public class HomePager extends ViewPager {
     static final String LIST_TAG_TOP_SITES = "top_sites";
     static final String LIST_TAG_MOST_RECENT = "most_recent";
     static final String LIST_TAG_LAST_TABS = "last_tabs";
+    static final String LIST_TAG_BROWSER_SEARCH = "browser_search";
 
     private EnumMap<Page, Fragment> mPages = new EnumMap<Page, Fragment>(Page.class);
 
@@ -137,8 +138,13 @@ public class HomePager extends ViewPager {
                 getContext().getString(R.string.home_top_sites_title));
         adapter.addTab(Page.BOOKMARKS, BookmarksPage.class, new Bundle(),
                 getContext().getString(R.string.bookmarks_title));
-        adapter.addTab(Page.READING_LIST, ReadingListPage.class, new Bundle(),
-                getContext().getString(R.string.reading_list_title));
+
+        // We disable reader mode support on low memory devices. Hence the
+        // reading list page should not show up on such devices.
+        if (!HardwareUtils.isLowMemoryPlatform()) {
+            adapter.addTab(Page.READING_LIST, ReadingListPage.class, new Bundle(),
+                    getContext().getString(R.string.reading_list_title));
+        }
 
         // On phones, the history tab is the first tab. On tablets, the
         // history tab is the last tab.

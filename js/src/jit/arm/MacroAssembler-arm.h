@@ -53,6 +53,8 @@ class MacroAssemblerARM : public Assembler
     void branchTruncateDouble(const FloatRegister &src, const Register &dest, Label *fail);
     void convertDoubleToInt32(const FloatRegister &src, const Register &dest, Label *fail,
                               bool negativeZeroCheck = true);
+    void convertFloat32ToInt32(const FloatRegister &src, const Register &dest, Label *fail,
+                               bool negativeZeroCheck = true);
 
     void convertFloatToDouble(const FloatRegister &src, const FloatRegister &dest);
     void branchTruncateFloat32(const FloatRegister &src, const Register &dest, Label *fail);
@@ -86,9 +88,9 @@ class MacroAssemblerARM : public Assembler
                 SetCond_ sc = NoSetCond, Condition c = Always);
     void ma_nop();
     void ma_movPatchable(Imm32 imm, Register dest, Assembler::Condition c,
-                         RelocStyle rs, Instruction *i = NULL);
+                         RelocStyle rs, Instruction *i = nullptr);
     void ma_movPatchable(ImmPtr imm, Register dest, Assembler::Condition c,
-                         RelocStyle rs, Instruction *i = NULL);
+                         RelocStyle rs, Instruction *i = nullptr);
     // These should likely be wrapped up as a set of macros
     // or something like that.  I cannot think of a good reason
     // to explicitly have all of this code.
@@ -322,6 +324,7 @@ class MacroAssemblerARM : public Assembler
     void ma_vimm_f32(float value, FloatRegister dest, Condition cc = Always);
 
     void ma_vcmp(FloatRegister src1, FloatRegister src2, Condition cc = Always);
+    void ma_vcmp_f32(FloatRegister src1, FloatRegister src2, Condition cc = Always);
     void ma_vcmpz(FloatRegister src1, Condition cc = Always);
 
     void ma_vadd_f32(FloatRegister src1, FloatRegister src2, FloatRegister dst);
@@ -512,9 +515,6 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void mov(Register src, Register dest) {
         ma_mov(src, dest);
     }
-    void mov(Imm32 imm, Register dest) {
-        ma_mov(imm, dest);
-    }
     void mov(ImmWord imm, Register dest) {
         ma_mov(Imm32(imm.value), dest);
     }
@@ -598,6 +598,10 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         ma_mov(imm, ScratchRegister);
         ma_push(ScratchRegister);
     }
+    void push(const Address &address) {
+        ma_ldr(Operand(address.base, address.offset), ScratchRegister);
+        ma_push(ScratchRegister);
+    }
     void push(const Register &reg) {
         ma_push(reg);
     }
@@ -656,6 +660,10 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     }
     void jump(Register reg) {
         ma_bx(reg);
+    }
+    void jump(const Address &address) {
+        ma_ldr(Operand(address.base, address.offset), ScratchRegister);
+        ma_bx(ScratchRegister);
     }
 
     void neg32(Register reg) {
@@ -1183,7 +1191,6 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     // Builds an exit frame on the stack, with a return address to an internal
     // non-function. Returns offset to be passed to markSafepointAt().
     bool buildFakeExitFrame(const Register &scratch, uint32_t *offset);
-    bool buildOOLFakeExitFrame(void *fakeReturnAddr);
 
     void callWithExitFrame(IonCode *target);
     void callWithExitFrame(IonCode *target, Register dynStack);
@@ -1390,6 +1397,9 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void passABIArg(const Register &reg);
     void passABIArg(const FloatRegister &reg);
     void passABIArg(const ValueOperand &regs);
+
+  protected:
+    bool buildOOLFakeExitFrame(void *fakeReturnAddr);
 
   private:
     void callWithABIPre(uint32_t *stackAdjust);

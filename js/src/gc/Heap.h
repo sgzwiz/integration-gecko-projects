@@ -101,6 +101,7 @@ struct Cell
     inline JSRuntime *runtimeFromMainThread() const;
     inline JS::shadow::Runtime *shadowRuntimeFromMainThread() const;
     inline JS::Zone *tenuredZone() const;
+    inline JS::Zone *tenuredZoneFromAnyThread() const;
     inline bool tenuredIsInsideZone(JS::Zone *zone) const;
 
     // Note: Unrestricted access to the runtime of a GC thing from an arbitrary
@@ -283,7 +284,7 @@ struct FreeSpan
              */
             *this = *reinterpret_cast<FreeSpan *>(thing);
         } else {
-            return NULL;
+            return nullptr;
         }
         checkSpan();
         return reinterpret_cast<void *>(thing);
@@ -1020,6 +1021,13 @@ Cell::tenuredZone() const
     JS_ASSERT(CurrentThreadCanAccessZone(zone));
     JS_ASSERT(isTenured());
     return zone;
+}
+
+JS::Zone *
+Cell::tenuredZoneFromAnyThread() const
+{
+    JS_ASSERT(isTenured());
+    return arenaHeader()->zone;
 }
 
 bool

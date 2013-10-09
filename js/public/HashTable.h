@@ -250,12 +250,17 @@ class HashMap
             remove(p);
     }
 
+    // Infallibly rekey one entry, if necessary.
+    // Requires template parameters Key and HashPolicy::Lookup to be the same type.
+    void rekeyIfMoved(const Key &old_key, const Key &new_key) {
+        if (old_key != new_key)
+            rekeyAs(old_key, new_key, new_key);
+    }
+
     // Infallibly rekey one entry, if present.
-    void rekey(const Lookup &old_key, const Key &new_key) {
-        if (old_key != new_key) {
-            if (Ptr p = lookup(old_key))
-                impl.rekeyAndMaybeRehash(p, new_key, new_key);
-        }
+    void rekeyAs(const Lookup &old_lookup, const Lookup &new_lookup, const Key &new_key) {
+        if (Ptr p = lookup(old_lookup))
+            impl.rekeyAndMaybeRehash(p, new_lookup, new_key);
     }
 
     // HashMap is movable
@@ -323,6 +328,10 @@ class HashSet
     // Also see the definition of Ptr in HashTable above.
     typedef typename Impl::Ptr Ptr;
     Ptr lookup(const Lookup &l) const                 { return impl.lookup(l); }
+
+    // Like lookup, but does not assert if two threads call lookup at the same
+    // time. Only use this method when none of the threads will modify the map.
+    Ptr readonlyThreadsafeLookup(const Lookup &l) const { return impl.readonlyThreadsafeLookup(l); }
 
     // Assuming |p.found()|, remove |*p|.
     void remove(Ptr p)                                { impl.remove(p); }
@@ -450,11 +459,16 @@ class HashSet
     }
 
     // Infallibly rekey one entry, if present.
-    void rekey(const Lookup &old_key, const T &new_key) {
-        if (old_key != new_key) {
-            if (Ptr p = lookup(old_key))
-                impl.rekeyAndMaybeRehash(p, new_key, new_key);
-        }
+    // Requires template parameters T and HashPolicy::Lookup to be the same type.
+    void rekeyIfMoved(const Lookup &old_value, const T &new_value) {
+        if (old_value != new_value)
+            rekeyAs(old_value, new_value, new_value);
+    }
+
+    // Infallibly rekey one entry, if present.
+    void rekeyAs(const Lookup &old_lookup, const Lookup &new_lookup, const T &new_value) {
+        if (Ptr p = lookup(old_lookup))
+            impl.rekeyAndMaybeRehash(p, new_lookup, new_value);
     }
 
     // HashSet is movable
@@ -562,6 +576,19 @@ struct DefaultHasher<double>
     }
     static bool match(double lhs, double rhs) {
         return mozilla::BitwiseCast<uint64_t>(lhs) == mozilla::BitwiseCast<uint64_t>(rhs);
+    }
+};
+
+template <>
+struct DefaultHasher<float>
+{
+    typedef float Lookup;
+    static HashNumber hash(float f) {
+        JS_STATIC_ASSERT(sizeof(HashNumber) == 4);
+        return HashNumber(mozilla::BitwiseCast<uint32_t>(f));
+    }
+    static bool match(float lhs, float rhs) {
+        return mozilla::BitwiseCast<uint32_t>(lhs) == mozilla::BitwiseCast<uint32_t>(rhs);
     }
 };
 

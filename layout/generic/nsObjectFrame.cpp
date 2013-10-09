@@ -6,6 +6,9 @@
 
 /* rendering objects for replaced elements implemented by a plugin */
 
+#include "nsObjectFrame.h"
+
+#include "mozilla/BasicEvents.h"
 #ifdef XP_WIN
 // This is needed for DoublePassRenderingEvent.
 #include "mozilla/plugins/PluginMessageUtils.h"
@@ -23,7 +26,6 @@
 #include "nsIPluginInstanceOwner.h"
 #include "nsNPAPIPluginInstance.h"
 #include "nsIDOMElement.h"
-#include "nsGUIEvent.h"
 #include "nsRenderingContext.h"
 #include "npapi.h"
 #include "nsIObjectLoadingContent.h"
@@ -36,7 +38,6 @@
 #include "GeckoProfiler.h"
 #include <algorithm>
 
-#include "nsObjectFrame.h"
 #include "nsIObjectFrame.h"
 #include "nsPluginNativeWindow.h"
 #include "FrameLayerBuilder.h"
@@ -130,8 +131,8 @@ extern "C" {
     GWorldPtr *   offscreenGWorld,
     UInt32        PixelFormat,
     const Rect *  boundsRect,
-    CTabHandle    cTable,                /* can be NULL */
-    GDHandle      aGDevice,              /* can be NULL */
+    CTabHandle    cTable,                /* can be nullptr */
+    GDHandle      aGDevice,              /* can be nullptr */
     GWorldFlags   flags,
     Ptr           newBuffer,
     SInt32        rowBytes)
@@ -1347,7 +1348,8 @@ nsObjectFrame::PrintPlugin(nsRenderingContext& aRenderingContext,
     return;
   }
   GWorldPtr gWorld;
-  if (::NewGWorldFromPtr(&gWorld, k32ARGBPixelFormat, &gwBounds, NULL, NULL, 0,
+  if (::NewGWorldFromPtr(&gWorld, k32ARGBPixelFormat, &gwBounds,
+                         nullptr, nullptr, 0,
                          buffer.Elements(), window.width * 4) != noErr) {
     ::CGContextRelease(cgBuffer);
     nativeDraw.EndNativeDrawing();
@@ -1561,12 +1563,12 @@ nsObjectFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
 
     imglayer->SetScaleToSize(size, SCALE_STRETCH);
     imglayer->SetContainer(container);
-    gfxPattern::GraphicsFilter filter =
+    GraphicsFilter filter =
       nsLayoutUtils::GetGraphicsFilterForFrame(this);
 #ifdef MOZ_GFX_OPTIMIZE_MOBILE
     if (!aManager->IsCompositingCheap()) {
       // Pixman just horrible with bilinear filter scaling
-      filter = gfxPattern::FILTER_NEAREST;
+      filter = GraphicsFilter::FILTER_NEAREST;
     }
 #endif
     imglayer->SetFilter(filter);
@@ -1741,7 +1743,7 @@ nsObjectFrame::PaintPlugin(nsDisplayListBuilder* aBuilder,
 
       // this rect is used only in the CoreGraphics drawing model
       gfxRect tmpRect(0, 0, 0, 0);
-      mInstanceOwner->Paint(tmpRect, NULL);
+      mInstanceOwner->Paint(tmpRect, nullptr);
     }
   }
 #elif defined(MOZ_X11)
@@ -1959,8 +1961,8 @@ nsObjectFrame::PaintPlugin(nsDisplayListBuilder* aBuilder,
 
 NS_IMETHODIMP
 nsObjectFrame::HandleEvent(nsPresContext* aPresContext,
-                           nsGUIEvent*     anEvent,
-                           nsEventStatus*  anEventStatus)
+                           WidgetGUIEvent* anEvent,
+                           nsEventStatus* anEventStatus)
 {
   NS_ENSURE_ARG_POINTER(anEvent);
   NS_ENSURE_ARG_POINTER(anEventStatus);
@@ -1993,7 +1995,7 @@ nsObjectFrame::HandleEvent(nsPresContext* aPresContext,
 #endif
 
   if (mInstanceOwner->SendNativeEvents() &&
-      NS_IS_PLUGIN_EVENT(anEvent)) {
+      anEvent->IsNativeEventDelivererForPlugin()) {
     *anEventStatus = mInstanceOwner->ProcessEvent(*anEvent);
     // Due to plugin code reentering Gecko, this frame may be dead at this
     // point.

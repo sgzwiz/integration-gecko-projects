@@ -71,6 +71,7 @@ CPP_SOURCES += [
     'BrowserStreamParent.cpp',
     'ChildAsyncCall.cpp',
     'ChildTimer.cpp',
+    'PluginBackgroundDestroyer.cpp',
     'PluginIdentifierChild.cpp',
     'PluginIdentifierParent.cpp',
     'PluginInstanceChild.cpp',
@@ -109,4 +110,6 @@ FAIL_ON_WARNINGS = True
 LIBXUL_LIBRARY = True
 
 LIBRARY_NAME = 'domplugins_s'
+
+EXPORT_LIBRARY = True
 

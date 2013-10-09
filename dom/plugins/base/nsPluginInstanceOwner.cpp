@@ -59,6 +59,10 @@ using mozilla::DefaultXDisplay;
 #include "ImageContainer.h"
 #include "nsIDOMHTMLCollection.h"
 #include "GLContext.h"
+#include "nsIContentInlines.h"
+#include "mozilla/MiscEvents.h"
+#include "mozilla/MouseEvents.h"
+#include "mozilla/TextEvents.h"
 
 #include "nsContentCID.h"
 #include "nsWidgetsCID.h"
@@ -111,7 +115,7 @@ public:
 
   void Destroy(nsIContent* aContent);
 
-  nsEventStatus ProcessEvent(const nsGUIEvent& anEvent)
+  nsEventStatus ProcessEvent(const WidgetGUIEvent& anEvent)
   {
     return nsEventStatus_eConsumeNoDefault;
   }
@@ -1784,11 +1788,11 @@ nsresult nsPluginInstanceOwner::DispatchFocusToPlugin(nsIDOMEvent* aFocusEvent)
   }
 #endif
 
-  nsEvent* theEvent = aFocusEvent->GetInternalNSEvent();
+  WidgetEvent* theEvent = aFocusEvent->GetInternalNSEvent();
   if (theEvent) {
     // we only care about the message in ProcessEvent
-    nsGUIEvent focusEvent(theEvent->mFlags.mIsTrusted, theEvent->message,
-                          nullptr);
+    WidgetGUIEvent focusEvent(theEvent->mFlags.mIsTrusted, theEvent->message,
+                              nullptr);
     nsEventStatus rv = ProcessEvent(focusEvent);
     if (nsEventStatus_eConsumeNoDefault == rv) {
       aFocusEvent->PreventDefault();
@@ -1826,9 +1830,9 @@ nsresult nsPluginInstanceOwner::DispatchKeyToPlugin(nsIDOMEvent* aKeyEvent)
 #endif
 
   if (mInstance) {
-    nsEvent *event = aKeyEvent->GetInternalNSEvent();
+    WidgetEvent* event = aKeyEvent->GetInternalNSEvent();
     if (event && event->eventStructType == NS_KEY_EVENT) {
-      nsEventStatus rv = ProcessEvent(*static_cast<nsGUIEvent*>(event));
+      nsEventStatus rv = ProcessEvent(*static_cast<WidgetGUIEvent*>(event));
       if (nsEventStatus_eConsumeNoDefault == rv) {
         aKeyEvent->PreventDefault();
         aKeyEvent->StopPropagation();
@@ -1860,10 +1864,10 @@ nsPluginInstanceOwner::ProcessMouseDown(nsIDOMEvent* aMouseEvent)
     }
   }
 
-  nsEvent* event = aMouseEvent->GetInternalNSEvent();
+  WidgetEvent* event = aMouseEvent->GetInternalNSEvent();
   if (event && event->eventStructType == NS_MOUSE_EVENT) {
-    mLastMouseDownButtonType = static_cast<nsMouseEvent*>(event)->button;
-    nsEventStatus rv = ProcessEvent(*static_cast<nsGUIEvent*>(event));
+    mLastMouseDownButtonType = static_cast<WidgetMouseEvent*>(event)->button;
+    nsEventStatus rv = ProcessEvent(*static_cast<WidgetGUIEvent*>(event));
     if (nsEventStatus_eConsumeNoDefault == rv) {
       return aMouseEvent->PreventDefault(); // consume event
     }
@@ -1883,9 +1887,9 @@ nsresult nsPluginInstanceOwner::DispatchMouseToPlugin(nsIDOMEvent* aMouseEvent)
   if (!mWidgetVisible)
     return NS_OK;
 
-  nsEvent* event = aMouseEvent->GetInternalNSEvent();
+  WidgetEvent* event = aMouseEvent->GetInternalNSEvent();
   if (event && event->eventStructType == NS_MOUSE_EVENT) {
-    nsEventStatus rv = ProcessEvent(*static_cast<nsGUIEvent*>(event));
+    nsEventStatus rv = ProcessEvent(*static_cast<WidgetGUIEvent*>(event));
     if (nsEventStatus_eConsumeNoDefault == rv) {
       aMouseEvent->PreventDefault();
       aMouseEvent->StopPropagation();
@@ -1922,8 +1926,8 @@ nsPluginInstanceOwner::HandleEvent(nsIDOMEvent* aEvent)
     // element above the plugin, the mouse is still above the plugin, and the
     // mouse-down event caused the element to disappear.  See bug 627649 and
     // bug 909678.
-    nsMouseEvent *event =
-      static_cast<nsMouseEvent*>(aEvent->GetInternalNSEvent());
+    WidgetMouseEvent *event =
+      static_cast<WidgetMouseEvent*>(aEvent->GetInternalNSEvent());
     if (event && ((int) event->button != mLastMouseDownButtonType)) {
       aEvent->PreventDefault();
       return NS_OK;
@@ -1947,7 +1951,7 @@ nsPluginInstanceOwner::HandleEvent(nsIDOMEvent* aEvent)
 
   nsCOMPtr<nsIDOMDragEvent> dragEvent(do_QueryInterface(aEvent));
   if (dragEvent && mInstance) {
-    nsEvent* ievent = aEvent->GetInternalNSEvent();
+    WidgetEvent* ievent = aEvent->GetInternalNSEvent();
     if ((ievent && ievent->mFlags.mIsTrusted) &&
          ievent->message != NS_DRAGDROP_ENTER && ievent->message != NS_DRAGDROP_OVER) {
       aEvent->PreventDefault();
@@ -1960,7 +1964,7 @@ nsPluginInstanceOwner::HandleEvent(nsIDOMEvent* aEvent)
 }
 
 #ifdef MOZ_X11
-static unsigned int XInputEventState(const nsInputEvent& anEvent)
+static unsigned int XInputEventState(const WidgetInputEvent& anEvent)
 {
   unsigned int state = 0;
   if (anEvent.IsShift()) state |= ShiftMask;
@@ -1971,7 +1975,7 @@ static unsigned int XInputEventState(const nsInputEvent& anEvent)
 }
 #endif
 
-nsEventStatus nsPluginInstanceOwner::ProcessEvent(const nsGUIEvent& anEvent)
+nsEventStatus nsPluginInstanceOwner::ProcessEvent(const WidgetGUIEvent& anEvent)
 {
   nsEventStatus rv = nsEventStatus_eIgnore;
 
@@ -2034,7 +2038,8 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const nsGUIEvent& anEvent)
         // If we're in a dragging operation that started over another frame,
         // convert it into a mouse-entered event (in the Cocoa Event Model).
         // See bug 525078.
-        if ((static_cast<const nsMouseEvent&>(anEvent).button == nsMouseEvent::eLeftButton) &&
+        if ((static_cast<const WidgetMouseEvent&>(anEvent).button ==
+               WidgetMouseEvent::eLeftButton) &&
             (nsIPresShell::GetCapturingContent() != mObjectFrame->GetContent())) {
           synthCocoaEvent.type = NPCocoaEventMouseEntered;
           synthCocoaEvent.data.mouse.pluginX = static_cast<double>(ptPx.x);
@@ -2071,7 +2076,8 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const nsGUIEvent& anEvent)
   if ((response == kNPEventHandled || response == kNPEventStartIME) &&
       !(anEvent.eventStructType == NS_MOUSE_EVENT &&
         anEvent.message == NS_MOUSE_BUTTON_DOWN &&
-        static_cast<const nsMouseEvent&>(anEvent).button == nsMouseEvent::eLeftButton &&
+        static_cast<const WidgetMouseEvent&>(anEvent).button ==
+          WidgetMouseEvent::eLeftButton &&
         !mContentFocused))
     rv = nsEventStatus_eConsumeNoDefault;
 
@@ -2089,7 +2095,8 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const nsGUIEvent& anEvent)
       // XXX Should extend this list to synthesize events for more event
       // types
       pluginEvent.event = 0;
-      const nsMouseEvent* mouseEvent = static_cast<const nsMouseEvent*>(&anEvent);
+      const WidgetMouseEvent* mouseEvent =
+        static_cast<const WidgetMouseEvent*>(&anEvent);
       switch (anEvent.message) {
       case NS_MOUSE_MOVE:
         pluginEvent.event = WM_MOUSEMOVE;
@@ -2208,8 +2215,8 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const nsGUIEvent& anEvent)
           mObjectFrame->GetContentRectRelativeToSelf().TopLeft();
         nsIntPoint pluginPoint(presContext->AppUnitsToDevPixels(appPoint.x),
                                presContext->AppUnitsToDevPixels(appPoint.y));
-        const nsMouseEvent& mouseEvent =
-          static_cast<const nsMouseEvent&>(anEvent);
+        const WidgetMouseEvent& mouseEvent =
+          static_cast<const WidgetMouseEvent&>(anEvent);
         // Get reference point relative to screen:
         LayoutDeviceIntPoint rootPoint(-1, -1);
         if (widget)
@@ -2278,13 +2285,13 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const nsGUIEvent& anEvent)
               event.state = XInputEventState(mouseEvent);
               switch (mouseEvent.button)
                 {
-                case nsMouseEvent::eMiddleButton:
+                case WidgetMouseEvent::eMiddleButton:
                   event.button = 2;
                   break;
-                case nsMouseEvent::eRightButton:
+                case WidgetMouseEvent::eRightButton:
                   event.button = 3;
                   break;
-                default: // nsMouseEvent::eLeftButton;
+                default: // WidgetMouseEvent::eLeftButton;
                   event.button = 1;
                   break;
                 }
@@ -2328,7 +2335,8 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const nsGUIEvent& anEvent)
 #endif
 
 #ifdef MOZ_WIDGET_QT
-          const nsKeyEvent& keyEvent = static_cast<const nsKeyEvent&>(anEvent);
+          const WidgetKeyboardEvent& keyEvent =
+            static_cast<const WidgetKeyboardEvent&>(anEvent);
 
           memset( &event, 0, sizeof(event) );
           event.time = anEvent.time;
@@ -2489,7 +2497,8 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const nsGUIEvent& anEvent)
 
     case NS_KEY_EVENT:
      {
-       const nsKeyEvent& keyEvent = static_cast<const nsKeyEvent&>(anEvent);
+       const WidgetKeyboardEvent& keyEvent =
+         static_cast<const WidgetKeyboardEvent&>(anEvent);
        LOG("Firing NS_KEY_EVENT %d %d\n", keyEvent.keyCode, keyEvent.charCode);
        // pluginEvent is initialized by nsWindow::InitKeyEvent().
        ANPEvent* pluginEvent = reinterpret_cast<ANPEvent*>(keyEvent.pluginEvent);
@@ -2682,7 +2691,7 @@ void nsPluginInstanceOwner::Paint(gfxContext* aContext,
       aFrameRect.height != pluginSurface->Height()) {
 
     pluginSurface = new gfxImageSurface(gfxIntSize(aFrameRect.width, aFrameRect.height), 
-                                        gfxImageSurface::ImageFormatARGB32);
+                                        gfxImageFormatARGB32);
     if (!pluginSurface)
       return;
   }
@@ -3210,7 +3219,7 @@ void* nsPluginInstanceOwner::FixUpPluginWindow(int32_t inPaintState)
     // Set this before calling ProcessEvent to avoid endless recursion.
     mSentInitialTopLevelWindowEvent = true;
 
-    nsPluginEvent pluginEvent(true, NS_PLUGIN_FOCUS_EVENT, nullptr);
+    WidgetPluginEvent pluginEvent(true, NS_PLUGIN_FOCUS_EVENT, nullptr);
     NPCocoaEvent cocoaEvent;
     InitializeNPCocoaEvent(&cocoaEvent);
     cocoaEvent.type = NPCocoaEventWindowFocusChanged;

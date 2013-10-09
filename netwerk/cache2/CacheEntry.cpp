@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "CacheLog.h"
 #include "CacheEntry.h"
 #include "CacheStorageService.h"
-#include "CacheLog.h"
 
 #include "nsIInputStream.h"
 #include "nsIOutputStream.h"
@@ -21,6 +21,7 @@
 #include "nsProxyRelease.h"
 #include "nsSerializationHelper.h"
 #include "nsThreadUtils.h"
+#include "mozilla/Telemetry.h"
 #include <math.h>
 #include <algorithm>
 
@@ -75,11 +76,10 @@ CacheEntry::CacheEntry(const nsACString& aStorageID,
 , mIsDoomed(false)
 , mSecurityInfoLoaded(false)
 , mPreventCallbacks(false)
-, mIsRegistered(false)
-, mIsRegistrationAllowed(true)
 , mHasMainThreadOnlyCallback(false)
 , mHasData(false)
 , mState(NOTLOADED)
+, mRegistration(NEVERREGISTERED)
 , mWriter(nullptr)
 , mPredictedDataSize(0)
 , mDataSize(0)
@@ -215,6 +215,7 @@ bool CacheEntry::Load(bool aTruncate, bool aPriority)
   }
   else {
     mState = LOADING;
+    mLoadStart = TimeStamp::Now();
   }
 
   mFile = new CacheFile();
@@ -251,6 +252,21 @@ NS_IMETHODIMP CacheEntry::OnFileReady(nsresult aResult, bool aIsNew)
 {
   LOG(("CacheEntry::OnFileReady [this=%p, rv=0x%08x, new=%d]",
       this, aResult, aIsNew));
+
+  MOZ_ASSERT(!mLoadStart.IsNull());
+
+  if (NS_SUCCEEDED(aResult)) {
+    if (aIsNew) {
+      mozilla::Telemetry::AccumulateTimeDelta(
+        mozilla::Telemetry::NETWORK_CACHE_V2_MISS_TIME_MS,
+        mLoadStart);
+    }
+    else {
+      mozilla::Telemetry::AccumulateTimeDelta(
+        mozilla::Telemetry::NETWORK_CACHE_V2_HIT_TIME_MS,
+        mLoadStart);
+    }
+  }
 
   // OnFileReady, that is the only code that can transit from LOADING
   // to any follow-on state, can only be invoked ones on an entry,
@@ -1152,24 +1168,27 @@ uint32_t CacheEntry::GetExpirationTime() const
 bool CacheEntry::IsRegistered() const
 {
   MOZ_ASSERT(CacheStorageService::IsOnManagementThread());
-  return mIsRegistered;
+  return mRegistration == REGISTERED;
 }
 
 bool CacheEntry::CanRegister() const
 {
   MOZ_ASSERT(CacheStorageService::IsOnManagementThread());
-  return !mIsRegistered && mIsRegistrationAllowed;
+  return mRegistration == NEVERREGISTERED;
 }
 
 void CacheEntry::SetRegistered(bool aRegistered)
 {
   MOZ_ASSERT(CacheStorageService::IsOnManagementThread());
-  MOZ_ASSERT(mIsRegistrationAllowed);
 
-  mIsRegistered = aRegistered;
-
-  if (!aRegistered) // Never allow registration again
-    mIsRegistrationAllowed = false;
+  if (aRegistered) {
+    MOZ_ASSERT(mRegistration == NEVERREGISTERED);
+    mRegistration = REGISTERED;
+  }
+  else {
+    MOZ_ASSERT(mRegistration == REGISTERED);
+    mRegistration = DEREGISTERED;
+  }
 }
 
 bool CacheEntry::Purge(uint32_t aWhat)

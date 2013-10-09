@@ -8,7 +8,7 @@
 /*****************************************************************************/
 
 #include <stdint.h>
-const PRTime gPreloadListExpirationTime = INT64_C(1390645107959000);
+const PRTime gPreloadListExpirationTime = INT64_C(1391854333088000);
 
 class nsSTSPreload
 {
@@ -44,12 +44,14 @@ static const nsSTSPreload kSTSPreloadList[] = {
   { "crm.onlime.ch", false },
   { "crypto.cat", false },
   { "cyphertite.com", true },
+  { "davidlyness.com", true },
   { "developer.mydigipass.com", false },
   { "dist.torproject.org", false },
   { "dm.lookout.com", false },
   { "dm.mylookout.com", false },
   { "download.jitsi.org", false },
   { "ebanking.indovinabank.com.vn", false },
+  { "ecosystem.atlassian.net", true },
   { "entropia.de", false },
   { "espra.com", true },
   { "factor.cc", false },
@@ -108,6 +110,7 @@ static const nsSTSPreload kSTSPreloadList[] = {
   { "squareup.com", false },
   { "stocktrade.de", false },
   { "stripe.com", true },
+  { "strongest-privacy.com", true },
   { "support.mayfirst.org", false },
   { "surkatty.org", true },
   { "therapynotes.com", false },
@@ -121,9 +124,9 @@ static const nsSTSPreload kSTSPreloadList[] = {
   { "writeapp.me", false },
   { "www.apollo-auto.com", true },
   { "www.braintreepayments.com", false },
-  { "www.cueup.com", false },
   { "www.cyveillance.com", true },
   { "www.entropia.de", false },
+  { "www.gov.uk", false },
   { "www.grc.com", false },
   { "www.intercom.io", false },
   { "www.irccloud.com", false },

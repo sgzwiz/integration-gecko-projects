@@ -8,7 +8,6 @@
 #define vm_ObjectImpl_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/GuardObjects.h"
 
 #include <stdint.h>
 
@@ -677,9 +676,11 @@ class ArrayBufferObject;
  * |setterIsStrict| indicates whether invalid changes will cause a TypeError
  * to be thrown.
  */
+template <ExecutionMode mode>
 extern bool
-ArraySetLength(JSContext *cx, Handle<ArrayObject*> obj, HandleId id, unsigned attrs,
-               HandleValue value, bool setterIsStrict);
+ArraySetLength(typename ExecutionModeTraits<mode>::ContextType cx,
+               Handle<ArrayObject*> obj, HandleId id,
+               unsigned attrs, HandleValue value, bool setterIsStrict);
 
 /*
  * Elements header used for all native objects. The elements component of such
@@ -769,9 +770,11 @@ class ObjectElements
     friend class ArrayBufferObject;
     friend class Nursery;
 
+    template <ExecutionMode mode>
     friend bool
-    ArraySetLength(JSContext *cx, Handle<ArrayObject*> obj, HandleId id, unsigned attrs,
-                   HandleValue value, bool setterIsStrict);
+    ArraySetLength(typename ExecutionModeTraits<mode>::ContextType cx,
+                   Handle<ArrayObject*> obj, HandleId id,
+                   unsigned attrs, HandleValue value, bool setterIsStrict);
 
     /* See Flags enum above. */
     uint32_t flags;
@@ -893,7 +896,7 @@ IsObjectValueInCompartment(js::Value v, JSCompartment *comp);
  * allocated array (the slots member). For an object with N fixed slots, shapes
  * with slots [0..N-1] are stored in the fixed slots, and the remainder are
  * stored in the dynamic array. If all properties fit in the fixed slots, the
- * 'slots' member is NULL.
+ * 'slots' member is nullptr.
  *
  * Elements are indexed via the 'elements' member. This member can point to
  * either the shared emptyObjectElements singleton, into the inline value array
@@ -920,6 +923,7 @@ IsObjectValueInCompartment(js::Value v, JSCompartment *comp);
 class ObjectImpl : public gc::BarrieredCell<ObjectImpl>
 {
     friend Zone *js::gc::BarrieredCell<ObjectImpl>::zone() const;
+    friend Zone *js::gc::BarrieredCell<ObjectImpl>::zoneFromAnyThread() const;
 
   protected:
     /*
@@ -1033,8 +1037,8 @@ class ObjectImpl : public gc::BarrieredCell<ObjectImpl>
 #endif
 
     Shape *
-    replaceWithNewEquivalentShape(ExclusiveContext *cx,
-                                  Shape *existingShape, Shape *newShape = NULL);
+    replaceWithNewEquivalentShape(ThreadSafeContext *cx,
+                                  Shape *existingShape, Shape *newShape = nullptr);
 
     enum GenerateShape {
         GENERATE_NONE,
@@ -1045,7 +1049,7 @@ class ObjectImpl : public gc::BarrieredCell<ObjectImpl>
                  GenerateShape generateShape = GENERATE_NONE);
     bool clearFlag(ExclusiveContext *cx, /*BaseShape::Flag*/ uint32_t flag);
 
-    bool toDictionaryMode(ExclusiveContext *cx);
+    bool toDictionaryMode(ThreadSafeContext *cx);
 
   private:
     friend class Nursery;
@@ -1065,7 +1069,7 @@ class ObjectImpl : public gc::BarrieredCell<ObjectImpl>
             if (start + length < fixed) {
                 *fixedStart = &fixedSlots()[start];
                 *fixedEnd = &fixedSlots()[start + length];
-                *slotsStart = *slotsEnd = NULL;
+                *slotsStart = *slotsEnd = nullptr;
             } else {
                 uint32_t localCopy = fixed - start;
                 *fixedStart = &fixedSlots()[start];
@@ -1074,7 +1078,7 @@ class ObjectImpl : public gc::BarrieredCell<ObjectImpl>
                 *slotsEnd = &slots[length - localCopy];
             }
         } else {
-            *fixedStart = *fixedEnd = NULL;
+            *fixedStart = *fixedEnd = nullptr;
             *slotsStart = &slots[start - fixed];
             *slotsEnd = &slots[start - fixed + length];
         }
@@ -1168,7 +1172,7 @@ class ObjectImpl : public gc::BarrieredCell<ObjectImpl>
         return shape_;
     }
 
-    bool generateOwnShape(ExclusiveContext *cx, js::Shape *newShape = NULL) {
+    bool generateOwnShape(ThreadSafeContext *cx, js::Shape *newShape = nullptr) {
         return replaceWithNewEquivalentShape(cx, lastProperty(), newShape);
     }
 
@@ -1221,10 +1225,10 @@ class ObjectImpl : public gc::BarrieredCell<ObjectImpl>
     }
 
     bool nativeContains(ExclusiveContext *cx, jsid id) {
-        return nativeLookup(cx, id) != NULL;
+        return nativeLookup(cx, id) != nullptr;
     }
     bool nativeContains(ExclusiveContext *cx, PropertyName* name) {
-        return nativeLookup(cx, name) != NULL;
+        return nativeLookup(cx, name) != nullptr;
     }
     bool nativeContains(ExclusiveContext *cx, Shape* shape) {
         return nativeLookup(cx, shape->propid()) == shape;
@@ -1243,7 +1247,7 @@ class ObjectImpl : public gc::BarrieredCell<ObjectImpl>
     }
 
     bool nativeContainsPure(jsid id) {
-        return nativeLookupPure(id) != NULL;
+        return nativeLookupPure(id) != nullptr;
     }
     bool nativeContainsPure(PropertyName* name) {
         return nativeContainsPure(NameToId(name));
@@ -1525,11 +1529,12 @@ BarrieredCell<ObjectImpl>::zone() const
     return zone;
 }
 
-template<>
-inline bool
-BarrieredCell<ObjectImpl>::isInsideZone(JS::Zone *zone_) const
+template <>
+JS_ALWAYS_INLINE Zone *
+BarrieredCell<ObjectImpl>::zoneFromAnyThread() const
 {
-    MOZ_CRASH("shouldn't be needed for ObjectImpl, and the default implementation won't work");
+    const ObjectImpl* obj = static_cast<const ObjectImpl*>(this);
+    return obj->shape_->zoneFromAnyThread();
 }
 
 // TypeScript::global uses 0x1 as a special value.

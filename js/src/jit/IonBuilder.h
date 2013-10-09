@@ -14,6 +14,7 @@
 
 #include "jit/BytecodeAnalysis.h"
 #include "jit/MIR.h"
+#include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
 #include "jit/TypeRepresentationSet.h"
 
@@ -120,7 +121,7 @@ class IonBuilder : public MIRGenerator
                 // pc for 'continue' jumps.
                 jsbytecode *continuepc;
 
-                // Common exit point. Created lazily, so it may be NULL.
+                // Common exit point. Created lazily, so it may be nullptr.
                 MBasicBlock *successor;
 
                 // Deferred break and continue targets.
@@ -205,6 +206,7 @@ class IonBuilder : public MIRGenerator
 
   public:
     IonBuilder(JSContext *cx, TempAllocator *temp, MIRGraph *graph,
+               types::CompilerConstraintList *constraints,
                BaselineInspector *inspector, CompileInfo *info, BaselineFrame *baselineFrame,
                size_t inliningDepth = 0, uint32_t loopDepth = 0);
 
@@ -263,7 +265,7 @@ class IonBuilder : public MIRGenerator
     bool pushLoop(CFGState::State state, jsbytecode *stopAt, MBasicBlock *entry, bool osr,
                   jsbytecode *loopHead, jsbytecode *initialPc,
                   jsbytecode *bodyStart, jsbytecode *bodyEnd, jsbytecode *exitpc,
-                  jsbytecode *continuepc = NULL);
+                  jsbytecode *continuepc = nullptr);
     void analyzeNewLoopTypes(MBasicBlock *entry, jsbytecode *start, jsbytecode *end);
 
     MBasicBlock *addBlock(MBasicBlock *block, uint32_t loopDepth);
@@ -275,10 +277,10 @@ class IonBuilder : public MIRGenerator
     MBasicBlock *newOsrPreheader(MBasicBlock *header, jsbytecode *loopEntry);
     MBasicBlock *newPendingLoopHeader(MBasicBlock *predecessor, jsbytecode *pc, bool osr);
     MBasicBlock *newBlock(jsbytecode *pc) {
-        return newBlock(NULL, pc);
+        return newBlock(nullptr, pc);
     }
     MBasicBlock *newBlockAfter(MBasicBlock *at, jsbytecode *pc) {
-        return newBlockAfter(at, NULL, pc);
+        return newBlockAfter(at, nullptr, pc);
     }
 
     // Given a list of pending breaks, creates a new block and inserts a Goto
@@ -321,7 +323,7 @@ class IonBuilder : public MIRGenerator
     bool initParameters();
     void rewriteParameter(uint32_t slotIdx, MDefinition *param, int32_t argIndex);
     void rewriteParameters();
-    bool initScopeChain(MDefinition *callee = NULL);
+    bool initScopeChain(MDefinition *callee = nullptr);
     bool initArgumentsObject();
     bool pushConstant(const Value &v);
 
@@ -357,14 +359,15 @@ class IonBuilder : public MIRGenerator
 
     // jsop_getprop() helpers.
     bool getPropTryArgumentsLength(bool *emitted);
-    bool getPropTryConstant(bool *emitted, jsid id, types::TemporaryTypeSet *types);
+    bool getPropTryConstant(bool *emitted, PropertyName *name,
+                            types::TemporaryTypeSet *types);
     bool getPropTryDefiniteSlot(bool *emitted, PropertyName *name,
                                 bool barrier, types::TemporaryTypeSet *types);
-    bool getPropTryCommonGetter(bool *emitted, jsid id,
+    bool getPropTryCommonGetter(bool *emitted, PropertyName *name,
+                                types::TemporaryTypeSet *types);
+    bool getPropTryInlineAccess(bool *emitted, PropertyName *name,
                                 bool barrier, types::TemporaryTypeSet *types);
-    bool getPropTryInlineAccess(bool *emitted, PropertyName *name, jsid id,
-                                bool barrier, types::TemporaryTypeSet *types);
-    bool getPropTryTypedObject(bool *emitted, jsid id,
+    bool getPropTryTypedObject(bool *emitted, PropertyName *name,
                                types::TemporaryTypeSet *resultTypes);
     bool getPropTryScalarPropOfTypedObject(bool *emitted,
                                            int32_t fieldOffset,
@@ -375,14 +378,13 @@ class IonBuilder : public MIRGenerator
                                             TypeRepresentationSet fieldTypeReprs,
                                             size_t fieldIndex,
                                             types::TemporaryTypeSet *resultTypes);
-    bool getPropTryCache(bool *emitted, PropertyName *name, jsid id,
+    bool getPropTryCache(bool *emitted, PropertyName *name,
                          bool barrier, types::TemporaryTypeSet *types);
     bool needsToMonitorMissingProperties(types::TemporaryTypeSet *types);
 
     // jsop_setprop() helpers.
     bool setPropTryCommonSetter(bool *emitted, MDefinition *obj,
-                                PropertyName *name, jsid id,
-                                MDefinition *value);
+                                PropertyName *name, MDefinition *value);
     bool setPropTryCommonDOMSetter(bool *emitted, MDefinition *obj,
                                    MDefinition *value, JSFunction *setter,
                                    bool isDOM);
@@ -390,11 +392,10 @@ class IonBuilder : public MIRGenerator
                                 PropertyName *name, MDefinition *value,
                                 bool barrier, types::TemporaryTypeSet *objTypes);
     bool setPropTryInlineAccess(bool *emitted, MDefinition *obj,
-                                PropertyName *name, jsid id,
-                                MDefinition *value, bool barrier,
+                                PropertyName *name, MDefinition *value, bool barrier,
                                 types::TemporaryTypeSet *objTypes);
     bool setPropTryTypedObject(bool *emitted, MDefinition *obj,
-                               jsid id, MDefinition *value);
+                               PropertyName *name, MDefinition *value);
     bool setPropTryCache(bool *emitted, MDefinition *obj,
                          PropertyName *name, MDefinition *value,
                          bool barrier, types::TemporaryTypeSet *objTypes);
@@ -403,7 +404,7 @@ class IonBuilder : public MIRGenerator
     bool lookupTypeRepresentationSet(MDefinition *typedObj,
                                      TypeRepresentationSet *out);
     bool lookupTypedObjectField(MDefinition *typedObj,
-                                jsid id,
+                                PropertyName *name,
                                 int32_t *fieldOffset,
                                 TypeRepresentationSet *fieldTypeReprs,
                                 size_t *fieldIndex);
@@ -447,6 +448,7 @@ class IonBuilder : public MIRGenerator
     bool jsop_binary(JSOp op, MDefinition *left, MDefinition *right);
     bool jsop_pos();
     bool jsop_neg();
+    bool jsop_setarg(uint32_t arg);
     bool jsop_defvar(uint32_t index);
     bool jsop_deffun(uint32_t index);
     bool jsop_notearg();
@@ -585,7 +587,6 @@ class IonBuilder : public MIRGenerator
 
     // Utility intrinsics.
     InliningStatus inlineIsCallable(CallInfo &callInfo);
-    InliningStatus inlineNewObjectWithClassPrototype(CallInfo &callInfo);
     InliningStatus inlineHaveSameClass(CallInfo &callInfo);
     InliningStatus inlineToObject(CallInfo &callInfo);
     InliningStatus inlineDump(CallInfo &callInfo);
@@ -623,7 +624,7 @@ class IonBuilder : public MIRGenerator
     MDefinition *patchInlinedReturns(CallInfo &callInfo, MIRGraphExits &exits, MBasicBlock *bottom);
 
     inline bool testCommonPropFunc(JSContext *cx, types::TemporaryTypeSet *types,
-                                   jsid id, JSFunction **funcp,
+                                   PropertyName *name, JSFunction **funcp,
                                    bool isGetter, bool *isDOM,
                                    MDefinition **guardOut);
 
@@ -631,6 +632,17 @@ class IonBuilder : public MIRGenerator
                                   types::TemporaryTypeSet *objTypes, types::TemporaryTypeSet *pushedTypes);
 
     MGetPropertyCache *getInlineableGetPropertyCache(CallInfo &callInfo);
+
+    bool testSingletonProperty(JSObject *obj, JSObject *singleton, PropertyName *name,
+                               bool *isKnownConstant);
+    bool testSingletonPropertyTypes(MDefinition *obj, JSObject *singleton,
+                                    JSObject *globalObj, PropertyName *name,
+                                    bool *isKnownConstant, bool *testObject,
+                                    bool *testString);
+    bool getDefiniteSlot(types::TemporaryTypeSet *types, PropertyName *name,
+                         types::HeapTypeSetKey *property);
+    bool freezePropTypeSets(types::TemporaryTypeSet *types,
+                            JSObject *foundProto, PropertyName *name);
 
     types::TemporaryTypeSet *bytecodeTypes(jsbytecode *pc);
     types::TemporaryTypeSet *cloneTypeSet(types::StackTypeSet *types);
@@ -659,9 +671,6 @@ class IonBuilder : public MIRGenerator
     CodeGenerator *backgroundCodegen_;
 
   public:
-    // Compilation index for this attempt.
-    types::RecompileInfo const recompileInfo;
-
     void clearForBackEnd();
 
     JSScript *script() const { return script_.get(); }
@@ -673,6 +682,14 @@ class IonBuilder : public MIRGenerator
 
     TypeRepresentationSetHash *getOrCreateReprSetHash(); // fallible
 
+    types::CompilerConstraintList *constraints() {
+        return constraints_;
+    }
+
+    bool isInlineBuilder() const {
+        return callerBuilder_ != nullptr;
+    }
+
   private:
     bool init();
 
@@ -680,6 +697,9 @@ class IonBuilder : public MIRGenerator
     BaselineFrame *baselineFrame_;
     AbortReason abortReason_;
     ScopedJSDeletePtr<TypeRepresentationSetHash> reprSetHash_;
+
+    // Constraints for recording dependencies on type information.
+    types::CompilerConstraintList *constraints_;
 
     // Basic analysis information about the script.
     BytecodeAnalysis analysis_;
@@ -696,7 +716,7 @@ class IonBuilder : public MIRGenerator
     /* Information used for inline-call builders. */
     MResumePoint *callerResumePoint_;
     jsbytecode *callerPC() {
-        return callerResumePoint_ ? callerResumePoint_->pc() : NULL;
+        return callerResumePoint_ ? callerResumePoint_->pc() : nullptr;
     }
     IonBuilder *callerBuilder_;
 
@@ -754,8 +774,8 @@ class CallInfo
 
   public:
     CallInfo(bool constructing)
-      : fun_(NULL),
-        thisArg_(NULL),
+      : fun_(nullptr),
+        thisArg_(nullptr),
         constructing_(constructing),
         setter_(false)
     { }

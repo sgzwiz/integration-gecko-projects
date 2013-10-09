@@ -20,6 +20,7 @@
 #include "nsServiceManagerUtils.h"
 #include "nsNetCID.h"
 #include "nsProxyRelease.h"
+#include "mozilla/Telemetry.h"
 
 static NS_DEFINE_CID(kStreamTransportServiceCID,
                      NS_STREAMTRANSPORTSERVICE_CID);
@@ -210,7 +211,7 @@ _OldCacheEntryWrapper::_OldCacheEntryWrapper(nsICacheEntryDescriptor* desc)
 }
 
 _OldCacheEntryWrapper::_OldCacheEntryWrapper(nsICacheEntryInfo* info)
-: mOldInfo(info)
+: mOldDesc(nullptr), mOldInfo(info)
 {
   MOZ_COUNT_CTOR(_OldCacheEntryWrapper);
   LOG(("Creating _OldCacheEntryWrapper %p for info %p", this, info));
@@ -485,6 +486,8 @@ nsresult _OldCacheLoad::Start()
   LOG(("_OldCacheLoad::Start [this=%p, key=%s]", this, mCacheKey.get()));
   MOZ_ASSERT(NS_IsMainThread());
 
+  mLoadStart = mozilla::TimeStamp::Now();
+
   bool mainThreadOnly;
   if (mCallback && (
       NS_SUCCEEDED(mCallback->GetMainThreadOnly(&mainThreadOnly)) &&
@@ -556,6 +559,24 @@ _OldCacheLoad::Run()
     if (!mCallback) {
       LOG(("  duplicate call, bypassed"));
       return NS_OK;
+    }
+
+    if (NS_SUCCEEDED(mStatus)) {
+      if (mFlags & nsICacheStorage::OPEN_TRUNCATE) {
+        mozilla::Telemetry::AccumulateTimeDelta(
+          mozilla::Telemetry::NETWORK_CACHE_V1_TRUNCATE_TIME_MS,
+          mLoadStart);
+      }
+      else if (mNew) {
+        mozilla::Telemetry::AccumulateTimeDelta(
+          mozilla::Telemetry::NETWORK_CACHE_V1_MISS_TIME_MS,
+          mLoadStart);
+      }
+      else {
+        mozilla::Telemetry::AccumulateTimeDelta(
+          mozilla::Telemetry::NETWORK_CACHE_V1_HIT_TIME_MS,
+          mLoadStart);
+      }
     }
 
     if (mMainThreadOnly)

@@ -118,10 +118,18 @@ WebConsoleActor.prototype =
   conn: null,
 
   /**
-   * The content window we work with.
+   * The window we work with.
    * @type nsIDOMWindow
    */
-  get window() this.parentActor.window,
+  get window() {
+    if (this.parentActor.isRootActor) {
+      // Try to find the Browser Console window, otherwise use the window of
+      // the root actor.
+      let window = Services.wm.getMostRecentWindow("devtools:webconsole");
+      return window || this.parentActor.window;
+    }
+    return this.parentActor.window;
+  },
 
   /**
    * The ConsoleServiceListener instance.
@@ -198,6 +206,33 @@ WebConsoleActor.prototype =
     this.dbg.enabled = false;
     this.dbg = null;
     this.conn = null;
+  },
+
+  /**
+   * Create and return an environment actor that corresponds to the provided
+   * Debugger.Environment. This is a straightforward clone of the ThreadActor's
+   * method except that it stores the environment actor in the web console
+   * actor's pool.
+   *
+   * @param Debugger.Environment aEnvironment
+   *        The lexical environment we want to extract.
+   * @return The EnvironmentActor for aEnvironment or undefined for host
+   *         functions or functions scoped to a non-debuggee global.
+   */
+  createEnvironmentActor: function WCA_createEnvironmentActor(aEnvironment) {
+    if (!aEnvironment) {
+      return undefined;
+    }
+
+    if (aEnvironment.actor) {
+      return aEnvironment.actor;
+    }
+
+    let actor = new EnvironmentActor(aEnvironment, this);
+    this._actorPool.addActor(actor);
+    aEnvironment.actor = actor;
+
+    return actor;
   },
 
   /**

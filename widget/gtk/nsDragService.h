@@ -9,6 +9,7 @@
 
 #include "nsBaseDragService.h"
 #include "nsIObserver.h"
+#include "nsAutoRef.h"
 #include <gtk/gtk.h>
 
 class nsWindow;
@@ -135,7 +136,7 @@ private:
     // mPendingWindow, mPendingWindowPoint, mPendingDragContext, and
     // mPendingTime, carry information from the GTK signal that will be used
     // when the scheduled task is run.  mPendingWindow and mPendingDragContext
-    // will be NULL if the scheduled task is eDragTaskLeave.
+    // will be nullptr if the scheduled task is eDragTaskLeave.
     nsRefPtr<nsWindow> mPendingWindow;
     nsIntPoint mPendingWindowPoint;
     nsCountedRef<GdkDragContext> mPendingDragContext;

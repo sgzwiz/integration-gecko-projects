@@ -17,6 +17,8 @@
 #include "nsLookAndFeel.h"
 #include "nsStyleConsts.h"
 #include "gfxFont.h"
+#include "gfxFontConstants.h"
+#include "mozilla/gfx/2D.h"
 #include "cutils/properties.h"
 
 static const PRUnichar UNICODE_BULLET = 0x2022;
@@ -420,7 +422,7 @@ nsLookAndFeel::GetFontImpl(FontID aID, nsString& aFontName,
                            gfxFontStyle& aFontStyle,
                            float aDevPixPerCSSPixel)
 {
-    aFontName.AssignLiteral("\"Fira Sans\"");
+    aFontName.AssignLiteral("\"Fira Sans OT\"");
     aFontStyle.style = NS_FONT_STYLE_NORMAL;
     aFontStyle.weight = NS_FONT_WEIGHT_NORMAL;
     aFontStyle.stretch = NS_FONT_STRETCH_NORMAL;

@@ -6,7 +6,6 @@
 #ifndef GFX_FONT_H
 #define GFX_FONT_H
 
-#include "nsAlgorithm.h"
 #include "gfxTypes.h"
 #include "nsString.h"
 #include "gfxPoint.h"
@@ -17,20 +16,18 @@
 #include "gfxSkipChars.h"
 #include "gfxRect.h"
 #include "nsExpirationTracker.h"
-#include "gfxFontConstants.h"
 #include "gfxPlatform.h"
 #include "nsIAtom.h"
-#include "nsISupportsImpl.h"
-#include "gfxPattern.h"
 #include "mozilla/HashFunctions.h"
 #include "nsIMemoryReporter.h"
 #include "nsIObserver.h"
 #include "gfxFontFeatures.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/gfx/Types.h"
 #include "mozilla/Attributes.h"
 #include <algorithm>
-#include "nsUnicodeProperties.h"
+#include "DrawMode.h"
+#include "nsUnicodeScriptCodes.h"
+#include "nsDataHashtable.h"
 #include "harfbuzz/hb.h"
 
 typedef struct _cairo_scaled_font cairo_scaled_font_t;
@@ -60,6 +57,12 @@ class nsILanguageAtomService;
 
 struct FontListSizes;
 struct gfxTextRunDrawCallbacks;
+
+namespace mozilla {
+namespace gfx {
+class GlyphRenderingOptions;
+}
+}
 
 struct gfxFontStyle {
     gfxFontStyle();
@@ -1323,21 +1326,6 @@ public:
         kAntialiasGrayscale,
         kAntialiasSubpixel
     } AntialiasOption;
-
-    // Options for how the text should be drawn
-    typedef enum {
-        // GLYPH_FILL and GLYPH_STROKE draw into the current context
-        //  and may be used together with bitwise OR.
-        GLYPH_FILL = 1,
-        // Note: using GLYPH_STROKE will destroy the current path.
-        GLYPH_STROKE = 2,
-        // Appends glyphs to the current path. Can NOT be used with
-        //  GLYPH_FILL or GLYPH_STROKE.
-        GLYPH_PATH = 4,
-        // When GLYPH_FILL and GLYPH_STROKE are both set, draws the
-        //  stroke underneath the fill.
-        GLYPH_STROKE_UNDERNEATH = 8
-    } DrawMode;
 
 protected:
     nsAutoRefCnt mRefCnt;
@@ -2630,7 +2618,7 @@ private:
 
 /**
  * Callback for Draw() to use when drawing text with mode
- * gfxFont::GLYPH_PATH.
+ * DrawMode::GLYPH_PATH.
  */
 struct gfxTextRunDrawCallbacks {
 
@@ -2842,7 +2830,7 @@ public:
      * if they overlap (perhaps due to negative spacing).
      */
     void Draw(gfxContext *aContext, gfxPoint aPt,
-              gfxFont::DrawMode aDrawMode,
+              DrawMode aDrawMode,
               uint32_t aStart, uint32_t aLength,
               PropertyProvider *aProvider,
               gfxFloat *aAdvanceWidth, gfxTextContextPaint *aContextPaint,
@@ -3271,7 +3259,7 @@ private:
 
     // **** drawing helper ****
     void DrawGlyphs(gfxFont *aFont, gfxContext *aContext,
-                    gfxFont::DrawMode aDrawMode, gfxPoint *aPt,
+                    DrawMode aDrawMode, gfxPoint *aPt,
                     gfxTextContextPaint *aContextPaint, uint32_t aStart,
                     uint32_t aEnd, PropertyProvider *aProvider,
                     uint32_t aSpacingStart, uint32_t aSpacingEnd,

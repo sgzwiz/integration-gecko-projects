@@ -70,11 +70,13 @@
 #endif
 
 #include "nsIDOMGlobalPropertyInitializer.h"
+#include "nsIDataStoreService.h"
 #include "nsJSUtils.h"
 
 #include "nsScriptNameSpaceManager.h"
 
 #include "mozilla/dom/NavigatorBinding.h"
+#include "mozilla/dom/Promise.h"
 
 namespace mozilla {
 namespace dom {
@@ -709,49 +711,45 @@ Navigator::RemoveIdleObserver(MozIdleObserver& aIdleObserver, ErrorResult& aRv)
   }
 }
 
-void
-Navigator::Vibrate(uint32_t aDuration, ErrorResult& aRv)
+bool
+Navigator::Vibrate(uint32_t aDuration)
 {
   nsAutoTArray<uint32_t, 1> pattern;
   pattern.AppendElement(aDuration);
-  Vibrate(pattern, aRv);
+  return Vibrate(pattern);
 }
 
-void
-Navigator::Vibrate(const nsTArray<uint32_t>& aPattern, ErrorResult& aRv)
+bool
+Navigator::Vibrate(const nsTArray<uint32_t>& aPattern)
 {
   if (!mWindow) {
-    aRv.Throw(NS_ERROR_UNEXPECTED);
-    return;
+    return false;
   }
+
   nsCOMPtr<nsIDocument> doc = mWindow->GetExtantDoc();
   if (!doc) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return;
+    return false;
   }
+
   if (doc->Hidden()) {
     // Hidden documents cannot start or stop a vibration.
-    return;
+    return false;
   }
 
   if (aPattern.Length() > sMaxVibrateListLen) {
-    // XXXbz this should be returning false instead
-    aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return;
+    return false;
   }
 
   for (size_t i = 0; i < aPattern.Length(); ++i) {
     if (aPattern[i] > sMaxVibrateMS) {
-      // XXXbz this should be returning false instead
-      aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-      return;
+      return false;
     }
   }
 
   // The spec says we check sVibratorEnabled after we've done the sanity
   // checking on the pattern.
-  if (!sVibratorEnabled) {
-    return;
+  if (aPattern.IsEmpty() || !sVibratorEnabled) {
+    return true;
   }
 
   // Add a listener to cancel the vibration if the document becomes hidden,
@@ -769,6 +767,7 @@ Navigator::Vibrate(const nsTArray<uint32_t>& aPattern, ErrorResult& aRv)
   gVibrateWindowListener = new VibrateWindowListener(mWindow, doc);
 
   hal::Vibrate(aPattern, mWindow);
+  return true;
 }
 
 //*****************************************************************************
@@ -1096,6 +1095,28 @@ Navigator::GetBattery(ErrorResult& aRv)
   }
 
   return mBatteryManager;
+}
+
+already_AddRefed<Promise>
+Navigator::GetDataStores(const nsAString& aName, ErrorResult& aRv)
+{
+  if (!mWindow || !mWindow->GetDocShell()) {
+    aRv.Throw(NS_ERROR_UNEXPECTED);
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIDataStoreService> service =
+    do_GetService("@mozilla.org/datastore-service;1");
+  if (!service) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return nullptr;
+  }
+
+  nsCOMPtr<nsISupports> promise;
+  aRv = service->GetDataStores(mWindow, aName, getter_AddRefs(promise));
+
+  nsRefPtr<Promise> p = static_cast<Promise*>(promise.get());
+  return p.forget();
 }
 
 PowerManager*
@@ -1784,6 +1805,16 @@ bool Navigator::HasPushNotificationsSupport(JSContext* /* unused */,
 {
   nsCOMPtr<nsPIDOMWindow> win = GetWindowFromGlobal(aGlobal);
   return win && Preferences::GetBool("services.push.enabled", false) && CheckPermission(win, "push");
+}
+
+/* static */
+bool Navigator::HasInputMethodSupport(JSContext* /* unused */,
+                                      JSObject* aGlobal)
+{
+  nsCOMPtr<nsPIDOMWindow> win = GetWindowFromGlobal(aGlobal);
+  return Preferences::GetBool("dom.mozInputMethod.testing", false) ||
+         (Preferences::GetBool("dom.mozInputMethod.enabled", false) &&
+          win && CheckPermission(win, "keyboard"));
 }
 
 /* static */

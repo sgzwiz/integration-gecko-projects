@@ -18,7 +18,7 @@
 #include "gfxCrashReporterUtils.h"      // for ScopedGfxFeatureReporter
 #include "gfxImageSurface.h"            // for gfxImageSurface
 #include "gfxMatrix.h"                  // for gfxMatrix
-#include "gfxPattern.h"                 // for gfxPattern, etc
+#include "GraphicsFilter.h"             // for GraphicsFilter
 #include "gfxPlatform.h"                // for gfxPlatform
 #include "gfxRect.h"                    // for gfxRect
 #include "gfxUtils.h"                   // for NextPowerOfTwo, gfxUtils, etc
@@ -510,7 +510,7 @@ CompositorOGL::Initialize()
   if (console) {
     nsString msg;
     msg +=
-      NS_LITERAL_STRING("OpenGL LayerManager Initialized Succesfully.\nVersion: ");
+      NS_LITERAL_STRING("OpenGL compositor Initialized Succesfully.\nVersion: ");
     msg += NS_ConvertUTF8toUTF16(
       nsDependentCString((const char*)mGLContext->fGetString(LOCAL_GL_VERSION)));
     msg += NS_LITERAL_STRING("\nVendor: ");
@@ -817,6 +817,8 @@ CompositorOGL::BeginFrame(const Rect *aClipRectIn, const gfxMatrix& aTransform,
                                  LOCAL_GL_ONE, LOCAL_GL_ONE);
   mGLContext->fEnable(LOCAL_GL_BLEND);
 
+  mGLContext->fEnable(LOCAL_GL_SCISSOR_TEST);
+
   if (!aClipRectIn) {
     mGLContext->fScissor(0, 0, width, height);
     if (aClipRectOut) {
@@ -825,8 +827,6 @@ CompositorOGL::BeginFrame(const Rect *aClipRectIn, const gfxMatrix& aTransform,
   } else {
     mGLContext->fScissor(aClipRectIn->x, aClipRectIn->y, aClipRectIn->width, aClipRectIn->height);
   }
-
-  mGLContext->fEnable(LOCAL_GL_SCISSOR_TEST);
 
   // If the Android compositor is being used, this clear will be done in
   // DrawWindowUnderlay. Make sure the bits used here match up with those used
@@ -986,8 +986,12 @@ CompositorOGL::DrawQuad(const Rect& aRect, const Rect& aClipRect,
   PROFILER_LABEL("CompositorOGL", "DrawQuad");
   MOZ_ASSERT(mFrameInProgress, "frame not started");
 
+  Rect clipRect = aClipRect;
+  if (!mTarget) {
+    clipRect.MoveBy(mRenderOffset.x, mRenderOffset.y);
+  }
   IntRect intClipRect;
-  aClipRect.ToIntRect(&intClipRect);
+  clipRect.ToIntRect(&intClipRect);
   mGLContext->PushScissorRect(nsIntRect(intClipRect.x, intClipRect.y,
                                         intClipRect.width, intClipRect.height));
 
@@ -1125,7 +1129,7 @@ CompositorOGL::DrawQuad(const Rect& aRect, const Rect& aClipRect,
         return;
       }
 
-      gfxPattern::GraphicsFilter filter = ThebesFilter(effectYCbCr->mFilter);
+      GraphicsFilter filter = ThebesFilter(effectYCbCr->mFilter);
 
       AutoBindTexture bindY(sourceY, LOCAL_GL_TEXTURE0);
       mGLContext->ApplyFilterToBoundTexture(filter);
@@ -1250,7 +1254,7 @@ CompositorOGL::DrawQuad(const Rect& aRect, const Rect& aClipRect,
 void
 CompositorOGL::EndFrame()
 {
-  PROFILER_LABEL("CompositorOGL", "BeginFrame");
+  PROFILER_LABEL("CompositorOGL", "EndFrame");
   MOZ_ASSERT(mCurrentRenderTarget == mWindowRenderTarget, "Rendering target not properly restored");
 
 #ifdef MOZ_DUMP_PAINTING
@@ -1261,11 +1265,10 @@ CompositorOGL::EndFrame()
     } else {
       mWidget->GetBounds(rect);
     }
-    nsRefPtr<gfxASurface> surf = gfxPlatform::GetPlatform()->CreateOffscreenSurface(rect.Size(), gfxASurface::CONTENT_COLOR_ALPHA);
-    nsRefPtr<gfxContext> ctx = new gfxContext(surf);
-    CopyToTarget(ctx, mCurrentRenderTarget->GetTransform());
+    RefPtr<DrawTarget> target = gfxPlatform::GetPlatform()->CreateOffscreenContentDrawTarget(IntSize(rect.width, rect.height), FORMAT_B8G8R8A8);
+    CopyToTarget(target, mCurrentRenderTarget->GetTransform());
 
-    WriteSnapshotToDumpFile(this, surf);
+    WriteSnapshotToDumpFile(this, target);
   }
 #endif
 
@@ -1335,13 +1338,13 @@ CompositorOGL::SetDestinationSurfaceSize(const gfx::IntSize& aSize)
 }
 
 void
-CompositorOGL::CopyToTarget(gfxContext *aTarget, const gfxMatrix& aTransform)
+CompositorOGL::CopyToTarget(DrawTarget *aTarget, const gfxMatrix& aTransform)
 {
-  nsIntRect rect;
+  IntRect rect;
   if (mUseExternalSurfaceSize) {
-    rect = nsIntRect(0, 0, mSurfaceSize.width, mSurfaceSize.height);
+    rect = IntRect(0, 0, mSurfaceSize.width, mSurfaceSize.height);
   } else {
-    rect = nsIntRect(0, 0, mWidgetSize.width, mWidgetSize.height);
+    rect = IntRect(0, 0, mWidgetSize.width, mWidgetSize.height);
   }
   GLint width = rect.width;
   GLint height = rect.height;
@@ -1351,10 +1354,6 @@ CompositorOGL::CopyToTarget(gfxContext *aTarget, const gfxMatrix& aTransform)
     return;
   }
 
-  nsRefPtr<gfxImageSurface> imageSurface =
-    new gfxImageSurface(gfxIntSize(width, height),
-                        gfxASurface::ImageFormatARGB32);
-
   mGLContext->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, 0);
 
   if (!mGLContext->IsGLES2()) {
@@ -1363,22 +1362,21 @@ CompositorOGL::CopyToTarget(gfxContext *aTarget, const gfxMatrix& aTransform)
     mGLContext->fReadBuffer(LOCAL_GL_BACK);
   }
 
-  NS_ASSERTION(imageSurface->Stride() == width * 4,
-               "Image Surfaces being created with weird stride!");
-
-  mGLContext->ReadPixelsIntoImageSurface(imageSurface);
+  RefPtr<SourceSurface> source =
+    mGLContext->ReadPixelsToSourceSurface(IntSize(width, height));
 
   // Map from GL space to Cairo space and reverse the world transform.
-  gfxMatrix glToCairoTransform = aTransform;
+  Matrix glToCairoTransform = MatrixForThebesMatrix(aTransform);
   glToCairoTransform.Invert();
   glToCairoTransform.Scale(1.0, -1.0);
-  glToCairoTransform.Translate(-gfxPoint(0.0, height));
+  glToCairoTransform.Translate(0.0, -height);
 
-  gfxContextAutoSaveRestore restore(aTarget);
-  aTarget->SetOperator(gfxContext::OPERATOR_SOURCE);
-  aTarget->SetMatrix(glToCairoTransform);
-  aTarget->SetSource(imageSurface);
-  aTarget->Paint();
+  Matrix oldMatrix = aTarget->GetTransform();
+  aTarget->SetTransform(glToCairoTransform);
+  Rect floatRect = Rect(rect.x, rect.y, rect.width, rect.height);
+  aTarget->DrawSurface(source, floatRect, floatRect, DrawSurfaceOptions(), DrawOptions(1.0f, OP_SOURCE));
+  aTarget->SetTransform(oldMatrix);
+  aTarget->Flush();
 }
 
 double
@@ -1445,6 +1443,21 @@ CompositorOGL::GetMaxTextureSize() const
                             &texSize);
   MOZ_ASSERT(texSize != 0);
   return texSize;
+}
+
+void
+CompositorOGL::SaveState()
+{
+  mGLContext->PushScissorRect();
+}
+
+void
+CompositorOGL::RestoreState()
+{
+  // Restore state that might be changed by drawBackground/drawForeground in
+  // mobile/android/base/gfx/LayerRenderer.java
+  mGLContext->fEnable(LOCAL_GL_SCISSOR_TEST);
+  mGLContext->PopScissorRect();
 }
 
 void

@@ -19,10 +19,7 @@
 #include "nsITimer.h"
 #include "nsGkAtoms.h"
 
-#include "gfxASurface.h"
-
 #include "nsBaseWidget.h"
-#include "nsGUIEvent.h"
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
 
@@ -33,6 +30,7 @@
 #ifdef ACCESSIBILITY
 #include "mozilla/a11y/Accessible.h"
 #endif
+#include "mozilla/MouseEvents.h"
 
 #include "nsGtkIMModule.h"
 
@@ -64,6 +62,7 @@ extern PRLogModuleInfo *gWidgetDrawLog;
 
 #endif /* MOZ_LOGGING */
 
+class gfxASurface;
 class gfxPattern;
 class nsDragService;
 #if defined(MOZ_X11) && defined(MOZ_HAVE_SHAREDMEMORYSYSV)
@@ -84,7 +83,8 @@ public:
     
     void CommonCreate(nsIWidget *aParent, bool aListenForResizes);
     
-    virtual nsresult DispatchEvent(nsGUIEvent *aEvent, nsEventStatus &aStatus);
+    virtual nsresult DispatchEvent(mozilla::WidgetGUIEvent* aEvent,
+                                   nsEventStatus& aStatus);
     
     // called when we are destroyed
     void OnDestroy(void);
@@ -243,8 +243,10 @@ public:
 
     static guint32     sLastButtonPressTime;
 
-    NS_IMETHOD         BeginResizeDrag(nsGUIEvent* aEvent, int32_t aHorizontal, int32_t aVertical);
-    NS_IMETHOD         BeginMoveDrag(nsMouseEvent* aEvent);
+    NS_IMETHOD         BeginResizeDrag(mozilla::WidgetGUIEvent* aEvent,
+                                       int32_t aHorizontal,
+                                       int32_t aVertical);
+    NS_IMETHOD         BeginMoveDrag(mozilla::WidgetMouseEvent* aEvent);
 
     MozContainer*      GetMozContainer() { return mContainer; }
     // GetMozContainerWidget returns the MozContainer even for undestroyed
@@ -337,14 +339,15 @@ private:
     void               SetUrgencyHint(GtkWidget *top_window, bool state);
     void              *SetupPluginPort(void);
     void               SetDefaultIcon(void);
-    void               InitButtonEvent(nsMouseEvent &aEvent, GdkEventButton *aGdkEvent);
+    void               InitButtonEvent(mozilla::WidgetMouseEvent& aEvent,
+                                       GdkEventButton* aGdkEvent);
     bool               DispatchCommandEvent(nsIAtom* aCommand);
     bool               DispatchContentCommandEvent(int32_t aMsg);
     void               SetWindowClipRegion(const nsTArray<nsIntRect>& aRects,
                                            bool aIntersectWithExisting);
     bool               CheckForRollup(gdouble aMouseX, gdouble aMouseY,
                                       bool aIsWheel, bool aAlwaysRollup);
-    bool               GetDragInfo(nsMouseEvent* aMouseEvent,
+    bool               GetDragInfo(mozilla::WidgetMouseEvent* aMouseEvent,
                                    GdkWindow** aWindow, gint* aButton,
                                    gint* aRootX, gint* aRootY);
     void               ClearCachedResources();
@@ -425,7 +428,7 @@ private:
     gchar*       mTransparencyBitmap;
  
     // all of our DND stuff
-    void   InitDragEvent         (nsDragEvent &aEvent);
+    void   InitDragEvent(mozilla::WidgetDragEvent& aEvent);
 
     float              mLastMotionPressure;
 

@@ -78,6 +78,7 @@ class MochitestRunner(MozbuildObject):
     """
 
     def get_webapp_runtime_path(self):
+        import mozinfo
         appname = 'webapprt-stub' + mozinfo.info.get('bin_suffix', '')
         if sys.platform.startswith('darwin'):
             appname = os.path.join(self.distdir, self.substs['MOZ_MACBUNDLE_NAME'],
@@ -520,7 +521,12 @@ class MachCommands(MachCommandBase):
         return self.run_mochitest(test_file, 'webapprt-content', **kwargs)
 
     def run_mochitest(self, test_file, flavor, **kwargs):
+        from mozbuild.controller.building import BuildDriver
+
         self._ensure_state_subdir_exists('.')
+
+        driver = self._spawn(BuildDriver)
+        driver.install_tests(remove=False)
 
         mochitest = self._spawn(MochitestRunner)
 
@@ -552,7 +558,12 @@ class B2GCommands(MachCommandBase):
         conditions=[conditions.is_b2g, is_emulator])
     @B2GCommand
     def run_mochitest_remote(self, test_file, **kwargs):
+        from mozbuild.controller.building import BuildDriver
+
         self._ensure_state_subdir_exists('.')
+
+        driver = self._spawn(BuildDriver)
+        driver.install_tests(remove=False)
 
         mochitest = self._spawn(MochitestRunner)
         return mochitest.run_b2g_test(b2g_home=self.b2g_home,
@@ -563,8 +574,12 @@ class B2GCommands(MachCommandBase):
         description='Run a b2g desktop mochitest.')
     @B2GCommand
     def run_mochitest_b2g_desktop(self, test_file, **kwargs):
+        from mozbuild.controller.building import BuildDriver
+
         self._ensure_state_subdir_exists('.')
+
+        driver = self._spawn(BuildDriver)
+        driver.install_tests(remove=False)
 
         mochitest = self._spawn(MochitestRunner)
         return mochitest.run_b2g_test(test_file=test_file, **kwargs)
-

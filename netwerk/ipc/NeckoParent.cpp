@@ -371,13 +371,8 @@ NeckoParent::AllocPRemoteOpenFileParent(const URIParams& aURI,
       nsRefPtr<TabParent> tabParent =
         static_cast<TabParent*>(Manager()->ManagedPBrowserParent()[i]);
       uint32_t appId = tabParent->OwnOrContainingAppId();
-      nsCOMPtr<mozIDOMApplication> domApp;
-      nsresult rv = appsService->GetAppByLocalId(appId, getter_AddRefs(domApp));
-      if (!domApp) {
-        continue;
-      }
-      mozApp = do_QueryInterface(domApp);
-      if (!mozApp) {
+      nsresult rv = appsService->GetAppByLocalId(appId, getter_AddRefs(mozApp));
+      if (NS_FAILED(rv) || !mozApp) {
         continue;
       }
       hasManage = false;
@@ -397,7 +392,21 @@ NeckoParent::AllocPRemoteOpenFileParent(const URIParams& aURI,
     fileURL->GetPath(requestedPath);
     NS_UnescapeURL(requestedPath);
 
-    if (hasManage) {
+    // Check if we load the whitelisted app uri for the neterror page.
+    bool netErrorWhiteList = false;
+
+    nsCOMPtr<nsIURI> appUri = DeserializeURI(aAppURI);
+    if (appUri) {
+      nsAdoptingString netErrorURI;
+      netErrorURI = Preferences::GetString("b2g.neterror.url");
+      if (netErrorURI) {
+        nsAutoCString spec;
+        appUri->GetSpec(spec);
+        netErrorWhiteList = spec.Equals(NS_ConvertUTF16toUTF8(netErrorURI).get());
+      }
+    }
+
+    if (hasManage || netErrorWhiteList) {
       // webapps-manage permission means allow reading any application.zip file
       // in either the regular webapps directory, or the core apps directory (if
       // we're using one).
@@ -489,6 +498,26 @@ NeckoParent::RecvCancelHTMLDNSPrefetch(const nsString& hostname,
 {
   nsHTMLDNSPrefetch::CancelPrefetch(hostname, flags, reason);
   return true;
+}
+
+void
+NeckoParent::CloneManagees(ProtocolBase* aSource,
+                         mozilla::ipc::ProtocolCloneContext* aCtx)
+{
+  aCtx->SetNeckoParent(this); // For cloning protocols managed by this.
+  PNeckoParent::CloneManagees(aSource, aCtx);
+}
+
+mozilla::ipc::IProtocol*
+NeckoParent::CloneProtocol(Channel* aChannel,
+                           mozilla::ipc::ProtocolCloneContext* aCtx)
+{
+  ContentParent* contentParent = aCtx->GetContentParent();
+  nsAutoPtr<PNeckoParent> actor(contentParent->AllocPNeckoParent());
+  if (!actor || !contentParent->RecvPNeckoConstructor(actor)) {
+    return nullptr;
+  }
+  return actor.forget();
 }
 
 }} // mozilla::net

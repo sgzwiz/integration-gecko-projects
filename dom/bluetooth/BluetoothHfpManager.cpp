@@ -27,6 +27,7 @@
 #include "nsISettingsService.h"
 #include "nsITelephonyProvider.h"
 #include "nsRadioInterfaceLayer.h"
+#include "nsServiceManagerUtils.h"
 
 /**
  * BRSF bitmask of AG supported features. See 4.34.1 "Bluetooth Defined AT
@@ -448,8 +449,7 @@ BluetoothHfpManager::NotifyConnectionStatusChanged(const nsAString& aType)
   MOZ_ASSERT(NS_IsMainThread());
 
   // Notify Gecko observers
-  nsCOMPtr<nsIObserverService> obs =
-    do_GetService("@mozilla.org/observer-service;1");
+  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
   NS_ENSURE_TRUE_VOID(obs);
 
   if (NS_FAILED(obs->NotifyObservers(this, NS_ConvertUTF16toUTF8(aType).get(),
@@ -1653,14 +1653,8 @@ BluetoothHfpManager::ConnectSco(BluetoothReplyRunnable* aRunnable)
 bool
 BluetoothHfpManager::DisconnectSco()
 {
-  if (!IsConnected()) {
-    BT_WARNING("BluetoothHfpManager is not connected");
-    return false;
-  }
-
-  SocketConnectionStatus status = mScoSocket->GetConnectionStatus();
-  if (status != SOCKET_CONNECTED && status != SOCKET_CONNECTING) {
-    BT_WARNING("No SCO exists");
+  if (!IsScoConnected()) {
+    BT_WARNING("SCO has been already disconnected.");
     return false;
   }
 

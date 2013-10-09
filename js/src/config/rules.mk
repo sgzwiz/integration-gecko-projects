@@ -32,12 +32,14 @@ _MOZBUILD_EXTERNAL_VARIABLES := \
   HOST_CSRCS \
   HOST_LIBRARY_NAME \
   IS_COMPONENT \
+  JS_MODULES_PATH \
   LIBRARY_NAME \
   LIBXUL_LIBRARY \
   MODULE \
   MSVC_ENABLE_PGO \
   NO_DIST_INSTALL \
   PARALLEL_DIRS \
+  SDK_HEADERS \
   SIMPLE_PROGRAMS \
   TEST_DIRS \
   TIERS \
@@ -104,11 +106,6 @@ endif
 endif
 endif
 
-ifdef SDK_HEADERS
-_EXTRA_EXPORTS := $(filter-out $(EXPORTS),$(SDK_HEADERS))
-EXPORTS += $(_EXTRA_EXPORTS)
-endif
-
 ifdef REBUILD_CHECK
 ifdef .PYMAKE
 REPORT_BUILD = @%rebuild_check rebuild_check $@ $^
@@ -165,10 +162,6 @@ ifdef ENABLE_TESTS
 # that changes to tests may not be updated and code could assume to pass
 # locally against non-current test code.
 DIRS += $(TEST_DIRS)
-
-ifndef INCLUDED_TESTS_XPCSHELL_MK #{
-  include $(topsrcdir)/config/makefiles/xpcshell.mk
-endif #}
 
 ifndef INCLUDED_TESTS_MOCHITEST_MK #{
   include $(topsrcdir)/config/makefiles/mochitest.mk
@@ -370,7 +363,7 @@ SIMPLE_PROGRAMS :=
 endif
 
 ifndef TARGETS
-TARGETS			= $(LIBRARY) $(SHARED_LIBRARY) $(PROGRAM) $(SIMPLE_PROGRAMS) $(HOST_LIBRARY) $(HOST_PROGRAM) $(HOST_SIMPLE_PROGRAMS) $(JAVA_LIBRARY)
+TARGETS			= $(LIBRARY) $(SHARED_LIBRARY) $(PROGRAM) $(SIMPLE_PROGRAMS) $(HOST_LIBRARY) $(HOST_PROGRAM) $(HOST_SIMPLE_PROGRAMS)
 endif
 
 COBJS = $(notdir $(CSRCS:.c=.$(OBJ_SUFFIX)))
@@ -736,7 +729,9 @@ GLOBAL_DEPS += Makefile.in
 endif
 
 ##############################################
-compile:: $(OBJS) $(HOST_OBJS)
+OBJ_TARGETS = $(OBJS) $(PROGOBJS) $(HOST_OBJS) $(HOST_PROGOBJS)
+
+compile:: $(OBJ_TARGETS)
 
 include $(topsrcdir)/config/makefiles/target_libs.mk
 
@@ -1261,35 +1256,12 @@ $(DEPTH)/config/autoconf.mk: $(topsrcdir)/config/autoconf.mk.in
 # Bunch of things that extend the 'export' rule (in order):
 ###############################################################################
 
-################################################################################
-# Copy each element of EXPORTS to $(DIST)/include
-
 ifneq ($(XPI_NAME),)
 $(FINAL_TARGET):
 	$(NSINSTALL) -D $@
 
 export:: $(FINAL_TARGET)
 endif
-
-ifndef NO_DIST_INSTALL
-ifneq (,$(EXPORTS))
-EXPORTS_FILES := $(EXPORTS)
-EXPORTS_DEST := $(DIST)/include
-EXPORTS_TARGET := export
-INSTALL_TARGETS += EXPORTS
-endif
-endif # NO_DIST_INSTALL
-
-define EXPORT_NAMESPACE_RULE
-ifndef NO_DIST_INSTALL
-EXPORTS_$(namespace)_FILES := $$(EXPORTS_$(namespace))
-EXPORTS_$(namespace)_DEST := $$(DIST)/include/$(namespace)
-EXPORTS_$(namespace)_TARGET := export
-INSTALL_TARGETS += EXPORTS_$(namespace)
-endif # NO_DIST_INSTALL
-endef
-
-$(foreach namespace,$(EXPORTS_NAMESPACES),$(eval $(EXPORT_NAMESPACE_RULE)))
 
 ################################################################################
 # Copy each element of PREF_JS_EXPORTS

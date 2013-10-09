@@ -23,6 +23,7 @@ from mochitest_options import MochitestOptions
 import devicemanager
 import droid
 import manifestparser
+import mozinfo
 import mozlog
 
 log = mozlog.getLogger('Mochi-Remote')
@@ -464,15 +465,26 @@ class MochiRemote(Mochitest):
             return 1
         return 0
 
-    def printScreenshot(self):
-        try:
-            image = self._dm.pullFile("/mnt/sdcard/Robotium-Screenshots/robocop-screenshot.jpg")
-            encoded = base64.b64encode(image)
-            log.info("SCREENSHOT: data:image/jpg;base64,%s", encoded)
-        except:
-            # If the test passes, no screenshot will be generated and
-            # pullFile will fail -- continue silently.
-            pass
+    def printScreenshots(self, screenShotDir):
+        # TODO: This can be re-written after completion of bug 749421
+        if not self._dm.dirExists(screenShotDir):
+            log.info("SCREENSHOT: No ScreenShots directory available: " + screenShotDir)
+            return
+
+        printed = 0
+        for name in self._dm.listFiles(screenShotDir):
+            fullName = screenShotDir + "/" + name
+            log.info("SCREENSHOT: FOUND: [%s]", fullName)
+            try:
+                image = self._dm.pullFile(fullName)
+                encoded = base64.b64encode(image)
+                log.info("SCREENSHOT: data:image/jpg;base64,%s", encoded)
+                printed += 1
+            except:
+                log.info("SCREENSHOT: Could not be parsed")
+                pass
+
+        log.info("SCREENSHOT: TOTAL PRINTED: [%s]", printed)
 
     def printDeviceInfo(self, printLogcat=False):
         try:
@@ -566,6 +578,12 @@ def main():
 
     mochitest.printDeviceInfo()
 
+    # Add Android version (SDK level) to mozinfo so that manifest entries
+    # can be conditional on android_version.
+    androidVersion = dm.shellCheckOutput(['getprop', 'ro.build.version.sdk'])
+    log.info("Android sdk version '%s'; will use this to filter manifests" % str(androidVersion))
+    mozinfo.info['android_version'] = androidVersion
+
     procName = options.app.split('/')[-1]
     if (dm.processExist(procName)):
         dm.killProcess(procName)
@@ -576,7 +594,7 @@ def main():
         mp = manifestparser.TestManifest(strict=False)
         # TODO: pull this in dynamically
         mp.read(options.robocopIni)
-        robocop_tests = mp.active_tests(exists=False)
+        robocop_tests = mp.active_tests(exists=False, **mozinfo.info)
         tests = []
         my_tests = tests
         for test in robocop_tests:
@@ -604,7 +622,7 @@ def main():
         options.extraPrefs.append('browser.chrome.dynamictoolbar=false')
 
         if (options.dm_trans == 'adb' and options.robocopApk):
-          dm._checkCmd(["install", "-r", options.robocopApk])
+            dm._checkCmd(["install", "-r", options.robocopApk])
 
         retVal = None
         for test in robocop_tests:
@@ -612,6 +630,10 @@ def main():
                 continue
 
             if not test['name'] in my_tests:
+                continue
+
+            if 'disabled' in test:
+                log.info('TEST-INFO | skipping %s | %s' % (test['name'], test['disabled']))
                 continue
 
             # When running in a loop, we need to create a fresh profile for each cycle
@@ -654,7 +676,8 @@ def main():
                    if (options.dm_trans == "sut"):
                        dm._runCmds([{"cmd": " ".join(cmd)}])
             try:
-                dm.removeDir("/mnt/sdcard/Robotium-Screenshots")
+                screenShotDir = "/mnt/sdcard/Robotium-Screenshots"
+                dm.removeDir(screenShotDir)
                 dm.recordLogcat()
                 result = mochitest.runTests(options)
                 if result != 0:
@@ -662,7 +685,7 @@ def main():
                 log_result = mochitest.addLogData()
                 if result != 0 or log_result != 0:
                     mochitest.printDeviceInfo(printLogcat=True)
-                    mochitest.printScreenshot()
+                    mochitest.printScreenshots(screenShotDir)
                 # Ensure earlier failures aren't overwritten by success on this run
                 if retVal is None or retVal == 0:
                     retVal = result

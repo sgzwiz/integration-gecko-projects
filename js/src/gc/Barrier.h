@@ -10,7 +10,9 @@
 #include "NamespaceImports.h"
 
 #include "gc/Heap.h"
-#include "gc/StoreBuffer.h"
+#ifdef JSGC_GENERATIONAL
+# include "gc/StoreBuffer.h"
+#endif
 #include "js/HashTable.h"
 #include "js/Id.h"
 #include "js/RootingAPI.h"
@@ -150,11 +152,14 @@ class BarrieredCell : public gc::Cell
   public:
     JS_ALWAYS_INLINE JS::Zone *zone() const { return tenuredZone(); }
     JS_ALWAYS_INLINE JS::shadow::Zone *shadowZone() const { return JS::shadow::Zone::asShadowZone(zone()); }
-    bool isInsideZone(JS::Zone *zone_) const { return tenuredIsInsideZone(zone_); }
+    JS_ALWAYS_INLINE JS::Zone *zoneFromAnyThread() const { return tenuredZoneFromAnyThread(); }
+    JS_ALWAYS_INLINE JS::shadow::Zone *shadowZoneFromAnyThread() const {
+        return JS::shadow::Zone::asShadowZone(zoneFromAnyThread());
+    }
 
     static JS_ALWAYS_INLINE void readBarrier(T *thing) {
 #ifdef JSGC_INCREMENTAL
-        JS::shadow::Zone *shadowZone = thing->shadowZone();
+        JS::shadow::Zone *shadowZone = thing->shadowZoneFromAnyThread();
         if (shadowZone->needsBarrier()) {
             MOZ_ASSERT(!RuntimeFromMainThreadIsHeapMajorCollecting(shadowZone));
             T *tmp = thing;
@@ -179,7 +184,7 @@ class BarrieredCell : public gc::Cell
         if (isNullLike(thing) || !thing->shadowRuntimeFromAnyThread()->needsBarrier())
             return;
 
-        JS::shadow::Zone *shadowZone = thing->shadowZone();
+        JS::shadow::Zone *shadowZone = thing->shadowZoneFromAnyThread();
         if (shadowZone->needsBarrier()) {
             MOZ_ASSERT(!RuntimeFromMainThreadIsHeapMajorCollecting(shadowZone));
             T *tmp = thing;
@@ -223,6 +228,31 @@ ZoneOfValue(const JS::Value &value)
     return static_cast<js::gc::Cell *>(value.toGCThing())->tenuredZone();
 }
 
+JS::Zone *
+ZoneOfObjectFromAnyThread(const JSObject &obj);
+
+static inline JS::shadow::Zone *
+ShadowZoneOfObjectFromAnyThread(JSObject *obj)
+{
+    return JS::shadow::Zone::asShadowZone(ZoneOfObjectFromAnyThread(*obj));
+}
+
+static inline JS::shadow::Zone *
+ShadowZoneOfStringFromAnyThread(JSString *str)
+{
+    return JS::shadow::Zone::asShadowZone(
+        reinterpret_cast<const js::gc::Cell *>(str)->tenuredZoneFromAnyThread());
+}
+
+JS_ALWAYS_INLINE JS::Zone *
+ZoneOfValueFromAnyThread(const JS::Value &value)
+{
+    JS_ASSERT(value.isMarkable());
+    if (value.isObject())
+        return ZoneOfObjectFromAnyThread(value.toObject());
+    return static_cast<js::gc::Cell *>(value.toGCThing())->tenuredZoneFromAnyThread();
+}
+
 /*
  * This is a post barrier for HashTables whose key is a GC pointer. Any
  * insertion into a HashTable not marked as part of the runtime, with a GC
@@ -250,7 +280,7 @@ class EncapsulatedPtr
     };
 
   public:
-    EncapsulatedPtr() : value(NULL) {}
+    EncapsulatedPtr() : value(nullptr) {}
     EncapsulatedPtr(T *v) : value(v) {}
     explicit EncapsulatedPtr(const EncapsulatedPtr<T> &v) : value(v.value) {}
 
@@ -261,10 +291,10 @@ class EncapsulatedPtr
         this->value = v;
     }
 
-    /* Use to set the pointer to NULL. */
+    /* Use to set the pointer to nullptr. */
     void clear() {
         pre();
-        value = NULL;
+        value = nullptr;
     }
 
     EncapsulatedPtr<T, Unioned> &operator=(T *v) {
@@ -306,7 +336,7 @@ template <class T, class Unioned = uintptr_t>
 class HeapPtr : public EncapsulatedPtr<T, Unioned>
 {
   public:
-    HeapPtr() : EncapsulatedPtr<T>(NULL) {}
+    HeapPtr() : EncapsulatedPtr<T>(nullptr) {}
     explicit HeapPtr(T *v) : EncapsulatedPtr<T>(v) { post(); }
     explicit HeapPtr(const HeapPtr<T> &v)
       : EncapsulatedPtr<T>(v) { post(); }
@@ -378,7 +408,7 @@ template <class T>
 class RelocatablePtr : public EncapsulatedPtr<T>
 {
   public:
-    RelocatablePtr() : EncapsulatedPtr<T>(NULL) {}
+    RelocatablePtr() : EncapsulatedPtr<T>(nullptr) {}
     explicit RelocatablePtr(T *v) : EncapsulatedPtr<T>(v) {
         if (v)
             post();
@@ -565,7 +595,7 @@ class EncapsulatedValue : public ValueOperations<EncapsulatedValue>
     static void writeBarrierPre(const Value &v) {
 #ifdef JSGC_INCREMENTAL
         if (v.isMarkable() && shadowRuntimeFromAnyThread(v)->needsBarrier())
-            writeBarrierPre(ZoneOfValue(v), v);
+            writeBarrierPre(ZoneOfValueFromAnyThread(v), v);
 #endif
     }
 
@@ -948,14 +978,14 @@ class EncapsulatedId
 #ifdef JSGC_INCREMENTAL
         if (JSID_IS_OBJECT(value)) {
             JSObject *obj = JSID_TO_OBJECT(value);
-            JS::shadow::Zone *shadowZone = ShadowZoneOfObject(obj);
+            JS::shadow::Zone *shadowZone = ShadowZoneOfObjectFromAnyThread(obj);
             if (shadowZone->needsBarrier()) {
                 js::gc::MarkObjectUnbarriered(shadowZone->barrierTracer(), &obj, "write barrier");
                 JS_ASSERT(obj == JSID_TO_OBJECT(value));
             }
         } else if (JSID_IS_STRING(value)) {
             JSString *str = JSID_TO_STRING(value);
-            JS::shadow::Zone *shadowZone = ShadowZoneOfString(str);
+            JS::shadow::Zone *shadowZone = ShadowZoneOfStringFromAnyThread(str);
             if (shadowZone->needsBarrier()) {
                 js::gc::MarkStringUnbarriered(shadowZone->barrierTracer(), &str, "write barrier");
                 JS_ASSERT(str == JSID_TO_STRING(value));
@@ -1049,13 +1079,13 @@ class ReadBarriered
     T *value;
 
   public:
-    ReadBarriered() : value(NULL) {}
+    ReadBarriered() : value(nullptr) {}
     ReadBarriered(T *value) : value(value) {}
     ReadBarriered(const Rooted<T*> &rooted) : value(rooted) {}
 
     T *get() const {
         if (!value)
-            return NULL;
+            return nullptr;
         T::readBarrier(value);
         return value;
     }

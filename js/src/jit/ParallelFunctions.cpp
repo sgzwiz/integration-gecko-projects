@@ -6,7 +6,6 @@
 
 #include "jit/ParallelFunctions.h"
 
-#include "jit/IonSpewer.h"
 #include "vm/ArrayObject.h"
 
 #include "jsgcinlines.h"
@@ -31,9 +30,9 @@ jit::ForkJoinSlicePar()
 // parallel code.  It uses the ArenaLists for the current thread and
 // allocates from there.
 JSObject *
-jit::NewGCThingPar(gc::AllocKind allocKind)
+jit::NewGCThingPar(ForkJoinSlice *slice, gc::AllocKind allocKind)
 {
-    ForkJoinSlice *slice = ForkJoinSlice::Current();
+    JS_ASSERT(ForkJoinSlice::Current() == slice);
     uint32_t thingSize = (uint32_t)gc::Arena::thingSize(allocKind);
     return gc::NewGCThing<JSObject, NoGC>(slice, allocKind, thingSize, gc::DefaultHeap);
 }
@@ -44,8 +43,7 @@ bool
 jit::IsThreadLocalObject(ForkJoinSlice *slice, JSObject *object)
 {
     JS_ASSERT(ForkJoinSlice::Current() == slice);
-    return !IsInsideNursery(slice->runtime(), object) &&
-           slice->allocator()->arenas.containsArena(slice->runtime(), object->arenaHeader());
+    return slice->isThreadLocal(object);
 }
 
 #ifdef DEBUG
@@ -54,16 +52,14 @@ printTrace(const char *prefix, struct IonLIRTraceData *cached)
 {
     fprintf(stderr, "%s / Block %3u / LIR %3u / Mode %u / LIR %s\n",
             prefix,
-            cached->bblock, cached->lir, cached->execModeInt, cached->lirOpName);
+            cached->blockIndex, cached->lirIndex, cached->execModeInt, cached->lirOpName);
 }
 
 struct IonLIRTraceData seqTraceData;
 #endif
 
 void
-jit::TraceLIR(uint32_t bblock, uint32_t lir, uint32_t execModeInt,
-              const char *lirOpName, const char *mirOpName,
-              JSScript *script, jsbytecode *pc)
+jit::TraceLIR(IonLIRTraceData *current)
 {
 #ifdef DEBUG
     static enum { NotSet, All, Bailouts } traceMode;
@@ -73,7 +69,7 @@ jit::TraceLIR(uint32_t bblock, uint32_t lir, uint32_t execModeInt,
     // You can either modify it to do whatever you like, or use gdb scripting.
     // For example:
     //
-    // break TracePar
+    // break TraceLIR
     // commands
     // continue
     // exit
@@ -88,27 +84,19 @@ jit::TraceLIR(uint32_t bblock, uint32_t lir, uint32_t execModeInt,
     }
 
     IonLIRTraceData *cached;
-    if (execModeInt == 0)
+    if (current->execModeInt == 0)
         cached = &seqTraceData;
     else
         cached = &ForkJoinSlice::Current()->traceData;
 
-    if (bblock == 0xDEADBEEF) {
-        if (execModeInt == 0)
+    if (current->blockIndex == 0xDEADBEEF) {
+        if (current->execModeInt == 0)
             printTrace("BAILOUT", cached);
         else
-            SpewBailoutIR(cached->bblock, cached->lir,
-                          cached->lirOpName, cached->mirOpName,
-                          cached->script, cached->pc);
+            SpewBailoutIR(cached);
     }
 
-    cached->bblock = bblock;
-    cached->lir = lir;
-    cached->execModeInt = execModeInt;
-    cached->lirOpName = lirOpName;
-    cached->mirOpName = mirOpName;
-    cached->script = script;
-    cached->pc = pc;
+    memcpy(cached, current, sizeof(IonLIRTraceData));
 
     if (traceMode == All)
         printTrace("Exec", cached);
@@ -138,7 +126,7 @@ jit::CheckOverRecursedPar(ForkJoinSlice *slice)
 
     if (!JS_CHECK_STACK_SIZE(realStackLimit, &stackDummy_)) {
         slice->bailoutRecord->setCause(ParallelBailoutOverRecursed,
-                                       NULL, NULL, NULL);
+                                       nullptr, nullptr, nullptr);
         return false;
     }
 
@@ -162,27 +150,32 @@ jit::CheckInterruptPar(ForkJoinSlice *slice)
 }
 
 JSObject *
-jit::PushPar(PushParArgs *args)
-{
-    // It is awkward to have the MIR pass the current slice in, so
-    // just fetch it from TLS.  Extending the array is kind of the
-    // slow path anyhow as it reallocates the elements vector.
-    ForkJoinSlice *slice = js::ForkJoinSlice::Current();
-    JSObject::EnsureDenseResult res =
-        args->object->parExtendDenseElements(slice, &args->value, 1);
-    if (res != JSObject::ED_OK)
-        return NULL;
-    return args->object;
-}
-
-JSObject *
 jit::ExtendArrayPar(ForkJoinSlice *slice, JSObject *array, uint32_t length)
 {
     JSObject::EnsureDenseResult res =
-        array->parExtendDenseElements(slice, NULL, length);
+        array->ensureDenseElementsPreservePackedFlag(slice, 0, length);
     if (res != JSObject::ED_OK)
-        return NULL;
+        return nullptr;
     return array;
+}
+
+ParallelResult
+jit::SetElementPar(ForkJoinSlice *slice, HandleObject obj, HandleValue index, HandleValue value,
+                   bool strict)
+{
+    RootedId id(slice);
+    if (!ValueToIdPure(index, id.address()))
+        return TP_RETRY_SEQUENTIALLY;
+
+    // SetObjectElementOperation, the sequential version, has several checks
+    // for certain deoptimizing behaviors, such as marking having written to
+    // holes and non-indexed element accesses. We don't do that here, as we
+    // can't modify any TI state anyways. If we need to add a new type, we
+    // would bail out.
+    RootedValue v(slice, value);
+    if (!baseops::SetPropertyHelper<ParallelExecution>(slice, obj, obj, id, 0, &v, strict))
+        return TP_RETRY_SEQUENTIALLY;
+    return TP_SUCCESS;
 }
 
 ParallelResult
@@ -482,8 +475,8 @@ jit::AbortPar(ParallelBailoutCause cause, JSScript *outermostScript, JSScript *c
          (currentScript ? PCToLineNumber(currentScript, bytecode) : 0));
 
     JS_ASSERT(InParallelSection());
-    JS_ASSERT(outermostScript != NULL);
-    JS_ASSERT(currentScript != NULL);
+    JS_ASSERT(outermostScript != nullptr);
+    JS_ASSERT(currentScript != nullptr);
     JS_ASSERT(outermostScript->hasParallelIonScript());
 
     ForkJoinSlice *slice = ForkJoinSlice::Current();
@@ -508,7 +501,7 @@ jit::PropagateAbortPar(JSScript *outermostScript, JSScript *currentScript)
 
     ForkJoinSlice *slice = ForkJoinSlice::Current();
     if (currentScript)
-        slice->bailoutRecord->addTrace(currentScript, NULL);
+        slice->bailoutRecord->addTrace(currentScript, nullptr);
 }
 
 void
@@ -568,10 +561,13 @@ jit::InitRestParameterPar(ForkJoinSlice *slice, uint32_t length, Value *rest,
     JS_ASSERT(!res->getDenseInitializedLength());
     JS_ASSERT(res->type() == templateObj->type());
 
-    if (length) {
-        JSObject::EnsureDenseResult edr = res->parExtendDenseElements(slice, rest, length);
+    if (length > 0) {
+        JSObject::EnsureDenseResult edr =
+            res->ensureDenseElementsPreservePackedFlag(slice, 0, length);
         if (edr != JSObject::ED_OK)
             return TP_FATAL;
+        res->initDenseElements(0, rest, length);
+        res->as<ArrayObject>().setLengthInt32(length);
     }
 
     out.set(res);

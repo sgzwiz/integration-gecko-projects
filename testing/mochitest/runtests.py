@@ -1,4 +1,3 @@
-#
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -13,7 +12,6 @@ import sys
 SCRIPT_DIR = os.path.abspath(os.path.realpath(os.path.dirname(__file__)))
 sys.path.insert(0, SCRIPT_DIR);
 
-import base64
 import json
 import mozcrash
 import mozinfo
@@ -24,12 +22,13 @@ import optparse
 import re
 import shutil
 import signal
+import subprocess
 import tempfile
 import time
 import traceback
 import urllib2
 
-from automationutils import environment, getDebuggerInfo, isURL, KeyValueParseError, parseKeyValue, processLeakLog, systemMemory
+from automationutils import environment, getDebuggerInfo, isURL, KeyValueParseError, parseKeyValue, processLeakLog, systemMemory, dumpScreen
 from datetime import datetime
 from manifestparser import TestManifest
 from mochitest_options import MochitestOptions
@@ -650,59 +649,11 @@ class Mochitest(MochitestUtilsMixin):
     del self.profile
 
   def dumpScreen(self, utilityPath):
-    # TODO: this code may be moved to automationutils.py
-    # see also: https://bugzilla.mozilla.org/show_bug.cgi?id=749421
-
     if self.haveDumpedScreen:
       log.info("Not taking screenshot here: see the one that was previously logged")
       return
-
     self.haveDumpedScreen = True
-
-    # Need to figure out what tool and whether it write to a file or stdout
-    if mozinfo.isUnix:
-      utility = [os.path.join(utilityPath, "screentopng")]
-      imgoutput = 'stdout'
-    elif mozinfo.isMac:
-      utility = ['/usr/sbin/screencapture', '-C', '-x', '-t', 'png']
-      imgoutput = 'file'
-    elif mozinfo.isWin:
-      utility = [os.path.join(utilityPath, "screenshot.exe")]
-      imgoutput = 'file'
-
-    # Run the capture correctly for the type of capture
-    if imgoutput == 'file':
-      tmpfd, imgfilename = tempfile.mkstemp(prefix='mozilla-test-fail_')
-      os.close(tmpfd)
-      utility.append(imgfilename)
-      kwargs = {}
-    elif imgoutput == 'stdout':
-      kwargs=dict(bufsize=-1, close_fds=True)
-    try:
-      dumper = mozprocess.ProcessHandler(utility, **kwargs)
-      dumper.run()
-    except OSError, err:
-      log.info("Failed to start %s for screenshot: %s",
-               utility[0], err.strerror)
-      return
-
-    # Check whether the capture utility ran successfully
-    returncode = dumper.wait()
-    if returncode:
-      log.info("%s exited with code %d", utility, returncode)
-      return
-
-    try:
-      if imgoutput == 'stdout':
-        image = '\n'.join(dumper.output)
-      elif imgoutput == 'file':
-        with open(imgfilename, 'rb') as imgfile:
-          image = imgfile.read()
-    except IOError, err:
-        log.info("Failed to read image from %s", imgoutput)
-
-    encoded = base64.b64encode(image)
-    log.info("SCREENSHOT: data:image/png;base64,%s", encoded)
+    dumpScreen(utilityPath)
 
   def killAndGetStack(self, processPID, utilityPath, debuggerInfo, dump_screen=False):
     """
@@ -721,8 +672,11 @@ class Mochitest(MochitestUtilsMixin):
         if os.path.exists(crashinject) and subprocess.Popen([crashinject, str(processPID)]).wait() == 0:
           return
       else:
-        # ABRT will get picked up by Breakpad's signal handler
-        os.kill(processPID, signal.SIGABRT)
+        try:
+          os.kill(processPID, signal.SIGABRT)
+        except OSError:
+          # https://bugzilla.mozilla.org/show_bug.cgi?id=921509
+          log.info("Can't trigger Breakpad, process no longer exists")
         return
     log.info("Can't trigger Breakpad, just killing process")
     killPid(processPID)
@@ -887,8 +841,13 @@ class Mochitest(MochitestUtilsMixin):
     # create mozrunner instance and start the system under test process
     self.lastTestSeen = self.test_name
     startTime = datetime.now()
-    runner_cls = mozrunner.runners.get(mozinfo.info.get('appname', 'firefox'),
-                                       mozrunner.Runner)
+
+    # b2g desktop requires FirefoxRunner even though appname is b2g
+    if mozinfo.info.get('appname') == 'b2g' and mozinfo.info.get('toolkit') != 'gonk':
+        runner_cls = mozrunner.FirefoxRunner
+    else:
+        runner_cls = mozrunner.runners.get(mozinfo.info.get('appname', 'firefox'),
+                                           mozrunner.Runner)
     runner = runner_cls(profile=self.profile,
                         binary=cmd,
                         cmdargs=args,
@@ -909,7 +868,7 @@ class Mochitest(MochitestUtilsMixin):
     log.info("INFO | runtests.py | Application pid: %d", proc.pid)
 
     # set process information on the output handler
-    outputHandler.setProcess(proc, timeout)
+    outputHandler.setProcess(proc if interactive else proc.proc, timeout)
 
     if onLaunch is not None:
       # Allow callers to specify an onLaunch callback to be fired after the
@@ -926,11 +885,16 @@ class Mochitest(MochitestUtilsMixin):
     status = proc.wait()
     runner.process_handler = None
 
+    if timeout is None:
+      didTimeout = False
+    else:
+      didTimeout = proc.didTimeout
+
     # finalize output handler
-    outputHandler.finish(proc.didTimeout)
+    outputHandler.finish(didTimeout)
 
     # handle timeout
-    if proc.didTimeout:
+    if didTimeout:
       browserProcessId = outputHandler.browserProcessId
       self.handleTimeout(timeout, proc, utilityPath, debuggerInfo, browserProcessId)
 
@@ -1061,7 +1025,7 @@ class Mochitest(MochitestUtilsMixin):
       self.cleanup(manifest, options)
     return status
 
-  def handleTimeout(self, timeout, proc, utilityPath, debuggerInfo, browserProcesssId):
+  def handleTimeout(self, timeout, proc, utilityPath, debuggerInfo, browserProcessId):
     """handle process output timeout"""
     # TODO: bug 913975 : _processOutput should call self.processOutputLine one more time one timeout (I think)
     log.info("TEST-UNEXPECTED-FAIL | %s | application timed out after %d seconds with no output", self.lastTestSeen, int(timeout))
@@ -1145,10 +1109,9 @@ class Mochitest(MochitestUtilsMixin):
       return (stackFixerFunction, stackFixerCommand)
 
     def setProcess(self, proc, outputTimeout=None):
-      self.proc = proc
       if self.stackFixerCommand:
         self.stackFixerProcess = mozprocess.ProcessHandler(self.stackFixerCommand,
-                                                           stdin=proc.proc.stdout,
+                                                           stdin=proc.stdout,
                                                            processOutputLine=[self],
           )
         self.stackFixerProcess.run(outputTimeout=outputTimeout)
