@@ -459,7 +459,7 @@ class RecursiveMakeBackend(CommonBackend):
             if current in self._may_skip[tier]:
                 current = None
             return current, subdirs.parallel, \
-                   subdirs.static + subdirs.dirs + subdirs.tests + subdirs.tools
+                subdirs.static + subdirs.dirs + subdirs.tests + subdirs.tools
 
         # compile, binaries and tools tiers use the same traversal as export
         filters = {
@@ -467,7 +467,7 @@ class RecursiveMakeBackend(CommonBackend):
             'compile': parallel_filter,
             'binaries': parallel_filter,
             'libs': libs_filter,
-            'tools': parallel_filter,
+            'tools': tools_filter,
         }
 
         root_deps_mk = Makefile()
