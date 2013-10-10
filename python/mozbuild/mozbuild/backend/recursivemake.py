@@ -444,11 +444,13 @@ class RecursiveMakeBackend(CommonBackend):
             return current, subdirs.parallel, \
                 subdirs.dirs + subdirs.tests + subdirs.tools
 
-        # Skip tools dirs during libs traversal
+        # Skip tools dirs during libs traversal. Because of bug 925236 and
+        # possible other unknown race conditions, don't parallelized the libs
+        # tier.
         def libs_filter(current, subdirs):
             if current in self._may_skip[tier]:
                 current = None
-            return current, subdirs.parallel, \
+            return current, [], subdirs.parallel + \
                 subdirs.static + subdirs.dirs + subdirs.tests
 
         # compile, binaries and tools tiers use the same traversal as export
