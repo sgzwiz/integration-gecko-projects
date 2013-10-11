@@ -169,7 +169,7 @@ loopStart:
 
     } while (!mShutdown);
 
-    MOZ_ASSERT(mLowestLevelWaiting == aLastLevel);
+    MOZ_ASSERT(mLowestLevelWaiting == LAST_LEVEL);
     MOZ_ASSERT(!mHasXPCOMEvents);
   } // lock
 
