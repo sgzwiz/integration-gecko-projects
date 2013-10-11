@@ -169,7 +169,8 @@ loopStart:
 
     } while (!mShutdown);
 
-    MOZ_ASSERT(!EventsPending());
+    MOZ_ASSERT(mLowestLevelWaiting == aLastLevel);
+    MOZ_ASSERT(!mHasXPCOMEvents);
   } // lock
 
   if (threadInternal)
