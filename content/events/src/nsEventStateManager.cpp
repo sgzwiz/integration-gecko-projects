@@ -3412,9 +3412,9 @@ nsEventStateManager::PostHandleEvent(nsPresContext* aPresContext,
         case WheelPrefs::ACTION_SCROLL: {
           // For scrolling of default action, we should honor the mouse wheel
           // transaction.
-          
+
           nsScrollbarsForWheel::PrepareToScrollText(this, aTargetFrame, wheelEvent);
-          
+
           if (aEvent->message != NS_WHEEL_WHEEL ||
               (!wheelEvent->deltaX && !wheelEvent->deltaY)) {
             break;
@@ -3426,9 +3426,11 @@ nsEventStateManager::PostHandleEvent(nsPresContext* aPresContext,
 
           nsScrollbarsForWheel::SetActiveScrollTarget(scrollTarget);
 
+          if (!scrollTarget) {
+            wheelEvent->mViewPortIsOverscrolled = true;
+          }
           wheelEvent->overflowDeltaX = wheelEvent->deltaX;
           wheelEvent->overflowDeltaY = wheelEvent->deltaY;
-
           WheelPrefs::GetInstance()->
             CancelApplyingUserPrefsFromOverflowDelta(wheelEvent);
           if (scrollTarget) {

@@ -257,7 +257,7 @@ enum {
   NSMutableArray* mPendingDirtyRects;
   BOOL mPendingFullDisplay;
   BOOL mPendingDisplay;
-  
+
   // WheelStart/Stop events should always come in pairs. This BOOL records the
   // last received event so that, when we receive one of the events, we make sure
   // to send its pair event first, in case we didn't yet for any reason.
@@ -301,6 +301,7 @@ enum {
 #ifdef __LP64__
   // Support for fluid swipe tracking.
   BOOL* mCancelSwipeAnimation;
+  uint32_t mCurrentSwipeDir;
 #endif
 
   // Whether this uses off-main-thread compositing.
@@ -373,7 +374,9 @@ enum {
 // Support for fluid swipe tracking.
 #ifdef __LP64__
 - (void)maybeTrackScrollEventAsSwipe:(NSEvent *)anEvent
-                      scrollOverflow:(double)overflow;
+                     scrollOverflowX:(double)anOverflowX
+                     scrollOverflowY:(double)anOverflowY
+              viewPortIsOverscrolled:(BOOL)aViewPortIsOverscrolled;
 #endif
 
 - (void)setUsingOMTCompositor:(BOOL)aUseOMTC;

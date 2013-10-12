@@ -84,7 +84,7 @@ nsHTMLScrollFrame::ScrollbarActivityStarted() const
     mInner.mScrollbarActivity->ActivityStarted();
   }
 }
- 
+
 void
 nsHTMLScrollFrame::ScrollbarActivityStopped() const
 {
@@ -92,7 +92,7 @@ nsHTMLScrollFrame::ScrollbarActivityStopped() const
     mInner.mScrollbarActivity->ActivityStopped();
   }
 }
- 
+
 nsresult
 nsHTMLScrollFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
 {
@@ -925,7 +925,7 @@ nsXULScrollFrame::ScrollbarActivityStarted() const
     mInner.mScrollbarActivity->ActivityStarted();
   }
 }
- 
+
 void
 nsXULScrollFrame::ScrollbarActivityStopped() const
 {
@@ -933,7 +933,7 @@ nsXULScrollFrame::ScrollbarActivityStopped() const
     mInner.mScrollbarActivity->ActivityStopped();
   }
 }
- 
+
 nsMargin
 nsGfxScrollFrameInner::GetDesiredScrollbarSizes(nsBoxLayoutState* aState)
 {

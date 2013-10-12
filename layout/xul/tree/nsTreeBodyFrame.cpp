@@ -4502,7 +4502,7 @@ nsTreeBodyFrame::ScrollbarActivityStarted() const
     mScrollbarActivity->ActivityStarted();
   }
 }
- 
+
 void
 nsTreeBodyFrame::ScrollbarActivityStopped() const
 {
@@ -4510,7 +4510,7 @@ nsTreeBodyFrame::ScrollbarActivityStopped() const
     mScrollbarActivity->ActivityStopped();
   }
 }
- 
+
 void
 nsTreeBodyFrame::DetachImageListeners()
 {

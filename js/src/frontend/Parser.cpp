@@ -94,7 +94,7 @@ PushStatementPC(ParseContext<ParseHandler> *pc, StmtInfoPC *stmt, StmtType type)
 template <>
 bool
 ParseContext<FullParseHandler>::define(TokenStream &ts,
-                                       PropertyName *name, ParseNode *pn, Definition::Kind kind)
+                                       HandlePropertyName name, ParseNode *pn, Definition::Kind kind)
 {
     JS_ASSERT(!pn->isUsed());
     JS_ASSERT_IF(pn->isDefn(), pn->isPlaceholder());
@@ -186,7 +186,7 @@ ParseContext<FullParseHandler>::define(TokenStream &ts,
 
 template <>
 bool
-ParseContext<SyntaxParseHandler>::define(TokenStream &ts, PropertyName *name, Node pn,
+ParseContext<SyntaxParseHandler>::define(TokenStream &ts, HandlePropertyName name, Node pn,
                                          Definition::Kind kind)
 {
     JS_ASSERT(!decls_.lookupFirst(name));
@@ -2606,7 +2606,7 @@ Parser<ParseHandler>::maybeParseDirective(Node list, Node pn, bool *cont)
                 }
             }
         } else if (directive == context->names().useAsm) {
-            if (pc->sc->isFunctionBox() && !pc->isGenerator())
+            if (pc->sc->isFunctionBox())
                 return asmJS(list);
             return report(ParseWarning, false, pn, JSMSG_USE_ASM_DIRECTIVE_FAIL);
         }

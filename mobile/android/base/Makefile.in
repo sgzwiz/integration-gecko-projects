@@ -298,30 +298,19 @@ ifdef MOZ_ANDROID_ANR_REPORTER
 DEFINES += -DMOZ_ANDROID_ANR_REPORTER=1
 endif
 
-FENNEC_PP_JAVA_VIEW_FILES = \
-  GeckoButton.java \
-  GeckoImageButton.java \
-  GeckoImageView.java \
-  GeckoEditText.java \
-  GeckoFrameLayout.java \
-  GeckoLinearLayout.java \
-  GeckoRelativeLayout.java \
-  GeckoTextSwitcher.java \
-  GeckoTextView.java \
-  $(NULL)
-
-FENNEC_PP_JAVA_FILES = \
+FENNEC_PP_JAVA_FILES := \
   App.java \
   AppConstants.java \
+  widget/GeckoEditText.java \
+  widget/GeckoImageButton.java \
+  widget/GeckoImageView.java \
+  widget/GeckoLinearLayout.java \
+  widget/GeckoRelativeLayout.java \
+  widget/GeckoTextSwitcher.java \
+  widget/GeckoTextView.java \
   SysInfo.java \
   WebApp.java \
   WebApps.java \
-  $(NULL)
-
-FENNEC_PP_XML_FILES = \
-  res/xml/preferences.xml \
-  res/xml/preferences_customize.xml \
-  res/xml/searchable.xml \
   $(NULL)
 
 ifneq (,$(findstring -march=armv7,$(OS_CFLAGS)))
@@ -363,6 +352,8 @@ DEFINES += \
   -DCPU_ARCH=$(CPU_ARCH) \
   -DGRE_MILESTONE=$(GRE_MILESTONE) \
   -DMOZILLA_OFFICIAL=$(MOZILLA_OFFICIAL) \
+  -DMOZ_ANDROID_SHARED_ID="$(MOZ_ANDROID_SHARED_ID)" \
+  -DMOZ_ANDROID_SHARED_ACCOUNT_TYPE="$(MOZ_ANDROID_SHARED_ACCOUNT_TYPE)" \
   -DMOZ_APP_ABI=$(TARGET_XPCOM_ABI) \
   -DMOZ_APP_BASENAME=$(MOZ_APP_BASENAME) \
   -DMOZ_APP_BUILDID=$(MOZ_APP_BUILDID) \
@@ -395,13 +386,10 @@ GARBAGE += \
   classes.dex  \
   $(MOZGLUE_PP_JAVA_FILES) \
   $(FENNEC_PP_JAVA_FILES) \
-  $(FENNEC_PP_JAVA_VIEW_FILES) \
   $(SYNC_PP_JAVA_FILES) \
   gecko.ap_  \
   res/values/strings.xml \
   R.java \
-  $(FENNEC_PP_XML_FILES) \
-  $(SYNC_PP_RES_XML) \
   package-name.txt \
   fennec_ids.txt \
   Manifest.java \
@@ -413,41 +401,15 @@ GARBAGE += \
 
 GARBAGE_DIRS += classes db jars res sync services
 
-MOZ_ANDROID_SHARED_ID = "$(ANDROID_PACKAGE_NAME).sharedID"
-MOZ_ANDROID_SHARED_ACCOUNT_TYPE = "$(ANDROID_PACKAGE_NAME)_sync"
-
 # Bug 567884 - Need a way to find appropriate icons during packaging
 ifeq ($(MOZ_APP_NAME),fennec)
 ICON_PATH = $(topsrcdir)/$(MOZ_BRANDING_DIRECTORY)/content/fennec_48x48.png
 ICON_PATH_HDPI = $(topsrcdir)/$(MOZ_BRANDING_DIRECTORY)/content/fennec_72x72.png
 ICON_PATH_XHDPI = $(topsrcdir)/$(MOZ_BRANDING_DIRECTORY)/content/fennec_96x96.png
 ICON_PATH_XXHDPI = $(topsrcdir)/$(MOZ_BRANDING_DIRECTORY)/content/fennec_144x144.png
-
-# we released these builds to the public with shared IDs and need to keep them
-ifeq (org.mozilla.firefox,$(ANDROID_PACKAGE_NAME))
-MOZ_ANDROID_SHARED_ID = "org.mozilla.firefox.sharedID"
-MOZ_ANDROID_SHARED_ACCOUNT_TYPE = "org.mozilla.firefox_sync"
-else ifeq (org.mozilla.firefox_beta,$(ANDROID_PACKAGE_NAME))
-MOZ_ANDROID_SHARED_ID = "org.mozilla.firefox.sharedID"
-MOZ_ANDROID_SHARED_ACCOUNT_TYPE = "org.mozilla.firefox_sync"
-else ifeq (org.mozilla.fennec_aurora,$(ANDROID_PACKAGE_NAME))
-MOZ_ANDROID_SHARED_ID = "org.mozilla.fennec.sharedID"
-MOZ_ANDROID_SHARED_ACCOUNT_TYPE = "org.mozilla.fennec_sync"
-else ifeq (org.mozilla.fennec,$(ANDROID_PACKAGE_NAME))
-MOZ_ANDROID_SHARED_ID = "org.mozilla.fennec.sharedID"
-MOZ_ANDROID_SHARED_ACCOUNT_TYPE = "org.mozilla.fennec_sync"
-endif
-
 else
 ICON_PATH = $(topsrcdir)/$(MOZ_BRANDING_DIRECTORY)/content/icon48.png
 ICON_PATH_HDPI = $(topsrcdir)/$(MOZ_BRANDING_DIRECTORY)/content/icon64.png
-endif
-
-ifdef MOZ_ANDROID_SHARED_ID
-DEFINES += -DMOZ_ANDROID_SHARED_ID="$(MOZ_ANDROID_SHARED_ID)"
-endif
-ifdef MOZ_ANDROID_SHARED_ACCOUNT_TYPE
-DEFINES += -DMOZ_ANDROID_SHARED_ACCOUNT_TYPE="$(MOZ_ANDROID_SHARED_ACCOUNT_TYPE)"
 endif
 
 RES_LAYOUT = \
@@ -604,11 +566,14 @@ RES_VALUES_V16 = \
   $(NULL)
 
 RES_XML = \
+  res/xml/preferences.xml \
+  res/xml/preferences_customize.xml \
   res/xml/preferences_display.xml \
   res/xml/preferences_search.xml \
   res/xml/preferences_privacy.xml \
   res/xml/preferences_vendor.xml \
   res/xml/preferences_devtools.xml \
+  res/xml/searchable.xml \
   $(SYNC_RES_XML) \
   $(NULL)
 
@@ -1230,6 +1195,75 @@ ifdef MOZ_WEBRTC
 ALL_JARS += jars/webrtc.jar
 endif
 
+JAVA_JAR_TARGETS += websockets
+websockets_DEST := jars/websockets.jar
+websockets_JAVAFILES := \
+  $(WEBSOCKETS_JAVA_FILES) \
+  $(NULL)
+websockets_JAVAC_FLAGS := -Xlint:all,-serial
+
+JAVA_JAR_TARGETS += gecko-browser
+gecko-browser_DEST := jars/gecko-browser.jar
+gecko-browser_JAVAFILES := \
+  $(FENNEC_JAVA_FILES) \
+  $(SYNC_JAVA_FILES) \
+  $(NULL)
+gecko-browser_PP_JAVAFILES := \
+  $(FENNEC_PP_JAVA_FILES) \
+  $(SYNC_PP_JAVA_FILES) \
+  R.java \
+  $(NULL)
+gecko-browser_EXTRA_JARS := \
+  jars/gecko-mozglue.jar \
+  jars/gecko-util.jar \
+  jars/sync-thirdparty.jar \
+  jars/websockets.jar \
+  $(NULL)
+gecko-browser_JAVAC_FLAGS := -Xlint:all,-deprecation,-fallthrough
+
+JAVA_JAR_TARGETS += gecko-mozglue
+gecko-mozglue_DEST := jars/gecko-mozglue.jar
+gecko-mozglue_JAVAFILES := \
+  $(MOZGLUE_JAVA_FILES) \
+  $(NULL)
+gecko-mozglue_PP_JAVAFILES := \
+  $(MOZGLUE_PP_JAVA_FILES) \
+  $(NULL)
+gecko-mozglue_JAVAC_FLAGS := -Xlint:all
+
+JAVA_JAR_TARGETS += gecko-util
+gecko-util_DEST := jars/gecko-util.jar
+gecko-util_JAVAFILES := \
+  $(UTIL_JAVA_FILES) \
+  $(NULL)
+gecko-util_EXTRA_JARS := \
+  jars/gecko-mozglue.jar \
+  $(NULL)
+gecko-util_JAVAC_FLAGS := -Xlint:all,-deprecation
+
+JAVA_JAR_TARGETS += sync-thirdparty
+sync-thirdparty_DEST := jars/sync-thirdparty.jar
+sync-thirdparty_JAVAFILES := \
+  $(SYNC_THIRDPARTY_JAVA_FILES) \
+  $(NULL)
+sync-thirdparty_JAVAC_FLAGS := -Xlint:none
+
+ifdef MOZ_WEBRTC
+JAVA_JAR_TARGETS += webrtc
+webrtc_DEST := jars/webrtc.jar
+webrtc_JAVAFILES := \
+  $(WEBRTC_JAVA_FILES) \
+  $(NULL)
+webrtc_EXTRA_JARS := \
+  jars/gecko-browser.jar \
+  jars/gecko-util.jar \
+  jars/gecko-mozglue.jar \
+  $(NULL)
+webrtc_JAVAC_FLAGS := -Xlint:all,-deprecation,-cast
+endif
+
+include $(topsrcdir)/config/makefiles/java-build.mk
+
 include $(topsrcdir)/config/rules.mk
 
 # Override the Java settings with some specific android settings
@@ -1242,49 +1276,7 @@ include $(topsrcdir)/config/android-common.mk
 # indices.
 classes.dex: $(ALL_JARS)
 	@echo "DX classes.dex"
-	$(DX) --dex --output=classes.dex jars $(ANDROID_COMPAT_LIB)
-
-jars/gecko-browser.jar: jars/gecko-mozglue.jar jars/gecko-util.jar jars/sync-thirdparty.jar jars/websockets.jar $(addprefix $(srcdir)/,$(FENNEC_JAVA_FILES)) $(FENNEC_PP_JAVA_FILES) $(FENNEC_PP_JAVA_VIEW_FILES) $(addprefix $(srcdir)/,$(SYNC_JAVA_FILES)) $(SYNC_PP_JAVA_FILES) R.java
-	@echo "JAR gecko-browser.jar"
-	$(NSINSTALL) -D classes/gecko-browser
-	$(JAVAC) $(JAVAC_FLAGS) -Xlint:all,-deprecation,-fallthrough -d classes/gecko-browser -classpath "jars/gecko-mozglue.jar:jars/gecko-util.jar:jars/sync-thirdparty.jar:jars/websockets.jar" $(addprefix $(srcdir)/,$(FENNEC_JAVA_FILES)) $(FENNEC_PP_JAVA_FILES) $(FENNEC_PP_JAVA_VIEW_FILES) $(addprefix $(srcdir)/,$(SYNC_JAVA_FILES)) $(SYNC_PP_JAVA_FILES) R.java
-	$(JAR) cMf jars/gecko-browser.jar -C classes/gecko-browser .
-
-jars/gecko-mozglue.jar: $(addprefix $(srcdir)/,$(MOZGLUE_JAVA_FILES)) $(MOZGLUE_PP_JAVA_FILES) jars
-	@echo "JAR gecko-mozglue.jar"
-	$(NSINSTALL) -D classes/gecko-mozglue
-	$(JAVAC) $(JAVAC_FLAGS) -Xlint:all -d classes/gecko-mozglue $(addprefix $(srcdir)/,$(MOZGLUE_JAVA_FILES)) $(MOZGLUE_PP_JAVA_FILES)
-	$(JAR) cMf jars/gecko-mozglue.jar -C classes/gecko-mozglue .
-
-jars/gecko-util.jar: jars/gecko-mozglue.jar $(addprefix $(srcdir)/,$(UTIL_JAVA_FILES)) jars
-	@echo "JAR gecko-util.jar"
-	$(NSINSTALL) -D classes/gecko-util
-	$(JAVAC) $(JAVAC_FLAGS) -Xlint:all,-deprecation -d classes/gecko-util -classpath "jars/gecko-mozglue.jar" $(addprefix $(srcdir)/,$(UTIL_JAVA_FILES))
-	$(JAR) cMf jars/gecko-util.jar -C classes/gecko-util .
-
-jars/sync-thirdparty.jar: $(addprefix $(srcdir)/,$(SYNC_THIRDPARTY_JAVA_FILES)) jars
-	@echo "JAR sync-thirdparty.jar"
-	$(NSINSTALL) -D classes/sync-thirdparty
-	$(JAVAC) $(JAVAC_FLAGS) -d classes/sync-thirdparty $(addprefix $(srcdir)/,$(SYNC_THIRDPARTY_JAVA_FILES))
-	$(JAR) cMf jars/sync-thirdparty.jar -C classes/sync-thirdparty .
-
-jars/websockets.jar: $(addprefix $(srcdir)/, $(WEBSOCKETS_JAVA_FILES)) jars
-	@echo "JAR websockets.jar"
-	$(NSINSTALL) -D classes/websockets
-	$(JAVAC) $(JAVAC_FLAGS) -Xlint:all,-serial -d classes/websockets $(addprefix $(srcdir)/,$(WEBSOCKETS_JAVA_FILES))
-	$(JAR) cMf jars/websockets.jar -C classes/websockets .
-
-ifdef MOZ_WEBRTC
-jars/webrtc.jar: $(addprefix $(srcdir)/, $(WEBRTC_JAVA_FILES)) jars jars/gecko-browser.jar jars/gecko-util.jar jars/gecko-mozglue.jar
-	@echo "JAR webrtc.jar"
-	$(NSINSTALL) -D classes/webrtc
-	$(JAVAC) $(JAVAC_FLAGS) -d classes/webrtc -classpath classes/gecko-browser:classes/gecko-util:classes/gecko-mozglue $(addprefix $(srcdir)/,$(WEBRTC_JAVA_FILES))
-	$(JAR) cMf jars/webrtc.jar -C classes/webrtc .
-endif
-
-jars:
-	@echo "MKDIR jars"
-	$(NSINSTALL) -D jars
+	$(DX) --dex --output=classes.dex $(ALL_JARS) $(ANDROID_COMPAT_LIB)
 
 CLASSES_WITH_JNI= \
     org.mozilla.gecko.GeckoAppShell \
@@ -1306,30 +1298,11 @@ jni-stubs.inc: jars/gecko-browser.jar jars/gecko-mozglue.jar jars/gecko-util.jar
 	$(JAVAH) -o javah.out -bootclasspath $(JAVA_BOOTCLASSPATH) -classpath $(subst $(NULL) $(NULL),:,$^) $(CLASSES_WITH_JNI)
 	$(PYTHON) $(topsrcdir)/mobile/android/base/jni-generator.py javah.out $@
 
-ANNOTATION_PROCESSOR_JAVA_FILES = \
-  build/annotationProcessors/AnnotationProcessor.java \
-  build/annotationProcessors/CodeGenerator.java \
-  build/annotationProcessors/MethodWithAnnotationInfo.java \
-  build/annotationProcessors/classloader/IterableJarLoadingURLClassLoader.java \
-  build/annotationProcessors/classloader/JarClassIterator.java \
-  build/annotationProcessors/utils/AlphabeticMethodComparator.java \
-  build/annotationProcessors/utils/GeneratableEntryPointIterator.java \
-  build/annotationProcessors/utils/Utils.java \
-  $(NULL)
+ANNOTATION_PROCESSOR_JAR_FILES := $(DEPTH)/build/annotationProcessors/annotationProcessors.jar
 
-GeneratedJNIWrappers.cpp: jars/gecko-browser.jar jars/gecko-mozglue.jar jars/gecko-util.jar jars/sync-thirdparty.jar
-	$(JAVAC) $(addprefix $(topsrcdir)/,$(ANNOTATION_PROCESSOR_JAVA_FILES)) -d $(CURDIR)
-	$(JAVA) -classpath $(JAVA_BOOTCLASSPATH):$(CURDIR) org.mozilla.gecko.annotationProcessors.AnnotationProcessor $^
-
-PP_RES_XML= \
-  $(SYNC_PP_RES_XML) \
-  $(FENNEC_PP_XML_FILES) \
-  $(NULL)
-
-# This is kinda awful; if any of the source files change, we remake them all.
-$(PP_RES_XML): $(patsubst res/%,$(srcdir)/resources/%.in,$(PP_RES_XML))
-	$(PYTHON) $(topsrcdir)/config/Preprocessor.py \
-             $(AUTOMATION_PPARGS) $(DEFINES) $(ACDEFINES) $(subst res/,$(srcdir)/resources/,$@).in > $@
+GeneratedJNIWrappers.cpp: $(ANNOTATION_PROCESSOR_JAR_FILES)
+GeneratedJNIWrappers.cpp: $(ALL_JARS)
+	$(JAVA) -classpath $(JAVA_BOOTCLASSPATH):$(ANNOTATION_PROCESSOR_JAR_FILES) org.mozilla.gecko.annotationProcessors.AnnotationProcessor $(ALL_JARS)
 
 # AndroidManifest.xml includes these files, so they need to be marked as dependencies.
 SERVICES_MANIFEST_FRAGMENTS = $(wildcard $(topsrcdir)/mobile/android/services/manifests/*.in)
@@ -1344,38 +1317,16 @@ android-tgts = \
 
 android-preqs = \
   Makefile.in \
+  widget/GeckoView.java.frag \
   $(call mkdir_deps,$(sort $(dir $(MOZGLUE_PP_JAVA_FILES)))) \
   $(call mkdir_deps,$(sort $(dir $(FENNEC_PP_JAVA_FILES)))) \
   $(call mkdir_deps,$(sort $(dir $(SYNC_PP_JAVA_FILES)))) \
   $(SERVICES_MANIFEST_FRAGMENTS) \
-  WebAppManifestFragment.xml.in \
-  WebAppsFragments.java \
   $(NULL)
 
 $(android-tgts): % : %.in $(android-preqs)
 	$(PYTHON) $(topsrcdir)/config/Preprocessor.py \
-             $(AUTOMATION_PPARGS) -DOBJDIR="`pwd`" $(DEFINES) $(ACDEFINES) $< > $@
-
-# Add a predefined number of WebApp<num> classes to the WebApps class.
-# These are used so that each webapp can launch in its own process
-# Keep this number in sync with the max web apps in WebAppAllocator.java
-NUM_WEB_APPS=100
-WebAppManifestFragment.xml.in: WebAppManifestFragment.xml.frag
-	@rm -f $@
-	@for n in `$(PYTHON) -c "for x in range($(NUM_WEB_APPS)): print x"`; do \
-		cat $< | sed s,@APPNUM@,$$n,g >> $@ ; \
-	done
-
-WebAppsFragments.java: WebAppsFragment.java.frag
-	@rm -f $@
-	@for n in `$(PYTHON) -c "for x in range($(NUM_WEB_APPS)): print x"`; do \
-		cat $< | sed s,@APPNUM@,$$n,g >> $@ ; \
-	done
-
-# Replace @VIEWTYPE@ with different View names.
-$(FENNEC_PP_JAVA_VIEW_FILES): GeckoView.java.frag
-	@rm -f $@
-	cat $< | sed s,@VIEWTYPE@,$(patsubst Gecko%.java,%,$@),g >> $@ ; \
+             $(AUTOMATION_PPARGS) $(DEFINES) $(ACDEFINES) $< > $@
 
 res/drawable-mdpi/icon.png: $(ICON_PATH)
 	$(NSINSTALL) -D res/drawable-mdpi
@@ -1417,7 +1368,6 @@ all_resources = \
   $(MULTILOCALE_STRINGS_XML_FILES) \
   AndroidManifest.xml \
   $(RESOURCES) \
-  $(PP_RES_XML) \
   $(NULL)
 
 R.java: $(all_resources)
