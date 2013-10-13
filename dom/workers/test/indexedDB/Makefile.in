@@ -113,6 +113,8 @@ MOCHITEST_FILES = \
   test_concurrent_access.html \
   objectStore_getAllKeys_worker.js \
   test_objectStore_getAllKeys.html \
+  objectStore_openKeyCursor_worker.js \
+  test_objectStore_openKeyCursor.html \
   $(NULL)
 
 include $(topsrcdir)/config/rules.mk

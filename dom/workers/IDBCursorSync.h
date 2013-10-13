@@ -51,8 +51,14 @@ class IDBCursorSync : public IDBObjectSync,
 public:
   NS_DECL_ISUPPORTS_INHERITED
 
+  // For INDEXKEY cursors.
   static IDBCursorSync*
   Create(JSContext* aCx, IDBIndexSync* aIndex, Direction aDirection);
+
+  // For OBJECTSTOREKEY cursors.
+  static IDBCursorSync*
+  Create(JSContext* aCx, IDBObjectStoreSync* aObjectStore,
+         Direction aDirection);
 
   virtual void
   _trace(JSTracer* aTrc) MOZ_OVERRIDE;

@@ -205,7 +205,7 @@ NS_IMPL_ISUPPORTS_INHERITED0(IDBCursorWithValueSync, IDBCursorSync)
 JS::Value
 IDBCursorWithValueSync::GetValue(JSContext* aCx, ErrorResult& aRv)
 {
-  MOZ_ASSERT(mType != INDEXKEY, "GetValue shouldn't exist on index keys");
+  MOZ_ASSERT(mType == OBJECTSTORE || mType == INDEXOBJECT);
 
   if (!mHaveValue) {
     return JSVAL_VOID;

@@ -29,6 +29,7 @@ struct ObjectStoreInfo;
 
 BEGIN_WORKERS_NAMESPACE
 
+class IDBCursorSync;
 class IDBCursorWithValueSync;
 class IDBIndexSync;
 class IndexedDBObjectStoreWorkerChild;
@@ -177,6 +178,10 @@ public:
   JS::Value
   GetAllKeys(JSContext* aCx, const Optional<JS::Handle<JS::Value> >& aKey,
              const Optional<uint32_t>& aLimit, ErrorResult& aRv);
+
+  IDBCursorSync*
+  OpenKeyCursor(JSContext* aCx, const Optional<JS::Handle<JS::Value> >& aRange,
+                IDBCursorDirection aDirection, ErrorResult& aRv);
 
 private:
   IDBObjectStoreSync(JSContext* aCx, WorkerPrivate* aWorkerPrivate);

@@ -437,13 +437,26 @@ IndexedDBObjectStoreWorkerChild::RecvPIndexedDBCursorConstructor(
     static_cast<IDBCursorSync*>(requestActor->GetObject());
   MOZ_ASSERT(cursor, "Must have an object here!");
 
-//  MOZ_ASSERT(static_cast<size_t>(aParams.direction()) ==
-//             cursor->GetDirection(), "Huh?");
+  typedef indexedDB::ipc::OptionalStructuredCloneReadInfo CursorUnionType;
+  SerializedStructuredCloneReadInfo cloneInfo;
+
+  switch (aParams.optionalCloneInfo().type()) {
+    case CursorUnionType::TSerializedStructuredCloneReadInfo: {
+      cloneInfo =
+        aParams.optionalCloneInfo().get_SerializedStructuredCloneReadInfo();
+    } break;
+
+    case CursorUnionType::Tvoid_t:
+      MOZ_ASSERT(aParams.blobsChild().IsEmpty());
+      break;
+
+    default:
+      MOZ_CRASH("Unknown union type!");
+      return false;
+  }
 
   Key emptyKey;
-  cursor->SetCurrentKeysAndValue(
-           aParams.key(), emptyKey,
-           aParams.optionalCloneInfo().get_SerializedStructuredCloneReadInfo());
+  cursor->SetCurrentKeysAndValue(aParams.key(), emptyKey, cloneInfo);
 
   actor->SetCursor(cursor);
   return true;
@@ -548,9 +561,6 @@ IndexedDBIndexWorkerChild::RecvPIndexedDBCursorConstructor(
   IDBCursorSync* cursor =
     static_cast<IDBCursorSync*>(requestActor->GetObject());
   MOZ_ASSERT(cursor, "Must have an object here!");
-
-//  MOZ_ASSERT(static_cast<size_t>(aParams.direction()) ==
-//             cursor->GetDirection(), "Huh?");
 
   typedef indexedDB::ipc::OptionalStructuredCloneReadInfo CursorUnionType;
   SerializedStructuredCloneReadInfo cloneInfo;
@@ -759,7 +769,8 @@ IndexedDBObjectStoreRequestWorkerChild::Recv__delete__(const ResponseValue& aRes
       MOZ_ASSERT(mRequestType == ParamsUnionType::TCountParams);
       break;
     case ResponseValue::TOpenCursorResponse:
-      MOZ_ASSERT(mRequestType == ParamsUnionType::TOpenCursorParams);
+      MOZ_ASSERT(mRequestType == ParamsUnionType::TOpenCursorParams ||
+                 mRequestType == ParamsUnionType::TOpenKeyCursorParams);
       break;
 
     default:

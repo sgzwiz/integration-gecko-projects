@@ -41,6 +41,22 @@ public:
   HandleResponse(const ResponseValue& aResponseValue);
 
 protected:
+  uint32_t mSyncQueueKey;
+  IDBCursorSync* mCursor;
+
+  // In-params.
+  nsRefPtr<IDBKeyRange> mKeyRange;
+};
+
+class OpenIndexKeyCursorHelper : public OpenHelper
+{
+public:
+  OpenIndexKeyCursorHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
+                           IDBCursorSync* aCursor, IDBKeyRange* aKeyRange)
+  : OpenHelper(aWorkerPrivate, aSyncQueueKey, aCursor, aKeyRange)
+  { }
+
+protected:
   nsresult
   IPCThreadRun()
   {
@@ -70,13 +86,48 @@ protected:
 
     return NS_OK;
   }
+};
 
-private:
-  uint32_t mSyncQueueKey;
-  IDBCursorSync* mCursor;
+class OpenObjectStoreKeyCursorHelper : public OpenHelper
+{
+public:
+  OpenObjectStoreKeyCursorHelper(WorkerPrivate* aWorkerPrivate,
+                                 uint32_t aSyncQueueKey, IDBCursorSync* aCursor,
+                                 IDBKeyRange* aKeyRange)
+  : OpenHelper(aWorkerPrivate, aSyncQueueKey, aCursor, aKeyRange)
+  { }
 
-  // In-params.
-  nsRefPtr<IDBKeyRange> mKeyRange;
+protected:
+  nsresult
+  IPCThreadRun()
+  {
+    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
+    mPrimarySyncQueueKey = mSyncQueueKey;
+
+    ObjectStoreRequestParams params;
+
+    OpenKeyCursorParams openKeyCursorParams;
+    if (mKeyRange) {
+      KeyRange keyRange;
+      mKeyRange->ToSerializedKeyRange(keyRange);
+      openKeyCursorParams.optionalKeyRange() = keyRange;
+    }
+    else {
+      openKeyCursorParams.optionalKeyRange() = mozilla::void_t();
+    }
+    openKeyCursorParams.direction() = mCursor->GetDirection();
+
+    params = openKeyCursorParams;
+
+    IndexedDBObjectStoreRequestWorkerChild* actor =
+      new IndexedDBObjectStoreRequestWorkerChild(params.type());
+    mCursor->ObjectStore()->GetActor()->SendPIndexedDBRequestConstructor(
+                                                                        actor,
+                                                                        params);
+    actor->SetHelper(this);
+
+    return NS_OK;
+  }
 };
 
 class ContinueHelper : public BlockingHelperBase
@@ -149,6 +200,29 @@ IDBCursorSync::Create(JSContext* aCx, IDBIndexSync* aIndex,
   return cursor;
 }
 
+// For OBJECTSTOREKEY cursors.
+// static
+IDBCursorSync*
+IDBCursorSync::Create(JSContext* aCx, IDBObjectStoreSync* aObjectStore,
+                      Direction aDirection)
+{
+  WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
+  MOZ_ASSERT(workerPrivate);
+
+  nsRefPtr<IDBCursorSync> cursor = new IDBCursorSync(aCx, workerPrivate);
+
+  cursor->mObjectStore = aObjectStore;
+  cursor->mTransaction = aObjectStore->Transaction();
+  cursor->mType = OBJECTSTOREKEY;
+  cursor->mDirection = aDirection;
+
+  if (!Wrap(aCx, nullptr, cursor)) {
+    return nullptr;
+  }
+
+  return cursor;
+}
+
 IDBCursorSync::IDBCursorSync(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
 : IDBObjectSync(aCx, aWorkerPrivate), mObjectStore(nullptr), mIndex(nullptr),
   mHaveValue(true), mActorChild(nullptr)
@@ -191,8 +265,20 @@ NS_IMPL_ISUPPORTS_INHERITED0(IDBCursorSync, IDBObjectSync)
 JSObject*
 IDBCursorSync::Source(JSContext* aCx)
 {
-  return mType == OBJECTSTORE ? mObjectStore->GetJSObject() :
-                                mIndex->GetJSObject();
+  switch (mType) {
+    case OBJECTSTORE:
+    case OBJECTSTOREKEY:
+      MOZ_ASSERT(mObjectStore);
+      return mObjectStore->GetJSObject();
+
+    case INDEXKEY:
+    case INDEXOBJECT:
+      MOZ_ASSERT(mIndex);
+      return mIndex->GetJSObject();
+
+    default:
+      MOZ_ASSUME_UNREACHABLE("Bad type!");
+  }
 }
 
 JS::Value
@@ -222,10 +308,10 @@ IDBCursorSync::PrimaryKey(JSContext* aCx)
   }
 
   if (!mHaveCachedPrimaryKey) {
-    MOZ_ASSERT(mType == OBJECTSTORE ? !mKey.IsUnset() :
-                                      !mObjectKey.IsUnset(), "Bad key!");
 
-    const indexedDB::Key& key = mType == OBJECTSTORE ? mKey : mObjectKey;
+    const indexedDB::Key& key =
+      (mType == OBJECTSTORE || mType == OBJECTSTOREKEY) ? mKey : mObjectKey;
+    MOZ_ASSERT(!key.IsUnset());
 
     nsresult rv = key.ToJSVal(aCx, mCachedPrimaryKey);
     NS_ENSURE_SUCCESS(rv, JSVAL_NULL);
@@ -249,21 +335,19 @@ IDBCursorSync::Update(JSContext* aCx, JS::Value aValue, ErrorResult& aRv)
     return;
   }
 
-  if (!mHaveValue || mType == INDEXKEY) {
+  if (!mHaveValue || mType == OBJECTSTOREKEY || mType == INDEXKEY) {
     NS_WARNING("Dont have value or bad type!");
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR);
     return;
   }
 
-  MOZ_ASSERT(mObjectStore, "This cannot be null!");
-  MOZ_ASSERT(!mKey.IsUnset() , "Bad key!");
-  MOZ_ASSERT(mType != INDEXOBJECT || !mObjectKey.IsUnset(), "Bad key!");
+  MOZ_ASSERT(mObjectStore);
+  MOZ_ASSERT(!mKey.IsUnset());
+  MOZ_ASSERT(mType == OBJECTSTORE || mType == INDEXOBJECT);
+  MOZ_ASSERT_IF(mType == INDEXOBJECT, !mObjectKey.IsUnset());
 
   nsresult rv;
-
-  JSAutoRequest ar(aCx);
-
-  indexedDB::Key& objectKey = (mType == OBJECTSTORE) ? mKey : mObjectKey;
+  const indexedDB::Key& objectKey = (mType == OBJECTSTORE) ? mKey : mObjectKey;
 
   if (mObjectStore->HasValidKeyPath()) {
     // Make sure the object given has the correct keyPath value set on it.
@@ -347,7 +431,7 @@ IDBCursorSync::Continue(JSContext* aCx,
         break;
 
       default:
-        NS_NOTREACHED("Unknown direction type!");
+        MOZ_ASSUME_UNREACHABLE("Unknown direction type!");
     }
   }
 
@@ -367,16 +451,17 @@ IDBCursorSync::Delete(JSContext* aCx, ErrorResult& aRv)
     return false;
   }
 
-  if (!mHaveValue || mType == INDEXKEY) {
+  if (!mHaveValue || mType == OBJECTSTOREKEY || mType == INDEXKEY) {
     NS_WARNING("Dont have value or bad type!");
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR);
     return false;
   }
 
-  MOZ_ASSERT(mObjectStore, "This cannot be null!");
-  MOZ_ASSERT(!mKey.IsUnset() , "Bad key!");
+  MOZ_ASSERT(mObjectStore);
+  MOZ_ASSERT(mType == OBJECTSTORE || mType == INDEXOBJECT);
+  MOZ_ASSERT(!mKey.IsUnset());
 
-  indexedDB::Key& objectKey = (mType == OBJECTSTORE) ? mKey : mObjectKey;
+  const indexedDB::Key& objectKey = (mType == OBJECTSTORE) ? mKey : mObjectKey;
 
   JS::Rooted<JS::Value> key(aCx);
   nsresult rv = objectKey.ToJSVal(aCx, &key);
@@ -396,8 +481,17 @@ IDBCursorSync::Open(JSContext* aCx, IDBKeyRange* aKeyRange)
 
   AutoSyncLoopHolder syncLoop(mWorkerPrivate);
 
-  nsRefPtr<OpenHelper> helper =
-    new OpenHelper(mWorkerPrivate, syncLoop.SyncQueueKey(), this, aKeyRange);
+  nsRefPtr<OpenHelper> helper;
+  if (mType == INDEXKEY) {
+    helper = new OpenIndexKeyCursorHelper(mWorkerPrivate,
+                                          syncLoop.SyncQueueKey(), this,
+                                          aKeyRange);
+  }
+  else {
+    helper = new OpenObjectStoreKeyCursorHelper(mWorkerPrivate,
+                                                syncLoop.SyncQueueKey(), this,
+                                                aKeyRange);
+  }
 
   if (!helper->Dispatch(aCx) || !syncLoop.RunAndForget(aCx)) {
     return false;
@@ -412,7 +506,7 @@ IDBCursorSync::ContinueInternal(JSContext* aCx,
                                 int32_t aCount,
                                 ErrorResult& aRv)
 {
-  MOZ_ASSERT(aCount > 0, "Must have a count!");
+  MOZ_ASSERT(aCount > 0);
 
   if (mTransaction->IsInvalid()) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
@@ -420,7 +514,6 @@ IDBCursorSync::ContinueInternal(JSContext* aCx,
   }
 
   if (!mHaveValue) {
-    NS_WARNING("Dont have value!");
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR);
     return false;
   }

@@ -66,6 +66,6 @@ partial interface IDBObjectStoreSync {
     [Throws] //Bug 917182 [Pref="dom.indexedDB.experimental"]
     any                     getAllKeys (optional any key, optional unsigned long limit);
 
-   // [Throws] //Bug 917182 [Pref="dom.indexedDB.experimental"]
-   // IDBCursorSync?          openKeyCursor (optional any range, optional IDBCursorDirection direction = "next");
+    [Throws] //Bug 917182 [Pref="dom.indexedDB.experimental"]
+    IDBCursorSync?          openKeyCursor (optional any range, optional IDBCursorDirection direction = "next");
 };

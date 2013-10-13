@@ -1027,16 +1027,6 @@ IDBObjectStoreSync::OpenCursor(JSContext* aCx,
     }
   }
 
-/*
-  IDBCursorSync::Direction direction = IDBCursorSync::NEXT;
-  if (aDirection.WasPassed()) {
-    nsresult rv = IDBCursorSync::ParseDirection(aDirection.Value(), &direction);
-    if (NS_FAILED(rv)) {
-      aRv.Throw(rv);
-      return nullptr;
-    }
-  }
-*/
   IDBCursorSync::Direction direction =
     IDBCursorSync::ConvertDirection(aDirection);
 
@@ -1184,6 +1174,43 @@ IDBObjectStoreSync::GetAllKeys(JSContext* aCx,
   }
 
   return value;
+}
+
+IDBCursorSync*
+IDBObjectStoreSync::OpenKeyCursor(JSContext* aCx,
+                                  const Optional<JS::Handle<JS::Value> >& aRange,
+                                  IDBCursorDirection aDirection,
+                                  ErrorResult& aRv)
+{
+  if (mTransaction->IsInvalid()) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
+    return nullptr;
+  }
+
+  nsRefPtr<IDBKeyRange> keyRange;
+  if (aRange.WasPassed()) {
+    if (NS_FAILED(IDBKeyRange::FromJSVal(aCx, aRange.Value(),
+                                         getter_AddRefs(keyRange)))) {
+      aRv.Throw(NS_ERROR_DOM_INDEXEDDB_DATA_ERR);
+      return nullptr;
+    }
+  }
+
+  IDBCursorSync::Direction direction =
+    IDBCursorSync::ConvertDirection(aDirection);
+
+  IDBCursorSync* cursor = IDBCursorSync::Create(aCx, this, direction);
+  if (!cursor) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return nullptr;
+  }
+
+  if (!cursor->Open(aCx, keyRange)) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return nullptr;
+  }
+
+  return cursor->mHaveValue ? cursor : nullptr;
 }
 
 bool
