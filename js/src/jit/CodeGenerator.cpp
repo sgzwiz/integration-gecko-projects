@@ -2151,7 +2151,7 @@ CodeGenerator::visitApplyArgsGeneric(LApplyArgsGeneric *apply)
     ExecutionMode executionMode = gen->info().executionMode();
     if (apply->hasSingleTarget()) {
         JSFunction *target = apply->getSingleTarget();
-        if (!CanIonCompile(target, executionMode)) {
+        if (target->isNative()) {
             if (!emitCallInvokeFunction(apply, copyreg))
                 return false;
             emitPopArguments(apply, copyreg);
@@ -6152,7 +6152,8 @@ CodeGenerator::addGetElementCache(LInstruction *ins, Register obj, ConstantOrReg
 {
     switch (gen->info().executionMode()) {
       case SequentialExecution: {
-        GetElementIC cache(obj, index, output, monitoredResult);
+        RegisterSet liveRegs = ins->safepoint()->liveRegs();
+        GetElementIC cache(liveRegs, obj, index, output, monitoredResult);
         return addCache(ins, allocateCache(cache));
       }
       case ParallelExecution: {

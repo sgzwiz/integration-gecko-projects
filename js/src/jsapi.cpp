@@ -616,6 +616,45 @@ JS_IsBuiltinFunctionConstructor(JSFunction *fun)
 enum InitState { Uninitialized, Running, ShutDown };
 static InitState jsInitState = Uninitialized;
 
+#ifdef DEBUG
+static void
+CheckMessageNumbering()
+{
+    // Assert that the numbers associated with the error names in js.msg are
+    // monotonically increasing.  It's not a compile-time check, but it's
+    // better than nothing.
+    int errorNumber = 0;
+# define MSG_DEF(name, number, count, exception, format)                      \
+    JS_ASSERT(name == errorNumber++);
+# include "js.msg"
+# undef MSG_DEF
+}
+
+static unsigned
+MessageParameterCount(const char *format)
+{
+    unsigned numfmtspecs = 0;
+    for (const char *fmt = format; *fmt != '\0'; fmt++) {
+        if (*fmt == '{' && isdigit(fmt[1]))
+            ++numfmtspecs;
+    }
+    return numfmtspecs;
+}
+
+static void
+CheckMessageParameterCounts()
+{
+    // Assert that each message format has the correct number of braced
+    // parameters.
+# define MSG_DEF(name, number, count, exception, format)                      \
+    JS_BEGIN_MACRO                                                            \
+        JS_ASSERT(MessageParameterCount(format) == count);                    \
+    JS_END_MACRO;
+# include "js.msg"
+# undef MSG_DEF
+}
+#endif /* DEBUG */
+
 JS_PUBLIC_API(bool)
 JS_Init(void)
 {
@@ -626,29 +665,9 @@ JS_Init(void)
                "how do we have live runtimes before JS_Init?");
 
 #ifdef DEBUG
-    // Assert that the numbers associated with the error names in js.msg are
-    // monotonically increasing.  It's not a compile-time check, but it's
-    // better than nothing.
-    int errorNumber = 0;
-#define MSG_DEF(name, number, count, exception, format)                       \
-    JS_ASSERT(name == errorNumber++);
-#include "js.msg"
-#undef MSG_DEF
-
-    // Assert that each message format has the correct number of braced
-    // parameters.
-#define MSG_DEF(name, number, count, exception, format)                       \
-    JS_BEGIN_MACRO                                                            \
-        unsigned numfmtspecs = 0;                                             \
-        for (const char *fmt = format; *fmt != '\0'; fmt++) {                 \
-            if (*fmt == '{' && isdigit(fmt[1]))                               \
-                ++numfmtspecs;                                                \
-        }                                                                     \
-        JS_ASSERT(count == numfmtspecs);                                      \
-    JS_END_MACRO;
-#include "js.msg"
-#undef MSG_DEF
-#endif /* DEBUG */
+    CheckMessageNumbering();
+    CheckMessageParameterCounts();
+#endif
 
     using js::TlsPerThreadData;
     if (!TlsPerThreadData.initialized() && !TlsPerThreadData.init())
@@ -945,6 +964,48 @@ JS_StringToVersion(const char *string)
     return JSVERSION_UNKNOWN;
 }
 
+static unsigned
+GetOptionsCommon(JSContext *cx)
+{
+    return (cx->options().extraWarnings() ? JSOPTION_EXTRA_WARNINGS : 0)
+         | (cx->options().werror() ? JSOPTION_WERROR : 0)
+         | (cx->options().varObjFix() ? JSOPTION_VAROBJFIX : 0)
+         | (cx->options().privateIsNSISupports() ? JSOPTION_PRIVATE_IS_NSISUPPORTS : 0)
+         | (cx->options().compileAndGo() ? JSOPTION_COMPILE_N_GO : 0)
+         | (cx->options().dontReportUncaught() ? JSOPTION_DONT_REPORT_UNCAUGHT : 0)
+         | (cx->options().noDefaultCompartmentObject() ? JSOPTION_NO_DEFAULT_COMPARTMENT_OBJECT : 0)
+         | (cx->options().noScriptRval() ? JSOPTION_NO_SCRIPT_RVAL : 0)
+         | (cx->options().baseline() ? JSOPTION_BASELINE : 0)
+         | (cx->options().typeInference() ? JSOPTION_TYPE_INFERENCE : 0)
+         | (cx->options().strictMode() ? JSOPTION_STRICT_MODE : 0)
+         | (cx->options().ion() ? JSOPTION_ION : 0)
+         | (cx->options().asmJS() ? JSOPTION_ASMJS : 0);
+}
+
+static unsigned
+SetOptionsCommon(JSContext *cx, unsigned newopts)
+{
+    JS_ASSERT((newopts & JSOPTION_MASK) == newopts);
+    unsigned oldopts = GetOptionsCommon(cx);
+
+    cx->options().setExtraWarnings(newopts & JSOPTION_EXTRA_WARNINGS);
+    cx->options().setWerror(newopts & JSOPTION_WERROR);
+    cx->options().setVarObjFix(newopts & JSOPTION_VAROBJFIX);
+    cx->options().setPrivateIsNSISupports(newopts & JSOPTION_PRIVATE_IS_NSISUPPORTS);
+    cx->options().setCompileAndGo(newopts & JSOPTION_COMPILE_N_GO);
+    cx->options().setDontReportUncaught(newopts & JSOPTION_DONT_REPORT_UNCAUGHT);
+    cx->options().setNoDefaultCompartmentObject(newopts & JSOPTION_NO_DEFAULT_COMPARTMENT_OBJECT);
+    cx->options().setNoScriptRval(newopts & JSOPTION_NO_SCRIPT_RVAL);
+    cx->options().setBaseline(newopts & JSOPTION_BASELINE);
+    cx->options().setTypeInference(newopts & JSOPTION_TYPE_INFERENCE);
+    cx->options().setStrictMode(newopts & JSOPTION_STRICT_MODE);
+    cx->options().setIon(newopts & JSOPTION_ION);
+    cx->options().setAsmJS(newopts & JSOPTION_ASMJS);
+
+    cx->updateJITEnabled();
+    return oldopts;
+}
+
 JS_PUBLIC_API(uint32_t)
 JS_GetOptions(JSContext *cx)
 {
@@ -953,18 +1014,7 @@ JS_GetOptions(JSContext *cx)
      * We may have been synchronized with a script version that was formerly on
      * the stack, but has now been popped.
      */
-    return cx->options();
-}
-
-static unsigned
-SetOptionsCommon(JSContext *cx, unsigned options)
-{
-    JS_ASSERT((options & JSOPTION_MASK) == options);
-    unsigned oldopts = cx->options();
-    unsigned newopts = options & JSOPTION_MASK;
-    cx->setOptions(newopts);
-    cx->updateJITEnabled();
-    return oldopts;
+    return GetOptionsCommon(cx);
 }
 
 JS_PUBLIC_API(uint32_t)
@@ -976,9 +1026,15 @@ JS_SetOptions(JSContext *cx, uint32_t options)
 JS_PUBLIC_API(uint32_t)
 JS_ToggleOptions(JSContext *cx, uint32_t options)
 {
-    unsigned oldopts = cx->options();
+    unsigned oldopts = GetOptionsCommon(cx);
     unsigned newopts = oldopts ^ options;
     return SetOptionsCommon(cx, newopts);
+}
+
+JS_PUBLIC_API(JS::ContextOptions &)
+JS::ContextOptionsRef(JSContext *cx)
+{
+    return cx->options();
 }
 
 JS_PUBLIC_API(void)
@@ -1497,6 +1553,7 @@ JS_ResolveStandardClass(JSContext *cx, HandleObject obj, HandleId id, bool *reso
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj, id);
+    JS_ASSERT(obj->is<GlobalObject>());
     *resolved = false;
 
     rt = cx->runtime();
@@ -1566,11 +1623,10 @@ JS_ResolveStandardClass(JSContext *cx, HandleObject obj, HandleId id, bool *reso
          * If this standard class is anonymous, then we don't want to resolve
          * by name.
          */
-        JS_ASSERT(obj->is<GlobalObject>());
         if (stdnm->clasp->flags & JSCLASS_IS_ANONYMOUS)
             return true;
 
-        if (IsStandardClassResolved(obj, stdnm->clasp))
+        if (obj->as<GlobalObject>().isStandardClassResolved(stdnm->clasp))
             return true;
 
         if (!stdnm->init(cx, obj))
@@ -1586,6 +1642,7 @@ JS_EnumerateStandardClasses(JSContext *cx, HandleObject obj)
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj);
+    MOZ_ASSERT(obj->is<GlobalObject>());
 
     /*
      * Check whether we need to bind 'undefined' and define it if so.
@@ -1603,7 +1660,7 @@ JS_EnumerateStandardClasses(JSContext *cx, HandleObject obj)
     /* Initialize any classes that have not been initialized yet. */
     for (unsigned i = 0; standard_class_atoms[i].init; i++) {
         const JSStdName &stdnm = standard_class_atoms[i];
-        if (!js::IsStandardClassResolved(obj, stdnm.clasp)) {
+        if (!obj->as<GlobalObject>().isStandardClassResolved(stdnm.clasp)) {
             if (!stdnm.init(cx, obj))
                 return false;
         }
@@ -4364,7 +4421,7 @@ struct AutoLastFrameCheck
     ~AutoLastFrameCheck() {
         if (cx->isExceptionPending() &&
             !JS_IsRunning(cx) &&
-            !cx->hasOption(JSOPTION_DONT_REPORT_UNCAUGHT)) {
+            !cx->options().dontReportUncaught()) {
             js_ReportUncaughtException(cx);
         }
     }
@@ -4470,15 +4527,15 @@ JS::CompileOptions::CompileOptions(JSContext *cx, JSVersion version)
       lineno(1),
       column(0),
       element(NullPtr()),
-      compileAndGo(cx->hasOption(JSOPTION_COMPILE_N_GO)),
+      compileAndGo(cx->options().compileAndGo()),
       forEval(false),
-      noScriptRval(cx->hasOption(JSOPTION_NO_SCRIPT_RVAL)),
+      noScriptRval(cx->options().noScriptRval()),
       selfHostingMode(false),
       canLazilyParse(true),
-      strictOption(cx->hasOption(JSOPTION_STRICT_MODE)),
-      extraWarningsOption(cx->hasExtraWarningsOption()),
-      werrorOption(cx->hasWErrorOption()),
-      asmJSOption(cx->hasOption(JSOPTION_ASMJS)),
+      strictOption(cx->options().strictMode()),
+      extraWarningsOption(cx->options().extraWarnings()),
+      werrorOption(cx->options().werror()),
+      asmJSOption(cx->options().asmJS()),
       sourcePolicy(SAVE_SOURCE)
 {
 }
