@@ -14,6 +14,7 @@
     "layout/base/tests/test_bug465448.xul":"",
 
     "layout/forms/test/test_bug478219.xhtml":"window.closed not working, bug 907795",
+    "caps/tests/mochitest/test_bug292789.html":"timed out, bug 927580",
     "content/media/test":"bug 918299",
     "content/media/test/test_bug448534.html": "Timed out, bug 894922? Bug 902677 is for the timing out of a lot of media tests",
     "content/media/mediasource/test/test_MediaSource.html": " ReferenceError: MediaSource is not defined",
