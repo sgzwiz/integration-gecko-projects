@@ -83,6 +83,8 @@
     "content/events/test/test_bug667919-2.html":"bug 900969, 5 tests",
 
     "content/html/content/test/test_bug561636.html":"observerservice not working",
+
+    "content/base/test/test_copyimage.html":"bug 927574",
     "content/base/test/test_bug548193.html":"observerservice issue",
     "content/base/test/test_x-frame-options.html":"observerservice issue",
 
