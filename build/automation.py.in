@@ -166,9 +166,9 @@ class Automation(object):
     self.lastTestSeen = "automation.py"
     self.haveDumpedScreen = False
 
-  def setServerInfo(self, 
-                    webServer = _DEFAULT_WEB_SERVER, 
-                    httpPort = _DEFAULT_HTTP_PORT, 
+  def setServerInfo(self,
+                    webServer = _DEFAULT_WEB_SERVER,
+                    httpPort = _DEFAULT_HTTP_PORT,
                     sslPort = _DEFAULT_SSL_PORT,
                     webSocketPort = _DEFAULT_WEBSOCKET_PORT):
     self.webServer = webServer
@@ -231,7 +231,7 @@ class Automation(object):
         import platform
         pid = "%i" % self.pid
         if platform.release() == "2000":
-          # Windows 2000 needs 'kill.exe' from the 
+          # Windows 2000 needs 'kill.exe' from the
           #'Windows 2000 Resource Kit tools'. (See bug 475455.)
           try:
             subprocess.Popen(["kill", "-f", pid]).wait()
@@ -275,7 +275,7 @@ class Automation(object):
       lineno += 1
       if line.startswith("#") or line == "\n":
         continue
-      
+
       match = lineRe.match(line)
       if not match:
         raise SyntaxError(lineno)
@@ -407,7 +407,7 @@ class Automation(object):
     # Create head of the ssltunnel configuration file
     sslTunnelConfigPath = os.path.join(profileDir, "ssltunnel.cfg")
     sslTunnelConfig = open(sslTunnelConfigPath, "w")
-  
+
     sslTunnelConfig.write("httpproxy:1\n")
     sslTunnelConfig.write("certdbdir:%s\n" % certPath)
     sslTunnelConfig.write("forward:127.0.0.1:%s\n" % self.httpPort)
@@ -465,7 +465,7 @@ class Automation(object):
                     env = env).wait()
       if ext == ".client":
         self.Process([pk12util, "-i", os.path.join(certPath, item), "-w",
-                    pwfilePath, "-d", profileDir], 
+                    pwfilePath, "-d", profileDir],
                     env = env).wait()
 
     os.unlink(pwfilePath)
@@ -522,9 +522,9 @@ class Automation(object):
         totalMemory = int(os.popen("free").readlines()[1].split()[1])
 
         # Only 2 GB RAM or less available? Use custom ASan options to reduce
-        # the amount of resources required to do the tests. Standard options 
+        # the amount of resources required to do the tests. Standard options
         # will otherwise lead to OOM conditions on the current test slaves.
-        # 
+        #
         # If we have more than 2 GB or RAM but still less than 4 GB, we need
         # another set of options to prevent OOM in some memory-intensive
         # tests.
@@ -622,7 +622,7 @@ class Automation(object):
         wpid, wstatus = os.waitpid(pid, os.WNOHANG)
         return wpid == 0
       except OSError, err:
-        # Catch the errors we might expect from os.kill/os.waitpid, 
+        # Catch the errors we might expect from os.kill/os.waitpid,
         # and re-raise any others
         if err.errno == errno.ESRCH or err.errno == errno.ECHILD:
           return False
@@ -635,26 +635,31 @@ class Automation(object):
 
     self.haveDumpedScreen = True;
 
-    # Need to figure out what tool and whether it write to a file or stdout
+    # Need to figure out which OS-dependant tool to use
     if self.UNIXISH:
       utility = [os.path.join(utilityPath, "screentopng")]
-      imgoutput = 'stdout'
     elif self.IS_MAC:
       utility = ['/usr/sbin/screencapture', '-C', '-x', '-t', 'png']
-      imgoutput = 'file'
     elif self.IS_WIN32:
       utility = [os.path.join(utilityPath, "screenshot.exe")]
-      imgoutput = 'file'
 
-    # Run the capture correctly for the type of capture
+    # Always write screenshots to a file - bug 749421 related
+    imgoutput = 'file'
+
+    # Get dir where to write the file
+    env = self.environment()
+    parent_dir = env.get('MOZ_UPLOAD_DIR', '')
+    if not parent_dir:
+      self.log.info('Failed to retrieve MOZ_UPLOAD_DIR env var')
+      return
+
+    # Run the capture tool to file the screenshot in the MOZ_UPLOAD_DIR
     try:
-      if imgoutput == 'file':
-        tmpfd, imgfilename = tempfile.mkstemp(prefix='mozilla-test-fail_')
+        tmpfd, imgfilename = tempfile.mkstemp(suffix='.png',
+                                              prefix='mozilla-test-fail-screenshot_',
+                                              dir=parent_dir)
         os.close(tmpfd)
         dumper = self.Process(utility + [imgfilename])
-      elif imgoutput == 'stdout':
-        dumper = self.Process(utility, bufsize=-1,
-                              stdout=subprocess.PIPE, close_fds=True)
     except OSError, err:
       self.log.info("Failed to start %s for screenshot: %s",
                     utility[0], err.strerror)
@@ -665,19 +670,6 @@ class Automation(object):
     if dumper.returncode != 0:
       self.log.info("%s exited with code %d", utility, dumper.returncode)
       return
-
-    try:
-      if imgoutput == 'stdout':
-        image = dumper_out
-      elif imgoutput == 'file':
-        with open(imgfilename, 'rb') as imgfile:
-          image = imgfile.read()
-    except IOError, err:
-        self.log.info("Failed to read image from %s", imgoutput)
-
-    import base64
-    encoded = base64.b64encode(image)
-    self.log.info("SCREENSHOT: data:image/png;base64,%s", encoded)
 
   def killAndGetStack(self, processPID, utilityPath, debuggerInfo):
     """Kill the process, preferrably in a way that gets us a stack trace.
@@ -878,8 +870,8 @@ class Automation(object):
 
       # start ssltunnel to provide https:// URLs capability
       ssltunnel = os.path.join(utilityPath, "ssltunnel" + self.BIN_SUFFIX)
-      ssltunnelProcess = self.Process([ssltunnel, 
-                               os.path.join(profileDir, "ssltunnel.cfg")], 
+      ssltunnelProcess = self.Process([ssltunnel,
+                               os.path.join(profileDir, "ssltunnel.cfg")],
                                env = self.environment(xrePath = xrePath))
       self.log.info("INFO | automation.py | SSL tunnel pid: %d", ssltunnelProcess.pid)
 
