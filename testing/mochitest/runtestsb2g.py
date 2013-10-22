@@ -144,6 +144,7 @@ class B2GMochitest(MochitestUtilsMixin):
         except:
             traceback.print_exc()
             log.error("Automation Error: Received unexpected exception while running application\n")
+            self.runner.check_for_crashes()
             status = 1
 
         self.stopWebServer(options)

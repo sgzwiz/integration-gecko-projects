@@ -300,6 +300,9 @@ class B2GRunner(RemoteRunner):
         self.backup_file(self.user_js)
         self.dm.pushFile(os.path.join(self.profile.profile, "user.js"), self.user_js)
 
+    def check_for_crashes(self):
+        return self.marionette.check_for_crash(test_name=self.last_test)
+
     def cleanup(self):
         super(B2GRunner, self).cleanup()
         if getattr(self.marionette, 'instance', False):
