@@ -93,6 +93,8 @@
     "content/base/test/test_XHR_system.html":"12 total, 2 failing - .mozSystem == true - got false, expected true + ",
 
     "content/base/test/test_bug326337.html":"timed out",
+    "content/base/test/test_bug426646.html":"timed out",
+    "content/base/test/test_bug557892.html":"timed out",
 
     "content/base/test/test_bug431701.html":"xmlhttprequest causes crash, bug 902271",
     "content/base/test/test_bug422537.html":"xmlhttprequest causes crash, bug 902271",
@@ -106,6 +108,7 @@
     "content/base/test/test_child_process_shutdown_message.html":"specialpowers.wrap issue, NS_ERROR_XPC_GS_RETURNED_FAILURE",
     "content/base/test/test_messagemanager_assertpermission.html":"specialpowers.wrap issue, NS_ERROR_XPC_GS_RETURNED_FAILURE",
 
+    "content/events/test/test_bug322588.html":"timed out",
 
     "content/html/content/test/test_formSubmission.html":"NS_ERROR_FILE_TARGET_DOES_NOT_EXIST",
 
