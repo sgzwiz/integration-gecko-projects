@@ -53,9 +53,12 @@ class B2GInstance(B2GBuild):
         return remote_profiles
 
     def check_for_crashes(self, symbols_path):
+        print "b2ginstance.py: checking for crashes"
+        print "symbols_path: %s" % symbols_path
         remote_dump_dirs = [posixpath.join(p, 'minidumps') for p in self.remote_profiles]
         crashed = False
         for remote_dump_dir in remote_dump_dirs:
+            print "checking for minidumps: %s" % remote_dump_dir
             local_dump_dir = tempfile.mkdtemp()
             self.dm.getDirectory(remote_dump_dir, local_dump_dir)
             try:
@@ -66,4 +69,5 @@ class B2GInstance(B2GBuild):
             finally:
                 shutil.rmtree(local_dump_dir)
                 self.dm.removeDir(remote_dump_dir)
+            print "minidump found: %s" % crashed
         return crashed
