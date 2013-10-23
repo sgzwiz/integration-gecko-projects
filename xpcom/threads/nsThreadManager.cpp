@@ -225,22 +225,6 @@ nsThreadManager::NewThread(uint32_t creationFlags,
   return NS_OK;
 }
 
-NS_METHOD
-nsThreadManager::NewCustomThread(nsThread *thread)
-{
-  // No new threads during Shutdown
-  NS_ENSURE_TRUE(mInitialized, NS_ERROR_NOT_INITIALIZED);
-
-  nsresult rv = thread->Init();
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // At this point, we expect that the thread has been registered in mThread;
-  // however, it is possible that it could have also been replaced by now, so
-  // we cannot really assert that it was added.
-
-  return NS_OK;
-}
-
 NS_IMETHODIMP
 nsThreadManager::GetThreadFromPRThread(PRThread *thread, nsIThread **result)
 {

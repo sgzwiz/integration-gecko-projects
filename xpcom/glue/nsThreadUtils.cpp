@@ -85,23 +85,6 @@ NS_NewThread(nsIThread **result, nsIRunnable *event, uint32_t stackSize)
   return NS_OK;
 }
 
-#ifdef MOZILLA_INTERNAL_API
-NS_METHOD
-NS_NewCustomThread(nsThread *thread, nsIRunnable *event)
-{
-  nsresult rv = nsThreadManager::get()->
-      nsThreadManager::NewCustomThread(thread);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (event) {
-    rv = thread->Dispatch(event, NS_DISPATCH_NORMAL);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  return NS_OK;
-}
-#endif
-
 NS_METHOD
 NS_GetCurrentThread(nsIThread **result)
 {

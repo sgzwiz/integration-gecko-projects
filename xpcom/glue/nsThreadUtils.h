@@ -60,19 +60,6 @@ NS_NewThread(nsIThread **result,
              nsIRunnable *initialEvent = nullptr,
              uint32_t stackSize = nsIThreadManager::DEFAULT_STACK_SIZE);
 
-#ifdef MOZILLA_INTERNAL_API
-class nsThread;
-
-/**
- * Creates a new thread using a custom subclass of nsThread.  The thread object
- * *MUST* subclass nsThread.  For obvious reasons this is only available from
- * inside libxul.
- */
-extern NS_COM_GLUE NS_METHOD
-NS_NewCustomThread(nsThread *thread,
-                   nsIRunnable *initialEvent = nullptr);
-#endif
-
 /**
  * Creates a named thread, otherwise the same as NS_NewThread
  */

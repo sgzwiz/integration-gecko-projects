@@ -19,7 +19,6 @@ class nsThreadManager : public nsIThreadManager
 public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSITHREADMANAGER
-  NS_METHOD NewCustomThread(nsThread *thread);
 
   static nsThreadManager *get() {
     static nsThreadManager sInstance;
