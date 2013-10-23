@@ -77,15 +77,24 @@ WorkerParent::RecvPIndexedDBConstructor(PIndexedDBParent* aActor,
 
   // XXXjanv security checks go here
 
-  nsCOMPtr<nsPIDOMWindow> window = mWorkerPrivate->GetWindow();
-  if (!window) {
-    NS_WARNING("Failed to get window!");
-    return aActor->SendResponse(false);
-  }
+  nsresult rv;
 
   nsRefPtr<IDBFactory> factory;
-  nsresult rv = IDBFactory::Create(window, aGroup, aASCIIOrigin, nullptr,
-                                   getter_AddRefs(factory));
+  if (mWorkerPrivate->IsSharedWorker()) {
+    rv = IDBFactory::Create(aGroup, aASCIIOrigin, nullptr,
+                            getter_AddRefs(factory));
+  }
+  else {
+    nsCOMPtr<nsPIDOMWindow> window = mWorkerPrivate->GetWindow();
+    if (!window) {
+      NS_WARNING("Failed to get window!");
+      return aActor->SendResponse(false);
+    }
+
+    rv = IDBFactory::Create(window, aGroup, aASCIIOrigin, nullptr,
+                            getter_AddRefs(factory));
+  }
+
   if (NS_FAILED(rv)) {
     NS_WARNING("Failed to create factory!");
     return aActor->SendResponse(false);

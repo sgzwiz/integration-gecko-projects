@@ -1,0 +1,63 @@
+<!--
+  Any copyright is dedicated to the Public Domain.
+  http://creativecommons.org/publicdomain/zero/1.0/
+-->
+<!DOCTYPE HTML>
+<html>
+<!--
+Tests of IndexedDB synchronous API (Bug 798875)
+-->
+<head>
+  <title>Test for IndexedDB synchronous API (Bug 798875)</title>
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=798875">IndexedDB synchronous API Bug 798875</a>
+<p id="display"></p>
+<div id="content" style="display: none">
+
+</div>
+<pre id="test">
+<script class="testbody" type="text/javascript">
+  const swPref = "dom.workers.sharedWorkers.enabled";
+
+  const data = {
+    name: window.location.pathname,
+    objectStoreName: "Names",
+    objectStoreData: { value: { name: "Marvin" }, key: 1 },
+    indexData: { name: "nameIndex", key: "name" }
+  };
+
+  var request = window.indexedDB.open(data.name, 1);
+
+  request.onupgradeneeded = function(event) {
+    var db = event.target.result;
+    var objectStore = db.createObjectStore(data.objectStoreName, { });
+    objectStore.add(data.objectStoreData.value, data.objectStoreData.key);
+    objectStore.createIndex(data.indexData.name, data.indexData.key);
+  };
+
+  request.onsuccess = function(event) {
+    SpecialPowers.pushPrefEnv({ set: [[swPref, true]] }, function() {
+      var worker = new SharedWorker("syncidb_sharedWorker_sharedWorker.js");
+
+      worker.port.onmessage = function(event) {
+        var result = event.data;
+        if(result == undefined) {
+          SimpleTest.finish();
+        }
+        else {
+          is(result.actual, result.expected, result.message);
+        }
+      };
+
+      worker.port.postMessage(data);
+    });
+  }
+
+  SimpleTest.waitForExplicitFinish();
+</script>
+</pre>
+</body>
+</html>
