@@ -151,8 +151,7 @@ ModifierKeyState::InitMouseEvent(WidgetInputEvent& aMouseEvent) const
                aMouseEvent.eventStructType == NS_SIMPLE_GESTURE_EVENT,
                "called with non-mouse event");
 
-  WidgetMouseEventBase& mouseEvent =
-    static_cast<WidgetMouseEventBase&>(aMouseEvent);
+  WidgetMouseEventBase& mouseEvent = *aMouseEvent.AsMouseEventBase();
   mouseEvent.buttons = 0;
   if (::GetKeyState(VK_LBUTTON) < 0) {
     mouseEvent.buttons |= WidgetMouseEvent::eLeftButtonFlag;
@@ -2234,7 +2233,7 @@ KeyboardLayout::SynthesizeNativeKeyEvent(nsWindowBase* aWidget,
                                          const nsAString& aCharacters,
                                          const nsAString& aUnmodifiedCharacters)
 {
-  UINT keyboardLayoutListCount = ::GetKeyboardLayoutList(0, NULL);
+  UINT keyboardLayoutListCount = ::GetKeyboardLayoutList(0, nullptr);
   NS_ASSERTION(keyboardLayoutListCount > 0,
                "One keyboard layout must be installed at least");
   HKL keyboardLayoutListBuff[50];
@@ -2248,7 +2247,7 @@ KeyboardLayout::SynthesizeNativeKeyEvent(nsWindowBase* aWidget,
 
   nsPrintfCString layoutName("%08x", aNativeKeyboardLayout);
   HKL loadedLayout = LoadKeyboardLayoutA(layoutName.get(), KLF_NOTELLSHELL);
-  if (loadedLayout == NULL) {
+  if (loadedLayout == nullptr) {
     if (keyboardLayoutListBuff != keyboardLayoutList) {
       delete [] keyboardLayoutList;
     }

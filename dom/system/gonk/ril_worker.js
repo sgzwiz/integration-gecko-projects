@@ -1042,25 +1042,6 @@ let RIL = {
   },
 
   /**
-   * Returns when to hide or show the caller id in the call.
-   *
-   * @param mmi
-   *        The MMI code.
-   * @return One of the CLIR_* constants.
-   */
-  _getCLIRMode: function _getCLIRMode(mmi) {
-    if (!mmi ||
-        (mmi.serviceCode != MMI_SC_CLIR) ||
-        (mmi.procedure != MMI_PROCEDURE_ACTIVATION &&
-         mmi.procedure != MMI_PROCEDURE_DEACTIVATION)) {
-      return CLIR_DEFAULT;
-    }
-
-    return mmi.procedure == MMI_PROCEDURE_ACTIVATION ? CLIR_INVOCATION :
-                                                       CLIR_SUPPRESSION;
-  },
-
-  /**
    * Enables or disables the presentation of the calling line identity (CLI) to
    * the called party when originating a call.
    *
@@ -1084,10 +1065,10 @@ let RIL = {
    * @param on
    *        Boolean indicating whether the screen should be on or off.
    */
-  setScreenState: function setScreenState(on) {
+  setScreenState: function setScreenState(options) {
     Buf.newParcel(REQUEST_SCREEN_STATE);
     Buf.writeInt32(1);
-    Buf.writeInt32(on ? 1 : 0);
+    Buf.writeInt32(options.on ? 1 : 0);
     Buf.sendParcel();
   },
 
@@ -1375,7 +1356,10 @@ let RIL = {
         let mmi = this._parseMMI(options.number);
         if (mmi && this._isTemporaryModeCLIR(mmi)) {
           options.number = mmi.dialNumber;
-          options.clirMode = this._getCLIRMode(mmi);
+          // In temporary mode, MMI_PROCEDURE_ACTIVATION means allowing CLI
+          // presentation, i.e. CLIR_SUPPRESSION. See TS 22.030, Annex B.
+          options.clirMode = mmi.procedure == MMI_PROCEDURE_ACTIVATION ?
+                             CLIR_SUPPRESSION : CLIR_INVOCATION;
         }
       }
       this.dialNonEmergencyNumber(options, onerror);
@@ -2743,6 +2727,13 @@ let RIL = {
         };
         command.language = command.event.language;
         break;
+      case STK_EVENT_TYPE_BROWSER_TERMINATION:
+        command.deviceId = {
+          sourceId: STK_DEVICE_ID_ME,
+          destinationId: STK_DEVICE_ID_SIM
+        };
+        command.terminationCause = command.event.terminationCause;
+        break;
     }
     this.sendICCEnvelopeCommand(command);
   },
@@ -2762,6 +2753,7 @@ let RIL = {
    * @param [optional] cause
    * @param [optional] timerId
    * @param [optional] timerValue
+   * @param [optional] terminationCause
    */
   sendICCEnvelopeCommand: function sendICCEnvelopeCommand(options) {
     if (DEBUG) {
@@ -2867,6 +2859,14 @@ let RIL = {
     // Language
     if (options.language) {
       ComprehensionTlvHelper.writeLanguageTlv(options.language);
+    }
+
+    // Browser Termination
+    if (options.terminationCause != null) {
+      GsmPDUHelper.writeHexOctet(COMPREHENSIONTLV_TAG_BROWSER_TERMINATION_CAUSE |
+                                 COMPREHENSIONTLV_FLAG_CR);
+      GsmPDUHelper.writeHexOctet(1);
+      GsmPDUHelper.writeHexOctet(options.terminationCause);
     }
 
     // Calculate and write BER length to 2nd mark
@@ -11011,10 +11011,8 @@ let ICCRecordHelper = {
   fetchICCRecords: function fetchICCRecords() {
     this.readICCID();
     RIL.getIMSI();
-    this.readMSISDN();
     this.readAD();
     this.readSST();
-    this.readMBDN();
   },
 
   /**
@@ -11159,12 +11157,26 @@ let ICCRecordHelper = {
         debug("SST: " + str);
       }
 
+      if (ICCUtilsHelper.isICCServiceAvailable("MSISDN")) {
+        if (DEBUG) debug("MSISDN: MSISDN is available");
+        this.readMSISDN();
+      } else {
+        if (DEBUG) debug("MSISDN: MSISDN service is not available");
+      }
+
       // Fetch SPN and PLMN list, if some of them are available.
       if (ICCUtilsHelper.isICCServiceAvailable("SPN")) {
         if (DEBUG) debug("SPN: SPN is available");
         this.readSPN();
       } else {
         if (DEBUG) debug("SPN: SPN service is not available");
+      }
+
+      if (ICCUtilsHelper.isICCServiceAvailable("MDN")) {
+        if (DEBUG) debug("MDN: MDN available.");
+        this.readMBDN();
+      } else {
+        if (DEBUG) debug("MDN: MDN service is not available");
       }
 
       if (ICCUtilsHelper.isICCServiceAvailable("SPDI")) {

@@ -46,7 +46,7 @@ private:
   friend class dom::PBrowserParent;
   friend class dom::PBrowserChild;
 
-public:
+protected:
   WidgetMouseEventBase()
   {
   }
@@ -58,6 +58,9 @@ public:
     inputSource(nsIDOMMouseEvent::MOZ_SOURCE_MOUSE)
  {
  }
+
+public:
+  virtual WidgetMouseEventBase* AsMouseEventBase() MOZ_OVERRIDE { return this; }
 
   /// The possible related target
   nsCOMPtr<nsISupports> relatedTarget;
@@ -136,11 +139,11 @@ public:
     eTopLevel
   };
 
+protected:
   WidgetMouseEvent()
   {
   }
 
-protected:
   WidgetMouseEvent(bool aIsTrusted, uint32_t aMessage, nsIWidget* aWidget,
                    nsEventStructType aStructType, reasonType aReason) :
     WidgetMouseEventBase(aIsTrusted, aMessage, aWidget, aStructType),
@@ -162,6 +165,7 @@ protected:
   }
 
 public:
+  virtual WidgetMouseEvent* AsMouseEvent() MOZ_OVERRIDE { return this; }
 
   WidgetMouseEvent(bool aIsTrusted, uint32_t aMessage, nsIWidget* aWidget,
                    reasonType aReason, contextType aContext = eNormal) :
@@ -187,7 +191,8 @@ public:
   }
 
 #ifdef DEBUG
-  ~WidgetMouseEvent() {
+  virtual ~WidgetMouseEvent()
+  {
     NS_WARN_IF_FALSE(message != NS_CONTEXTMENU ||
                      button ==
                        ((context == eNormal) ? eRightButton : eLeftButton),
@@ -225,6 +230,8 @@ public:
 class WidgetDragEvent : public WidgetMouseEvent
 {
 public:
+  virtual WidgetDragEvent* AsDragEvent() MOZ_OVERRIDE { return this; }
+
   WidgetDragEvent(bool aIsTrusted, uint32_t aMessage, nsIWidget* aWidget) :
     WidgetMouseEvent(aIsTrusted, aMessage, aWidget, NS_DRAG_EVENT, eReal),
     userCancelled(false)
@@ -268,6 +275,11 @@ private:
   }
 
 public:
+  virtual WidgetMouseScrollEvent* AsMouseScrollEvent() MOZ_OVERRIDE
+  {
+    return this;
+  }
+
   WidgetMouseScrollEvent(bool aIsTrusted, uint32_t aMessage,
                          nsIWidget* aWidget) :
     WidgetMouseEventBase(aIsTrusted, aMessage, aWidget, NS_MOUSE_SCROLL_EVENT),
@@ -312,13 +324,16 @@ private:
   }
 
 public:
+  virtual WidgetWheelEvent* AsWheelEvent() MOZ_OVERRIDE { return this; }
+
   WidgetWheelEvent(bool aIsTrusted, uint32_t aMessage, nsIWidget* aWidget) :
     WidgetMouseEventBase(aIsTrusted, aMessage, aWidget, NS_WHEEL_EVENT),
     deltaX(0.0), deltaY(0.0), deltaZ(0.0),
     deltaMode(nsIDOMWheelEvent::DOM_DELTA_PIXEL),
     customizedByUserPrefs(false), isMomentum(false), isPixelOnlyDevice(false),
     lineOrPageDeltaX(0), lineOrPageDeltaY(0), scrollType(SCROLL_DEFAULT),
-    overflowDeltaX(0.0), overflowDeltaY(0.0)
+    overflowDeltaX(0.0), overflowDeltaY(0.0),
+    mViewPortIsOverscrolled(false)
   {
   }
 
@@ -399,6 +414,12 @@ public:
   double overflowDeltaX;
   double overflowDeltaY;
 
+  // Whether or not the parent of the currently overscrolled frame is the
+  // ViewPort. This is false in situations when an element on the page is being
+  // overscrolled (such as a text field), but true when the 'page' is being
+  // overscrolled.
+  bool mViewPortIsOverscrolled;
+
   void AssignWheelEventData(const WidgetWheelEvent& aEvent, bool aCopyTargets)
   {
     AssignMouseEventBaseData(aEvent, aCopyTargets);
@@ -415,11 +436,9 @@ public:
     scrollType = aEvent.scrollType;
     overflowDeltaX = aEvent.overflowDeltaX;
     overflowDeltaY = aEvent.overflowDeltaY;
+    mViewPortIsOverscrolled = aEvent.mViewPortIsOverscrolled;
   }
 };
-
-// TODO: Remove following typedef
-typedef WidgetWheelEvent                WheelEvent;
 
 } // namespace mozilla
 

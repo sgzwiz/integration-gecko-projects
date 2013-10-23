@@ -12,6 +12,10 @@ CPP_SOURCES += [
     'ctypes.cpp',
 ]
 
+LOCAL_INCLUDES += [
+    '/js/xpconnect/loader',
+]
+
 LIBRARY_NAME = 'jsctypes'
 
 EXTRA_JS_MODULES += [
@@ -19,4 +23,6 @@ EXTRA_JS_MODULES += [
 ]
 
 LIBXUL_LIBRARY = True
+
+EXPORT_LIBRARY = True
 

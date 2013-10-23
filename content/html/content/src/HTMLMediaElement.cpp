@@ -6,6 +6,7 @@
 
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/dom/HTMLMediaElementBinding.h"
+#include "mozilla/dom/ElementInlines.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Util.h"
 
@@ -74,6 +75,7 @@
 
 #include "nsCSSParser.h"
 #include "nsIMediaList.h"
+#include "nsIDOMWakeLock.h"
 
 #include "ImageContainer.h"
 #include "nsIPowerManagerService.h"
@@ -1135,14 +1137,14 @@ nsresult HTMLMediaElement::LoadResource()
       ReportLoadError("MediaLoadInvalidURI", params, ArrayLength(params));
       return rv;
     }
-    mMediaSource = source.forget();
     nsRefPtr<MediaSourceDecoder> decoder = new MediaSourceDecoder(this);
-    if (!mMediaSource->Attach(decoder)) {
+    if (!source->Attach(decoder)) {
       // TODO: Handle failure: run "If the media data cannot be fetched at
       // all, due to network errors, causing the user agent to give up
       // trying to fetch the resource" section of resource fetch algorithm.
       return NS_ERROR_FAILURE;
     }
+    mMediaSource = source.forget();
     nsRefPtr<MediaResource> resource = new MediaSourceResource();
     return FinishDecoderSetup(decoder, resource, nullptr, nullptr);
   }
@@ -2504,7 +2506,19 @@ nsresult HTMLMediaElement::InitializeDecoderForChannel(nsIChannel* aChannel,
   // stream successfully created, the stream now owns the channel.
   mChannel = nullptr;
 
-  return FinishDecoderSetup(decoder, resource, aListener, nullptr);
+  // We postpone the |FinishDecoderSetup| function call until we get
+  // |OnConnected| signal from MediaStreamController which is held by
+  // RtspMediaResource.
+  if (DecoderTraits::DecoderWaitsForOnConnected(mimeType)) {
+    decoder->SetResource(resource);
+    mDecoder = decoder;
+    if (aListener) {
+      *aListener = nullptr;
+    }
+    return NS_OK;
+  } else {
+    return FinishDecoderSetup(decoder, resource, aListener, nullptr);
+  }
 }
 
 nsresult HTMLMediaElement::FinishDecoderSetup(MediaDecoder* aDecoder,

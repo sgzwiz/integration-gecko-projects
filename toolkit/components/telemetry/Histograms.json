@@ -3343,6 +3343,71 @@
     "n_buckets": 50,
     "description": "Time spent to display first page in PDF Viewer (ms)"
   },
+  "SHUMWAY_TIME_TO_VIEW_MS": {
+    "kind": "exponential",
+    "high": "2 * 60 * 1000",
+    "n_buckets": 50,
+    "description": "Time spent to display first frame (ms)"
+  },
+  "SHUMWAY_PARSING_MS": {
+    "kind": "exponential",
+    "high": "2 * 60 * 1000",
+    "n_buckets": 50,
+    "description": "Time spent to parse SWF file (ms)"
+  },
+  "SHUMWAY_SWF_INDEX_ON_PAGE": {
+    "kind": "enumerated",
+    "n_values": 30,
+    "description": "Index of the SWF on the page (0 - full page, 1 - first, 2 - second, etc.)"
+  },
+  "SHUMWAY_SWF_SIZE_KB": {
+    "kind": "exponential",
+    "low": "1",
+    "high": "256 * 1024",
+    "n_buckets": 50,
+    "description": "The SWF file size (KB)"
+  },
+  "SHUMWAY_SWF_VERSION": {
+    "kind": "enumerated",
+    "n_values": 30,
+    "description": "The SWF file version"
+  },
+  "SHUMWAY_SWF_FRAME_RATE": {
+    "kind": "linear",
+    "high": "256",
+    "n_buckets": "50",
+    "description": "The SWF file frame rate"
+  },
+  "SHUMWAY_SWF_AREA": {
+    "kind": "exponential",
+    "low": "256",
+    "high": "16777216",
+    "n_buckets": 50,
+    "description": "The SWF file dimension: amount of pixels (width * height)"
+  },
+  "SHUMWAY_SWF_AVM2": {
+    "kind": "boolean",
+    "description": "The AVM2 is enabled in the SWF file"
+  },
+  "SHUMWAY_SWF_BANNER": {
+    "kind": "enumerated",
+    "n_values": 30,
+    "description": "The well-known banner size"
+  },
+  "SHUMWAY_ERROR": {
+    "kind": "enumerated",
+    "n_values": 3,
+    "description": "The Shumway reported error: 0 - unknown, 1 - AVM1, 2 - AVM2)"
+  },
+  "SHUMWAY_FEATURE_USED": {
+    "kind": "enumerated",
+    "n_values": 700,
+    "description": "The Shumway feature is used during movie execution"
+  },
+  "SHUMWAY_FALLBACK": {
+    "kind": "boolean",
+    "description": "The Shumway was selected to fallback to the Flash (false - by heuristics, true - by user)"
+  },
   "PLUGINS_NOTIFICATION_SHOWN": {
     "kind": "boolean",
     "description": "The number of times the click-to-activate notification was shown: false: shown by in-content activation true: shown by location bar activation"
@@ -4088,10 +4153,10 @@
     "n_values": 3,
     "description": "A simple counter of daily mixed-content unblock operations and top documents loaded"
   },
-  "NTLM_MODULE_USED": {
+  "NTLM_MODULE_USED_2": {
     "kind": "enumerated",
     "n_values": 8,
-    "description": "The module used for the NTLM protocol (Windows_API, Kerberos, Samba_auth or Generic) and whether or not the authentication was used to connect to a proxy server. This data is collected only once per session (at first NTLM authentification)."
+    "description": "The module used for the NTLM protocol (Windows_API, Kerberos, Samba_auth or Generic) and whether or not the authentication was used to connect to a proxy server. This data is collected only once per session (at first NTLM authentification) ; fixed version."
   },
   "FX_THUMBNAILS_BG_QUEUE_SIZE_ON_CAPTURE": {
     "kind": "exponential",
@@ -4114,9 +4179,9 @@
     "extended_statistics_ok": true,
     "description": "BACKGROUND THUMBNAILS: Time the capture took once it started and successfully completed (ms)"
   },
-  "FX_THUMBNAILS_BG_CAPTURE_DONE_REASON": {
+  "FX_THUMBNAILS_BG_CAPTURE_DONE_REASON_2": {
     "kind": "enumerated",
-    "n_values": 4,
+    "n_values": 10,
     "description": "BACKGROUND THUMBNAILS: Reason the capture completed (see TEL_CAPTURE_DONE_* constants in BackgroundPageThumbs.jsm)"
   },
   "FX_THUMBNAILS_BG_CAPTURE_PAGE_LOAD_TIME_MS": {

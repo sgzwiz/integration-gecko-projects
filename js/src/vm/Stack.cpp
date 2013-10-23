@@ -264,12 +264,12 @@ StackFrame::prologue(JSContext *cx)
             pushOnScopeChain(*callobj);
             flags_ |= HAS_CALL_OBJ;
         }
-        Probes::enterScript(cx, script, nullptr, this);
+        probes::EnterScript(cx, script, nullptr, this);
         return true;
     }
 
     if (isGlobalFrame()) {
-        Probes::enterScript(cx, script, nullptr, this);
+        probes::EnterScript(cx, script, nullptr, this);
         return true;
     }
 
@@ -281,13 +281,14 @@ StackFrame::prologue(JSContext *cx)
 
     if (isConstructing()) {
         RootedObject callee(cx, &this->callee());
-        JSObject *obj = CreateThisForFunction(cx, callee, useNewType());
+        JSObject *obj = CreateThisForFunction(cx, callee,
+                                              useNewType() ? SingletonObject : GenericObject);
         if (!obj)
             return false;
         functionThis() = ObjectValue(*obj);
     }
 
-    Probes::enterScript(cx, script, script->function(), this);
+    probes::EnterScript(cx, script, script->function(), this);
     return true;
 }
 
@@ -298,7 +299,7 @@ StackFrame::epilogue(JSContext *cx)
     JS_ASSERT(!hasBlockChain());
 
     RootedScript script(cx, this->script());
-    Probes::exitScript(cx, script, script->function(), this);
+    probes::ExitScript(cx, script, script->function(), this);
 
     if (isEvalFrame()) {
         if (isStrictEvalFrame()) {
@@ -427,6 +428,9 @@ StackFrame::markValues(JSTracer *trc, Value *sp)
         // Mark callee, |this| and arguments.
         unsigned argc = Max(numActualArgs(), numFormalArgs());
         gc::MarkValueRootRange(trc, argc + 2, argv_ - 2, "fp argv");
+    } else {
+        // Mark callee and |this|
+        gc::MarkValueRootRange(trc, 2, ((Value *)this) - 2, "stack callee and this");
     }
 }
 
@@ -614,7 +618,7 @@ ScriptFrameIter::Data::Data(JSContext *cx, PerThreadData *perThread, SavedOption
     interpFrames_(nullptr),
     activations_(cx->runtime())
 #ifdef JS_ION
-  , ionFrames_((uint8_t *)nullptr)
+  , ionFrames_((uint8_t *)nullptr, SequentialExecution)
 #endif
 {
 }

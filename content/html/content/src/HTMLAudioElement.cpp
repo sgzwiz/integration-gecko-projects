@@ -19,6 +19,9 @@
 #include <algorithm>
 #include "mozilla/Preferences.h"
 #include "nsComponentManagerUtils.h"
+#include "nsIHttpChannel.h"
+#include "mozilla/dom/TimeRanges.h"
+#include "AudioStream.h"
 
 static bool
 IsAudioAPIEnabled()
@@ -114,7 +117,7 @@ HTMLAudioElement::MozSetup(uint32_t aChannels, uint32_t aRate, ErrorResult& aRv)
 #endif
 
   mAudioStream = AudioStream::AllocateStream();
-  aRv = mAudioStream->Init(aChannels, aRate, mAudioChannelType);
+  aRv = mAudioStream->Init(aChannels, aRate, mAudioChannelType, AudioStream::HighLatency);
   if (aRv.Failed()) {
     mAudioStream->Shutdown();
     mAudioStream = nullptr;

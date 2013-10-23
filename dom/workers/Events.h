@@ -36,6 +36,9 @@ CreateProgressEvent(JSContext* aCx, JS::Handle<JSString*> aType,
                     bool aLengthComputable, double aLoaded, double aTotal);
 
 JSObject*
+CreateConnectEvent(JSContext* aCx, JS::Handle<JSObject*> aMessagePort);
+
+JSObject*
 CreateVersionChangeEvent(JSContext* aCx, uint64_t aOldVersion,
                          uint64_t aNewVersion);
 

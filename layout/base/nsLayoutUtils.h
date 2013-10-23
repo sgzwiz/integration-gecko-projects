@@ -263,6 +263,15 @@ public:
     return DoCompareTreePosition(aFrame1, aFrame2, -1, 1, aCommonAncestor);
   }
 
+  static int32_t CompareTreePosition(nsIFrame* aFrame1,
+                                     nsIFrame* aFrame2,
+                                     nsTArray<nsIFrame*>& aFrame2Ancestors,
+                                     nsIFrame* aCommonAncestor = nullptr)
+  {
+    return DoCompareTreePosition(aFrame1, aFrame2, aFrame2Ancestors,
+                                 -1, 1, aCommonAncestor);
+  }
+
   /*
    * More generic version of |CompareTreePosition|.  |aIf1Ancestor|
    * gives the value to return when 1 is an ancestor of 2, and likewise
@@ -274,6 +283,17 @@ public:
                                        int32_t aIf1Ancestor,
                                        int32_t aIf2Ancestor,
                                        nsIFrame* aCommonAncestor = nullptr);
+
+  static nsIFrame* FillAncestors(nsIFrame* aFrame,
+                                 nsIFrame* aStopAtAncestor,
+                                 nsTArray<nsIFrame*>* aAncestors);
+
+  static int32_t DoCompareTreePosition(nsIFrame* aFrame1,
+                                       nsIFrame* aFrame2,
+                                       nsTArray<nsIFrame*>& aFrame2Ancestors,
+                                       int32_t aIf1Ancestor,
+                                       int32_t aIf2Ancestor,
+                                       nsIFrame* aCommonAncestor);
 
   /**
    * LastContinuationWithChild gets the last continuation in aFrame's chain
@@ -1506,7 +1526,7 @@ public:
   struct SurfaceFromElementResult {
     SurfaceFromElementResult();
 
-    /* mSurface will contain the resulting surface, or will be NULL on error */
+    /* mSurface will contain the resulting surface, or will be nullptr on error */
     nsRefPtr<gfxASurface> mSurface;
     /* The size of the surface */
     gfxIntSize mSize;
@@ -1542,7 +1562,7 @@ public:
    * When the document is editable by contenteditable attribute of its root
    * content or body content.
    *
-   * Be aware, this returns NULL if it's in designMode.
+   * Be aware, this returns nullptr if it's in designMode.
    *
    * For example:
    *
@@ -1556,7 +1576,7 @@ public:
    *          created by script with XHTML.
    *
    *  <body><p contenteditable="true"></p></body>
-   *    returns NULL because <body> isn't editable.
+   *    returns nullptr because <body> isn't editable.
    */
   static nsIContent*
     GetEditableRootContentByContentEditable(nsIDocument* aDocument);
@@ -1646,6 +1666,11 @@ public:
    * Checks if we should enable parsing for CSS Filters.
    */
   static bool CSSFiltersEnabled();
+
+  /**
+   * Checks whether support for the CSS-wide "unset" value is enabled.
+   */
+  static bool UnsetValueEnabled();
 
   /**
    * Unions the overflow areas of all non-popup children of aFrame with

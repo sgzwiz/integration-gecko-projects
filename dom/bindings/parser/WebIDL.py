@@ -320,7 +320,7 @@ class IDLUnresolvedIdentifier(IDLObject):
                               [location])
         if name[0] == '_' and not allowDoubleUnderscore:
             name = name[1:]
-        if (name in ["constructor", "iterator", "toString", "toJSON"] and
+        if (name in ["constructor", "toString", "toJSON"] and
             not allowForbidden):
             raise WebIDLError("Cannot use reserved identifier '%s'" % (name),
                               [location])
@@ -4780,7 +4780,8 @@ class Parser(Tokenizer):
 
     def p_error(self, p):
         if not p:
-            raise WebIDLError("Syntax Error at end of file. Possibly due to missing semicolon(;), braces(}) or both", [])
+            raise WebIDLError("Syntax Error at end of file. Possibly due to missing semicolon(;), braces(}) or both",
+                              [self._filename])
         else:
             raise WebIDLError("invalid syntax", [Location(self.lexer, p.lineno, p.lexpos, self._filename)])
 

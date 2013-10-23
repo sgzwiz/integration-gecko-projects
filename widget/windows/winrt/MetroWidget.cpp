@@ -59,7 +59,7 @@ extern PRLogModuleInfo* gWindowsLog;
 
 static uint32_t gInstanceCount = 0;
 const PRUnichar* kMetroSubclassThisProp = L"MetroSubclassThisProp";
-HWND MetroWidget::sICoreHwnd = NULL;
+HWND MetroWidget::sICoreHwnd = nullptr;
 
 namespace mozilla {
 namespace widget {
@@ -144,7 +144,7 @@ namespace {
     // processed.
     Log("  Inputs sent. Waiting for input messages to clear");
     MSG msg;
-    while (WinUtils::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+    while (WinUtils::PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
       if (nsTextStore::ProcessRawKeyMessage(msg)) {
         continue;  // the message is consumed by TSF
       }
@@ -163,8 +163,8 @@ nsRefPtr<mozilla::layers::APZCTreeManager> MetroWidget::sAPZC;
 
 MetroWidget::MetroWidget() :
   mTransparencyMode(eTransparencyOpaque),
-  mWnd(NULL),
-  mMetroWndProc(NULL),
+  mWnd(nullptr),
+  mMetroWndProc(nullptr),
   mTempBasicLayerInUse(false),
   mRootLayerTreeId(),
   nsWindowBase()
@@ -302,7 +302,7 @@ MetroWidget::Destroy()
   mLayerManager = nullptr;
   mView = nullptr;
   mIdleService = nullptr;
-  mWnd = NULL;
+  mWnd = nullptr;
 
   return NS_OK;
 }
@@ -633,7 +633,7 @@ bool
 MetroWidget::DispatchKeyboardEvent(WidgetGUIEvent* aEvent)
 {
   MOZ_ASSERT(aEvent);
-  WidgetKeyboardEvent* oldKeyEvent = static_cast<WidgetKeyboardEvent*>(aEvent);
+  WidgetKeyboardEvent* oldKeyEvent = aEvent->AsKeyboardEvent();
   WidgetKeyboardEvent* keyEvent =
     new WidgetKeyboardEvent(oldKeyEvent->mFlags.mIsTrusted,
                             oldKeyEvent->message, oldKeyEvent->widget);
@@ -920,7 +920,7 @@ MetroWidget::RemoveSubclass()
       NS_ASSERTION(mMetroWndProc, "Should have old proc here.");
       SetWindowLongPtr(mWnd, GWLP_WNDPROC,
         reinterpret_cast<LONG_PTR>(mMetroWndProc));
-      mMetroWndProc = NULL;
+      mMetroWndProc = nullptr;
   }
   RemovePropW(mWnd, kMetroSubclassThisProp);
 }
@@ -1020,8 +1020,7 @@ MetroWidget::ApzReceiveInputEvent(WidgetInputEvent* aEvent)
   if (!MetroWidget::sAPZC) {
     return nsEventStatus_eIgnore;
   }
-  WidgetInputEvent& event = static_cast<WidgetInputEvent&>(*aEvent);
-  return MetroWidget::sAPZC->ReceiveInputEvent(event);
+  return MetroWidget::sAPZC->ReceiveInputEvent(*aEvent->AsInputEvent());
 }
 
 nsEventStatus
@@ -1034,8 +1033,8 @@ MetroWidget::ApzReceiveInputEvent(WidgetInputEvent* aInEvent,
   if (!MetroWidget::sAPZC) {
     return nsEventStatus_eIgnore;
   }
-  WidgetInputEvent& event = static_cast<WidgetInputEvent&>(*aInEvent);
-  return MetroWidget::sAPZC->ReceiveInputEvent(event, aOutEvent);
+  return MetroWidget::sAPZC->ReceiveInputEvent(*aInEvent->AsInputEvent(),
+                                               aOutEvent);
 }
 
 LayerManager*

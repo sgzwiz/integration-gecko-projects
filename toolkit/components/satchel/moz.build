@@ -19,6 +19,10 @@ CPP_SOURCES += [
     'nsFormFillController.cpp',
 ]
 
+LOCAL_INCLUDES += [
+    '../build',
+]
+
 EXTRA_COMPONENTS += [
     'FormHistoryStartup.js',
     'nsFormAutoComplete.js',
@@ -41,4 +45,6 @@ EXTRA_PP_JS_MODULES += [
 ]
 
 LIBXUL_LIBRARY = True
+
+EXPORT_LIBRARY = True
 

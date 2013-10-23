@@ -6,7 +6,6 @@
 #ifndef mozilla_dom_workers_workerprivate_h__
 #define mozilla_dom_workers_workerprivate_h__
 
-#include "mozilla/Attributes.h"
 #include "Workers.h"
 
 #include "nsIContentSecurityPolicy.h"
@@ -18,13 +17,15 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/dom/quota/PersistenceType.h"
-#include "mozilla/Mutex.h"
 #include "mozilla/TimeStamp.h"
-#include "nsAutoPtr.h"
-#include "nsCOMPtr.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsDataHashtable.h"
 #include "nsEventQueue.h"
+#include "nsHashKeys.h"
 #include "nsString.h"
 #include "nsTArray.h"
+#include "nsThreadUtils.h"
 #include "nsTPriorityQueue.h"
 #include "StructuredCloneTags.h"
 
@@ -37,9 +38,8 @@ class nsIChannel;
 class nsIDocument;
 class nsIPrincipal;
 class nsIScriptContext;
-class nsIURI;
-class nsPIDOMWindow;
 class nsITimer;
+class nsIURI;
 
 namespace JS {
 class RuntimeStats;
@@ -47,7 +47,10 @@ class RuntimeStats;
 
 BEGIN_WORKERS_NAMESPACE
 
+class MessagePort;
+class SharedWorker;
 class WorkerChild;
+class WorkerMessagePort;
 class WorkerParent;
 class WorkerPrivate;
 
@@ -236,6 +239,8 @@ public:
 template <class Derived>
 class WorkerPrivateParent : public EventTarget
 {
+  class SynchronizeAndResumeRunnable;
+
 public:
   struct LocationInfo
   {
@@ -249,7 +254,50 @@ public:
     nsCString mHash;
   };
 
+  struct LoadInfo
+  {
+    // All of these should be released in ForgetMainThreadObjects.
+    nsCOMPtr<nsIURI> mBaseURI;
+    nsCOMPtr<nsIURI> mResolvedScriptURI;
+    nsCOMPtr<nsIPrincipal> mPrincipal;
+    nsCOMPtr<nsIScriptContext> mScriptContext;
+    nsCOMPtr<nsPIDOMWindow> mWindow;
+    nsCOMPtr<nsIContentSecurityPolicy> mCSP;
+    nsCOMPtr<nsIChannel> mChannel;
+
+    nsCString mDomain;
+
+    bool mEvalAllowed;
+    bool mReportCSPViolations;
+    bool mXHRParamsAllowed;
+    bool mPrincipalIsSystem;
+
+    LoadInfo()
+    : mEvalAllowed(false), mReportCSPViolations(false),
+      mXHRParamsAllowed(false), mPrincipalIsSystem(false)
+    { }
+
+    void
+    StealFrom(LoadInfo& aOther)
+    {
+      mBaseURI = aOther.mBaseURI.forget();
+      mResolvedScriptURI = aOther.mResolvedScriptURI.forget();
+      mPrincipal = aOther.mPrincipal.forget();
+      mScriptContext = aOther.mScriptContext.forget();
+      mWindow = aOther.mWindow.forget();
+      mCSP = aOther.mCSP.forget();
+      mChannel = aOther.mChannel.forget();
+      mDomain = aOther.mDomain;
+      mEvalAllowed = aOther.mEvalAllowed;
+      mReportCSPViolations = aOther.mReportCSPViolations;
+      mXHRParamsAllowed = aOther.mXHRParamsAllowed;
+      mPrincipalIsSystem = aOther.mPrincipalIsSystem;
+    }
+  };
+
 protected:
+  typedef mozilla::ErrorResult ErrorResult;
+
   SharedMutex mMutex;
   mozilla::CondVar mCondVar;
   mozilla::CondVar mMemoryReportCondVar;
@@ -258,25 +306,17 @@ private:
   uint64_t mTopLevelId;
   JSObject* mJSObject;
   WorkerPrivate* mParent;
-  JSContext* mParentJSContext;
   nsString mScriptURL;
-  nsCString mDomain;
+  nsString mSharedWorkerName;
   nsCString mGroup;
   nsCString mOrigin;
   mozilla::dom::quota::PersistenceType mDefaultPersistenceType;
   LocationInfo mLocationInfo;
-
-  // Main-thread things.
-  nsCOMPtr<nsPIDOMWindow> mWindow;
-  nsCOMPtr<nsIScriptContext> mScriptContext;
-  nsCOMPtr<nsIURI> mBaseURI;
-  nsCOMPtr<nsIURI> mScriptURI;
-  nsCOMPtr<nsIPrincipal> mPrincipal;
-  nsCOMPtr<nsIChannel> mChannel;
-  nsCOMPtr<nsIContentSecurityPolicy> mCSP;
+  LoadInfo mLoadInfo;
 
   // Only used for top level workers.
   nsTArray<nsRefPtr<WorkerRunnable> > mQueuedRunnables;
+  nsRevocableEventPtr<SynchronizeAndResumeRunnable> mSynchronizeRunnable;
 
   // Only for ChromeWorkers without window and only touched on the main thread.
   nsTArray<nsCString> mHostObjectURIs;
@@ -284,31 +324,27 @@ private:
   // Protected by mMutex.
   JSSettings mJSSettings;
 
+  // Only touched on the parent thread (currently this is always the main
+  // thread as SharedWorkers are always top-level).
+  nsDataHashtable<nsUint64HashKey, SharedWorker*> mSharedWorkers;
+
   uint64_t mBusyCount;
+  uint64_t mMessagePortSerial;
   Status mParentStatus;
   bool mJSObjectRooted;
   bool mParentSuspended;
   bool mIsChromeWorker;
-  bool mPrincipalIsSystem;
   bool mMainThreadObjectsForgotten;
-  bool mEvalAllowed;
-  bool mReportCSPViolations;
+  bool mIsSharedWorker;
 
   WorkerParent* mWorkerParent;
   WorkerChild* mWorkerChild;
 
 protected:
-  WorkerPrivateParent(JSContext* aCx, JS::Handle<JSObject*> aObject, WorkerPrivate* aParent,
-                      JSContext* aParentJSContext, const nsAString& aScriptURL,
-                      bool aIsChromeWorker, const nsACString& aDomain,
-                      nsCOMPtr<nsPIDOMWindow>& aWindow,
-                      nsCOMPtr<nsIScriptContext>& aScriptContext,
-                      nsCOMPtr<nsIURI>& aBaseURI,
-                      nsCOMPtr<nsIPrincipal>& aPrincipal,
-                      nsCOMPtr<nsIChannel>& aChannel,
-                      nsCOMPtr<nsIContentSecurityPolicy>& aCSP,
-                      bool aEvalAllowed,
-                      bool aReportCSPViolations);
+  WorkerPrivateParent(JSContext* aCx, JS::HandleObject aObject,
+                      WorkerPrivate* aParent, const nsAString& aScriptURL,
+                      bool aIsChromeWorker, bool aIsSharedWorker,
+                      const nsAString& aSharedWorkerName, LoadInfo& aLoadInfo);
 
   ~WorkerPrivateParent();
 
@@ -329,6 +365,11 @@ private:
   {
     return NotifyPrivate(aCx, Terminating);
   }
+
+  bool
+  PostMessageInternal(JSContext* aCx, JS::Handle<JS::Value> aMessage,
+                      JS::Handle<JS::Value> aTransferable,
+                      bool aToMessagePort, uint64_t aMessagePortSerial);
 
 public:
   int64_t
@@ -367,13 +408,14 @@ public:
   }
 
   bool
-  Suspend(JSContext* aCx);
-
-  void
-  Resume(JSContext* aCx);
+  Suspend(JSContext* aCx, nsPIDOMWindow* aWindow);
 
   bool
-  SynchronizeAndResume(nsIScriptContext* aCx);
+  Resume(JSContext* aCx, nsPIDOMWindow* aWindow);
+
+  bool
+  SynchronizeAndResume(JSContext* aCx, nsPIDOMWindow* aWindow,
+                       nsIScriptContext* aScriptContext);
 
   virtual void
   _trace(JSTracer* aTrc) MOZ_OVERRIDE;
@@ -409,7 +451,24 @@ public:
 
   bool
   PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
-              JS::Handle<JS::Value> aTransferable);
+              JS::Handle<JS::Value> aTransferable)
+  {
+    return PostMessageInternal(aCx, aMessage, aTransferable, false, 0);
+  }
+
+  void
+  PostMessageToMessagePort(JSContext* aCx,
+                           uint64_t aMessagePortSerial,
+                           JS::Handle<JS::Value> aMessage,
+                           const Optional<Sequence<JS::Value > >& aTransferable,
+                           ErrorResult& aRv);
+
+  bool
+  DispatchMessageEventToMessagePort(
+                               JSContext* aCx,
+                               uint64_t aMessagePortSerial,
+                               JSAutoStructuredCloneBuffer& aBuffer,
+                               nsTArray<nsCOMPtr<nsISupports>>& aClonedObjects);
 
   uint64_t
   GetInnerWindowId();
@@ -432,6 +491,24 @@ public:
 
   void
   GarbageCollect(JSContext* aCx, bool aShrinking);
+
+  bool
+  RegisterSharedWorker(JSContext* aCx, SharedWorker* aSharedWorker);
+
+  void
+  UnregisterSharedWorker(JSContext* aCx, SharedWorker* aSharedWorker);
+
+  void
+  BroadcastErrorToSharedWorkers(JSContext* aCx,
+                                const nsAString& aMessage,
+                                const nsAString& aFilename,
+                                const nsAString& aLine,
+                                uint32_t aLineNumber,
+                                uint32_t aColumnNumber,
+                                uint32_t aFlags);
+
+  void
+  WorkerScriptLoaded();
 
   void
   QueueRunnable(WorkerRunnable* aRunnable)
@@ -479,7 +556,7 @@ public:
   GetScriptContext() const
   {
     AssertIsOnMainThread();
-    return mScriptContext;
+    return mLoadInfo.mScriptContext;
   }
 
   JSObject*
@@ -497,7 +574,7 @@ public:
   const nsCString&
   Domain() const
   {
-    return mDomain;
+    return mLoadInfo.mDomain;
   }
 
   const nsCString&
@@ -522,31 +599,24 @@ public:
   GetBaseURI() const
   {
     AssertIsOnMainThread();
-    return mBaseURI;
+    return mLoadInfo.mBaseURI;
   }
 
   void
   SetBaseURI(nsIURI* aBaseURI);
 
   nsIURI*
-  GetScriptURI() const
+  GetResolvedScriptURI() const
   {
     AssertIsOnMainThread();
-    return mScriptURI;
-  }
-
-  void
-  SetScriptURI(nsIURI* aScriptURI)
-  {
-    AssertIsOnMainThread();
-    mScriptURI = aScriptURI;
+    return mLoadInfo.mResolvedScriptURI;
   }
 
   nsIPrincipal*
   GetPrincipal() const
   {
     AssertIsOnMainThread();
-    return mPrincipal;
+    return mLoadInfo.mPrincipal;
   }
 
   void
@@ -555,60 +625,72 @@ public:
   bool
   UsesSystemPrincipal() const
   {
-    return mPrincipalIsSystem;
+    return mLoadInfo.mPrincipalIsSystem;
   }
 
-  nsIChannel*
-  GetChannel() const
+  already_AddRefed<nsIChannel>
+  ForgetWorkerChannel()
   {
     AssertIsOnMainThread();
-    return mChannel;
+    return mLoadInfo.mChannel.forget();
   }
 
   nsIDocument*
   GetDocument() const
   {
     AssertIsOnMainThread();
-    return mWindow ? mWindow->GetExtantDoc() : nullptr;
+    return mLoadInfo.mWindow ? mLoadInfo.mWindow->GetExtantDoc() : nullptr;
   }
 
   nsPIDOMWindow*
   GetWindow()
   {
     AssertIsOnMainThread();
-    return mWindow;
+    return mLoadInfo.mWindow;
   }
 
   nsIContentSecurityPolicy*
   GetCSP() const
   {
     AssertIsOnMainThread();
-    return mCSP;
+    return mLoadInfo.mCSP;
   }
 
   void
   SetCSP(nsIContentSecurityPolicy* aCSP)
   {
     AssertIsOnMainThread();
-    mCSP = aCSP;
+    mLoadInfo.mCSP = aCSP;
   }
 
   bool
   IsEvalAllowed() const
   {
-    return mEvalAllowed;
+    return mLoadInfo.mEvalAllowed;
   }
 
   void
   SetEvalAllowed(bool aEvalAllowed)
   {
-    mEvalAllowed = aEvalAllowed;
+    mLoadInfo.mEvalAllowed = aEvalAllowed;
   }
 
   bool
   GetReportCSPViolations() const
   {
-    return mReportCSPViolations;
+    return mLoadInfo.mReportCSPViolations;
+  }
+
+  bool
+  XHRParamsAllowed() const
+  {
+    return mLoadInfo.mXHRParamsAllowed;
+  }
+
+  void
+  SetXHRParamsAllowed(bool aAllowed)
+  {
+    mLoadInfo.mXHRParamsAllowed = aAllowed;
   }
 
   LocationInfo&
@@ -629,6 +711,43 @@ public:
   {
     return mIsChromeWorker;
   }
+
+  bool
+  IsSharedWorker() const
+  {
+    return mIsSharedWorker;
+  }
+
+  const nsString&
+  SharedWorkerName() const
+  {
+    return mSharedWorkerName;
+  }
+
+  uint64_t
+  NextMessagePortSerial()
+  {
+    AssertIsOnMainThread();
+    return mMessagePortSerial++;
+  }
+
+  void
+  GetAllSharedWorkers(nsTArray<nsRefPtr<SharedWorker>>& aSharedWorkers);
+
+  void
+  CloseSharedWorkersForWindow(nsPIDOMWindow* aWindow);
+
+  void
+  RegisterHostObjectURI(const nsACString& aURI);
+
+  void
+  UnregisterHostObjectURI(const nsACString& aURI);
+
+  void
+  StealHostObjectURIs(nsTArray<nsCString>& aArray);
+
+  virtual JSObject*
+  WrapObject(JSContext* aCx, JS::HandleObject aScope) MOZ_OVERRIDE;
 
 #ifdef DEBUG
   void
@@ -662,10 +781,6 @@ public:
 
   WorkerChild*
   GetWorkerChild();
-
-  void RegisterHostObjectURI(const nsACString& aURI);
-  void UnregisterHostObjectURI(const nsACString& aURI);
-  void StealHostObjectURIs(nsTArray<nsCString>& aArray);
 };
 
 class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
@@ -715,6 +830,8 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
   nsCOMPtr<nsITimer> mTimer;
   nsRefPtr<MemoryReporter> mMemoryReporter;
 
+  nsDataHashtable<nsUint64HashKey, WorkerMessagePort*> mWorkerPorts;
+
   mozilla::TimeStamp mKillTime;
   uint32_t mErrorHandlerRecursionCount;
   uint32_t mNextTimeoutId;
@@ -726,7 +843,6 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
   bool mCloseHandlerFinished;
   bool mMemoryReporterRunning;
   bool mBlockedForMemoryReporter;
-  bool mXHRParamsAllowed;
 
 #ifdef DEBUG
   nsCOMPtr<nsIThread> mThread;
@@ -736,8 +852,15 @@ public:
   ~WorkerPrivate();
 
   static already_AddRefed<WorkerPrivate>
-  Create(JSContext* aCx, JS::Handle<JSObject*> aObj, WorkerPrivate* aParent,
-         JS::Handle<JSString*> aScriptURL, bool aIsChromeWorker);
+  Create(JSContext* aCx, JS::HandleObject aObject, WorkerPrivate* aParent,
+         const nsAString& aScriptURL, bool aIsChromeWorker,
+         bool aIsSharedWorker, const nsAString& aSharedWorkerName,
+         LoadInfo* aLoadInfo = nullptr);
+
+  static nsresult
+  GetLoadInfo(JSContext* aCx, nsPIDOMWindow* aWindow, WorkerPrivate* aParent,
+              const nsAString& aScriptURL, bool aIsChromeWorker,
+              LoadInfo* aLoadInfo);
 
   void
   DoRunLoop(JSContext* aCx);
@@ -821,8 +944,20 @@ public:
   DestroySyncLoop(uint32_t aSyncLoopKey);
 
   bool
-  PostMessageToParent(JSContext* aCx, JS::Handle<JS::Value> aMessage,
-                      JS::Handle<JS::Value> transferable);
+  PostMessageToParent(JSContext* aCx,
+                      JS::Handle<JS::Value> aMessage,
+                      JS::Handle<JS::Value> aTransferable)
+  {
+    return PostMessageToParentInternal(aCx, aMessage, aTransferable, false, 0);
+  }
+
+  void
+  PostMessageToParentMessagePort(
+                             JSContext* aCx,
+                             uint64_t aMessagePortSerial,
+                             JS::HandleValue aMessage,
+                             const Optional<Sequence<JS::Value>>& aTransferable,
+                             ErrorResult& aRv);
 
   bool
   NotifyInternal(JSContext* aCx, Status aStatus);
@@ -868,18 +1003,6 @@ public:
 
   bool
   BlockAndCollectRuntimeStats(JS::RuntimeStats* aRtStats);
-
-  bool
-  XHRParamsAllowed() const
-  {
-    return mXHRParamsAllowed;
-  }
-
-  void
-  SetXHRParamsAllowed(bool aAllowed)
-  {
-    mXHRParamsAllowed = aAllowed;
-  }
 
 #ifdef JS_GC_ZEAL
   void
@@ -942,16 +1065,20 @@ public:
     BeginCTypesCall();
   }
 
+  bool
+  ConnectMessagePort(JSContext* aCx, uint64_t aMessagePortSerial);
+
+  void
+  DisconnectMessagePort(uint64_t aMessagePortSerial);
+
+  WorkerMessagePort*
+  GetMessagePort(uint64_t aMessagePortSerial);
+
 private:
-  WorkerPrivate(JSContext* aCx, JS::Handle<JSObject*> aObject, WorkerPrivate* aParent,
-                JSContext* aParentJSContext, const nsAString& aScriptURL,
-                bool aIsChromeWorker, const nsACString& aDomain,
-                nsCOMPtr<nsPIDOMWindow>& aWindow,
-                nsCOMPtr<nsIScriptContext>& aScriptContext,
-                nsCOMPtr<nsIURI>& aBaseURI, nsCOMPtr<nsIPrincipal>& aPrincipal,
-                nsCOMPtr<nsIChannel>& aChannel,
-                nsCOMPtr<nsIContentSecurityPolicy>& aCSP, bool aEvalAllowed,
-                bool aReportCSPViolations, bool aXHRParamsAllowed);
+  WorkerPrivate(JSContext* aCx, JS::HandleObject aObject,
+                WorkerPrivate* aParent, const nsAString& aScriptURL,
+                bool aIsChromeWorker, bool aIsSharedWorker,
+                const nsAString& aSharedWorkerName, LoadInfo& aLoadInfo);
 
   bool
   Dispatch(WorkerRunnable* aEvent, EventQueue* aQueue);
@@ -1017,8 +1144,17 @@ private:
   void
   WaitForWorkerEvents(PRIntervalTime interval = PR_INTERVAL_NO_TIMEOUT);
 
-  static bool
-  CheckXHRParamsAllowed(nsPIDOMWindow* aWindow);
+  static PLDHashOperator
+  TraceMessagePorts(const uint64_t& aKey,
+                    WorkerMessagePort* aData,
+                    void* aUserArg);
+
+  bool
+  PostMessageToParentInternal(JSContext* aCx,
+                              JS::Handle<JS::Value> aMessage,
+                              JS::Handle<JS::Value> aTransferable,
+                              bool aToMessagePort,
+                              uint64_t aMessagePortSerial);
 };
 
 WorkerPrivate*

@@ -17,6 +17,8 @@ if CONFIG['OS_ARCH'] == 'WINNT':
 if CONFIG['DEHYDRA_PATH']:
     TEST_TOOL_DIRS += ['static-checker']
 
+FAIL_ON_WARNINGS = True
+
 EXPORTS.testing += [
     'TestHarness.h',
 ]
@@ -74,6 +76,7 @@ CPP_UNIT_TESTS += [
     'TestID.cpp',
     'TestObserverArray.cpp',
     'TestObserverService.cpp',
+    'TestPLDHash.cpp',
     'TestPipe.cpp',
     'TestRefPtr.cpp',
     'TestTArray.cpp',

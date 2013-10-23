@@ -13,7 +13,7 @@ using namespace mozilla::dom;
 
 nsDOMDragEvent::nsDOMDragEvent(EventTarget* aOwner,
                                nsPresContext* aPresContext,
-                               WidgetInputEvent* aEvent)
+                               WidgetDragEvent* aEvent)
   : nsDOMMouseEvent(aOwner, aPresContext, aEvent ? aEvent :
                     new WidgetDragEvent(false, 0, nullptr))
 {
@@ -24,17 +24,7 @@ nsDOMDragEvent::nsDOMDragEvent(EventTarget* aOwner,
     mEventIsInternal = true;
     mEvent->time = PR_Now();
     mEvent->refPoint.x = mEvent->refPoint.y = 0;
-    static_cast<WidgetMouseEvent*>(mEvent)->inputSource =
-      nsIDOMMouseEvent::MOZ_SOURCE_UNKNOWN;
-  }
-}
-
-nsDOMDragEvent::~nsDOMDragEvent()
-{
-  if (mEventIsInternal) {
-    if (mEvent->eventStructType == NS_DRAG_EVENT)
-      delete static_cast<WidgetDragEvent*>(mEvent);
-    mEvent = nullptr;
+    mEvent->AsMouseEvent()->inputSource = nsIDOMMouseEvent::MOZ_SOURCE_UNKNOWN;
   }
 }
 
@@ -64,8 +54,7 @@ nsDOMDragEvent::InitDragEvent(const nsAString& aType, bool aCanBubble,
   }
 
   if (mEventIsInternal && mEvent) {
-    WidgetDragEvent* dragEvent = static_cast<WidgetDragEvent*>(mEvent);
-    dragEvent->dataTransfer = aDataTransfer;
+    mEvent->AsDragEvent()->dataTransfer = aDataTransfer;
   }
 }
 
@@ -110,7 +99,7 @@ nsDOMDragEvent::GetDataTransfer()
     return nullptr;
   }
 
-  WidgetDragEvent* dragEvent = static_cast<WidgetDragEvent*>(mEvent);
+  WidgetDragEvent* dragEvent = mEvent->AsDragEvent();
   // for synthetic events, just use the supplied data transfer object even if null
   if (!mEventIsInternal) {
     nsresult rv = nsContentUtils::SetDataTransferInEvent(dragEvent);

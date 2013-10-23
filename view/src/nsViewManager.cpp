@@ -295,6 +295,10 @@ void nsViewManager::Refresh(nsView *aView, const nsIntRegion& aRegion)
 {
   NS_ASSERTION(aView->GetViewManager() == this, "wrong view manager");
 
+  if (mPresShell && mPresShell->IsNeverPainting()) {
+    return;
+  }
+
   // damageRegion is the damaged area, in twips, relative to the view origin
   nsRegion damageRegion = aRegion.ToAppUnits(AppUnitsPerDevPixel());
   // move region from widget coordinates into view coordinates
@@ -370,6 +374,10 @@ void nsViewManager::ProcessPendingUpdatesForView(nsView* aView,
     return;
   }
 
+  if (mPresShell && mPresShell->IsNeverPainting()) {
+    return;
+  }
+
   if (aView->HasWidget()) {
     aView->ResetWidgetBounds(false, true);
   }
@@ -415,6 +423,7 @@ void nsViewManager::ProcessPendingUpdatesForView(nsView* aView,
         printf("---- PAINT END ----\n");
       }
 #endif
+
       aView->SetForcedRepaint(false);
       SetPainting(false);
       FlushDirtyRegionToWidget(aView);
@@ -695,8 +704,7 @@ nsViewManager::DispatchEvent(WidgetGUIEvent *aEvent,
 
   if ((aEvent->HasMouseEventMessage() &&
        // Ignore mouse events that we synthesize.
-       static_cast<WidgetMouseEvent*>(aEvent)->reason ==
-         WidgetMouseEvent::eReal &&
+       aEvent->AsMouseEvent()->reason == WidgetMouseEvent::eReal &&
        // Ignore mouse exit and enter (we'll get moves if the user
        // is really moving the mouse) since we get them when we
        // create and destroy widgets.

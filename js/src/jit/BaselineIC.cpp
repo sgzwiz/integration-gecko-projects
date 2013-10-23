@@ -6,8 +6,11 @@
 
 #include "jit/BaselineIC.h"
 
+#include "mozilla/TemplateLib.h"
+
 #include "jsautooplen.h"
 #include "jslibmath.h"
+#include "jstypes.h"
 
 #include "builtin/Eval.h"
 #include "jit/BaselineHelpers.h"
@@ -23,8 +26,10 @@
 #include "jsboolinlines.h"
 #include "jsscriptinlines.h"
 
+#include "jit/IonFrames-inl.h"
 #include "vm/Interpreter-inl.h"
 #include "vm/ScopeObject-inl.h"
+#include "vm/StringObject-inl.h"
 
 namespace js {
 namespace jit {
@@ -179,11 +184,15 @@ ICStub::trace(JSTracer *trc)
       case ICStub::Call_Scripted: {
         ICCall_Scripted *callStub = toCall_Scripted();
         MarkScript(trc, &callStub->calleeScript(), "baseline-callscripted-callee");
+        if (callStub->templateObject())
+            MarkObject(trc, &callStub->templateObject(), "baseline-callscripted-template");
         break;
       }
       case ICStub::Call_Native: {
         ICCall_Native *callStub = toCall_Native();
         MarkObject(trc, &callStub->callee(), "baseline-callnative-callee");
+        if (callStub->templateObject())
+            MarkObject(trc, &callStub->templateObject(), "baseline-callnative-template");
         break;
       }
       case ICStub::GetElem_NativeSlot: {
@@ -395,6 +404,16 @@ ICStub::trace(JSTracer *trc)
         MarkObject(trc, &callStub->holder(), "baseline-setpropcallnative-stub-holder");
         MarkShape(trc, &callStub->holderShape(), "baseline-setpropcallnative-stub-holdershape");
         MarkObject(trc, &callStub->setter(), "baseline-setpropcallnative-stub-setter");
+        break;
+      }
+      case ICStub::NewArray_Fallback: {
+        ICNewArray_Fallback *stub = toNewArray_Fallback();
+        MarkObject(trc, &stub->templateObject(), "baseline-newarray-template");
+        break;
+      }
+      case ICStub::NewObject_Fallback: {
+        ICNewObject_Fallback *stub = toNewObject_Fallback();
+        MarkObject(trc, &stub->templateObject(), "baseline-newobject-template");
         break;
       }
       default:
@@ -874,6 +893,12 @@ PrepareOsrTempData(JSContext *cx, ICUseCount_Fallback *stub, BaselineFrame *fram
     } else {
         *((JSScript **) (stackFrame + StackFrame::offsetOfExec())) = frame->script();
         *((uint32_t *) (stackFrame + StackFrame::offsetOfFlags())) = 0;
+    }
+
+    // Set return value.
+    if (frame->hasReturnValue()) {
+        *((uint32_t *) (stackFrame + StackFrame::offsetOfFlags())) |= StackFrame::HAS_RVAL;
+        *((Value *) (stackFrame + StackFrame::offsetOfReturnValue())) = *(frame->returnValue());
     }
 
     // Do locals and stack values.  Note that in the fake StackFrame, these go from
@@ -1367,9 +1392,6 @@ ICUpdatedStub::addUpdateStubForValue(JSContext *cx, HandleScript script, HandleO
         return true;
     }
 
-    if (!obj->getType(cx))
-        return false;
-
     types::EnsureTrackPropertyTypes(cx, obj, id);
 
     if (val.isPrimitive()) {
@@ -1682,11 +1704,11 @@ ICNewArray_Fallback::Compiler::generateStubCode(MacroAssembler &masm)
 //
 
 static bool
-DoNewObject(JSContext *cx, ICNewObject_Fallback *stub, HandleObject templateObject,
-            MutableHandleValue res)
+DoNewObject(JSContext *cx, ICNewObject_Fallback *stub, MutableHandleValue res)
 {
     FallbackICSpew(cx, stub, "NewObject");
 
+    RootedObject templateObject(cx, stub->templateObject());
     JSObject *obj = NewInitObject(cx, templateObject);
     if (!obj)
         return false;
@@ -1695,8 +1717,7 @@ DoNewObject(JSContext *cx, ICNewObject_Fallback *stub, HandleObject templateObje
     return true;
 }
 
-typedef bool(*DoNewObjectFn)(JSContext *, ICNewObject_Fallback *, HandleObject,
-                             MutableHandleValue);
+typedef bool(*DoNewObjectFn)(JSContext *, ICNewObject_Fallback *, MutableHandleValue);
 static const VMFunction DoNewObjectInfo = FunctionInfo<DoNewObjectFn>(DoNewObject);
 
 bool
@@ -1704,7 +1725,6 @@ ICNewObject_Fallback::Compiler::generateStubCode(MacroAssembler &masm)
 {
     EmitRestoreTailCallReg(masm);
 
-    masm.push(R0.scratchReg()); // template
     masm.push(BaselineStubReg); // stub.
 
     return tailCallVM(DoNewObjectInfo, masm);
@@ -4497,7 +4517,9 @@ ICGetElem_Arguments::Compiler::generateStubCode(MacroAssembler &masm)
 
     // In tempReg, calculate index of word containing bit: (idx >> logBitsPerWord)
     masm.movePtr(idxReg, tempReg);
-    masm.rshiftPtr(Imm32(JS_BITS_PER_WORD_LOG2), tempReg);
+    const uint32_t shift = mozilla::tl::FloorLog2<(sizeof(size_t) * JS_BITS_PER_BYTE)>::value;
+    JS_ASSERT(shift == 5 || shift == 6);
+    masm.rshiftPtr(Imm32(shift), tempReg);
     masm.loadPtr(BaseIndex(scratchReg, tempReg, ScaleFromElemWidth(sizeof(size_t))), scratchReg);
 
     // Don't bother testing specific bit, if any bit is set in the word, fail.
@@ -5325,6 +5347,10 @@ TryAttachGlobalNameStub(JSContext *cx, HandleScript script, ICGetName_Fallback *
 
     RootedId id(cx, NameToId(name));
 
+    // Instantiate this global property, for use during Ion compilation.
+    if (IsIonEnabled(cx))
+        types::EnsureTrackPropertyTypes(cx, global, NameToId(name));
+
     // The property must be found, and it must be found as a normal data property.
     RootedShape shape(cx, global->nativeLookup(cx, id));
     if (!shape || !shape->hasDefaultGetter() || !shape->hasSlot())
@@ -5381,6 +5407,10 @@ TryAttachScopeNameStub(JSContext *cx, HandleScript script, ICGetName_Fallback *s
 
     if (!IsCacheableGetPropReadSlot(scopeChain, scopeChain, shape))
         return true;
+
+    // Instantiate properties on singleton scope chain objects, for use during Ion compilation.
+    if (scopeChain->hasSingletonType() && IsIonEnabled(cx))
+        types::EnsureTrackPropertyTypes(cx, scopeChain, NameToId(name));
 
     bool isFixedSlot;
     uint32_t offset;
@@ -5809,6 +5839,10 @@ TryAttachNativeGetPropStub(JSContext *cx, HandleScript script, jsbytecode *pc,
         uint32_t offset;
         GetFixedOrDynamicSlotOffset(holder, shape->slot(), &isFixedSlot, &offset);
 
+        // Instantiate this property for singleton holders, for use during Ion compilation.
+        if (IsIonEnabled(cx))
+            types::EnsureTrackPropertyTypes(cx, holder, NameToId(name));
+
         ICStub::Kind kind = (obj == holder) ? ICStub::GetProp_Native
                                             : ICStub::GetProp_NativePrototype;
 
@@ -5918,6 +5952,10 @@ TryAttachStringGetPropStub(JSContext *cx, HandleScript script, ICGetProp_Fallbac
     if (!stringProto)
         return false;
 
+    // Instantiate this property, for use during Ion compilation.
+    if (IsIonEnabled(cx))
+        types::EnsureTrackPropertyTypes(cx, stringProto, NameToId(name));
+
     // For now, only look for properties directly set on String.prototype
     RootedId propId(cx, NameToId(name));
     RootedShape shape(cx, stringProto->nativeLookup(cx, propId));
@@ -5983,7 +6021,7 @@ DoGetPropFallback(JSContext *cx, BaselineFrame *frame, ICGetProp_Fallback *stub,
 
 #if JS_HAS_NO_SUCH_METHOD
     // Handle objects with __noSuchMethod__.
-    if (op == JSOP_CALLPROP && JS_UNLIKELY(res.isPrimitive()) && val.isObject()) {
+    if (op == JSOP_CALLPROP && JS_UNLIKELY(res.isUndefined()) && val.isObject()) {
         if (!OnUnknownMethod(cx, obj, IdToValue(id), res))
             return false;
     }
@@ -7398,6 +7436,53 @@ TryAttachFunApplyStub(JSContext *cx, ICCall_Fallback *stub, HandleScript script,
 }
 
 static bool
+GetTemplateObjectForNative(JSContext *cx, HandleScript script, jsbytecode *pc,
+                           Native native, const CallArgs &args, MutableHandleObject res)
+{
+    // Check for natives to which template objects can be attached. This is
+    // done to provide templates to Ion for inlining these natives later on.
+
+    if (native == js_Array) {
+        size_t count = 0;
+        if (args.hasDefined(1))
+            count = args.length();
+        else if (args.hasDefined(0) && args[0].isInt32() && args[0].toInt32() > 0)
+            count = args[0].toInt32();
+        res.set(NewDenseUnallocatedArray(cx, count, nullptr, TenuredObject));
+        if (!res)
+            return false;
+
+        types::TypeObject *type = types::TypeScript::InitObject(cx, script, pc, JSProto_Array);
+        if (!type)
+            return false;
+        res->setType(type);
+        return true;
+    }
+
+    if (native == js::array_concat) {
+        if (args.thisv().isObject() && args.thisv().toObject().is<ArrayObject>() &&
+            !args.thisv().toObject().hasSingletonType())
+        {
+            res.set(NewDenseEmptyArray(cx, args.thisv().toObject().getProto(), TenuredObject));
+            if (!res)
+                return false;
+            res->setType(args.thisv().toObject().type());
+            return true;
+        }
+    }
+
+    if (native == js_String) {
+        RootedString emptyString(cx, cx->runtime()->emptyString);
+        res.set(StringObject::create(cx, emptyString, TenuredObject));
+        if (!res)
+            return false;
+        return true;
+    }
+
+    return true;
+}
+
+static bool
 TryAttachCallStub(JSContext *cx, ICCall_Fallback *stub, HandleScript script, jsbytecode *pc,
                   JSOp op, uint32_t argc, Value *vp, bool constructing, bool useNewType)
 {
@@ -7464,12 +7549,27 @@ TryAttachCallStub(JSContext *cx, ICCall_Fallback *stub, HandleScript script, jsb
             return true;
         }
 
+        // Keep track of the function's |prototype| property in type
+        // information, for use during Ion compilation.
+        if (IsIonEnabled(cx))
+            types::EnsureTrackPropertyTypes(cx, fun, NameToId(cx->names().prototype));
+
+        // Remember the template object associated with any script being called
+        // as a constructor, for later use during Ion compilation.
+        RootedObject templateObject(cx);
+        if (constructing) {
+            templateObject = CreateThisForFunction(cx, fun, MaybeSingletonObject);
+            if (!templateObject)
+                return false;
+        }
+
         IonSpew(IonSpew_BaselineIC,
                 "  Generating Call_Scripted stub (fun=%p, %s:%d, cons=%s)",
                 fun.get(), fun->nonLazyScript()->filename(), fun->nonLazyScript()->lineno,
                 constructing ? "yes" : "no");
         ICCallScriptedCompiler compiler(cx, stub->fallbackMonitorStub()->firstMonitorStub(),
-                                        calleeScript, constructing, pc - script->code);
+                                        calleeScript, templateObject,
+                                        constructing, pc - script->code);
         ICStub *newStub = compiler.getStub(compiler.getStubSpace(script));
         if (!newStub)
             return false;
@@ -7479,12 +7579,12 @@ TryAttachCallStub(JSContext *cx, ICCall_Fallback *stub, HandleScript script, jsb
     }
 
     if (fun->isNative() && (!constructing || (constructing && fun->isNativeConstructor()))) {
-        // Generalied native call stubs are not here yet!
+        // Generalized native call stubs are not here yet!
         JS_ASSERT(!stub->nativeStubsAreGeneralized());
 
         // Check for JSOP_FUNAPPLY
         if (op == JSOP_FUNAPPLY) {
-            if (fun->maybeNative() == js_fun_apply)
+            if (fun->native() == js_fun_apply)
                 return TryAttachFunApplyStub(cx, stub, script, pc, thisv, argc, vp + 2);
 
             // Don't try to attach a "regular" optimized call stubs for FUNAPPLY ops,
@@ -7498,10 +7598,15 @@ TryAttachCallStub(JSContext *cx, ICCall_Fallback *stub, HandleScript script, jsb
             return true;
         }
 
+        CallArgs args = CallArgsFromVp(argc, vp);
+        RootedObject templateObject(cx);
+        if (!GetTemplateObjectForNative(cx, script, pc, fun->native(), args, &templateObject))
+            return false;
+
         IonSpew(IonSpew_BaselineIC, "  Generating Call_Native stub (fun=%p, cons=%s)",
                 fun.get(), constructing ? "yes" : "no");
         ICCall_Native::Compiler compiler(cx, stub->fallbackMonitorStub()->firstMonitorStub(),
-                                         fun, constructing, pc - script->code);
+                                         fun, templateObject, constructing, pc - script->code);
         ICStub *newStub = compiler.getStub(compiler.getStubSpace(script));
         if (!newStub)
             return false;
@@ -8821,6 +8926,11 @@ DoInstanceOfFallback(JSContext *cx, ICInstanceOf_Fallback *stub,
 
     RootedObject obj(cx, &rhs.toObject());
 
+    // For functions, keep track of the |prototype| property in type information,
+    // for use during Ion compilation.
+    if (obj->is<JSFunction>() && IsIonEnabled(cx))
+        types::EnsureTrackPropertyTypes(cx, obj, NameToId(cx->names().prototype));
+
     bool cond = false;
     if (!HasInstance(cx, obj, lhs, &cond))
         return false;
@@ -9300,16 +9410,20 @@ ICSetPropCallSetter::ICSetPropCallSetter(Kind kind, IonCode *stubCode, HandleSha
 }
 
 ICCall_Scripted::ICCall_Scripted(IonCode *stubCode, ICStub *firstMonitorStub,
-                                 HandleScript calleeScript, uint32_t pcOffset)
+                                 HandleScript calleeScript, HandleObject templateObject,
+                                 uint32_t pcOffset)
   : ICMonitoredStub(ICStub::Call_Scripted, stubCode, firstMonitorStub),
     calleeScript_(calleeScript),
+    templateObject_(templateObject),
     pcOffset_(pcOffset)
 { }
 
-ICCall_Native::ICCall_Native(IonCode *stubCode, ICStub *firstMonitorStub, HandleFunction callee,
+ICCall_Native::ICCall_Native(IonCode *stubCode, ICStub *firstMonitorStub,
+                             HandleFunction callee, HandleObject templateObject,
                              uint32_t pcOffset)
   : ICMonitoredStub(ICStub::Call_Native, stubCode, firstMonitorStub),
     callee_(callee),
+    templateObject_(templateObject),
     pcOffset_(pcOffset)
 { }
 

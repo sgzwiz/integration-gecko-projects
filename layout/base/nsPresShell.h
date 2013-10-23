@@ -570,6 +570,11 @@ protected:
     nsDelayedInputEvent()
     : nsDelayedEvent(), mEvent(nullptr) {}
 
+    virtual ~nsDelayedInputEvent()
+    {
+      delete mEvent;
+    }
+
     mozilla::WidgetInputEvent* mEvent;
   };
 
@@ -579,18 +584,14 @@ protected:
     nsDelayedMouseEvent(mozilla::WidgetMouseEvent* aEvent) :
       nsDelayedInputEvent()
     {
-      mEvent = new mozilla::WidgetMouseEvent(aEvent->mFlags.mIsTrusted,
-                                             aEvent->message,
-                                             aEvent->widget,
-                                             aEvent->reason,
-                                             aEvent->context);
-      static_cast<mozilla::WidgetMouseEvent*>(mEvent)->
-        AssignMouseEventData(*aEvent, false);
-    }
-
-    virtual ~nsDelayedMouseEvent()
-    {
-      delete static_cast<mozilla::WidgetMouseEvent*>(mEvent);
+      mozilla::WidgetMouseEvent* mouseEvent =
+        new mozilla::WidgetMouseEvent(aEvent->mFlags.mIsTrusted,
+                                      aEvent->message,
+                                      aEvent->widget,
+                                      aEvent->reason,
+                                      aEvent->context);
+      mouseEvent->AssignMouseEventData(*aEvent, false);
+      mEvent = mouseEvent;
     }
   };
 
@@ -600,16 +601,12 @@ protected:
     nsDelayedKeyEvent(mozilla::WidgetKeyboardEvent* aEvent) :
       nsDelayedInputEvent()
     {
-      mEvent = new mozilla::WidgetKeyboardEvent(aEvent->mFlags.mIsTrusted,
-                                                aEvent->message,
-                                                aEvent->widget);
-      static_cast<mozilla::WidgetKeyboardEvent*>(mEvent)->
-        AssignKeyEventData(*aEvent, false);
-    }
-
-    virtual ~nsDelayedKeyEvent()
-    {
-      delete static_cast<mozilla::WidgetKeyboardEvent*>(mEvent);
+      mozilla::WidgetKeyboardEvent* keyEvent =
+        new mozilla::WidgetKeyboardEvent(aEvent->mFlags.mIsTrusted,
+                                         aEvent->message,
+                                         aEvent->widget);
+      keyEvent->AssignKeyEventData(*aEvent, false);
+      mEvent = keyEvent;
     }
   };
 
@@ -719,9 +716,6 @@ protected:
   virtual void SysColorChanged() MOZ_OVERRIDE { mPresContext->SysColorChanged(); }
   virtual void ThemeChanged() MOZ_OVERRIDE { mPresContext->ThemeChanged(); }
   virtual void BackingScaleFactorChanged() MOZ_OVERRIDE { mPresContext->UIResolutionChanged(); }
-
-  virtual void FreezePainting() MOZ_OVERRIDE;
-  virtual void ThawPainting() MOZ_OVERRIDE;
 
   void UpdateImageVisibility();
 

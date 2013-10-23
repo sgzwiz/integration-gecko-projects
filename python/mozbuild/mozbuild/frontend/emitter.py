@@ -24,6 +24,7 @@ from .data import (
     Exports,
     GeneratedEventWebIDLFile,
     GeneratedWebIDLFile,
+    InstallationTarget,
     IPDLFile,
     LocalInclude,
     PreprocessedTestWebIDLFile,
@@ -126,12 +127,21 @@ class TreeMetadataEmitter(LoggingMixin):
             yield XPIDLFile(sandbox, mozpath.join(sandbox['SRCDIR'], idl),
                 xpidl_module)
 
+        for symbol in ('CPP_SOURCES', 'CSRCS'):
+            for src in (sandbox[symbol] or []):
+                if not os.path.exists(os.path.join(sandbox['SRCDIR'], src)):
+                    raise SandboxValidationError('Reference to a file that '
+                        'doesn\'t exist in %s (%s) in %s'
+                        % (symbol, src, sandbox['RELATIVEDIR']))
+
         # Proxy some variables as-is until we have richer classes to represent
         # them. We should aim to keep this set small because it violates the
         # desired abstraction of the build definition away from makefiles.
         passthru = VariablePassthru(sandbox)
         varmap = dict(
             # Makefile.in : moz.build
+            ANDROID_GENERATED_RESFILES='ANDROID_GENERATED_RESFILES',
+            ANDROID_RESFILES='ANDROID_RESFILES',
             ASFILES='ASFILES',
             CMMSRCS='CMMSRCS',
             CPPSRCS='CPP_SOURCES',
@@ -199,6 +209,10 @@ class TreeMetadataEmitter(LoggingMixin):
             for name in sandbox.get(sandbox_var, []):
                 yield klass(sandbox, name)
 
+        if sandbox.get('FINAL_TARGET') or sandbox.get('XPI_NAME') or \
+                sandbox.get('DIST_SUBDIR'):
+            yield InstallationTarget(sandbox)
+
         # While there are multiple test manifests, the behavior is very similar
         # across them. We enforce this by having common handling of all
         # manifests and outputting a single class type with the differences
@@ -221,8 +235,10 @@ class TreeMetadataEmitter(LoggingMixin):
         test_manifests = dict(
             A11Y=('a11y', 'testing/mochitest/a11y', True),
             BROWSER_CHROME=('browser-chrome', 'testing/mochitest/browser', True),
+            METRO_CHROME=('metro-chrome', 'testing/mochitest/metro', True),
             MOCHITEST=('mochitest', 'testing/mochitest/tests', True),
             MOCHITEST_CHROME=('chrome', 'testing/mochitest/chrome', True),
+            MOCHITEST_WEBAPPRT_CHROME=('webapprt-chrome', 'testing/mochitest/webapprtChrome', True),
             WEBRTC_SIGNALLING_TEST=('steeplechase', 'steeplechase', True),
             XPCSHELL_TESTS=('xpcshell', 'xpcshell', False),
         )
@@ -263,6 +279,8 @@ class TreeMetadataEmitter(LoggingMixin):
             finder = FileFinder(base=manifest_dir, find_executables=False)
 
             for test in filtered:
+                obj.tests.append(test)
+
                 obj.installs[mozpath.normpath(test['path'])] = \
                     mozpath.join(out_dir, test['relpath'])
 

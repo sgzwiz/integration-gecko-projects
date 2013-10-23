@@ -113,12 +113,15 @@ class B2GMochitest(MochitestUtilsMixin):
         self.startWebSocketServer(options, None)
         self.buildURLOptions(options, {'MOZ_HIDE_RESULTS_TABLE': '1'})
 
-        if options.timeout:
-            timeout = options.timeout + 30
-        elif options.debugger or not options.autorun:
+        if options.debugger or not options.autorun:
             timeout = None
         else:
-            timeout = 330.0 # default JS harness timeout is 300 seconds
+            if not options.timeout:
+                if mozinfo.info['debug']:
+                    options.timeout = 420
+                else:
+                    options.timeout = 300
+            timeout = options.timeout + 30.0
 
         log.info("runtestsb2g.py | Running tests: start.")
         status = 0
@@ -344,9 +347,10 @@ def run_desktop_mochitests(parser, options):
     marionette = Marionette.getMarionetteOrExit(**kwargs)
     mochitest = B2GDesktopMochitest(marionette, options.profile_data_dir)
 
-    # b2g desktop builds don't always have a b2g-bin file
-    if options.app[-4:] == '-bin':
-        options.app = options.app[:-4]
+    # add a -bin suffix if b2g-bin exists, but just b2g was specified
+    if options.app[-4:] != '-bin':
+        if os.path.isfile("%s-bin" % options.app):
+            options.app = "%s-bin" % options.app
 
     options = MochitestOptions.verifyOptions(parser, options, mochitest)
     if options == None:

@@ -461,8 +461,8 @@ public:
           nsRefPtr<nsEventStateManager> esm =
             aVisitor.mPresContext->EventStateManager();
           esm->DispatchLegacyMouseScrollEvents(frame,
-                 static_cast<WheelEvent*>(aVisitor.mEvent),
-                 &aVisitor.mEventStatus);
+                                               aVisitor.mEvent->AsWheelEvent(),
+                                               &aVisitor.mEventStatus);
         }
       }
       nsIFrame* frame = mPresShell->GetCurrentEventFrame();
@@ -475,7 +475,7 @@ public:
       }
       if (frame) {
         frame->HandleEvent(aVisitor.mPresContext,
-                           static_cast<WidgetGUIEvent*>(aVisitor.mEvent),
+                           aVisitor.mEvent->AsGUIEvent(),
                            &aVisitor.mEventStatus);
       }
     }
@@ -497,7 +497,8 @@ public:
     nsCOMPtr<nsIObserverService> observerService =
       mozilla::services::GetObserverService();
     if (observerService) {
-      observerService->NotifyObservers(mDocument, "before-first-paint", NULL);
+      observerService->NotifyObservers(mDocument, "before-first-paint",
+                                       nullptr);
     }
     return NS_OK;
   }
@@ -1053,7 +1054,7 @@ PresShell::Destroy()
   if (mPresContext) {
     // We hold a reference to the pres context, and it holds a weak link back
     // to us. To avoid the pres context having a dangling reference, set its 
-    // pres shell to NULL
+    // pres shell to nullptr
     mPresContext->SetShell(nullptr);
 
     // Clear the link handler (weak reference) as well
@@ -5669,7 +5670,7 @@ PresShell::Paint(nsView*        aViewToPaint,
     root->SetVisibleRegion(bounds);
     layerManager->SetRoot(root);
   }
-  layerManager->EndTransaction(NULL, NULL, (aFlags & PAINT_COMPOSITE) ?
+  layerManager->EndTransaction(nullptr, nullptr, (aFlags & PAINT_COMPOSITE) ?
     LayerManager::END_DEFAULT : LayerManager::END_NO_COMPOSITE);
 }
 
@@ -5887,8 +5888,7 @@ PresShell::RecordMouseLocation(WidgetGUIEvent* aEvent)
   }
 
   if ((aEvent->message == NS_MOUSE_MOVE &&
-       static_cast<WidgetMouseEvent*>(aEvent)->reason ==
-         WidgetMouseEvent::eReal) ||
+       aEvent->AsMouseEvent()->reason == WidgetMouseEvent::eReal) ||
       aEvent->message == NS_MOUSE_ENTER ||
       aEvent->message == NS_MOUSE_BUTTON_DOWN ||
       aEvent->message == NS_MOUSE_BUTTON_UP) {
@@ -6092,7 +6092,7 @@ PresShell::HandleEvent(nsIFrame* aFrame,
       mNoDelayedKeyEvents = true;
     } else if (!mNoDelayedKeyEvents) {
       nsDelayedEvent* event =
-        new nsDelayedKeyEvent(static_cast<WidgetKeyboardEvent*>(aEvent));
+        new nsDelayedKeyEvent(aEvent->AsKeyboardEvent());
       if (!mDelayedEvents.AppendElement(event)) {
         delete event;
       }
@@ -6184,9 +6184,9 @@ PresShell::HandleEvent(nsIFrame* aFrame,
       captureRetarget = true;
     }
 
+    WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent();
     bool isWindowLevelMouseExit = (aEvent->message == NS_MOUSE_EXIT) &&
-      (static_cast<WidgetMouseEvent*>(aEvent)->exit ==
-         WidgetMouseEvent::eTopLevel);
+      (mouseEvent && mouseEvent->exit == WidgetMouseEvent::eTopLevel);
 
     // Get the frame at the event point. However, don't do this if we're
     // capturing and retargeting the event because the captured frame will
@@ -6198,7 +6198,7 @@ PresShell::HandleEvent(nsIFrame* aFrame,
       uint32_t flags = 0;
       if (aEvent->message == NS_TOUCH_START) {
         flags |= INPUT_IGNORE_ROOT_SCROLL_FRAME;
-        WidgetTouchEvent* touchEvent = static_cast<WidgetTouchEvent*>(aEvent);
+        WidgetTouchEvent* touchEvent = aEvent->AsTouchEvent();
         // if this is a continuing session, ensure that all these events are
         // in the same document by taking the target of the events already in
         // the capture list
@@ -6277,8 +6277,8 @@ PresShell::HandleEvent(nsIFrame* aFrame,
       } else {
         eventPoint = nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, frame);
       }
-      if (aEvent->eventStructType == NS_MOUSE_EVENT &&
-          static_cast<WidgetMouseEvent*>(aEvent)->ignoreRootScrollFrame) {
+      if (mouseEvent && mouseEvent->eventStructType == NS_MOUSE_EVENT &&
+          mouseEvent->ignoreRootScrollFrame) {
         flags |= INPUT_IGNORE_ROOT_SCROLL_FRAME;
       }
       nsIFrame* target =
@@ -6313,8 +6313,7 @@ PresShell::HandleEvent(nsIFrame* aFrame,
       if (aEvent->message == NS_MOUSE_BUTTON_DOWN) {
         mNoDelayedMouseEvents = true;
       } else if (!mNoDelayedMouseEvents && aEvent->message == NS_MOUSE_BUTTON_UP) {
-        nsDelayedEvent* event =
-          new nsDelayedMouseEvent(static_cast<WidgetMouseEvent*>(aEvent));
+        nsDelayedEvent* event = new nsDelayedMouseEvent(aEvent->AsMouseEvent());
         if (!mDelayedEvents.AppendElement(event)) {
           delete event;
         }
@@ -6330,7 +6329,7 @@ PresShell::HandleEvent(nsIFrame* aFrame,
       case NS_TOUCH_CANCEL:
       case NS_TOUCH_END: {
         // get the correct shell to dispatch to
-        WidgetTouchEvent* touchEvent = static_cast<WidgetTouchEvent*>(aEvent);
+        WidgetTouchEvent* touchEvent = aEvent->AsTouchEvent();
         nsTArray< nsRefPtr<dom::Touch> >& touches = touchEvent->touches;
         for (uint32_t i = 0; i < touches.Length(); ++i) {
           dom::Touch* touch = touches[i];
@@ -6678,8 +6677,7 @@ PresShell::HandleEventInternal(WidgetEvent* aEvent, nsEventStatus* aStatus)
         nsIDocument* doc = GetCurrentEventContent() ?
                            mCurrentEventContent->OwnerDoc() : nullptr;
         nsIDocument* fullscreenAncestor = nullptr;
-        if (static_cast<const WidgetKeyboardEvent*>(aEvent)->keyCode ==
-              NS_VK_ESCAPE) {
+        if (aEvent->AsKeyboardEvent()->keyCode == NS_VK_ESCAPE) {
           if ((fullscreenAncestor = nsContentUtils::GetFullscreenAncestor(doc))) {
             // Prevent default action on ESC key press when exiting
             // DOM fullscreen mode. This prevents the browser ESC key
@@ -6720,7 +6718,7 @@ PresShell::HandleEventInternal(WidgetEvent* aEvent, nsEventStatus* aStatus)
         isHandlingUserInput = true;
         break;
       case NS_TOUCH_START: {
-        WidgetTouchEvent* touchEvent = static_cast<WidgetTouchEvent*>(aEvent);
+        WidgetTouchEvent* touchEvent = aEvent->AsTouchEvent();
         // if there is only one touch in this touchstart event, assume that it is
         // the start of a new touch session and evict any old touches in the
         // queue
@@ -6748,7 +6746,7 @@ PresShell::HandleEventInternal(WidgetEvent* aEvent, nsEventStatus* aStatus)
       case NS_TOUCH_END: {
         // Remove the changed touches
         // need to make sure we only remove touches that are ending here
-        WidgetTouchEvent* touchEvent = static_cast<WidgetTouchEvent*>(aEvent);
+        WidgetTouchEvent* touchEvent = aEvent->AsTouchEvent();
         nsTArray< nsRefPtr<dom::Touch> >& touches = touchEvent->touches;
         for (uint32_t i = 0; i < touches.Length(); ++i) {
           dom::Touch* touch = touches[i];
@@ -6775,7 +6773,7 @@ PresShell::HandleEventInternal(WidgetEvent* aEvent, nsEventStatus* aStatus)
       }
       case NS_TOUCH_MOVE: {
         // Check for touches that changed. Mark them add to queue
-        WidgetTouchEvent* touchEvent = static_cast<WidgetTouchEvent*>(aEvent);
+        WidgetTouchEvent* touchEvent = aEvent->AsTouchEvent();
         nsTArray< nsRefPtr<dom::Touch> >& touches = touchEvent->touches;
         bool haveChanged = false;
         for (int32_t i = touches.Length(); i; ) {
@@ -6834,15 +6832,15 @@ PresShell::HandleEventInternal(WidgetEvent* aEvent, nsEventStatus* aStatus)
     }
 
     if (aEvent->message == NS_CONTEXTMENU) {
-      WidgetMouseEvent* me = static_cast<WidgetMouseEvent*>(aEvent);
-      if (!CanHandleContextMenuEvent(me, GetCurrentEventFrame())) {
+      WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent();
+      if (!CanHandleContextMenuEvent(mouseEvent, GetCurrentEventFrame())) {
         return NS_OK;
       }
-      if (me->context == WidgetMouseEvent::eContextMenuKey &&
-          !AdjustContextMenuKeyEvent(me)) {
+      if (mouseEvent->context == WidgetMouseEvent::eContextMenuKey &&
+          !AdjustContextMenuKeyEvent(mouseEvent)) {
         return NS_OK;
       }
-      if (me->IsShift()) {
+      if (mouseEvent->IsShift()) {
         aEvent->mFlags.mOnlyChromeDispatch = true;
         aEvent->mFlags.mRetargetToNonNativeAnonymous = true;
       }
@@ -6940,7 +6938,7 @@ PresShell::DispatchTouchEvent(WidgetEvent* aEvent,
               (aEvent->message == NS_TOUCH_MOVE && aTouchIsNew);
   bool preventDefault = false;
   nsEventStatus tmpStatus = nsEventStatus_eIgnore;
-  WidgetTouchEvent* touchEvent = static_cast<WidgetTouchEvent*>(aEvent);
+  WidgetTouchEvent* touchEvent = aEvent->AsTouchEvent();
 
   // loop over all touches and dispatch events on any that have changed
   for (uint32_t i = 0; i < touchEvent->touches.Length(); ++i) {
@@ -7190,7 +7188,7 @@ PresShell::PrepareToUseCaretPosition(nsIWidget* aEventWidget, nsIntPoint& aTarge
   // since the match could be an anonymous textnode inside a
   // <textarea> or text <input>, we need to get the outer frame
   // note: frames are not refcounted
-  nsIFrame* frame = nullptr; // may be NULL
+  nsIFrame* frame = nullptr; // may be nullptr
   nsCOMPtr<nsIDOMNode> node;
   rv = domSelection->GetFocusNode(getter_AddRefs(node));
   NS_ENSURE_SUCCESS(rv, false);
@@ -7423,7 +7421,7 @@ PresShell::GetCurrentItemAndPositionForElement(nsIDOMElement *aCurrentEl,
 bool
 PresShell::ShouldIgnoreInvalidation()
 {
-  return mPaintingSuppressed || !mIsActive;
+  return mPaintingSuppressed || !mIsActive || mIsNeverPainting;
 }
 
 void
@@ -9709,28 +9707,4 @@ nsIPresShell::SetMaxLineBoxWidth(nscoord aMaxLineBoxWidth)
     mReflowOnZoomPending = true;
     FrameNeedsReflow(GetRootFrame(), eResize, NS_FRAME_HAS_DIRTY_CHILDREN);
   }
-}
-
-void
-PresShell::FreezePainting()
-{
-  // We want to freeze painting all the way up the presentation hierarchy.
-  nsCOMPtr<nsIPresShell> parent = GetParentPresShell();
-  if (parent) {
-    parent->FreezePainting();
-  }
-
-  GetPresContext()->RefreshDriver()->Freeze();
-}
-
-void
-PresShell::ThawPainting()
-{
-  // We want to thaw painting all the way up the presentation hierarchy.
-  nsCOMPtr<nsIPresShell> parent = GetParentPresShell();
-  if (parent) {
-    parent->ThawPainting();
-  }
-
-  GetPresContext()->RefreshDriver()->Thaw();
 }

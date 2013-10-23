@@ -28,6 +28,7 @@ JS_DIR = os.path.dirname(os.path.dirname(TESTS_LIB_DIR))
 TOP_SRC_DIR = os.path.dirname(os.path.dirname(JS_DIR))
 TEST_DIR = os.path.join(JS_DIR, 'jit-test', 'tests')
 LIB_DIR = os.path.join(JS_DIR, 'jit-test', 'lib') + os.path.sep
+JS_CACHE_DIR = os.path.join(JS_DIR, 'jit-test', '.js-cache')
 ECMA6_DIR = posixpath.join(JS_DIR, 'tests', 'ecma_6')
 
 # Backported from Python 3.1 posixpath.py
@@ -77,8 +78,8 @@ class Test:
         # Path relative to the top mozilla/ directory.
         self.relpath_top = os.path.relpath(path, TOP_SRC_DIR)
 
-        # Path relative to mozilla/js/src/.
-        self.relpath_js = os.path.relpath(path, JS_DIR)
+        # Path relative to mozilla/js/src/jit-test/tests/.
+        self.relpath_tests = os.path.relpath(path, TEST_DIR)
 
         self.jitflags = []     # jit flags to enable
         self.slow = False      # True means the test is slow-running
@@ -558,14 +559,14 @@ def process_test_results(results, num_tests, options):
                 sys.stdout.write(res.err)
 
             ok = check_output(res.out, res.err, res.rc, res.test)
-            doing = 'after %s' % res.test.relpath_js
+            doing = 'after %s' % res.test.relpath_tests
             if not ok:
                 failures.append(res)
                 if res.timed_out:
-                    pb.message("TIMEOUT - %s" % res.test.relpath_js)
+                    pb.message("TIMEOUT - %s" % res.test.relpath_tests)
                     timeouts += 1
                 else:
-                    pb.message("FAIL - %s" % res.test.relpath_js)
+                    pb.message("FAIL - %s" % res.test.relpath_tests)
 
             if options.tinderbox:
                 print_tinderbox(ok, res)

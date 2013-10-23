@@ -24,6 +24,7 @@
 #include "mozilla/layers/ShadowLayers.h"
 #include "mozilla/layout/RenderFrameChild.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
@@ -67,6 +68,7 @@
 #include "nsViewportInfo.h"
 #include "JavaScriptChild.h"
 #include "APZCCallbackHelper.h"
+#include "nsILoadContext.h"
 
 #define BROWSER_ELEMENT_CHILD_SCRIPT \
     NS_LITERAL_STRING("chrome://global/content/BrowserElementChild.js")
@@ -1201,7 +1203,7 @@ TabChild::~TabChild()
     mGlobal = nullptr;
 
     if (mTabChildGlobal) {
-      nsEventListenerManager* elm = mTabChildGlobal->GetListenerManager(false);
+      nsEventListenerManager* elm = mTabChildGlobal->GetExistingListenerManager();
       if (elm) {
         elm->Disconnect();
       }
@@ -1674,9 +1676,9 @@ TabChild::RecvRealMouseEvent(const WidgetMouseEvent& event)
 }
 
 bool
-TabChild::RecvMouseWheelEvent(const WheelEvent& event)
+TabChild::RecvMouseWheelEvent(const WidgetWheelEvent& event)
 {
-  WheelEvent localEvent(event);
+  WidgetWheelEvent localEvent(event);
   DispatchWidgetEvent(localEvent);
   return true;
 }
@@ -2102,7 +2104,7 @@ TabChild::RecvDestroy()
   }
 
   nsCOMPtr<nsIObserverService> observerService =
-    do_GetService(NS_OBSERVERSERVICE_CONTRACTID);
+    mozilla::services::GetObserverService();
 
   observerService->RemoveObserver(this, CANCEL_DEFAULT_PAN_ZOOM);
   observerService->RemoveObserver(this, BROWSER_ZOOM_TO_RECT);
@@ -2239,7 +2241,7 @@ TabChild::InitRenderingState()
     mRemoteFrame = remoteFrame;
 
     nsCOMPtr<nsIObserverService> observerService =
-        do_GetService(NS_OBSERVERSERVICE_CONTRACTID);
+        mozilla::services::GetObserverService();
 
     if (observerService) {
         observerService->AddObserver(this,
@@ -2423,6 +2425,18 @@ TabChild::DoSendAsyncMessage(JSContext* aCx,
     }
   }
   return SendAsyncMessage(nsString(aMessage), data, cpows);
+}
+
+TabChild*
+TabChild::GetFrom(nsIPresShell* aPresShell)
+{
+  nsIDocument* doc = aPresShell->GetDocument();
+  if (!doc) {
+      return nullptr;
+  }
+  nsCOMPtr<nsISupports> container = doc->GetContainer();
+  nsCOMPtr<nsIDocShell> docShell(do_QueryInterface(container));
+  return GetFrom(docShell);
 }
 
 

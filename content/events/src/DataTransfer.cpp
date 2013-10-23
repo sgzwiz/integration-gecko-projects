@@ -22,6 +22,8 @@
 #include "nsCRT.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIScriptContext.h"
+#include "nsIDocument.h"
+#include "nsIScriptGlobalObject.h"
 #include "mozilla/dom/DataTransferBinding.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/BindingUtils.h"
@@ -638,7 +640,7 @@ DataTransfer::MozGetDataAt(JSContext* aCx, const nsAString& aFormat,
 
   JS::Rooted<JS::Value> result(aCx);
   JS::Rooted<JSObject*> scope(aCx, GetWrapper());
-  if (!VariantToJsval(aCx, scope, data, result.address())) {
+  if (!VariantToJsval(aCx, scope, data, &result)) {
     aRv = NS_ERROR_FAILURE;
     return JS::UndefinedValue();
   }

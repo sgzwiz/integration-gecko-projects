@@ -35,6 +35,7 @@
 #include "gfxPlatform.h"
 #include "qcms.h"
 
+#include "mozilla/AutoRestore.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/Preferences.h"
 #include <algorithm>
@@ -1594,7 +1595,8 @@ NS_IMETHODIMP nsCocoaWindow::SetTitle(const nsAString& aTitle)
     return NS_OK;
 
   const nsString& strTitle = PromiseFlatString(aTitle);
-  NSString* title = [NSString stringWithCharacters:strTitle.get() length:strTitle.Length()];
+  NSString* title = [NSString stringWithCharacters:reinterpret_cast<const unichar*>(strTitle.get())
+                                            length:strTitle.Length()];
   [mWindow setTitle:title];
 
   return NS_OK;
@@ -2518,9 +2520,29 @@ GetDPI(NSWindow* aWindow)
   mScheduledShadowInvalidation = NO;
   mDPI = GetDPI(self);
   mTrackingArea = nil;
+  mBeingShown = NO;
   [self updateTrackingArea];
 
   return self;
+}
+
+- (BOOL)isVisibleOrBeingShown
+{
+  return [super isVisible] || mBeingShown;
+}
+
+- (void)orderFront:(id)sender
+{
+  AutoRestore<BOOL> saveBeingShown(mBeingShown);
+  mBeingShown = YES;
+  [super orderFront:sender];
+}
+
+- (void)makeKeyAndOrderFront:(id)sender
+{
+  AutoRestore<BOOL> saveBeingShown(mBeingShown);
+  mBeingShown = YES;
+  [super makeKeyAndOrderFront:sender];
 }
 
 - (void)dealloc

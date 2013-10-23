@@ -377,9 +377,17 @@ AddAnimationsAndTransitionsToLayer(Layer* aLayer, nsDisplayListBuilder* aBuilder
     return;
   }
 
-  // If the frame is not prerendered, bail out.  Layout will still perform the
-  // animation.
+  // If the frame is not prerendered, bail out.
   if (!aItem->CanUseAsyncAnimations(aBuilder)) {
+    // AnimationManager or TransitionManager need to know that we refused to
+    // run this animation asynchronously so that they will not throttle the
+    // main thread animation.
+    frame->Properties().Set(nsIFrame::RefusedAsyncAnimation(),
+                            reinterpret_cast<void*>(intptr_t(true)));
+
+    // We need to schedule another refresh driver run so that AnimationManager
+    // or TransitionManager get a chance to unthrottle the animation.
+    frame->SchedulePaint();
     return;
   }
 
@@ -3667,16 +3675,6 @@ nsDisplayScrollLayer::GetScrollLayerCount()
 #endif
 }
 
-intptr_t
-nsDisplayScrollLayer::RemoveScrollLayerCount()
-{
-  intptr_t result = GetScrollLayerCount();
-  FrameProperties props = mScrolledFrame->Properties();
-  props.Remove(nsIFrame::ScrollLayerCount());
-  return result;
-}
-
-
 nsDisplayScrollInfoLayer::nsDisplayScrollInfoLayer(
   nsDisplayListBuilder* aBuilder,
   nsIFrame* aScrolledFrame,
@@ -3688,12 +3686,12 @@ nsDisplayScrollInfoLayer::nsDisplayScrollInfoLayer(
 #endif
 }
 
-#ifdef NS_BUILD_REFCNT_LOGGING
 nsDisplayScrollInfoLayer::~nsDisplayScrollInfoLayer()
 {
+  FrameProperties props = mScrolledFrame->Properties();
+  props.Remove(nsIFrame::ScrollLayerCount());
   MOZ_COUNT_DTOR(nsDisplayScrollInfoLayer);
 }
-#endif
 
 LayerState
 nsDisplayScrollInfoLayer::GetLayerState(nsDisplayListBuilder* aBuilder,
@@ -3717,7 +3715,7 @@ nsDisplayScrollInfoLayer::ShouldFlattenAway(nsDisplayListBuilder* aBuilder)
   // one nsDisplayScrollLayer (with rendered content) or one
   // nsDisplayScrollInfoLayer (with only the metadata) should survive the
   // visibility computation.
-  return RemoveScrollLayerCount() == 1;
+  return GetScrollLayerCount() == 1;
 }
 
 nsDisplayZoom::nsDisplayZoom(nsDisplayListBuilder* aBuilder,
@@ -3829,8 +3827,9 @@ nsDisplayTransform::GetFrameBoundsForTransform(const nsIFrame* aFrame)
   NS_PRECONDITION(aFrame, "Can't get the bounds of a nonexistent frame!");
 
   if (aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT) {
-    // TODO: SVG needs to define what percentage translations resolve against.
-    return nsRect();
+    gfxRect bbox = nsSVGUtils::GetBBox(const_cast<nsIFrame*>(aFrame));
+    return nsLayoutUtils::RoundGfxRectToAppRect(bbox,
+      aFrame->PresContext()->AppUnitsPerCSSPixel()) - aFrame->GetPosition();
   }
 
   return nsRect(nsPoint(0, 0), aFrame->GetSize());
@@ -3846,8 +3845,9 @@ nsDisplayTransform::GetFrameBoundsForTransform(const nsIFrame* aFrame)
   nsRect result;
 
   if (aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT) {
-    // TODO: SVG needs to define what percentage translations resolve against.
-    return result;
+    gfxRect bbox = nsSVGUtils::GetBBox(const_cast<nsIFrame*>(aFrame));
+    return nsLayoutUtils::RoundGfxRectToAppRect(bbox,
+      aFrame->PresContext()->AppUnitsPerCSSPixel()) - aFrame->GetPosition();
   }
 
   /* Iterate through the continuation list, unioning together all the
@@ -3921,47 +3921,45 @@ nsDisplayTransform::GetDeltaToMozTransformOrigin(const nsIFrame* aFrame,
                          nsDisplayTransform::GetFrameBoundsForTransform(aFrame));
 
   /* Allows us to access named variables by index. */
-  float coords[3];
-  const nscoord* dimensions[2] =
-    {&boundingRect.width, &boundingRect.height};
+  float coords[2];
+  nscoord boundingOffsets[2] = {boundingRect.x, boundingRect.y};
+  nscoord boundingDimensions[2] = {boundingRect.width, boundingRect.height};
+  nscoord frameOffsets[2] = {aFrame->GetPosition().x, aFrame->GetPosition().y};
 
   for (uint8_t index = 0; index < 2; ++index) {
     /* If the -moz-transform-origin specifies a percentage, take the percentage
      * of the size of the box.
      */
     const nsStyleCoord &coord = display->mTransformOrigin[index];
-    if (coord.GetUnit() == eStyleUnit_Calc) {
-      const nsStyleCoord::Calc *calc = coord.GetCalcValue();
+    if (coord.GetUnit() == eStyleUnit_Percent) {
       coords[index] =
-        NSAppUnitsToFloatPixels(*dimensions[index], aAppUnitsPerPixel) *
-          calc->mPercent +
-        NSAppUnitsToFloatPixels(calc->mLength, aAppUnitsPerPixel);
-    } else if (coord.GetUnit() == eStyleUnit_Percent) {
-      coords[index] =
-        NSAppUnitsToFloatPixels(*dimensions[index], aAppUnitsPerPixel) *
-        coord.GetPercentValue();
+        NSAppUnitsToFloatPixels(boundingDimensions[index], aAppUnitsPerPixel) *
+          coord.GetPercentValue() +
+        NSAppUnitsToFloatPixels(boundingOffsets[index], aAppUnitsPerPixel);
     } else {
-      NS_ABORT_IF_FALSE(coord.GetUnit() == eStyleUnit_Coord, "unexpected unit");
-      coords[index] =
-        NSAppUnitsToFloatPixels(coord.GetCoordValue(), aAppUnitsPerPixel);
-    }
-    if ((aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT) &&
-        coord.GetUnit() != eStyleUnit_Percent) {
-      // <length> values represent offsets from the origin of the SVG element's
-      // user space, not the top left of its bounds, so we must adjust for that:
-      nscoord offset =
-        (index == 0) ? aFrame->GetPosition().x : aFrame->GetPosition().y;
-      coords[index] -= NSAppUnitsToFloatPixels(offset, aAppUnitsPerPixel);
+      if (coord.GetUnit() == eStyleUnit_Calc) {
+        const nsStyleCoord::Calc *calc = coord.GetCalcValue();
+        coords[index] =
+          NSAppUnitsToFloatPixels(boundingDimensions[index], aAppUnitsPerPixel) *
+            calc->mPercent +
+          NSAppUnitsToFloatPixels(calc->mLength, aAppUnitsPerPixel);
+      } else {
+        NS_ABORT_IF_FALSE(coord.GetUnit() == eStyleUnit_Coord, "unexpected unit");
+        coords[index] =
+          NSAppUnitsToFloatPixels(coord.GetCoordValue(), aAppUnitsPerPixel);
+      }
+      if (aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT) {
+        // <length> values represent offsets from the origin of the SVG element's
+        // user space, not the top left of its border-box, so we must
+        // convert them to be relative to the border-box.
+        coords[index] -= NSAppUnitsToFloatPixels(frameOffsets[index], aAppUnitsPerPixel);
+      }
     }
   }
 
-  coords[2] = NSAppUnitsToFloatPixels(display->mTransformOrigin[2].GetCoordValue(),
-                                      aAppUnitsPerPixel);
-  /* Adjust based on the origin of the rectangle. */
-  coords[0] += NSAppUnitsToFloatPixels(boundingRect.x, aAppUnitsPerPixel);
-  coords[1] += NSAppUnitsToFloatPixels(boundingRect.y, aAppUnitsPerPixel);
-
-  return gfxPoint3D(coords[0], coords[1], coords[2]);
+  return gfxPoint3D(coords[0], coords[1],
+                    NSAppUnitsToFloatPixels(display->mTransformOrigin[2].GetCoordValue(),
+                                            aAppUnitsPerPixel));
 }
 
 /* Returns the delta specified by the -moz-perspective-origin property.

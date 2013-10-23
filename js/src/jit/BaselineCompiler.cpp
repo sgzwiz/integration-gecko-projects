@@ -33,7 +33,7 @@ BaselineCompiler::BaselineCompiler(JSContext *cx, HandleScript script)
 bool
 BaselineCompiler::init()
 {
-    if (!analysis_.init(cx))
+    if (!analysis_.init(cx->runtime()->gsnCache))
         return false;
 
     if (!labels_.init(script->length))
@@ -74,7 +74,7 @@ BaselineCompiler::compile()
     IonSpew(IonSpew_Codegen, "# Emitting baseline code for script %s:%d",
             script->filename(), script->lineno);
 
-    if (cx->typeInferenceEnabled() && !script->ensureHasBytecodeTypeMap(cx))
+    if (cx->typeInferenceEnabled() && !script->ensureHasTypes(cx))
         return Method_Error;
 
     // Only need to analyze scripts which are marked |argumensHasVarBinding|, to
@@ -155,11 +155,15 @@ BaselineCompiler::compile()
     prologueOffset_.fixup(&masm);
     spsPushToggleOffset_.fixup(&masm);
 
+    // Note: There is an extra entry in the bytecode type map for the search hint, see below.
+    size_t bytecodeTypeMapEntries = cx->typeInferenceEnabled() ? script->nTypeSets + 1 : 0;
+
     BaselineScript *baselineScript = BaselineScript::New(cx, prologueOffset_.offset(),
                                                          spsPushToggleOffset_.offset(),
                                                          icEntries_.length(),
                                                          pcMappingIndexEntries.length(),
-                                                         pcEntries.length());
+                                                         pcEntries.length(),
+                                                         bytecodeTypeMapEntries);
     if (!baselineScript)
         return Method_Error;
 
@@ -209,6 +213,26 @@ BaselineCompiler::compile()
     // All SPS instrumentation is emitted toggled off.  Toggle them on if needed.
     if (cx->runtime()->spsProfiler.enabled())
         baselineScript->toggleSPS(true);
+
+    if (cx->typeInferenceEnabled()) {
+        uint32_t *bytecodeMap = baselineScript->bytecodeTypeMap();
+
+        uint32_t added = 0;
+        for (jsbytecode *pc = script->code; pc < script->code + script->length; pc += GetBytecodeLength(pc)) {
+            JSOp op = JSOp(*pc);
+            if (js_CodeSpec[op].format & JOF_TYPESET) {
+                bytecodeMap[added++] = pc - script->code;
+                if (added == script->nTypeSets)
+                    break;
+            }
+        }
+
+        JS_ASSERT(added == script->nTypeSets);
+
+        // The last entry in the last index found, and is used to avoid binary
+        // searches for the sought entry when queries are in linear order.
+        bytecodeMap[script->nTypeSets] = 0;
+    }
 
     return Method_Compiled;
 }
@@ -1393,7 +1417,12 @@ BaselineCompiler::emit_JSOP_NEWARRAY()
     masm.move32(Imm32(length), R0.scratchReg());
     masm.movePtr(ImmGCPtr(type), R1.scratchReg());
 
-    ICNewArray_Fallback::Compiler stubCompiler(cx);
+    JSObject *templateObject = NewDenseUnallocatedArray(cx, length, nullptr, TenuredObject);
+    if (!templateObject)
+        return false;
+    templateObject->setType(type);
+
+    ICNewArray_Fallback::Compiler stubCompiler(cx, templateObject);
     if (!emitOpIC(stubCompiler.getStub(&stubSpace_)))
         return false;
 
@@ -1445,10 +1474,7 @@ BaselineCompiler::emit_JSOP_NEWOBJECT()
             return false;
     }
 
-    // Pass base object in R0.
-    masm.movePtr(ImmGCPtr(templateObject), R0.scratchReg());
-
-    ICNewObject_Fallback::Compiler stubCompiler(cx);
+    ICNewObject_Fallback::Compiler stubCompiler(cx, templateObject);
     if (!emitOpIC(stubCompiler.getStub(&stubSpace_)))
         return false;
 
@@ -1474,7 +1500,12 @@ BaselineCompiler::emit_JSOP_NEWINIT()
         masm.move32(Imm32(0), R0.scratchReg());
         masm.movePtr(ImmGCPtr(type), R1.scratchReg());
 
-        ICNewArray_Fallback::Compiler stubCompiler(cx);
+        JSObject *templateObject = NewDenseUnallocatedArray(cx, 0, nullptr, TenuredObject);
+        if (!templateObject)
+            return false;
+        templateObject->setType(type);
+
+        ICNewArray_Fallback::Compiler stubCompiler(cx, templateObject);
         if (!emitOpIC(stubCompiler.getStub(&stubSpace_)))
             return false;
     } else {
@@ -1492,10 +1523,7 @@ BaselineCompiler::emit_JSOP_NEWINIT()
                 return false;
         }
 
-        // Pass base object in R0.
-        masm.movePtr(ImmGCPtr(templateObject), R0.scratchReg());
-
-        ICNewObject_Fallback::Compiler stubCompiler(cx);
+        ICNewObject_Fallback::Compiler stubCompiler(cx, templateObject);
         if (!emitOpIC(stubCompiler.getStub(&stubSpace_)))
             return false;
     }
@@ -2465,6 +2493,12 @@ BaselineCompiler::emit_JSOP_ENTERLET0()
 
 bool
 BaselineCompiler::emit_JSOP_ENTERLET1()
+{
+    return emitEnterBlock();
+}
+
+bool
+BaselineCompiler::emit_JSOP_ENTERLET2()
 {
     return emitEnterBlock();
 }

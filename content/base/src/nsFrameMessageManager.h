@@ -32,6 +32,7 @@ class ContentParent;
 class ContentChild;
 struct StructuredCloneData;
 class ClonedMessageData;
+class MessageManagerReporter;
 
 namespace ipc {
 
@@ -121,7 +122,7 @@ struct nsMessageListenerInfo
 class CpowHolder
 {
   public:
-    virtual bool ToObject(JSContext* cx, JSObject** objp) = 0;
+    virtual bool ToObject(JSContext* cx, JS::MutableHandleObject objp) = 0;
 };
 
 class MOZ_STACK_CLASS SameProcessCpowHolder : public CpowHolder
@@ -132,7 +133,7 @@ class MOZ_STACK_CLASS SameProcessCpowHolder : public CpowHolder
     {
     }
 
-    bool ToObject(JSContext* aCx, JSObject** aObjp);
+    bool ToObject(JSContext* aCx, JS::MutableHandleObject aObjp);
 
   private:
     JS::Rooted<JSObject*> mObj;
@@ -143,6 +144,7 @@ class nsFrameMessageManager MOZ_FINAL : public nsIContentFrameMessageManager,
                                         public nsIFrameScriptLoader,
                                         public nsIProcessChecker
 {
+  friend class mozilla::dom::MessageManagerReporter;
   typedef mozilla::dom::StructuredCloneData StructuredCloneData;
 public:
   nsFrameMessageManager(mozilla::dom::ipc::MessageManagerCallback* aCallback,

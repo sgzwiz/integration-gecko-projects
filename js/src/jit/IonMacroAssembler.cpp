@@ -23,6 +23,7 @@
 # include "jsgcinlines.h"
 #endif
 #include "jsinferinlines.h"
+#include "jsobjinlines.h"
 
 using namespace js;
 using namespace js::jit;
@@ -340,53 +341,6 @@ MacroAssembler::PopRegsInMaskIgnore(RegisterSet set, RegisterSet ignore)
     JS_ASSERT(diffG == 0);
 }
 
-bool MacroAssembler::maybeCallPostBarrier(Register object, ConstantOrRegister value,
-                                          Register maybeScratch) {
-    bool usedMaybeScratch = false;
-
-#ifdef JSGC_GENERATIONAL
-    JSRuntime *runtime = GetIonContext()->runtime;
-    if (value.constant()) {
-        JS_ASSERT_IF(value.value().isGCThing(),
-                     !gc::IsInsideNursery(runtime, value.value().toGCThing()));
-        return false;
-    }
-
-    TypedOrValueRegister valReg = value.reg();
-    if (valReg.hasTyped() && valReg.type() != MIRType_Object)
-        return false;
-
-    Label done;
-    Label tenured;
-    branchPtr(Assembler::Below, object, ImmWord(runtime->gcNurseryStart_), &tenured);
-    branchPtr(Assembler::Below, object, ImmWord(runtime->gcNurseryEnd_), &done);
-
-    bind(&tenured);
-    if (valReg.hasValue()) {
-        branchTestObject(Assembler::NotEqual, valReg.valueReg(), &done);
-        extractObject(valReg, maybeScratch);
-        usedMaybeScratch = true;
-    }
-    Register valObj = valReg.hasValue() ? maybeScratch : valReg.typedReg().gpr();
-    branchPtr(Assembler::Below, valObj, ImmWord(runtime->gcNurseryStart_), &done);
-    branchPtr(Assembler::AboveOrEqual, valObj, ImmWord(runtime->gcNurseryEnd_), &done);
-
-    GeneralRegisterSet saveRegs = GeneralRegisterSet::Volatile();
-    PushRegsInMask(saveRegs);
-    Register callScratch = saveRegs.getAny();
-    setupUnalignedABICall(2, callScratch);
-    movePtr(ImmPtr(runtime), callScratch);
-    passABIArg(callScratch);
-    passABIArg(object);
-    callWithABI(JS_FUNC_TO_DATA_PTR(void *, PostWriteBarrier));
-    PopRegsInMask(saveRegs);
-
-    bind(&done);
-#endif
-
-    return usedMaybeScratch;
-}
-
 void
 MacroAssembler::branchNurseryPtr(Condition cond, const Address &ptr1, const ImmMaybeNurseryPtr &ptr2,
                                  Label *label)
@@ -478,6 +432,10 @@ MacroAssembler::loadFromTypedArray(int arrayType, const T &src, AnyRegister dest
             convertUInt32ToDouble(temp, dest.fpu());
         } else {
             load32(src, dest.gpr());
+
+            // Bail out if the value doesn't fit into a signed int32 value. This
+            // is what allows MLoadTypedArrayElement to have a type() of
+            // MIRType_Int32 for UInt32 array loads.
             test32(dest.gpr(), dest.gpr());
             j(Assembler::Signed, fail);
         }
@@ -681,7 +639,7 @@ MacroAssembler::newGCThing(const Register &result, gc::AllocKind allocKind, Labe
 
     // Don't execute the inline path if the compartment has an object metadata callback,
     // as the metadata to use for the object may vary between executions of the op.
-    if (GetIonContext()->compartment->objectMetadataCallback)
+    if (GetIonContext()->compartment->hasObjectMetadataCallback())
         jump(fail);
 
 #ifdef JSGC_GENERATIONAL
@@ -1312,56 +1270,7 @@ MacroAssembler::handleFailure(ExecutionMode executionMode)
         sps_->reenter(*this, InvalidReg);
 }
 
-void
-MacroAssembler::pushCalleeToken(Register callee, ExecutionMode mode)
-{
-    // Tag and push a callee, then clear the tag after pushing. This is needed
-    // if we dereference the callee pointer after pushing it as part of a
-    // frame.
-    tagCallee(callee, mode);
-    push(callee);
-    clearCalleeTag(callee, mode);
-}
-
-void
-MacroAssembler::PushCalleeToken(Register callee, ExecutionMode mode)
-{
-    tagCallee(callee, mode);
-    Push(callee);
-    clearCalleeTag(callee, mode);
-}
-
-void
-MacroAssembler::tagCallee(Register callee, ExecutionMode mode)
-{
-    switch (mode) {
-      case SequentialExecution:
-        // CalleeToken_Function is untagged, so we don't need to do anything.
-        return;
-      case ParallelExecution:
-        orPtr(Imm32(CalleeToken_ParallelFunction), callee);
-        return;
-      default:
-        MOZ_ASSUME_UNREACHABLE("No such execution mode");
-    }
-}
-
-void
-MacroAssembler::clearCalleeTag(Register callee, ExecutionMode mode)
-{
-    switch (mode) {
-      case SequentialExecution:
-        // CalleeToken_Function is untagged, so we don't need to do anything.
-        return;
-      case ParallelExecution:
-        andPtr(Imm32(~0x3), callee);
-        return;
-      default:
-        MOZ_ASSUME_UNREACHABLE("No such execution mode");
-    }
-}
-
-void printf0_(const char *output) {
+static void printf0_(const char *output) {
     printf("%s", output);
 }
 
@@ -1381,7 +1290,7 @@ MacroAssembler::printf(const char *output)
     PopRegsInMask(RegisterSet::Volatile());
 }
 
-void printf1_(const char *output, uintptr_t value) {
+static void printf1_(const char *output, uintptr_t value) {
     char *line = JS_sprintf_append(nullptr, output, value);
     printf("%s", line);
     js_free(line);
@@ -1853,6 +1762,11 @@ MacroAssembler::convertTypedOrValueToInt(TypedOrValueRegister src, FloatRegister
         break;
       case MIRType_Double:
         convertDoubleToInt(src.typedReg().fpu(), output, temp, nullptr, fail, behavior);
+        break;
+      case MIRType_Float32:
+        // Conversion to Double simplifies implementation at the expense of performance.
+        convertFloatToDouble(src.typedReg().fpu(), temp);
+        convertDoubleToInt(temp, output, temp, nullptr, fail, behavior);
         break;
       case MIRType_String:
       case MIRType_Object:

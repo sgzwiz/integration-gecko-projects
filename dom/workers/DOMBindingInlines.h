@@ -6,7 +6,10 @@
 #ifndef mozilla_dom_workers_dombindinginlines_h__
 #define mozilla_dom_workers_dombindinginlines_h__
 
+#include "jsfriendapi.h"
 #include "mozilla/dom/JSSlots.h"
+#include "mozilla/dom/URLBinding.h"
+#include "mozilla/dom/WorkerMessagePortBinding.h"
 #include "mozilla/dom/IDBCursorSyncBinding.h"
 #include "mozilla/dom/IDBDatabaseSyncBinding.h"
 #include "mozilla/dom/IDBFactorySyncBinding.h"
@@ -15,14 +18,13 @@
 #include "mozilla/dom/IDBTransactionSyncBinding.h"
 #include "mozilla/dom/XMLHttpRequestBinding.h"
 #include "mozilla/dom/XMLHttpRequestUploadBinding.h"
-#include "mozilla/dom/URLBinding.h"
-#include "jsfriendapi.h"
 
 BEGIN_WORKERS_NAMESPACE
 
+class URL;
+class WorkerMessagePort;
 class XMLHttpRequest;
 class XMLHttpRequestUpload;
-class URL;
 
 namespace {
 
@@ -58,9 +60,10 @@ SPECIALIZE_PROTO_TRAITS(IDBFactorySync)
 SPECIALIZE_PROTO_TRAITS(IDBIndexSync)
 SPECIALIZE_PROTO_TRAITS(IDBObjectStoreSync)
 SPECIALIZE_PROTO_TRAITS(IDBTransactionSync)
+SPECIALIZE_PROTO_TRAITS(URL)
+SPECIALIZE_PROTO_TRAITS(WorkerMessagePort)
 SPECIALIZE_PROTO_TRAITS(XMLHttpRequest)
 SPECIALIZE_PROTO_TRAITS(XMLHttpRequestUpload)
-SPECIALIZE_PROTO_TRAITS(URL)
 
 #undef SPECIALIZE_PROTO_TRAITS
 

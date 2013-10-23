@@ -747,7 +747,7 @@ public:
       nsContentUtils::WrapNative(aCx, global,
                                  static_cast<nsIDOMFileHandle*>(fileHandle),
                                  &NS_GET_IID(nsIDOMFileHandle),
-                                 wrappedFileHandle.address());
+                                 &wrappedFileHandle);
     if (NS_FAILED(rv)) {
       NS_WARNING("Failed to wrap native!");
       return nullptr;
@@ -806,7 +806,7 @@ public:
       JS::Rooted<JSObject*> global(aCx, JS::CurrentGlobalOrNull(aCx));
       rv = nsContentUtils::WrapNative(aCx, global, domBlob,
                                       &NS_GET_IID(nsIDOMBlob),
-                                      wrappedBlob.address());
+                                      &wrappedBlob);
       if (NS_FAILED(rv)) {
         NS_WARNING("Failed to wrap native!");
         return nullptr;
@@ -833,7 +833,7 @@ public:
     JS::Rooted<JSObject*> global(aCx, JS::CurrentGlobalOrNull(aCx));
     rv = nsContentUtils::WrapNative(aCx, global, domFile,
                                     &NS_GET_IID(nsIDOMFile),
-                                    wrappedFile.address());
+                                    &wrappedFile);
     if (NS_FAILED(rv)) {
       NS_WARNING("Failed to wrap native!");
       return nullptr;

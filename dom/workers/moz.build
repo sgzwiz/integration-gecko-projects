@@ -31,9 +31,12 @@ EXPORTS.mozilla.dom.workers.bindings += [
     'IDBObjectStoreSync.h',
     'IDBTransactionSync.h',
     'Location.h',
+    'MessagePort.h',
     'Navigator.h',
+    'SharedWorker.h',
     'URL.h',
     'WorkerFeature.h',
+    'WorkerMessagePort.h',
     'XMLHttpRequest.h',
     'XMLHttpRequestEventTarget.h',
     'XMLHttpRequestUpload.h',
@@ -59,12 +62,15 @@ CPP_SOURCES += [
     'IDBTransactionSync.cpp',
     'IPCThreadUtils.cpp',
     'Location.cpp',
+    'MessagePort.cpp',
     'Navigator.cpp',
     'Principal.cpp',
     'RuntimeService.cpp',
     'ScriptLoader.cpp',
+    'SharedWorker.cpp',
     'URL.cpp',
     'Worker.cpp',
+    'WorkerMessagePort.cpp',
     'WorkerPrivate.cpp',
     'WorkerScope.cpp',
     'XMLHttpRequest.cpp',
@@ -80,10 +86,10 @@ LIBXUL_LIBRARY = True
 
 MSVC_ENABLE_PGO = True
 
-#LOCAL_INCLUDES += [
-#    '../base',
-#    '../system',
-#    '/content/base/src',
-#    '/content/events/src',
-#    '/xpcom/build',
-#]
+LOCAL_INCLUDES += [
+    '../base',
+    '../system',
+    '/content/base/src',
+    '/content/events/src',
+    '/xpcom/build',
+]

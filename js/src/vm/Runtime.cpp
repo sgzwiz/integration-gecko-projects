@@ -25,7 +25,9 @@
 #include "jswatchpoint.h"
 #include "jswrapper.h"
 
-#include "assembler/assembler/MacroAssembler.h"
+#if defined(JS_ION)
+# include "assembler/assembler/MacroAssembler.h"
+#endif
 #include "jit/AsmJSSignalHandlers.h"
 #include "jit/IonCompartment.h"
 #include "jit/PcScriptCache.h"
@@ -116,6 +118,8 @@ JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
 #ifdef JS_THREADSAFE
     operationCallbackLock(nullptr),
     operationCallbackOwner(nullptr),
+#else
+    operationCallbackLockTaken(false),
 #endif
 #ifdef JS_WORKER_THREADS
     workerThreadState(nullptr),
@@ -139,7 +143,6 @@ JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
     bumpAlloc_(nullptr),
     ionRuntime_(nullptr),
     selfHostingGlobal_(nullptr),
-    selfHostedClasses_(nullptr),
     nativeStackBase(0),
     cxCallback(nullptr),
     destroyCompartmentCallback(nullptr),
@@ -293,6 +296,7 @@ JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
     PodZero(&debugHooks);
     PodZero(&atomState);
     PodArrayZero(nativeStackQuota);
+    PodZero(&asmJSCacheOps);
 
 #if JS_STACK_GROWTH_DIRECTION > 0
     nativeStackLimit = UINTPTR_MAX;

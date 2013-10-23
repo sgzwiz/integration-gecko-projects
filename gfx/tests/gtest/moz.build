@@ -21,6 +21,7 @@ GTEST_CPP_SOURCES += [
     'TestRegion.cpp',
     'TestColorNames.cpp',
     'TestTextures.cpp',
+    'TestBufferRotation.cpp',
 ]
 
 # Because of gkmedia on windows we wont find these
@@ -35,4 +36,6 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] != 'windows':
     ]
 
 LIBXUL_LIBRARY = True
+
+EXPORT_LIBRARY = True
 

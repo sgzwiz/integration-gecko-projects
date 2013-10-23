@@ -1162,7 +1162,7 @@ class AssemblerX86Shared
 #endif
 
     // Zero-extend byte to 32-bit integer.
-    void movzxbl(const Register &src, const Register &dest) {
+    void movzbl(const Register &src, const Register &dest) {
         masm.movzbl_rr(src.code(), dest.code());
     }
 
@@ -1448,9 +1448,17 @@ class AssemblerX86Shared
         JS_ASSERT(HasSSE2());
         masm.andpd_rr(src.code(), dest.code());
     }
+    void andps(const FloatRegister &src, const FloatRegister &dest) {
+        JS_ASSERT(HasSSE2());
+        masm.andps_rr(src.code(), dest.code());
+    }
     void sqrtsd(const FloatRegister &src, const FloatRegister &dest) {
         JS_ASSERT(HasSSE2());
         masm.sqrtsd_rr(src.code(), dest.code());
+    }
+    void sqrtss(const FloatRegister &src, const FloatRegister &dest) {
+        JS_ASSERT(HasSSE2());
+        masm.sqrtss_rr(src.code(), dest.code());
     }
     void roundsd(const FloatRegister &src, const FloatRegister &dest,
                  JSC::X86Assembler::RoundingMode mode)

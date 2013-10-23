@@ -103,6 +103,9 @@ pref("dom.workers.enabled", true);
 // The number of workers per domain allowed to run concurrently.
 pref("dom.workers.maxPerDomain", 20);
 
+// Whether or not Shared Web Workers are enabled.
+pref("dom.workers.sharedWorkers.enabled", false);
+
 // Whether nonzero values can be returned from performance.timing.*
 pref("dom.enable_performance", true);
 
@@ -227,6 +230,8 @@ pref("media.navigator.video.default_width",640);
 pref("media.navigator.video.default_height",480);
 pref("media.navigator.video.default_fps",30);
 pref("media.navigator.video.default_minfps",10);
+pref("media.navigator.video.max_fs", 0); // unrestricted
+pref("media.navigator.video.max_fr", 0); // unrestricted
 pref("media.peerconnection.enabled", true);
 pref("media.navigator.permission.disabled", false);
 pref("media.peerconnection.default_iceservers", "[{\"url\": \"stun:23.21.150.121\"}]");
@@ -247,6 +252,11 @@ pref("media.peerconnection.noise", 1);
 pref("media.navigator.enabled", true);
 #endif
 #endif
+
+pref("media.tabstreaming.width", 320);
+pref("media.tabstreaming.height", 240);
+pref("media.tabstreaming.time_per_frame", 40);
+
 // TextTrack support
 pref("media.webvtt.enabled", false);
 
@@ -272,6 +282,12 @@ pref("media.video_stats.enabled", true);
 
 // Whether to enable the audio writing APIs on the audio element
 pref("media.audio_data.enabled", true);
+
+// Whether to lock touch scrolling to one axis at a time
+// 0 = FREE (No locking at all)
+// 1 = STANDARD (Once locked, remain locked until scrolling ends)
+// 2 = STICKY (Allow lock to be broken, with hysteresis)
+pref("apzc.axis_lock_mode", 0);
 
 #ifdef XP_MACOSX
 // Whether to run in native HiDPI mode on machines with "Retina"/HiDPI display;
@@ -1799,11 +1815,6 @@ pref("layout.word_select.stop_at_punctuation", true);
 // Windows default is 1 for word delete behavior, the rest as for 2.
 pref("layout.selection.caret_style", 0);
 
-// pref to control whether or not to replace backslashes with Yen signs
-// in documents encoded in one of Japanese legacy encodings (EUC-JP, 
-// Shift_JIS, ISO-2022-JP)
-pref("layout.enable_japanese_specific_transform", false);
-
 // pref to force frames to be resizable
 pref("layout.frames.force_resizability", false);
 
@@ -1890,6 +1901,12 @@ pref("layout.css.osx-font-smoothing.enabled", true);
 #else
 pref("layout.css.osx-font-smoothing.enabled", false);
 #endif
+
+// Is support for the CSS-wide "unset" value enabled?
+pref("layout.css.unset-value.enabled", true);
+
+// Is support for the "all" shorthand enabled?
+pref("layout.css.all-shorthand.enabled", true);
 
 // pref for which side vertical scrollbars should be on
 // 0 = end-side in UI direction
@@ -3956,9 +3973,6 @@ pref("print.print_command", "lp -c -s ${MOZ_PRINTER_NAME:+-d\"$MOZ_PRINTER_NAME\
 
 // Login Manager prefs
 pref("signon.rememberSignons",              true);
-pref("signon.SignonFileName",               "signons.txt"); // obsolete 
-pref("signon.SignonFileName2",              "signons2.txt"); // obsolete
-pref("signon.SignonFileName3",              "signons3.txt"); // obsolete
 pref("signon.autofillForms",                true);
 pref("signon.autologin.proxy",              false);
 pref("signon.debug",                        false);
@@ -4073,6 +4087,20 @@ pref("image.mem.max_ms_before_yield", 5);
 // might keep around more than this, but we'll try to get down to this value).
 pref("image.mem.max_decoded_image_kb", 51200);
 
+// Minimum timeout for expiring unused images from the surface cache, in
+// milliseconds. This controls how long we store cached temporary surfaces.
+pref("image.mem.surfacecache.min_expiration_ms", 60000); // 60ms
+
+// Maximum size for the surface cache, in kilobytes.
+pref("image.mem.surfacecache.max_size_kb", 102400); // 100MB
+
+// The surface cache's size, within the constraints of the maximum size set
+// above, is determined using a formula based on system capabilities like memory
+// size. The size factor is used to tune this formula. Larger size factors
+// result in smaller caches. The default should be a good balance for most
+// systems.
+pref("image.mem.surfacecache.size_factor", 64);
+
 // Whether we decode images on multiple background threads rather than the
 // foreground thread.
 pref("image.multithreaded_decoding.enabled", true);
@@ -4139,21 +4167,25 @@ pref("layers.frame-counter", false);
 // Max number of layers per container. See Overwrite in mobile prefs.
 pref("layers.max-active", -1);
 
+// Set the default values, and then override per-platform as needed
+pref("layers.offmainthreadcomposition.enabled", false);
 // Whether to use the deprecated texture architecture rather than the new one.
+pref("layers.use-deprecated-textures", true);
+// Asynchonous video compositing using the ImageBridge IPDL protocol.
+// requires off-main-thread compositing.
+pref("layers.async-video.enabled",false);
+
 #ifdef XP_MACOSX
 pref("layers.offmainthreadcomposition.enabled", true);
 pref("layers.use-deprecated-textures", false);
-// Asynchonous video compositing using the ImageBridge IPDL protocol.
-// requires off-main-thread compositing.
 pref("layers.async-video.enabled",true);
-#else
-pref("layers.async-video.enabled",false);
-#ifdef MOZ_WIDGET_GONK
-pref("layers.use-deprecated-textures", false);
-#else
-pref("layers.offmainthreadcomposition.enabled", false);
-pref("layers.use-deprecated-textures", true);
 #endif
+
+// ANDROID covers android and b2g
+#ifdef ANDROID
+pref("layers.offmainthreadcomposition.enabled", true);
+pref("layers.use-deprecated-textures", false);
+pref("layers.async-video.enabled",true);
 #endif
 
 // same effect as layers.offmainthreadcomposition.enabled, but specifically for
@@ -4268,6 +4300,7 @@ pref("dom.sms.enabled", false);
 // 7-bit default alphabet.
 pref("dom.sms.strict7BitEncoding", false);
 pref("dom.sms.requestStatusReport", true);
+pref("dom.mms.requestStatusReport", true);
 
 // WebContacts
 pref("dom.mozContacts.enabled", false);
@@ -4384,7 +4417,7 @@ pref("dom.browserElement.maxScreenshotDelayMS", 2000);
 // Whether we should show the placeholder when the element is focused but empty.
 pref("dom.placeholder.show_on_focus", true);
 
-// UAProfile settings
+// MMS UA Profile settings
 pref("wap.UAProf.url", "");
 pref("wap.UAProf.tagname", "x-wap-profile");
 
@@ -4415,6 +4448,11 @@ pref("mms.debugging.enabled", false);
 // the target element?
 pref("ui.touch_activation.delay_ms", 100);
 
+// If the user has clicked an element, how long do we keep the
+// :active state before it is cleared by the mouse sequences
+// fired after a touchstart/touchend.
+pref("ui.touch_activation.duration_ms", 100);
+
 // nsMemoryInfoDumper can watch a fifo in the temp directory and take various
 // actions when the fifo is written to.  Disable this in general.
 pref("memory_info_dumper.watch_fifo", false);
@@ -4434,8 +4472,23 @@ pref("dom.forms.inputmode", true);
 // InputMethods for soft keyboards in B2G
 pref("dom.mozInputMethod.enabled", false);
 
+// DataStore is disabled by default
+pref("dom.datastore.enabled", false);
+
 // Telephony API
 pref("dom.telephony.enabled", false);
+
+// Cell Broadcast API
+pref("dom.cellbroadcast.enabled", false);
+
+// ICC API
+pref("dom.icc.enabled", false);
+
+// Mobile Connection API
+pref("dom.mobileconnection.enabled", false);
+
+// Voice Mail API
+pref("dom.voicemail.enabled", false);
 
 // DOM Inter-App Communication API.
 pref("dom.inter-app-communication-api.enabled", false);
@@ -4445,3 +4498,6 @@ pref("urlclassifier.malware_table", "goog-malware-shavar");
 pref("urlclassifier.phish_table", "goog-phish-shavar");
 pref("urlclassifier.download_block_table", "goog-badbinurl-shavar");
 pref("urlclassifier.download_allow_table", "goog-downloadwhite-digest256");
+
+// Turn off Spatial navigation by default.
+pref("snav.enabled", false);

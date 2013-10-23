@@ -11,14 +11,19 @@
 #include "mozilla/dom/DragEventBinding.h"
 #include "mozilla/EventForwards.h"
 
+namespace mozilla {
+namespace dom {
+class DataTransfer;
+} // namespace dom
+} // namespace mozilla
+
 class nsDOMDragEvent : public nsDOMMouseEvent,
                        public nsIDOMDragEvent
 {
 public:
   nsDOMDragEvent(mozilla::dom::EventTarget* aOwner,
                  nsPresContext* aPresContext,
-                 mozilla::WidgetInputEvent* aEvent);
-  virtual ~nsDOMDragEvent();
+                 mozilla::WidgetDragEvent* aEvent);
 
   NS_DECL_ISUPPORTS_INHERITED
 

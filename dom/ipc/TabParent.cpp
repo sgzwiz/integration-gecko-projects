@@ -294,7 +294,9 @@ TabParent::ActorDestroy(ActorDestroyReason why)
   }
   nsRefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
   nsCOMPtr<nsIObserverService> os = services::GetObserverService();
+  nsRefPtr<nsFrameMessageManager> fmm;
   if (frameLoader) {
+    fmm = frameLoader->GetFrameMessageManager();
     nsCOMPtr<Element> frameElement(mFrameElement);
     ReceiveMessage(CHILD_PROCESS_SHUTDOWN_MESSAGE, false, nullptr, nullptr);
     frameLoader->DestroyChild();
@@ -310,6 +312,9 @@ TabParent::ActorDestroy(ActorDestroyReason why)
 
   if (os) {
     os->NotifyObservers(NS_ISUPPORTS_CAST(nsITabParent*, this), "ipc:browser-destroyed", nullptr);
+  }
+  if (fmm) {
+    fmm->Disconnect();
   }
 }
 
@@ -621,10 +626,10 @@ TabParent::MapEventCoordinatesForChildProcess(
     aEvent->refPoint = aOffset;
   } else {
     aEvent->refPoint = LayoutDeviceIntPoint();
-    WidgetTouchEvent* touchEvent = static_cast<WidgetTouchEvent*>(aEvent);
     // Then offset all the touch points by that distance, to put them
     // in the space where top-left is 0,0.
-    const nsTArray< nsRefPtr<Touch> >& touches = touchEvent->touches;
+    const nsTArray< nsRefPtr<Touch> >& touches =
+      aEvent->AsTouchEvent()->touches;
     for (uint32_t i = 0; i < touches.Length(); ++i) {
       Touch* touch = touches[i];
       if (touch) {
@@ -647,12 +652,12 @@ bool TabParent::SendRealMouseEvent(WidgetMouseEvent& event)
   return PBrowserParent::SendRealMouseEvent(e);
 }
 
-bool TabParent::SendMouseWheelEvent(WheelEvent& event)
+bool TabParent::SendMouseWheelEvent(WidgetWheelEvent& event)
 {
   if (mIsDestroyed) {
     return false;
   }
-  WheelEvent e(event);
+  WidgetWheelEvent e(event);
   MaybeForwardEventToRenderFrame(event, &e);
   if (!MapEventCoordinatesForChildProcess(&e)) {
     return false;
@@ -736,7 +741,7 @@ TabParent::TryCapture(const WidgetGUIEvent& aEvent)
     return false;
   }
 
-  WidgetTouchEvent event(static_cast<const WidgetTouchEvent&>(aEvent));
+  WidgetTouchEvent event(*aEvent.AsTouchEvent());
 
   bool isTouchPointUp = (event.message == NS_TOUCH_END ||
                          event.message == NS_TOUCH_CANCEL);

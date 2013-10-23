@@ -54,13 +54,6 @@ IccListener::NotifyStkSessionEnd()
 }
 
 NS_IMETHODIMP
-IccListener::NotifyIccCardLockError(const nsAString & lockType,
-                                    uint32_t retryCount)
-{
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 IccListener::NotifyCardStateChanged()
 {
   return NS_OK;
@@ -221,6 +214,9 @@ TelephonyListener::SupplementaryServiceNotification(int32_t aCallIndex,
 NS_IMETHODIMP
 TelephonyListener::NotifyCdmaCallWaiting(const nsAString& aNumber)
 {
+  BluetoothHfpManager* hfp = BluetoothHfpManager::Get();
+  hfp->UpdateSecondNumber(aNumber);
+
   return NS_OK;
 }
 
@@ -296,8 +292,9 @@ BluetoothRilListener::StartMobileConnectionListening()
     do_GetService(NS_RILCONTENTHELPER_CONTRACTID);
   NS_ENSURE_TRUE(provider, false);
 
+  // TODO: Bug 921991 - B2G BT: support multiple sim cards
   nsresult rv = provider->
-                  RegisterMobileConnectionMsg(mMobileConnectionListener);
+                  RegisterMobileConnectionMsg(0, mMobileConnectionListener);
   return NS_SUCCEEDED(rv);
 }
 
@@ -308,8 +305,9 @@ BluetoothRilListener::StopMobileConnectionListening()
     do_GetService(NS_RILCONTENTHELPER_CONTRACTID);
   NS_ENSURE_TRUE(provider, false);
 
+  // TODO: Bug 921991 - B2G BT: support multiple sim cards
   nsresult rv = provider->
-                  UnregisterMobileConnectionMsg(mMobileConnectionListener);
+                  UnregisterMobileConnectionMsg(0, mMobileConnectionListener);
   return NS_SUCCEEDED(rv);
 }
 

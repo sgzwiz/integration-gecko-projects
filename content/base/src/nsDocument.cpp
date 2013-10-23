@@ -213,6 +213,8 @@
 #include "nsCharSeparatedTokenizer.h"
 #include "mozilla/dom/XPathEvaluator.h"
 #include "mozilla/dom/DOMStringList.h"
+#include "nsIDocumentEncoder.h"
+#include "nsIStructuredCloneContainer.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -1259,6 +1261,49 @@ nsDOMStyleSheetSetList::EnsureFresh()
 }
 
 // ==================================================================
+nsIDocument::SelectorCache::SelectorCache()
+  : nsExpirationTracker<SelectorCacheKey, 4>(1000) { }
+
+// CacheList takes ownership of aSelectorList.
+void nsIDocument::SelectorCache::CacheList(const nsAString& aSelector,
+                                           nsCSSSelectorList* aSelectorList)
+{
+  SelectorCacheKey* key = new SelectorCacheKey(aSelector);
+  mTable.Put(key->mKey, aSelectorList);
+  AddObject(key);
+}
+
+class nsIDocument::SelectorCacheKeyDeleter MOZ_FINAL : public nsRunnable
+{
+public:
+  explicit SelectorCacheKeyDeleter(SelectorCacheKey* aToDelete)
+    : mSelector(aToDelete)
+  {
+    MOZ_COUNT_CTOR(SelectorCacheKeyDeleter);
+  }
+
+  ~SelectorCacheKeyDeleter()
+  {
+    MOZ_COUNT_DTOR(SelectorCacheKeyDeleter);
+  }
+
+  NS_IMETHOD Run()
+  {
+    return NS_OK;
+  }
+
+private:
+  nsAutoPtr<SelectorCacheKey> mSelector;
+};
+
+void nsIDocument::SelectorCache::NotifyExpired(SelectorCacheKey* aSelector)
+{
+  RemoveObject(aSelector);
+  mTable.Remove(aSelector->mKey);
+  nsCOMPtr<nsIRunnable> runnable = new SelectorCacheKeyDeleter(aSelector);
+  NS_DispatchToCurrentThread(runnable);
+}
+
 
 struct nsIDocument::FrameRequest
 {
@@ -1558,7 +1603,7 @@ nsDocument::DeleteCycleCollectable()
 
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(nsDocument)
   if (Element::CanSkip(tmp, aRemovingAllowed)) {
-    nsEventListenerManager* elm = tmp->GetListenerManager(false);
+    nsEventListenerManager* elm = tmp->GetExistingListenerManager();
     if (elm) {
       elm->MarkForCC();
     }
@@ -2577,29 +2622,23 @@ nsDocument::InitCSP(nsIChannel* aChannel)
   }
 
   // While we are supporting both CSP 1.0 and the x- headers, the 1.0 headers
-  // can coexist with x- headers.  If both exist, they're both enforced, but
-  // there's a warning posted in the web console that the x-headers are going
-  // away.
+  // take priority.  If both are present, the x-* headers are ignored.
 
   // ----- if there's a full-strength CSP header, apply it.
-  if (!cspOldHeaderValue.IsEmpty()) {
+  if (!cspHeaderValue.IsEmpty()) {
+    rv = AppendCSPFromHeader(csp, cspHeaderValue, selfURI, false, true);
+    NS_ENSURE_SUCCESS(rv, rv);
+  } else if (!cspOldHeaderValue.IsEmpty()) {
     rv = AppendCSPFromHeader(csp, cspOldHeaderValue, selfURI, false, false);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  if (!cspHeaderValue.IsEmpty()) {
-    rv = AppendCSPFromHeader(csp, cspHeaderValue, selfURI, false, true);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
   // ----- if there's a report-only CSP header, apply it.
-  if (!cspOldROHeaderValue.IsEmpty()) {
-    rv = AppendCSPFromHeader(csp, cspOldROHeaderValue, selfURI, true, false);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
   if (!cspROHeaderValue.IsEmpty()) {
     rv = AppendCSPFromHeader(csp, cspROHeaderValue, selfURI, true, true);
+    NS_ENSURE_SUCCESS(rv, rv);
+  } else if (!cspOldROHeaderValue.IsEmpty()) {
+    rv = AppendCSPFromHeader(csp, cspOldROHeaderValue, selfURI, true, false);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -3382,6 +3421,11 @@ nsDocument::doCreateShell(nsPresContext* aContext,
 
   // Note: we don't hold a ref to the shell (it holds a ref to us)
   mPresShell = shell;
+
+  // Make sure to never paint if we belong to an invisible DocShell.
+  nsCOMPtr<nsIDocShell> docShell = do_QueryReferent(mDocumentContainer);
+  if (docShell && docShell->IsInvisible())
+    shell->SetNeverPainting(true);
 
   mExternalResourceMap.ShowViewers();
 
@@ -5067,7 +5111,7 @@ CustomElementConstructor(JSContext *aCx, unsigned aArgc, JS::Value* aVp)
   nsresult rv = document->CreateElem(elemName, nullptr, kNameSpaceID_XHTML,
                                      getter_AddRefs(newElement));
   rv = nsContentUtils::WrapNative(aCx, global, newElement, newElement,
-                                  args.rval().address());
+                                  args.rval());
   NS_ENSURE_SUCCESS(rv, false);
 
   return true;
@@ -5124,7 +5168,7 @@ nsDocument::Register(JSContext* aCx, const nsAString& aName,
     // If a prototype is provided, we must check to ensure that it inherits
     // from HTMLElement.
     protoObject = aOptions.mPrototype;
-    if (!JS_WrapObject(aCx, protoObject.address())) {
+    if (!JS_WrapObject(aCx, &protoObject)) {
       rv.Throw(NS_ERROR_UNEXPECTED);
       return nullptr;
     }
@@ -6632,7 +6676,7 @@ nsIDocument::AdoptNode(nsINode& aAdoptedNode, ErrorResult& rv)
       JS::Rooted<JSObject*> global(cx, GetScopeObject()->GetGlobalJSObject());
 
       JS::Rooted<JS::Value> v(cx);
-      rv = nsContentUtils::WrapNative(cx, global, this, this, v.address(),
+      rv = nsContentUtils::WrapNative(cx, global, this, this, &v,
                                       nullptr, /* aAllowWrapping = */ false);
       if (rv.Failed())
         return nullptr;
@@ -6871,14 +6915,20 @@ nsDocument::GetViewportInfo(const ScreenIntSize& aDisplaySize)
 }
 
 nsEventListenerManager*
-nsDocument::GetListenerManager(bool aCreateIfNotFound)
+nsDocument::GetOrCreateListenerManager()
 {
-  if (!mListenerManager && aCreateIfNotFound) {
+  if (!mListenerManager) {
     mListenerManager =
       new nsEventListenerManager(static_cast<EventTarget*>(this));
     SetFlags(NODE_HAS_LISTENERMANAGER);
   }
 
+  return mListenerManager;
+}
+
+nsEventListenerManager*
+nsDocument::GetExistingListenerManager() const
+{
   return mListenerManager;
 }
 
@@ -7575,8 +7625,7 @@ nsDocument::CanSavePresentation(nsIRequest *aNewRequest)
   // Check our event listener manager for unload/beforeunload listeners.
   nsCOMPtr<EventTarget> piTarget = do_QueryInterface(mScriptGlobalObject);
   if (piTarget) {
-    nsEventListenerManager* manager =
-      piTarget->GetListenerManager(false);
+    nsEventListenerManager* manager = piTarget->GetExistingListenerManager();
     if (manager && manager->HasUnloadListeners()) {
       return false;
     }
@@ -11245,7 +11294,7 @@ nsIDocument::WrapObject(JSContext *aCx, JS::Handle<JSObject*> aScope)
   nsCOMPtr<nsIXPConnectJSObjectHolder> holder;
   nsresult rv = nsContentUtils::WrapNative(aCx, obj, win,
                                            &NS_GET_IID(nsIDOMWindow),
-                                           winVal.address(),
+                                           &winVal,
                                            getter_AddRefs(holder),
                                            false);
   if (NS_FAILED(rv)) {
@@ -11274,6 +11323,43 @@ nsIDocument::XPathEvaluator()
     mXPathEvaluator = new dom::XPathEvaluator(this);
   }
   return mXPathEvaluator;
+}
+
+already_AddRefed<nsIDocumentEncoder>
+nsIDocument::GetCachedEncoder()
+{
+  return mCachedEncoder.forget();
+}
+
+void
+nsIDocument::SetCachedEncoder(already_AddRefed<nsIDocumentEncoder> aEncoder)
+{
+  mCachedEncoder = aEncoder;
+}
+
+void
+nsIDocument::SetContentTypeInternal(const nsACString& aType)
+{
+  mCachedEncoder = nullptr;
+  mContentType = aType;
+}
+
+nsILoadContext*
+nsIDocument::GetLoadContext() const
+{
+  nsCOMPtr<nsISupports> container = GetContainer();
+  if (container) {
+    nsCOMPtr<nsILoadContext> loadContext = do_QueryInterface(container);
+    return loadContext;
+  }
+  return nullptr;
+}
+
+void
+nsIDocument::SetStateObject(nsIStructuredCloneContainer *scContainer)
+{
+  mStateObjectContainer = scContainer;
+  mStateObjectCached = nullptr;
 }
 
 bool

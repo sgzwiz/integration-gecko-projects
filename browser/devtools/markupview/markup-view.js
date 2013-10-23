@@ -18,7 +18,7 @@ const CONTAINER_FLASHING_DURATION = 500;
 const {UndoStack} = require("devtools/shared/undo");
 const {editableField, InplaceEditor} = require("devtools/shared/inplace-editor");
 const {gDevTools} = Cu.import("resource:///modules/devtools/gDevTools.jsm", {});
-const {colorUtils} = require("devtools/css-color");
+const {OutputParser} = require("devtools/output-parser");
 const promise = require("sdk/core/promise");
 
 Cu.import("resource://gre/modules/devtools/LayoutHelpers.jsm");
@@ -56,6 +56,7 @@ function MarkupView(aInspector, aFrame, aControllerWindow) {
   this._frame = aFrame;
   this.doc = this._frame.contentDocument;
   this._elt = this.doc.querySelector("#root");
+  this._outputParser = new OutputParser();
 
   this.layoutHelpers = new LayoutHelpers(this.doc.defaultView);
 
@@ -76,7 +77,7 @@ function MarkupView(aInspector, aFrame, aControllerWindow) {
   this.undo = new UndoStack();
   this.undo.installController(aControllerWindow);
 
-  this._containers = new WeakMap();
+  this._containers = new Map();
 
   this._boundMutationObserver = this._mutationObserver.bind(this);
   this.walker.on("mutations", this._boundMutationObserver);
@@ -384,11 +385,11 @@ MarkupView.prototype = {
     return container;
   },
 
-
   /**
    * Mutation observer used for included nodes.
    */
   _mutationObserver: function(aMutations) {
+    let requiresLayoutChange = false;
     for (let mutation of aMutations) {
       let type = mutation.type;
       let target = mutation.target;
@@ -410,7 +411,12 @@ MarkupView.prototype = {
         continue;
       }
       if (type === "attributes" || type === "characterData") {
-        container.update(false);
+        container.update();
+
+        // Auto refresh style properties on selected node when they change.
+        if (type === "attributes" && container.selected) {
+          requiresLayoutChange = true;
+        }
       } else if (type === "childList") {
         container.childrenDirty = true;
         // Update the children to take care of changes in the DOM
@@ -418,6 +424,10 @@ MarkupView.prototype = {
         // new nodes
         this._updateChildren(container, {flash: true});
       }
+    }
+
+    if (requiresLayoutChange) {
+      this._inspector.immediateLayoutChange();
     }
     this._waitForChildren().then(() => {
       this._flashMutatedNodes(aMutations);
@@ -778,6 +788,8 @@ MarkupView.prototype = {
     this._frame.removeEventListener("focus", this._boundFocus, false);
     delete this._boundFocus;
 
+    delete this._outputParser;
+
     if (this._boundUpdatePreview) {
       this._frame.contentWindow.removeEventListener("scroll",
         this._boundUpdatePreview, true);
@@ -806,6 +818,9 @@ MarkupView.prototype = {
 
     delete this._elt;
 
+    for ([key, container] of this._containers) {
+      container.destroy();
+    }
     delete this._containers;
   },
 
@@ -946,7 +961,8 @@ function MarkupContainer(aMarkupView, aNode) {
   // Appending the editor element and attaching event listeners
   this.tagLine.appendChild(this.editor.elt);
 
-  this.elt.addEventListener("mousedown", this._onMouseDown.bind(this), false);
+  this._onMouseDown = this._onMouseDown.bind(this);
+  this.elt.addEventListener("mousedown", this._onMouseDown, false);
 }
 
 MarkupContainer.prototype = {
@@ -1151,9 +1167,9 @@ MarkupContainer.prototype = {
    * Update the container's editor to the current state of the
    * viewed node.
    */
-  update: function(parseColors=true) {
+  update: function() {
     if (this.editor.update) {
-      this.editor.update(parseColors);
+      this.editor.update();
     }
   },
 
@@ -1165,6 +1181,29 @@ MarkupContainer.prototype = {
     if (focusable) {
       focusable.focus();
     }
+  },
+
+  /**
+   * Get rid of event listeners and references, when the container is no longer
+   * needed
+   */
+  destroy: function() {
+    // Recursively destroy children containers
+    let firstChild;
+    while (firstChild = this.children.firstChild) {
+      firstChild.container.destroy();
+      this.children.removeChild(firstChild);
+    }
+
+    // Remove event listeners
+    this.elt.removeEventListener("dblclick", this._onToggle, false);
+    this.elt.removeEventListener("mouseover", this._onMouseOver, false);
+    this.elt.removeEventListener("mouseout", this._onMouseOut, false);
+    this.elt.removeEventListener("mousedown", this._onMouseDown, false);
+    this.expander.removeEventListener("click", this._onToggle, false);
+
+    // Destroy my editor
+    this.editor.destroy();
   }
 };
 
@@ -1184,7 +1223,8 @@ function RootContainer(aMarkupView, aNode) {
 RootContainer.prototype = {
   hasChildren: true,
   expanded: true,
-  update: function() {}
+  update: function() {},
+  destroy: function() {}
 };
 
 /**
@@ -1195,6 +1235,10 @@ function GenericEditor(aContainer, aNode) {
   this.elt.className = "editor";
   this.elt.textContent = aNode.nodeName;
 }
+
+GenericEditor.prototype = {
+  destroy: function() {}
+};
 
 /**
  * Creates an editor for a DOCTYPE node.
@@ -1210,6 +1254,10 @@ function DoctypeEditor(aContainer, aNode) {
      (aNode.systemId ? ' "' + aNode.systemId + '"' : '') +
      '>';
 }
+
+DoctypeEditor.prototype = {
+  destroy: function() {}
+};
 
 /**
  * Creates a simple text editor node, used for TEXT and COMMENT
@@ -1285,7 +1333,9 @@ TextEditor.prototype = {
         }
       }).then(null, console.error);
     }
-  }
+  },
+
+  destroy: function() {}
 };
 
 /**
@@ -1367,7 +1417,7 @@ ElementEditor.prototype = {
   /**
    * Update the state of the editor from the node.
    */
-  update: function(parseColors=true) {
+  update: function() {
     let attrs = this.node.attributes;
     if (!attrs) {
       return;
@@ -1386,9 +1436,6 @@ ElementEditor.prototype = {
     // Get the attribute editor for each attribute that exists on
     // the node and show it.
     for (let attr of attrs) {
-      if (parseColors && typeof attr.value !== "undefined") {
-        attr.value = colorUtils.processCSSString(attr.value);
-      }
       let attribute = this._createAttribute(attr);
       if (!attribute.inplaceEditor) {
         attribute.style.removeProperty("display");
@@ -1494,18 +1541,88 @@ ElementEditor.prototype = {
 
     this.attrs[aAttr.name] = attr;
 
-    let collapsedValue;
-    if (aAttr.value.match(COLLAPSE_DATA_URL_REGEX)) {
-      collapsedValue = truncateString(aAttr.value, COLLAPSE_DATA_URL_LENGTH);
-    }
-    else {
-      collapsedValue = truncateString(aAttr.value, COLLAPSE_ATTRIBUTE_LENGTH);
-    }
-
     name.textContent = aAttr.name;
-    val.textContent = collapsedValue;
+
+    if (typeof aAttr.value !== "undefined") {
+      let outputParser = this.markup._outputParser;
+      let frag = outputParser.parseHTMLAttribute(aAttr.value);
+      frag = this._truncateFrag(frag);
+      val.appendChild(frag);
+    }
 
     return attr;
+  },
+
+  /**
+   * We truncate HTML attributes to a text length defined by
+   * COLLAPSE_DATA_URL_LENGTH and COLLAPSE_ATTRIBUTE_LENGTH. Because we parse
+   * text into document fragments we need to process each fragment and truncate
+   * according to the fragment's textContent length.
+   *
+   * @param  {DocumentFragment} frag
+   *         The fragment to truncate.
+   * @return {[DocumentFragment]}
+   *         Truncated fragment.
+   */
+  _truncateFrag: function(frag) {
+    let chars = 0;
+    let text = frag.textContent;
+    let maxWidth = text.match(COLLAPSE_DATA_URL_REGEX) ?
+                            COLLAPSE_DATA_URL_LENGTH : COLLAPSE_ATTRIBUTE_LENGTH;
+    let overBy = text.length - maxWidth;
+    let children = frag.childNodes;
+    let croppedNode = null;
+
+    if (overBy <= 0) {
+      return frag;
+    }
+
+    // For fragments containing only one single node we just need to truncate
+    // frag.textContent.
+    if (children.length === 1) {
+      let length = text.length;
+      let start = text.substr(0, maxWidth / 2);
+      let end = text.substr(length - maxWidth / 2, length - 1);
+
+      frag.textContent = start + "…" + end;
+      return frag;
+    }
+
+    // First maxWidth / 2 chars plus &hellip;
+    for (let i = 0; i < children.length; i++) {
+      let node = children[i];
+      let text = node.textContent;
+
+      let numChars = text.length;
+      if (chars + numChars > maxWidth / 2) {
+        node.textContent = text.substr(0, chars + numChars - maxWidth / 2) + "…";
+        croppedNode = node;
+        break;
+      } else {
+        chars += numChars;
+      }
+    }
+
+    // Last maxWidth / two chars.
+    chars = 0;
+    for (let i = children.length - 1; i >= 0; i--) {
+      let node = children[i];
+      let text = node.textContent;
+
+      let numChars = text.length;
+      if (chars + numChars > maxWidth / 2) {
+        if (node !== croppedNode) {
+          node.parentNode.removeChild(node);
+          chars += numChars;
+        } else {
+          break;
+        }
+      } else {
+        chars += numChars;
+      }
+    }
+
+    return frag;
   },
 
   /**
@@ -1595,7 +1712,9 @@ ElementEditor.prototype = {
         }
       });
     }).then(null, console.error);
-  }
+  },
+
+  destroy: function() {}
 };
 
 function nodeDocument(node) {

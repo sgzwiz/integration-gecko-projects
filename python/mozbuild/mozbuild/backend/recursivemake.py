@@ -28,6 +28,7 @@ from ..frontend.data import (
     Exports,
     GeneratedEventWebIDLFile,
     GeneratedWebIDLFile,
+    InstallationTarget,
     IPDLFile,
     LocalInclude,
     PreprocessedTestWebIDLFile,
@@ -409,6 +410,9 @@ class RecursiveMakeBackend(CommonBackend):
         elif isinstance(obj, LocalInclude):
             self._process_local_include(obj.path, backend_file)
 
+        elif isinstance(obj, InstallationTarget):
+            self._process_installation_target(obj, backend_file)
+
         self._backend_files[obj.srcdir] = backend_file
 
     def _fill_root_mk(self):
@@ -444,12 +448,22 @@ class RecursiveMakeBackend(CommonBackend):
             return current, subdirs.parallel, \
                 subdirs.dirs + subdirs.tests + subdirs.tools
 
-        # Skip tools dirs during libs traversal
+        # Skip tools dirs during libs traversal. Because of bug 925236 and
+        # possible other unknown race conditions, don't parallelize the libs
+        # tier.
         def libs_filter(current, subdirs):
             if current in self._may_skip[tier]:
                 current = None
-            return current, subdirs.parallel, \
+            return current, [], subdirs.parallel + \
                 subdirs.static + subdirs.dirs + subdirs.tests
+
+        # Because of bug 925236 and possible other unknown race conditions,
+        # don't parallelize the tools tier.
+        def tools_filter(current, subdirs):
+            if current in self._may_skip[tier]:
+                current = None
+            return current, subdirs.parallel, \
+                subdirs.static + subdirs.dirs + subdirs.tests + subdirs.tools
 
         # compile, binaries and tools tiers use the same traversal as export
         filters = {
@@ -457,7 +471,7 @@ class RecursiveMakeBackend(CommonBackend):
             'compile': parallel_filter,
             'binaries': parallel_filter,
             'libs': libs_filter,
-            'tools': parallel_filter,
+            'tools': tools_filter,
         }
 
         root_deps_mk = Makefile()
@@ -863,6 +877,22 @@ class RecursiveMakeBackend(CommonBackend):
             self._process_exports(obj, children[subdir], backend_file,
                 namespace=namespace + subdir)
 
+    def _process_installation_target(self, obj, backend_file):
+        # A few makefiles need to be able to override the following rules via
+        # make XPI_NAME=blah commands, so we default to the lazy evaluation as
+        # much as possible here to avoid breaking things.
+        if obj.xpiname:
+            backend_file.write('XPI_NAME = %s\n' % (obj.xpiname))
+        if obj.subdir:
+            backend_file.write('DIST_SUBDIR = %s\n' % (obj.subdir))
+        if obj.target and not obj.is_custom():
+            backend_file.write('FINAL_TARGET = $(DEPTH)/%s\n' % (obj.target))
+        else:
+            backend_file.write('FINAL_TARGET = $(if $(XPI_NAME),$(DIST)/xpi-stage/$(XPI_NAME),$(DIST)/bin)$(DIST_SUBDIR:%=/%)\n')
+
+        if not obj.enabled:
+            backend_file.write('NO_DIST_INSTALL := 1\n')
+
     def _handle_idl_manager(self, manager):
         build_files = self._install_manifests['xpidl']
 
@@ -933,6 +963,7 @@ class RecursiveMakeBackend(CommonBackend):
         self._install_manifests['dist_include'].add_optional_exists(header)
 
     def _process_test_manifest(self, obj, backend_file):
+        # Much of the logic in this function could be moved to CommonBackend.
         self.backend_input_files.add(os.path.join(obj.topsrcdir,
             obj.manifest_relpath))
 

@@ -35,8 +35,8 @@
 class nsPIDOMWindow;
 
 extern nsresult
-xpc_qsUnwrapArgImpl(JSContext* cx, jsval v, const nsIID& iid, void** ppArg,
-                    nsISupports** ppArgRef, jsval* vp);
+xpc_qsUnwrapArgImpl(JSContext* cx, JS::Handle<JS::Value> v, const nsIID& iid, void** ppArg,
+                    nsISupports** ppArgRef, JS::MutableHandle<JS::Value> vp);
 
 namespace mozilla {
 namespace dom {
@@ -53,8 +53,8 @@ struct SelfRef
 /** Convert a jsval to an XPCOM pointer. */
 template <class Interface, class StrongRefType>
 inline nsresult
-UnwrapArg(JSContext* cx, jsval v, Interface** ppArg,
-          StrongRefType** ppArgRef, jsval* vp)
+UnwrapArg(JSContext* cx, JS::Handle<JS::Value> v, Interface** ppArg,
+          StrongRefType** ppArgRef, JS::MutableHandle<JS::Value> vp)
 {
   nsISupports* argRef = *ppArgRef;
   nsresult rv = xpc_qsUnwrapArgImpl(cx, v, NS_GET_TEMPLATE_IID(Interface),
@@ -796,7 +796,7 @@ WrapNewBindingNonWrapperCachedObject(JSContext* cx, JS::Handle<JSObject*> scope,
 bool
 NativeInterface2JSObjectAndThrowIfFailed(JSContext* aCx,
                                          JS::Handle<JSObject*> aScope,
-                                         JS::Value* aRetval,
+                                         JS::MutableHandle<JS::Value> aRetval,
                                          xpcObjectHelper& aHelper,
                                          const nsIID* aIID,
                                          bool aAllowNativeWrapper);
@@ -815,7 +815,7 @@ HandleNewBindingWrappingFailure(JSContext* cx, JS::Handle<JSObject*> scope,
   }
 
   qsObjectHelper helper(value, GetWrapperCache(value));
-  return NativeInterface2JSObjectAndThrowIfFailed(cx, scope, rval.address(),
+  return NativeInterface2JSObjectAndThrowIfFailed(cx, scope, rval,
                                                   helper, nullptr, true);
 }
 
@@ -981,12 +981,12 @@ InstanceClassHasProtoAtDepth(JS::Handle<JSObject*> protoObject, uint32_t protoID
 bool
 XPCOMObjectToJsval(JSContext* cx, JS::Handle<JSObject*> scope,
                    xpcObjectHelper& helper, const nsIID* iid,
-                   bool allowNativeWrapper, JS::Value* rval);
+                   bool allowNativeWrapper, JS::MutableHandle<JS::Value> rval);
 
 // Special-cased wrapping for variants
 bool
 VariantToJsval(JSContext* aCx, JS::Handle<JSObject*> aScope,
-               nsIVariant* aVariant, JS::Value* aRetval);
+               nsIVariant* aVariant, JS::MutableHandle<JS::Value> aRetval);
 
 // Wrap an object "p" which is not using WebIDL bindings yet.  This _will_
 // actually work on WebIDL binding objects that are wrappercached, but will be
@@ -998,10 +998,10 @@ WrapObject(JSContext* cx, JS::Handle<JSObject*> scope, T* p,
            nsWrapperCache* cache, const nsIID* iid,
            JS::MutableHandle<JS::Value> rval)
 {
-  if (xpc_FastGetCachedWrapper(cache, scope, rval.address()))
+  if (xpc_FastGetCachedWrapper(cache, scope, rval))
     return true;
   qsObjectHelper helper(p, cache);
-  return XPCOMObjectToJsval(cx, scope, helper, iid, true, rval.address());
+  return XPCOMObjectToJsval(cx, scope, helper, iid, true, rval);
 }
 
 // A specialization of the above for nsIVariant, because that needs to
@@ -1014,7 +1014,7 @@ WrapObject<nsIVariant>(JSContext* cx, JS::Handle<JSObject*> scope, nsIVariant* p
 {
   MOZ_ASSERT(iid);
   MOZ_ASSERT(iid->Equals(NS_GET_IID(nsIVariant)));
-  return VariantToJsval(cx, scope, p, rval.address());
+  return VariantToJsval(cx, scope, p, rval);
 }
 
 // Wrap an object "p" which is not using WebIDL bindings yet.  Just like the
@@ -1104,8 +1104,8 @@ WrapNativeISupportsParent(JSContext* cx, JS::Handle<JSObject*> scope, T* p,
 {
   qsObjectHelper helper(ToSupports(p), cache);
   JS::Rooted<JS::Value> v(cx);
-  return XPCOMObjectToJsval(cx, scope, helper, nullptr, false, v.address()) ?
-         JSVAL_TO_OBJECT(v) :
+  return XPCOMObjectToJsval(cx, scope, helper, nullptr, false, &v) ?
+         v.toObjectOrNull() :
          nullptr;
 }
 
@@ -1272,7 +1272,7 @@ WrapCallThisObject(JSContext* cx, JS::Handle<JSObject*> scope, const T& p)
   }
 
   // But all that won't necessarily put things in the compartment of cx.
-  if (!JS_WrapObject(cx, obj.address())) {
+  if (!JS_WrapObject(cx, &obj)) {
     return nullptr;
   }
 
@@ -2009,7 +2009,7 @@ const T& NonNullHelper(const OwningNonNull<T>& aArg)
 // Reparent the wrapper of aObj to whatever its native now thinks its
 // parent should be.
 nsresult
-ReparentWrapper(JSContext* aCx, JS::HandleObject aObj);
+ReparentWrapper(JSContext* aCx, JS::Handle<JSObject*> aObj);
 
 /**
  * Used to implement the hasInstance hook of an interface object.

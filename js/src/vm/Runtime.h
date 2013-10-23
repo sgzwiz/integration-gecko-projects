@@ -675,8 +675,7 @@ class MarkingValidator;
 typedef Vector<JS::Zone *, 4, SystemAllocPolicy> ZoneVector;
 
 class AutoLockForExclusiveAccess;
-class AutoPauseWorkersForGC;
-struct SelfHostedClass;
+class AutoPauseWorkersForTracing;
 class ThreadDataIter;
 
 void RecomputeStackLimit(JSRuntime *rt, StackKind kind);
@@ -720,38 +719,41 @@ struct JSRuntime : public JS::shadow::Runtime,
     /* Branch callback */
     JSOperationCallback operationCallback;
 
-#ifdef JS_THREADSAFE
   private:
     /*
      * Lock taken when triggering the operation callback from another thread.
      * Protects all data that is touched in this process.
      */
+#ifdef JS_THREADSAFE
     PRLock *operationCallbackLock;
     PRThread *operationCallbackOwner;
-  public:
+#else
+    bool operationCallbackLockTaken;
 #endif // JS_THREADSAFE
+  public:
 
     class AutoLockForOperationCallback {
-#ifdef JS_THREADSAFE
         JSRuntime *rt;
       public:
         AutoLockForOperationCallback(JSRuntime *rt MOZ_GUARD_OBJECT_NOTIFIER_PARAM) : rt(rt) {
             MOZ_GUARD_OBJECT_NOTIFIER_INIT;
             JS_ASSERT(!rt->currentThreadOwnsOperationCallbackLock());
+#ifdef JS_THREADSAFE
             PR_Lock(rt->operationCallbackLock);
             rt->operationCallbackOwner = PR_GetCurrentThread();
+#else
+            rt->operationCallbackLockTaken = true;
+#endif // JS_THREADSAFE
         }
         ~AutoLockForOperationCallback() {
-            JS_ASSERT(rt->operationCallbackOwner == PR_GetCurrentThread());
+            JS_ASSERT(rt->currentThreadOwnsOperationCallbackLock());
+#ifdef JS_THREADSAFE
             rt->operationCallbackOwner = nullptr;
             PR_Unlock(rt->operationCallbackLock);
-        }
-#else // JS_THREADSAFE
-      public:
-        AutoLockForOperationCallback(JSRuntime *rt MOZ_GUARD_OBJECT_NOTIFIER_PARAM) {
-            MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-        }
+#else
+            rt->operationCallbackLockTaken = false;
 #endif // JS_THREADSAFE
+        }
 
         MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
     };
@@ -760,7 +762,7 @@ struct JSRuntime : public JS::shadow::Runtime,
 #if defined(JS_THREADSAFE)
         return operationCallbackOwner == PR_GetCurrentThread();
 #else
-        return true;
+        return operationCallbackLockTaken;
 #endif
     }
 
@@ -787,7 +789,7 @@ struct JSRuntime : public JS::shadow::Runtime,
     size_t numExclusiveThreads;
 
     friend class js::AutoLockForExclusiveAccess;
-    friend class js::AutoPauseWorkersForGC;
+    friend class js::AutoPauseWorkersForTracing;
     friend class js::ThreadDataIter;
 
   public:
@@ -860,7 +862,6 @@ struct JSRuntime : public JS::shadow::Runtime,
     js::jit::IonRuntime *ionRuntime_;
 
     JSObject *selfHostingGlobal_;
-    js::SelfHostedClass *selfHostedClasses_;
 
     /* Space for interpreter frames. */
     js::InterpreterStack interpreterStack_;
@@ -906,10 +907,6 @@ struct JSRuntime : public JS::shadow::Runtime,
     bool isSelfHostingGlobal(js::HandleObject global) {
         return global == selfHostingGlobal_;
     }
-    js::SelfHostedClass *selfHostedClasses() {
-        return selfHostedClasses_;
-    }
-    void addSelfHostedClass(js::SelfHostedClass *shClass);
     bool cloneSelfHostedFunctionScript(JSContext *cx, js::Handle<js::PropertyName*> name,
                                        js::Handle<JSFunction*> targetFun);
     bool cloneSelfHostedValue(JSContext *cx, js::Handle<js::PropertyName*> name,
@@ -1199,6 +1196,7 @@ struct JSRuntime : public JS::shadow::Runtime,
     bool needZealousGC() {
         if (gcNextScheduled > 0 && --gcNextScheduled == 0) {
             if (gcZeal() == js::gc::ZealAllocValue ||
+                gcZeal() == js::gc::ZealGenerationalGCValue ||
                 (gcZeal() >= js::gc::ZealIncrementalRootsThenFinish &&
                  gcZeal() <= js::gc::ZealIncrementalMultipleSlices))
             {
@@ -1354,6 +1352,9 @@ struct JSRuntime : public JS::shadow::Runtime,
 
     /* Call this to accumulate telemetry data. */
     JSAccumulateTelemetryDataCallback telemetryCallback;
+
+    /* AsmJSCache callbacks are runtime-wide. */
+    JS::AsmJSCacheOps asmJSCacheOps;
 
     /*
      * The propertyRemovals counter is incremented for every JSObject::clear,

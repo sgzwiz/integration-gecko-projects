@@ -9,47 +9,17 @@
 
 #include "jsobj.h"
 
+#include "builtin/TypedObjectConstants.h"
 #include "builtin/TypeRepresentation.h"
 
 namespace js {
 
-// Slots common to all type descriptors:
-enum TypeCommonSlots {
-    // Canonical type representation of this type (see TypeRepresentation.h).
-    SLOT_TYPE_REPR=0,
-    TYPE_RESERVED_SLOTS
-};
-
-// Slots for ArrayType type descriptors:
-enum ArrayTypeCommonSlots {
-    // Type descriptor for the element type.
-    SLOT_ARRAY_ELEM_TYPE = TYPE_RESERVED_SLOTS,
-    ARRAY_TYPE_RESERVED_SLOTS
-};
-
-// Slots for StructType type descriptors:
-enum StructTypeCommonSlots {
-    // JS array containing type descriptors for each field, in order.
-    SLOT_STRUCT_FIELD_TYPES = TYPE_RESERVED_SLOTS,
-    STRUCT_TYPE_RESERVED_SLOTS
-};
-
-// Slots for data blocks:
-enum BlockCommonSlots {
-    // The type descriptor with which this block is associated.
-    SLOT_DATATYPE = 0,
-
-    // If this value is nullptr, then the block instance owns the
-    // uint8_t* in its priate data. Otherwise, this field contains the
-    // owner, and thus keeps the owner alive.
-    SLOT_BLOCKREFOWNER,
-
-    BLOCK_RESERVED_SLOTS
-};
-
-extern const Class DataClass;
-
-extern const Class TypeClass;
+/*
+ * This object exists in order to encapsulate the typed object types
+ * somewhat, rather than sticking them all into the global object.
+ * Eventually it will go away and become a module.
+ */
+extern const Class TypedObjectClass;
 
 template <ScalarTypeRepresentation::Type type, typename T>
 class NumericType
@@ -57,11 +27,15 @@ class NumericType
   private:
     static const Class * typeToClass();
   public:
-    static bool convert(JSContext *cx, HandleValue val, T* converted);
     static bool reify(JSContext *cx, void *mem, MutableHandleValue vp);
     static bool call(JSContext *cx, unsigned argc, Value *vp);
 };
 
+/*
+ * These are the classes of the scalar type descriptors, like `uint8`,
+ * `uint16` etc. Each of these classes has exactly one instance that
+ * is pre-created.
+ */
 extern const Class NumericTypeClasses[ScalarTypeRepresentation::TYPE_MAX];
 
 /*
@@ -73,12 +47,26 @@ class ArrayType : public JSObject
   public:
     static const Class class_;
 
+    // Properties and methods to be installed on ArrayType.prototype,
+    // and hence inherited by all array type objects:
+    static const JSPropertySpec typeObjectProperties[];
+    static const JSFunctionSpec typeObjectMethods[];
+
+    // Properties and methods to be installed on ArrayType.prototype.prototype,
+    // and hence inherited by all array *typed* objects:
+    static const JSPropertySpec typedObjectProperties[];
+    static const JSFunctionSpec typedObjectMethods[];
+
+    // This is the function that gets called when the user
+    // does `new ArrayType(elem)`. It produces an array type object.
+    static bool construct(JSContext *cx, unsigned argc, Value *vp);
+
     static JSObject *create(JSContext *cx, HandleObject arrayTypeGlobal,
                             HandleObject elementType, size_t length);
-    static bool construct(JSContext *cx, unsigned int argc, jsval *vp);
-    static bool repeat(JSContext *cx, unsigned int argc, jsval *vp);
+    static bool repeat(JSContext *cx, unsigned argc, Value *vp);
+    static bool subarray(JSContext *cx, unsigned argc, Value *vp);
 
-    static bool toSource(JSContext *cx, unsigned int argc, jsval *vp);
+    static bool toSource(JSContext *cx, unsigned argc, Value *vp);
 
     static JSObject *elementType(JSContext *cx, HandleObject obj);
 };
@@ -101,13 +89,25 @@ class StructType : public JSObject
   public:
     static const Class class_;
 
-    static bool toSource(JSContext *cx, unsigned int argc, jsval *vp);
+    // Properties and methods to be installed on StructType.prototype,
+    // and hence inherited by all struct type objects:
+    static const JSPropertySpec typeObjectProperties[];
+    static const JSFunctionSpec typeObjectMethods[];
+
+    // Properties and methods to be installed on StructType.prototype.prototype,
+    // and hence inherited by all struct *typed* objects:
+    static const JSPropertySpec typedObjectProperties[];
+    static const JSFunctionSpec typedObjectMethods[];
+
+    // This is the function that gets called when the user
+    // does `new StructType(...)`. It produces a struct type object.
+    static bool construct(JSContext *cx, unsigned argc, Value *vp);
+
+    static bool toSource(JSContext *cx, unsigned argc, Value *vp);
 
     static bool convertAndCopyTo(JSContext *cx,
                                  StructTypeRepresentation *typeRepr,
                                  HandleValue from, uint8_t *mem);
-
-    static bool construct(JSContext *cx, unsigned int argc, jsval *vp);
 };
 
 /* Binary data objects and handles */
@@ -213,10 +213,58 @@ class BinaryBlock
                                    HandleObject owner, size_t offset);
 
     // user-accessible constructor (`new TypeDescriptor(...)`)
-    static bool construct(JSContext *cx, unsigned int argc, jsval *vp);
+    static bool construct(JSContext *cx, unsigned argc, Value *vp);
 };
 
+
+// Usage: ClampToUint8(v)
+//
+// Same as the C function ClampDoubleToUint8. `v` must be a number.
+bool ClampToUint8(ThreadSafeContext *cx, unsigned argc, Value *vp);
+extern const JSJitInfo ClampToUint8JitInfo;
+
+// Usage: Memcpy(targetTypedObj, targetOffset,
+//               sourceTypedObj, sourceOffset,
+//               size)
+//
+// Intrinsic function. Copies size bytes from the data for
+// `sourceTypedObj` at `sourceOffset` into the data for
+// `targetTypedObj` at `targetOffset`.
+bool Memcpy(ThreadSafeContext *cx, unsigned argc, Value *vp);
+
+extern const JSJitInfo MemcpyJitInfo;
+
+// Usage: StoreScalar(targetTypedObj, targetOffset, value)
+//
+// Intrinsic function. Stores value (which must be an int32 or uint32)
+// by `scalarTypeRepr` (which must be a type repr obj) and stores the
+// value at the memory for `targetTypedObj` at offset `targetOffset`.
+#define JS_STORE_SCALAR_CLASS_DEFN(_constant, T, _name)                       \
+class StoreScalar##T {                                                        \
+  public:                                                                     \
+    static bool Func(ThreadSafeContext *cx, unsigned argc, Value *vp);        \
+    static const JSJitInfo JitInfo;                                           \
+};
+
+// Usage: LoadScalar(targetTypedObj, targetOffset, value)
+//
+// Intrinsic function. Loads value (which must be an int32 or uint32)
+// by `scalarTypeRepr` (which must be a type repr obj) and loads the
+// value at the memory for `targetTypedObj` at offset `targetOffset`.
+// `targetTypedObj` must be attached.
+#define JS_LOAD_SCALAR_CLASS_DEFN(_constant, T, _name)                        \
+class LoadScalar##T {                                                         \
+  public:                                                                     \
+    static bool Func(ThreadSafeContext *cx, unsigned argc, Value *vp);        \
+    static const JSJitInfo JitInfo;                                           \
+};
+
+// I was using templates for this stuff instead of macros, but ran
+// into problems with the Unagi compiler.
+JS_FOR_EACH_UNIQUE_SCALAR_TYPE_REPR_CTYPE(JS_STORE_SCALAR_CLASS_DEFN)
+JS_FOR_EACH_UNIQUE_SCALAR_TYPE_REPR_CTYPE(JS_LOAD_SCALAR_CLASS_DEFN)
 
 } // namespace js
 
 #endif /* builtin_TypedObject_h */
+
