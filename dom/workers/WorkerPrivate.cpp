@@ -558,6 +558,7 @@ public:
                             nsTArray<nsCOMPtr<nsISupports> >& aDoomed,
                             nsTArray<nsCString>& aHostObjectURIs)
   {
+    mThread.swap(aThread);
     mDoomed.SwapElements(aDoomed);
     mHostObjectURIs.SwapElements(aHostObjectURIs);
   }
@@ -1541,39 +1542,6 @@ public:
 
     aCompartmentStats->extra = extras;
   }
-};
-
-class XPCOMAdapterRunnable : public WorkerRunnable {
-public:
-  XPCOMAdapterRunnable(WorkerPrivate* aWorkerPrivate,
-                       nsIRunnable* aRunnable)
-  : WorkerRunnable(aWorkerPrivate, WorkerThread,
-                   ModifyBusyCount, RunWhenClearing),
-    mRunnable(aRunnable)
-  { }
-
-  bool
-  PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
-  {
-    // Silence bad assertions.
-    return true;
-  }
-
-  void
-  PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
-               bool aDispatchResult)
-  {
-    // Silence bad assertions.
-  }
-
-  bool
-  WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
-  {
-    return NS_SUCCEEDED(mRunnable->Run());
-  }
-
-private:
-  nsCOMPtr<nsIRunnable> mRunnable;
 };
 
 } /* anonymous namespace */
@@ -3393,22 +3361,6 @@ WorkerPrivate::Dispatch(WorkerRunnable* aEvent, EventQueue* aQueue)
 
   event.forget();
   return true;
-}
-
-bool
-WorkerPrivate::DispatchXPCOMEvent(nsIRunnable* aRunnable)
-{
-#ifdef DEBUG
-  {
-    nsCOMPtr<WorkerRunnable> workerRunnable = do_QueryInterface(aRunnable);
-    NS_ASSERTION(!workerRunnable, "This was dispatched the wrong way!");
-  }
-#endif
-
-
-  nsRefPtr<XPCOMAdapterRunnable> runnable =
-    new XPCOMAdapterRunnable(this, aRunnable);
-  return Dispatch(runnable);
 }
 
 bool

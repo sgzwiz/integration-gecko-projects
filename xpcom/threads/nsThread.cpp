@@ -349,27 +349,17 @@ nsThread::PutEvent(nsIRunnable *event)
 {
   {
     MutexAutoLock lock(mLock);
-    nsresult rv = PutEventInternal(event);
-    NS_ENSURE_SUCCESS(rv, rv);
+    if (mEventsAreDoomed) {
+      NS_WARNING("An event was posted to a thread that will never run it (rejected)");
+      return NS_ERROR_UNEXPECTED;
+    }
+    if (!mEvents.PutEvent(event))
+      return NS_ERROR_OUT_OF_MEMORY;
   }
 
   nsCOMPtr<nsIThreadObserver> obs = GetObserver();
   if (obs)
     obs->OnDispatchedEvent(this);
-
-  return NS_OK;
-}
-
-nsresult
-nsThread::PutEventInternal(nsIRunnable *event)
-{
-  mLock.AssertCurrentThreadOwns();
-  if (mEventsAreDoomed) {
-    NS_WARNING("An event was posted to a thread that will never run it (rejected)");
-    return NS_ERROR_UNEXPECTED;
-  }
-  if (!mEvents.PutEvent(event))
-    return NS_ERROR_OUT_OF_MEMORY;
 
   return NS_OK;
 }

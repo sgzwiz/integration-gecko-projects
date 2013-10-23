@@ -63,7 +63,6 @@ CPP_SOURCES += [
     'Principal.cpp',
     'RuntimeService.cpp',
     'ScriptLoader.cpp',
-    'Thread.cpp',
     'URL.cpp',
     'Worker.cpp',
     'WorkerPrivate.cpp',

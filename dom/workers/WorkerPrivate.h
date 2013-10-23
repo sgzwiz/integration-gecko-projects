@@ -51,19 +51,9 @@ class WorkerChild;
 class WorkerParent;
 class WorkerPrivate;
 
-#ifdef DEBUG
-#define WORKERRUNNABLE_IID                                                    \
- { 0x4dcd27be, 0x2760, 0x4a93, { 0x9b, 0x47, 0xd5, 0x03,                      \
-   0xd1, 0x43, 0x7d, 0x10 } }
-#endif
-
 class WorkerRunnable : public nsIRunnable
 {
 public:
-#ifdef DEBUG
-  NS_DECLARE_STATIC_IID_ACCESSOR(WORKERRUNNABLE_IID);
-#endif
-
   enum Target { ParentThread, WorkerThread };
   enum BusyBehavior { ModifyBusyCount, UnchangedBusyCount };
   enum ClearingBehavior { SkipWhenClearing, RunWhenClearing };
@@ -123,10 +113,6 @@ protected:
 public:
   NS_DECL_NSIRUNNABLE
 };
-
-#ifdef DEBUG
-NS_DEFINE_STATIC_IID_ACCESSOR(WorkerRunnable, WORKERRUNNABLE_IID)
-#endif
 
 class WorkerSyncRunnable : public WorkerRunnable
 {
@@ -780,11 +766,6 @@ public:
   {
     return Dispatch(aEvent, &mControlQueue);
   }
-
-  // This is not 'Dispatch' because it should only be used for raw XPCOM
-  // runnables that are not 
-  bool
-  DispatchXPCOMEvent(nsIRunnable* aEvent);
 
   bool
   CloseInternal(JSContext* aCx)
