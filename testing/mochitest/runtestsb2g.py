@@ -130,6 +130,7 @@ class B2GMochitest(MochitestUtilsMixin):
                             'devicemanager': self._dm,
                             'marionette': self.marionette,
                             'remote_test_root': self.remote_test_root,
+                            'symbols_path': options.symbolsPath,
                             'test_script': self.test_script,
                             'test_script_args': self.test_script_args }
             self.runner = B2GRunner(**runner_args)
