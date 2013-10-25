@@ -435,6 +435,24 @@
     "layout/style/test/test_visited_reftests.html":"bug 870262, :visited support",
 
     "Harness_sanity/test_sanityEventUtils.html": "bug 688052",
-    "Harness_sanity/test_sanitySimpletest.html": "bug 688052"
+    "Harness_sanity/test_sanitySimpletest.html": "bug 688052",
+
+    "content/base/test/test_bug326337.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/base/test/test_bug426646.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/base/test/test_bug557892.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/base/test/test_copyimage.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/events/test/test_bug322588.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/events/test/test_bug493251.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/events/test/test_bug545268.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/events/test/test_bug656379-1.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/html/content/test/forms/test_change_event.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/html/content/test/forms/test_input_event.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/html/content/test/forms/test_input_range_key_events.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/html/content/test/forms/test_input_range_rounding.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/html/content/test/test_bug633058.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/html/content/test/test_bug643051.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/html/content/test/test_bug651956.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/html/content/test/test_bug659743.xml": "Bug 931116, b2g desktop specific, initial triage",
+    "content/html/content/test/test_bug674558.html": "Bug 931116, b2g desktop specific, initial triage"
   }
 }
