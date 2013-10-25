@@ -453,6 +453,10 @@
     "content/html/content/test/test_bug643051.html": "Bug 931116, b2g desktop specific, initial triage",
     "content/html/content/test/test_bug651956.html": "Bug 931116, b2g desktop specific, initial triage",
     "content/html/content/test/test_bug659743.xml": "Bug 931116, b2g desktop specific, initial triage",
-    "content/html/content/test/test_bug674558.html": "Bug 931116, b2g desktop specific, initial triage"
+    "content/html/content/test/test_bug674558.html": "Bug 931116, b2g desktop specific, initial triage",
+
+    "content/html/content/test/test_iframe_sandbox_general.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/html/content/test/test_iframe_sandbox_modal.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/html/content/test/test_iframe_sandbox_popups.html": "Bug 931116, b2g desktop specific, initial triage"
   }
 }
