@@ -65,8 +65,8 @@ FileDescriptor::DuplicateInCurrentProcess(PlatformHandleType aHandle)
 void
 FileDescriptor::CloseCurrentProcessHandle()
 {
-  MOZ_ASSERT_IF(mHandleCreatedByOtherProcess,
-                mHandleCreatedByOtherProcessWasUsed);
+  //MOZ_ASSERT_IF(mHandleCreatedByOtherProcess,
+  //             mHandleCreatedByOtherProcessWasUsed);
 
   // Don't actually close handles created by another process.
   if (mHandleCreatedByOtherProcess) {
