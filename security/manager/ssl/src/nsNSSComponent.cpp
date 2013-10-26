@@ -144,7 +144,7 @@ bool EnsureNSSInitialized(EnsureNSSOperator op)
       return true;
     }
 
-    NS_ERROR("Trying to initialize PSM/NSS in a non-chrome process!");
+    NS_WARNING("Trying to initialize PSM/NSS in a non-chrome process!");
     return false;
   }
 
