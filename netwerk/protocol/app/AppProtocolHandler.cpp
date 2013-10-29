@@ -285,7 +285,6 @@ AppProtocolHandler::Create(nsISupports* aOuter,
   // use indirectly (via our new JarChannel) in NewChannel.
   nsCOMPtr<nsIProtocolHandler> jarInitializer(
     do_GetService(NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "jar"));
-
   AppProtocolHandler* ph = new AppProtocolHandler();
   if (ph == nullptr) {
     return NS_ERROR_OUT_OF_MEMORY;
