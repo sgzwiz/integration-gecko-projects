@@ -2058,7 +2058,7 @@ CmpInstructions(const void *a, const void *b)
 }
 
 bool
-jit::AnalyzeNewScriptProperties(JSContext *cx, JSFunction *fun,
+jit::AnalyzeNewScriptProperties(JSContext *cx, HandleFunction fun,
                                 types::TypeObject *type, HandleObject baseobj,
                                 Vector<types::TypeNewScript::Initializer> *initializerList)
 {
@@ -2083,7 +2083,7 @@ jit::AnalyzeNewScriptProperties(JSContext *cx, JSFunction *fun,
 
     types::AutoEnterAnalysis enter(cx);
 
-    if (!cx->compartment()->ensureIonCompartmentExists(cx))
+    if (!cx->compartment()->ensureJitCompartmentExists(cx))
         return Method_Error;
 
     if (!script->hasBaselineScript()) {

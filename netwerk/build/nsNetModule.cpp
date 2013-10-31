@@ -36,6 +36,7 @@
 #include "nsXULAppAPI.h"
 #include "nsCategoryCache.h"
 #include "nsIContentSniffer.h"
+#include "Seer.h"
 #include "nsNetUtil.h"
 #include "nsIThreadPool.h"
 #include "mozilla/net/NeckoChild.h"
@@ -812,6 +813,7 @@ NS_DEFINE_NAMED_CID(NS_NETWORK_LINK_SERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_SERIALIZATION_HELPER_CID);
 NS_DEFINE_NAMED_CID(NS_REDIRECTCHANNELREGISTRAR_CID);
 NS_DEFINE_NAMED_CID(NS_CACHE_STORAGE_SERVICE_CID);
+NS_DEFINE_NAMED_CID(NS_NETWORKSEER_CID);
 
 static const mozilla::Module::CIDEntry kNeckoCIDs[] = {
     { &kNS_IOSERVICE_CID, false, nullptr, nsIOServiceConstructor },
@@ -939,7 +941,7 @@ static const mozilla::Module::CIDEntry kNeckoCIDs[] = {
       mozilla::net::WebSocketSSLChannelConstructor },
 #endif
 #ifdef MOZ_RTSP
-    { &kNS_RTSPPROTOCOLHANDLER_CID, false, NULL, mozilla::net::RtspHandlerConstructor },
+    { &kNS_RTSPPROTOCOLHANDLER_CID, false, nullptr, mozilla::net::RtspHandlerConstructor },
 #endif
 #if defined(XP_WIN)
     { &kNS_NETWORK_LINK_SERVICE_CID, false, nullptr, nsNotifyAddrListenerConstructor },
@@ -953,6 +955,7 @@ static const mozilla::Module::CIDEntry kNeckoCIDs[] = {
     { &kNS_SERIALIZATION_HELPER_CID, false, nullptr, nsSerializationHelperConstructor },
     { &kNS_REDIRECTCHANNELREGISTRAR_CID, false, nullptr, RedirectChannelRegistrarConstructor },
     { &kNS_CACHE_STORAGE_SERVICE_CID, false, nullptr, CacheStorageServiceConstructor },
+    { &kNS_NETWORKSEER_CID, false, NULL, mozilla::net::Seer::Create },
     { nullptr }
 };
 
@@ -1097,6 +1100,7 @@ static const mozilla::Module::ContractIDEntry kNeckoContracts[] = {
     { NS_SERIALIZATION_HELPER_CONTRACTID, &kNS_SERIALIZATION_HELPER_CID },
     { NS_REDIRECTCHANNELREGISTRAR_CONTRACTID, &kNS_REDIRECTCHANNELREGISTRAR_CID },
     { NS_CACHE_STORAGE_SERVICE_CONTRACTID, &kNS_CACHE_STORAGE_SERVICE_CID },
+    { NS_NETWORKSEER_CONTRACTID, &kNS_NETWORKSEER_CID },
     { nullptr }
 };
 

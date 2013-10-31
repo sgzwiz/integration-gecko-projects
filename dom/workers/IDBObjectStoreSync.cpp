@@ -568,7 +568,7 @@ IDBObjectStoreSync::DeserializeValue(JSContext* aCx,
 
   JSAutoRequest ar(aCx);
 
-  return aBuffer.read(aCx, aValue.address(), nullptr, nullptr);
+  return aBuffer.read(aCx, aValue, nullptr, nullptr);
 }
 
 // static

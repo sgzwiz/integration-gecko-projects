@@ -1406,13 +1406,13 @@ public:
 
 class UpdateJSContextOptionsRunnable : public WorkerControlRunnable
 {
-  uint32_t mContentOptions;
-  uint32_t mChromeOptions;
+  JS::ContextOptions mContentOptions;
+  JS::ContextOptions mChromeOptions;
 
 public:
   UpdateJSContextOptionsRunnable(WorkerPrivate* aWorkerPrivate,
-                                 uint32_t aContentOptions,
-                                 uint32_t aChromeOptions)
+                                 const JS::ContextOptions& aContentOptions,
+                                 const JS::ContextOptions& aChromeOptions)
   : WorkerControlRunnable(aWorkerPrivate, WorkerThread, UnchangedBusyCount),
     mContentOptions(aContentOptions), mChromeOptions(aChromeOptions)
   { }
@@ -2009,6 +2009,11 @@ private:
 
     mAlreadyMappedToAddon = true;
 
+    if (XRE_GetProcessType() != GeckoProcessType_Default) {
+      // Only try to access the service from the main process.
+      return;
+    }
+
     nsAutoCString addonId;
     bool ok;
     nsCOMPtr<amIAddonManager> addonManager =
@@ -2064,11 +2069,6 @@ WorkerPrivateParent<Derived>::WorkerPrivateParent(
     aParent->AssertIsOnWorkerThread();
 
     aParent->CopyJSSettings(mJSSettings);
-
-    NS_ASSERTION(JS_GetOptions(aCx) == (aParent->IsChromeWorker() ?
-                                        mJSSettings.chrome.options :
-                                        mJSSettings.content.options),
-                 "Options mismatch!");
   }
   else {
     AssertIsOnMainThread();
@@ -2412,7 +2412,7 @@ WorkerPrivateParent<Derived>::_finalize(JSFreeOp* aFop)
   // will call Release, and some of our members cannot be released during
   // finalization. Of course, if those members are already gone then we can skip
   // this mess...
-  WorkerPrivateParent<Derived>* extraSelfRef = NULL;
+  WorkerPrivateParent<Derived>* extraSelfRef = nullptr;
 
   if (!mParent && !mMainThreadObjectsForgotten) {
     AssertIsOnMainThread();
@@ -2656,7 +2656,7 @@ WorkerPrivateParent<Derived>::DispatchMessageEventToMessagePort(
   JSAutoCompartment(cx, sgo->GetGlobalJSObject());
 
   JS::Rooted<JS::Value> data(cx);
-  if (!buffer.read(cx, data.address(), WorkerStructuredCloneCallbacks(true))) {
+  if (!buffer.read(cx, &data, WorkerStructuredCloneCallbacks(true))) {
     return false;
   }
 
@@ -2702,8 +2702,8 @@ WorkerPrivateParent<Derived>::GetInnerWindowId()
 template <class Derived>
 void
 WorkerPrivateParent<Derived>::UpdateJSContextOptions(JSContext* aCx,
-                                                     uint32_t aContentOptions,
-                                                     uint32_t aChromeOptions)
+                                                     const JS::ContextOptions& aContentOptions,
+                                                     const JS::ContextOptions& aChromeOptions)
 {
   AssertIsOnParentThread();
 
@@ -4951,12 +4951,12 @@ WorkerPrivate::RescheduleTimeoutTimer(JSContext* aCx)
 
 void
 WorkerPrivate::UpdateJSContextOptionsInternal(JSContext* aCx,
-                                              uint32_t aContentOptions,
-                                              uint32_t aChromeOptions)
+                                              const JS::ContextOptions& aContentOptions,
+                                              const JS::ContextOptions& aChromeOptions)
 {
   AssertIsOnWorkerThread();
 
-  JS_SetOptions(aCx, IsChromeWorker() ? aChromeOptions : aContentOptions);
+  JS::ContextOptionsRef(aCx) = IsChromeWorker() ? aChromeOptions : aContentOptions;
 
   for (uint32_t index = 0; index < mChildWorkers.Length(); index++) {
     mChildWorkers[index]->UpdateJSContextOptions(aCx, aContentOptions,

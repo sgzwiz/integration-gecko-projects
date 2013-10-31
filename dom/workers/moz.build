@@ -18,8 +18,8 @@ EXPORTS.mozilla.dom.workers += [
 # Stuff needed for the bindings, not really public though.
 EXPORTS.mozilla.dom.workers.bindings += [
     'BlockingHelperBase.h',
-    'DOMBindingBase.h',
     'DatabaseInfoMT.h',
+    'DOMBindingBase.h',
     'EventListenerManager.h',
     'EventTarget.h',
     'FileReaderSync.h',
@@ -42,14 +42,14 @@ EXPORTS.mozilla.dom.workers.bindings += [
     'XMLHttpRequestUpload.h',
 ]
 
-CPP_SOURCES += [
+SOURCES += [
     'BlockingHelperBase.cpp',
     'ChromeWorkerScope.cpp',
     'DatabaseInfoMT.cpp',
     'DOMBindingBase.cpp',
     'EventListenerManager.cpp',
-    'EventTarget.cpp',
     'Events.cpp',
+    'EventTarget.cpp',
     'File.cpp',
     'FileReaderSync.cpp',
     'IDBCursorSync.cpp',
@@ -93,3 +93,6 @@ LOCAL_INCLUDES += [
     '/content/events/src',
     '/xpcom/build',
 ]
+
+include('/ipc/chromium/chromium-config.mozbuild')
+

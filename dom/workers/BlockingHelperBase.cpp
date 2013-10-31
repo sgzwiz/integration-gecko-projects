@@ -48,7 +48,7 @@ ConvertCloneReadInfosToArrayInternal(
         val = JSVAL_VOID;
       }
       else {
-        buffer.read(aCx, val.address(), nullptr, nullptr);
+        buffer.read(aCx, &val, nullptr, nullptr);
       }
 
       if (!JS_SetElement(aCx, array, index, &val)) {

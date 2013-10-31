@@ -86,6 +86,9 @@ let RILQUIRKS_EXTRA_UINT32_2ND_CALL = libcutils.property_get("ro.moz.ril.extra_i
 // On the emulator we support querying the number of lock retries
 let RILQUIRKS_HAVE_QUERY_ICC_LOCK_RETRY_COUNT = libcutils.property_get("ro.moz.ril.query_icc_count", "false") == "true";
 
+// Ril quirk to Send STK Profile Download
+let RILQUIRKS_SEND_STK_PROFILE_DOWNLOAD = libcutils.property_get("ro.moz.ril.send_stk_profile_dl", "false") == "true";
+
 // Marker object.
 let PENDING_NETWORK_TYPE = {};
 
@@ -3014,10 +3017,14 @@ let RIL = {
         ICCRecordHelper.readICCPhase();
         ICCRecordHelper.fetchICCRecords();
       } else if (this.appType == CARD_APPTYPE_USIM) {
-        this.sendStkTerminalProfile(STK_SUPPORTED_TERMINAL_PROFILE);
+        if (RILQUIRKS_SEND_STK_PROFILE_DOWNLOAD) {
+          this.sendStkTerminalProfile(STK_SUPPORTED_TERMINAL_PROFILE);
+        }
         ICCRecordHelper.fetchICCRecords();
       } else if (this.appType == CARD_APPTYPE_RUIM) {
-        this.sendStkTerminalProfile(STK_SUPPORTED_TERMINAL_PROFILE);
+        if (RILQUIRKS_SEND_STK_PROFILE_DOWNLOAD) {
+          this.sendStkTerminalProfile(STK_SUPPORTED_TERMINAL_PROFILE);
+        }
         RuimRecordHelper.fetchRuimRecords();
       }
       this.reportStkServiceIsRunning();
@@ -4213,7 +4220,13 @@ let RIL = {
         // the (U)SIM before sending an ACK to the SC.`  ~ 3GPP 23.038 clause 4
         message.result = PDU_FCS_RESERVED;
       }
-      message.rilMessageType = "sms-received";
+
+      if (message.messageType == PDU_CDMA_MSG_TYPE_BROADCAST) {
+        message.rilMessageType = "broadcastsms-received";
+      } else {
+        message.rilMessageType = "sms-received";
+      }
+
       this.sendChromeMessage(message);
 
       // We will acknowledge receipt of the SMS after we try to store it
@@ -8803,25 +8816,28 @@ let CdmaPDUHelper = {
 
     // Transform message to GSM msg
     let msg = {
-      SMSC:           "",
-      mti:            0,
-      udhi:           0,
-      sender:         message.sender,
-      recipient:      null,
-      pid:            PDU_PID_DEFAULT,
-      epid:           PDU_PID_DEFAULT,
-      dcs:            0,
-      mwi:            null, //message[PDU_CDMA_MSG_USERDATA_BODY].header ? message[PDU_CDMA_MSG_USERDATA_BODY].header.mwi : null,
-      replace:        false,
-      header:         message[PDU_CDMA_MSG_USERDATA_BODY].header,
-      body:           message[PDU_CDMA_MSG_USERDATA_BODY].body,
-      data:           null,
-      timestamp:      message[PDU_CDMA_MSG_USERDATA_TIMESTAMP],
-      status:         null,
-      scts:           null,
-      dt:             null,
-      encoding:       message[PDU_CDMA_MSG_USERDATA_BODY].encoding,
-      messageClass:   GECKO_SMS_MESSAGE_CLASSES[PDU_DCS_MSG_CLASS_NORMAL]
+      SMSC:            "",
+      mti:             0,
+      udhi:            0,
+      sender:          message.sender,
+      recipient:       null,
+      pid:             PDU_PID_DEFAULT,
+      epid:            PDU_PID_DEFAULT,
+      dcs:             0,
+      mwi:             null, //message[PDU_CDMA_MSG_USERDATA_BODY].header ? message[PDU_CDMA_MSG_USERDATA_BODY].header.mwi : null,
+      replace:         false,
+      header:          message[PDU_CDMA_MSG_USERDATA_BODY].header,
+      body:            message[PDU_CDMA_MSG_USERDATA_BODY].body,
+      data:            null,
+      timestamp:       message[PDU_CDMA_MSG_USERDATA_TIMESTAMP],
+      language:        message[PDU_CDMA_LANGUAGE_INDICATOR],
+      status:          null,
+      scts:            null,
+      dt:              null,
+      encoding:        message[PDU_CDMA_MSG_USERDATA_BODY].encoding,
+      messageClass:    GECKO_SMS_MESSAGE_CLASSES[PDU_DCS_MSG_CLASS_NORMAL],
+      messageType:     message.messageType,
+      serviceCategory: message.service
     };
 
     return msg;
@@ -8922,6 +8938,9 @@ let CdmaPDUHelper = {
           break;
         case PDU_CDMA_REPLY_OPTION:
           message[id] = this.decodeUserDataReplyAction();
+          break;
+        case PDU_CDMA_LANGUAGE_INDICATOR:
+          message[id] = this.decodeLanguageIndicator();
           break;
         case PDU_CDMA_MSG_USERDATA_CALLBACK_NUMBER:
           message[id] = this.decodeUserDataCallbackNumber();
@@ -9300,6 +9319,17 @@ let CdmaPDUHelper = {
                    report: (replyAction & 0x1) ? true : false
                  };
 
+    return result;
+  },
+
+  /**
+   * User data subparameter decoder : Language Indicator
+   *
+   * @see 3GGP2 C.S0015-B 2.0, 4.5.14 Language Indicator
+   */
+  decodeLanguageIndicator: function cdma_decodeLanguageIndicator() {
+    let language = BitBufferHelper.readBits(8);
+    let result = CB_CDMA_LANG_GROUP[language];
     return result;
   },
 
@@ -10382,7 +10412,7 @@ let ComprehensionTlvHelper = {
     } else {
       RIL.sendStkTerminalResponse({
         resultCode: STK_RESULT_CMD_DATA_NOT_UNDERSTOOD});
-      throw new Error("Invalid octet in Comprehension TLV :" + length);
+      throw new Error("Invalid octet in Comprehension TLV :" + temp);
     }
 
     let ctlv = {
@@ -11026,7 +11056,8 @@ let ICCRecordHelper = {
       let phase = GsmPDUHelper.readHexOctet();
       // If EF_phase is coded '03' or greater, an ME supporting STK shall
       // perform the PROFILE DOWNLOAD procedure.
-      if (phase >= ICC_PHASE_2_PROFILE_DOWNLOAD_REQUIRED) {
+      if (RILQUIRKS_SEND_STK_PROFILE_DOWNLOAD &&
+          phase >= ICC_PHASE_2_PROFILE_DOWNLOAD_REQUIRED) {
         RIL.sendStkTerminalProfile(STK_SUPPORTED_TERMINAL_PROFILE);
       }
 

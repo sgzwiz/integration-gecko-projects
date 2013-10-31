@@ -153,9 +153,9 @@ class TestRecursiveMakeBackend(BackendTester):
         """Ensure the RecursiveMakeBackend works without error."""
         env = self._consume('stub0', RecursiveMakeBackend)
         self.assertTrue(os.path.exists(os.path.join(env.topobjdir,
-            'backend.RecursiveMakeBackend.built')))
+            'backend.RecursiveMakeBackend')))
         self.assertTrue(os.path.exists(os.path.join(env.topobjdir,
-            'backend.RecursiveMakeBackend.built.pp')))
+            'backend.RecursiveMakeBackend.pp')))
 
     def test_output_files(self):
         """Ensure proper files are generated."""
@@ -211,8 +211,6 @@ class TestRecursiveMakeBackend(BackendTester):
         lines = [l.strip() for l in open(p, 'rt').readlines()[2:]]
         self.assertEqual(lines, [
             'MOZBUILD_DERIVED := 1',
-            'NO_MAKEFILE_RULE := 1',
-            'NO_SUBMAKEFILES_RULE := 1',
             'DIRS := dir1',
             'PARALLEL_DIRS := dir2',
             'TEST_DIRS := dir3',
@@ -244,8 +242,6 @@ class TestRecursiveMakeBackend(BackendTester):
         lines = [l.strip() for l in open(backend_path, 'rt').readlines()[2:]]
         self.assertEqual(lines, [
             'MOZBUILD_DERIVED := 1',
-            'NO_MAKEFILE_RULE := 1',
-            'NO_SUBMAKEFILES_RULE := 1',
             'DIRS := dir',
             'PARALLEL_DIRS := p_dir',
             'DIRS += external',
@@ -355,8 +351,11 @@ class TestRecursiveMakeBackend(BackendTester):
                 'SIMPLE_PROGRAMS += foo.x',
             ],
             'SSRCS': [
-                'SSRCS += bar.S',
+                'SSRCS += baz.S',
                 'SSRCS += foo.S',
+            ],
+            'VISIBILITY_FLAGS': [
+                'VISIBILITY_FLAGS :=',
             ],
         }
 
@@ -512,6 +511,23 @@ class TestRecursiveMakeBackend(BackendTester):
         expected = [
             'LOCAL_INCLUDES += -I$(topsrcdir)/bar/baz',
             'LOCAL_INCLUDES += -I$(srcdir)/foo',
+        ]
+
+        found = [str for str in lines if str.startswith('LOCAL_INCLUDES')]
+        self.assertEqual(found, expected)
+
+    def test_generated_includes(self):
+        """Test that GENERATED_INCLUDES are written to backend.mk correctly."""
+        env = self._consume('generated_includes', RecursiveMakeBackend)
+
+        backend_path = os.path.join(env.topobjdir, 'backend.mk')
+        lines = [l.strip() for l in open(backend_path, 'rt').readlines()[2:]]
+
+        topobjdir = env.topobjdir.replace('\\', '/')
+
+        expected = [
+            'LOCAL_INCLUDES += -I%s/bar/baz' % topobjdir,
+            'LOCAL_INCLUDES += -Ifoo',
         ]
 
         found = [str for str in lines if str.startswith('LOCAL_INCLUDES')]

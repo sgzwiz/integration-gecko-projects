@@ -87,7 +87,7 @@ class MathCache;
 class WorkerThreadState;
 
 namespace jit {
-class IonRuntime;
+class JitRuntime;
 class JitActivation;
 struct PcScriptCache;
 }
@@ -592,6 +592,7 @@ class PerThreadData : public PerThreadDataFriendFields,
 
     bool associatedWith(const JSRuntime *rt) { return runtime_ == rt; }
     inline JSRuntime *runtimeFromMainThread();
+    inline JSRuntime *runtimeIfOnOwnerThread();
 };
 
 template<class Client>
@@ -859,7 +860,7 @@ struct JSRuntime : public JS::shadow::Runtime,
      */
     JSC::ExecutableAllocator *execAlloc_;
     WTF::BumpPointerAllocator *bumpAlloc_;
-    js::jit::IonRuntime *ionRuntime_;
+    js::jit::JitRuntime *jitRuntime_;
 
     JSObject *selfHostingGlobal_;
 
@@ -868,7 +869,7 @@ struct JSRuntime : public JS::shadow::Runtime,
 
     JSC::ExecutableAllocator *createExecutableAllocator(JSContext *cx);
     WTF::BumpPointerAllocator *createBumpPointerAllocator(JSContext *cx);
-    js::jit::IonRuntime *createIonRuntime(JSContext *cx);
+    js::jit::JitRuntime *createJitRuntime(JSContext *cx);
 
   public:
     JSC::ExecutableAllocator *getExecAlloc(JSContext *cx) {
@@ -884,14 +885,14 @@ struct JSRuntime : public JS::shadow::Runtime,
     WTF::BumpPointerAllocator *getBumpPointerAllocator(JSContext *cx) {
         return bumpAlloc_ ? bumpAlloc_ : createBumpPointerAllocator(cx);
     }
-    js::jit::IonRuntime *getIonRuntime(JSContext *cx) {
-        return ionRuntime_ ? ionRuntime_ : createIonRuntime(cx);
+    js::jit::JitRuntime *getJitRuntime(JSContext *cx) {
+        return jitRuntime_ ? jitRuntime_ : createJitRuntime(cx);
     }
-    js::jit::IonRuntime *ionRuntime() {
-        return ionRuntime_;
+    js::jit::JitRuntime *jitRuntime() const {
+        return jitRuntime_;
     }
-    bool hasIonRuntime() const {
-        return !!ionRuntime_;
+    bool hasJitRuntime() const {
+        return !!jitRuntime_;
     }
     js::InterpreterStack &interpreterStack() {
         return interpreterStack_;
@@ -1793,6 +1794,12 @@ PerThreadData::runtimeFromMainThread()
 {
     JS_ASSERT(js::CurrentThreadCanAccessRuntime(runtime_));
     return runtime_;
+}
+
+inline JSRuntime *
+PerThreadData::runtimeIfOnOwnerThread()
+{
+    return js::CurrentThreadCanAccessRuntime(runtime_) ? runtime_ : nullptr;
 }
 
 /************************************************************************/

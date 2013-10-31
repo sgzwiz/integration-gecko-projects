@@ -143,7 +143,7 @@ class ArrayBufferObject : public JSObject
     static bool saveArrayBufferList(JSCompartment *c, ArrayBufferVector &vector);
     static void restoreArrayBufferLists(ArrayBufferVector &vector);
 
-    static bool stealContents(JSContext *cx, JSObject *obj, void **contents,
+    static bool stealContents(JSContext *cx, Handle<ArrayBufferObject*> buffer, void **contents,
                               uint8_t **data);
 
     static void updateElementsHeader(js::ObjectElements *header, uint32_t bytes) {
@@ -198,7 +198,7 @@ class ArrayBufferObject : public JSObject
     /*
      * Neuter all views of an ArrayBuffer.
      */
-    void neuterViews(JSContext *maybecx);
+    bool neuterViews(JSContext *cx);
 
     inline uint8_t * dataPointer() const {
         return (uint8_t *) elements;
@@ -221,8 +221,11 @@ class ArrayBufferObject : public JSObject
     bool isAsmJSArrayBuffer() const {
         return getElementsHeader()->isAsmJSArrayBuffer();
     }
+    bool isNeutered() const {
+        return getElementsHeader()->isNeuteredBuffer();
+    }
     static bool prepareForAsmJS(JSContext *cx, Handle<ArrayBufferObject*> buffer);
-    static void neuterAsmJSArrayBuffer(ArrayBufferObject &buffer);
+    static bool neuterAsmJSArrayBuffer(JSContext *cx, ArrayBufferObject &buffer);
     static void releaseAsmJSArrayBuffer(FreeOp *fop, JSObject *obj);
 };
 

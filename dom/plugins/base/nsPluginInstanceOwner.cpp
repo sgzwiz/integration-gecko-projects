@@ -166,7 +166,7 @@ nsPluginInstanceOwner::GetImageContainer()
   // Right now we only draw with Gecko layers on Honeycomb and higher. See Paint()
   // for what we do on other versions.
   if (AndroidBridge::Bridge()->GetAPIVersion() < 11)
-    return NULL;
+    return nullptr;
   
   container = LayerManager::CreateImageContainer();
 
@@ -1354,8 +1354,8 @@ NPEventModel nsPluginInstanceOwner::GetEventModel()
 
 #define DEFAULT_REFRESH_RATE 20 // 50 FPS
 
-nsCOMPtr<nsITimer>                *nsPluginInstanceOwner::sCATimer = NULL;
-nsTArray<nsPluginInstanceOwner*>  *nsPluginInstanceOwner::sCARefreshListeners = NULL;
+nsCOMPtr<nsITimer>               *nsPluginInstanceOwner::sCATimer = nullptr;
+nsTArray<nsPluginInstanceOwner*> *nsPluginInstanceOwner::sCARefreshListeners = nullptr;
 
 void nsPluginInstanceOwner::CARefresh(nsITimer *aTimer, void *aClosure) {
   if (!sCARefreshListeners) {
@@ -1412,7 +1412,7 @@ void nsPluginInstanceOwner::AddToCARefreshTimer() {
 
   if (sCARefreshListeners->Length() == 1) {
     *sCATimer = do_CreateInstance("@mozilla.org/timer;1");
-    (*sCATimer)->InitWithFuncCallback(CARefresh, NULL, 
+    (*sCATimer)->InitWithFuncCallback(CARefresh, nullptr, 
                    DEFAULT_REFRESH_RATE, nsITimer::TYPE_REPEATING_SLACK);
   }
 }
@@ -1428,10 +1428,10 @@ void nsPluginInstanceOwner::RemoveFromCARefreshTimer() {
     if (sCATimer) {
       (*sCATimer)->Cancel();
       delete sCATimer;
-      sCATimer = NULL;
+      sCATimer = nullptr;
     }
     delete sCARefreshListeners;
-    sCARefreshListeners = NULL;
+    sCARefreshListeners = nullptr;
   }
 }
 
@@ -1477,7 +1477,7 @@ void nsPluginInstanceOwner::RenderCoreAnimation(CGContextRef aCGContext,
   }
 
   if (mCARenderer->isInit() == false) {
-    void *caLayer = NULL;
+    void *caLayer = nullptr;
     nsresult rv = mInstance->GetValueFromPlugin(NPPVpluginCoreAnimationLayer, &caLayer);
     if (NS_FAILED(rv) || !caLayer) {
       return;
@@ -1494,12 +1494,12 @@ void nsPluginInstanceOwner::RenderCoreAnimation(CGContextRef aCGContext,
     FixUpPluginWindow(ePluginPaintEnable);
   }
 
-  CGImageRef caImage = NULL;
+  CGImageRef caImage = nullptr;
   nsresult rt = mCARenderer->Render(aWidth, aHeight, scaleFactor, &caImage);
   if (rt == NS_OK && mIOSurface && mColorProfile) {
     nsCARenderer::DrawSurfaceToCGContext(aCGContext, mIOSurface, mColorProfile,
                                          0, 0, aWidth, aHeight);
-  } else if (rt == NS_OK && caImage != NULL) {
+  } else if (rt == NS_OK && caImage != nullptr) {
     // Significant speed up by resetting the scaling
     ::CGContextSetInterpolationQuality(aCGContext, kCGInterpolationNone );
     ::CGContextTranslateCTM(aCGContext, 0, (double) aHeight * scaleFactor);
@@ -2795,18 +2795,18 @@ void nsPluginInstanceOwner::Paint(gfxContext* aContext,
   Visual* visual = DefaultVisualOfScreen(screen);
 
   renderer.Draw(aContext, nsIntSize(window->width, window->height),
-                rendererFlags, screen, visual, nullptr);
+                rendererFlags, screen, visual);
 }
 nsresult
-nsPluginInstanceOwner::Renderer::DrawWithXlib(gfxXlibSurface* xsurface, 
+nsPluginInstanceOwner::Renderer::DrawWithXlib(cairo_surface_t* xsurface,
                                               nsIntPoint offset,
                                               nsIntRect *clipRects, 
                                               uint32_t numClipRects)
 {
-  Screen *screen = cairo_xlib_surface_get_screen(xsurface->CairoSurface());
+  Screen *screen = cairo_xlib_surface_get_screen(xsurface);
   Colormap colormap;
   Visual* visual;
-  if (!xsurface->GetColormapAndVisual(&colormap, &visual)) {
+  if (!gfxXlibSurface::GetColormapAndVisual(xsurface, &colormap, &visual)) {
     NS_ERROR("Failed to get visual and colormap");
     return NS_ERROR_UNEXPECTED;
   }
@@ -2850,10 +2850,10 @@ nsPluginInstanceOwner::Renderer::DrawWithXlib(gfxXlibSurface* xsurface,
     clipRect.height = mWindow->height;
     // Don't ask the plugin to draw outside the drawable.
     // This also ensures that the unsigned clip rectangle offsets won't be -ve.
-    gfxIntSize surfaceSize = xsurface->GetSize();
     clipRect.IntersectRect(clipRect,
                            nsIntRect(0, 0,
-                                     surfaceSize.width, surfaceSize.height));
+                                     cairo_xlib_surface_get_width(xsurface),
+                                     cairo_xlib_surface_get_height(xsurface)));
   }
 
   NPRect newClipRect;
@@ -2906,7 +2906,7 @@ nsPluginInstanceOwner::Renderer::DrawWithXlib(gfxXlibSurface* xsurface,
     // set the drawing info
     exposeEvent.type = GraphicsExpose;
     exposeEvent.display = DisplayOfScreen(screen);
-    exposeEvent.drawable = xsurface->XDrawable();
+    exposeEvent.drawable = cairo_xlib_surface_get_drawable(xsurface);
     exposeEvent.x = dirtyRect.x;
     exposeEvent.y = dirtyRect.y;
     exposeEvent.width  = dirtyRect.width;
@@ -2989,7 +2989,7 @@ void* nsPluginInstanceOwner::GetPluginPortFromWidget()
 {
 //!!! Port must be released for windowless plugins on Windows, because it is HDC !!!
 
-  void* result = NULL;
+  void* result = nullptr;
   if (mWidget) {
 #ifdef XP_WIN
     if (mPluginWindow && (mPluginWindow->type == NPWindowTypeDrawable))
@@ -3081,7 +3081,7 @@ NS_IMETHODIMP nsPluginInstanceOwner::CreateWidget(void)
   }
 
   if (mObjectFrame) {
-    // NULL widget is fine, will result in windowless setup.
+    // nullptr widget is fine, will result in windowless setup.
     mObjectFrame->PrepForDrawing(mWidget);
   }
 

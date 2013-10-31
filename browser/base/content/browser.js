@@ -756,7 +756,6 @@ var gBrowserInit = {
     gBrowser.addEventListener("PluginCrashed",         gPluginHandler, true);
     gBrowser.addEventListener("PluginOutdated",        gPluginHandler, true);
     gBrowser.addEventListener("PluginInstantiated",    gPluginHandler, true);
-    gBrowser.addEventListener("PluginRemoved",         gPluginHandler, true);
 
     gBrowser.addEventListener("NewPluginInstalled", gPluginHandler.newPluginInstalled, true);
 
@@ -1215,9 +1214,7 @@ var gBrowserInit = {
 
     SessionStore.promiseInitialized.then(() => {
       // Enable the Restore Last Session command if needed
-      if (SessionStore.canRestoreLastSession &&
-          !PrivateBrowsingUtils.isWindowPrivate(window))
-        goSetCommandEnabled("Browser:RestoreLastSession", true);
+      RestoreLastSessionObserver.init();
 
       TabView.init();
 
@@ -2155,7 +2152,7 @@ function losslessDecodeURI(aURI) {
   // except ZWNJ (U+200C) and ZWJ (U+200D) (bug 582186).
   // This includes all bidirectional formatting characters.
   // (RFC 3987 sections 3.2 and 4.1 paragraph 6)
-  value = value.replace(/[\u00ad\u034f\u115f-\u1160\u17b4-\u17b5\u180b-\u180d\u200b\u200e-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufff8]|\ud834[\udd73-\udd7a]|[\udb40-\udb43][\udc00-\udfff]/g,
+  value = value.replace(/[\u00ad\u034f\u061c\u115f-\u1160\u17b4-\u17b5\u180b-\u180d\u200b\u200e-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufff8]|\ud834[\udd73-\udd7a]|[\udb40-\udb43][\udc00-\udfff]/g,
                         encodeURIComponent);
   return value;
 }
@@ -3018,11 +3015,11 @@ const BrowserSearch = {
    *        allows the search service to provide a different nsISearchSubmission
    *        depending on e.g. where the search is triggered in the UI.
    *
-   * @return string Name of the search engine used to perform a search or null
-   *         if a search was not performed.
+   * @return engine The search engine used to perform a search, or null if no
+   *                search was performed.
    */
-  loadSearch: function BrowserSearch_search(searchText, useNewTab, purpose) {
-    var engine;
+  _loadSearch: function (searchText, useNewTab, purpose) {
+    let engine;
 
     // If the search bar is visible, use the current engine, otherwise, fall
     // back to the default engine.
@@ -3031,7 +3028,7 @@ const BrowserSearch = {
     else
       engine = Services.search.defaultEngine;
 
-    var submission = engine.getSubmission(searchText, null, purpose); // HTML response
+    let submission = engine.getSubmission(searchText, null, purpose); // HTML response
 
     // getSubmission can return null if the engine doesn't have a URL
     // with a text/html response type.  This is unlikely (since
@@ -3048,6 +3045,20 @@ const BrowserSearch = {
                  inBackground: inBackground,
                  relatedToCurrent: true });
 
+    return engine;
+  },
+
+  /**
+   * Just like _loadSearch, but preserving an old API.
+   *
+   * @return string Name of the search engine used to perform a search or null
+   *         if a search was not performed.
+   */
+  loadSearch: function BrowserSearch_search(searchText, useNewTab, purpose) {
+    let engine = BrowserSearch._loadSearch(searchText, useNewTab, purpose);
+    if (!engine) {
+      return null;
+    }
     return engine.name;
   },
 
@@ -3058,7 +3069,7 @@ const BrowserSearch = {
    * BrowserSearch.loadSearch for the preferred API.
    */
   loadSearchFromContext: function (terms) {
-    let engine = BrowserSearch.loadSearch(terms, true, "contextmenu");
+    let engine = BrowserSearch._loadSearch(terms, true, "contextmenu");
     if (engine) {
       BrowserSearch.recordSearchInHealthReport(engine, "contextmenu");
     }
@@ -3084,8 +3095,7 @@ const BrowserSearch = {
    * FHR records only search counts and nothing pertaining to the search itself.
    *
    * @param engine
-   *        (string) The name of the engine used to perform the search. This
-   *        is typically nsISearchEngine.name.
+   *        (nsISearchEngine) The engine handling the search.
    * @param source
    *        (string) Where the search originated from. See the FHR
    *        SearchesProvider for allowed values.
@@ -6721,19 +6731,16 @@ var gIdentityHandler = {
    * Click handler for the identity-box element in primary chrome.
    */
   handleIdentityButtonEvent : function(event) {
-    TelemetryStopwatch.start("FX_IDENTITY_POPUP_OPEN_MS");
     event.stopPropagation();
 
     if ((event.type == "click" && event.button != 0) ||
         (event.type == "keypress" && event.charCode != KeyEvent.DOM_VK_SPACE &&
          event.keyCode != KeyEvent.DOM_VK_RETURN)) {
-      TelemetryStopwatch.cancel("FX_IDENTITY_POPUP_OPEN_MS");
       return; // Left click, space or enter only
     }
 
     // Don't allow left click, space or enter if the location has been modified.
     if (gURLBar.getAttribute("pageproxystate") != "valid") {
-      TelemetryStopwatch.cancel("FX_IDENTITY_POPUP_OPEN_MS");
       return;
     }
 
@@ -6759,8 +6766,6 @@ var gIdentityHandler = {
   },
 
   onPopupShown : function(event) {
-    TelemetryStopwatch.finish("FX_IDENTITY_POPUP_OPEN_MS");
-
     document.getElementById('identity-popup-more-info-button').focus();
 
     this._identityPopup.addEventListener("blur", this, true);
@@ -7000,6 +7005,26 @@ function switchToTabHavingURI(aURI, aOpenNew) {
 
   return false;
 }
+
+let RestoreLastSessionObserver = {
+  init: function () {
+    if (SessionStore.canRestoreLastSession &&
+        !PrivateBrowsingUtils.isWindowPrivate(window)) {
+      Services.obs.addObserver(this, "sessionstore-last-session-cleared", true);
+      goSetCommandEnabled("Browser:RestoreLastSession", true);
+    }
+  },
+
+  observe: function () {
+    // The last session can only be restored once so there's
+    // no way we need to re-enable our menu item.
+    Services.obs.removeObserver(this, "sessionstore-last-session-cleared");
+    goSetCommandEnabled("Browser:RestoreLastSession", false);
+  },
+
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver,
+                                         Ci.nsISupportsWeakReference])
+};
 
 function restoreLastSession() {
   SessionStore.restoreLastSession();

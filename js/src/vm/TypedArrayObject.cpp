@@ -31,6 +31,7 @@
 #include "gc/Barrier.h"
 #include "gc/Marking.h"
 #include "jit/AsmJS.h"
+#include "jit/AsmJSModule.h"
 #include "vm/GlobalObject.h"
 #include "vm/Interpreter.h"
 #include "vm/NumericConversions.h"
@@ -330,27 +331,32 @@ GetViewListRef(ArrayBufferObject *obj)
     return reinterpret_cast<OldObjectRepresentationHack*>(obj->getElementsHeader())->views;
 }
 
-void
-ArrayBufferObject::neuterViews(JSContext *maybecx)
+bool
+ArrayBufferObject::neuterViews(JSContext *cx)
 {
     ArrayBufferViewObject *view;
     for (view = GetViewList(this); view; view = view->nextView()) {
         view->neuter();
 
         // Notify compiled jit code that the base pointer has moved.
-        if (maybecx)
-            MarkObjectStateChange(maybecx, view);
+        MarkObjectStateChange(cx, view);
     }
 
     // neuterAsmJSArrayBuffer adjusts state specific to the ArrayBuffer data
     // itself, but it only affects the behavior of views
-    if (isAsmJSArrayBuffer())
-        ArrayBufferObject::neuterAsmJSArrayBuffer(*this);
+    if (isAsmJSArrayBuffer()) {
+        if (!ArrayBufferObject::neuterAsmJSArrayBuffer(cx, *this))
+            return false;
+    }
+
+    return true;
 }
 
 void
 ArrayBufferObject::changeContents(JSContext *maybecx, ObjectElements *newHeader)
 {
+   JS_ASSERT(!isAsmJSArrayBuffer());
+
     // Grab out data before invalidating it.
     uint32_t byteLengthCopy = byteLength();
     uintptr_t oldDataPointer = uintptr_t(dataPointer());
@@ -368,8 +374,8 @@ ArrayBufferObject::changeContents(JSContext *maybecx, ObjectElements *newHeader)
     }
 
     // The list of views in the old header is reachable if the contents are
-    // being transferred, so NULL it out
-    SetViewList(this, NULL);
+    // being transferred, so null it out
+    SetViewList(this, nullptr);
 
     elements = newHeader->elements();
 
@@ -391,6 +397,8 @@ ArrayBufferObject::neuter(JSContext *cx)
 
     uint32_t byteLen = 0;
     updateElementsHeader(getElementsHeader(), byteLen);
+
+    getElementsHeader()->setIsNeuteredBuffer();
 }
 
 bool
@@ -427,7 +435,7 @@ ArrayBufferObject::getTransferableContents(JSContext *maybecx, bool *callerOwns)
     uint32_t byteLen = byteLength();
     ObjectElements *newheader = AllocateArrayBufferContents(maybecx, byteLen, dataPointer());
     if (!newheader)
-        return NULL;
+        return nullptr;
 
     initElementsHeader(newheader, byteLen);
     *callerOwns = true;
@@ -523,22 +531,6 @@ ArrayBufferObject::releaseAsmJSArrayBuffer(FreeOp *fop, JSObject *obj)
     munmap(p, AsmJSMappedSize);
 # endif
 }
-
-void
-ArrayBufferObject::neuterAsmJSArrayBuffer(ArrayBufferObject &buffer)
-{
-    // Protect all the pages so that any read/write will generate a fault which
-    // the AsmJSMemoryFaultHandler will turn into the expected result value.
-    JS_ASSERT(buffer.isAsmJSArrayBuffer());
-    JS_ASSERT(buffer.byteLength() % AsmJSAllocationGranularity == 0);
-#ifdef XP_WIN
-    if (!VirtualAlloc(buffer.dataPointer(), buffer.byteLength(), MEM_RESERVE, PAGE_NOACCESS))
-        MOZ_CRASH();
-#else
-    if (mprotect(buffer.dataPointer(), buffer.byteLength(), PROT_NONE))
-        MOZ_CRASH();
-#endif
-}
 #else  /* defined(JS_ION) && defined(JS_CPU_X64) */
 bool
 ArrayBufferObject::prepareForAsmJS(JSContext *cx, Handle<ArrayBufferObject*> buffer)
@@ -546,7 +538,7 @@ ArrayBufferObject::prepareForAsmJS(JSContext *cx, Handle<ArrayBufferObject*> buf
     if (buffer->isAsmJSArrayBuffer())
         return true;
 
-    if (!buffer->copyData(cx))
+    if (!buffer->ensureNonInline(cx))
         return false;
     JS_ASSERT(buffer->hasDynamicElements());
 
@@ -559,13 +551,26 @@ ArrayBufferObject::releaseAsmJSArrayBuffer(FreeOp *fop, JSObject *obj)
 {
     fop->free_(obj->as<ArrayBufferObject>().getElementsHeader());
 }
-
-void
-ArrayBufferObject::neuterAsmJSArrayBuffer(ArrayBufferObject &buffer)
-{
-    // TODO: be ever-so-slightly unsound (but safe) for now.
-}
 #endif
+
+bool
+ArrayBufferObject::neuterAsmJSArrayBuffer(JSContext *cx, ArrayBufferObject &buffer)
+{
+#ifdef JS_ION
+    AsmJSActivation *act = cx->mainThread().asmJSActivationStackFromOwnerThread();
+    for (; act; act = act->prev()) {
+        if (act->module().maybeHeapBufferObject() == &buffer)
+            break;
+    }
+    if (!act)
+        return true;
+
+    js_ReportOverRecursed(cx);
+    return false;
+#else
+    return true;
+#endif
+}
 
 void
 ArrayBufferObject::addView(ArrayBufferViewObject *view)
@@ -665,28 +670,29 @@ ArrayBufferObject::createDataViewForThis(JSContext *cx, unsigned argc, Value *vp
 }
 
 bool
-ArrayBufferObject::stealContents(JSContext *cx, JSObject *obj, void **contents, uint8_t **data)
+ArrayBufferObject::stealContents(JSContext *cx, Handle<ArrayBufferObject*> buffer, void **contents,
+                                 uint8_t **data)
 {
-    ArrayBufferObject &buffer = obj->as<ArrayBufferObject>();
-
     // Make the data stealable
     bool own;
-    ObjectElements *header = reinterpret_cast<ObjectElements*>(buffer.getTransferableContents(cx, &own));
+    ObjectElements *header = reinterpret_cast<ObjectElements*>(buffer->getTransferableContents(cx, &own));
     if (!header)
         return false;
+    JS_ASSERT(!IsInsideNursery(cx->runtime(), header));
     *contents = header;
     *data = reinterpret_cast<uint8_t *>(header + 1);
 
     // Neuter the views, which may also mprotect(PROT_NONE) the buffer. So do
     // it after copying out the data.
-    buffer.neuterViews(cx);
+    if (!buffer->neuterViews(cx))
+        return false;
 
     if (!own) {
         // If header has dynamically allocated elements, revert it back to
         // fixed-element storage before neutering it.
-        buffer.changeContents(cx, ObjectElements::fromElements(buffer.fixedElements()));
+        buffer->changeContents(cx, ObjectElements::fromElements(buffer->fixedElements()));
     }
-    buffer.neuter(cx);
+    buffer->neuter(cx);
 
     return true;
 }
@@ -4019,17 +4025,19 @@ JS_GetArrayBufferData(JSObject *obj)
     if (!obj)
         return nullptr;
     ArrayBufferObject &buffer = obj->as<ArrayBufferObject>();
-    if (!buffer.ensureNonInline(NULL))
+    if (!buffer.ensureNonInline(nullptr))
         return nullptr;
     return buffer.dataPointer();
 }
 
-JS_FRIEND_API(void)
-JS_NeuterArrayBuffer(JSObject *obj, JSContext *cx)
+JS_FRIEND_API(bool)
+JS_NeuterArrayBuffer(JSContext *cx, JSObject *obj)
 {
     ArrayBufferObject &buffer = obj->as<ArrayBufferObject>();
-    buffer.neuterViews(cx);
+    if (!buffer.neuterViews(cx))
+        return false;
     buffer.neuter(cx);
+    return true;
 }
 
 JS_FRIEND_API(JSObject *)
@@ -4080,10 +4088,10 @@ JS_ReallocateArrayBufferContents(JSContext *cx, uint32_t nbytes, void **contents
 }
 
 JS_PUBLIC_API(bool)
-JS_StealArrayBufferContents(JSContext *cx, JSObject *obj, void **contents,
-                            uint8_t **data)
+JS_StealArrayBufferContents(JSContext *cx, HandleObject objArg, void **contents, uint8_t **data)
 {
-    if (!(obj = CheckedUnwrap(obj)))
+    JSObject *obj = CheckedUnwrap(objArg);
+    if (!obj)
         return false;
 
     if (!obj->is<ArrayBufferObject>()) {
@@ -4091,7 +4099,8 @@ JS_StealArrayBufferContents(JSContext *cx, JSObject *obj, void **contents,
         return false;
     }
 
-    if (!ArrayBufferObject::stealContents(cx, obj, contents, data))
+    Rooted<ArrayBufferObject*> buffer(cx, &obj->as<ArrayBufferObject>());
+    if (!ArrayBufferObject::stealContents(cx, buffer, contents, data))
         return false;
 
     return true;

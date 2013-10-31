@@ -323,12 +323,12 @@ WriteStructuredClone(JSContext *cx, HandleValue v, uint64_t **bufp, size_t *nbyt
 }
 
 bool
-ReadStructuredClone(JSContext *cx, uint64_t *data, size_t nbytes, Value *vp,
+ReadStructuredClone(JSContext *cx, uint64_t *data, size_t nbytes, MutableHandleValue vp,
                     const JSStructuredCloneCallbacks *cb, void *cbClosure)
 {
     SCInput in(cx, data, nbytes);
     JSStructuredCloneReader r(in, cb, cbClosure);
-    return r.read(vp);
+    return r.read(vp.address());
 }
 
 // This may acquire new ways of discarding transfer map entries as new
@@ -713,7 +713,7 @@ JSStructuredCloneWriter::parseTransferable()
 
         JSObject* tObj = CheckedUnwrap(&v.toObject());
         if (!tObj) {
-            JS_ReportErrorNumber(context(), js_GetErrorMessage, NULL, JSMSG_UNWRAP_DENIED);
+            JS_ReportErrorNumber(context(), js_GetErrorMessage, nullptr, JSMSG_UNWRAP_DENIED);
             return false;
         }
         if (!tObj->is<ArrayBufferObject>()) {
@@ -723,7 +723,7 @@ JSStructuredCloneWriter::parseTransferable()
 
         // No duplicates allowed
         if (std::find(transferableObjects.begin(), transferableObjects.end(), tObj) != transferableObjects.end()) {
-            JS_ReportErrorNumber(context(), js_GetErrorMessage, NULL, JSMSG_SC_DUP_TRANSFERABLE);
+            JS_ReportErrorNumber(context(), js_GetErrorMessage, nullptr, JSMSG_SC_DUP_TRANSFERABLE);
             return false;
         }
 
@@ -740,7 +740,7 @@ JSStructuredCloneWriter::reportErrorTransferable()
     if (callbacks && callbacks->reportError)
         return callbacks->reportError(context(), JS_SCERR_TRANSFERABLE);
     else
-        JS_ReportErrorNumber(context(), js_GetErrorMessage, NULL, JSMSG_SC_NOT_TRANSFERABLE);
+        JS_ReportErrorNumber(context(), js_GetErrorMessage, nullptr, JSMSG_SC_NOT_TRANSFERABLE);
 }
 
 bool
@@ -962,7 +962,7 @@ JSStructuredCloneWriter::writeTransferMap()
         // Emit a placeholder pointer. We will steal the data and neuter the
         // transferable later.
         if (!out.writePair(SCTAG_TRANSFER_MAP_ENTRY, SCTAG_TM_UNFILLED) ||
-            !out.writePtr(NULL) ||
+            !out.writePtr(nullptr) ||
             !out.write(0))
         {
             return false;
@@ -991,9 +991,10 @@ JSStructuredCloneWriter::transferOwnership()
          !tr.empty();
          tr.popFront())
     {
+        RootedObject obj(context(), tr.front());
         void *content;
         uint8_t *data;
-        if (!JS_StealArrayBufferContents(context(), tr.front(), &content, &data))
+        if (!JS_StealArrayBufferContents(context(), obj, &content, &data))
             return false; // Destructor will clean up the already-transferred data
 
         MOZ_ASSERT(uint32_t(LittleEndian::readUint64(point) >> 32) == SCTAG_TRANSFER_MAP_ENTRY);
@@ -1494,7 +1495,7 @@ JSStructuredCloneReader::readTransferMap()
         if (!in.read(&userdata))
             return false;
 
-        JSObject *obj = JS_NewArrayBufferWithContents(context(), content);
+        RootedObject obj(context(), JS_NewArrayBufferWithContents(context(), content));
         if (!obj)
             return false;
 
@@ -1551,7 +1552,7 @@ using namespace js;
 
 JS_PUBLIC_API(bool)
 JS_ReadStructuredClone(JSContext *cx, uint64_t *buf, size_t nbytes,
-                       uint32_t version, JS::Value *vp,
+                       uint32_t version, JS::MutableHandleValue vp,
                        const JSStructuredCloneCallbacks *optionalCallbacks,
                        void *closure)
 {
@@ -1570,11 +1571,10 @@ JS_ReadStructuredClone(JSContext *cx, uint64_t *buf, size_t nbytes,
 }
 
 JS_PUBLIC_API(bool)
-JS_WriteStructuredClone(JSContext *cx, JS::Value valueArg, uint64_t **bufp, size_t *nbytesp,
+JS_WriteStructuredClone(JSContext *cx, JS::HandleValue value, uint64_t **bufp, size_t *nbytesp,
                         const JSStructuredCloneCallbacks *optionalCallbacks,
-                        void *closure, JS::Value transferable)
+                        void *closure, JS::HandleValue transferable)
 {
-    RootedValue value(cx, valueArg);
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, value);
@@ -1606,11 +1606,10 @@ JS_StructuredCloneHasTransferables(const uint64_t *data, size_t nbytes,
 }
 
 JS_PUBLIC_API(bool)
-JS_StructuredClone(JSContext *cx, JS::Value valueArg, JS::Value *vp,
+JS_StructuredClone(JSContext *cx, JS::HandleValue value, JS::MutableHandleValue vp,
                    const JSStructuredCloneCallbacks *optionalCallbacks,
                    void *closure)
 {
-    RootedValue value(cx, valueArg);
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
 
@@ -1621,7 +1620,7 @@ JS_StructuredClone(JSContext *cx, JS::Value valueArg, JS::Value *vp,
       if (!cx->compartment()->wrap(cx, strValue.address())) {
         return false;
       }
-      *vp = JS::StringValue(strValue);
+      vp.setString(strValue);
       return true;
     }
 
@@ -1632,13 +1631,17 @@ JS_StructuredClone(JSContext *cx, JS::Value valueArg, JS::Value *vp,
 
     JSAutoStructuredCloneBuffer buf;
     {
-        mozilla::Maybe<AutoCompartment> ac;
+        // If we use Maybe<AutoCompartment> here, G++ can't tell that the
+        // destructor is only called when Maybe::construct was called, and
+        // we get warnings about using uninitialized variables.
         if (value.isObject()) {
-            ac.construct(cx, &value.toObject());
+            AutoCompartment ac(cx, &value.toObject());
+            if (!buf.write(cx, value, callbacks, closure))
+                return false;
+        } else {
+            if (!buf.write(cx, value, callbacks, closure))
+                return false;
         }
-
-        if (!buf.write(cx, value, callbacks, closure))
-            return false;
     }
 
     return buf.read(cx, vp, callbacks, closure);
@@ -1700,7 +1703,7 @@ JSAutoStructuredCloneBuffer::steal(uint64_t **datap, size_t *nbytesp, uint32_t *
 }
 
 bool
-JSAutoStructuredCloneBuffer::read(JSContext *cx, JS::Value *vp,
+JSAutoStructuredCloneBuffer::read(JSContext *cx, JS::MutableHandleValue vp,
                                   const JSStructuredCloneCallbacks *optionalCallbacks,
                                   void *closure)
 {
@@ -1711,21 +1714,20 @@ JSAutoStructuredCloneBuffer::read(JSContext *cx, JS::Value *vp,
 }
 
 bool
-JSAutoStructuredCloneBuffer::write(JSContext *cx, JS::Value valueArg,
+JSAutoStructuredCloneBuffer::write(JSContext *cx, JS::HandleValue value,
                                    const JSStructuredCloneCallbacks *optionalCallbacks,
                                    void *closure)
 {
-    JS::Value transferable = JSVAL_VOID;
-    return write(cx, valueArg, transferable, optionalCallbacks, closure);
+    JS::HandleValue transferable = JS::UndefinedHandleValue;
+    return write(cx, value, transferable, optionalCallbacks, closure);
 }
 
 bool
-JSAutoStructuredCloneBuffer::write(JSContext *cx, JS::Value valueArg,
-                                   JS::Value transferable,
+JSAutoStructuredCloneBuffer::write(JSContext *cx, JS::HandleValue value,
+                                   JS::HandleValue transferable,
                                    const JSStructuredCloneCallbacks *optionalCallbacks,
                                    void *closure)
 {
-    RootedValue value(cx, valueArg);
     clear();
     bool ok = !!JS_WriteStructuredClone(cx, value, &data_, &nbytes_,
                                         optionalCallbacks, closure,

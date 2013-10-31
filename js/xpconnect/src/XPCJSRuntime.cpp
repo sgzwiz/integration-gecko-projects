@@ -261,9 +261,32 @@ public:
 
 namespace xpc {
 
+static uint32_t kLivingAdopters = 0;
+
+void
+RecordAdoptedNode(JSCompartment *c)
+{
+    CompartmentPrivate *priv = EnsureCompartmentPrivate(c);
+    if (!priv->adoptedNode) {
+        priv->adoptedNode = true;
+        ++kLivingAdopters;
+    }
+}
+
+void
+RecordDonatedNode(JSCompartment *c)
+{
+    EnsureCompartmentPrivate(c)->donatedNode = true;
+}
+
 CompartmentPrivate::~CompartmentPrivate()
 {
     MOZ_COUNT_DTOR(xpc::CompartmentPrivate);
+
+    Telemetry::Accumulate(Telemetry::COMPARTMENT_ADOPTED_NODE, adoptedNode);
+    Telemetry::Accumulate(Telemetry::COMPARTMENT_DONATED_NODE, donatedNode);
+    if (adoptedNode)
+        --kLivingAdopters;
 }
 
 bool CompartmentPrivate::TryParseLocationURI()
@@ -653,6 +676,13 @@ XPCJSRuntime::GCSliceCallback(JSRuntime *rt,
 void
 XPCJSRuntime::CustomGCCallback(JSGCStatus status)
 {
+    // Record kLivingAdopters once per GC to approximate time sampling during
+    // periods of activity.
+    if (status == JSGC_BEGIN) {
+        Telemetry::Accumulate(Telemetry::COMPARTMENT_LIVING_ADOPTERS,
+                              kLivingAdopters);
+    }
+
     nsTArray<xpcGCCallback> callbacks(extraGCCallbacks);
     for (uint32_t i = 0; i < callbacks.Length(); ++i)
         callbacks[i](status);
@@ -2336,8 +2366,11 @@ ReportJSRuntimeExplicitTreeStats(const JS::RuntimeStats &rtStats,
                                  nsIMemoryReporterCallback *cb,
                                  nsISupports *closure, size_t *rtTotalOut)
 {
-    nsCOMPtr<amIAddonManager> am =
-      do_GetService("@mozilla.org/addons/integration;1");
+    nsCOMPtr<amIAddonManager> am;
+    if (XRE_GetProcessType() == GeckoProcessType_Default) {
+        // Only try to access the service from the main process.
+        am = do_GetService("@mozilla.org/addons/integration;1");
+    }
     return ReportJSRuntimeExplicitTreeStats(rtStats, rtPath, am.get(), cb,
                                             closure, rtTotalOut);
 }
@@ -2574,8 +2607,11 @@ JSReporter::CollectReports(WindowPaths *windowPaths,
     // callback may be a JS function, and executing JS while getting these
     // stats seems like a bad idea.
 
-    nsCOMPtr<amIAddonManager> addonManager =
-      do_GetService("@mozilla.org/addons/integration;1");
+    nsCOMPtr<amIAddonManager> addonManager;
+    if (XRE_GetProcessType() == GeckoProcessType_Default) {
+        // Only try to access the service from the main process.
+        addonManager = do_GetService("@mozilla.org/addons/integration;1");
+    }
     bool getLocations = !!addonManager;
     XPCJSRuntimeStats rtStats(windowPaths, topWindowPaths, getLocations);
     OrphanReporter orphanReporter(XPCConvert::GetISupportsFromJSObject);
@@ -3348,10 +3384,7 @@ XPCJSRuntime::GetJunkScope()
         SandboxOptions options;
         options.sandboxName.AssignASCII("XPConnect Junk Compartment");
         RootedValue v(cx);
-        nsresult rv = CreateSandboxObject(cx, v.address(),
-                                          nsContentUtils::GetSystemPrincipal(),
-                                          options);
-
+        nsresult rv = CreateSandboxObject(cx, &v, nsContentUtils::GetSystemPrincipal(), options);
         NS_ENSURE_SUCCESS(rv, nullptr);
 
         mJunkScope = js::UncheckedUnwrap(&v.toObject());

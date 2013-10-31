@@ -87,7 +87,9 @@ nsresult MediaOmxReader::InitOmxDecoder()
     dataSource->initCheck();
 
     sp<MediaExtractor> extractor = MediaExtractor::Create(dataSource);
-
+    if (!extractor.get()) {
+      return NS_ERROR_FAILURE;
+    }
     mOmxDecoder = new OmxDecoder(mDecoder->GetResource(), mDecoder);
     if (!mOmxDecoder->Init(extractor)) {
       return NS_ERROR_FAILURE;
@@ -262,7 +264,7 @@ bool MediaOmxReader::DecodeVideoFrame(bool &aKeyframeSkip,
                             mDecoder->GetImageContainer(),
                             pos,
                             frame.mTimeUs,
-                            frame.mTimeUs+1, // We don't know the end time.
+                            1, // We don't know the duration.
                             b,
                             frame.mKeyFrame,
                             -1,
@@ -272,7 +274,7 @@ bool MediaOmxReader::DecodeVideoFrame(bool &aKeyframeSkip,
                             mDecoder->GetImageContainer(),
                             pos,
                             frame.mTimeUs,
-                            frame.mTimeUs+1, // We don't know the end time.
+                            1, // We don't know the duration.
                             frame.mGraphicBuffer,
                             frame.mKeyFrame,
                             -1,

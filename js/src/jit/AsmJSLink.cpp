@@ -331,6 +331,15 @@ CallAsmJS(JSContext *cx, unsigned argc, Value *vp)
     unsigned exportIndex = callee->getExtendedSlot(ASM_EXPORT_INDEX_SLOT).toInt32();
     const AsmJSModule::ExportedFunction &func = module.exportedFunction(exportIndex);
 
+    // An asm.js module is specialized to its heap's base address and length
+    // which is normally immutable except for the neuter operation that occurs
+    // when an ArrayBuffer is transfered. Throw an internal error if we try to
+    // run with a neutered heap.
+    if (module.maybeHeapBufferObject() && module.maybeHeapBufferObject()->isNeutered()) {
+        js_ReportOverRecursed(cx);
+        return false;
+    }
+
     // The calling convention for an external call into asm.js is to pass an
     // array of 8-byte values where each value contains either a coerced int32
     // (in the low word) or double value, with the coercions specified by the
@@ -674,7 +683,7 @@ js::IsAsmJSModuleNative(js::Native native)
 }
 
 static bool
-IsMaybeWrappedNativeFunction(const Value &v, Native native, JSFunction **fun = NULL)
+IsMaybeWrappedNativeFunction(const Value &v, Native native, JSFunction **fun = nullptr)
 {
     if (!v.isObject())
         return false;
@@ -708,7 +717,7 @@ js::IsAsmJSModuleLoadedFromCache(JSContext *cx, unsigned argc, Value *vp)
 
     JSFunction *fun;
     if (!args.hasDefined(0) || !IsMaybeWrappedNativeFunction(args[0], LinkAsmJS, &fun)) {
-        JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_USE_ASM_TYPE_FAIL,
+        JS_ReportErrorNumber(cx, js_GetErrorMessage, nullptr, JSMSG_USE_ASM_TYPE_FAIL,
                              "argument passed to isAsmJSModuleLoadedFromCache is not a "
                              "validated asm.js module");
         return false;

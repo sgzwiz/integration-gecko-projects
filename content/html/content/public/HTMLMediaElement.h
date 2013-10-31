@@ -17,7 +17,8 @@
 #include "DecoderTraits.h"
 #include "nsIAudioChannelAgent.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/TextTrackList.h"
+#include "mozilla/dom/AudioChannelBinding.h"
+#include "mozilla/dom/TextTrackManager.h"
 
 // Define to output information on decoding and painting framerate
 /* #define DEBUG_FRAME_RATE 1 */
@@ -50,6 +51,7 @@ namespace dom {
 
 class MediaError;
 class MediaSource;
+class TextTrackList;
 
 class HTMLMediaElement : public nsGenericHTMLElement,
                          public nsIObserver,
@@ -512,12 +514,8 @@ public:
 
   double MozFragmentEnd();
 
-  // XPCOM GetMozAudioChannelType() is OK
-
-  void SetMozAudioChannelType(const nsAString& aValue, ErrorResult& aRv)
-  {
-    SetHTMLAttr(nsGkAtoms::mozaudiochannel, aValue, aRv);
-  }
+  AudioChannel MozAudioChannelType() const;
+  void SetMozAudioChannelType(AudioChannel aValue, ErrorResult& aRv);
 
   TextTrackList* TextTracks() const;
 
@@ -526,12 +524,14 @@ public:
                                            const nsAString& aLanguage);
 
   void AddTextTrack(TextTrack* aTextTrack) {
-    mTextTracks->AddTextTrack(aTextTrack);
+    if (mTextTrackManager) {
+      mTextTrackManager->AddTextTrack(aTextTrack);
+    }
   }
 
-  void RemoveTextTrack(TextTrack* aTextTrack) {
-    if (mTextTracks) {
-      mTextTracks->RemoveTextTrack(*aTextTrack);
+  void RemoveTextTrack(TextTrack* aTextTrack, bool aPendingListOnly = false) {
+    if (mTextTrackManager) {
+      mTextTrackManager->RemoveTextTrack(aTextTrack, aPendingListOnly);
     }
   }
 
@@ -859,6 +859,11 @@ protected:
   // Update the audio channel playing state
   virtual void UpdateAudioChannelPlayingState();
 
+  // Adds to the element's list of pending text tracks each text track
+  // in the element's list of text tracks whose text track mode is not disabled
+  // and whose text track readiness state is loading.
+  void PopulatePendingTextTrackList();
+
   // The current decoder. Load() has been called on this decoder.
   // At most one of mDecoder and mSrcStream can be non-null.
   nsRefPtr<MediaDecoder> mDecoder;
@@ -1148,8 +1153,7 @@ protected:
   // An agent used to join audio channel service.
   nsCOMPtr<nsIAudioChannelAgent> mAudioChannelAgent;
 
-  // List of our attached text track objects.
-  nsRefPtr<TextTrackList> mTextTracks;
+  nsRefPtr<TextTrackManager> mTextTrackManager;
 };
 
 } // namespace dom

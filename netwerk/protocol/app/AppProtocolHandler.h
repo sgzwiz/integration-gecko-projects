@@ -8,7 +8,7 @@
 #define AppProtocolHandler_
 
 #include "nsIProtocolHandler.h"
-#include "nsDataHashtable.h"
+#include "nsClassHashtable.h"
 #include "mozilla/dom/AppInfoBinding.h"
 
 class AppProtocolHandler : public nsIProtocolHandler
@@ -29,7 +29,7 @@ public:
                          void* *aResult);
 
 private:
-  nsDataHashtable<nsCStringHashKey, mozilla::dom::AppInfo> mAppInfoCache;
+  nsClassHashtable<nsCStringHashKey, mozilla::dom::AppInfo> mAppInfoCache;
 };
 
 #endif /* AppProtocolHandler_ */

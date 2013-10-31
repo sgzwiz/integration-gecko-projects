@@ -36,7 +36,6 @@ _SERV_FILES = 	\
 		$(topsrcdir)/testing/mozbase/mozdevice/mozdevice/Zeroconf.py \
 		$(topsrcdir)/build/automationutils.py \
 		$(topsrcdir)/build/mobile/remoteautomation.py \
-		$(topsrcdir)/build/mobile/b2gautomation.py \
 		gen_template.pl \
 		server.js \
 		chunkifyTests.js \
@@ -65,7 +64,6 @@ ifeq ($(MOZ_BUILD_APP),mobile/android)
 _SERV_FILES += \
   $(topsrcdir)/mobile/android/base/tests/robocop.ini \
   $(topsrcdir)/mobile/android/base/tests/robocop_autophone.ini \
-  $(topsrcdir)/mobile/android/base/tests/robocop_x86.ini \
   $(NULL)
 endif
 

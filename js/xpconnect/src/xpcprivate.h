@@ -3692,7 +3692,7 @@ CreateGlobalObject(JSContext *cx, const JSClass *clasp, nsIPrincipal *principal,
 // reachable through prinOrSop, a new null principal will be created
 // and used.
 nsresult
-CreateSandboxObject(JSContext *cx, jsval *vp, nsISupports *prinOrSop,
+CreateSandboxObject(JSContext *cx, JS::MutableHandleValue vp, nsISupports *prinOrSop,
                     xpc::SandboxOptions& options);
 // Helper for evaluating scripts in a sandbox object created with
 // CreateSandboxObject(). The caller is responsible of ensuring
@@ -3744,6 +3744,8 @@ public:
     CompartmentPrivate()
         : wantXrays(false)
         , universalXPConnectEnabled(false)
+        , adoptedNode(false)
+        , donatedNode(false)
         , scope(nullptr)
         , locationWasParsed(false)
     {
@@ -3759,6 +3761,10 @@ public:
     // enablePrivilege. Once set, this value is never unset (i.e., it doesn't follow
     // the old scoping rules of enablePrivilege). Using it is inherently unsafe.
     bool universalXPConnectEnabled;
+
+    // for telemetry. See bug 928476.
+    bool adoptedNode;
+    bool donatedNode;
 
     // Our XPCWrappedNativeScope. This is non-null if and only if this is an
     // XPConnect compartment.
