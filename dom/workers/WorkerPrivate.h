@@ -24,6 +24,7 @@
 #include "nsDOMEventTargetHelper.h"
 #include "nsEventQueue.h"
 #include "nsHashKeys.h"
+#include "nsRefPtrHashtable.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
@@ -45,12 +46,18 @@ namespace JS {
 class RuntimeStats;
 }
 
+namespace mozilla {
+namespace dom {
+class Function;
+}
+}
+
 BEGIN_WORKERS_NAMESPACE
 
 class MessagePort;
 class SharedWorker;
 class WorkerChild;
-class WorkerMessagePort;
+class WorkerGlobalScope;
 class WorkerParent;
 class WorkerPrivate;
 
@@ -825,6 +832,7 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
   nsRefPtr<WorkerCrossThreadDispatcher> mCrossThreadDispatcher;
 
   // Things touched on worker thread only.
+  nsRefPtr<WorkerGlobalScope> mScope;
   nsTArray<ParentType*> mChildWorkers;
   nsTArray<WorkerFeature*> mFeatures;
   nsTArray<nsAutoPtr<TimeoutInfo> > mTimeouts;
@@ -832,7 +840,7 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
   nsCOMPtr<nsITimer> mTimer;
   nsRefPtr<MemoryReporter> mMemoryReporter;
 
-  nsDataHashtable<nsUint64HashKey, WorkerMessagePort*> mWorkerPorts;
+  nsRefPtrHashtable<nsUint64HashKey, MessagePort> mWorkerPorts;
 
   mozilla::TimeStamp mKillTime;
   uint32_t mErrorHandlerRecursionCount;
@@ -914,7 +922,7 @@ public:
   ResumeInternal(JSContext* aCx);
 
   void
-  TraceInternal(JSTracer* aTrc);
+  TraceTimeouts(const TraceCallbacks& aCallbacks, void* aClosure) const;
 
   bool
   ModifyBusyCountFromWorker(JSContext* aCx, bool aIncrease);
@@ -953,12 +961,13 @@ public:
   void
   DestroySyncLoop(uint32_t aSyncLoopKey);
 
-  bool
+  void
   PostMessageToParent(JSContext* aCx,
                       JS::Handle<JS::Value> aMessage,
-                      JS::Handle<JS::Value> aTransferable)
+                      const Optional<Sequence<JS::Value>>& aTransferable,
+                      ErrorResult& aRv)
   {
-    return PostMessageToParentInternal(aCx, aMessage, aTransferable, false, 0);
+    PostMessageToParentInternal(aCx, aMessage, aTransferable, false, 0, aRv);
   }
 
   void
@@ -975,11 +984,17 @@ public:
   void
   ReportError(JSContext* aCx, const char* aMessage, JSErrorReport* aReport);
 
-  bool
-  SetTimeout(JSContext* aCx, unsigned aArgc, jsval* aVp, bool aIsInterval);
+  int32_t
+  SetTimeout(JSContext* aCx,
+             Function* aHandler,
+             const nsAString& aStringHandler,
+             int32_t aTimeout,
+             const Sequence<JS::Value>& aArguments,
+             bool aIsInterval,
+             ErrorResult& aRv);
 
-  bool
-  ClearTimeout(JSContext* aCx, uint32_t aId);
+  void
+  ClearTimeout(int32_t aId);
 
   bool
   RunExpiredTimeouts(JSContext* aCx);
@@ -1033,6 +1048,13 @@ public:
     return mJSContext;
   }
 
+  WorkerGlobalScope*
+  GlobalScope() const
+  {
+    AssertIsOnWorkerThread();
+    return mScope;
+  }
+
 #ifdef DEBUG
   void
   AssertIsOnWorkerThread() const;
@@ -1081,8 +1103,14 @@ public:
   void
   DisconnectMessagePort(uint64_t aMessagePortSerial);
 
-  WorkerMessagePort*
+  MessagePort*
   GetMessagePort(uint64_t aMessagePortSerial);
+
+  JSObject*
+  CreateGlobalScope(JSContext* aCx);
+
+  bool
+  RegisterBindings(JSContext* aCx, JS::Handle<JSObject*> aGlobal);
 
 private:
   WorkerPrivate(JSContext* aCx, WorkerPrivate* aParent,
@@ -1154,17 +1182,13 @@ private:
   void
   WaitForWorkerEvents(PRIntervalTime interval = PR_INTERVAL_NO_TIMEOUT);
 
-  static PLDHashOperator
-  TraceMessagePorts(const uint64_t& aKey,
-                    WorkerMessagePort* aData,
-                    void* aUserArg);
-
-  bool
+  void
   PostMessageToParentInternal(JSContext* aCx,
                               JS::Handle<JS::Value> aMessage,
-                              JS::Handle<JS::Value> aTransferable,
+                              const Optional<Sequence<JS::Value>>& aTransferable,
                               bool aToMessagePort,
-                              uint64_t aMessagePortSerial);
+                              uint64_t aMessagePortSerial,
+                              ErrorResult& aRv);
 };
 
 // This class is only used to trick the DOM bindings.  We never create

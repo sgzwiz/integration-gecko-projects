@@ -50,7 +50,6 @@
 #include "OSFileConstants.h"
 #include "xpcpublic.h"
 
-#include "Events.h"
 #include "SharedWorker.h"
 #include "WorkerPrivate.h"
 

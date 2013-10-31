@@ -10,6 +10,7 @@
 
 #include "mozilla/dom/BindingDeclarations.h"
 #include "nsDOMEventTargetHelper.h"
+#include "mozilla/dom/MessagePort.h"
 
 class nsIDOMEvent;
 class nsPIDOMWindow;
@@ -17,14 +18,17 @@ class nsPIDOMWindow;
 BEGIN_WORKERS_NAMESPACE
 
 class SharedWorker;
+class WorkerPrivate;
 
-class MessagePort MOZ_FINAL : public nsDOMEventTargetHelper
+class MessagePort MOZ_FINAL : public mozilla::dom::MessagePortBase
 {
   friend class SharedWorker;
+  friend class WorkerPrivate;
 
   typedef mozilla::ErrorResult ErrorResult;
 
   nsRefPtr<SharedWorker> mSharedWorker;
+  WorkerPrivate* mWorkerPrivate;
   nsTArray<nsCOMPtr<nsIDOMEvent>> mQueuedEvents;
   uint64_t mSerial;
   bool mStarted;
@@ -33,18 +37,18 @@ public:
   static bool
   PrefEnabled();
 
-  void
+  virtual void
   PostMessageMoz(JSContext* aCx, JS::HandleValue aMessage,
                  const Optional<Sequence<JS::Value>>& aTransferable,
-                 ErrorResult& aRv);
+                 ErrorResult& aRv) MOZ_OVERRIDE;
 
-  void
-  Start();
+  virtual void
+  Start() MOZ_OVERRIDE;
 
-  void
-  Close()
+  virtual void
+  Close() MOZ_OVERRIDE
   {
-    AssertIsOnMainThread();
+    AssertCorrectThread();
 
     if (!IsClosed()) {
       CloseInternal();
@@ -63,30 +67,40 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(MessagePort, nsDOMEventTargetHelper)
 
-  EventHandlerNonNull*
-  GetOnmessage()
+  virtual EventHandlerNonNull*
+  GetOnmessage() MOZ_OVERRIDE
   {
-    AssertIsOnMainThread();
+    AssertCorrectThread();
 
-    return GetEventHandler(nsGkAtoms::onmessage, EmptyString());
+    return NS_IsMainThread() ? GetEventHandler(nsGkAtoms::onmessage, EmptyString())
+                             : GetEventHandler(nullptr, NS_LITERAL_STRING("message"));
   }
 
-  void
-  SetOnmessage(EventHandlerNonNull* aCallback)
+  virtual void
+  SetOnmessage(EventHandlerNonNull* aCallback) MOZ_OVERRIDE
   {
-    AssertIsOnMainThread();
+    AssertCorrectThread();
 
-    SetEventHandler(nsGkAtoms::onmessage, EmptyString(), aCallback);
+    if (NS_IsMainThread()) {
+      SetEventHandler(nsGkAtoms::onmessage, EmptyString(), aCallback);
+    }
+    else {
+      SetEventHandler(nullptr, NS_LITERAL_STRING("message"), aCallback);
+    }
 
     Start();
+  }
+
+  virtual already_AddRefed<MessagePortBase>
+  Clone() MOZ_OVERRIDE
+  {
+    return nullptr;
   }
 
   bool
   IsClosed() const
   {
-    AssertIsOnMainThread();
-
-    return !mSharedWorker;
+    return !mSharedWorker && !mWorkerPrivate;
   }
 
   virtual JSObject*
@@ -95,10 +109,19 @@ public:
   virtual nsresult
   PreHandleEvent(nsEventChainPreVisitor& aVisitor) MOZ_OVERRIDE;
 
+#ifdef DEBUG
+  void
+  AssertCorrectThread() const;
+#else
+  inline void
+  AssertCorrectThread() const { }
+#endif
+
 private:
-  // This class can only be created by SharedWorker.
+  // This class can only be created by SharedWorker or WorkerPrivate.
   MessagePort(nsPIDOMWindow* aWindow, SharedWorker* aSharedWorker,
               uint64_t aSerial);
+  MessagePort(WorkerPrivate* aWorkerPrivate, uint64_t aSerial);
 
   // This class is reference-counted and will be destroyed from Release().
   ~MessagePort();

@@ -2252,6 +2252,56 @@ public:
 bool
 ThreadsafeCheckIsChrome(JSContext* aCx, JSObject* aObj);
 
+void
+TraceGlobal(JSTracer* aTrc, JSObject* aObj);
+
+bool
+ResolveGlobal(JSContext* aCx, JS::Handle<JSObject*> aObj,
+              JS::MutableHandle<jsid> aId, unsigned aFlags,
+              JS::MutableHandle<JSObject*> aObjp);
+
+bool
+EnumerateGlobal(JSContext* aCx, JS::Handle<JSObject*> aObj);
+
+template <class T, JS::Handle<JSObject*> (*ProtoGetter)(JSContext*,
+                                                        JS::Handle<JSObject*>)>
+JSObject*
+CreateGlobal(JSContext* aCx, T* aObject, nsWrapperCache* aCache,
+             const JSClass* aClass, JS::CompartmentOptions& aOptions,
+             JSPrincipals* aPrincipal)
+{
+  JS::Rooted<JSObject*> global(aCx,
+    JS_NewGlobalObject(aCx, aClass, aPrincipal, JS::DontFireOnNewGlobalHook,
+                       aOptions));
+  if (!global) {
+    return nullptr;
+  }
+
+  dom::AllocateProtoAndIfaceCache(global);
+
+  js::SetReservedSlot(global, DOM_OBJECT_SLOT, PRIVATE_TO_JSVAL(aObject));
+  NS_ADDREF(aObject);
+
+  aCache->SetIsDOMBinding();
+  aCache->SetWrapper(global);
+
+  JSAutoCompartment ac(aCx, global);
+  if (!JS_InitStandardClasses(aCx, global)) {
+    return nullptr;
+  }
+
+  JS::Handle<JSObject*> proto = ProtoGetter(aCx, global);
+  if (!proto) {
+    return nullptr;
+  }
+
+  if (!JS_SetPrototype(aCx, global, proto)) {
+    return nullptr;
+  }
+
+  return global;
+}
+
 } // namespace dom
 } // namespace mozilla
 
