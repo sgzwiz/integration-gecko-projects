@@ -702,6 +702,7 @@
     "dom/tests/mochitest/general/test__content.html": "Bug 931116, b2g desktop specific, initial triage",
     "dom/tests/mochitest/general/test_bug628069_1.html": "Bug 931116, b2g desktop specific, initial triage",
     "dom/tests/mochitest/general/test_bug631440.html": "Bug 931116, b2g desktop specific, initial triage",
+    "dom/tests/mochitest/general/test_frameElementWrapping.html": "Bug 931116, b2g desktop specific, initial triage",
     "dom/tests/mochitest/general/test_framedhistoryframes.html": "Bug 931116, b2g desktop specific, initial triage",
     "dom/tests/mochitest/general/test_interfaces.html": "Bug 931116, b2g desktop specific, initial triage",
     "dom/tests/mochitest/general/test_offsets.html": "Bug 931116, b2g desktop specific, initial triage",
