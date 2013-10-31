@@ -24,7 +24,7 @@
 #define DNS_PREFETCH  0x00000002
 #define STYLESHEET    0x00000004
 #define NEXT          0x00000008
-#define ALTERNATE     0x00000010
+#define ALTERNATE2    0x00000010
 
 class nsIDocument;
 class nsIURI;

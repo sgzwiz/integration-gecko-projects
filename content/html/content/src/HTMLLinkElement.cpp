@@ -360,7 +360,7 @@ HTMLLinkElement::GetStyleSheetInfo(nsAString& aTitle,
   aTitle.Assign(title);
 
   // If alternate, does it have title?
-  if (linkTypes & ALTERNATE) {
+  if (linkTypes & ALTERNATE2) {
     if (aTitle.IsEmpty()) { // alternates must have title
       return;
     } else {

@@ -130,7 +130,7 @@ uint32_t ToLinkMask(const nsAString& aLink)
   else if (aLink.EqualsLiteral("next"))
     return NEXT;
   else if (aLink.EqualsLiteral("alternate"))
-    return ALTERNATE;
+    return ALTERNATE2;
   else 
     return 0;
 }

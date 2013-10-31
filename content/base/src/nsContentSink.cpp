@@ -699,7 +699,7 @@ nsContentSink::ProcessLink(const nsSubstring& aAnchor, const nsSubstring& aHref,
     return NS_OK;
   }
 
-  bool isAlternate = linkTypes & ALTERNATE;
+  bool isAlternate = linkTypes & ALTERNATE2;
   return ProcessStyleLink(nullptr, aHref, isAlternate, aTitle, aType,
                           aMedia);
 }
