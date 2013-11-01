@@ -142,7 +142,8 @@ nsAppStartup::nsAppStartup() :
   mRestart(false),
   mInterrupted(false),
   mIsSafeModeNecessary(false),
-  mStartupCrashTrackingEnded(false)
+  mStartupCrashTrackingEnded(false),
+  mRestartTouchEnvironment(false)
 { }
 
 
@@ -270,7 +271,7 @@ nsAppStartup::Run(void)
       return rv;
   }
 
-  return mRestart ? NS_SUCCESS_RESTART_APP : NS_OK;
+  return (mRestart || mRestartTouchEnvironment) ? NS_SUCCESS_RESTART_APP : NS_OK;
 }
 
 
@@ -361,7 +362,12 @@ nsAppStartup::Quit(uint32_t aMode)
       gRestartMode = (aMode & 0xF0);
     }
 
-    if (mRestart) {
+    if (!mRestartTouchEnvironment) {
+      mRestartTouchEnvironment = (aMode & eRestartTouchEnvironment) != 0;
+      gRestartMode = (aMode & 0xF0);
+    }
+
+    if (mRestart || mRestartTouchEnvironment) {
       // Mark the next startup as a restart.
       PR_SetEnv("MOZ_APP_RESTART=1");
 
@@ -431,7 +437,8 @@ nsAppStartup::Quit(uint32_t aMode)
       NS_NAMED_LITERAL_STRING(shutdownStr, "shutdown");
       NS_NAMED_LITERAL_STRING(restartStr, "restart");
       obsService->NotifyObservers(nullptr, "quit-application",
-        mRestart ? restartStr.get() : shutdownStr.get());
+        (mRestart || mRestartTouchEnvironment) ?
+         restartStr.get() : shutdownStr.get());
     }
 
     if (!mRunning) {
@@ -551,6 +558,14 @@ nsAppStartup::GetWasRestarted(bool *aResult)
    * thus we have to check if the variable is present and not empty. */
   *aResult = mozAppRestart && (strcmp(mozAppRestart, "") != 0);
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsAppStartup::GetRestartingTouchEnvironment(bool *aResult)
+{
+  NS_ENSURE_ARG_POINTER(aResult);
+  *aResult = mRestartTouchEnvironment;
   return NS_OK;
 }
 
