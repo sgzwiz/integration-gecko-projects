@@ -60,6 +60,15 @@ public:
   Create(JSContext* aCx, IDBObjectStoreSync* aObjectStore,
          Direction aDirection);
 
+  // For INDEXOBJECT cursors.
+  static IDBCursorSync*
+  CreateWithValue(JSContext* aCx, IDBIndexSync* aIndex, Direction aDirection);
+
+  // For OBJECTSTORE cursors.
+  static IDBCursorSync*
+  CreateWithValue(JSContext* aCx, IDBObjectStoreSync* aObjectStore,
+                  Direction aDirection);
+
   virtual void
   _trace(JSTracer* aTrc) MOZ_OVERRIDE;
 
@@ -127,6 +136,9 @@ public:
 
   bool
   Delete(JSContext* aCx, ErrorResult& aRv);
+
+  JS::Value
+  GetValue(JSContext* aCx, ErrorResult& aRv);
 
 protected:
   typedef mozilla::dom::indexedDB::IDBKeyRange IDBKeyRange;

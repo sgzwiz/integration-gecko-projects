@@ -26,7 +26,6 @@ struct IndexInfo;
 BEGIN_WORKERS_NAMESPACE
 
 class IDBCursorSync;
-class IDBCursorWithValueSync;
 class IDBObjectStoreSync;
 class IndexedDBIndexWorkerChild;
 
@@ -104,7 +103,7 @@ public:
     return mUnique;
   }
 
-  IDBCursorWithValueSync*
+  IDBCursorSync*
   OpenCursor(JSContext* aCx, const Optional<JS::Handle<JS::Value> >& aRange,
              IDBCursorDirection aDirection, ErrorResult& aRv);
 

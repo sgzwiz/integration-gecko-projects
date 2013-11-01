@@ -14,7 +14,6 @@
 #include "BlockingHelperBase.h"
 #include "DOMBindingInlines.h"
 #include "IDBCursorSync.h"
-#include "IDBCursorWithValueSync.h"
 #include "IDBObjectStoreSync.h"
 #include "IPCThreadUtils.h"
 #include "WorkerPrivate.h"
@@ -443,7 +442,7 @@ IDBIndexSync::GetKeyPath(JSContext* aCx, ErrorResult& aRv)
   return mCachedKeyPath;
 }
 
-IDBCursorWithValueSync*
+IDBCursorSync*
 IDBIndexSync::OpenCursor(JSContext* aCx,
                          const Optional<JS::Handle<JS::Value> >& aRange,
                          IDBCursorDirection aDirection, ErrorResult& aRv)
@@ -465,8 +464,7 @@ IDBIndexSync::OpenCursor(JSContext* aCx,
   IDBCursorSync::Direction direction =
     IDBCursorSync::ConvertDirection(aDirection);
 
-  IDBCursorWithValueSync* cursor = IDBCursorWithValueSync::Create(aCx, this,
-                                                                  direction);
+  IDBCursorSync* cursor = IDBCursorSync::CreateWithValue(aCx, this, direction);
   if (!cursor) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;

@@ -30,7 +30,6 @@ struct ObjectStoreInfo;
 BEGIN_WORKERS_NAMESPACE
 
 class IDBCursorSync;
-class IDBCursorWithValueSync;
 class IDBIndexSync;
 class IndexedDBObjectStoreWorkerChild;
 
@@ -163,7 +162,7 @@ public:
   void
   DeleteIndex(JSContext* aCx, const nsAString& aIndexName, ErrorResult& aRv);
 
-  IDBCursorWithValueSync*
+  IDBCursorSync*
   OpenCursor(JSContext* aCx, const Optional<JS::Handle<JS::Value> >& aRange,
              IDBCursorDirection aDirection, ErrorResult& aRv);
 

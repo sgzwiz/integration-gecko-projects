@@ -13,7 +13,7 @@
 
 #include "BlockingHelperBase.h"
 #include "DOMBindingInlines.h"
-#include "IDBCursorWithValueSync.h"
+#include "IDBCursorSync.h"
 #include "IDBIndexSync.h"
 #include "IDBTransactionSync.h"
 #include "IPCThreadUtils.h"
@@ -1005,7 +1005,7 @@ IDBObjectStoreSync::DeleteIndex(JSContext* aCx, const nsAString& aIndexName,
 
 }
 
-IDBCursorWithValueSync*
+IDBCursorSync*
 IDBObjectStoreSync::OpenCursor(JSContext* aCx,
                                const Optional<JS::Handle<JS::Value> >& aRange,
                                IDBCursorDirection aDirection,
@@ -1030,8 +1030,7 @@ IDBObjectStoreSync::OpenCursor(JSContext* aCx,
   IDBCursorSync::Direction direction =
     IDBCursorSync::ConvertDirection(aDirection);
 
-  IDBCursorWithValueSync* cursor =
-    IDBCursorWithValueSync::Create(aCx, this, direction);
+  IDBCursorSync* cursor = IDBCursorSync::CreateWithValue(aCx, this, direction);
 
   if (!cursor) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
