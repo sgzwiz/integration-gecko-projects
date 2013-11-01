@@ -454,6 +454,7 @@
     "dom/settings/tests/test_settings_basics.html": "debug-only failure, bug 932878",
     "dom/settings/tests/test_settings_blobs.html": "debug-only failure",
     "dom/settings/tests/test_settings_onsettingchange.html": "debug-only failure",
+    "dom/settings/tests/test_settings_events.html": "debug-only failure",
     "dom/tests/mochitest/localstorage/test_localStorageOriginsEquals.html": "debug-only timeout",
     "dom/tests/mochitest/ajax/jquery/test_jQuery.html": "debug-only timeout",
     "dom/workers/test/test_csp.html": "debug-only failure",
