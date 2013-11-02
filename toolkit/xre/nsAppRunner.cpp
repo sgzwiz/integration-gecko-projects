@@ -126,7 +126,7 @@
 #include "nsXREDirProvider.h"
 #include "nsToolkitCompsCID.h"
 
-#if defined(XP_WIN)
+#if defined(XP_WIN) && defined(MOZ_METRO)
 #include "updatehelper.h"
 #endif
 
