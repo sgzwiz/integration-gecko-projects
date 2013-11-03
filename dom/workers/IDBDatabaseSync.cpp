@@ -10,6 +10,7 @@
 #include "mozilla/dom/IDBDatabaseSyncBinding.h"
 #include "mozilla/dom/IDBTransactionCallbackBinding.h"
 #include "mozilla/dom/IDBVersionChangeCallbackBinding.h"
+#include "mozilla/dom/IDBVersionChangeBlockedCallbackBinding.h"
 #include "mozilla/dom/indexedDB/IDBEvents.h"
 
 #include "IDBFactorySync.h"
@@ -131,6 +132,15 @@ public:
     AssertIsOnIPCThread();
   }
 
+  VersionChangeRunnable(WorkerPrivate* aWorkerPrivate,
+                        IDBDatabaseSync* aDatabase, uint64_t aOldVersion,
+                        uint64_t aNewVersion)
+  : WorkerSyncRunnable(aWorkerPrivate, UINT32_MAX, true, SkipWhenClearing),
+    mDatabase(aDatabase), mOldVersion(aOldVersion), mNewVersion(aNewVersion)
+  {
+    AssertIsOnIPCThread();
+  }
+
   bool
   PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
   {
@@ -160,6 +170,7 @@ public:
 
 private:
   IDBDatabaseSync* mDatabase;
+
   uint64_t mOldVersion;
   uint64_t mNewVersion;
 };
@@ -201,6 +212,47 @@ private:
   // A weak ref (we can't addref the native object from the IPC thread).
   // This shouldn't be a problem because IDBDatabaseSync has been pinned.
   IDBDatabaseSync* mDatabase;
+};
+
+class UpgradeBlockedRunnable : public WorkerSyncRunnable
+{
+public:
+  UpgradeBlockedRunnable(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
+                         IDBDatabaseSync* aDatabase, uint64_t aOldVersion)
+  : WorkerSyncRunnable(aWorkerPrivate, aSyncQueueKey, false, SkipWhenClearing),
+    mDatabase(aDatabase), mOldVersion(aOldVersion)
+  {
+    AssertIsOnIPCThread();
+  }
+
+  bool
+  PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
+  {
+    AssertIsOnIPCThread();
+    return true;
+  }
+
+  void
+  PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
+               bool aDispatchResult)
+  {
+    AssertIsOnIPCThread();
+  }
+
+  bool
+  WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
+  {
+    mDatabase->DoUpgradeBlocked(aCx, mOldVersion);
+
+    return true;
+  }
+
+private:
+  // A weak ref (we can't addref the native object from the IPC thread).
+  // This shouldn't be a problem because IDBDatabaseSync has been pinned.
+  IDBDatabaseSync* mDatabase;
+
+  uint64_t mOldVersion;
 };
 
 MOZ_STACK_CLASS
@@ -269,7 +321,8 @@ already_AddRefed<IDBDatabaseSync>
 IDBDatabaseSync::Create(JSContext* aCx, IDBFactorySync* aFactory,
                         const nsAString& aName, uint64_t aVersion,
                         PersistenceType aPersistenceType,
-                        IDBVersionChangeCallback* aUpgradeCallback)
+                        IDBVersionChangeCallback* aUpgradeCallback,
+                        IDBVersionChangeBlockedCallback* aUpgradeBlockedCallback)
 {
   WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
   MOZ_ASSERT(workerPrivate);
@@ -281,13 +334,15 @@ IDBDatabaseSync::Create(JSContext* aCx, IDBFactorySync* aFactory,
   database->mVersion = aVersion;
   database->mPersistenceType = aPersistenceType;
   database->mUpgradeCallback = aUpgradeCallback;
+  database->mUpgradeBlockedCallback = aUpgradeBlockedCallback;
 
   return database.forget();
 }
 
 IDBDatabaseSync::IDBDatabaseSync(WorkerPrivate* aWorkerPrivate)
 : IDBObjectSyncEventTarget(aWorkerPrivate), mVersion(0),
-  mUpgradeCallback(nullptr), mUpgradeCode(NS_OK)
+  mUpgradeCallback(nullptr), mUpgradeBlockedCallback(nullptr),
+  mUpgradeCode(NS_OK)
 {
   SetIsDOMBinding();
 }
@@ -355,18 +410,44 @@ IDBDatabaseSync::DoUpgrade(JSContext* aCx)
 }
 
 void
+IDBDatabaseSync::DoUpgradeBlocked(JSContext* aCx, uint64_t aOldVersion)
+{
+  if (mUpgradeBlockedCallback) {
+    ErrorResult rv;
+    mUpgradeBlockedCallback->Call(mFactory, aOldVersion, rv);
+  }
+}
+
+void
 IDBDatabaseSync::OnVersionChange(uint64_t aOldVersion, uint64_t aNewVersion)
 {
   AssertIsOnIPCThread();
 
-  if (mFactory->DeleteDatabaseSyncQueueKey() != UINT32_MAX) {
-    nsRefPtr<VersionChangeRunnable> runnable =
-      new VersionChangeRunnable(mWorkerPrivate,
-                                mFactory->DeleteDatabaseSyncQueueKey(), this,
-                                aOldVersion, aNewVersion);
+  nsRefPtr<VersionChangeRunnable> runnable;
 
-    runnable->Dispatch(nullptr);
+  uint32_t syncQueueKey = mFactory->OpenOrDeleteDatabaseSyncQueueKey();
+  if (syncQueueKey == UINT32_MAX) {
+    runnable = new VersionChangeRunnable(mWorkerPrivate, this, aOldVersion,
+                                         aNewVersion);
   }
+  else {
+    runnable = new VersionChangeRunnable(mWorkerPrivate, syncQueueKey, this,
+                                         aOldVersion, aNewVersion);
+  }
+
+  runnable->Dispatch(nullptr);
+}
+
+void
+IDBDatabaseSync::OnBlocked(uint64_t aOldVersion)
+{
+  AssertIsOnIPCThread();
+
+  nsRefPtr<UpgradeBlockedRunnable> runnable =
+    new UpgradeBlockedRunnable(mWorkerPrivate, Proxy()->mSyncQueueKey, this,
+                               aOldVersion);
+
+  runnable->Dispatch(nullptr);
 }
 
 void

@@ -202,6 +202,7 @@ WEBIDL_FILES = [
     'IDBTransaction.webidl',
     'IDBTransactionCallback.webidl',
     'IDBTransactionSync.webidl',
+    'IDBVersionChangeBlockedCallback.webidl',
     'IDBVersionChangeCallback.webidl',
     'IDBVersionChangeEvent.webidl',
     'ImageData.webidl',

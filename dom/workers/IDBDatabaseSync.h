@@ -23,6 +23,7 @@ struct IDBObjectStoreParameters;
 //struct IDBOpenDBOptionsWorkers;
 class IDBTransactionCallback;
 class IDBVersionChangeCallback;
+class IDBVersionChangeBlockedCallback;
 namespace indexedDB {
 struct ObjectStoreInfo;
 } // namespace indexedDB
@@ -65,7 +66,8 @@ public:
   static already_AddRefed<IDBDatabaseSync>
   Create(JSContext* aCx, IDBFactorySync* aFactory, const nsAString& aName,
          uint64_t aVersion, PersistenceType aPersistenceType,
-         IDBVersionChangeCallback* aUpgradeCallback);
+         IDBVersionChangeCallback* aUpgradeCallback,
+         IDBVersionChangeBlockedCallback* aUpgradeBlockedCallback);
 
   IDBDatabaseSyncProxy*
   Proxy();
@@ -113,12 +115,18 @@ public:
   void
   DoUpgrade(JSContext* aCx);
 
+  void
+  DoUpgradeBlocked(JSContext* aCx, uint64_t aOldVersion);
+
   // Methods called on the IPC thread.
   void
   OnVersionChange(uint64_t aOldVersion, uint64_t aNewVersion);
 
   void
   OnUpgradeNeeded();
+
+  void
+  OnBlocked(uint64_t aOldVersion);
 
   // WebIDL
   virtual JSObject*
@@ -199,6 +207,7 @@ private:
   uint64_t mVersion;
   PersistenceType mPersistenceType;
   IDBVersionChangeCallback* mUpgradeCallback;
+  IDBVersionChangeBlockedCallback* mUpgradeBlockedCallback;
 
   nsRefPtr<IDBTransactionSync> mTransaction;
   nsresult mUpgradeCode;

@@ -20,6 +20,7 @@ namespace mozilla {
 namespace dom {
 struct IDBOpenDBOptions;
 class IDBVersionChangeCallback;
+class IDBVersionChangeBlockedCallback;
 } // namespace dom
 } // namespace mozilla
 
@@ -51,7 +52,7 @@ public:
   Proxy();
 
   uint32_t
-  DeleteDatabaseSyncQueueKey() const;
+  OpenOrDeleteDatabaseSyncQueueKey() const;
 
   // WebIDL
   virtual JSObject*
@@ -66,6 +67,7 @@ public:
   already_AddRefed<IDBDatabaseSync>
   Open(JSContext* aCx, const nsAString& aName, uint64_t aVersion,
        const Optional<OwningNonNull<IDBVersionChangeCallback> >& aUpgradeCallback,
+       const Optional<OwningNonNull<IDBVersionChangeBlockedCallback> >& aUpgradeBlockedCallback,
        const Optional<uint32_t>& aTimeout,
        ErrorResult& aRv);
 
@@ -73,16 +75,20 @@ public:
   Open(JSContext* aCx, const nsAString& aName,
        const IDBOpenDBOptions& aOptions,
        const Optional<OwningNonNull<IDBVersionChangeCallback> >& aUpgradeCallback,
+       const Optional<OwningNonNull<IDBVersionChangeBlockedCallback> >& aUpgradeBlockedCallback,
        const Optional<uint32_t>& aTimeout, ErrorResult& aRv);
 
   void
   DeleteDatabase(JSContext* aCx, const nsAString& aName,
-                 const IDBOpenDBOptions& aOptions, ErrorResult& aRv);
+                 const IDBOpenDBOptions& aOptions,
+                 const Optional<OwningNonNull<IDBVersionChangeBlockedCallback> >& aDeleteBlockedCallback,
+                 ErrorResult& aRv);
 
 private:
   IDBFactorySync(WorkerPrivate* aWorkerPrivate);
   ~IDBFactorySync();
 
+  nsRefPtr<IDBDatabaseSync> mDatabase;
   nsRefPtr<DeleteDatabaseHelper> mDeleteDatabaseHelper;
 };
 

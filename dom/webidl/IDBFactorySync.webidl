@@ -9,13 +9,13 @@
 
 interface IDBFactorySync {
     [Throws]
-    IDBDatabaseSync open (DOMString name, [EnforceRange] unsigned long long version, optional IDBVersionChangeCallback upgradeCallback, optional unsigned long timeout);
+    IDBDatabaseSync open (DOMString name, [EnforceRange] unsigned long long version, optional IDBVersionChangeCallback upgradeCallback, optional IDBVersionChangeBlockedCallback upgradeBlockedCallback, optional unsigned long timeout);
 
     [Throws]
-    IDBDatabaseSync open (DOMString name, optional IDBOpenDBOptions options, optional IDBVersionChangeCallback upgradeCallback, optional unsigned long timeout);
+    IDBDatabaseSync open (DOMString name, optional IDBOpenDBOptions options, optional IDBVersionChangeCallback upgradeCallback, optional IDBVersionChangeBlockedCallback upgradeBlockedCallback, optional unsigned long timeout);
 
     [Throws]
-    void            deleteDatabase (DOMString name, optional IDBOpenDBOptions options);
+    void            deleteDatabase (DOMString name, optional IDBOpenDBOptions options, optional IDBVersionChangeBlockedCallback deleteBlockedCallback);
 
     [Throws]
     short           cmp (any first, any second);

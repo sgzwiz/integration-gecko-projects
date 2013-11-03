@@ -184,8 +184,11 @@ IDBFactorySync::Proxy()
 }
 
 uint32_t
-IDBFactorySync::DeleteDatabaseSyncQueueKey() const
+IDBFactorySync::OpenOrDeleteDatabaseSyncQueueKey() const
 {
+  if (mDatabase) {
+    return mDatabase->Proxy()->mSyncQueueKey;
+  }
   if (mDeleteDatabaseHelper) {
     return mDeleteDatabaseHelper->Proxy()->mSyncQueueKey;
   }
@@ -201,19 +204,21 @@ IDBFactorySync::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 already_AddRefed<IDBDatabaseSync>
 IDBFactorySync::Open(JSContext* aCx, const nsAString& aName, uint64_t aVersion,
                      const Optional<OwningNonNull<IDBVersionChangeCallback> >& aUpgradeCallback,
+                     const Optional<OwningNonNull<IDBVersionChangeBlockedCallback> >& aUpgradeBlockedCallback,
                      const Optional<uint32_t>& aTimeout, ErrorResult& aRv)
 {
   IDBOpenDBOptions options;
   options.mVersion.Construct();
   options.mVersion.Value() = aVersion;
 
-  return Open(aCx, aName, options, aUpgradeCallback, aTimeout, aRv);
+  return Open(aCx, aName, options, aUpgradeCallback, aUpgradeBlockedCallback, aTimeout, aRv);
 }
 
 already_AddRefed<IDBDatabaseSync>
 IDBFactorySync::Open(JSContext* aCx, const nsAString& aName,
                      const IDBOpenDBOptions& aOptions,
                      const Optional<OwningNonNull<IDBVersionChangeCallback> >& aUpgradeCallback,
+                     const Optional<OwningNonNull<IDBVersionChangeBlockedCallback> >& aUpgradeBlockedCallback,
                      const Optional<uint32_t>& aTimeout, ErrorResult& aRv)
 {
   uint64_t version = 0;
@@ -232,25 +237,33 @@ IDBFactorySync::Open(JSContext* aCx, const nsAString& aName,
   IDBVersionChangeCallback* upgradeCallback =
     aUpgradeCallback.WasPassed() ? &aUpgradeCallback.Value() : nullptr;
 
-  nsRefPtr<IDBDatabaseSync> database =
-    IDBDatabaseSync::Create(aCx, this, aName, version, persistenceType,
-                            upgradeCallback);
-  if (!database) {
+  IDBVersionChangeBlockedCallback* upgradeBlockedCallback =
+    aUpgradeBlockedCallback.WasPassed() ? &aUpgradeBlockedCallback.Value()
+                                        : nullptr;
+
+  mDatabase = IDBDatabaseSync::Create(aCx, this, aName, version,
+                                      persistenceType, upgradeCallback,
+                                      upgradeBlockedCallback);
+  if (!mDatabase) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
   }
 
-  if (!database->Open(aCx)) {
+  if (!mDatabase->Open(aCx)) {
     aRv.Throw(NS_ERROR_FAILURE);
+    mDatabase = nullptr;
     return nullptr;
   }
 
+  nsRefPtr<IDBDatabaseSync> database;
+  mDatabase.swap(database);
   return database.forget();
 }
 
 void
 IDBFactorySync::DeleteDatabase(JSContext* aCx, const nsAString& aName,
                                const IDBOpenDBOptions& aOptions,
+                               const Optional<OwningNonNull<IDBVersionChangeBlockedCallback> >& aDeleteBlockedCallback,
                                ErrorResult& aRv)
 {
   quota::PersistenceType persistenceType =
@@ -262,6 +275,7 @@ IDBFactorySync::DeleteDatabase(JSContext* aCx, const nsAString& aName,
 
   if (!mDeleteDatabaseHelper->Run(aCx)) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+    mDeleteDatabaseHelper = nullptr;
     return;
   }
 

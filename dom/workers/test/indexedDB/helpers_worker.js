@@ -3,6 +3,10 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+function repr(val) {
+  return typeof val == "string" ? '"' + val + '"' : val;
+}
+
 function ok(condition, name, diag) {
   var rtnObj = new Object();
   rtnObj.type = "ok";
@@ -13,21 +17,15 @@ function ok(condition, name, diag) {
 }
 
 function is(a, b, name) {
-  var rtnObj = new Object();
-  rtnObj.type = "is";
-  rtnObj.a = a;
-  rtnObj.b = b;
-  rtnObj.name = name;
-  postMessage(rtnObj);
+  var pass = (a == b);
+  var diag = pass ? "" : "got " + repr(a) + ", expected " + repr(b);
+  ok(pass, name, diag);
 }
 
 function isnot(a, b, name) {
-  var rtnObj = new Object();
-  rtnObj.type = "isnot";
-  rtnObj.a = a;
-  rtnObj.b = b;
-  rtnObj.name = name;
-  postMessage(rtnObj);
+  var pass = (a != b);
+  var diag = pass ? "" : "didn't expect " + repr(a) + ", but got it";
+  ok(pass, name, diag);
 }
 
 function todo(condition, name, diag) {
@@ -40,12 +38,10 @@ function todo(condition, name, diag) {
 }
 
 function todo_is(a, b, name) {
-  var rtnObj = new Object();
-  rtnObj.type = "todo_is";
-  rtnObj.a = a;
-  rtnObj.b = b;
-  rtnObj.name = name;
-  postMessage(rtnObj);
+  var pass = (a == b);
+  var diag = pass ? repr(a) + " should equal " + repr(b)
+                  : "got " + repr(a) + ", expected " + repr(b);
+  todo(pass, name, diag);
 }
 
 function info(name) {
@@ -58,6 +54,12 @@ function info(name) {
 function unexpectedEventHandler()
 {
   ok(false, "Got event, but did not expect it!");
+  postMessage(undefined);
+}
+
+function unexpectedCallback()
+{
+  ok(false, "Callback called, but did not expect it!");
   postMessage(undefined);
 }
 

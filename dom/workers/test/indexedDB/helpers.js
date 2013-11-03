@@ -16,20 +16,11 @@ function runTest(path) {
       if (result.type == "ok") {
         ok(result.condition, result.name, result.diag);
       }
-      else if (result.type == "is") {
-        is(result.a, result.b, result.name);
-      }
-      else if (result.type == "info") {        
+      else if (result.type == "info") {
         info(result.name);
-      }
-      else if (result.type == "isnot") {
-        isnot(result.a, result.b, result.name);
       }
       else if (result.type == "todo") {
         todo(result.a, result.b, result.name);
-      }
-      else if (result.type == "todo_is") {
-        todo_is(result.a, result.b, result.name);
       }
     }
   };

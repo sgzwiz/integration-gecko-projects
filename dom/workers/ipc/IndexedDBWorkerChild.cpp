@@ -224,6 +224,10 @@ IndexedDBDatabaseWorkerChild::RecvError(const nsresult& aRv)
 bool
 IndexedDBDatabaseWorkerChild::RecvBlocked(const uint64_t& aOldVersion)
 {
+  IDBDatabaseSync* database = mDatabaseProxy->Database();
+
+  database->OnBlocked(aOldVersion);
+
   return true;
 }
 
