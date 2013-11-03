@@ -54,6 +54,7 @@ class Function;
 
 BEGIN_WORKERS_NAMESPACE
 
+class IDBDatabaseSync;
 class MessagePort;
 class SharedWorker;
 class WorkerChild;
@@ -842,6 +843,9 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
 
   nsRefPtrHashtable<nsUint64HashKey, MessagePort> mWorkerPorts;
 
+  uint64_t mLastDatabaseSerial;
+  nsDataHashtable<nsUint64HashKey, IDBDatabaseSync*> mDatabases;
+
   mozilla::TimeStamp mKillTime;
   uint32_t mErrorHandlerRecursionCount;
   uint32_t mNextTimeoutId;
@@ -1105,6 +1109,15 @@ public:
 
   MessagePort*
   GetMessagePort(uint64_t aMessagePortSerial);
+
+  void
+  RegisterDatabase(IDBDatabaseSync* aDatabase);
+
+  void
+  UnregisterDatabase(IDBDatabaseSync* aDatabase);
+
+  IDBDatabaseSync*
+  GetDatabase(uint64_t aDatabaseSerial);
 
   JSObject*
   CreateGlobalScope(JSContext* aCx);

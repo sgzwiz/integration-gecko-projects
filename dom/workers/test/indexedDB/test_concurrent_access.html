@@ -8,64 +8,63 @@
 
   <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
-</head>
-<body>
-<p id="display"></p>
-<div id="content" style="display: none">
-</div>
-<pre id="test">
-<script class="testbody" type="text/javascript">
+
+  <script type="text/javascript;version=1.7">
+  const indexedDBSyncPref = "dom.indexedDBSync.enabled";
+  const numberOfWorkers = 10;
+
   const data = {
-    numberOfWorkers : 10,
     name: window.location.pathname,
-    version: 1,
     objectStoreName: "Objects",
     objectStoreData: { value: { name: "Marvin" }, key: 1 },
     indexData: { name: "nameIndex", key: "name" }
   };
 
-  /* Create db with async API */
-  var request = window.indexedDB.open(data.name, 1);
+  // Create db using async API.
+  let request = window.indexedDB.open(data.name, 1);
 
   request.onupgradeneeded = function(event) {
     info("Initialization");
-    var db = event.target.result;
+    let db = event.target.result;
     var objectStore = db.createObjectStore(data.objectStoreName, { autoIncrement: 0 });
     objectStore.add(data.objectStoreData.value, data.objectStoreData.key);
     objectStore.createIndex(data.indexData.name, data.indexData.key);
   };
 
   request.onsuccess = function(event) {
-    info("Initialization was done");
+    info("Initialization succeeded");
 
-    /* Let's run several Concurrent_access_workers */
-    var counter = 0;
-    for (var i = 0; i < data.numberOfWorkers; i++) {
-
-      var worker = new Worker("concurrent_access_worker.js");
-      worker.onmessage = function(event) {
-        var result = event.data;
-        if(result == undefined) {
-          counter = counter + 1;
-          info(counter + ". worker finished");
-          if (counter == data.numberOfWorkers) {
-            info("Test successfully completed");
-            SimpleTest.finish();
+    SpecialPowers.pushPrefEnv({ set: [[indexedDBSyncPref, true]] }, function() {
+      // Let's run several concurrent workers at once.
+      let counter = 0;
+      for (let i = 0; i < numberOfWorkers; i++) {
+        let worker = new Worker("concurrent_access_worker.js");
+        worker.onmessage = function(event) {
+          let result = event.data;
+          if(result == undefined) {
+            counter++;
+            info(counter + ". worker finished");
+            if (counter == numberOfWorkers) {
+              info("Test successfully completed");
+              SimpleTest.finish();
+            }
           }
-        }
-        else {
-          if (result.type == "ok") {
-            ok(result.condition, result.name, result.diag);
+          else {
+            if (result.type == "ok") {
+              ok(result.condition, result.name, result.diag);
+            }
           }
-        }
-      };
-
-      worker.postMessage(data);
-    }
+        };
+        worker.postMessage(data);
+      }
+    });
   };
 
-    SimpleTest.waitForExplicitFinish();
-</script>
-</pre>
-</body>
+  SimpleTest.waitForExplicitFinish();
+  </script>
+
+</head>
+
+<body></body>
+
 </html>

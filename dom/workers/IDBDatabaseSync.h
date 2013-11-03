@@ -52,6 +52,7 @@ class IDBDatabaseSync MOZ_FINAL : public IDBObjectSyncEventTarget,
 {
   friend class IDBFactorySync;
   friend class IndexedDBDatabaseWorkerChild;
+  friend class WorkerPrivate;
 
   typedef mozilla::dom::IDBObjectStoreParameters IDBObjectStoreParameters;
   typedef mozilla::dom::indexedDB::ObjectStoreInfo ObjectStoreInfo;
@@ -196,21 +197,26 @@ private:
   bool
   Open(JSContext* aCx);
 
+  uint64_t mSerial;
+
   nsRefPtr<IDBFactorySync> mFactory;
+
   nsRefPtr<DatabaseInfoMT> mDatabaseInfo;
 
   // Set to a copy of the existing DatabaseInfo when starting a versionchange
   // transaction.
   nsRefPtr<DatabaseInfoMT> mPreviousDatabaseInfo;
-
   nsCString mDatabaseId;
   uint64_t mVersion;
   PersistenceType mPersistenceType;
+
   IDBVersionChangeCallback* mUpgradeCallback;
   IDBVersionChangeBlockedCallback* mUpgradeBlockedCallback;
 
   nsRefPtr<IDBTransactionSync> mTransaction;
   nsresult mUpgradeCode;
+
+  bool mRegistered;
 };
 
 END_WORKERS_NAMESPACE

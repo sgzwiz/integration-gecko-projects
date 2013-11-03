@@ -20,6 +20,8 @@ Tests of IndexedDB synchronous API (Bug 798875)
 </div>
 <pre id="test">
 <script class="testbody" type="text/javascript">
+  const indexedDBSyncPref = "dom.indexedDBSync.enabled";
+
   const data = {
     name: window.location.pathname,
     objectStoreName: "Names",
@@ -37,17 +39,19 @@ Tests of IndexedDB synchronous API (Bug 798875)
   };
 
   request.onsuccess = function(event) {
-    var worker = new Worker("syncidb_worker_worker.js");
-    worker.onmessage = function(event) {
-      var result = event.data;
-      if(result == undefined) {
-        SimpleTest.finish();
-      }
-      else {
-        is(result.actual, result.expected, result.message);
-      }
-    };
-    worker.postMessage(data);
+    SpecialPowers.pushPrefEnv({ set: [[indexedDBSyncPref, true]] }, function() {
+      var worker = new Worker("syncidb_worker_worker.js");
+      worker.onmessage = function(event) {
+        var result = event.data;
+        if(result == undefined) {
+          SimpleTest.finish();
+        }
+        else {
+          is(result.actual, result.expected, result.message);
+        }
+      };
+      worker.postMessage(data);
+    });
   };
 
   SimpleTest.waitForExplicitFinish();

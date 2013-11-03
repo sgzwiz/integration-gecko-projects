@@ -124,19 +124,21 @@ class VersionChangeRunnable : public WorkerSyncRunnable
 {
 public:
   VersionChangeRunnable(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
-                        IDBDatabaseSync* aDatabase, uint64_t aOldVersion,
+                        uint64_t aDatabaseSerial, uint64_t aOldVersion,
                         uint64_t aNewVersion)
   : WorkerSyncRunnable(aWorkerPrivate, aSyncQueueKey, false, SkipWhenClearing),
-    mDatabase(aDatabase), mOldVersion(aOldVersion), mNewVersion(aNewVersion)
+    mDatabaseSerial(aDatabaseSerial), mOldVersion(aOldVersion),
+    mNewVersion(aNewVersion)
   {
     AssertIsOnIPCThread();
   }
 
   VersionChangeRunnable(WorkerPrivate* aWorkerPrivate,
-                        IDBDatabaseSync* aDatabase, uint64_t aOldVersion,
+                        uint64_t aDatabaseSerial, uint64_t aOldVersion,
                         uint64_t aNewVersion)
   : WorkerSyncRunnable(aWorkerPrivate, UINT32_MAX, true, SkipWhenClearing),
-    mDatabase(aDatabase), mOldVersion(aOldVersion), mNewVersion(aNewVersion)
+    mDatabaseSerial(aDatabaseSerial), mOldVersion(aOldVersion),
+    mNewVersion(aNewVersion)
   {
     AssertIsOnIPCThread();
   }
@@ -158,18 +160,26 @@ public:
   bool
   WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
   {
+    nsRefPtr<IDBDatabaseSync> database =
+      aWorkerPrivate->GetDatabase(mDatabaseSerial);
+    if (!database) {
+      return true;
+    }
+
     nsRefPtr<nsDOMEvent> event =
-      IDBVersionChangeEvent::Create(mDatabase, mOldVersion, mNewVersion);
+      IDBVersionChangeEvent::Create(database, mOldVersion, mNewVersion);
     NS_ENSURE_TRUE(event, false);
 
     bool dummy;
-    mDatabase->DispatchEvent(event, &dummy);
+    database->DispatchEvent(event, &dummy);
 
     return true;
   }
 
 private:
-  IDBDatabaseSync* mDatabase;
+  // We can't addref the native object from the IPC thread and a weak ref can't
+  // be used since the database may or may not have been pinned.
+  uint64_t mDatabaseSerial;
 
   uint64_t mOldVersion;
   uint64_t mNewVersion;
@@ -210,7 +220,7 @@ public:
 
 private:
   // A weak ref (we can't addref the native object from the IPC thread).
-  // This shouldn't be a problem because IDBDatabaseSync has been pinned.
+  // This shouldn't be a problem because the database has been pinned.
   IDBDatabaseSync* mDatabase;
 };
 
@@ -249,7 +259,7 @@ public:
 
 private:
   // A weak ref (we can't addref the native object from the IPC thread).
-  // This shouldn't be a problem because IDBDatabaseSync has been pinned.
+  // This shouldn't be a problem because the database has been pinned.
   IDBDatabaseSync* mDatabase;
 
   uint64_t mOldVersion;
@@ -305,6 +315,9 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IDBDatabaseSync,
                                                 IDBObjectSyncEventTarget)
   tmp->ReleaseProxy(ObjectIsGoingAway);
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFactory)
+
+  tmp->mWorkerPrivate->UnregisterDatabase(tmp);
+  tmp->mRegistered = false;
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(IDBDatabaseSync,
@@ -336,13 +349,16 @@ IDBDatabaseSync::Create(JSContext* aCx, IDBFactorySync* aFactory,
   database->mUpgradeCallback = aUpgradeCallback;
   database->mUpgradeBlockedCallback = aUpgradeBlockedCallback;
 
+  workerPrivate->RegisterDatabase(database);
+  database->mRegistered = true;
+
   return database.forget();
 }
 
 IDBDatabaseSync::IDBDatabaseSync(WorkerPrivate* aWorkerPrivate)
-: IDBObjectSyncEventTarget(aWorkerPrivate), mVersion(0),
+: IDBObjectSyncEventTarget(aWorkerPrivate), mSerial(0), mVersion(0),
   mUpgradeCallback(nullptr), mUpgradeBlockedCallback(nullptr),
-  mUpgradeCode(NS_OK)
+  mUpgradeCode(NS_OK), mRegistered(false)
 {
   SetIsDOMBinding();
 }
@@ -354,6 +370,10 @@ IDBDatabaseSync::~IDBDatabaseSync()
   ReleaseProxy(ObjectIsGoingAway);
 
   MOZ_ASSERT(!mRooted);
+
+  if (mRegistered) {
+    mWorkerPrivate->UnregisterDatabase(this);
+  }
 }
 
 IDBDatabaseSyncProxy*
@@ -427,11 +447,11 @@ IDBDatabaseSync::OnVersionChange(uint64_t aOldVersion, uint64_t aNewVersion)
 
   uint32_t syncQueueKey = mFactory->OpenOrDeleteDatabaseSyncQueueKey();
   if (syncQueueKey == UINT32_MAX) {
-    runnable = new VersionChangeRunnable(mWorkerPrivate, this, aOldVersion,
+    runnable = new VersionChangeRunnable(mWorkerPrivate, mSerial, aOldVersion,
                                          aNewVersion);
   }
   else {
-    runnable = new VersionChangeRunnable(mWorkerPrivate, syncQueueKey, this,
+    runnable = new VersionChangeRunnable(mWorkerPrivate, syncQueueKey, mSerial,
                                          aOldVersion, aNewVersion);
   }
 

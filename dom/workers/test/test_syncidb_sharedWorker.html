@@ -21,6 +21,7 @@ Tests of IndexedDB synchronous API (Bug 798875)
 <pre id="test">
 <script class="testbody" type="text/javascript">
   const swPref = "dom.workers.sharedWorkers.enabled";
+  const indexedDBSyncPref = "dom.indexedDBSync.enabled";
 
   const data = {
     name: window.location.pathname,
@@ -39,7 +40,8 @@ Tests of IndexedDB synchronous API (Bug 798875)
   };
 
   request.onsuccess = function(event) {
-    SpecialPowers.pushPrefEnv({ set: [[swPref, true]] }, function() {
+    SpecialPowers.pushPrefEnv({ set: [[swPref, true],
+                                      [indexedDBSyncPref, true]] }, function() {
       var worker = new SharedWorker("syncidb_sharedWorker_sharedWorker.js");
 
       worker.port.onmessage = function(event) {

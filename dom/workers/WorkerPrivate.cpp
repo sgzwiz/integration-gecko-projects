@@ -69,6 +69,7 @@
 #include "mozilla/dom/Exceptions.h"
 #include "File.h"
 #include "MessagePort.h"
+#include "IDBDatabaseSync.h"
 #include "IPCThreadUtils.h"
 #include "Principal.h"
 #include "RuntimeService.h"
@@ -3336,8 +3337,8 @@ WorkerPrivate::WorkerPrivate(JSContext* aCx,
 : WorkerPrivateParent<WorkerPrivate>(aCx, aParent, aScriptURL,
                                      aIsChromeWorker, aIsSharedWorker,
                                      aSharedWorkerName, aLoadInfo),
-  mJSContext(nullptr), mErrorHandlerRecursionCount(0), mNextTimeoutId(1),
-  mStatus(Pending), mSuspended(false), mTimerRunning(false),
+  mJSContext(nullptr), mLastDatabaseSerial(0), mErrorHandlerRecursionCount(0),
+  mNextTimeoutId(1), mStatus(Pending), mSuspended(false), mTimerRunning(false),
   mRunningExpiredTimeouts(false), mCloseHandlerStarted(false),
   mCloseHandlerFinished(false), mMemoryReporterRunning(false),
   mBlockedForMemoryReporter(false)
@@ -5337,6 +5338,44 @@ WorkerPrivate::GetMessagePort(uint64_t aMessagePortSerial)
   }
 
   return nullptr;
+}
+
+void
+WorkerPrivate::RegisterDatabase(IDBDatabaseSync* aDatabase)
+{
+  AssertIsOnWorkerThread();
+
+  MOZ_ASSERT(aDatabase);
+  MOZ_ASSERT(!aDatabase->mSerial, "Already have database serial!");
+  MOZ_ASSERT(!mDatabases.Get(mLastDatabaseSerial + 1),
+             "Already have this database registered!");
+
+  aDatabase->mSerial = ++mLastDatabaseSerial;
+  mDatabases.Put(aDatabase->mSerial, aDatabase);
+}
+
+void
+WorkerPrivate::UnregisterDatabase(IDBDatabaseSync* aDatabase)
+{
+  AssertIsOnWorkerThread();
+
+  MOZ_ASSERT(aDatabase);
+  MOZ_ASSERT(aDatabase->mSerial, "Don't have database serial!");
+  MOZ_ASSERT(mDatabases.Get(aDatabase->mSerial),
+             "Don't have this database registered!");
+
+  mDatabases.Remove(aDatabase->mSerial);
+  aDatabase->mSerial = 0;
+}
+
+workers::IDBDatabaseSync*
+WorkerPrivate::GetDatabase(uint64_t aDatabaseSerial)
+{
+  AssertIsOnWorkerThread();
+
+  MOZ_ASSERT(aDatabaseSerial > 0);
+
+  return mDatabases.Get(aDatabaseSerial);
 }
 
 JSObject*

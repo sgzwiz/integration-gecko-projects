@@ -9,7 +9,7 @@ onmessage = function(event) {
   var data = event.data;
   var objectStoreData = data.objectStoreData;
 
-  var db = indexedDBSync.open(data.name, data.version, function(trans, oldVersion) {
+  var db = indexedDBSync.open(data.name, 1, function(trans, oldVersion) {
     ok(false, "Unexpected upgradeneeded callback ");
   });
 
