@@ -195,7 +195,7 @@ IndexedDBDatabaseWorkerChild::RecvSuccess(
 {
   MOZ_ASSERT(mDatabaseProxy->mExpectingResponse);
 
-  IDBDatabaseSync* database = mDatabaseProxy->Database();
+  DebugOnly<IDBDatabaseSync*> database = mDatabaseProxy->Database();
 
   MOZ_ASSERT(aDBInfo.origin == database->mFactory->GetASCIIOrigin(), "Huh?");
   MOZ_ASSERT(aDBInfo.name == database->mName, "Huh?");
