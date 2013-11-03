@@ -31,10 +31,20 @@ struct ObjectStoreInfo;
 
 BEGIN_WORKERS_NAMESPACE
 
+class IDBDatabaseSync;
 class IDBFactorySync;
 class IDBObjectStoreSync;
 class IDBTransactionSync;
 class IndexedDBDatabaseWorkerChild;
+
+class IDBDatabaseSyncProxy : public IDBObjectSyncProxy<IndexedDBDatabaseWorkerChild>
+{
+public:
+  IDBDatabaseSyncProxy(IDBDatabaseSync* aDatabase);
+
+  IDBDatabaseSync*
+  Database();
+};
 
 class IDBDatabaseSync MOZ_FINAL : public IDBObjectSyncEventTarget,
                                   public indexedDB::IDBDatabaseBase
@@ -48,16 +58,29 @@ class IDBDatabaseSync MOZ_FINAL : public IDBObjectSyncEventTarget,
 
 public:
   NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(
+                                                       IDBDatabaseSync,
+                                                       IDBObjectSyncEventTarget)
 
-  static IDBDatabaseSync*
+  static already_AddRefed<IDBDatabaseSync>
   Create(JSContext* aCx, IDBFactorySync* aFactory, const nsAString& aName,
-         uint64_t aVersion, PersistenceType aPersistenceType);
+         uint64_t aVersion, PersistenceType aPersistenceType,
+         IDBVersionChangeCallback* aUpgradeCallback);
 
-  virtual void
-  _trace(JSTracer* aTrc) MOZ_OVERRIDE;
+  IDBDatabaseSyncProxy*
+  Proxy();
 
-  virtual void
-  _finalize(JSFreeOp* aFop) MOZ_OVERRIDE;
+  IDBFactorySync*
+  Factory() const
+  {
+    return mFactory;
+  }
+
+  DatabaseInfoMT*
+  Info() const
+  {
+    return mDatabaseInfo;
+  }
 
   nsCString Id() const
   {
@@ -76,40 +99,31 @@ public:
     return mPersistenceType;
   }
 
-  DatabaseInfoMT*
-  Info() const
-  {
-    return mDatabaseInfo;
-  }
+  void
+  EnterSetVersionTransaction();
 
-  void EnterSetVersionTransaction();
-  void ExitSetVersionTransaction();
+  void
+  ExitSetVersionTransaction();
 
   // Called when a versionchange transaction is aborted to reset the
   // DatabaseInfoMT.
-  void RevertToPreviousState();
-
-  // Methods called on the IPC thread.
-  virtual void
-  ReleaseIPCThreadObjects();
-
-  IndexedDBDatabaseWorkerChild*
-  GetActor() const
-  {
-    return mActorChild;
-  }
+  void
+  RevertToPreviousState();
 
   void
-  SetActor(IndexedDBDatabaseWorkerChild* aActorChild)
-  {
-    MOZ_ASSERT(!aActorChild || !mActorChild, "Shouldn't have more than one!");
-    mActorChild = aActorChild;
-  }
+  DoUpgrade(JSContext* aCx);
 
+  // Methods called on the IPC thread.
   void
   OnVersionChange(uint64_t aOldVersion, uint64_t aNewVersion);
 
+  void
+  OnUpgradeNeeded();
+
   // WebIDL
+  virtual JSObject*
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
+
   void
   GetName(nsString& aName)
   {
@@ -131,7 +145,7 @@ public:
   already_AddRefed<DOMStringList>
   GetObjectStoreNames(JSContext* aCx, ErrorResult& aRv);
 
-  IDBObjectStoreSync*
+  already_AddRefed<IDBObjectStoreSync>
   CreateObjectStore(JSContext* aCx, const nsAString& aName,
                     const IDBObjectStoreParameters& aOptionalParameters,
                     ErrorResult& aRv);
@@ -165,26 +179,16 @@ public:
   void
   Close(JSContext* aCx, ErrorResult& aRv);
 
-  already_AddRefed<EventHandlerNonNull>
-  GetOnversionchange(ErrorResult& aRv)
-  {
-    return GetEventListener(NS_LITERAL_STRING("versionchange"), aRv);
-  }
-
-  void
-  SetOnversionchange(EventHandlerNonNull* aListener, ErrorResult& aRv)
-  {
-    SetEventListener(NS_LITERAL_STRING("versionchange"), aListener, aRv);
-  }
+  IMPL_EVENT_HANDLER(versionchange)
 
 private:
-  IDBDatabaseSync(JSContext* aCx, WorkerPrivate* aWorkerPrivate);
+  IDBDatabaseSync(WorkerPrivate* aWorkerPrivate);
   ~IDBDatabaseSync();
 
   bool
-  Open(JSContext* aCx, IDBVersionChangeCallback* aUpgradeCallback);
+  Open(JSContext* aCx);
 
-  IDBFactorySync* mFactory;
+  nsRefPtr<IDBFactorySync> mFactory;
   nsRefPtr<DatabaseInfoMT> mDatabaseInfo;
 
   // Set to a copy of the existing DatabaseInfo when starting a versionchange
@@ -194,12 +198,10 @@ private:
   nsCString mDatabaseId;
   uint64_t mVersion;
   PersistenceType mPersistenceType;
+  IDBVersionChangeCallback* mUpgradeCallback;
 
-  IDBTransactionSync* mTransaction;
-  bool mUpgradeNeeded;
-
-  // Only touched on the IPC thread.
-  IndexedDBDatabaseWorkerChild* mActorChild;
+  nsRefPtr<IDBTransactionSync> mTransaction;
+  nsresult mUpgradeCode;
 };
 
 END_WORKERS_NAMESPACE

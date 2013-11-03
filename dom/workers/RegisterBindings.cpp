@@ -57,7 +57,7 @@ IndexedDBSyncLazyGetter(JSContext* aCx, JS::Handle<JSObject*> aObj,
   NS_ASSERTION(JS_FlatStringEqualsAscii(JSID_TO_FLAT_STRING(aId), IDBSYNC_STR),
                "Bad id!");
 
-  IDBFactorySync* indexedDBSync = IDBFactorySync::Create(aCx, aObj);
+  nsRefPtr<IDBFactorySync> indexedDBSync = IDBFactorySync::Create(aCx, aObj);
   if (!indexedDBSync) {
     return false;
   }
@@ -120,18 +120,18 @@ WorkerPrivate::RegisterBindings(JSContext* aCx, JS::Handle<JSObject*> aGlobal)
 
   // Init other paris-bindings.
   if (!DOMExceptionBinding::GetConstructorObject(aCx, aGlobal) ||
-      !DOMStringListBinding::GetConstructorObject(aCx, global) ||
+      !DOMStringListBinding::GetConstructorObject(aCx, aGlobal) ||
       !EventBinding::GetConstructorObject(aCx, aGlobal) ||
       !FileReaderSyncBinding_workers::GetConstructorObject(aCx, aGlobal) ||
-      !IDBCursorSyncBinding_workers::GetConstructorObject(aCx, global) ||
-      !IDBCursorWithValueSyncBinding_workers::GetConstructorObject(aCx, global) ||
-      !IDBDatabaseSyncBinding_workers::GetConstructorObject(aCx, global) ||
-      !IDBFactorySyncBinding_workers::GetConstructorObject(aCx, global) ||
-      !IDBIndexSyncBinding_workers::GetConstructorObject(aCx, global) ||
-      !IDBKeyRangeBinding::GetConstructorObject(aCx, global) ||
-      !IDBObjectStoreSyncBinding_workers::GetConstructorObject(aCx, global) ||
-      !IDBVersionChangeEventBinding_workers::GetConstructorObject(aCx, global) ||
-      !IDBTransactionSyncBinding_workers::GetConstructorObject(aCx, global) ||
+      !IDBCursorSyncBinding_workers::GetConstructorObject(aCx, aGlobal) ||
+      !IDBCursorWithValueSyncBinding_workers::GetConstructorObject(aCx, aGlobal) ||
+      !IDBDatabaseSyncBinding_workers::GetConstructorObject(aCx, aGlobal) ||
+      !IDBFactorySyncBinding_workers::GetConstructorObject(aCx, aGlobal) ||
+      !IDBIndexSyncBinding_workers::GetConstructorObject(aCx, aGlobal) ||
+      !IDBKeyRangeBinding::GetConstructorObject(aCx, aGlobal) ||
+      !IDBObjectStoreSyncBinding_workers::GetConstructorObject(aCx, aGlobal) ||
+      !IDBVersionChangeEventBinding::GetConstructorObject(aCx, aGlobal) ||
+      !IDBTransactionSyncBinding_workers::GetConstructorObject(aCx, aGlobal) ||
       !ImageDataBinding::GetConstructorObject(aCx, aGlobal) ||
       !MessageEventBinding::GetConstructorObject(aCx, aGlobal) ||
       !MessagePortBinding::GetConstructorObject(aCx, aGlobal) ||
@@ -146,8 +146,8 @@ WorkerPrivate::RegisterBindings(JSContext* aCx, JS::Handle<JSObject*> aGlobal)
     return false;
   }
 
-  if (!DefineIndexedDBSyncLazyGetter(aCx, global)) {
-    return NULL;
+  if (!DefineIndexedDBSyncLazyGetter(aCx, aGlobal)) {
+    return false;
   }
 
   if (!JS_DefineProfilingFunctions(aCx, aGlobal)) {

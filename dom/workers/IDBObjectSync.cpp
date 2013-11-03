@@ -8,40 +8,37 @@
 
 #include "base/thread.h"
 
-#include "IPCThreadUtils.h"
 #include "RuntimeService.h"
 #include "WorkerPrivate.h"
 
+#include "ipc/IndexedDBWorkerChild.h"
+
 USING_WORKERS_NAMESPACE
 using namespace mozilla;
+using namespace mozilla::dom::indexedDB;
 
 namespace {
 
-class ProxyReleaseHelper
+class AsyncTeardownRunnable
 {
+  nsRefPtr<IDBObjectSyncProxyBase> mProxy;
+
 public:
-  ProxyReleaseHelper(IDBObjectSyncBase* aObject)
-  : mObject(aObject),
-    mMutex(RuntimeService::IPCMutex()),
-    mCondVar(mMutex, "ProxyReleaseHelper::mCondVar"),
-    mWaiting(true)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(AsyncTeardownRunnable2)
+
+  AsyncTeardownRunnable(IDBObjectSyncProxyBase* aProxy)
   {
-    MOZ_ASSERT(mObject, "Null object!");
+    mProxy = aProxy;
+    MOZ_ASSERT(mProxy);
   }
 
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ProxyReleaseHelper)
-
-  void
-  DispatchAndWaitForResult()
+  bool
+  Dispatch()
   {
     MessageLoop* ipcLoop = RuntimeService::IPCMessageLoop();
     ipcLoop->PostTask(FROM_HERE,
-                      NewRunnableMethod(this, &ProxyReleaseHelper::Run));
-
-    MutexAutoLock autolock(mMutex);
-    while (mWaiting) {
-      mCondVar.Wait();
-    }
+                      NewRunnableMethod(this, &AsyncTeardownRunnable::Run));
+    return true;
   }
 
 private:
@@ -49,80 +46,267 @@ private:
   Run() {
     AssertIsOnIPCThread();
 
-    mObject->ReleaseIPCThreadObjects();
+    mProxy->Teardown();
+    mProxy = nullptr;
+  }
+};
 
-    MutexAutoLock lock(mMutex);
-    MOZ_ASSERT(mWaiting, "Huh?!");
+class SyncTeardownRunnable : public BlockWorkerThreadRunnable
+{
+  nsRefPtr<IDBObjectSyncProxyBase> mProxy;
 
-    mObject = nullptr;
-
-    mWaiting = false;
-    mCondVar.NotifyAll();
+public:
+  SyncTeardownRunnable(WorkerPrivate* aWorkerPrivate, IDBObjectSyncProxyBase* aProxy)
+  : BlockWorkerThreadRunnable(aWorkerPrivate), mProxy(aProxy)
+  {
+    MOZ_ASSERT(aWorkerPrivate);
+    MOZ_ASSERT(aProxy);
   }
 
+  virtual nsresult
+  IPCThreadRun() MOZ_OVERRIDE
+  {
+    AssertIsOnIPCThread();
+
+    mProxy->Teardown();
+
+    return NS_OK;
+  }
+};
+
+class UnpinRunnable : public WorkerControlRunnable
+{
   IDBObjectSyncBase* mObject;
-  mozilla::Mutex& mMutex;
-  mozilla::CondVar mCondVar;
-  bool mWaiting;
+
+public:
+  UnpinRunnable(WorkerPrivate* aWorkerPrivate, IDBObjectSyncBase* aObject)
+  : WorkerControlRunnable(aWorkerPrivate, WorkerThread, UnchangedBusyCount),
+    mObject(aObject)
+  { }
+
+  bool
+  PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
+  {
+    AssertIsOnIPCThread();
+    return true;
+  }
+
+  void
+  PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
+               bool aDispatchResult)
+  {
+    AssertIsOnIPCThread();
+  }
+
+  bool
+  WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
+  {
+    mObject->Unpin();
+    return true;
+  }
 };
 
 } // anonymous namespace
 
 void
-IDBObjectSyncBase::UnblockWorkerThread(nsresult aErrorCode)
+IDBObjectSyncProxyBase::OnUnblockRequested()
+{
+  AssertIsOnIPCThread();
+
+  mExpectingResponse = false;
+
+  mWorkerPrivate = nullptr;
+  mSyncQueueKey = UINT32_MAX;
+}
+
+void
+IDBObjectSyncProxyBase::OnUnblockPerformed(WorkerPrivate* aWorkerPrivate)
+{
+  aWorkerPrivate->AssertIsOnWorkerThread();
+
+  mObject->Unpin();
+}
+
+void
+IDBObjectSyncProxyBase::UnblockWorkerThread(nsresult aErrorCode, bool aDispatch)
 {
   nsRefPtr<UnblockWorkerThreadRunnable> runnable =
-    new UnblockWorkerThreadRunnable(mWorkerPrivate, mPrimarySyncQueueKey,
-                                    aErrorCode);
+    new UnblockWorkerThreadRunnable(mWorkerPrivate, mSyncQueueKey,
+                                    aErrorCode, this);
 
-  if (!runnable->Dispatch()) {
-    NS_WARNING("Failed to dispatch runnable!");
+  if (aDispatch) {
+    if (!runnable->Dispatch()) {
+      NS_WARNING("Failed to dispatch runnable!");
+    }
+  }
+  else {
+    runnable->RunImmediatelly();
+  }
+}
+
+void
+IDBObjectSyncProxyBase::MaybeUnpinObject()
+{
+  AssertIsOnIPCThread();
+
+  if (mExpectingResponse) {
+    mExpectingResponse = false;
+
+    nsRefPtr<UnpinRunnable> runnable =
+      new UnpinRunnable(mWorkerPrivate, mObject);
+    if (!runnable->Dispatch(nullptr)) {
+      NS_RUNTIMEABORT("We're going to hang at shutdown anyways.");
+    }
+
+    mWorkerPrivate = nullptr;
+    mSyncQueueKey = UINT32_MAX;
+  }
+}
+
+IDBObjectSyncBase::IDBObjectSyncBase(WorkerPrivate* aWorkerPrivate)
+: mWorkerPrivate(aWorkerPrivate), mRooted(false), mCanceled(false)
+{
+}
+
+IDBObjectSyncBase::~IDBObjectSyncBase()
+{
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
+  ReleaseProxy(ObjectIsGoingAway);
+
+  MOZ_ASSERT(!mRooted);
+}
+
+void
+IDBObjectSyncBase::Unpin()
+{
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
+  MOZ_ASSERT(mRooted);
+
+  JSContext* cx = GetCurrentThreadJSContext();
+
+  NS_RELEASE_THIS();
+
+  mWorkerPrivate->RemoveFeature(cx, this);
+
+  mRooted = false;
+}
+
+bool
+IDBObjectSyncBase::Notify(JSContext* aCx, Status aStatus)
+{
+  mWorkerPrivate->AssertIsOnWorkerThread();
+  MOZ_ASSERT(mWorkerPrivate->GetJSContext() == aCx);
+
+  if (aStatus >= Canceling && !mCanceled) {
+    mCanceled = true;
+    ReleaseProxy(WorkerIsGoingAway);
   }
 
-  mPrimarySyncQueueKey = UINT32_MAX;
+  return true;
 }
 
 void
-IDBObjectSyncBase::ProxyRelease()
-{
-  nsRefPtr<ProxyReleaseHelper> helper = new ProxyReleaseHelper(this);
-  helper->DispatchAndWaitForResult();
-}
-
-NS_IMPL_ISUPPORTS_INHERITED0(IDBObjectSync, DOMBindingBase)
-
-void
-IDBObjectSync::_trace(JSTracer* aTrc)
-{
-  DOMBindingBase::_trace(aTrc);
-}
-
-void
-IDBObjectSync::_finalize(JSFreeOp* aFop)
+IDBObjectSyncBase::ReleaseProxy(ReleaseType aType)
 {
   // Can't assert that we're on the worker thread here because mWorkerPrivate
   // may be gone.
 
-  ProxyRelease();
+  if (!mProxy) {
+    return;
+  }
 
-  DOMBindingBase::_finalize(aFop);
+  if (aType == ObjectIsGoingAway) {
+    // We're in a GC finalizer, so we can't do a sync call here (and we don't
+    // need to).
+    nsRefPtr<AsyncTeardownRunnable> runnable =
+      new AsyncTeardownRunnable(mProxy);
+    mProxy = nullptr;
+
+    if (!runnable->Dispatch()) {
+      NS_ERROR("Failed to dispatch teardown runnable!");
+    }
+  } else {
+    // We need to make a sync call here.
+    nsRefPtr<SyncTeardownRunnable> runnable =
+      new SyncTeardownRunnable(mWorkerPrivate, mProxy);
+    mProxy = nullptr;
+
+    if (!runnable->Dispatch(nullptr)) {
+      NS_ERROR("Failed to dispatch teardown runnable!");
+    }
+  }
 }
 
-NS_IMPL_ISUPPORTS_INHERITED0(IDBObjectSyncEventTarget, EventTarget)
-
 void
-IDBObjectSyncEventTarget::_trace(JSTracer* aTrc)
+IDBObjectSyncBase::Pin()
 {
-  EventTarget::_trace(aTrc);
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
+  MOZ_ASSERT(!mRooted);
+
+  JSContext* cx = GetCurrentThreadJSContext();
+
+  if (!mWorkerPrivate->AddFeature(cx, this)) {
+    return;
+  }
+
+  NS_ADDREF_THIS();
+
+  mRooted = true;
 }
 
-void
-IDBObjectSyncEventTarget::_finalize(JSFreeOp* aFop)
+NS_IMPL_CYCLE_COLLECTING_ADDREF(IDBObjectSync)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(IDBObjectSync)
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(IDBObjectSync)
+  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
+NS_INTERFACE_MAP_END
+
+NS_IMPL_CYCLE_COLLECTION_CLASS(IDBObjectSync)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(IDBObjectSync)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
+  tmp->ReleaseProxy(ObjectIsGoingAway);
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(IDBObjectSync)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(IDBObjectSync)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
+NS_IMPL_CYCLE_COLLECTION_TRACE_END
+
+IDBObjectSync::IDBObjectSync(WorkerPrivate* aWorkerPrivate)
+: IDBObjectSyncBase(aWorkerPrivate)
 {
-  // Can't assert that we're on the worker thread here because mWorkerPrivate
-  // may be gone.
+}
 
-  ProxyRelease();
+NS_IMPL_ADDREF_INHERITED(IDBObjectSyncEventTarget, nsDOMEventTargetHelper)
+NS_IMPL_RELEASE_INHERITED(IDBObjectSyncEventTarget, nsDOMEventTargetHelper)
 
-  EventTarget::_finalize(aFop);
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(IDBObjectSyncEventTarget)
+NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
+
+NS_IMPL_CYCLE_COLLECTION_CLASS(IDBObjectSyncEventTarget)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IDBObjectSyncEventTarget,
+                                                nsDOMEventTargetHelper)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(IDBObjectSyncEventTarget,
+                                                  nsDOMEventTargetHelper)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(IDBObjectSyncEventTarget,
+                                               nsDOMEventTargetHelper)
+NS_IMPL_CYCLE_COLLECTION_TRACE_END
+
+IDBObjectSyncEventTarget::IDBObjectSyncEventTarget(
+                                                  WorkerPrivate* aWorkerPrivate)
+: IDBObjectSyncBase(aWorkerPrivate)
+{
 }

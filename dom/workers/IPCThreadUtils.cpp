@@ -22,9 +22,10 @@ class StopSyncloopRunnable : public WorkerSyncRunnable
 {
 public:
   StopSyncloopRunnable(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
-                       ClearingBehavior aClearingBehavior, nsresult aErrorCode)
+                       ClearingBehavior aClearingBehavior, nsresult aErrorCode,
+                       UnblockListener* aListener)
   : WorkerSyncRunnable(aWorkerPrivate, aSyncQueueKey, false, aClearingBehavior),
-    mErrorCode(aErrorCode)
+    mErrorCode(aErrorCode), mListener(aListener)
   {
     AssertIsOnIPCThread();
   }
@@ -54,29 +55,19 @@ public:
       aWorkerPrivate->StopSyncLoop(mSyncQueueKey, true);
     }
 
+    if (mListener) {
+      mListener->OnUnblockPerformed(aWorkerPrivate);
+    }
+
     return true;
   }
 
 private:
   nsresult mErrorCode;
+  nsRefPtr<UnblockListener> mListener;
 };
 
 } // anonymous namespace
-
-#ifdef DEBUG
-void
-mozilla::dom::workers::AssertIsOnIPCThread()
-{
-  MOZ_ASSERT(MessageLoop::current() == RuntimeService::IPCMessageLoop(),
-             "Wrong thread!");
-}
-#endif
-
-bool
-mozilla::dom::workers::IsOnIPCThread()
-{
-  return MessageLoop::current() == RuntimeService::IPCMessageLoop();
-}
 
 BlockWorkerThreadRunnable::BlockWorkerThreadRunnable(
                                                   WorkerPrivate* aWorkerPrivate)
@@ -109,11 +100,27 @@ BlockWorkerThreadRunnable::Run()
 
   nsRefPtr<StopSyncloopRunnable> runnable =
     new StopSyncloopRunnable(mWorkerPrivate, mSyncQueueKey,
-                             WorkerRunnable::SkipWhenClearing, rv);
+                             WorkerRunnable::SkipWhenClearing, rv, nullptr);
 
   if (!runnable->Dispatch(nullptr)) {
     NS_WARNING("Failed to dispatch runnable!");
   }
+}
+
+UnblockWorkerThreadRunnable::UnblockWorkerThreadRunnable(
+                                                  WorkerPrivate* aWorkerPrivate,
+                                                  uint32_t aSyncQueueKey,
+                                                  nsresult aErrorCode,
+                                                  UnblockListener* aListener)
+: mWorkerPrivate(aWorkerPrivate), mSyncQueueKey(aSyncQueueKey),
+  mErrorCode(aErrorCode), mListener(aListener)
+{
+  AssertIsOnIPCThread();
+}
+
+UnblockWorkerThreadRunnable::~UnblockWorkerThreadRunnable()
+{
+  AssertIsOnIPCThread();
 }
 
 bool
@@ -135,9 +142,27 @@ UnblockWorkerThreadRunnable::Run()
 
   nsRefPtr<StopSyncloopRunnable> runnable =
     new StopSyncloopRunnable(mWorkerPrivate, mSyncQueueKey,
-                             WorkerRunnable::RunWhenClearing, mErrorCode);
+                             WorkerRunnable::RunWhenClearing, mErrorCode,
+                             mListener);
 
   if (!runnable->Dispatch(nullptr)) {
     NS_WARNING("Failed to dispatch runnable!");
+    return;
   }
+
+  if (mListener) {
+    mListener->OnUnblockRequested();
+  }
+}
+
+bool
+mozilla::dom::workers::IsOnIPCThread()
+{
+  return MessageLoop::current() == RuntimeService::IPCMessageLoop();
+}
+
+void
+mozilla::dom::workers::AssertIsOnIPCThread()
+{
+  MOZ_ASSERT(IsOnIPCThread(), "Wrong thread!");
 }

@@ -6,13 +6,14 @@
 
 #include "IDBCursorSync.h"
 
+#include "mozilla/dom/IDBCursorSyncBinding.h"
 #include "mozilla/dom/indexedDB/IDBKeyRange.h"
 #include "mozilla/dom/indexedDB/IndexedDatabaseInlines.h"
 #include "mozilla/dom/indexedDB/Key.h"
+#include "mozilla/dom/UnionTypes.h"
 
 #include "BlockingHelperBase.h"
 #include "DatabaseInfoMT.h"
-#include "DOMBindingInlines.h"
 #include "IDBIndexSync.h"
 #include "IDBObjectStoreSync.h"
 #include "IPCThreadUtils.h"
@@ -28,231 +29,130 @@ using mozilla::ErrorResult;
 
 BEGIN_WORKERS_NAMESPACE
 
-class OpenHelper : public BlockingHelperBase
+class OpenHelper
 {
 public:
-  OpenHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
-             IDBCursorSync* aCursor, IDBKeyRange* aKeyRange)
-  : BlockingHelperBase(aWorkerPrivate, aCursor), mSyncQueueKey(aSyncQueueKey),
-    mCursor(aCursor), mKeyRange(aKeyRange)
+  OpenHelper(IDBCursorSync* aCursor, IDBKeyRange* aKeyRange)
+  : mCursor(aCursor), mKeyRange(aKeyRange)
   { }
 
+  virtual IDBObjectSync*
+  Object() const
+  {
+    return mCursor;
+  }
+
   virtual nsresult
-  HandleResponse(const ResponseValue& aResponseValue);
+  UnpackResponse(const ResponseValue& aResponseValue);
 
 protected:
-  uint32_t mSyncQueueKey;
-  IDBCursorSync* mCursor;
+  nsRefPtr<IDBCursorSync> mCursor;
 
   // In-params.
   nsRefPtr<IDBKeyRange> mKeyRange;
 };
 
-class OpenIndexKeyCursorHelper : public OpenHelper
-{
-public:
-  OpenIndexKeyCursorHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
-                           IDBCursorSync* aCursor, IDBKeyRange* aKeyRange)
-  : OpenHelper(aWorkerPrivate, aSyncQueueKey, aCursor, aKeyRange)
-  { }
-
-protected:
-  nsresult
-  IPCThreadRun()
-  {
-    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
-    mPrimarySyncQueueKey = mSyncQueueKey;
-
-    IndexRequestParams params;
-
-    OpenKeyCursorParams openKeyCursorParams;
-    if (mKeyRange) {
-      KeyRange keyRange;
-      mKeyRange->ToSerializedKeyRange(keyRange);
-      openKeyCursorParams.optionalKeyRange() = keyRange;
-    }
-    else {
-      openKeyCursorParams.optionalKeyRange() = mozilla::void_t();
-    }
-    openKeyCursorParams.direction() = mCursor->GetDirection();
-
-    params = openKeyCursorParams;
-
-    IndexedDBIndexRequestWorkerChild* actor =
-      new IndexedDBIndexRequestWorkerChild(params.type());
-    mCursor->Index()->GetActor()->SendPIndexedDBRequestConstructor(actor,
-                                                                   params);
-    actor->SetHelper(this);
-
-    return NS_OK;
-  }
-};
-
-class OpenObjectStoreKeyCursorHelper : public OpenHelper
+class OpenObjectStoreKeyCursorHelper : public OpenHelper,
+                                       public ObjectStoreHelper
 {
 public:
   OpenObjectStoreKeyCursorHelper(WorkerPrivate* aWorkerPrivate,
-                                 uint32_t aSyncQueueKey, IDBCursorSync* aCursor,
-                                 IDBKeyRange* aKeyRange)
-  : OpenHelper(aWorkerPrivate, aSyncQueueKey, aCursor, aKeyRange)
+                                 IDBCursorSync* aCursor, IDBKeyRange* aKeyRange)
+  : OpenHelper(aCursor, aKeyRange),
+    ObjectStoreHelper(aWorkerPrivate, aCursor->ObjectStore())
   { }
 
-protected:
-  nsresult
-  IPCThreadRun()
+  virtual IDBObjectSync*
+  Object() const MOZ_OVERRIDE
   {
-    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
-    mPrimarySyncQueueKey = mSyncQueueKey;
+    return OpenHelper::Object();
+  }
 
-    ObjectStoreRequestParams params;
+  virtual nsresult
+  PackArguments(ObjectStoreRequestParams& aParams) MOZ_OVERRIDE;
 
-    OpenKeyCursorParams openKeyCursorParams;
-    if (mKeyRange) {
-      KeyRange keyRange;
-      mKeyRange->ToSerializedKeyRange(keyRange);
-      openKeyCursorParams.optionalKeyRange() = keyRange;
-    }
-    else {
-      openKeyCursorParams.optionalKeyRange() = mozilla::void_t();
-    }
-    openKeyCursorParams.direction() = mCursor->GetDirection();
-
-    params = openKeyCursorParams;
-
-    IndexedDBObjectStoreRequestWorkerChild* actor =
-      new IndexedDBObjectStoreRequestWorkerChild(params.type());
-    mCursor->ObjectStore()->GetActor()->SendPIndexedDBRequestConstructor(
-                                                                        actor,
-                                                                        params);
-    actor->SetHelper(this);
-
-    return NS_OK;
+  virtual nsresult
+  UnpackResponse(const ResponseValue& aResponseValue) MOZ_OVERRIDE
+  {
+    return OpenHelper::UnpackResponse(aResponseValue);
   }
 };
 
-class OpenIndexCursorHelper : public OpenHelper
+class OpenObjectStoreCursorHelper : public OpenObjectStoreKeyCursorHelper
 {
 public:
-  OpenIndexCursorHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
-                        IDBCursorSync* aCursor, IDBKeyRange* aKeyRange)
-  : OpenHelper(aWorkerPrivate, aSyncQueueKey, aCursor, aKeyRange)
+  OpenObjectStoreCursorHelper(WorkerPrivate* aWorkerPrivate,
+                              IDBCursorSync* aCursor, IDBKeyRange* aKeyRange)
+  : OpenObjectStoreKeyCursorHelper(aWorkerPrivate, aCursor, aKeyRange)
   { }
 
-protected:
-  nsresult
-  IPCThreadRun()
+  virtual nsresult
+  PackArguments(ObjectStoreRequestParams& aParams) MOZ_OVERRIDE;
+};
+
+class OpenIndexKeyCursorHelper : public OpenHelper,
+                                 public IndexHelper
+{
+public:
+  OpenIndexKeyCursorHelper(WorkerPrivate* aWorkerPrivate,
+                           IDBCursorSync* aCursor, IDBKeyRange* aKeyRange)
+  : OpenHelper(aCursor, aKeyRange),
+    IndexHelper(aWorkerPrivate, aCursor->Index())
+  { }
+
+  virtual IDBObjectSync*
+  Object() const MOZ_OVERRIDE
   {
-    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
-    mPrimarySyncQueueKey = mSyncQueueKey;
+    return OpenHelper::Object();
+  }
 
-    IndexRequestParams params;
+  virtual nsresult
+  PackArguments(IndexRequestParams& aParams) MOZ_OVERRIDE;
 
-    OpenCursorParams openCursorParams;
-    if (mKeyRange) {
-      KeyRange keyRange;
-      mKeyRange->ToSerializedKeyRange(keyRange);
-      openCursorParams.optionalKeyRange() = keyRange;
-    }
-    else {
-      openCursorParams.optionalKeyRange() = mozilla::void_t();
-    }
-    openCursorParams.direction() = mCursor->GetDirection();
-
-    params = openCursorParams;
-
-    IndexedDBIndexRequestWorkerChild* actor =
-      new IndexedDBIndexRequestWorkerChild(params.type());
-    mCursor->Index()->GetActor()->SendPIndexedDBRequestConstructor(
-                                                                        actor,
-                                                                        params);
-    actor->SetHelper(this);
-
-    return NS_OK;
+  virtual nsresult
+  UnpackResponse(const ResponseValue& aResponseValue)
+  {
+    return OpenHelper::UnpackResponse(aResponseValue);
   }
 };
 
-class OpenObjectStoreCursorHelper : public OpenHelper
+class OpenIndexCursorHelper : public OpenIndexKeyCursorHelper
 {
 public:
-  OpenObjectStoreCursorHelper(
-                        WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
-                        IDBCursorSync* aCursor, IDBKeyRange* aKeyRange)
-  : OpenHelper(aWorkerPrivate, aSyncQueueKey, aCursor, aKeyRange)
+  OpenIndexCursorHelper(WorkerPrivate* aWorkerPrivate, IDBCursorSync* aCursor,
+                        IDBKeyRange* aKeyRange)
+  : OpenIndexKeyCursorHelper(aWorkerPrivate, aCursor, aKeyRange)
   { }
 
-protected:
-  nsresult
-  IPCThreadRun()
-  {
-    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
-    mPrimarySyncQueueKey = mSyncQueueKey;
-
-    ObjectStoreRequestParams params;
-
-    OpenCursorParams openCursorParams;
-    if (mKeyRange) {
-      KeyRange keyRange;
-      mKeyRange->ToSerializedKeyRange(keyRange);
-      openCursorParams.optionalKeyRange() = keyRange;
-    }
-    else {
-      openCursorParams.optionalKeyRange() = mozilla::void_t();
-    }
-    openCursorParams.direction() = mCursor->GetDirection();
-
-    params = openCursorParams;
-
-    IndexedDBObjectStoreRequestWorkerChild* actor =
-      new IndexedDBObjectStoreRequestWorkerChild(params.type());
-    mCursor->ObjectStore()->GetActor()->SendPIndexedDBRequestConstructor(
-                                                                        actor,
-                                                                        params);
-    actor->SetHelper(this);
-
-    return NS_OK;
-  }
+  virtual nsresult
+  PackArguments(IndexRequestParams& aParams) MOZ_OVERRIDE;
 };
 
 class ContinueHelper : public BlockingHelperBase
 {
 public:
-  ContinueHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
-                 IDBCursorSync* aCursor, int32_t aCount)
-  : BlockingHelperBase(aWorkerPrivate, aCursor), mSyncQueueKey(aSyncQueueKey),
-    mCursor(aCursor), mCount(aCount)
+  ContinueHelper(WorkerPrivate* aWorkerPrivate, IDBCursorSync* aCursor,
+                 int32_t aCount)
+  : BlockingHelperBase(aWorkerPrivate, aCursor), mCursor(aCursor),
+    mCount(aCount)
   {
     MOZ_ASSERT(aCount > 0, "Must have a count!");
   }
 
-  virtual nsresult
-  HandleResponse(const ResponseValue& aResponseValue);
-
-protected:
-  nsresult
-  IPCThreadRun()
+  IDBCursorSync*
+  Cursor()
   {
-    MOZ_ASSERT(mPrimarySyncQueueKey == UINT32_MAX, "Should be unset!");
-    mPrimarySyncQueueKey = mSyncQueueKey;
-
-    CursorRequestParams params;
-
-    ContinueParams continueParams;
-    continueParams.key() = mCursor->mContinueToKey;
-    continueParams.count() = uint32_t(mCount);
-
-    params = continueParams;
-
-    IndexedDBCursorRequestWorkerChild* actor =
-      new IndexedDBCursorRequestWorkerChild(params.type());
-    mCursor->GetActor()->SendPIndexedDBRequestConstructor(actor, params);
-    actor->SetHelper(this);
-
-    return NS_OK;
+    return static_cast<IDBCursorSync*>(mObject.get());
   }
 
+  virtual nsresult
+  SendConstructor(IndexedDBRequestWorkerChildBase** aActor) MOZ_OVERRIDE;
+
+  virtual nsresult
+  UnpackResponse(const ResponseValue& aResponseValue) MOZ_OVERRIDE;
+
 private:
-  uint32_t mSyncQueueKey;
-  IDBCursorSync* mCursor;
+  nsRefPtr<IDBCursorSync> mCursor;
 
   // In-params.
   int32_t mCount;
@@ -260,97 +160,114 @@ private:
 
 END_WORKERS_NAMESPACE
 
+IDBCursorSyncProxy::IDBCursorSyncProxy(IDBCursorSync* aCursor)
+: IDBObjectSyncProxy<IndexedDBCursorWorkerChild>(aCursor)
+{
+}
+
+IDBCursorSync*
+IDBCursorSyncProxy::Cursor()
+{
+  return static_cast<IDBCursorSync*>(mObject);
+}
+
+NS_IMPL_ADDREF_INHERITED(IDBCursorSync, IDBObjectSync)
+NS_IMPL_RELEASE_INHERITED(IDBCursorSync, IDBObjectSync)
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(IDBCursorSync)
+NS_INTERFACE_MAP_END_INHERITING(IDBObjectSync)
+
+NS_IMPL_CYCLE_COLLECTION_CLASS(IDBCursorSync)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IDBCursorSync,
+                                                IDBObjectSync)
+  tmp->ReleaseProxy(ObjectIsGoingAway);
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mObjectStore)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mIndex)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mTransaction)
+
+  if (tmp->mHoldingJSVal) {
+    tmp->mCachedKey = JSVAL_VOID;
+    tmp->mCachedPrimaryKey = JSVAL_VOID;
+    tmp->mCachedValue = JSVAL_VOID;
+    tmp->mHaveCachedKey = false;
+    tmp->mHaveCachedPrimaryKey = false;
+    tmp->mHaveCachedValue = false;
+    tmp->mHaveValue = false;
+    mozilla::DropJSObjects(tmp);
+    tmp->mHoldingJSVal = false;
+  }
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(IDBCursorSync,
+                                                  IDBObjectSync)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mObjectStore)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIndex)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTransaction)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(IDBCursorSync,
+                                               IDBObjectSync)
+  MOZ_ASSERT(tmp->mHaveCachedKey || JSVAL_IS_VOID(tmp->mCachedKey),
+             "Should have a cached key");
+  MOZ_ASSERT(tmp->mHaveCachedPrimaryKey ||
+             JSVAL_IS_VOID(tmp->mCachedPrimaryKey),
+             "Should have a cached primary key");
+  MOZ_ASSERT(tmp->mHaveCachedValue || JSVAL_IS_VOID(tmp->mCachedValue),
+             "Should have a cached value");
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mCachedKey)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mCachedPrimaryKey)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mCachedValue)
+NS_IMPL_CYCLE_COLLECTION_TRACE_END
+
 // For INDEXKEY cursors.
 // static
-IDBCursorSync*
+already_AddRefed<IDBCursorSync>
 IDBCursorSync::Create(JSContext* aCx, IDBIndexSync* aIndex,
                       Direction aDirection)
 {
   WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
   MOZ_ASSERT(workerPrivate);
 
-  nsRefPtr<IDBCursorSync> cursor = new IDBCursorSync(aCx, workerPrivate);
+  nsRefPtr<IDBCursorSync> cursor = new IDBCursorSync(workerPrivate);
 
   cursor->mIndex = aIndex;
   cursor->mTransaction = aIndex->ObjectStore()->Transaction();
   cursor->mType = INDEXKEY;
   cursor->mDirection = aDirection;
 
-  if (!Wrap(aCx, nullptr, cursor)) {
-    return nullptr;
-  }
-
-  return cursor;
+  return cursor.forget();
 }
 
 // For OBJECTSTOREKEY cursors.
 // static
-IDBCursorSync*
+already_AddRefed<IDBCursorSync>
 IDBCursorSync::Create(JSContext* aCx, IDBObjectStoreSync* aObjectStore,
                       Direction aDirection)
 {
   WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
   MOZ_ASSERT(workerPrivate);
 
-  nsRefPtr<IDBCursorSync> cursor = new IDBCursorSync(aCx, workerPrivate);
+  nsRefPtr<IDBCursorSync> cursor = new IDBCursorSync(workerPrivate);
 
   cursor->mObjectStore = aObjectStore;
   cursor->mTransaction = aObjectStore->Transaction();
   cursor->mType = OBJECTSTOREKEY;
   cursor->mDirection = aDirection;
 
-  if (!Wrap(aCx, nullptr, cursor)) {
-    return nullptr;
-  }
-
-  return cursor;
-}
-
-inline JSObject*
-MyWrap(JSContext* aCx, JSObject* aGlobal, nsRefPtr<IDBCursorSync>& aConcreteObject)
-{
-  MOZ_ASSERT(aCx);
-
-  if (!aGlobal) {
-    aGlobal = JS::CurrentGlobalOrNull(aCx);
-    if (!aGlobal) {
-      return nullptr;
-    }
-  }
-
-  JS::Rooted<JSObject*> global(aCx, aGlobal);
-  JSObject* proto = mozilla::dom::IDBCursorWithValueSyncBinding_workers::GetProtoObject(aCx, global);
-  if (!proto) {
-    return nullptr;
-  }
-
-  JSObject* wrapper =
-    JS_NewObject(aCx, mozilla::dom::IDBCursorWithValueSyncBinding_workers::GetJSClass(), proto, global);
-  if (!wrapper) {
-    return nullptr;
-  }
-
-  js::SetReservedSlot(wrapper, DOM_OBJECT_SLOT,
-                      PRIVATE_TO_JSVAL(aConcreteObject));
-
-  aConcreteObject->SetIsDOMBinding();
-  aConcreteObject->SetWrapper(wrapper);
-
-  NS_ADDREF(aConcreteObject.get());
-  return wrapper;
+  return cursor.forget();
 }
 
 // For INDEXOBJECT cursors.
 // static
-IDBCursorSync*
+already_AddRefed<IDBCursorSync>
 IDBCursorSync::CreateWithValue(JSContext* aCx, IDBIndexSync* aIndex,
                                Direction aDirection)
 {
   WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
   MOZ_ASSERT(workerPrivate);
 
-  nsRefPtr<IDBCursorSync> cursor =
-    new IDBCursorSync(aCx, workerPrivate);
+  nsRefPtr<IDBCursorSync> cursor = new IDBCursorSync(workerPrivate);
 
   cursor->mObjectStore = aIndex->ObjectStore();
   cursor->mIndex = aIndex;
@@ -358,90 +275,88 @@ IDBCursorSync::CreateWithValue(JSContext* aCx, IDBIndexSync* aIndex,
   cursor->mType = INDEXOBJECT;
   cursor->mDirection = aDirection;
 
-  if (!MyWrap(aCx, nullptr, cursor)) {
-    return nullptr;
-  }
-
-  return cursor;
+  return cursor.forget();
 }
 
 // For OBJECTSTORE cursors.
 //static
-IDBCursorSync*
+already_AddRefed<IDBCursorSync>
 IDBCursorSync::CreateWithValue(JSContext* aCx, IDBObjectStoreSync* aObjectStore,
                                Direction aDirection)
 {
   WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
   MOZ_ASSERT(workerPrivate);
 
-  nsRefPtr<IDBCursorSync> cursor =
-    new IDBCursorSync(aCx, workerPrivate);
+  nsRefPtr<IDBCursorSync> cursor = new IDBCursorSync(workerPrivate);
 
   cursor->mObjectStore = aObjectStore;
   cursor->mTransaction = aObjectStore->Transaction();
   cursor->mType = OBJECTSTORE;
   cursor->mDirection = aDirection;
 
-  if (!MyWrap(aCx, nullptr, cursor)) {
-    return nullptr;
-  }
-
-  return cursor;
+  return cursor.forget();
 }
 
-IDBCursorSync::IDBCursorSync(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
-: IDBObjectSync(aCx, aWorkerPrivate), mObjectStore(nullptr), mIndex(nullptr),
-  mHaveValue(true), mActorChild(nullptr)
+IDBCursorSync::IDBCursorSync(WorkerPrivate* aWorkerPrivate)
+: IDBObjectSync(aWorkerPrivate), mHaveValue(true), mHoldingJSVal(false)
 {
+  SetIsDOMBinding();
 }
 
 IDBCursorSync::~IDBCursorSync()
 {
   // TODO: Clear mCloneReadInfo
-}
+  mWorkerPrivate->AssertIsOnWorkerThread();
 
-void
-IDBCursorSync::_trace(JSTracer* aTrc)
-{
-  JS_CallHeapValueTracer(aTrc, &mCachedKey, "mCachedKey");
-  JS_CallHeapValueTracer(aTrc, &mCachedPrimaryKey, "mCachedPrimaryKey");
-  JS_CallHeapValueTracer(aTrc, &mCachedValue, "mCachedValue");
+  ReleaseProxy(ObjectIsGoingAway);
 
-  IDBObjectSync::_trace(aTrc);
-}
+  MOZ_ASSERT(!mRooted);
 
-void
-IDBCursorSync::_finalize(JSFreeOp* aFop)
-{
-  IDBObjectSync::_finalize(aFop);
-}
-
-void
-IDBCursorSync::ReleaseIPCThreadObjects()
-{
-  AssertIsOnIPCThread();
-
-  if (mActorChild) {
-    mActorChild->Send__delete__(mActorChild);
-    MOZ_ASSERT(!mActorChild, "Should have cleared in Send__delete__!");
+  if (mHoldingJSVal) {
+    mCachedKey = JSVAL_VOID;
+    mCachedPrimaryKey = JSVAL_VOID;
+    mCachedValue = JSVAL_VOID;
+    mozilla::DropJSObjects(this);
   }
 }
 
-NS_IMPL_ISUPPORTS_INHERITED0(IDBCursorSync, IDBObjectSync)
+IDBCursorSyncProxy*
+IDBCursorSync::Proxy()
+{
+  return static_cast<IDBCursorSyncProxy*>(mProxy.get());
+}
 
 JSObject*
-IDBCursorSync::Source(JSContext* aCx)
+IDBCursorSync::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
+{
+  switch (mType) {
+    case OBJECTSTORE:
+    case INDEXOBJECT:
+      return IDBCursorWithValueSyncBinding_workers::Wrap(aCx, aScope, this);
+
+    case OBJECTSTOREKEY:
+    case INDEXKEY:
+      return IDBCursorSyncBinding_workers::Wrap(aCx, aScope, this);
+
+    default:
+      MOZ_ASSUME_UNREACHABLE("Bad type!");
+  }
+}
+
+void
+IDBCursorSync::GetSource(OwningIDBObjectStoreSyncOrIDBIndexSync& aSource) const
 {
   switch (mType) {
     case OBJECTSTORE:
     case OBJECTSTOREKEY:
       MOZ_ASSERT(mObjectStore);
-      return mObjectStore->GetJSObject();
+      aSource.SetAsIDBObjectStoreSync() = mObjectStore;
+      break;
 
     case INDEXKEY:
     case INDEXOBJECT:
       MOZ_ASSERT(mIndex);
-      return mIndex->GetJSObject();
+      aSource.SetAsIDBIndexSync() = mIndex;
 
     default:
       MOZ_ASSUME_UNREACHABLE("Bad type!");
@@ -458,6 +373,11 @@ IDBCursorSync::Key(JSContext* aCx)
   }
 
   if (!mHaveCachedKey) {
+    if (!mHoldingJSVal) {
+      mozilla::HoldJSObjects(this);
+      mHoldingJSVal = true;
+    }
+
     nsresult rv = mKey.ToJSVal(aCx, mCachedKey);
     NS_ENSURE_SUCCESS(rv, JSVAL_NULL);
 
@@ -475,6 +395,10 @@ IDBCursorSync::PrimaryKey(JSContext* aCx)
   }
 
   if (!mHaveCachedPrimaryKey) {
+    if (!mHoldingJSVal) {
+      mozilla::HoldJSObjects(this);
+      mHoldingJSVal = true;
+    }
 
     const indexedDB::Key& key =
       (mType == OBJECTSTORE || mType == OBJECTSTOREKEY) ? mKey : mObjectKey;
@@ -651,6 +575,11 @@ IDBCursorSync::GetValue(JSContext* aCx, ErrorResult& aRv)
   }
 
   if (!mHaveCachedValue) {
+    if (!mHoldingJSVal) {
+      mozilla::HoldJSObjects(this);
+      mHoldingJSVal = true;
+    }
+
     JS::Rooted<JS::Value> val(aCx);
     if (!IDBObjectStoreSync::DeserializeValue(aCx, mCloneReadInfo.mCloneBuffer,
                                               &val)) {
@@ -669,40 +598,31 @@ IDBCursorSync::GetValue(JSContext* aCx, ErrorResult& aRv)
 }
 
 bool
-IDBCursorSync::Open(JSContext* aCx, IDBKeyRange* aKeyRange)
+IDBCursorSync::Open2(JSContext* aCx, IDBKeyRange* aKeyRange)
 {
-  DOMBindingAnchor<IDBCursorSync> selfAnchor(this);
+//  mProxy = new IDBCursorSyncProxy(this);
 
-  AutoSyncLoopHolder syncLoop(mWorkerPrivate);
-
-  nsRefPtr<OpenHelper> helper;
+  nsRefPtr<BlockingHelperBase> helper;
   switch (mType) {
-    case INDEXKEY:
-      helper = new OpenIndexKeyCursorHelper(mWorkerPrivate,
-                                            syncLoop.SyncQueueKey(), this,
-                                            aKeyRange);
-      break;
     case OBJECTSTOREKEY:
-      helper = new OpenObjectStoreKeyCursorHelper(mWorkerPrivate,
-                                                  syncLoop.SyncQueueKey(), this,
+      helper = new OpenObjectStoreKeyCursorHelper(mWorkerPrivate, this,
                                                   aKeyRange);
       break;
-    case INDEXOBJECT:
-      helper = new OpenIndexCursorHelper(mWorkerPrivate,
-                                         syncLoop.SyncQueueKey(), this,
-                                         aKeyRange);
-      break;
     case OBJECTSTORE:
-      helper = new OpenObjectStoreCursorHelper(mWorkerPrivate,
-                                               syncLoop.SyncQueueKey(), this,
-                                               aKeyRange);
+      helper = new OpenObjectStoreCursorHelper(mWorkerPrivate, this, aKeyRange);
+      break;
+    case INDEXKEY:
+      helper = new OpenIndexKeyCursorHelper(mWorkerPrivate, this, aKeyRange);
+      break;
+    case INDEXOBJECT:
+      helper = new OpenIndexCursorHelper(mWorkerPrivate, this, aKeyRange);
       break;
 
     default:
       MOZ_ASSUME_UNREACHABLE("Unknown cursor type!");
   }
 
-  if (!helper->Dispatch(aCx) || !syncLoop.RunAndForget(aCx)) {
+  if (!helper->Run(aCx)) {
     return false;
   }
 
@@ -729,15 +649,10 @@ IDBCursorSync::ContinueInternal(JSContext* aCx,
 
   mContinueToKey = aKey;
 
-  DOMBindingAnchor<IDBCursorSync> selfAnchor(this);
-
-  AutoSyncLoopHolder syncLoop(mWorkerPrivate);
-
   nsRefPtr<ContinueHelper> helper =
-    new ContinueHelper(mWorkerPrivate, syncLoop.SyncQueueKey(), this, aCount);
+    new ContinueHelper(mWorkerPrivate, this, aCount);
 
-  if (!helper->Dispatch(aCx) || !syncLoop.RunAndForget(aCx)) {
-    NS_WARNING("Failed to distpatch or RunAndForget!");
+  if (!helper->Run(aCx)) {
     return false;
   }
 
@@ -772,7 +687,7 @@ IDBCursorSync::SetCurrentKeysAndValue(
 }
 
 nsresult
-OpenHelper::HandleResponse(const ResponseValue& aResponseValue)
+OpenHelper::UnpackResponse(const ResponseValue& aResponseValue)
 {
   AssertIsOnIPCThread();
 
@@ -806,7 +721,110 @@ OpenHelper::HandleResponse(const ResponseValue& aResponseValue)
 }
 
 nsresult
-ContinueHelper::HandleResponse(const ResponseValue& aResponseValue)
+OpenObjectStoreKeyCursorHelper::PackArguments(ObjectStoreRequestParams& aParams)
+{
+  AssertIsOnIPCThread();
+
+  OpenKeyCursorParams openKeyCursorParams;
+  if (mKeyRange) {
+    KeyRange keyRange;
+    mKeyRange->ToSerializedKeyRange(keyRange);
+    openKeyCursorParams.optionalKeyRange() = keyRange;
+  }
+  else {
+    openKeyCursorParams.optionalKeyRange() = mozilla::void_t();
+  }
+  openKeyCursorParams.direction() = mCursor->GetDirection();
+
+  aParams = openKeyCursorParams;
+
+  return NS_OK;
+}
+
+nsresult
+OpenObjectStoreCursorHelper::PackArguments(ObjectStoreRequestParams& aParams)
+{
+  AssertIsOnIPCThread();
+
+  OpenCursorParams openCursorParams;
+  if (mKeyRange) {
+    KeyRange keyRange;
+    mKeyRange->ToSerializedKeyRange(keyRange);
+    openCursorParams.optionalKeyRange() = keyRange;
+  }
+  else {
+    openCursorParams.optionalKeyRange() = mozilla::void_t();
+  }
+  openCursorParams.direction() = mCursor->GetDirection();
+
+  aParams = openCursorParams;
+
+  return NS_OK;
+}
+
+nsresult
+OpenIndexKeyCursorHelper::PackArguments(IndexRequestParams& aParams)
+{
+  AssertIsOnIPCThread();
+
+  OpenKeyCursorParams openKeyCursorParams;
+  if (mKeyRange) {
+    KeyRange keyRange;
+    mKeyRange->ToSerializedKeyRange(keyRange);
+    openKeyCursorParams.optionalKeyRange() = keyRange;
+  }
+  else {
+    openKeyCursorParams.optionalKeyRange() = mozilla::void_t();
+  }
+  openKeyCursorParams.direction() = mCursor->GetDirection();
+
+  aParams = openKeyCursorParams;
+
+  return NS_OK;
+}
+
+nsresult
+OpenIndexCursorHelper::PackArguments(IndexRequestParams& aParams)
+{
+  AssertIsOnIPCThread();
+
+  OpenCursorParams openCursorParams;
+  if (mKeyRange) {
+    KeyRange keyRange;
+    mKeyRange->ToSerializedKeyRange(keyRange);
+    openCursorParams.optionalKeyRange() = keyRange;
+  }
+  else {
+    openCursorParams.optionalKeyRange() = mozilla::void_t();
+  }
+  openCursorParams.direction() = mCursor->GetDirection();
+
+  aParams = openCursorParams;
+
+  return NS_OK;
+}
+
+nsresult
+ContinueHelper::SendConstructor(IndexedDBRequestWorkerChildBase** aActor)
+{
+  CursorRequestParams params;
+
+  ContinueParams continueParams;
+  continueParams.key() = mCursor->mContinueToKey;
+  continueParams.count() = uint32_t(mCount);
+
+  params = continueParams;
+
+  IndexedDBCursorRequestWorkerChild* actor =
+    new IndexedDBCursorRequestWorkerChild(params.type());
+  Cursor()->Proxy()->Actor()->SendPIndexedDBRequestConstructor(actor, params);
+
+  *aActor = actor;
+  return NS_OK;
+}
+
+nsresult
+ContinueHelper::UnpackResponse(const ResponseValue& aResponseValue)
 {
   MOZ_ASSERT(aResponseValue.type() == ResponseValue::TContinueResponse,
              "Bad response type!");

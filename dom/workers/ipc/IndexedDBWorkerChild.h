@@ -16,17 +16,18 @@
 #include "mozilla/dom/indexedDB/PIndexedDBRequestChild.h"
 #include "mozilla/dom/indexedDB/PIndexedDBTransactionChild.h"
 
+#include "IDBFactorySync.h"
+
 BEGIN_WORKERS_NAMESPACE
 
-class BlockingHelperBase;
-class DeleteDatabaseHelper;
-class IDBCursorSync;
-class IDBDatabaseSync;
-class IDBFactorySync;
-class IDBIndexSync;
-class IDBObjectStoreSync;
-class IDBObjectSync;
-class IDBTransactionSync;
+class BlockingHelperProxy;
+class DeleteDatabaseProxy;
+class IDBCursorSyncProxy;
+class IDBDatabaseSyncProxy;
+class IDBFactorySyncProxy;
+class IDBIndexSyncProxy;
+class IDBObjectStoreSyncProxy;
+class IDBTransactionSyncProxy;
 
 /*******************************************************************************
  * IndexedDBChild
@@ -35,14 +36,14 @@ class IDBTransactionSync;
 
 class IndexedDBWorkerChild : public mozilla::dom::indexedDB::PIndexedDBChild
 {
-  IDBFactorySync* mFactory;
+  IDBFactorySyncProxy* mFactoryProxy;
 
 public:
   IndexedDBWorkerChild();
   virtual ~IndexedDBWorkerChild();
 
   void
-  SetFactory(IDBFactorySync* aProxy);
+  SetFactoryProxy(IDBFactorySyncProxy* aFactoryProxy);
 
 protected:
   virtual void
@@ -78,14 +79,14 @@ protected:
 class IndexedDBDatabaseWorkerChild : public mozilla::dom::indexedDB::
                                             PIndexedDBDatabaseChild
 {
-  IDBDatabaseSync* mDatabase;
+  IDBDatabaseSyncProxy* mDatabaseProxy;
 
 public:
   IndexedDBDatabaseWorkerChild(const nsString& aName, uint64_t aVersion);
   virtual ~IndexedDBDatabaseWorkerChild();
 
   void
-  SetDatabase(IDBDatabaseSync* aDatabase);
+  SetDatabaseProxy(IDBDatabaseSyncProxy* aDatabaseProxy);
 
 protected:  bool
   EnsureDatabaseInfo(const DatabaseInfoGuts& aDBInfo,
@@ -133,19 +134,19 @@ protected:  bool
 class IndexedDBTransactionWorkerChild : public mozilla::dom::indexedDB::
                                                PIndexedDBTransactionChild
 {
-  IDBTransactionSync* mTransaction;
+  IDBTransactionSyncProxy* mTransactionProxy;
 
 public:
   IndexedDBTransactionWorkerChild();
   virtual ~IndexedDBTransactionWorkerChild();
 
   void
-  SetTransaction(IDBTransactionSync* aTransaction);
+  SetTransactionProxy(IDBTransactionSyncProxy* aTransactionProxy);
 
-  IDBTransactionSync*
-  GetTransaction() const
+  IDBTransactionSyncProxy*
+  GetTransactionProxy() const
   {
-    return mTransaction;
+    return mTransactionProxy;
   }
 
 protected:
@@ -171,14 +172,14 @@ protected:
 class IndexedDBObjectStoreWorkerChild : public mozilla::dom::indexedDB::
                                                PIndexedDBObjectStoreChild
 {
-  IDBObjectStoreSync* mObjectStore;
+  IDBObjectStoreSyncProxy* mObjectStoreProxy;
 
 public:
   IndexedDBObjectStoreWorkerChild();
   virtual ~IndexedDBObjectStoreWorkerChild();
 
   void
-  SetObjectStore(IDBObjectStoreSync* aObjectStore);
+  SetObjectStoreProxy(IDBObjectStoreSyncProxy* aObjectStoreProxy);
 
 protected:
   virtual void
@@ -218,14 +219,14 @@ protected:
 class IndexedDBIndexWorkerChild : public mozilla::dom::indexedDB::
                                          PIndexedDBIndexChild
 {
-  IDBIndexSync* mIndex;
+  IDBIndexSyncProxy* mIndexProxy;
 
 public:
   IndexedDBIndexWorkerChild();
   virtual ~IndexedDBIndexWorkerChild();
 
   void
-  SetIndex(IDBIndexSync* aIndex);
+  SetIndexProxy(IDBIndexSyncProxy* aIndexProxy);
 
 protected:
   virtual void
@@ -257,14 +258,14 @@ protected:
 class IndexedDBCursorWorkerChild : public mozilla::dom::indexedDB::
                                           PIndexedDBCursorChild
 {
-  IDBCursorSync* mCursor;
+  IDBCursorSyncProxy* mCursorProxy;
 
 public:
   IndexedDBCursorWorkerChild();
   virtual ~IndexedDBCursorWorkerChild();
 
   void
-  SetCursor(IDBCursorSync* aCursor);
+  SetCursorProxy(IDBCursorSyncProxy* aCursorProxy);
 
 protected:
   virtual void
@@ -285,11 +286,14 @@ class IndexedDBRequestWorkerChildBase : public mozilla::dom::indexedDB::
                                         PIndexedDBRequestChild
 {
 protected:
-  BlockingHelperBase* mHelper;
+  BlockingHelperProxy* mHelperProxy;
 
 public:
   void
-  SetHelper(BlockingHelperBase* aHelper);
+  SetHelperProxy(BlockingHelperProxy* aHelperProxy);
+
+  void
+  Disconnect();
 
   IDBObjectSync*
   GetObject() const;
@@ -370,7 +374,7 @@ protected:
 class IndexedDBDeleteDatabaseRequestWorkerChild :
   public mozilla::dom::indexedDB::PIndexedDBDeleteDatabaseRequestChild
 {
-  DeleteDatabaseHelper* mHelper;
+  DeleteDatabaseProxy* mHelperProxy;
   nsCString mDatabaseId;
 
 public:
@@ -378,7 +382,10 @@ public:
   virtual ~IndexedDBDeleteDatabaseRequestWorkerChild();
 
   void
-  SetHelper(DeleteDatabaseHelper* aHelper);
+  SetHelperProxy(DeleteDatabaseProxy* aHelperProxy);
+
+  void
+  Disconnect();
 
 protected:
   virtual void

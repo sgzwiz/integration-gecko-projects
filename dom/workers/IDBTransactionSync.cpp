@@ -7,10 +7,10 @@
 #include "IDBTransactionSync.h"
 
 #include "mozilla/dom/DOMStringList.h"
+#include "mozilla/dom/IDBTransactionSyncBinding.h"
 #include "mozilla/dom/indexedDB/DatabaseInfo.h"
 
 #include "DatabaseInfoMT.h"
-#include "DOMBindingInlines.h"
 #include "IDBDatabaseSync.h"
 #include "IDBObjectStoreSync.h"
 #include "IPCThreadUtils.h"
@@ -45,16 +45,16 @@ protected:
 
     IndexedDBTransactionWorkerChild* actor =
       new IndexedDBTransactionWorkerChild();
-    mTransaction->Db()->GetActor()->SendPIndexedDBTransactionConstructor(
+    mTransaction->Db()->Proxy()->Actor()->SendPIndexedDBTransactionConstructor(
                                                                         actor,
                                                                         params);
-    actor->SetTransaction(mTransaction);
+    actor->SetTransactionProxy(mTransaction->Proxy());
 
     return NS_OK;
   }
 
 private:
-  IDBTransactionSync* mTransaction;
+  nsRefPtr<IDBTransactionSync> mTransaction;
 };
 
 class AbortRunnable : public BlockWorkerThreadRunnable
@@ -68,13 +68,13 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    mTransaction->GetActor()->SendAbort(mTransaction->GetAbortCode());
+    mTransaction->Proxy()->Actor()->SendAbort(mTransaction->GetAbortCode());
 
     return NS_OK;
   }
 
 private:
-  IDBTransactionSync* mTransaction;
+  nsRefPtr<IDBTransactionSync> mTransaction;
 };
 
 class FinishRunnable : public BlockWorkerThreadRunnable
@@ -90,31 +90,64 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    if (mTransaction->GetMode() == IDBTransactionBase::VERSION_CHANGE) {
-      MOZ_ASSERT(mTransaction->Db()->PrimarySyncQueueKey() == UINT32_MAX,
-                 "Should be unset!");
-      mTransaction->Db()->PrimarySyncQueueKey() = mSyncQueueKey;
-    }
-    else {
-      MOZ_ASSERT(mTransaction->PrimarySyncQueueKey() == UINT32_MAX,
-                 "Should be unset!");
-      mTransaction->PrimarySyncQueueKey() = mSyncQueueKey;
-    }
+    MOZ_ASSERT(!mTransaction->Proxy()->mWorkerPrivate, "Should be null!");
+    mTransaction->Proxy()->mWorkerPrivate = mWorkerPrivate;
 
-    mTransaction->GetActor()->SendAllRequestsFinished();
+    MOZ_ASSERT(mTransaction->Proxy()->mSyncQueueKey == UINT32_MAX,
+               "Should be unset!");
+    mTransaction->Proxy()->mSyncQueueKey = mSyncQueueKey;
+
+    mTransaction->Proxy()->Actor()->SendAllRequestsFinished();
+
+    mTransaction->Proxy()->mExpectingResponse = true;
 
     return NS_OK;
   }
 
 private:
   uint32_t mSyncQueueKey;
-  IDBTransactionSync* mTransaction;
+  nsRefPtr<IDBTransactionSync> mTransaction;
 };
 
 } // anonymous namespace
 
-// static
+IDBTransactionSyncProxy::IDBTransactionSyncProxy(
+                                               IDBTransactionSync* aTransaction)
+: IDBObjectSyncProxy<IndexedDBTransactionWorkerChild>(aTransaction)
+{
+}
+
 IDBTransactionSync*
+IDBTransactionSyncProxy::Transaction()
+{
+  return static_cast<IDBTransactionSync*>(mObject);
+}
+
+NS_IMPL_ADDREF_INHERITED(IDBTransactionSync, IDBObjectSync)
+NS_IMPL_RELEASE_INHERITED(IDBTransactionSync, IDBObjectSync)
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(IDBTransactionSync)
+NS_INTERFACE_MAP_END_INHERITING(IDBObjectSync)
+
+NS_IMPL_CYCLE_COLLECTION_CLASS(IDBTransactionSync)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IDBTransactionSync,
+                                                IDBObjectSync)
+  tmp->ReleaseProxy(ObjectIsGoingAway);
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDatabase)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mCreatedObjectStores)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDeletedObjectStores)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(IDBTransactionSync,
+                                                  IDBObjectSync)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDatabase)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCreatedObjectStores)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDeletedObjectStores)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+// static
+already_AddRefed<IDBTransactionSync>
 IDBTransactionSync::Create(JSContext* aCx, IDBDatabaseSync* aDatabase,
                            const Sequence<nsString>& aObjectStoreNames,
                            Mode aMode)
@@ -122,8 +155,7 @@ IDBTransactionSync::Create(JSContext* aCx, IDBDatabaseSync* aDatabase,
   WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
   MOZ_ASSERT(workerPrivate);
 
-  nsRefPtr<IDBTransactionSync> trans =
-    new IDBTransactionSync(aCx, workerPrivate);
+  nsRefPtr<IDBTransactionSync> trans = new IDBTransactionSync(workerPrivate);
 
   trans->mDatabase = aDatabase;
   trans->mDatabaseInfo = aDatabase->Info();
@@ -131,22 +163,28 @@ IDBTransactionSync::Create(JSContext* aCx, IDBDatabaseSync* aDatabase,
   trans->mObjectStoreNames.AppendElements(aObjectStoreNames);
   trans->mObjectStoreNames.Sort();
 
-  if (!Wrap(aCx, nullptr, trans)) {
-    return nullptr;
-  }
-
-  return trans;
+  return trans.forget();
 }
 
-IDBTransactionSync::IDBTransactionSync(JSContext* aCx,
-                                       WorkerPrivate* aWorkerPrivate)
-: IDBObjectSync(aCx, aWorkerPrivate), mDatabase(nullptr),
-  mActorChild(nullptr), mInvalid(false)
-{ }
+IDBTransactionSync::IDBTransactionSync(WorkerPrivate* aWorkerPrivate)
+: IDBObjectSync(aWorkerPrivate), mInvalid(false)
+{
+  SetIsDOMBinding();
+}
 
 IDBTransactionSync::~IDBTransactionSync()
 {
-  MOZ_ASSERT(!mActorChild, "Still have an actor object attached!");
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
+  ReleaseProxy(ObjectIsGoingAway);
+
+  MOZ_ASSERT(!mRooted);
+}
+
+IDBTransactionSyncProxy*
+IDBTransactionSync::Proxy()
+{
+  return static_cast<IDBTransactionSyncProxy*>(mProxy.get());
 }
 
 void
@@ -174,31 +212,6 @@ IDBTransactionSync::SetDBInfo(DatabaseInfoMT* aDBInfo)
   mDatabaseInfo = aDBInfo;
 }
 
-void
-IDBTransactionSync::_trace(JSTracer* aTrc)
-{
-  IDBObjectSync::_trace(aTrc);
-}
-
-void
-IDBTransactionSync::_finalize(JSFreeOp* aFop)
-{
-  IDBObjectSync::_finalize(aFop);
-}
-
-void
-IDBTransactionSync::ReleaseIPCThreadObjects()
-{
-  AssertIsOnIPCThread();
-
-  if (mActorChild) {
-    mActorChild->Send__delete__(mActorChild);
-    MOZ_ASSERT(!mActorChild, "Should have cleared in Send__delete__!");
-  }
-}
-
-NS_IMPL_ISUPPORTS_INHERITED0(IDBTransactionSync, IDBObjectSync)
-
 /*
 void
 IDBTransactionSync::GetMode(nsString& aMode)
@@ -207,6 +220,12 @@ IDBTransactionSync::GetMode(nsString& aMode)
   NS_ENSURE_SUCCESS(rv,);
 }
 */
+
+JSObject*
+IDBTransactionSync::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
+{
+  return IDBTransactionSyncBinding_workers::Wrap(aCx, aScope, this);
+}
 
 IDBDatabaseSync*
 IDBTransactionSync::Db()
@@ -232,7 +251,7 @@ IDBTransactionSync::ObjectStoreNames(JSContext* aCx)
   return list.forget();
 }
 
-IDBObjectStoreSync*
+already_AddRefed<IDBObjectStoreSync>
 IDBTransactionSync::ObjectStore(JSContext* aCx, const nsAString& aName,
                                 ErrorResult& aRv)
 {
@@ -255,13 +274,14 @@ IDBTransactionSync::ObjectStore(JSContext* aCx, const nsAString& aName,
     return nullptr;
   }
 
-  IDBObjectStoreSync* objectStore = GetOrCreateObjectStore(aCx, info, false);
+  nsRefPtr<IDBObjectStoreSync> objectStore =
+    GetOrCreateObjectStore(aCx, info, false);
   if (!objectStore) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
     return nullptr;
   }
 
-  return objectStore;
+  return objectStore.forget();
 }
 
 void
@@ -323,12 +343,19 @@ IDBTransactionSync::Abort(JSContext* aCx, ErrorResult& aRv)
 bool
 IDBTransactionSync::Init(JSContext* aCx)
 {
+  mProxy = new IDBTransactionSyncProxy(this);
+
   nsRefPtr<InitRunnable> runnable = new InitRunnable(mWorkerPrivate, this);
 
-  return runnable->Dispatch(aCx);
+  if (!runnable->Dispatch(aCx)) {
+    ReleaseProxy();
+    return false;
+  }
+
+  return true;
 }
 
-IDBObjectStoreSync*
+already_AddRefed<IDBObjectStoreSync>
 IDBTransactionSync::GetOrCreateObjectStore(JSContext* aCx,
                                            ObjectStoreInfo* aObjectStoreInfo,
                                            bool aCreating)
@@ -337,13 +364,13 @@ IDBTransactionSync::GetOrCreateObjectStore(JSContext* aCx,
   MOZ_ASSERT(!aCreating || GetMode() == IDBTransaction::VERSION_CHANGE,
              "How else can we create here?!");
 
-  IDBObjectStoreSync* retval = nullptr;
+  nsRefPtr<IDBObjectStoreSync> retval;
 
   for (uint32_t index = 0; index < mCreatedObjectStores.Length(); index++) {
     IDBObjectStoreSync* objectStore = mCreatedObjectStores[index];
     if (objectStore->Name() == aObjectStoreInfo->name) {
       retval = objectStore;
-      return retval;
+      return retval.forget();
     }
   }
 
@@ -362,14 +389,15 @@ IDBTransactionSync::GetOrCreateObjectStore(JSContext* aCx,
 
   mCreatedObjectStores.AppendElement(retval);
 
-  return retval;
+  return retval.forget();
 }
 
 bool
 IDBTransactionSync::Finish(JSContext* aCx)
 {
-  DOMBindingAnchor<IDBTransactionSync> selfAnchor(this);
+  Pin();
 
+  AutoUnpin autoUnpin(this);
   AutoSyncLoopHolder syncLoop(mWorkerPrivate);
 
   nsRefPtr<FinishRunnable> runnable =
@@ -378,6 +406,8 @@ IDBTransactionSync::Finish(JSContext* aCx)
   if (!runnable->Dispatch(aCx)) {
     return false;
   }
+
+  autoUnpin.Forget();
 
   return syncLoop.RunAndForget(aCx);
 }

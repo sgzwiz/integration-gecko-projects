@@ -33,7 +33,6 @@ interface IDBDatabaseSync : EventTarget {
     [Throws]
     void               close ();
 
-    [Throws]
                 attribute EventHandler       onversionchange;
 };
 

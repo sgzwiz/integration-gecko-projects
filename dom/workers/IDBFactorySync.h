@@ -25,62 +25,51 @@ class IDBVersionChangeCallback;
 
 BEGIN_WORKERS_NAMESPACE
 
+class DeleteDatabaseHelper;
 class IDBDatabaseSync;
+class IDBFactorySync;
 class IndexedDBDeleteDatabaseRequestWorkerChild;
 class IndexedDBWorkerChild;
+
+class IDBFactorySyncProxy : public IDBObjectSyncProxy<IndexedDBWorkerChild>
+{
+public:
+  IDBFactorySyncProxy(IDBFactorySync* aFactory);
+};
 
 class IDBFactorySync MOZ_FINAL : public IDBObjectSync,
                                  public indexedDB::IDBFactoryBase
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(IDBFactorySync, IDBObjectSync);
 
-  static IDBFactorySync*
+  static already_AddRefed<IDBFactorySync>
   Create(JSContext* aCx, JSObject* aGlobal);
 
-  virtual void
-  _trace(JSTracer* aTrc) MOZ_OVERRIDE;
+  IDBFactorySyncProxy*
+  Proxy();
 
-  virtual void
-  _finalize(JSFreeOp* aFop) MOZ_OVERRIDE;
-
-  uint32_t&
-  DeleteDatabaseSyncQueueKey()
-  {
-    return mDeleteDatabaseSyncQueueKey;
-  }
-
-  const uint32_t&
-  DeleteDatabaseSyncQueueKey() const
-  {
-    return mDeleteDatabaseSyncQueueKey;
-  }
-
-  // Methods called on the IPC thread.
-  virtual void
-  ReleaseIPCThreadObjects();
-
-  IndexedDBWorkerChild*
-  GetActor() const
-  {
-    return mActorChild;
-  }
-
-  void
-  SetActor(IndexedDBWorkerChild* aActorChild)
-  {
-    MOZ_ASSERT(!aActorChild || !mActorChild, "Shouldn't have more than one!");
-    mActorChild = aActorChild;
-  }
+  uint32_t
+  DeleteDatabaseSyncQueueKey() const;
 
   // WebIDL
-  IDBDatabaseSync*
+  virtual JSObject*
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
+
+  nsISupports*
+  GetParentObject() const
+  {
+    return nullptr;
+  }
+
+  already_AddRefed<IDBDatabaseSync>
   Open(JSContext* aCx, const nsAString& aName, uint64_t aVersion,
        const Optional<OwningNonNull<IDBVersionChangeCallback> >& aUpgradeCallback,
        const Optional<uint32_t>& aTimeout,
        ErrorResult& aRv);
 
-  IDBDatabaseSync*
+  already_AddRefed<IDBDatabaseSync>
   Open(JSContext* aCx, const nsAString& aName,
        const IDBOpenDBOptions& aOptions,
        const Optional<OwningNonNull<IDBVersionChangeCallback> >& aUpgradeCallback,
@@ -91,52 +80,48 @@ public:
                  const IDBOpenDBOptions& aOptions, ErrorResult& aRv);
 
 private:
-  IDBFactorySync(JSContext* aCx, WorkerPrivate* aWorkerPrivate);
+  IDBFactorySync(WorkerPrivate* aWorkerPrivate);
   ~IDBFactorySync();
 
-  uint32_t mDeleteDatabaseSyncQueueKey;
-
-  // Only touched on the IPC thread.
-  IndexedDBWorkerChild* mActorChild;
+  nsRefPtr<DeleteDatabaseHelper> mDeleteDatabaseHelper;
 };
 
-class DeleteDatabaseHelper : public BlockWorkerThreadRunnable
+class DeleteDatabaseProxy : public IDBObjectSyncProxyWithActor<IndexedDBDeleteDatabaseRequestWorkerChild>
 {
 public:
-  DeleteDatabaseHelper(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
-                       IDBFactorySync* aFactory, const nsAString& aName,
+  DeleteDatabaseProxy(DeleteDatabaseHelper* aHelper);
+
+  virtual void
+  Teardown() MOZ_OVERRIDE;
+};
+
+class DeleteDatabaseHelper : public IDBObjectSyncBase
+{
+public:
+  // This needs to be fully qualified to not confuse trace refcnt assertions.
+  NS_INLINE_DECL_REFCOUNTING(mozilla::dom::workers::DeleteDatabaseHelper)
+
+  DeleteDatabaseHelper(WorkerPrivate* aWorkerPrivate, IDBFactorySync* aFactory,
+                       const nsAString& aName,
                        quota::PersistenceType aPersistenceType)
-  : BlockWorkerThreadRunnable(aWorkerPrivate), mSyncQueueKey(aSyncQueueKey),
-    mFactory(aFactory), mActorChild(nullptr), mName(aName),
+  : IDBObjectSyncBase(aWorkerPrivate), mFactory(aFactory), mName(aName),
     mPersistenceType(aPersistenceType)
   { }
 
-  virtual
-  ~DeleteDatabaseHelper()
+  DeleteDatabaseProxy*
+  Proxy() const
   {
-    MOZ_ASSERT(!mActorChild, "Still have an actor object attached!");
+    return static_cast<DeleteDatabaseProxy*>(mProxy.get());
   }
 
-  void
-  SetActor(IndexedDBDeleteDatabaseRequestWorkerChild* aActorChild)
-  {
-    MOZ_ASSERT(!aActorChild || !mActorChild, "Shouldn't have more than one!");
-    mActorChild = aActorChild;
-  }
+  bool
+  Run(JSContext* aCx);
 
-  void
-  OnRequestComplete(nsresult aRv);
-
-protected:
   nsresult
-  IPCThreadRun();
+  SendConstructor(IndexedDBDeleteDatabaseRequestWorkerChild** aActor);
 
 private:
-  uint32_t mSyncQueueKey;
-  IDBFactorySync* mFactory;
-
-  // Only touched on the IPC thread.
-  IndexedDBDeleteDatabaseRequestWorkerChild* mActorChild;
+  nsRefPtr<IDBFactorySync> mFactory;
 
   // In-params.
   nsString mName;

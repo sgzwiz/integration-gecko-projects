@@ -11,29 +11,17 @@
 
 BEGIN_WORKERS_NAMESPACE
 
-#ifdef DEBUG
-void
-AssertIsOnIPCThread();
-#else
-inline void
-AssertIsOnIPCThread()
-{ }
-#endif
-
-bool
-IsOnIPCThread();
-
 class WorkerPrivate;
 
 class BlockWorkerThreadRunnable
 {
 public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(BlockWorkerThreadRunnable)
+
   BlockWorkerThreadRunnable(WorkerPrivate* aWorkerPrivate);
 
   virtual ~BlockWorkerThreadRunnable()
   { }
-
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(BlockWorkerThreadRunnable)
 
   bool
   Dispatch(JSContext* aCx);
@@ -43,45 +31,66 @@ protected:
   IPCThreadRun() = 0;
 
   WorkerPrivate* mWorkerPrivate;
-  uint32_t mSyncQueueKey;
 
 private:
   void
   Run();
+
+  uint32_t mSyncQueueKey;
+};
+
+class UnblockListener
+{
+public:
+  NS_IMETHOD_(nsrefcnt)
+  AddRef() = 0;
+
+  NS_IMETHOD_(nsrefcnt)
+  Release() = 0;
+
+  virtual void
+  OnUnblockRequested() = 0;
+
+  virtual void
+  OnUnblockPerformed(WorkerPrivate* aWorkerPrivate) = 0;
 };
 
 class UnblockWorkerThreadRunnable
 {
 public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(UnblockWorkerThreadRunnable)
+
   UnblockWorkerThreadRunnable(WorkerPrivate* aWorkerPrivate,
                               uint32_t aSyncQueueKey,
-                              nsresult aErrorCode)
-  : mWorkerPrivate(aWorkerPrivate), mSyncQueueKey(aSyncQueueKey),
-    mErrorCode(aErrorCode)
-  {
-    AssertIsOnIPCThread();
-  }
+                              nsresult aErrorCode,
+                              UnblockListener* aListener);
 
-  ~UnblockWorkerThreadRunnable()
-  {
-    AssertIsOnIPCThread();
-  }
+  ~UnblockWorkerThreadRunnable();
 
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(UnblockWorkerThreadRunnable)
+  void
+  RunImmediatelly()
+  {
+    this->Run();
+  }
 
   bool
   Dispatch();
-
-protected:
-  WorkerPrivate* mWorkerPrivate;
-  uint32_t mSyncQueueKey;
 
 private:
   void
   Run();
 
+  WorkerPrivate* mWorkerPrivate;
+  uint32_t mSyncQueueKey;
   nsresult mErrorCode;
+  nsRefPtr<UnblockListener> mListener;
 };
+
+bool
+IsOnIPCThread();
+
+void
+AssertIsOnIPCThread();
 
 END_WORKERS_NAMESPACE
 

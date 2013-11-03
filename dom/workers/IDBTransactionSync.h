@@ -28,26 +28,35 @@ BEGIN_WORKERS_NAMESPACE
 struct DatabaseInfoMT;
 class IDBDatabaseSync;
 class IDBObjectStoreSync;
+class IDBTransactionSync;
+class IndexedDBDatabaseWorkerChild;
 class IndexedDBTransactionWorkerChild;
 
+class IDBTransactionSyncProxy : public IDBObjectSyncProxy<IndexedDBTransactionWorkerChild>
+{
+public:
+  IDBTransactionSyncProxy(IDBTransactionSync* aTransaction);
+
+  IDBTransactionSync*
+  Transaction();
+};
 
 class IDBTransactionSync MOZ_FINAL : public IDBObjectSync,
                                      public indexedDB::IDBTransactionBase
 {
   friend class IDBDatabaseSync;
+  friend class IndexedDBDatabaseWorkerChild;
 
 public:
   NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(IDBTransactionSync, IDBObjectSync);
 
-  static IDBTransactionSync*
+  static already_AddRefed<IDBTransactionSync>
   Create(JSContext* aCx, IDBDatabaseSync* aDatabase,
          const Sequence<nsString>& aObjectStoreNames, Mode aMode);
 
-  virtual void
-  _trace(JSTracer* aTrc) MOZ_OVERRIDE;
-
-  virtual void
-  _finalize(JSFreeOp* aFop) MOZ_OVERRIDE;
+  IDBTransactionSyncProxy*
+  Proxy();
 
   DatabaseInfoMT*
   DBInfo() const
@@ -77,27 +86,17 @@ public:
     return mInvalid;
   }
 
-  void
-  SetDBInfo(DatabaseInfoMT* aDBInfo);
-
-  // Methods called on the IPC thread.
-  virtual void
-  ReleaseIPCThreadObjects();
-
-  IndexedDBTransactionWorkerChild*
-  GetActor() const
-  {
-    return mActorChild;
-  }
-
-  void
-  SetActor(IndexedDBTransactionWorkerChild* aActorChild)
-  {
-    MOZ_ASSERT(!aActorChild || !mActorChild, "Shouldn't have more than one!");
-    mActorChild = aActorChild;
-  }
 
   // WebIDL
+  virtual JSObject*
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
+
+  nsISupports*
+  GetParentObject() const
+  {
+    return nullptr;
+  }
+
   IDBTransactionMode
   GetMode(ErrorResult& aRv) const
   {
@@ -110,20 +109,23 @@ public:
   already_AddRefed<DOMStringList>
   ObjectStoreNames(JSContext* aCx);
 
-  IDBObjectStoreSync*
+  already_AddRefed<IDBObjectStoreSync>
   ObjectStore(JSContext* aCx, const nsAString& aName, ErrorResult& aRv);
 
   void
   Abort(JSContext* aCx, ErrorResult& aRv);
 
 private:
-  IDBTransactionSync(JSContext* aCx, WorkerPrivate* aWorkerPrivate);
+  IDBTransactionSync(WorkerPrivate* aWorkerPrivate);
   ~IDBTransactionSync();
 
   bool
   Init(JSContext* aCx);
 
-  IDBObjectStoreSync*
+  void
+  SetDBInfo(DatabaseInfoMT* aDBInfo);
+
+  already_AddRefed<IDBObjectStoreSync>
   GetOrCreateObjectStore(JSContext* aCx,
                          indexedDB::ObjectStoreInfo* aObjectStoreInfo,
                          bool aCreating);
@@ -131,13 +133,10 @@ private:
   bool
   Finish(JSContext* aCx);
 
-  IDBDatabaseSync* mDatabase;
+  nsRefPtr<IDBDatabaseSync> mDatabase;
   nsRefPtr<DatabaseInfoMT> mDatabaseInfo;
   nsTArray<nsRefPtr<IDBObjectStoreSync> > mCreatedObjectStores;
   nsTArray<nsRefPtr<IDBObjectStoreSync> > mDeletedObjectStores;
-
-  // Only touched on the IPC thread.
-  IndexedDBTransactionWorkerChild* mActorChild;
 
   bool mInvalid;
 };

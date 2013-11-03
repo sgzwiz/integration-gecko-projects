@@ -16,6 +16,7 @@
 
 namespace mozilla {
 namespace dom {
+class OwningIDBObjectStoreSyncOrIDBIndexSync;
 namespace indexedDB {
 class IDBKeyRange;
 class Key;
@@ -26,12 +27,22 @@ class Key;
 BEGIN_WORKERS_NAMESPACE
 
 class ContinueHelper;
+class IDBCursorSync;
 class IDBIndexSync;
 class IDBObjectStoreSync;
 class IDBTransactionSync;
 class IndexedDBCursorWorkerChild;
 class IndexedDBIndexWorkerChild;
 class OpenHelper;
+
+class IDBCursorSyncProxy : public IDBObjectSyncProxy<IndexedDBCursorWorkerChild>
+{
+public:
+  IDBCursorSyncProxy(IDBCursorSync* aCursor);
+
+  IDBCursorSync*
+  Cursor();
+};
 
 class IDBCursorSync : public IDBObjectSync,
                       public indexedDB::IDBCursorBase
@@ -50,30 +61,29 @@ class IDBCursorSync : public IDBObjectSync,
 
 public:
   NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(IDBCursorSync,
+                                                         IDBObjectSync);
 
   // For INDEXKEY cursors.
-  static IDBCursorSync*
+  static already_AddRefed<IDBCursorSync>
   Create(JSContext* aCx, IDBIndexSync* aIndex, Direction aDirection);
 
   // For OBJECTSTOREKEY cursors.
-  static IDBCursorSync*
+  static already_AddRefed<IDBCursorSync>
   Create(JSContext* aCx, IDBObjectStoreSync* aObjectStore,
          Direction aDirection);
 
   // For INDEXOBJECT cursors.
-  static IDBCursorSync*
+  static already_AddRefed<IDBCursorSync>
   CreateWithValue(JSContext* aCx, IDBIndexSync* aIndex, Direction aDirection);
 
   // For OBJECTSTORE cursors.
-  static IDBCursorSync*
+  static already_AddRefed<IDBCursorSync>
   CreateWithValue(JSContext* aCx, IDBObjectStoreSync* aObjectStore,
                   Direction aDirection);
 
-  virtual void
-  _trace(JSTracer* aTrc) MOZ_OVERRIDE;
-
-  virtual void
-  _finalize(JSFreeOp* aFop) MOZ_OVERRIDE;
+  IDBCursorSyncProxy*
+  Proxy();
 
   // 'Get' prefix is to avoid name collisions with the enum
   Direction GetDirection()
@@ -91,26 +101,18 @@ public:
     return mObjectStore;
   }
 
-  // Methods called on the IPC thread.
-  virtual void
-  ReleaseIPCThreadObjects();
+  // WebIDL
+  virtual JSObject*
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 
-  IndexedDBCursorWorkerChild*
-  GetActor() const
+  nsISupports*
+  GetParentObject() const
   {
-    return mActorChild;
+    return nullptr;
   }
 
   void
-  SetActor(IndexedDBCursorWorkerChild* aActorChild)
-  {
-    MOZ_ASSERT(!aActorChild || !mActorChild, "Shouldn't have more than one!");
-    mActorChild = aActorChild;
-  }
-
-  // WebIDL
-  JSObject*
-  Source(JSContext* aCx);
+  GetSource(OwningIDBObjectStoreSyncOrIDBIndexSync& aSource) const;
 
   IDBCursorDirection
   GetDirection(ErrorResult& aRv) const
@@ -143,11 +145,11 @@ public:
 protected:
   typedef mozilla::dom::indexedDB::IDBKeyRange IDBKeyRange;
 
-  IDBCursorSync(JSContext* aCx, WorkerPrivate* aWorkerPrivate);
+  IDBCursorSync(WorkerPrivate* aWorkerPrivate);
   virtual ~IDBCursorSync();
 
   bool
-  Open(JSContext* aCx, IDBKeyRange* aKeyRange);
+  Open2(JSContext* aCx, IDBKeyRange* aKeyRange);
 
   bool
   ContinueInternal(JSContext* aCx, const indexedDB::Key& aKey, int32_t aCount,
@@ -158,16 +160,14 @@ protected:
                          const indexedDB::Key& aObjectKey,
                          const SerializedStructuredCloneReadInfo aCloneInfo);
 
-  IDBObjectStoreSync* mObjectStore;
-  IDBIndexSync* mIndex;
-  IDBTransactionSync* mTransaction;
+  nsRefPtr<IDBObjectStoreSync> mObjectStore;
+  nsRefPtr<IDBIndexSync> mIndex;
+  nsRefPtr<IDBTransactionSync> mTransaction;
 
   indexedDB::Key mContinueToKey;
   StructuredCloneReadInfo mCloneReadInfo;
   bool mHaveValue;
-
-  // Only touched on the IPC thread.
-  IndexedDBCursorWorkerChild* mActorChild;
+  bool mHoldingJSVal;
 };
 
 END_WORKERS_NAMESPACE

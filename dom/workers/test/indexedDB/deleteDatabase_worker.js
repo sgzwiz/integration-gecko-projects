@@ -31,7 +31,7 @@ onmessage = function(event) {
 
   function closeDB(event) {
     onversionchangecalled = true;
-    //ok(event instanceof IDBVersionChangeEvent, "expect a versionchange event");
+    ok(event instanceof IDBVersionChangeEvent, "expect a versionchange event");
     is(event.oldVersion, 10, "oldVersion should be 10");
     ok(event.newVersion === null, "newVersion should be null");
     ok(!(event.newVersion === undefined), "newVersion should be null");
@@ -41,7 +41,7 @@ onmessage = function(event) {
   };
   function closeDB2(event) {
     onversionchangecalled2 = true;
-    //ok(event instanceof IDBVersionChangeEvent, "expect a versionchange event");
+    ok(event instanceof IDBVersionChangeEvent, "expect a versionchange event");
     is(event.oldVersion, 10, "oldVersion should be 10");
     ok(event.newVersion === null, "newVersion should be null");
     ok(!(event.newVersion === undefined), "newVersion should be null");

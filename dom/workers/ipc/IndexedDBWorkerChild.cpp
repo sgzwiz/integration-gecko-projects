@@ -25,7 +25,7 @@ using mozilla::dom::quota::QuotaManager;
  ******************************************************************************/
 
 IndexedDBWorkerChild::IndexedDBWorkerChild()
-: mFactory(NULL)
+: mFactoryProxy(nullptr)
 {
   MOZ_COUNT_CTOR(IndexedDBWorkerChild);
 }
@@ -33,26 +33,26 @@ IndexedDBWorkerChild::IndexedDBWorkerChild()
 IndexedDBWorkerChild::~IndexedDBWorkerChild()
 {
   MOZ_COUNT_DTOR(IndexedDBWorkerChild);
-  MOZ_ASSERT(!mFactory);
+  MOZ_ASSERT(!mFactoryProxy);
 }
 
 void
-IndexedDBWorkerChild::SetFactory(IDBFactorySync* aFactory)
+IndexedDBWorkerChild::SetFactoryProxy(IDBFactorySyncProxy* aFactoryProxy)
 {
-  MOZ_ASSERT(aFactory);
-  MOZ_ASSERT(!mFactory);
+  MOZ_ASSERT(aFactoryProxy);
+  MOZ_ASSERT(!mFactoryProxy);
 
-  aFactory->SetActor(this);
-  mFactory = aFactory;
+  aFactoryProxy->SetActor(this);
+  mFactoryProxy = aFactoryProxy;
 }
 
 void
 IndexedDBWorkerChild::ActorDestroy(ActorDestroyReason aWhy)
 {
-  if (mFactory) {
-    mFactory->SetActor(static_cast<IndexedDBWorkerChild*>(NULL));
+  if (mFactoryProxy) {
+    mFactoryProxy->SetActor(static_cast<IndexedDBWorkerChild*>(nullptr));
 #ifdef DEBUG
-    mFactory = NULL;
+    mFactoryProxy = nullptr;
 #endif
   }
 }
@@ -60,7 +60,9 @@ IndexedDBWorkerChild::ActorDestroy(ActorDestroyReason aWhy)
 bool
 IndexedDBWorkerChild::RecvResponse(const bool& aAllowed)
 {
-  mFactory->UnblockWorkerThread(aAllowed ? NS_OK : NS_ERROR_FAILURE);
+  MOZ_ASSERT(mFactoryProxy->mExpectingResponse);
+
+  mFactoryProxy->UnblockWorkerThread(aAllowed ? NS_OK : NS_ERROR_FAILURE);
 
   return true;
 }
@@ -105,7 +107,7 @@ IndexedDBWorkerChild::DeallocPIndexedDBDeleteDatabaseRequestChild(
 
 IndexedDBDatabaseWorkerChild::IndexedDBDatabaseWorkerChild(const nsString& aName,
                                                uint64_t aVersion)
-: mDatabase(NULL)
+: mDatabaseProxy(NULL)
 {
   MOZ_COUNT_CTOR(IndexedDBDatabaseWorkerChild);
 }
@@ -113,16 +115,18 @@ IndexedDBDatabaseWorkerChild::IndexedDBDatabaseWorkerChild(const nsString& aName
 IndexedDBDatabaseWorkerChild::~IndexedDBDatabaseWorkerChild()
 {
   MOZ_COUNT_DTOR(IndexedDBDatabaseWorkerChild);
+  MOZ_ASSERT(!mDatabaseProxy);
 }
 
 void
-IndexedDBDatabaseWorkerChild::SetDatabase(IDBDatabaseSync* aDatabase)
+IndexedDBDatabaseWorkerChild::SetDatabaseProxy(
+                                           IDBDatabaseSyncProxy* aDatabaseProxy)
 {
-  MOZ_ASSERT(aDatabase);
-  MOZ_ASSERT(!mDatabase);
+  MOZ_ASSERT(aDatabaseProxy);
+  MOZ_ASSERT(!mDatabaseProxy);
 
-  aDatabase->SetActor(this);
-  mDatabase = aDatabase;
+  aDatabaseProxy->SetActor(this);
+  mDatabaseProxy = aDatabaseProxy;
 }
 
 bool
@@ -165,8 +169,10 @@ IndexedDBDatabaseWorkerChild::EnsureDatabaseInfo(
     }
   }
 
-  mDatabase->mDatabaseId = dbInfo->id;
-  dbInfo.swap(mDatabase->mDatabaseInfo);
+  IDBDatabaseSync* database = mDatabaseProxy->Database();
+
+  database->mDatabaseId = dbInfo->id;
+  dbInfo.swap(database->mDatabaseInfo);
 
   return true;
 }
@@ -174,10 +180,10 @@ IndexedDBDatabaseWorkerChild::EnsureDatabaseInfo(
 void
 IndexedDBDatabaseWorkerChild::ActorDestroy(ActorDestroyReason aWhy)
 {
-  if (mDatabase) {
-    mDatabase->SetActor(static_cast<IndexedDBDatabaseWorkerChild*>(NULL));
+  if (mDatabaseProxy) {
+    mDatabaseProxy->SetActor(static_cast<IndexedDBDatabaseWorkerChild*>(NULL));
 #ifdef DEBUG
-    mDatabase = NULL;
+    mDatabaseProxy = NULL;
 #endif
   }
 }
@@ -187,16 +193,20 @@ IndexedDBDatabaseWorkerChild::RecvSuccess(
                            const DatabaseInfoGuts& aDBInfo,
                            const InfallibleTArray<ObjectStoreInfoGuts>& aOSInfo)
 {
-  MOZ_ASSERT(aDBInfo.origin == mDatabase->mFactory->GetASCIIOrigin(), "Huh?");
-  MOZ_ASSERT(aDBInfo.name == mDatabase->mName, "Huh?");
-  MOZ_ASSERT(!mDatabase->mVersion || aDBInfo.version == mDatabase->mVersion,
+  MOZ_ASSERT(mDatabaseProxy->mExpectingResponse);
+
+  IDBDatabaseSync* database = mDatabaseProxy->Database();
+
+  MOZ_ASSERT(aDBInfo.origin == database->mFactory->GetASCIIOrigin(), "Huh?");
+  MOZ_ASSERT(aDBInfo.name == database->mName, "Huh?");
+  MOZ_ASSERT(!database->mVersion || aDBInfo.version == database->mVersion,
              "Huh?");
 
   if (!EnsureDatabaseInfo(aDBInfo, aOSInfo)) {
     return false;
   }
 
-  mDatabase->UnblockWorkerThread(NS_OK);
+  mDatabaseProxy->UnblockWorkerThread(NS_OK);
 
   return true;
 }
@@ -204,7 +214,9 @@ IndexedDBDatabaseWorkerChild::RecvSuccess(
 bool
 IndexedDBDatabaseWorkerChild::RecvError(const nsresult& aRv)
 {
-  mDatabase->UnblockWorkerThread(aRv);
+  MOZ_ASSERT(mDatabaseProxy->mExpectingResponse);
+
+  mDatabaseProxy->UnblockWorkerThread(aRv);
 
   return true;
 }
@@ -219,7 +231,9 @@ bool
 IndexedDBDatabaseWorkerChild::RecvVersionChange(const uint64_t& aOldVersion,
                                                 const uint64_t& aNewVersion)
 {
-  mDatabase->OnVersionChange(aOldVersion, aNewVersion);
+  IDBDatabaseSync* database = mDatabaseProxy->Database();
+
+  database->OnVersionChange(aOldVersion, aNewVersion);
 
   return true;
 }
@@ -238,9 +252,11 @@ IndexedDBDatabaseWorkerChild::RecvPIndexedDBTransactionConstructor(
   // This only happens when the parent has created a version-change transaction
   // for us.
 
+  MOZ_ASSERT(mDatabaseProxy->mExpectingResponse);
+
   IndexedDBTransactionWorkerChild* actor =
     static_cast<IndexedDBTransactionWorkerChild*>(aActor);
-  MOZ_ASSERT(!actor->GetTransaction());
+  MOZ_ASSERT(!actor->GetTransactionProxy());
 
   MOZ_ASSERT(aParams.type() ==
              TransactionParams::TVersionChangeTransactionParams);
@@ -252,24 +268,25 @@ IndexedDBDatabaseWorkerChild::RecvPIndexedDBTransactionConstructor(
   const InfallibleTArray<ObjectStoreInfoGuts>& osInfo = params.osInfo();
   uint64_t oldVersion = params.oldVersion();
 
-  MOZ_ASSERT(dbInfo.origin == mDatabase->mFactory->GetASCIIOrigin());
-  MOZ_ASSERT(dbInfo.name == mDatabase->mName);
-  MOZ_ASSERT(!mDatabase->mVersion || dbInfo.version == mDatabase->mVersion);
-  MOZ_ASSERT(!mDatabase->mVersion || oldVersion < mDatabase->mVersion);
+  IDBDatabaseSync* database = mDatabaseProxy->Database();
+
+  MOZ_ASSERT(dbInfo.origin == database->mFactory->GetASCIIOrigin());
+  MOZ_ASSERT(dbInfo.name == database->mName);
+  MOZ_ASSERT(!database->mVersion || dbInfo.version == database->mVersion);
+  MOZ_ASSERT(!database->mVersion || oldVersion < database->mVersion);
 
   if (!EnsureDatabaseInfo(dbInfo, osInfo)) {
     return false;
   }
 
-  mDatabase->mTransaction->SetDBInfo(mDatabase->mDatabaseInfo);
+  database->mTransaction->SetDBInfo(database->mDatabaseInfo);
 
-  mDatabase->EnterSetVersionTransaction();
-  mDatabase->mPreviousDatabaseInfo->version = oldVersion;
-  mDatabase->mUpgradeNeeded = true;
+  database->EnterSetVersionTransaction();
+  database->mPreviousDatabaseInfo->version = oldVersion;
 
-  actor->SetTransaction(mDatabase->mTransaction);
+  actor->SetTransactionProxy(database->mTransaction->Proxy());
 
-  mDatabase->UnblockWorkerThread(NS_OK);
+  database->OnUpgradeNeeded();
 
   return true;
 }
@@ -296,7 +313,7 @@ IndexedDBDatabaseWorkerChild::DeallocPIndexedDBTransactionChild(
  ******************************************************************************/
 
 IndexedDBTransactionWorkerChild::IndexedDBTransactionWorkerChild()
-: mTransaction(NULL)
+: mTransactionProxy(NULL)
 {
   MOZ_COUNT_CTOR(IndexedDBTransactionWorkerChild);
 }
@@ -307,23 +324,24 @@ IndexedDBTransactionWorkerChild::~IndexedDBTransactionWorkerChild()
 }
 
 void
-IndexedDBTransactionWorkerChild::SetTransaction(
-                                               IDBTransactionSync* aTransaction)
+IndexedDBTransactionWorkerChild::SetTransactionProxy(
+                                     IDBTransactionSyncProxy* aTransactionProxy)
 {
-  MOZ_ASSERT(aTransaction);
-  MOZ_ASSERT(!mTransaction);
+  MOZ_ASSERT(aTransactionProxy);
+  MOZ_ASSERT(!mTransactionProxy);
 
-  aTransaction->SetActor(this);
-  mTransaction = aTransaction;
+  aTransactionProxy->SetActor(this);
+  mTransactionProxy = aTransactionProxy;
 }
 
 void
 IndexedDBTransactionWorkerChild::ActorDestroy(ActorDestroyReason aWhy)
 {
-  if (mTransaction) {
-    mTransaction->SetActor(static_cast<IndexedDBTransactionWorkerChild*>(NULL));
+  if (mTransactionProxy) {
+    mTransactionProxy->SetActor(
+                           static_cast<IndexedDBTransactionWorkerChild*>(NULL));
 #ifdef DEBUG
-    mTransaction = NULL;
+    mTransactionProxy = NULL;
 #endif
   }
 }
@@ -331,7 +349,8 @@ IndexedDBTransactionWorkerChild::ActorDestroy(ActorDestroyReason aWhy)
 bool
 IndexedDBTransactionWorkerChild::RecvComplete(const CompleteParams& aParams)
 {
-  MOZ_ASSERT(mTransaction);
+  MOZ_ASSERT(mTransactionProxy);
+  MOZ_ASSERT(mTransactionProxy->mExpectingResponse);
 
   nsresult resultCode;
   switch (aParams.type()) {
@@ -350,20 +369,21 @@ IndexedDBTransactionWorkerChild::RecvComplete(const CompleteParams& aParams)
       return false;
   }
 
-  if (mTransaction->GetMode() == IDBTransactionBase::VERSION_CHANGE) {
-    mTransaction->Db()->ExitSetVersionTransaction();
+  IDBTransactionSync* transaction = mTransactionProxy->Transaction();
+
+  if (transaction->GetMode() == IDBTransactionBase::VERSION_CHANGE) {
+    transaction->Db()->ExitSetVersionTransaction();
 
     if (NS_FAILED(resultCode)) {
       // This will make the database take a snapshot of it's DatabaseInfo
       ErrorResult rv;
-      mTransaction->Db()->Close(nullptr, rv);
+      transaction->Db()->Close(nullptr, rv);
       // Then remove the info from the hash as it contains invalid data.
-      DatabaseInfoMT::Remove(mTransaction->Db()->Id());
+      DatabaseInfoMT::Remove(transaction->Db()->Id());
     }
   }
-  else {
-    mTransaction->UnblockWorkerThread(NS_OK);
-  }
+
+  mTransactionProxy->UnblockWorkerThread(NS_OK);
 
   return true;
 }
@@ -389,7 +409,7 @@ IndexedDBTransactionWorkerChild::DeallocPIndexedDBObjectStoreChild(
  ******************************************************************************/
 
 IndexedDBObjectStoreWorkerChild::IndexedDBObjectStoreWorkerChild()
-: mObjectStore(NULL)
+: mObjectStoreProxy(NULL)
 {
   MOZ_COUNT_CTOR(IndexedDBObjectStoreWorkerChild);
 }
@@ -397,26 +417,27 @@ IndexedDBObjectStoreWorkerChild::IndexedDBObjectStoreWorkerChild()
 IndexedDBObjectStoreWorkerChild::~IndexedDBObjectStoreWorkerChild()
 {
   MOZ_COUNT_DTOR(IndexedDBObjectStoreWorkerChild);
-  MOZ_ASSERT(!mObjectStore);
+  MOZ_ASSERT(!mObjectStoreProxy);
 }
 
 void
-IndexedDBObjectStoreWorkerChild::SetObjectStore(IDBObjectStoreSync* aObjectStore)
+IndexedDBObjectStoreWorkerChild::SetObjectStoreProxy(
+                                     IDBObjectStoreSyncProxy* aObjectStoreProxy)
 {
-  MOZ_ASSERT(aObjectStore);
-  MOZ_ASSERT(!mObjectStore);
+  MOZ_ASSERT(aObjectStoreProxy);
+  MOZ_ASSERT(!mObjectStoreProxy);
 
-  aObjectStore->SetActor(this);
-  mObjectStore = aObjectStore;
+  aObjectStoreProxy->SetActor(this);
+  mObjectStoreProxy = aObjectStoreProxy;
 }
 
 void
 IndexedDBObjectStoreWorkerChild::ActorDestroy(ActorDestroyReason aWhy)
 {
-  if (mObjectStore) {
-    mObjectStore->SetActor(static_cast<IndexedDBObjectStoreWorkerChild*>(NULL));
+  if (mObjectStoreProxy) {
+    mObjectStoreProxy->SetActor(static_cast<IndexedDBObjectStoreWorkerChild*>(NULL));
 #ifdef DEBUG
-    mObjectStore = NULL;
+    mObjectStoreProxy = NULL;
 #endif
   }
 }
@@ -458,7 +479,7 @@ IndexedDBObjectStoreWorkerChild::RecvPIndexedDBCursorConstructor(
   Key emptyKey;
   cursor->SetCurrentKeysAndValue(aParams.key(), emptyKey, cloneInfo);
 
-  actor->SetCursor(cursor);
+  actor->SetCursorProxy(cursor->Proxy());
   return true;
 }
 
@@ -514,7 +535,7 @@ IndexedDBObjectStoreWorkerChild::DeallocPIndexedDBCursorChild(
  ******************************************************************************/
 
 IndexedDBIndexWorkerChild::IndexedDBIndexWorkerChild()
-: mIndex(NULL)
+: mIndexProxy(NULL)
 {
   MOZ_COUNT_CTOR(IndexedDBIndexWorkerChild);
 }
@@ -522,26 +543,26 @@ IndexedDBIndexWorkerChild::IndexedDBIndexWorkerChild()
 IndexedDBIndexWorkerChild::~IndexedDBIndexWorkerChild()
 {
   MOZ_COUNT_DTOR(IndexedDBIndexWorkerChild);
-  MOZ_ASSERT(!mIndex);
+  MOZ_ASSERT(!mIndexProxy);
 }
 
 void
-IndexedDBIndexWorkerChild::SetIndex(IDBIndexSync* aIndex)
+IndexedDBIndexWorkerChild::SetIndexProxy(IDBIndexSyncProxy* aIndexProxy)
 {
-  MOZ_ASSERT(aIndex);
-  MOZ_ASSERT(!mIndex);
+  MOZ_ASSERT(aIndexProxy);
+  MOZ_ASSERT(!mIndexProxy);
 
-  aIndex->SetActor(this);
-  mIndex = aIndex;
+  aIndexProxy->SetActor(this);
+  mIndexProxy = aIndexProxy;
 }
 
 void
 IndexedDBIndexWorkerChild::ActorDestroy(ActorDestroyReason aWhy)
 {
-  if (mIndex) {
-    mIndex->SetActor(static_cast<IndexedDBIndexWorkerChild*>(NULL));
+  if (mIndexProxy) {
+    mIndexProxy->SetActor(static_cast<IndexedDBIndexWorkerChild*>(NULL));
 #ifdef DEBUG
-    mIndex = NULL;
+    mIndexProxy = NULL;
 #endif
   }
 }
@@ -583,7 +604,7 @@ IndexedDBIndexWorkerChild::RecvPIndexedDBCursorConstructor(
   cursor->SetCurrentKeysAndValue(aParams.key(), aParams.objectKey(),
                                  cloneInfo);
 
-  actor->SetCursor(cursor);
+  actor->SetCursorProxy(cursor->Proxy());
   return true;
 }
 
@@ -623,7 +644,7 @@ IndexedDBIndexWorkerChild::DeallocPIndexedDBCursorChild(
  ******************************************************************************/
 
 IndexedDBCursorWorkerChild::IndexedDBCursorWorkerChild()
-: mCursor(NULL)
+: mCursorProxy(NULL)
 {
   MOZ_COUNT_CTOR(IndexedDBCursorWorkerChild);
 }
@@ -631,26 +652,26 @@ IndexedDBCursorWorkerChild::IndexedDBCursorWorkerChild()
 IndexedDBCursorWorkerChild::~IndexedDBCursorWorkerChild()
 {
   MOZ_COUNT_DTOR(IndexedDBCursorWorkerChild);
-  MOZ_ASSERT(!mCursor);
+  MOZ_ASSERT(!mCursorProxy);
 }
 
 void
-IndexedDBCursorWorkerChild::SetCursor(IDBCursorSync* aCursor)
+IndexedDBCursorWorkerChild::SetCursorProxy(IDBCursorSyncProxy* aCursorProxy)
 {
-  MOZ_ASSERT(aCursor);
-  MOZ_ASSERT(!mCursor);
+  MOZ_ASSERT(aCursorProxy);
+  MOZ_ASSERT(!mCursorProxy);
 
-  aCursor->SetActor(this);
-  mCursor = aCursor;
+  aCursorProxy->SetActor(this);
+  mCursorProxy = aCursorProxy;
 }
 
 void
 IndexedDBCursorWorkerChild::ActorDestroy(ActorDestroyReason aWhy)
 {
-  if (mCursor) {
-    mCursor->SetActor(static_cast<IndexedDBCursorWorkerChild*>(NULL));
+  if (mCursorProxy) {
+    mCursorProxy->SetActor(static_cast<IndexedDBCursorWorkerChild*>(NULL));
 #ifdef DEBUG
-    mCursor = NULL;
+    mCursorProxy = NULL;
 #endif
   }
 }
@@ -676,7 +697,7 @@ IndexedDBCursorWorkerChild::DeallocPIndexedDBRequestChild(
  ******************************************************************************/
 
 IndexedDBRequestWorkerChildBase::IndexedDBRequestWorkerChildBase()
-: mHelper(NULL)
+: mHelperProxy(nullptr)
 {
   MOZ_COUNT_CTOR(IndexedDBRequestWorkerChildBase);
 }
@@ -687,28 +708,38 @@ IndexedDBRequestWorkerChildBase::~IndexedDBRequestWorkerChildBase()
 }
 
 void
-IndexedDBRequestWorkerChildBase::SetHelper(BlockingHelperBase* aHelper)
+IndexedDBRequestWorkerChildBase::SetHelperProxy(
+                                              BlockingHelperProxy* aHelperProxy)
 {
-  MOZ_ASSERT(aHelper);
-  MOZ_ASSERT(!mHelper);
+  MOZ_ASSERT(aHelperProxy);
+  MOZ_ASSERT(!mHelperProxy);
 
-  aHelper->SetActor(this);
-  mHelper = aHelper;
+  aHelperProxy->SetActor(this);
+  mHelperProxy = aHelperProxy;
+}
+
+void
+IndexedDBRequestWorkerChildBase::Disconnect()
+{
+  MOZ_ASSERT(mHelperProxy);
+
+  mHelperProxy->SetActor(static_cast<IndexedDBRequestWorkerChildBase*>(NULL));
+  mHelperProxy = nullptr;
 }
 
 IDBObjectSync*
 IndexedDBRequestWorkerChildBase::GetObject() const
 {
-  return mHelper->Object();
+  return mHelperProxy->Helper()->Object();
 }
 
 void
 IndexedDBRequestWorkerChildBase::ActorDestroy(ActorDestroyReason aWhy)
 {
-  if (mHelper) {
-    mHelper->SetActor(static_cast<IndexedDBRequestWorkerChildBase*>(NULL));
+  if (mHelperProxy) {
+    mHelperProxy->SetActor(static_cast<IndexedDBRequestWorkerChildBase*>(NULL));
 #ifdef DEBUG
-    mHelper = NULL;
+    mHelperProxy = NULL;
 #endif
   }
 }
@@ -741,6 +772,8 @@ IndexedDBObjectStoreRequestWorkerChild::~IndexedDBObjectStoreRequestWorkerChild(
 bool
 IndexedDBObjectStoreRequestWorkerChild::Recv__delete__(const ResponseValue& aResponse)
 {
+  MOZ_ASSERT(mHelperProxy->mExpectingResponse);
+
   switch (aResponse.type()) {
     case ResponseValue::Tnsresult:
       break;
@@ -778,7 +811,7 @@ IndexedDBObjectStoreRequestWorkerChild::Recv__delete__(const ResponseValue& aRes
       return false;
   }
 
-  mHelper->OnRequestComplete(aResponse);
+  mHelperProxy->OnRequestComplete(aResponse);
 
   return true;
 }
@@ -804,6 +837,8 @@ IndexedDBIndexRequestWorkerChild::~IndexedDBIndexRequestWorkerChild()
 bool
 IndexedDBIndexRequestWorkerChild::Recv__delete__(const ResponseValue& aResponse)
 {
+  MOZ_ASSERT(mHelperProxy->mExpectingResponse);
+
   switch (aResponse.type()) {
     case ResponseValue::Tnsresult:
       break;
@@ -832,7 +867,7 @@ IndexedDBIndexRequestWorkerChild::Recv__delete__(const ResponseValue& aResponse)
       return false;
   }
 
-  mHelper->OnRequestComplete(aResponse);
+  mHelperProxy->OnRequestComplete(aResponse);
 
   return true;
 }
@@ -859,6 +894,8 @@ bool
 IndexedDBCursorRequestWorkerChild::Recv__delete__(
                                                  const ResponseValue& aResponse)
 {
+  MOZ_ASSERT(mHelperProxy->mExpectingResponse);
+
   switch (aResponse.type()) {
     case ResponseValue::Tnsresult:
       break;
@@ -871,7 +908,7 @@ IndexedDBCursorRequestWorkerChild::Recv__delete__(
       return false;
   }
 
-  mHelper->OnRequestComplete(aResponse);
+  mHelperProxy->OnRequestComplete(aResponse);
 
   return true;
 }
@@ -882,7 +919,7 @@ IndexedDBCursorRequestWorkerChild::Recv__delete__(
 
 IndexedDBDeleteDatabaseRequestWorkerChild::IndexedDBDeleteDatabaseRequestWorkerChild(
                                                   const nsACString& aDatabaseId)
-: mHelper(NULL), mDatabaseId(aDatabaseId)
+: mHelperProxy(NULL), mDatabaseId(aDatabaseId)
 {
   MOZ_COUNT_CTOR(IndexedDBDeleteDatabaseRequestWorkerChild);
   MOZ_ASSERT(!aDatabaseId.IsEmpty());
@@ -894,22 +931,31 @@ IndexedDBDeleteDatabaseRequestWorkerChild::~IndexedDBDeleteDatabaseRequestWorker
 }
 
 void
-IndexedDBDeleteDatabaseRequestWorkerChild::SetHelper(DeleteDatabaseHelper* aHelper)
+IndexedDBDeleteDatabaseRequestWorkerChild::SetHelperProxy(DeleteDatabaseProxy* aHelperProxy)
 {
-  MOZ_ASSERT(aHelper);
-  MOZ_ASSERT(!mHelper);
+  MOZ_ASSERT(aHelperProxy);
+  MOZ_ASSERT(!mHelperProxy);
 
-  aHelper->SetActor(this);
-  mHelper = aHelper;
+  aHelperProxy->SetActor(this);
+  mHelperProxy = aHelperProxy;
+}
+
+void
+IndexedDBDeleteDatabaseRequestWorkerChild::Disconnect()
+{
+  MOZ_ASSERT(mHelperProxy);
+
+  mHelperProxy->SetActor(static_cast<IndexedDBDeleteDatabaseRequestWorkerChild*>(NULL));
+  mHelperProxy = nullptr;
 }
 
 void
 IndexedDBDeleteDatabaseRequestWorkerChild::ActorDestroy(ActorDestroyReason aWhy)
 {
-  if (mHelper) {
-    mHelper->SetActor(static_cast<IndexedDBDeleteDatabaseRequestWorkerChild*>(NULL));
+  if (mHelperProxy) {
+    mHelperProxy->SetActor(static_cast<IndexedDBDeleteDatabaseRequestWorkerChild*>(NULL));
 #ifdef DEBUG
-    mHelper = NULL;
+    mHelperProxy = NULL;
 #endif
   }
 }
@@ -921,7 +967,7 @@ IndexedDBDeleteDatabaseRequestWorkerChild::Recv__delete__(const nsresult& aRv)
     DatabaseInfoMT::Remove(mDatabaseId);
   }
 
-  mHelper->OnRequestComplete(aRv);
+  mHelperProxy->UnblockWorkerThread(aRv, false);
 
   return true;
 }

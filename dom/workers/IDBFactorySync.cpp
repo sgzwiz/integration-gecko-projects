@@ -8,8 +8,8 @@
 
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/IDBFactoryBinding.h"
+#include "mozilla/dom/IDBFactorySyncBinding.h"
 
-#include "DOMBindingInlines.h"
 #include "IDBDatabaseSync.h"
 #include "IPCThreadUtils.h"
 #include "WorkerPrivate.h"
@@ -30,7 +30,7 @@ class ConstructRunnable : public BlockWorkerThreadRunnable
 {
 public:
   ConstructRunnable(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
-                     IDBFactorySync* aFactory)
+                    IDBFactorySync* aFactory)
   : BlockWorkerThreadRunnable(aWorkerPrivate), mSyncQueueKey(aSyncQueueKey),
     mFactory(aFactory)
   { }
@@ -39,93 +39,166 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    MOZ_ASSERT(mFactory->PrimarySyncQueueKey() == UINT32_MAX,
-               "Primary sync queue key should be unset!");
-    mFactory->PrimarySyncQueueKey() = mSyncQueueKey;
+    const nsRefPtr<IDBFactorySyncProxy>& proxy = mFactory->Proxy();
+
+    MOZ_ASSERT(!proxy->mWorkerPrivate, "Should be null!");
+    proxy->mWorkerPrivate = mWorkerPrivate;
+
+    MOZ_ASSERT(proxy->mSyncQueueKey, "Should be unset!");
+    proxy->mSyncQueueKey = mSyncQueueKey;
 
     IndexedDBWorkerChild* actor = new IndexedDBWorkerChild();
     mWorkerPrivate->GetWorkerChild()->SendPIndexedDBConstructor(
                                                     actor,
                                                     mFactory->GetGroup(),
                                                     mFactory->GetASCIIOrigin());
-    actor->SetFactory(mFactory);
+    actor->SetFactoryProxy(proxy);
+
+    proxy->mExpectingResponse = true;
 
     return NS_OK;
   }
 
 private:
   uint32_t mSyncQueueKey;
-  IDBFactorySync* mFactory;
+  nsRefPtr<IDBFactorySync> mFactory;
+};
+
+class SendConstructorRunnable : public BlockWorkerThreadRunnable
+{
+public:
+  SendConstructorRunnable(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
+                          DeleteDatabaseHelper* aHelper)
+  : BlockWorkerThreadRunnable(aWorkerPrivate), mSyncQueueKey(aSyncQueueKey),
+    mHelper(aHelper)
+  { }
+
+protected:
+  virtual nsresult
+  IPCThreadRun() MOZ_OVERRIDE
+  {
+    const nsRefPtr<DeleteDatabaseProxy>& proxy = mHelper->Proxy();
+
+    MOZ_ASSERT(!proxy->mWorkerPrivate, "Should be null!");
+    proxy->mWorkerPrivate = mWorkerPrivate;
+
+    MOZ_ASSERT(proxy->mSyncQueueKey == UINT32_MAX, "Should be unset!");
+    proxy->mSyncQueueKey = mSyncQueueKey;
+
+    IndexedDBDeleteDatabaseRequestWorkerChild* actor;
+    nsresult rv = mHelper->SendConstructor(&actor);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    actor->SetHelperProxy(proxy);
+
+    proxy->mExpectingResponse = true;
+
+    return NS_OK;
+  }
+
+  uint32_t mSyncQueueKey;
+  nsRefPtr<DeleteDatabaseHelper> mHelper;
 };
 
 } // anonymous namespace
 
+IDBFactorySyncProxy::IDBFactorySyncProxy(IDBFactorySync* aFactory)
+: IDBObjectSyncProxy<IndexedDBWorkerChild>(aFactory)
+{
+}
+
+NS_IMPL_ADDREF_INHERITED(IDBFactorySync, IDBObjectSync)
+NS_IMPL_RELEASE_INHERITED(IDBFactorySync, IDBObjectSync)
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(IDBFactorySync)
+NS_INTERFACE_MAP_END_INHERITING(IDBObjectSync)
+
+NS_IMPL_CYCLE_COLLECTION_CLASS(IDBFactorySync)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IDBFactorySync,
+                                                IDBObjectSync)
+  tmp->ReleaseProxy(ObjectIsGoingAway);
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(IDBFactorySync,
+                                                  IDBObjectSync)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
 // static
-IDBFactorySync*
+already_AddRefed<IDBFactorySync>
 IDBFactorySync::Create(JSContext* aCx, JSObject* aGlobal)
 {
   WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
   MOZ_ASSERT(workerPrivate);
 
-  nsRefPtr<IDBFactorySync> factory = new IDBFactorySync(aCx, workerPrivate);
+  nsRefPtr<IDBFactorySync> factory = new IDBFactorySync(workerPrivate);
 
   factory->mGroup = workerPrivate->Group();
   factory->mASCIIOrigin = workerPrivate->Origin();
   factory->mDefaultPersistenceType = workerPrivate->DefaultPersistenceType();
 
-  if (!Wrap(aCx, aGlobal, factory)) {
-    return nullptr;
-  }
+  factory->mProxy = new IDBFactorySyncProxy(factory);
 
+  factory->Pin();
+
+  AutoUnpin autoUnpin(factory);
   AutoSyncLoopHolder syncLoop(workerPrivate);
 
   nsRefPtr<ConstructRunnable> runnable =
     new ConstructRunnable(workerPrivate, syncLoop.SyncQueueKey(),
                           factory);
 
-  if (!runnable->Dispatch(aCx) || !syncLoop.RunAndForget(aCx)) {
+  if (!runnable->Dispatch(aCx)) {
+    factory->ReleaseProxy();
     return nullptr;
   }
 
-  return factory;
+  autoUnpin.Forget();
+
+  if (!syncLoop.RunAndForget(aCx)) {
+    return nullptr;
+  }
+
+  return factory.forget();
 }
 
-IDBFactorySync::IDBFactorySync(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
-: IDBObjectSync(aCx, aWorkerPrivate), mDeleteDatabaseSyncQueueKey(UINT32_MAX),
-  mActorChild(nullptr)
-{ }
+IDBFactorySync::IDBFactorySync(WorkerPrivate* aWorkerPrivate)
+: IDBObjectSync(aWorkerPrivate)
+{
+  SetIsDOMBinding();
+}
 
 IDBFactorySync::~IDBFactorySync()
 {
-  MOZ_ASSERT(!mActorChild, "Still have an actor object attached!");
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
+  ReleaseProxy(ObjectIsGoingAway);
+
+  MOZ_ASSERT(!mRooted);
 }
 
-void
-IDBFactorySync::_trace(JSTracer* aTrc)
+IDBFactorySyncProxy*
+IDBFactorySync::Proxy()
 {
-  IDBObjectSync::_trace(aTrc);
+  return static_cast<IDBFactorySyncProxy*>(mProxy.get());
 }
 
-void
-IDBFactorySync::_finalize(JSFreeOp* aFop)
+uint32_t
+IDBFactorySync::DeleteDatabaseSyncQueueKey() const
 {
-  IDBObjectSync::_finalize(aFop);
-}
-
-void
-IDBFactorySync::ReleaseIPCThreadObjects()
-{
-  AssertIsOnIPCThread();
-
-  if (mActorChild) {
-    mActorChild->Send__delete__(mActorChild);
-    MOZ_ASSERT(!mActorChild, "Should have cleared in Send__delete__!");
+  if (mDeleteDatabaseHelper) {
+    return mDeleteDatabaseHelper->Proxy()->mSyncQueueKey;
   }
+  return UINT32_MAX;
 }
 
-NS_IMPL_ISUPPORTS_INHERITED0(IDBFactorySync, IDBObjectSync)
+JSObject*
+IDBFactorySync::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
+{
+  return IDBFactorySyncBinding_workers::Wrap(aCx, aScope, this);
+}
 
-IDBDatabaseSync*
+already_AddRefed<IDBDatabaseSync>
 IDBFactorySync::Open(JSContext* aCx, const nsAString& aName, uint64_t aVersion,
                      const Optional<OwningNonNull<IDBVersionChangeCallback> >& aUpgradeCallback,
                      const Optional<uint32_t>& aTimeout, ErrorResult& aRv)
@@ -137,7 +210,7 @@ IDBFactorySync::Open(JSContext* aCx, const nsAString& aName, uint64_t aVersion,
   return Open(aCx, aName, options, aUpgradeCallback, aTimeout, aRv);
 }
 
-IDBDatabaseSync*
+already_AddRefed<IDBDatabaseSync>
 IDBFactorySync::Open(JSContext* aCx, const nsAString& aName,
                      const IDBOpenDBOptions& aOptions,
                      const Optional<OwningNonNull<IDBVersionChangeCallback> >& aUpgradeCallback,
@@ -156,22 +229,23 @@ IDBFactorySync::Open(JSContext* aCx, const nsAString& aName,
     quota::PersistenceTypeFromStorage(aOptions.mStorage,
                                       mDefaultPersistenceType);
 
-  IDBDatabaseSync* database =
-    IDBDatabaseSync::Create(aCx, this, aName, version, persistenceType);
+  IDBVersionChangeCallback* upgradeCallback =
+    aUpgradeCallback.WasPassed() ? &aUpgradeCallback.Value() : nullptr;
+
+  nsRefPtr<IDBDatabaseSync> database =
+    IDBDatabaseSync::Create(aCx, this, aName, version, persistenceType,
+                            upgradeCallback);
   if (!database) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
   }
 
-  IDBVersionChangeCallback* upgradeCallback =
-    aUpgradeCallback.WasPassed() ? &aUpgradeCallback.Value() : nullptr;
-
-  if (!database->Open(aCx, upgradeCallback)) {
+  if (!database->Open(aCx)) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
   }
 
-  return database;
+  return database.forget();
 }
 
 void
@@ -179,59 +253,77 @@ IDBFactorySync::DeleteDatabase(JSContext* aCx, const nsAString& aName,
                                const IDBOpenDBOptions& aOptions,
                                ErrorResult& aRv)
 {
-  DOMBindingAnchor<IDBFactorySync> selfAnchor(this);
-
-  AutoSyncLoopHolder syncLoop(mWorkerPrivate);
-
   quota::PersistenceType persistenceType =
     quota::PersistenceTypeFromStorage(aOptions.mStorage,
                                       mDefaultPersistenceType);
 
-  nsRefPtr<DeleteDatabaseHelper> helper =
-    new DeleteDatabaseHelper(mWorkerPrivate, syncLoop.SyncQueueKey(), this,
-                             aName, persistenceType);
+  mDeleteDatabaseHelper =
+    new DeleteDatabaseHelper(mWorkerPrivate, this, aName, persistenceType);
 
-  if (!helper->Dispatch(aCx) || !syncLoop.RunAndForget(aCx)) {
+  if (!mDeleteDatabaseHelper->Run(aCx)) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
     return;
   }
+
+  mDeleteDatabaseHelper = nullptr;
+}
+
+DeleteDatabaseProxy::DeleteDatabaseProxy(DeleteDatabaseHelper* aHelper)
+: IDBObjectSyncProxyWithActor<IndexedDBDeleteDatabaseRequestWorkerChild>(aHelper)
+{
 }
 
 void
-DeleteDatabaseHelper::OnRequestComplete(nsresult aRv)
+DeleteDatabaseProxy::Teardown()
 {
-  nsRefPtr<UnblockWorkerThreadRunnable> runnable =
-    new UnblockWorkerThreadRunnable(mWorkerPrivate,
-                                    mFactory->DeleteDatabaseSyncQueueKey(),
-                                    aRv);
+  AssertIsOnIPCThread();
+  if (mActor) {
+    MaybeUnpinObject();
 
-  if (!runnable->Dispatch()) {
-    NS_WARNING("Failed to dispatch runnable!");
+    mActor->Disconnect();
+    MOZ_ASSERT(!mActor);
+  }
+}
+
+bool
+DeleteDatabaseHelper::Run(JSContext* aCx)
+{
+  mProxy = new DeleteDatabaseProxy(this);
+
+  Pin();
+
+  AutoUnpin autoUnpin(this);
+  AutoSyncLoopHolder syncLoop(mWorkerPrivate);
+
+  nsRefPtr<SendConstructorRunnable> runnable =
+    new SendConstructorRunnable(mWorkerPrivate, syncLoop.SyncQueueKey(), this);
+
+  if (!runnable->Dispatch(aCx)) {
+    ReleaseProxy();
+    return false;
   }
 
-  mFactory->DeleteDatabaseSyncQueueKey() = UINT32_MAX;
+  autoUnpin.Forget();
+
+  if (!syncLoop.RunAndForget(aCx)) {
+    return false;
+  }
+
+  return true;
 }
 
 nsresult
-DeleteDatabaseHelper::IPCThreadRun()
+DeleteDatabaseHelper::SendConstructor(
+                             IndexedDBDeleteDatabaseRequestWorkerChild** aActor)
 {
-  MOZ_ASSERT(mFactory->DeleteDatabaseSyncQueueKey() == UINT32_MAX,
-             "Delete database sync queue key should be unset!");
-  mFactory->DeleteDatabaseSyncQueueKey() = mSyncQueueKey;
-
   nsCString databaseId;
   QuotaManager::GetStorageId(mPersistenceType, mFactory->GetASCIIOrigin(),
                              mName, databaseId);
 
   IndexedDBDeleteDatabaseRequestWorkerChild* actor =
     new IndexedDBDeleteDatabaseRequestWorkerChild(databaseId);
+  mFactory->Proxy()->Actor()->SendPIndexedDBDeleteDatabaseRequestConstructor(actor, nsString(mName), mPersistenceType);
 
-  mFactory->GetActor()->SendPIndexedDBDeleteDatabaseRequestConstructor(
-                                                              actor,
-                                                              nsString(mName),
-                                                              mPersistenceType);
-
-  actor->SetHelper(this);
-
+  *aActor = actor;
   return NS_OK;
 }

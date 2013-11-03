@@ -9,14 +9,14 @@
  */
 
 interface IDBCursorSync {
-    readonly    attribute object             source;
+    readonly    attribute (IDBObjectStoreSync or IDBIndexSync) source;
 
     [Throws]
-    readonly    attribute IDBCursorDirection direction;
+    readonly    attribute IDBCursorDirection                   direction;
 
-    readonly    attribute any                key;
+    readonly    attribute any                                  key;
 
-    readonly    attribute any                primaryKey;
+    readonly    attribute any                                  primaryKey;
 
     [Throws]
     void    update (any value);

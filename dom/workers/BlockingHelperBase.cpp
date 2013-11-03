@@ -12,10 +12,50 @@
 #include "mozilla/dom/indexedDB/IndexedDatabase.h"
 #include "mozilla/dom/indexedDB/PIndexedDBRequest.h"
 
+#include "WorkerPrivate.h"
+
+#include "ipc/IndexedDBWorkerChild.h"
+
 USING_WORKERS_NAMESPACE
 using namespace mozilla::dom::indexedDB;
 
 namespace {
+
+class SendConstructorRunnable : public BlockWorkerThreadRunnable
+{
+public:
+  SendConstructorRunnable(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
+                          BlockingHelperBase* aHelper)
+  : BlockWorkerThreadRunnable(aWorkerPrivate), mSyncQueueKey(aSyncQueueKey),
+    mHelper(aHelper)
+  { }
+
+protected:
+  virtual nsresult
+  IPCThreadRun() MOZ_OVERRIDE
+  {
+    const nsRefPtr<BlockingHelperProxy>& proxy = mHelper->Proxy();
+
+    MOZ_ASSERT(!proxy->mWorkerPrivate, "Should be null!");
+    proxy->mWorkerPrivate = mWorkerPrivate;
+
+    MOZ_ASSERT(proxy->mSyncQueueKey == UINT32_MAX, "Should be unset!");
+    proxy->mSyncQueueKey = mSyncQueueKey;
+
+    IndexedDBRequestWorkerChildBase* actor;
+    nsresult rv = mHelper->SendConstructor(&actor);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    actor->SetHelperProxy(proxy);
+
+    proxy->mExpectingResponse = true;
+
+    return NS_OK;
+  }
+
+  uint32_t mSyncQueueKey;
+  nsRefPtr<BlockingHelperBase> mHelper;
+};
 
 // This inline is just so that we always clear aBuffers appropriately even if
 // something fails.
@@ -64,8 +104,31 @@ ConvertCloneReadInfosToArrayInternal(
 
 } // anonymous namespace
 
+BlockingHelperProxy::BlockingHelperProxy(BlockingHelperBase* aHelper)
+: IDBObjectSyncProxyWithActor<IndexedDBRequestWorkerChildBase>(aHelper)
+{
+}
+
 void
-BlockingHelperBase::OnRequestComplete(const ResponseValue& aResponseValue)
+BlockingHelperProxy::Teardown()
+{
+  AssertIsOnIPCThread();
+  if (mActor) {
+    MaybeUnpinObject();
+
+    mActor->Disconnect();
+    MOZ_ASSERT(!mActor);
+  }
+}
+
+BlockingHelperBase*
+BlockingHelperProxy::Helper()
+{
+  return static_cast<BlockingHelperBase*>(mObject);
+}
+
+void
+BlockingHelperProxy::OnRequestComplete(const ResponseValue& aResponseValue)
 {
   nsresult rv;
 
@@ -74,16 +137,37 @@ BlockingHelperBase::OnRequestComplete(const ResponseValue& aResponseValue)
     rv = aResponseValue.get_nsresult();
   }
   else {
-    rv = HandleResponse(aResponseValue);
+    rv = Helper()->UnpackResponse(aResponseValue);
   }
 
-  nsRefPtr<UnblockWorkerThreadRunnable> runnable =
-    new UnblockWorkerThreadRunnable(mWorkerPrivate, mPrimarySyncQueueKey, rv);
-  if (!runnable->Dispatch()) {
-    NS_WARNING("Failed to dispatch runnable!");
+  UnblockWorkerThread(rv, false);
+}
+
+bool
+BlockingHelperBase::Run(JSContext* aCx)
+{
+  mProxy = new BlockingHelperProxy(this);
+
+  Pin();
+
+  AutoUnpin autoUnpin(this);
+  AutoSyncLoopHolder syncLoop(mWorkerPrivate);
+
+  nsRefPtr<SendConstructorRunnable> runnable =
+    new SendConstructorRunnable(mWorkerPrivate, syncLoop.SyncQueueKey(), this);
+
+  if (!runnable->Dispatch(aCx)) {
+    ReleaseProxy();
+    return false;
   }
 
-  mPrimarySyncQueueKey = UINT32_MAX;
+  autoUnpin.Forget();
+
+  if (!syncLoop.RunAndForget(aCx)) {
+    return false;
+  }
+
+  return true;
 }
 
 // static

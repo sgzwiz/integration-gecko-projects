@@ -7,13 +7,13 @@
 #include "IDBDatabaseSync.h"
 
 #include "mozilla/dom/DOMStringList.h"
-#include "mozilla/dom/IDBDatabaseBinding.h"
+#include "mozilla/dom/IDBDatabaseSyncBinding.h"
 #include "mozilla/dom/IDBTransactionCallbackBinding.h"
 #include "mozilla/dom/IDBVersionChangeCallbackBinding.h"
+#include "mozilla/dom/indexedDB/IDBEvents.h"
 
-#include "DOMBindingInlines.h"
-#include "Events.h"
 #include "IDBFactorySync.h"
+#include "IDBObjectStoreSync.h"
 #include "IDBTransactionSync.h"
 #include "IPCThreadUtils.h"
 #include "WorkerPrivate.h"
@@ -26,6 +26,7 @@ using mozilla::dom::IDBTransactionCallback;
 using mozilla::dom::IDBTransactionMode;
 using mozilla::dom::IDBVersionChangeCallback;
 using mozilla::dom::indexedDB::IDBTransactionBase;
+using mozilla::dom::indexedDB::IDBVersionChangeEvent;
 using mozilla::dom::NonNull;
 using mozilla::dom::Optional;
 using mozilla::dom::Sequence;
@@ -37,34 +38,39 @@ class OpenRunnable : public BlockWorkerThreadRunnable
 {
 public:
   OpenRunnable(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
-               IDBFactorySync* aFactory, IDBDatabaseSync* aDatabase)
+               IDBDatabaseSync* aDatabase)
   : BlockWorkerThreadRunnable(aWorkerPrivate), mSyncQueueKey(aSyncQueueKey),
-    mFactory(aFactory), mDatabase(aDatabase)
+    mDatabase(aDatabase)
   { }
 
 protected:
   nsresult
   IPCThreadRun()
   {
-    MOZ_ASSERT(mDatabase->PrimarySyncQueueKey() == UINT32_MAX,
-               "Primary sync queue key should be unset!");
-    mDatabase->PrimarySyncQueueKey() = mSyncQueueKey;
+    const nsRefPtr<IDBDatabaseSyncProxy>& proxy = mDatabase->Proxy();
+
+    MOZ_ASSERT(!proxy->mWorkerPrivate, "Should be null!");
+    proxy->mWorkerPrivate = mWorkerPrivate;
+
+    MOZ_ASSERT(proxy->mSyncQueueKey == UINT32_MAX, "Should be unset!");
+    proxy->mSyncQueueKey = mSyncQueueKey;
 
     IndexedDBDatabaseWorkerChild* dbActor =
       static_cast<IndexedDBDatabaseWorkerChild*>(
-        mFactory->GetActor()->SendPIndexedDBDatabaseConstructor(
+        mDatabase->Factory()->Proxy()->Actor()->SendPIndexedDBDatabaseConstructor(
                                                          mDatabase->Name(),
                                                          mDatabase->RequestedVersion(),
                                                          mDatabase->Type()));
-    dbActor->SetDatabase(mDatabase);
+    dbActor->SetDatabaseProxy(proxy);
+
+    proxy->mExpectingResponse = true;
 
     return NS_OK;
   }
 
 private:
   uint32_t mSyncQueueKey;
-  IDBFactorySync* mFactory;
-  IDBDatabaseSync* mDatabase;
+  nsRefPtr<IDBDatabaseSync> mDatabase;
 };
 
 class CloseRunnable : public BlockWorkerThreadRunnable
@@ -78,14 +84,14 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    IndexedDBDatabaseWorkerChild* dbActor = mDatabase->GetActor();
+    IndexedDBDatabaseWorkerChild* dbActor = mDatabase->Proxy()->Actor();
     dbActor->SendClose(false);
 
     return NS_OK;
   }
 
 private:
-  IDBDatabaseSync* mDatabase;
+  nsRefPtr<IDBDatabaseSync> mDatabase;
 };
 
 class DeleteObjectStoreRunnable : public BlockWorkerThreadRunnable
@@ -102,7 +108,7 @@ protected:
   nsresult
   IPCThreadRun()
   {
-    IndexedDBTransactionWorkerChild* dbActor = mTransaction->GetActor();
+    IndexedDBTransactionWorkerChild* dbActor = mTransaction->Proxy()->Actor();
     dbActor->SendDeleteObjectStore(mObjectStoreName);
 
     return NS_OK;
@@ -142,20 +148,12 @@ public:
   bool
   WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
   {
-    JS::Rooted<JSObject*> event(aCx,
-               events::CreateVersionChangeEvent(aCx, mOldVersion, mNewVersion));
-
-    if (!event) {
-      return false;
-    }
-
-    JS::Rooted<JSObject*> target(aCx, mDatabase->GetJSObject());
-    MOZ_ASSERT(target);
+    nsRefPtr<nsDOMEvent> event =
+      IDBVersionChangeEvent::Create(mDatabase, mOldVersion, mNewVersion);
+    NS_ENSURE_TRUE(event, false);
 
     bool dummy;
-    if (!events::DispatchEventToTarget(aCx, target, event, &dummy)) {
-      JS_ReportPendingException(aCx);
-    }
+    mDatabase->DispatchEvent(event, &dummy);
 
     return true;
   }
@@ -164,6 +162,45 @@ private:
   IDBDatabaseSync* mDatabase;
   uint64_t mOldVersion;
   uint64_t mNewVersion;
+};
+
+class UpgradeNeededRunnable : public WorkerSyncRunnable
+{
+public:
+  UpgradeNeededRunnable(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
+                        IDBDatabaseSync* aDatabase)
+  : WorkerSyncRunnable(aWorkerPrivate, aSyncQueueKey, false, SkipWhenClearing),
+    mDatabase(aDatabase)
+  {
+    AssertIsOnIPCThread();
+  }
+
+  bool
+  PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
+  {
+    AssertIsOnIPCThread();
+    return true;
+  }
+
+  void
+  PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
+               bool aDispatchResult)
+  {
+    AssertIsOnIPCThread();
+  }
+
+  bool
+  WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
+  {
+    mDatabase->DoUpgrade(aCx);
+
+    return true;
+  }
+
+private:
+  // A weak ref (we can't addref the native object from the IPC thread).
+  // This shouldn't be a problem because IDBDatabaseSync has been pinned.
+  IDBDatabaseSync* mDatabase;
 };
 
 MOZ_STACK_CLASS
@@ -193,37 +230,81 @@ private:
 
 } // anonymous namespace
 
-// static
+IDBDatabaseSyncProxy::IDBDatabaseSyncProxy(IDBDatabaseSync* aDatabase)
+: IDBObjectSyncProxy<IndexedDBDatabaseWorkerChild>(aDatabase)
+{
+}
+
 IDBDatabaseSync*
+IDBDatabaseSyncProxy::Database()
+{
+  return static_cast<IDBDatabaseSync*>(mObject);
+}
+
+NS_IMPL_ADDREF_INHERITED(IDBDatabaseSync, nsDOMEventTargetHelper)
+NS_IMPL_RELEASE_INHERITED(IDBDatabaseSync, nsDOMEventTargetHelper)
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(IDBDatabaseSync)
+NS_INTERFACE_MAP_END_INHERITING(IDBObjectSyncEventTarget)
+
+NS_IMPL_CYCLE_COLLECTION_CLASS(IDBDatabaseSync)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IDBDatabaseSync,
+                                                IDBObjectSyncEventTarget)
+  tmp->ReleaseProxy(ObjectIsGoingAway);
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFactory)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(IDBDatabaseSync,
+                                                  IDBObjectSyncEventTarget)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFactory)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(IDBDatabaseSync,
+                                               IDBObjectSyncEventTarget)
+NS_IMPL_CYCLE_COLLECTION_TRACE_END
+
+// static
+already_AddRefed<IDBDatabaseSync>
 IDBDatabaseSync::Create(JSContext* aCx, IDBFactorySync* aFactory,
                         const nsAString& aName, uint64_t aVersion,
-                        PersistenceType aPersistenceType)
+                        PersistenceType aPersistenceType,
+                        IDBVersionChangeCallback* aUpgradeCallback)
 {
   WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
   MOZ_ASSERT(workerPrivate);
 
-  nsRefPtr<IDBDatabaseSync> database = new IDBDatabaseSync(aCx, workerPrivate);
+  nsRefPtr<IDBDatabaseSync> database = new IDBDatabaseSync(workerPrivate);
 
   database->mFactory = aFactory;
   database->mName = aName;
   database->mVersion = aVersion;
   database->mPersistenceType = aPersistenceType;
+  database->mUpgradeCallback = aUpgradeCallback;
 
-  if (!Wrap(aCx, nullptr, database)) {
-    return nullptr;
-  }
-
-  return database;
+  return database.forget();
 }
 
-IDBDatabaseSync::IDBDatabaseSync(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
-: IDBObjectSyncEventTarget(aCx, aWorkerPrivate), mFactory(nullptr), mVersion(0),
-  mTransaction(nullptr), mUpgradeNeeded(false), mActorChild(nullptr)
-{ }
+IDBDatabaseSync::IDBDatabaseSync(WorkerPrivate* aWorkerPrivate)
+: IDBObjectSyncEventTarget(aWorkerPrivate), mVersion(0),
+  mUpgradeCallback(nullptr), mUpgradeCode(NS_OK)
+{
+  SetIsDOMBinding();
+}
 
 IDBDatabaseSync::~IDBDatabaseSync()
 {
-  MOZ_ASSERT(!mActorChild, "Still have an actor object attached!");
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
+  ReleaseProxy(ObjectIsGoingAway);
+
+  MOZ_ASSERT(!mRooted);
+}
+
+IDBDatabaseSyncProxy*
+IDBDatabaseSync::Proxy()
+{
+  return static_cast<IDBDatabaseSyncProxy*>(mProxy.get());
 }
 
 void
@@ -254,25 +335,19 @@ IDBDatabaseSync::RevertToPreviousState()
 }
 
 void
-IDBDatabaseSync::_trace(JSTracer* aTrc)
+IDBDatabaseSync::DoUpgrade(JSContext* aCx)
 {
-  IDBObjectSyncEventTarget::_trace(aTrc);
-}
+  if (mUpgradeCallback) {
+    ErrorResult rv;
+    mUpgradeCallback->Call(mFactory, *mTransaction, 99, rv);
+    if (rv.Failed()) {
+      mTransaction->Abort(aCx, rv);
+      mUpgradeCode = mTransaction->GetAbortCode();
+    }
+  }
 
-void
-IDBDatabaseSync::_finalize(JSFreeOp* aFop)
-{
-  IDBObjectSyncEventTarget::_finalize(aFop);
-}
-
-void
-IDBDatabaseSync::ReleaseIPCThreadObjects()
-{
-  AssertIsOnIPCThread();
-
-  if (mActorChild) {
-    mActorChild->Send__delete__(mActorChild);
-    MOZ_ASSERT(!mActorChild, "Should have cleared in Send__delete__!");
+  if (!mTransaction->Finish(aCx)) {
+    mUpgradeCode = NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
   }
 }
 
@@ -281,15 +356,32 @@ IDBDatabaseSync::OnVersionChange(uint64_t aOldVersion, uint64_t aNewVersion)
 {
   AssertIsOnIPCThread();
 
-  nsRefPtr<VersionChangeRunnable> runnable =
-    new VersionChangeRunnable(mWorkerPrivate,
-                              mFactory->DeleteDatabaseSyncQueueKey(), this,
-                              aOldVersion, aNewVersion);
+  if (mFactory->DeleteDatabaseSyncQueueKey() != UINT32_MAX) {
+    nsRefPtr<VersionChangeRunnable> runnable =
+      new VersionChangeRunnable(mWorkerPrivate,
+                                mFactory->DeleteDatabaseSyncQueueKey(), this,
+                                aOldVersion, aNewVersion);
+
+    runnable->Dispatch(nullptr);
+  }
+}
+
+void
+IDBDatabaseSync::OnUpgradeNeeded()
+{
+  AssertIsOnIPCThread();
+
+  nsRefPtr<UpgradeNeededRunnable> runnable =
+    new UpgradeNeededRunnable(mWorkerPrivate, mProxy->mSyncQueueKey, this);
 
   runnable->Dispatch(nullptr);
 }
 
-NS_IMPL_ISUPPORTS_INHERITED0(IDBDatabaseSync, IDBObjectSyncEventTarget)
+JSObject*
+IDBDatabaseSync::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
+{
+  return IDBDatabaseSyncBinding_workers::Wrap(aCx, aScope, this);
+}
 
 already_AddRefed<DOMStringList>
 IDBDatabaseSync::GetObjectStoreNames(JSContext* aCx, ErrorResult& aRv)
@@ -303,7 +395,7 @@ IDBDatabaseSync::GetObjectStoreNames(JSContext* aCx, ErrorResult& aRv)
   return list.forget();
 }
 
-IDBObjectStoreSync*
+already_AddRefed<IDBObjectStoreSync>
 IDBDatabaseSync::CreateObjectStore(
                      JSContext* aCx,
                      const nsAString& aName,
@@ -353,7 +445,7 @@ IDBDatabaseSync::CreateObjectStore(
   // Don't leave this in the hash if we fail below!
   AutoRemoveObjectStore autoRemove(mDatabaseInfo, newInfo->name);
 
-  IDBObjectStoreSync* objectStore =
+  nsRefPtr<IDBObjectStoreSync> objectStore =
     mTransaction->GetOrCreateObjectStore(aCx, newInfo, true);
 
   if (!objectStore) {
@@ -363,7 +455,7 @@ IDBDatabaseSync::CreateObjectStore(
   }
 
   autoRemove.forget();
-  return objectStore;
+  return objectStore.forget();
 }
 
 void
@@ -439,7 +531,7 @@ IDBDatabaseSync::Transaction(JSContext* aCx,
 
   // TODO: Timeout
 
-  IDBTransactionSync* trans =
+  nsRefPtr<IDBTransactionSync> trans =
     IDBTransactionSync::Create(aCx, this, aStoreNames, transactionMode);
   if (!trans) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
@@ -451,11 +543,11 @@ IDBDatabaseSync::Transaction(JSContext* aCx,
     return;
   }
 
-  aCallback.Call(this, *trans, aRv);
-  if (aRv.Failed()) {
-    ErrorResult rv;
+  ErrorResult rv;
+  aCallback.Call(this, *trans, rv);
+  if (rv.Failed()) {
     trans->Abort(aCx, rv);
-    return;
+    aRv = trans->GetAbortCode();
   }
 
   if (!trans->Finish(aCx)) {
@@ -481,7 +573,7 @@ IDBDatabaseSync::Close(JSContext* aCx, ErrorResult& aRv)
     }
 
     if (IsOnIPCThread()) {
-      mActorChild->SendClose(false);
+      Proxy()->Actor()->SendClose(false);
     }
     else {
       nsRefPtr<CloseRunnable> runnable =
@@ -497,45 +589,42 @@ IDBDatabaseSync::Close(JSContext* aCx, ErrorResult& aRv)
 }
 
 bool
-IDBDatabaseSync::Open(JSContext* aCx,
-                      IDBVersionChangeCallback* aUpgradeCallback)
+IDBDatabaseSync::Open(JSContext* aCx)
 {
-  Sequence<nsString> storeNames;
-
-  mTransaction = IDBTransactionSync::Create(aCx, this, storeNames,
+  mTransaction = IDBTransactionSync::Create(aCx, this, Sequence<nsString>(),
                                             IDBTransactionBase::VERSION_CHANGE);
   if (!mTransaction) {
     return false;
   }
 
-  DOMBindingAnchor<IDBDatabaseSync> selfAnchor(this);
-  DOMBindingAnchor<IDBFactorySync> factoryAnchor(mFactory);
+  mTransaction->mProxy = new IDBTransactionSyncProxy(mTransaction);
 
+  mProxy = new IDBDatabaseSyncProxy(this);
+
+  Pin();
+
+  AutoUnpin autoUnpin(this);
   AutoSyncLoopHolder syncLoop(mWorkerPrivate);
 
   nsRefPtr<OpenRunnable> runnable =
-    new OpenRunnable(mWorkerPrivate, syncLoop.SyncQueueKey(), mFactory, this);
+    new OpenRunnable(mWorkerPrivate, syncLoop.SyncQueueKey(), this);
 
-  if (!runnable->Dispatch(aCx) || !syncLoop.RunAndForget(aCx)) {
+  if (!runnable->Dispatch(aCx)) {
+    ReleaseProxy();
     return false;
   }
 
-  if (mUpgradeNeeded) {
-    if (aUpgradeCallback) {
-      ErrorResult rv;
-      aUpgradeCallback->Call(mFactory, *mTransaction, 99, rv);
-      if (rv.Failed()) {
-        return false;
-      }
-    }
+  autoUnpin.Forget();
 
-    if (!mTransaction->Finish(aCx)) {
-      return false;
-    }
+  if (!syncLoop.RunAndForget(aCx)) {
+    mTransaction->mInvalid = true;
+    mTransaction = nullptr;
+
+    return false;
   }
 
   mTransaction->mInvalid = true;
   mTransaction = nullptr;
 
-  return true;
+  return NS_SUCCEEDED(mUpgradeCode);
 }

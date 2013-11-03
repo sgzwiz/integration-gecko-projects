@@ -11,14 +11,18 @@
 
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/indexedDB/IDBIndexBase.h"
-#include "DatabaseInfoMT.h"
 
+#include "BlockingHelperBase.h"
+#include "DatabaseInfoMT.h"
 #include "IDBObjectSync.h"
 
 namespace mozilla {
 namespace dom {
 namespace indexedDB {
 struct IndexInfo;
+namespace ipc {
+class IndexRequestParams;
+} // namespace ipc
 } // namespace indexedDB
 } // namespace dom
 } // namespace mozilla
@@ -26,8 +30,18 @@ struct IndexInfo;
 BEGIN_WORKERS_NAMESPACE
 
 class IDBCursorSync;
+class IDBIndexSync;
 class IDBObjectStoreSync;
 class IndexedDBIndexWorkerChild;
+
+class IDBIndexSyncProxy : public IDBObjectSyncProxy<IndexedDBIndexWorkerChild>
+{
+public:
+  IDBIndexSyncProxy(IDBIndexSync* aIndex);
+
+  IDBIndexSync*
+  Index();
+};
 
 class IDBIndexSync MOZ_FINAL : public IDBObjectSync,
                                public indexedDB::IDBIndexBase
@@ -38,16 +52,15 @@ class IDBIndexSync MOZ_FINAL : public IDBObjectSync,
 
 public:
   NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(IDBIndexSync,
+                                                         IDBObjectSync);
 
-  static IDBIndexSync*
+  static already_AddRefed<IDBIndexSync>
   Create(JSContext* aCx, IDBObjectStoreSync* aObjectStore,
          IndexInfo* aIndexInfo);
 
-  virtual void
-  _trace(JSTracer* aTrc) MOZ_OVERRIDE;
-
-  virtual void
-  _finalize(JSFreeOp* aFop) MOZ_OVERRIDE;
+  IDBIndexSyncProxy*
+  Proxy();
 
   const indexedDB::KeyPath&
   GetKeyPath() const
@@ -55,24 +68,16 @@ public:
     return mKeyPath;
   }
 
-  // Methods called on the IPC thread.
-  virtual void
-  ReleaseIPCThreadObjects();
-
-  IndexedDBIndexWorkerChild*
-  GetActor() const
-  {
-    return mActorChild;
-  }
-
-  void
-  SetActor(IndexedDBIndexWorkerChild* aActorChild)
-  {
-    MOZ_ASSERT(!aActorChild || !mActorChild, "Shouldn't have more than one!");
-    mActorChild = aActorChild;
-  }
-
   // WebIDL
+  virtual JSObject*
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
+
+  nsISupports*
+  GetParentObject() const
+  {
+    return nullptr;
+  }
+
   void
   GetName(nsString& aName)
   {
@@ -103,11 +108,11 @@ public:
     return mUnique;
   }
 
-  IDBCursorSync*
+  already_AddRefed<IDBCursorSync>
   OpenCursor(JSContext* aCx, const Optional<JS::Handle<JS::Value> >& aRange,
              IDBCursorDirection aDirection, ErrorResult& aRv);
 
-  IDBCursorSync*
+  already_AddRefed<IDBCursorSync>
   OpenKeyCursor(JSContext* aCx, const Optional<JS::Handle<JS::Value> >& aRange,
                 IDBCursorDirection aDirection, ErrorResult& aRv);
 
@@ -130,16 +135,40 @@ public:
         ErrorResult& aRv);
 
 private:
-  IDBIndexSync(JSContext* aCx, WorkerPrivate* aWorkerPrivate);
+  IDBIndexSync(WorkerPrivate* aWorkerPrivate);
   ~IDBIndexSync();
 
   bool
   Init(JSContext* aCx, IndexInfo* aIndexInfo, bool aCreating);
 
-  IDBObjectStoreSync* mObjectStore;
+  nsRefPtr<IDBObjectStoreSync> mObjectStore;
 
-  // Only touched on the IPC thread.
-  IndexedDBIndexWorkerChild* mActorChild;
+  bool mHoldingJSVal;
+};
+
+class IndexHelper : public BlockingHelperBase
+{
+public:
+  typedef mozilla::dom::indexedDB::ipc::IndexRequestParams IndexRequestParams;
+
+  IndexHelper(WorkerPrivate* aWorkerPrivate, IDBIndexSync* aIndex)
+  : BlockingHelperBase(aWorkerPrivate, aIndex)
+  { }
+
+  IDBIndexSync*
+  Index()
+  {
+    return static_cast<IDBIndexSync*>(mObject.get());
+  }
+
+  virtual nsresult
+  SendConstructor(IndexedDBRequestWorkerChildBase** aActor) MOZ_OVERRIDE;
+
+  virtual nsresult
+  PackArguments(IndexRequestParams& aParams) = 0;
+
+  virtual nsresult
+  UnpackResponse(const ResponseValue& aResponseValue) = 0;
 };
 
 END_WORKERS_NAMESPACE
