@@ -337,9 +337,12 @@ IDBDatabaseSync::RevertToPreviousState()
 void
 IDBDatabaseSync::DoUpgrade(JSContext* aCx)
 {
+  MOZ_ASSERT(mPreviousDatabaseInfo);
+
   if (mUpgradeCallback) {
     ErrorResult rv;
-    mUpgradeCallback->Call(mFactory, *mTransaction, 99, rv);
+    mUpgradeCallback->Call(mFactory, *mTransaction,
+                           mPreviousDatabaseInfo->version, rv);
     if (rv.Failed()) {
       mTransaction->Abort(aCx, rv);
       mUpgradeCode = mTransaction->GetAbortCode();
