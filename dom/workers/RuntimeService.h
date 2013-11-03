@@ -136,6 +136,7 @@ private:
   bool mObserved;
   bool mShuttingDown;
   bool mNavigatorStringsLoaded;
+  bool mIndexedDBSyncEnabled;
 
 public:
   NS_DECL_ISUPPORTS
@@ -187,6 +188,11 @@ public:
   GetNavigatorStrings() const
   {
     return mNavigatorStrings;
+  }
+
+  bool IsIndexedDBSyncEnabled() const
+  {
+    return mIndexedDBSyncEnabled;
   }
 
   void

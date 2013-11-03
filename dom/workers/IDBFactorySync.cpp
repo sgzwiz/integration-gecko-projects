@@ -12,6 +12,7 @@
 
 #include "IDBDatabaseSync.h"
 #include "IPCThreadUtils.h"
+#include "RuntimeService.h"
 #include "WorkerPrivate.h"
 
 #include "ipc/IndexedDBWorkerChild.h"
@@ -221,6 +222,14 @@ IDBFactorySync::Open(JSContext* aCx, const nsAString& aName,
                      const Optional<OwningNonNull<IDBVersionChangeBlockedCallback> >& aUpgradeBlockedCallback,
                      const Optional<uint32_t>& aTimeout, ErrorResult& aRv)
 {
+  RuntimeService* rts = RuntimeService::GetService();
+  MOZ_ASSERT(rts);
+
+  if (!rts->IsIndexedDBSyncEnabled()) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR);
+    return nullptr;
+  }
+
   uint64_t version = 0;
   if (aOptions.mVersion.WasPassed()) {
     if (aOptions.mVersion.Value() < 1) {
@@ -266,6 +275,14 @@ IDBFactorySync::DeleteDatabase(JSContext* aCx, const nsAString& aName,
                                const Optional<OwningNonNull<IDBVersionChangeBlockedCallback> >& aDeleteBlockedCallback,
                                ErrorResult& aRv)
 {
+  RuntimeService* rts = RuntimeService::GetService();
+  MOZ_ASSERT(rts);
+
+  if (!rts->IsIndexedDBSyncEnabled()) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR);
+    return;
+  }
+
   quota::PersistenceType persistenceType =
     quota::PersistenceTypeFromStorage(aOptions.mStorage,
                                       mDefaultPersistenceType);

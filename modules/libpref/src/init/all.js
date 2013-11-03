@@ -91,8 +91,10 @@ pref("browser.cache.compression_level", 0);
 // Whether or not testing features are enabled.
 pref("dom.quotaManager.testing", false);
 
-// Whether or not indexedDB is enabled.
+// Whether or not asynchronous indexedDB is enabled.
 pref("dom.indexedDB.enabled", true);
+// Whether or not synchronous indexedDB is enabled.
+pref("dom.indexedDBSync.enabled", false);
 // Space to allow indexedDB databases before prompting (in MB).
 pref("dom.indexedDB.warningQuota", 50);
 // Whether or not indexedDB experimental features are enabled.

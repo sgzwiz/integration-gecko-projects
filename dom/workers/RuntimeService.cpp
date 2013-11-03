@@ -104,6 +104,8 @@ static_assert(MAX_WORKERS_PER_DOMAIN >= 1,
 #define PREF_MAX_SCRIPT_RUN_TIME_CONTENT "dom.max_script_run_time"
 #define PREF_MAX_SCRIPT_RUN_TIME_CHROME "dom.max_chrome_script_run_time"
 
+#define PREF_INDEXEDDBSYNC_ENABLED "dom.indexedDBSync.enabled"
+
 #define GC_REQUEST_OBSERVER_TOPIC "child-gc-request"
 #define MEMORY_PRESSURE_OBSERVER_TOPIC "memory-pressure"
 
@@ -1130,7 +1132,7 @@ RuntimeService::RuntimeService()
   mIPCThread(nullptr), mIPCMessageLoop(nullptr),
   mIPCMutex("RuntimeService::mIPCMutex"),
   mObserved(false), mShuttingDown(false),
-  mNavigatorStringsLoaded(false)
+  mNavigatorStringsLoaded(false), mIndexedDBSyncEnabled(false)
 {
   AssertIsOnMainThread();
   NS_ASSERTION(!gRuntimeService, "More than one service!");
@@ -1626,6 +1628,12 @@ RuntimeService::Init()
   gMaxWorkersPerDomain = std::max(0, maxPerDomain);
 
   mDetectorName = Preferences::GetLocalizedCString("intl.charset.detector");
+
+  if (NS_FAILED(Preferences::AddBoolVarCache(&mIndexedDBSyncEnabled,
+                                             PREF_INDEXEDDBSYNC_ENABLED,
+                                             false))) {
+    NS_WARNING("Unable to respond to synchronous indexedDB enabled changes!");
+  }
 
   nsCOMPtr<nsIPlatformCharset> platformCharset =
     do_GetService(NS_PLATFORMCHARSET_CONTRACTID, &rv);
