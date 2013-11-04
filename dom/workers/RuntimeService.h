@@ -37,8 +37,8 @@ BEGIN_WORKERS_NAMESPACE
 
 class SharedWorker;
 class WorkerPrivate;
-class WorkerModuleParent;
-class WorkerModuleChild;
+class WorkerPoolParent;
+class WorkerPoolChild;
 
 class RuntimeService MOZ_FINAL : public nsIObserver
 {
@@ -98,6 +98,9 @@ class RuntimeService MOZ_FINAL : public nsIObserver
   // Protected by mMutex.
   nsTArray<IdleThreadInfo> mIdleThreadArray;
 
+  // Protected by mMutex.
+  uint64_t mLastWorkerSerial;
+
   // *Not* protected by mMutex.
   nsClassHashtable<nsPtrHashKey<nsPIDOMWindow>,
                    nsTArray<WorkerPrivate*> > mWindowMap;
@@ -105,20 +108,15 @@ class RuntimeService MOZ_FINAL : public nsIObserver
   // Only used on the main thread.
   nsCOMPtr<nsITimer> mIdleThreadTimer;
 
-  // Only used on the main thread.
-  uint64_t mLastTopLevelWorkerId;
-  nsDataHashtable<nsUint64HashKey, WorkerPrivate*> mTopLevelWorkers;
-
   nsCString mDetectorName;
   nsCString mSystemCharset;
 
   static JSSettings sDefaultJSSettings;
 
-  nsRefPtr<WorkerModuleParent> mWorkerModuleParent;
-  nsRefPtr<WorkerModuleChild> mWorkerModuleChild;
   base::Thread* mIPCThread;
   MessageLoop* mIPCMessageLoop;
-  mozilla::Mutex mIPCMutex;
+  nsRefPtr<WorkerPoolParent> mWorkerPoolParent;
+  nsRefPtr<WorkerPoolChild> mWorkerPoolChild;
 
 public:
   struct NavigatorStrings
@@ -136,6 +134,7 @@ private:
   bool mObserved;
   bool mShuttingDown;
   bool mNavigatorStringsLoaded;
+  bool mIPCInitialized;
   bool mIndexedDBSyncEnabled;
 
 public:
@@ -265,16 +264,8 @@ public:
   void
   GarbageCollectAllWorkers(bool aShrinking);
 
-  static WorkerPrivate*
-  GetTopLevelWorker(uint64_t aTopLevelId)
-  {
-    AssertIsOnMainThread();
-
-    RuntimeService* service = GetService();
-    NS_ASSERTION(service, "Must have a service here!");
-
-    return service->mTopLevelWorkers.Get(aTopLevelId);
-  }
+  bool
+  InitIPC();
 
   static MessageLoop*
   IPCMessageLoop()
@@ -283,24 +274,6 @@ public:
     NS_ASSERTION(service, "Must have a service here!");
 
     return service->mIPCMessageLoop;
-  }
-
-  static Mutex&
-  IPCMutex()
-  {
-    RuntimeService* service = GetService();
-    NS_ASSERTION(service, "Must have a service here!");
-
-    return service->mIPCMutex;
-  }
-
-  static WorkerModuleChild*
-  GetWorkerModuleChild()
-  {
-    RuntimeService* service = GetService();
-    NS_ASSERTION(service, "Must have a service here!");
-
-    return service->mWorkerModuleChild;
   }
 
 private:

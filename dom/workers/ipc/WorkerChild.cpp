@@ -9,7 +9,8 @@
 USING_WORKERS_NAMESPACE
 using namespace mozilla::dom::indexedDB;
 
-WorkerChild::WorkerChild()
+WorkerChild::WorkerChild(uint64_t aSerial)
+: mSerial(aSerial)
 {
   MOZ_COUNT_CTOR(WorkerChild);
 }

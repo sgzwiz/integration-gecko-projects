@@ -79,8 +79,9 @@
 #include "WorkerScope.h"
 
 #include "ipc/WorkerChild.h"
-#include "ipc/WorkerModuleChild.h"
 #include "ipc/WorkerParent.h"
+#include "ipc/WorkerPoolChild.h"
+#include "ipc/WorkerPoolParent.h"
 
 #ifdef CreateFile
 #undef CreateFile
@@ -754,8 +755,8 @@ public:
   {
     AssertIsOnMainThread();
 
-    WorkerParent* workerParent = mFinishedWorker->GetWorkerParent();
-    if (workerParent && !workerParent->Send__delete__(workerParent)) {
+    WorkerParent* actor = mFinishedWorker->GetActorParent();
+    if (actor && !actor->Send__delete__(actor)) {
       NS_WARNING("Failed to send delete!");
     }
 
@@ -1673,6 +1674,86 @@ public:
   }
 };
 
+class InitIPCRunnable : public nsRunnable
+{
+  WorkerPrivate* mWorkerPrivate;
+  uint32_t mSyncQueueKey;
+
+private:
+  class StopSyncloopRunnable : public WorkerSyncRunnable
+  {
+    bool mResult;
+
+  public:
+    StopSyncloopRunnable(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
+                         bool aResult)
+    : WorkerSyncRunnable(aWorkerPrivate, aSyncQueueKey, false), mResult(aResult)
+    {
+      MOZ_ASSERT(aWorkerPrivate, "Don't hand me a null WorkerPrivate!");
+    }
+
+    bool
+    WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
+    {
+      aWorkerPrivate->StopSyncLoop(mSyncQueueKey, mResult);
+      return true;
+    }
+
+    bool
+    PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
+    {
+      AssertIsOnMainThread();
+      return true;
+    }
+
+    void
+    PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
+                 bool aDispatchResult)
+    {
+      AssertIsOnMainThread();
+    }
+  };
+
+public:
+  InitIPCRunnable(WorkerPrivate* aWorker)
+  : mWorkerPrivate(aWorker),
+    mSyncQueueKey(0)
+  {
+    MOZ_ASSERT(aWorker, "WorkerPrivate cannot be null");
+  }
+
+  bool
+  Dispatch(JSContext* aCx)
+  {
+    AutoSyncLoopHolder syncLoop(mWorkerPrivate);
+    mSyncQueueKey = syncLoop.SyncQueueKey();
+
+    if (NS_FAILED(NS_DispatchToMainThread(this, NS_DISPATCH_NORMAL))) {
+      JS_ReportError(aCx, "Failed to dispatch to main thread!");
+      return false;
+    }
+
+    return syncLoop.RunAndForget(aCx);
+  }
+
+  NS_IMETHOD
+  Run()
+  {
+    AssertIsOnMainThread();
+
+    bool result = mWorkerPrivate->GetTopLevelWorker()->InitIPC();
+
+    nsRefPtr<StopSyncloopRunnable> runnable =
+        new StopSyncloopRunnable(mWorkerPrivate, mSyncQueueKey, result);
+
+    if (!runnable->Dispatch(nullptr)) {
+      NS_WARNING("Failed to dispatch response!");
+    }
+
+    return NS_OK;
+  }
+};
+
 } /* anonymous namespace */
 
 #ifdef DEBUG
@@ -2106,12 +2187,11 @@ WorkerPrivateParent<Derived>::WorkerPrivateParent(
 : mMutex("WorkerPrivateParent Mutex"),
   mCondVar(mMutex, "WorkerPrivateParent CondVar"),
   mMemoryReportCondVar(mMutex, "WorkerPrivateParent Memory Report CondVar"),
-  mTopLevelId(0), mParent(aParent), mScriptURL(aScriptURL),
+  mSerial(0), mParent(aParent), mScriptURL(aScriptURL),
   mSharedWorkerName(aSharedWorkerName), mBusyCount(0), mMessagePortSerial(0),
   mParentStatus(Pending), mRooted(false), mParentSuspended(false),
   mIsChromeWorker(aIsChromeWorker), mMainThreadObjectsForgotten(false),
-  mIsSharedWorker(aIsSharedWorker), mWorkerParent(nullptr),
-  mWorkerChild(nullptr)
+  mIsSharedWorker(aIsSharedWorker), mActorParent(nullptr), mActorChild(nullptr)
 {
   SetIsDOMBinding();
 
@@ -3287,6 +3367,21 @@ WorkerPrivateParent<Derived>::SetPrincipal(nsIPrincipal* aPrincipal)
 }
 
 template <class Derived>
+WorkerPrivate*
+WorkerPrivateParent<Derived>::GetTopLevelWorker()
+{
+  WorkerPrivate* topLevelWorker = nullptr;
+
+  WorkerPrivate* worker = ParentAsWorkerPrivate();
+  while (worker) {
+    topLevelWorker = worker;
+    worker = worker->mParent;
+  }
+
+  return topLevelWorker;
+}
+
+template <class Derived>
 JSContext*
 WorkerPrivateParent<Derived>::ParentJSContext() const
 {
@@ -3304,28 +3399,48 @@ WorkerPrivateParent<Derived>::ParentJSContext() const
 }
 
 template <class Derived>
+bool
+WorkerPrivateParent<Derived>::InitIPC()
+{
+  AssertIsOnMainThread();
+
+  MOZ_ASSERT(!mParent, "Should have called GetTopLevelWorker!");
+
+  if (mActorParent) {
+    return true;
+  }
+
+  RuntimeService* rts = RuntimeService::GetService();
+  MOZ_ASSERT(rts, "Must have a service here!");
+
+  if (!rts->InitIPC()) {
+    return false;
+  }
+
+  MOZ_ASSERT(WorkerPoolParent::GetSingleton());
+
+  WorkerParent* actor = new WorkerParent();
+  if (!WorkerPoolParent::GetSingleton()->SendPWorkerConstructor(actor,
+                                                                mSerial)) {
+    return false;
+  }
+
+  actor->SetWorkerPrivate(ParentAsWorkerPrivate());
+
+  return true;
+}
+
+template <class Derived>
 WorkerChild*
-WorkerPrivateParent<Derived>::GetWorkerChild()
+WorkerPrivateParent<Derived>::GetActorChild() const
 {
   AssertIsOnIPCThread();
 
-  if (GetParent()) {
-    return GetParent()->GetWorkerChild();
-  }
+  MOZ_ASSERT(!mParent, "Should have called GetTopLevelWorker!");
 
-  if (!mWorkerChild) {
-    WorkerModuleChild* workerModuleChild =
-      RuntimeService::GetWorkerModuleChild();
+  MOZ_ASSERT(WorkerPoolChild::GetSingleton());
 
-    WorkerChild* workerChild = new WorkerChild();
-
-    WorkerHandle handle(mTopLevelId);
-    workerModuleChild->SendPWorkerConstructor(workerChild, handle);
-
-    mWorkerChild = workerChild;
-  }
-
-  return mWorkerChild;
+  return WorkerPoolChild::GetSingleton()->GetActorForSerial(mSerial);
 }
 
 WorkerPrivate::WorkerPrivate(JSContext* aCx,
@@ -5462,6 +5577,21 @@ WorkerPrivate::AssertIsOnWorkerThread() const
   MOZ_ASSERT(current, "Wrong thread!");
 }
 #endif // DEBUG
+
+bool
+WorkerPrivate::InitIPCFromWorker(JSContext* aCx)
+{
+  AssertIsOnWorkerThread();
+
+  nsRefPtr<InitIPCRunnable> runnable = new InitIPCRunnable(this);
+
+  if (!runnable->Dispatch(aCx)) {
+    JS_ReportPendingException(aCx);
+    return false;
+  }
+
+  return true;
+}
 
 BEGIN_WORKERS_NAMESPACE
 

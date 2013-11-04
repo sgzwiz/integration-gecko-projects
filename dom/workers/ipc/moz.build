@@ -5,21 +5,17 @@
 
 MODULE = 'dom'
 
-EXPORTS.mozilla.dom.workers += [
-    'SerializationHelpers.h',
-]
-
 SOURCES += [
     'IndexedDBWorkerChild.cpp',
     'WorkerChild.cpp',
-    'WorkerModuleChild.cpp',
-    'WorkerModuleParent.cpp',
     'WorkerParent.cpp',
+    'WorkerPoolChild.cpp',
+    'WorkerPoolParent.cpp',
 ]
 
 IPDL_SOURCES += [
     'PWorker.ipdl',
-    'PWorkerModule.ipdl',
+    'PWorkerPool.ipdl',
 ]
 
 LIBRARY_NAME = 'domworkersipc_s'

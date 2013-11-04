@@ -57,8 +57,8 @@
 #include "ipc/Nuwa.h"
 #endif
 
-#include "ipc/WorkerModuleParent.h"
-#include "ipc/WorkerModuleChild.h"
+#include "ipc/WorkerPoolParent.h"
+#include "ipc/WorkerPoolChild.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -1128,11 +1128,11 @@ END_WORKERS_NAMESPACE
 JSSettings RuntimeService::sDefaultJSSettings;
 
 RuntimeService::RuntimeService()
-: mMutex("RuntimeService::mMutex"), mLastTopLevelWorkerId(0),
+: mMutex("RuntimeService::mMutex"), mLastWorkerSerial(0),
   mIPCThread(nullptr), mIPCMessageLoop(nullptr),
-  mIPCMutex("RuntimeService::mIPCMutex"),
   mObserved(false), mShuttingDown(false),
-  mNavigatorStringsLoaded(false), mIndexedDBSyncEnabled(false)
+  mNavigatorStringsLoaded(false), mIPCInitialized(false),
+  mIndexedDBSyncEnabled(false)
 {
   AssertIsOnMainThread();
   NS_ASSERTION(!gRuntimeService, "More than one service!");
@@ -1251,6 +1251,8 @@ RuntimeService::RegisterWorker(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
       domainInfo->mSharedWorkerInfos.Put(sharedWorkerScriptSpec,
                                          sharedWorkerInfo);
     }
+
+    aWorkerPrivate->SetSerial(++mLastWorkerSerial);
   }
 
   // From here on out we must call UnregisterWorker if something fails!
@@ -1287,9 +1289,6 @@ RuntimeService::RegisterWorker(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
     } else {
       MOZ_ASSERT(aWorkerPrivate->IsSharedWorker());
     }
-
-    aWorkerPrivate->SetTopLevelId(mLastTopLevelWorkerId++);
-    mTopLevelWorkers.Put(aWorkerPrivate->GetTopLevelId(), aWorkerPrivate);
   }
 
   if (!queued && !ScheduleWorker(aCx, aWorkerPrivate)) {
@@ -1402,8 +1401,6 @@ RuntimeService::UnregisterWorker(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
       MOZ_ASSERT(!queuedWorker, "queuedWorker should be in this array!");
       mWindowMap.Remove(window);
     }
-
-    mTopLevelWorkers.Remove(aWorkerPrivate->GetTopLevelId());
   }
 
   if (queuedWorker && !ScheduleWorker(aCx, queuedWorker)) {
@@ -1647,22 +1644,6 @@ RuntimeService::Init()
     return rv;
   }
 
-  mIPCThread = new base::Thread("WorkersIPCThread");
-  if (!mIPCThread->Start()) {
-    return NS_ERROR_FAILURE;
-  }
-
-  mIPCMessageLoop = mIPCThread->message_loop();
-
-  mWorkerModuleParent = new WorkerModuleParent();
-
-  mWorkerModuleChild = new WorkerModuleChild();
-
-  if (!mWorkerModuleParent->Open(mWorkerModuleChild->GetIPCChannel(),
-                                 mIPCMessageLoop, ipc::ParentSide)) {
-    return NS_ERROR_FAILURE;
-  }
-
   return NS_OK;
 }
 
@@ -1828,7 +1809,9 @@ RuntimeService::Cleanup()
 
   CleanupOSFileConstants();
 
-  mIPCThread->Stop();
+  if (mIPCThread) {
+    mIPCThread->Stop();
+  }
 
   nsLayoutStatics::Release();
 }
@@ -2185,6 +2168,36 @@ void
 RuntimeService::GarbageCollectAllWorkers(bool aShrinking)
 {
   BROADCAST_ALL_WORKERS(GarbageCollect, aShrinking);
+}
+
+bool
+RuntimeService::InitIPC()
+{
+  AssertIsOnMainThread();
+
+  if (mIPCInitialized) {
+    return true;
+  }
+
+  mIPCThread = new base::Thread("WorkersIPCThread");
+  if (!mIPCThread->Start()) {
+    return false;
+  }
+
+  mIPCMessageLoop = mIPCThread->message_loop();
+
+  mWorkerPoolParent = WorkerPoolParent::CreateSingleton();
+
+  mWorkerPoolChild = WorkerPoolChild::CreateSingleton();
+
+  if (!mWorkerPoolParent->Open(mWorkerPoolChild->GetIPCChannel(),
+                               mIPCMessageLoop, ipc::ParentSide)) {
+    return false;
+  }
+
+  mIPCInitialized = true;
+
+  return true;
 }
 
 // nsISupports

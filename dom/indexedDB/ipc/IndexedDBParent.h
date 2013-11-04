@@ -194,6 +194,12 @@ public:
     return mManagerTab;
   }
 
+  workers::WorkerParent*
+  GetManagerWorker() const
+  {
+    return mManagerWorker;
+  }
+
   bool
   CheckReadPermission(const nsAString& aDatabaseName);
 

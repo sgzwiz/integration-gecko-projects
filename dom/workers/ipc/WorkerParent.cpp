@@ -29,15 +29,15 @@ WorkerParent::SetWorkerPrivate(WorkerPrivate* aWorkerPrivate)
 {
   MOZ_ASSERT(aWorkerPrivate);
 
-  aWorkerPrivate->SetWorkerParent(this);
-  mWorkerPrivate= aWorkerPrivate;
+  aWorkerPrivate->SetActor(this);
+  mWorkerPrivate = aWorkerPrivate;
 }
 
 void
 WorkerParent::ActorDestroy(ActorDestroyReason aWhy)
 {
   if (mWorkerPrivate) {
-    mWorkerPrivate->SetWorkerParent(static_cast<WorkerParent*>(NULL));
+    mWorkerPrivate->SetActor(static_cast<WorkerParent*>(NULL));
 #ifdef DEBUG
     mWorkerPrivate = NULL;
 #endif

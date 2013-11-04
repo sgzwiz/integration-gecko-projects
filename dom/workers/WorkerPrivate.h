@@ -311,7 +311,7 @@ protected:
   mozilla::CondVar mMemoryReportCondVar;
 
 private:
-  uint64_t mTopLevelId;
+  uint64_t mSerial;
   WorkerPrivate* mParent;
   nsString mScriptURL;
   nsString mSharedWorkerName;
@@ -346,8 +346,8 @@ private:
   bool mMainThreadObjectsForgotten;
   bool mIsSharedWorker;
 
-  WorkerParent* mWorkerParent;
-  WorkerChild* mWorkerChild;
+  WorkerParent* mActorParent;
+  WorkerChild* mActorChild;
 
 protected:
   WorkerPrivateParent(JSContext* aCx, WorkerPrivate* aParent,
@@ -390,16 +390,10 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(WorkerPrivateParent,
                                                          nsDOMEventTargetHelper)
 
-  int64_t
-  GetTopLevelId() const
-  {
-    return mTopLevelId;
-  }
-
   void
-  SetTopLevelId(uint64_t aTopLevelId)
+  SetSerial(uint64_t aSerial)
   {
-    mTopLevelId = aTopLevelId;
+    mSerial = aSerial;
   }
 
   // May be called on any thread...
@@ -538,6 +532,9 @@ public:
   {
     return mParent;
   }
+
+  WorkerPrivate*
+  GetTopLevelWorker();
 
   bool
   IsSuspended() const
@@ -775,22 +772,24 @@ public:
   { }
 #endif
 
+  bool
+  InitIPC();
+
   void
-  SetWorkerParent(WorkerParent* aWorkerParent)
+  SetActor(WorkerParent* aActorParent)
   {
-    NS_ASSERTION(!aWorkerParent || !mWorkerParent,
-                 "Shouldn't have more than one!");
-    mWorkerParent = aWorkerParent;
+    MOZ_ASSERT(!aActorParent || !mActorParent, "Shouldn't have more than one!");
+    mActorParent = aActorParent;
   }
 
   WorkerParent*
-  GetWorkerParent() const
+  GetActorParent() const
   {
-    return mWorkerParent;
+    return mActorParent;
   }
 
   WorkerChild*
-  GetWorkerChild();
+  GetActorChild() const;
 };
 
 class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
@@ -1124,6 +1123,9 @@ public:
 
   bool
   RegisterBindings(JSContext* aCx, JS::Handle<JSObject*> aGlobal);
+
+  bool
+  InitIPCFromWorker(JSContext* aCx);
 
 private:
   WorkerPrivate(JSContext* aCx, WorkerPrivate* aParent,

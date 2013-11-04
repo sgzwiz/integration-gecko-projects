@@ -48,11 +48,13 @@ protected:
     MOZ_ASSERT(proxy->mSyncQueueKey, "Should be unset!");
     proxy->mSyncQueueKey = mSyncQueueKey;
 
+    WorkerChild* workerActor =
+      mWorkerPrivate->GetTopLevelWorker()->GetActorChild();
+    MOZ_ASSERT(workerActor);
+
     IndexedDBWorkerChild* actor = new IndexedDBWorkerChild();
-    mWorkerPrivate->GetWorkerChild()->SendPIndexedDBConstructor(
-                                                    actor,
-                                                    mFactory->GetGroup(),
-                                                    mFactory->GetASCIIOrigin());
+    workerActor->SendPIndexedDBConstructor(actor, mFactory->GetGroup(),
+                                           mFactory->GetASCIIOrigin());
     actor->SetFactoryProxy(proxy);
 
     proxy->mExpectingResponse = true;
@@ -137,6 +139,8 @@ IDBFactorySync::Create(JSContext* aCx, JSObject* aGlobal)
   factory->mGroup = workerPrivate->Group();
   factory->mASCIIOrigin = workerPrivate->Origin();
   factory->mDefaultPersistenceType = workerPrivate->DefaultPersistenceType();
+
+  workerPrivate->InitIPCFromWorker(aCx);
 
   factory->mProxy = new IDBFactorySyncProxy(factory);
 

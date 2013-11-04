@@ -14,10 +14,16 @@ BEGIN_WORKERS_NAMESPACE
 class WorkerChild : public PWorkerChild
 {
 public:
-  WorkerChild();
+  WorkerChild(uint64_t aSerial);
   virtual ~WorkerChild();
 
   NS_INLINE_DECL_REFCOUNTING(WorkerChild)
+
+  uint64_t
+  Serial() const
+  {
+    return mSerial;
+  }
 
 private:
   virtual PIndexedDBChild*
@@ -26,6 +32,8 @@ private:
 
   virtual bool
   DeallocPIndexedDBChild(PIndexedDBChild* aActor) MOZ_OVERRIDE;
+
+  uint64_t mSerial;
 };
 
 END_WORKERS_NAMESPACE

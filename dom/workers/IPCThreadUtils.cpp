@@ -158,6 +158,8 @@ UnblockWorkerThreadRunnable::Run()
 bool
 mozilla::dom::workers::IsOnIPCThread()
 {
+  MOZ_ASSERT(RuntimeService::IPCMessageLoop(), "IPC not yet initialized!");
+
   return MessageLoop::current() == RuntimeService::IPCMessageLoop();
 }
 

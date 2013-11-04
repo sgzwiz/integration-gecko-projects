@@ -4,22 +4,19 @@
 
 include protocol PWorker;
 
-include "mozilla/dom/workers/SerializationHelpers.h";
-
-using mozilla::dom::workers::WorkerHandle;
-
 namespace mozilla {
 namespace dom {
 namespace workers {
 
-// This should really be "async", but we're using "rpc" as a workaround
-// for bug 716631.
-rpc protocol PWorkerModule
+/* This protocol is used for in-process communication between the main thread
+ * and the IPC thread.
+ */
+protocol PWorkerPool
 {
     manages PWorker;
 
-parent:
-    PWorker(WorkerHandle handle);
+child:
+    PWorker(uint64_t serial);
 };
 
 } // namespace workers

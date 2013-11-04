@@ -16,7 +16,6 @@ EXPORTS.mozilla.dom += [
 ]
 
 EXPORTS.mozilla.dom.workers += [
-    'WorkerHandle.h',
     'Workers.h',
 ]
 
