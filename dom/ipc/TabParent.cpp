@@ -10,6 +10,7 @@
 
 #include "IDBFactory.h"
 #include "IndexedDBParent.h"
+#include "WorkerParent.h"
 #include "mozIApplication.h"
 #include "mozilla/BrowserElementParent.h"
 #include "mozilla/docshell/OfflineCacheUpdateParent.h"
@@ -66,6 +67,7 @@ using namespace mozilla::layout;
 using namespace mozilla::services;
 using namespace mozilla::widget;
 using namespace mozilla::dom::indexedDB;
+using namespace mozilla::dom::workers;
 using namespace mozilla::jsipc;
 
 // The flags passed by the webProgress notifications are 16 bits shifted
@@ -1319,6 +1321,19 @@ TabParent::RecvPIndexedDBConstructor(PIndexedDBParent* aActor,
   actor->mASCIIOrigin = aASCIIOrigin;
 
   *aAllowed = true;
+  return true;
+}
+
+PWorkerParent*
+TabParent::AllocPWorkerParent()
+{
+  return new WorkerParent(this);
+}
+
+bool
+TabParent::DeallocPWorkerParent(PWorkerParent* aActor)
+{
+  delete aActor;
   return true;
 }
 

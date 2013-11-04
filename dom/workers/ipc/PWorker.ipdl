@@ -2,8 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-include protocol PWorkerPool;
+include protocol PBrowser;
 include protocol PIndexedDB;
+include protocol PWorkerPool;
 
 namespace mozilla {
 namespace dom {
@@ -11,14 +12,14 @@ namespace workers {
 
 protocol PWorker
 {
-    manager PWorkerPool;
+    manager PWorkerPool or PBrowser;
 
     manages PIndexedDB;
 
 parent:
     PIndexedDB(nsCString group, nsCString asciiOrigin);
 
-child:
+both:
     __delete__();
 };
 

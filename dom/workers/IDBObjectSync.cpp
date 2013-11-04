@@ -19,13 +19,11 @@ using namespace mozilla::dom::indexedDB;
 
 namespace {
 
-class AsyncTeardownRunnable
+class AsyncTeardownRunnable : public nsRunnable
 {
   nsRefPtr<IDBObjectSyncProxyBase> mProxy;
 
 public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(AsyncTeardownRunnable2)
-
   AsyncTeardownRunnable(IDBObjectSyncProxyBase* aProxy)
   {
     mProxy = aProxy;
@@ -35,19 +33,29 @@ public:
   bool
   Dispatch()
   {
-    MessageLoop* ipcLoop = RuntimeService::IPCMessageLoop();
-    ipcLoop->PostTask(FROM_HERE,
-                      NewRunnableMethod(this, &AsyncTeardownRunnable::Run));
+    if (RuntimeService::IsMainProcess()) {
+      MessageLoop* ipcLoop = RuntimeService::IPCMessageLoop();
+      ipcLoop->PostTask(FROM_HERE,
+                        NewRunnableMethod(this, &AsyncTeardownRunnable::Run));
+    }
+    else {
+      if (NS_FAILED(NS_DispatchToMainThread(this, NS_DISPATCH_NORMAL))) {
+        return false;
+      }
+    }
+
     return true;
   }
 
-private:
-  void
-  Run() {
+  NS_IMETHOD
+  Run()
+  {
     AssertIsOnIPCThread();
 
     mProxy->Teardown();
     mProxy = nullptr;
+
+    return NS_OK;
   }
 };
 

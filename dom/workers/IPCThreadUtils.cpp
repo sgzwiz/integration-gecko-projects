@@ -84,14 +84,21 @@ BlockWorkerThreadRunnable::Dispatch(JSContext* aCx)
   AutoSyncLoopHolder syncLoop(mWorkerPrivate);
   mSyncQueueKey = syncLoop.SyncQueueKey();
 
-  MessageLoop* ipcLoop = RuntimeService::IPCMessageLoop();
-  ipcLoop->PostTask(FROM_HERE,
-                    NewRunnableMethod(this, &BlockWorkerThreadRunnable::Run));
+  if (RuntimeService::IsMainProcess()) {
+    MessageLoop* ipcLoop = RuntimeService::IPCMessageLoop();
+    ipcLoop->PostTask(FROM_HERE,
+                      NewRunnableMethod(this, &BlockWorkerThreadRunnable::Run));
+  }
+  else {
+    if (NS_FAILED(NS_DispatchToMainThread(this, NS_DISPATCH_NORMAL))) {
+      return false;
+    }
+  }
 
   return syncLoop.RunAndForget(aCx);
 }
 
-void
+NS_IMETHODIMP
 BlockWorkerThreadRunnable::Run()
 {
   AssertIsOnIPCThread();
@@ -104,7 +111,10 @@ BlockWorkerThreadRunnable::Run()
 
   if (!runnable->Dispatch(nullptr)) {
     NS_WARNING("Failed to dispatch runnable!");
+    return NS_ERROR_FAILURE;
   }
+
+  return NS_OK;
 }
 
 UnblockWorkerThreadRunnable::UnblockWorkerThreadRunnable(
@@ -128,14 +138,21 @@ UnblockWorkerThreadRunnable::Dispatch()
 {
   AssertIsOnIPCThread();
 
-  MessageLoop* ipcLoop = RuntimeService::IPCMessageLoop();
-  ipcLoop->PostTask(FROM_HERE,
-                    NewRunnableMethod(this, &UnblockWorkerThreadRunnable::Run));
+  if (RuntimeService::IsMainProcess()) {
+    MessageLoop* ipcLoop = RuntimeService::IPCMessageLoop();
+    ipcLoop->PostTask(FROM_HERE,
+                      NewRunnableMethod(this, &UnblockWorkerThreadRunnable::Run));
+  }
+  else {
+    if (NS_FAILED(NS_DispatchToMainThread(this, NS_DISPATCH_NORMAL))) {
+      return false;
+    }
+  }
 
   return true;
 }
 
-void
+NS_IMETHODIMP
 UnblockWorkerThreadRunnable::Run()
 {
   AssertIsOnIPCThread();
@@ -147,20 +164,26 @@ UnblockWorkerThreadRunnable::Run()
 
   if (!runnable->Dispatch(nullptr)) {
     NS_WARNING("Failed to dispatch runnable!");
-    return;
+    return NS_ERROR_FAILURE;
   }
 
   if (mListener) {
     mListener->OnUnblockRequested();
   }
+
+  return NS_OK;
 }
 
 bool
 mozilla::dom::workers::IsOnIPCThread()
 {
-  MOZ_ASSERT(RuntimeService::IPCMessageLoop(), "IPC not yet initialized!");
+  if (RuntimeService::IsMainProcess()) {
+    MOZ_ASSERT(RuntimeService::IPCMessageLoop(), "IPC not yet initialized!");
 
-  return MessageLoop::current() == RuntimeService::IPCMessageLoop();
+    return MessageLoop::current() == RuntimeService::IPCMessageLoop();
+  }
+
+  return NS_IsMainThread();
 }
 
 void

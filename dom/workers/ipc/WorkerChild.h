@@ -14,10 +14,14 @@ BEGIN_WORKERS_NAMESPACE
 class WorkerChild : public PWorkerChild
 {
 public:
+  WorkerChild();
+
   WorkerChild(uint64_t aSerial);
+
   virtual ~WorkerChild();
 
-  NS_INLINE_DECL_REFCOUNTING(WorkerChild)
+  void
+  SetWorkerPrivate(WorkerPrivate* aWorker);
 
   uint64_t
   Serial() const
@@ -26,12 +30,17 @@ public:
   }
 
 private:
+  virtual void
+  ActorDestroy(ActorDestroyReason aWhy) MOZ_OVERRIDE;
+
   virtual PIndexedDBChild*
   AllocPIndexedDBChild(const nsCString& aGroup,
                        const nsCString& aASCIIOrigin) MOZ_OVERRIDE;
 
   virtual bool
   DeallocPIndexedDBChild(PIndexedDBChild* aActor) MOZ_OVERRIDE;
+
+  WorkerPrivate* mWorkerPrivate;
 
   uint64_t mSerial;
 };

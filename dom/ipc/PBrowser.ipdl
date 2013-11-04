@@ -13,6 +13,7 @@ include protocol PContentPermissionRequest;
 include protocol PRenderFrame;
 include protocol POfflineCacheUpdate;
 include protocol PIndexedDB;
+include protocol PWorker;
 include DOMTypes;
 include JavaScriptTypes;
 include URIParams;
@@ -67,6 +68,7 @@ intr protocol PBrowser
     manages PRenderFrame;
     manages POfflineCacheUpdate;
     manages PIndexedDB;
+    manages PWorker;
 
 both:
     AsyncMessage(nsString aMessage, ClonedMessageData aData, CpowEntry[] aCpows);
@@ -259,6 +261,8 @@ parent:
 
     sync PIndexedDB(nsCString group, nsCString asciiOrigin)
         returns (bool allowed);
+
+    PWorker();
 
     /**
      * window.open from inside <iframe mozbrowser> is special.  When the child

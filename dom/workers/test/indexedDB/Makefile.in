@@ -10,6 +10,7 @@ VPATH            = @srcdir@
 include $(DEPTH)/config/autoconf.mk
 
 MOCHITEST_FILES = \
+  disable_in_child_processes.js \
   helpers.js \
   helpers_worker.js \
   put_get_values_worker.js \

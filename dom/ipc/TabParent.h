@@ -272,6 +272,10 @@ protected:
                               const nsCString& aASCIIOrigin,
                               bool* aAllowed);
 
+    virtual PWorkerParent* AllocPWorkerParent();
+
+    virtual bool DeallocPWorkerParent(PWorkerParent* aActor);
+
     Element* mFrameElement;
     nsCOMPtr<nsIBrowserDOMWindow> mBrowserDOMWindow;
 

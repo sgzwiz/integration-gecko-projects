@@ -9,15 +9,15 @@
 
 #include "Workers.h"
 
+#include "nsThreadUtils.h"
+
 BEGIN_WORKERS_NAMESPACE
 
 class WorkerPrivate;
 
-class BlockWorkerThreadRunnable
+class BlockWorkerThreadRunnable : public nsRunnable
 {
 public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(BlockWorkerThreadRunnable)
-
   BlockWorkerThreadRunnable(WorkerPrivate* aWorkerPrivate);
 
   virtual ~BlockWorkerThreadRunnable()
@@ -26,6 +26,9 @@ public:
   bool
   Dispatch(JSContext* aCx);
 
+  NS_IMETHOD
+  Run();
+
 protected:
   virtual nsresult
   IPCThreadRun() = 0;
@@ -33,9 +36,6 @@ protected:
   WorkerPrivate* mWorkerPrivate;
 
 private:
-  void
-  Run();
-
   uint32_t mSyncQueueKey;
 };
 
@@ -55,11 +55,9 @@ public:
   OnUnblockPerformed(WorkerPrivate* aWorkerPrivate) = 0;
 };
 
-class UnblockWorkerThreadRunnable
+class UnblockWorkerThreadRunnable : public nsRunnable
 {
 public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(UnblockWorkerThreadRunnable)
-
   UnblockWorkerThreadRunnable(WorkerPrivate* aWorkerPrivate,
                               uint32_t aSyncQueueKey,
                               nsresult aErrorCode,
@@ -67,19 +65,19 @@ public:
 
   ~UnblockWorkerThreadRunnable();
 
-  void
+  nsresult
   RunImmediatelly()
   {
-    this->Run();
+    return this->Run();
   }
 
   bool
   Dispatch();
 
-private:
-  void
+  NS_IMETHOD
   Run();
 
+private:
   WorkerPrivate* mWorkerPrivate;
   uint32_t mSyncQueueKey;
   nsresult mErrorCode;

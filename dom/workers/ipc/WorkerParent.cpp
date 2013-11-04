@@ -4,17 +4,26 @@
 
 #include "WorkerParent.h"
 
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/indexedDB/IDBFactory.h"
-#include "mozilla/dom/indexedDB/IndexedDatabaseManager.h"
 #include "mozilla/dom/indexedDB/IndexedDBParent.h"
+#include "mozilla/dom/TabParent.h"
 
+#include "RuntimeService.h"
 #include "WorkerPrivate.h"
 
 USING_WORKERS_NAMESPACE
 using namespace mozilla::dom::indexedDB;
 
-WorkerParent::WorkerParent()
-: mWorkerPrivate(NULL)
+WorkerParent::WorkerParent(WorkerPoolParent* aWorkerPoolParent)
+: mManagerWorkerPool(aWorkerPoolParent), mManagerTab(nullptr),
+  mWorkerPrivate(nullptr)
+{
+  MOZ_COUNT_CTOR(WorkerParent);
+}
+
+WorkerParent::WorkerParent(TabParent* aTabParent)
+: mManagerWorkerPool(nullptr), mManagerTab(aTabParent), mWorkerPrivate(NULL)
 {
   MOZ_COUNT_CTOR(WorkerParent);
 }
@@ -65,13 +74,7 @@ WorkerParent::RecvPIndexedDBConstructor(PIndexedDBParent* aActor,
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  nsRefPtr<IndexedDatabaseManager> mgr = IndexedDatabaseManager::GetOrCreate();
-  if (!mgr) {
-    NS_WARNING("Failed to get manager!");
-    return aActor->SendResponse(false);
-  }
-
-  if (!IndexedDatabaseManager::IsMainProcess()) {
+  if (!RuntimeService::IsMainProcess()) {
     NS_RUNTIMEABORT("Not supported yet!");
   }
 
@@ -80,18 +83,53 @@ WorkerParent::RecvPIndexedDBConstructor(PIndexedDBParent* aActor,
   nsresult rv;
 
   nsRefPtr<IDBFactory> factory;
-  if (mWorkerPrivate->IsSharedWorker()) {
-    rv = IDBFactory::Create(aGroup, aASCIIOrigin, nullptr,
+  if (mManagerWorkerPool) {
+    if (mWorkerPrivate->IsSharedWorker()) {
+      rv = IDBFactory::Create(aGroup, aASCIIOrigin, nullptr,
+                              getter_AddRefs(factory));
+    }
+    else {
+      nsCOMPtr<nsPIDOMWindow> window = mWorkerPrivate->GetWindow();
+      if (!window) {
+        NS_WARNING("Failed to get window!");
+        return aActor->SendResponse(false);
+      }
+
+      rv = IDBFactory::Create(window, aGroup, aASCIIOrigin, nullptr,
                             getter_AddRefs(factory));
+    }
   }
   else {
-    nsCOMPtr<nsPIDOMWindow> window = mWorkerPrivate->GetWindow();
-    if (!window) {
-      NS_WARNING("Failed to get window!");
+    nsCOMPtr<nsINode> node =
+      do_QueryInterface(mManagerTab->GetOwnerElement());
+    if (!node) {
+      NS_WARNING("Failed to get owner node!");
       return aActor->SendResponse(false);
     }
 
-    rv = IDBFactory::Create(window, aGroup, aASCIIOrigin, nullptr,
+    nsIDocument* doc = node->GetOwnerDocument();
+    if (!doc) {
+      NS_WARNING("Failed to get owner document!");
+      return aActor->SendResponse(false);
+    }
+
+    nsCOMPtr<nsPIDOMWindow> window = doc->GetInnerWindow();
+    if (!doc) {
+      NS_WARNING("Failed to get inner window!");
+      return aActor->SendResponse(false);
+    }
+
+    // Let's do a current inner check to see if the inner is active or is in
+    // bf cache, and bail out if it's not active.
+    nsCOMPtr<nsPIDOMWindow> outer = doc->GetWindow();
+    if (!outer || outer->GetCurrentInnerWindow() != window) {
+      return aActor->SendResponse(false);
+    }
+
+    ContentParent* contentParent = mManagerTab->Manager();
+    MOZ_ASSERT(contentParent, "Null manager of manager?!");
+
+    rv = IDBFactory::Create(window, aGroup, aASCIIOrigin, contentParent,
                             getter_AddRefs(factory));
   }
 

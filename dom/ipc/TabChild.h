@@ -377,6 +377,10 @@ protected:
 
     virtual bool DeallocPIndexedDBChild(PIndexedDBChild* aActor);
 
+    virtual PWorkerChild* AllocPWorkerChild();
+
+    virtual bool DeallocPWorkerChild(PWorkerChild* aActor);
+
 private:
     /**
      * Create a new TabChild object.

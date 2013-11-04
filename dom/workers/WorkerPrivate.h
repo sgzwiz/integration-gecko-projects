@@ -782,6 +782,13 @@ public:
     mActorParent = aActorParent;
   }
 
+  void
+  SetActor(WorkerChild* aActorChild)
+  {
+    MOZ_ASSERT(!aActorChild || !mActorChild, "Shouldn't have more than one!");
+    mActorChild = aActorChild;
+  }
+
   WorkerParent*
   GetActorParent() const
   {

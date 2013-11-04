@@ -9,17 +9,37 @@
 
 #include "mozilla/dom/workers/PWorkerParent.h"
 
+namespace mozilla {
+namespace dom {
+class TabParent;
+} // namespace dom
+} // namespace mozilla
+
 BEGIN_WORKERS_NAMESPACE
 
+class WorkerPoolParent;
 class WorkerPrivate;
 
 class WorkerParent : public PWorkerParent
 {
 public:
-  WorkerParent();
+  WorkerParent(WorkerPoolParent* aWorkerPoolParent);
+
+  WorkerParent(TabParent* aTabParent);
+
   virtual ~WorkerParent();
 
-  NS_INLINE_DECL_REFCOUNTING(WorkerParent)
+  WorkerPoolParent*
+  ManagerWorkerPool() const
+  {
+    return mManagerWorkerPool;
+  }
+
+  TabParent*
+  ManagerTab() const
+  {
+    return mManagerTab;
+  }
 
   void
   SetWorkerPrivate(WorkerPrivate* aWorker);
@@ -39,6 +59,9 @@ private:
   RecvPIndexedDBConstructor(PIndexedDBParent* aActor,
                             const nsCString& aGroup,
                             const nsCString& aASCIIOrigin) MOZ_OVERRIDE;
+
+  WorkerPoolParent* mManagerWorkerPool;
+  TabParent* mManagerTab;
 
   WorkerPrivate* mWorkerPrivate;
 };

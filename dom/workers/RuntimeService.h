@@ -111,6 +111,7 @@ class RuntimeService MOZ_FINAL : public nsIObserver
   nsCString mDetectorName;
   nsCString mSystemCharset;
 
+  static bool sIsMainProcess;
   static JSSettings sDefaultJSSettings;
 
   base::Thread* mIPCThread;
@@ -146,6 +147,16 @@ public:
 
   static RuntimeService*
   GetService();
+
+  static bool
+  IsMainProcess()
+#ifdef DEBUG
+  ;
+#else
+  {
+    return sIsMainProcess;
+  }
+#endif
 
   bool
   RegisterWorker(JSContext* aCx, WorkerPrivate* aWorkerPrivate);
@@ -270,6 +281,8 @@ public:
   static MessageLoop*
   IPCMessageLoop()
   {
+    MOZ_ASSERT(IsMainProcess(), "Wrong process!");
+
     RuntimeService* service = GetService();
     NS_ASSERTION(service, "Must have a service here!");
 

@@ -45,6 +45,7 @@
 #include "mozilla/dom/WorkerBinding.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/quota/QuotaManager.h"
+#include "mozilla/dom/TabChild.h"
 #include "mozilla/Util.h"
 #include "nsAlgorithm.h"
 #include "nsContentUtils.h"
@@ -755,9 +756,17 @@ public:
   {
     AssertIsOnMainThread();
 
-    WorkerParent* actor = mFinishedWorker->GetActorParent();
-    if (actor && !actor->Send__delete__(actor)) {
-      NS_WARNING("Failed to send delete!");
+    if (RuntimeService::IsMainProcess()) {
+      WorkerParent* actor = mFinishedWorker->GetActorParent();
+      if (actor && !actor->Send__delete__(actor)) {
+        NS_WARNING("Failed to send delete!");
+      }
+    }
+    else {
+      WorkerChild* actor = mFinishedWorker->GetActorChild();
+      if (actor && !actor->Send__delete__(actor)) {
+        NS_WARNING("Failed to send delete!");
+      }
     }
 
     AutoSafeJSContext cx;
@@ -3406,26 +3415,44 @@ WorkerPrivateParent<Derived>::InitIPC()
 
   MOZ_ASSERT(!mParent, "Should have called GetTopLevelWorker!");
 
-  if (mActorParent) {
-    return true;
+  if (RuntimeService::IsMainProcess()) {
+    if (mActorParent) {
+      return true;
+    }
+
+    RuntimeService* rts = RuntimeService::GetService();
+    MOZ_ASSERT(rts, "Must have a service here!");
+
+    if (!rts->InitIPC()) {
+      return false;
+    }
+
+    WorkerPoolParent* workerPoolActor = WorkerPoolParent::GetSingleton();
+    MOZ_ASSERT(workerPoolActor);
+
+    WorkerParent* actor = new WorkerParent(workerPoolActor);
+    if (!WorkerPoolParent::GetSingleton()->SendPWorkerConstructor(actor,
+                                                                  mSerial)) {
+      return false;
+    }
+
+    actor->SetWorkerPrivate(ParentAsWorkerPrivate());
   }
+  else {
+    if (mActorChild) {
+      return true;
+    }
 
-  RuntimeService* rts = RuntimeService::GetService();
-  MOZ_ASSERT(rts, "Must have a service here!");
+    TabChild* tabActor = TabChild::GetFrom(GetWindow());
+    if (!tabActor) {
+      return false;
+    }
 
-  if (!rts->InitIPC()) {
-    return false;
+    WorkerChild* actor = new WorkerChild();
+    tabActor->SendPWorkerConstructor(actor);
+
+    actor->SetWorkerPrivate(ParentAsWorkerPrivate());
   }
-
-  MOZ_ASSERT(WorkerPoolParent::GetSingleton());
-
-  WorkerParent* actor = new WorkerParent();
-  if (!WorkerPoolParent::GetSingleton()->SendPWorkerConstructor(actor,
-                                                                mSerial)) {
-    return false;
-  }
-
-  actor->SetWorkerPrivate(ParentAsWorkerPrivate());
 
   return true;
 }
@@ -3438,9 +3465,13 @@ WorkerPrivateParent<Derived>::GetActorChild() const
 
   MOZ_ASSERT(!mParent, "Should have called GetTopLevelWorker!");
 
-  MOZ_ASSERT(WorkerPoolChild::GetSingleton());
+  if (RuntimeService::IsMainProcess()) {
+    MOZ_ASSERT(WorkerPoolChild::GetSingleton());
 
-  return WorkerPoolChild::GetSingleton()->GetActorForSerial(mSerial);
+    return WorkerPoolChild::GetSingleton()->GetActorForSerial(mSerial);
+  }
+
+  return mActorChild;
 }
 
 WorkerPrivate::WorkerPrivate(JSContext* aCx,

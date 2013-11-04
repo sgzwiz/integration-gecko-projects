@@ -11,6 +11,7 @@
 #include "Layers.h"
 #include "ContentChild.h"
 #include "IndexedDBChild.h"
+#include "WorkerChild.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/IntentionalCrash.h"
@@ -81,6 +82,7 @@ using namespace mozilla::layers;
 using namespace mozilla::layout;
 using namespace mozilla::docshell;
 using namespace mozilla::dom::indexedDB;
+using namespace mozilla::dom::workers;
 using namespace mozilla::widget;
 using namespace mozilla::jsipc;
 
@@ -2370,6 +2372,20 @@ TabChild::AllocPIndexedDBChild(
 
 bool
 TabChild::DeallocPIndexedDBChild(PIndexedDBChild* aActor)
+{
+  delete aActor;
+  return true;
+}
+
+PWorkerChild*
+TabChild::AllocPWorkerChild()
+{
+  NS_NOTREACHED("Should never get here!");
+  return NULL;
+}
+
+bool
+TabChild::DeallocPWorkerChild(PWorkerChild* aActor)
 {
   delete aActor;
   return true;

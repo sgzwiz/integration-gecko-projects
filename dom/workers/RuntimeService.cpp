@@ -47,6 +47,7 @@
 #include "nsTraceRefcnt.h"
 #include "nsXPCOM.h"
 #include "nsXPCOMPrivate.h"
+#include "nsXULAppAPI.h"
 #include "OSFileConstants.h"
 #include "xpcpublic.h"
 
@@ -1125,6 +1126,7 @@ GetCurrentThreadJSContext()
 END_WORKERS_NAMESPACE
 
 // This is only touched on the main thread. Initialized in Init() below.
+bool RuntimeService::sIsMainProcess = false;
 JSSettings RuntimeService::sDefaultJSSettings;
 
 RuntimeService::RuntimeService()
@@ -1156,6 +1158,8 @@ RuntimeService::GetOrCreateService()
   AssertIsOnMainThread();
 
   if (!gRuntimeService) {
+    sIsMainProcess = XRE_GetProcessType() == GeckoProcessType_Default;
+
     nsRefPtr<RuntimeService> service = new RuntimeService();
     if (NS_FAILED(service->Init())) {
       NS_WARNING("Failed to initialize!");
@@ -1176,6 +1180,19 @@ RuntimeService::GetService()
 {
   return gRuntimeService;
 }
+
+#ifdef DEBUG
+// static
+bool
+RuntimeService::IsMainProcess()
+{
+  MOZ_ASSERT(gRuntimeService,
+             "IsMainProcess() called before runtime has been initialized!");
+  MOZ_ASSERT((XRE_GetProcessType() == GeckoProcessType_Default) ==
+             sIsMainProcess, "XRE_GetProcessType changed its tune!");
+  return sIsMainProcess;
+}
+#endif
 
 bool
 RuntimeService::RegisterWorker(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
@@ -1809,7 +1826,7 @@ RuntimeService::Cleanup()
 
   CleanupOSFileConstants();
 
-  if (mIPCThread) {
+  if (IsMainProcess() && mIPCThread) {
     mIPCThread->Stop();
   }
 
@@ -2173,6 +2190,7 @@ RuntimeService::GarbageCollectAllWorkers(bool aShrinking)
 bool
 RuntimeService::InitIPC()
 {
+  MOZ_ASSERT(IsMainProcess(), "Wrong process!");
   AssertIsOnMainThread();
 
   if (mIPCInitialized) {
