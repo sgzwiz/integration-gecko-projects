@@ -59,45 +59,55 @@ public:
     return nsRefPtr<WorkerGlobalScope>(this).forget();
   }
 
-  already_AddRefed<WorkerLocation> Location();
-  already_AddRefed<WorkerNavigator> Navigator();
-  void Close(JSContext* aCx);
+  already_AddRefed<WorkerLocation>
+  Location();
+  already_AddRefed<WorkerNavigator>
+  Navigator();
+  void
+  Close(JSContext* aCx);
 
-  OnErrorEventHandlerNonNull* GetOnerror();
-  void SetOnerror(OnErrorEventHandlerNonNull* aHandler);
+  OnErrorEventHandlerNonNull*
+  GetOnerror();
+  void
+  SetOnerror(OnErrorEventHandlerNonNull* aHandler);
 
-  void ImportScripts(JSContext* aCx, const Sequence<nsString>& aScriptURLs,
-                     ErrorResult& aRv);
+  void
+  ImportScripts(JSContext* aCx, const Sequence<nsString>& aScriptURLs,
+                ErrorResult& aRv);
 
-  int32_t SetTimeout(JSContext* aCx,
-                     Function& aHandler,
-                     const int32_t aTimeout,
-                     const Sequence<JS::Value>& aArguments,
-                     ErrorResult& aRv);
-  int32_t SetTimeout(const nsAString& aHandler,
-                     const int32_t aTimeout,
-                     ErrorResult& aRv);
-  void ClearTimeout(int32_t aHandle, ErrorResult& aRv);
-  int32_t SetInterval(JSContext* aCx,
-                      Function& aHandler,
-                      const Optional<int32_t>& aTimeout,
-                      const Sequence<JS::Value>& aArguments,
-                      ErrorResult& aRv);
-  int32_t SetInterval(const nsAString& aHandler,
-                      const Optional<int32_t>& aTimeout,
-                      ErrorResult& aRv);
-  void ClearInterval(int32_t aHandle, ErrorResult& aRv);
+  int32_t
+  SetTimeout(JSContext* aCx, Function& aHandler, const int32_t aTimeout,
+             const Sequence<JS::Value>& aArguments, ErrorResult& aRv);
+  int32_t
+  SetTimeout(const nsAString& aHandler, const int32_t aTimeout,
+             ErrorResult& aRv);
+  void
+  ClearTimeout(int32_t aHandle, ErrorResult& aRv);
+  int32_t
+  SetInterval(JSContext* aCx, Function& aHandler,
+              const Optional<int32_t>& aTimeout,
+              const Sequence<JS::Value>& aArguments, ErrorResult& aRv);
+  int32_t
+  SetInterval(const nsAString& aHandler, const Optional<int32_t>& aTimeout,
+              ErrorResult& aRv);
+  void
+  ClearInterval(int32_t aHandle, ErrorResult& aRv);
 
-  void Atob(const nsAString& aAtob, nsAString& aOutput, ErrorResult& aRv) const;
-  void Btoa(const nsAString& aBtoa, nsAString& aOutput, ErrorResult& aRv) const;
+  void
+  Atob(const nsAString& aAtob, nsAString& aOutput, ErrorResult& aRv) const;
+  void
+  Btoa(const nsAString& aBtoa, nsAString& aOutput, ErrorResult& aRv) const;
 
   IMPL_EVENT_HANDLER(close)
 
-  void Dump(const Optional<nsAString>& aString) const;
+  void
+  Dump(const Optional<nsAString>& aString) const;
 };
 
-class DedicatedWorkerGlobalScope : public WorkerGlobalScope
+class DedicatedWorkerGlobalScope MOZ_FINAL : public WorkerGlobalScope
 {
+  ~DedicatedWorkerGlobalScope() { }
+
 public:
   DedicatedWorkerGlobalScope(WorkerPrivate* aWorkerPrivate);
 
@@ -116,9 +126,11 @@ public:
   IMPL_EVENT_HANDLER(message)
 };
 
-class SharedWorkerGlobalScope : public WorkerGlobalScope
+class SharedWorkerGlobalScope MOZ_FINAL : public WorkerGlobalScope
 {
   const nsString mName;
+
+  ~SharedWorkerGlobalScope() { }
 
 public:
   SharedWorkerGlobalScope(WorkerPrivate* aWorkerPrivate, const nsString& aName);
@@ -142,4 +154,4 @@ CreateGlobalScope(JSContext* aCx);
 
 END_WORKERS_NAMESPACE
 
-#endif /* mozilla_dom_workers_workerscope_h__ */
+#endif /* mozilla_dom_workerscope_h__ */

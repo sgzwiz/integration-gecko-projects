@@ -153,10 +153,12 @@ IDBFactorySync::Create(JSContext* aCx, JSObject* aGlobal)
     new ConstructRunnable(workerPrivate, syncLoop.SyncQueueKey(),
                           factory);
 
+printf("before constrcut runnable dispatch\n");
   if (!runnable->Dispatch(aCx)) {
     factory->ReleaseProxy();
     return nullptr;
   }
+printf("after constrcut runnable dispatch\n");
 
   autoUnpin.Forget();
 

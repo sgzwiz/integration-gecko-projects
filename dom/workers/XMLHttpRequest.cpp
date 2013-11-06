@@ -1467,16 +1467,19 @@ NS_INTERFACE_MAP_END_INHERITING(nsXHREventTarget)
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(XMLHttpRequest)
 
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(XMLHttpRequest, nsXHREventTarget)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(XMLHttpRequest,
+                                                  nsXHREventTarget)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mUpload)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(XMLHttpRequest, nsXHREventTarget)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(XMLHttpRequest,
+                                                nsXHREventTarget)
   tmp->ReleaseProxy(XHRIsGoingAway);
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mUpload)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(XMLHttpRequest, nsXHREventTarget)
+NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(XMLHttpRequest,
+                                               nsXHREventTarget)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mStateData.mResponse)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
@@ -1574,12 +1577,14 @@ XMLHttpRequest::MaybeDispatchPrematureAbortEvents(ErrorResult& aRv)
   if (mProxy->mSeenUploadLoadStart) {
     MOZ_ASSERT(mUpload);
 
-    DispatchPrematureAbortEvent(mUpload, NS_LITERAL_STRING("abort"), true, aRv);
+    DispatchPrematureAbortEvent(mUpload, NS_LITERAL_STRING("abort"), true,
+                                aRv);
     if (aRv.Failed()) {
       return;
     }
 
-    DispatchPrematureAbortEvent(mUpload, NS_LITERAL_STRING("loadend"), true, aRv);
+    DispatchPrematureAbortEvent(mUpload, NS_LITERAL_STRING("loadend"), true,
+                                aRv);
     if (aRv.Failed()) {
       return;
     }
@@ -1588,7 +1593,8 @@ XMLHttpRequest::MaybeDispatchPrematureAbortEvents(ErrorResult& aRv)
   }
 
   if (mProxy->mSeenLoadStart) {
-    DispatchPrematureAbortEvent(this, NS_LITERAL_STRING("readystatechange"), false, aRv);
+    DispatchPrematureAbortEvent(this, NS_LITERAL_STRING("readystatechange"),
+                                false, aRv);
     if (aRv.Failed()) {
       return;
     }
@@ -1598,7 +1604,8 @@ XMLHttpRequest::MaybeDispatchPrematureAbortEvents(ErrorResult& aRv)
       return;
     }
 
-    DispatchPrematureAbortEvent(this, NS_LITERAL_STRING("loadend"), false, aRv);
+    DispatchPrematureAbortEvent(this, NS_LITERAL_STRING("loadend"), false,
+                                aRv);
     if (aRv.Failed()) {
       return;
     }
@@ -1634,13 +1641,18 @@ XMLHttpRequest::DispatchPrematureAbortEvent(EventTarget* aTarget,
 
     nsCOMPtr<nsIDOMProgressEvent> progress = do_QueryInterface(event);
     if (progress) {
-      progress->InitProgressEvent(aEventType, false, false,
-                                  aUploadTarget ? mProxy->mLastUploadLengthComputable :
-                                                  mProxy->mLastLengthComputable,
-                                  aUploadTarget ? mProxy->mLastUploadLoaded :
-                                                  mProxy->mLastLoaded,
-                                  aUploadTarget ? mProxy->mLastUploadTotal :
-                                                  mProxy->mLastTotal);
+      if (aUploadTarget) {
+        progress->InitProgressEvent(aEventType, false, false,
+                                    mProxy->mLastUploadLengthComputable,
+                                    mProxy->mLastUploadLoaded,
+                                    mProxy->mLastUploadTotal);
+      }
+      else {
+        progress->InitProgressEvent(aEventType, false, false,
+                                    mProxy->mLastLengthComputable,
+                                    mProxy->mLastLoaded,
+                                    mProxy->mLastTotal);
+      }
     }
   }
 
@@ -1659,15 +1671,15 @@ XMLHttpRequest::Unpin()
 {
   mWorkerPrivate->AssertIsOnWorkerThread();
 
-  NS_ASSERTION(mRooted, "Mismatched calls to Unpin!");
+  MOZ_ASSERT(mRooted, "Mismatched calls to Unpin!");
 
   JSContext* cx = GetCurrentThreadJSContext();
-
-  NS_RELEASE_THIS();
 
   mWorkerPrivate->RemoveFeature(cx, this);
 
   mRooted = false;
+
+  NS_RELEASE_THIS();
 }
 
 void
@@ -2183,7 +2195,6 @@ XMLHttpRequest::GetResponseText(nsAString& aResponseText, ErrorResult& aRv)
   aRv = mStateData.mResponseTextResult;
   aResponseText = mStateData.mResponseText;
 }
-
 
 void
 XMLHttpRequest::UpdateState(const StateData& aStateData)

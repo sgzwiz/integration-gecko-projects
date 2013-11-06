@@ -38,17 +38,3 @@ partial interface WorkerGlobalScope {
 
   void dump(optional DOMString str);
 };
-
-[Global,Func="mozilla::dom::workers::DedicatedWorkerGlobalScope::Visible"]
-interface DedicatedWorkerGlobalScope : WorkerGlobalScope {
-  [Throws]
-  void postMessage(any message, optional sequence<any> transfer);
-
-  attribute EventHandler onmessage;
-};
-
-[Global,Func="mozilla::dom::workers::SharedWorkerGlobalScope::Visible"]
-interface SharedWorkerGlobalScope : WorkerGlobalScope {
-  readonly attribute DOMString name;
-  attribute EventHandler onconnect;
-};

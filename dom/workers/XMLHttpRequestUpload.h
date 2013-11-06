@@ -12,14 +12,13 @@ BEGIN_WORKERS_NAMESPACE
 
 class XMLHttpRequest;
 
-class XMLHttpRequestUpload : public nsXHREventTarget
+class XMLHttpRequestUpload MOZ_FINAL : public nsXHREventTarget
 {
   nsRefPtr<XMLHttpRequest> mXHR;
 
-protected:
   XMLHttpRequestUpload(XMLHttpRequest* aXHR);
 
-  virtual ~XMLHttpRequestUpload();
+  ~XMLHttpRequestUpload();
 
 public:
   virtual JSObject*
@@ -39,7 +38,8 @@ public:
     return nullptr;
   }
 
-  bool HasListeners()
+  bool
+  HasListeners()
   {
     return mListenerManager && mListenerManager->HasListeners();
   }

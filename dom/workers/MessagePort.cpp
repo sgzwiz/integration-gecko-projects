@@ -12,6 +12,8 @@
 #include "SharedWorker.h"
 #include "WorkerPrivate.h"
 
+using mozilla::dom::EventHandlerNonNull;
+using mozilla::dom::MessagePortBase;
 using mozilla::dom::Optional;
 using mozilla::dom::Sequence;
 
@@ -69,16 +71,6 @@ MessagePort::~MessagePort()
   Close();
 }
 
-// static
-bool
-MessagePort::PrefEnabled()
-{
-  AssertIsOnMainThread();
-
-  // Currently tied to the SharedWorker preference.
-  return SharedWorker::PrefEnabled();
-}
-
 void
 MessagePort::PostMessageMoz(JSContext* aCx, JS::HandleValue aMessage,
                             const Optional<Sequence<JS::Value>>& aTransferable,
@@ -117,13 +109,27 @@ MessagePort::Start()
   mStarted = true;
 
   if (!mQueuedEvents.IsEmpty()) {
-    WorkerRunnable::Target target =
-      mWorkerPrivate ? WorkerRunnable::WorkerThread : WorkerRunnable::ParentThread;
-    WorkerPrivate* workerPrivate =
-      mWorkerPrivate ? mWorkerPrivate : mSharedWorker->GetWorkerPrivate();
+    WorkerRunnable::Target target = WorkerRunnable::WorkerThread;
+    WorkerPrivate* workerPrivate = mWorkerPrivate;
+
+    if (!workerPrivate) {
+      target = WorkerRunnable::ParentThread;
+      workerPrivate = mSharedWorker->GetWorkerPrivate();
+    }
+
     nsRefPtr<DelayedEventRunnable> runnable =
       new DelayedEventRunnable(workerPrivate, target, this, mQueuedEvents);
     runnable->Dispatch(nullptr);
+  }
+}
+
+void
+MessagePort::Close()
+{
+  AssertCorrectThread();
+
+  if (!IsClosed()) {
+    CloseInternal();
   }
 }
 
@@ -136,6 +142,37 @@ MessagePort::QueueEvent(nsIDOMEvent* aEvent)
   MOZ_ASSERT(!mStarted);
 
   mQueuedEvents.AppendElement(aEvent);
+}
+
+EventHandlerNonNull*
+MessagePort::GetOnmessage()
+{
+  AssertCorrectThread();
+
+  return NS_IsMainThread() ? GetEventHandler(nsGkAtoms::onmessage, EmptyString())
+                           : GetEventHandler(nullptr, NS_LITERAL_STRING("message"));
+}
+
+void
+MessagePort::SetOnmessage(EventHandlerNonNull* aCallback)
+{
+  AssertCorrectThread();
+
+  if (NS_IsMainThread()) {
+    SetEventHandler(nsGkAtoms::onmessage, EmptyString(), aCallback);
+  }
+  else {
+    SetEventHandler(nullptr, NS_LITERAL_STRING("message"), aCallback);
+  }
+
+  Start();
+}
+
+already_AddRefed<MessagePortBase>
+MessagePort::Clone()
+{
+  NS_WARNING("Haven't implemented structured clone for these ports yet!");
+  return nullptr;
 }
 
 void

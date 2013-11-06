@@ -195,10 +195,6 @@ IsDOMObject(JSObject* obj)
   mozilla::dom::UnwrapObject<mozilla::dom::prototypes::id::Interface,        \
     mozilla::dom::Interface##Binding::NativeType>(cx, obj, value)
 
-#define UNWRAP_WORKER_OBJECT(Interface, cx, obj, value)                      \
-  UnwrapObject<prototypes::id::Interface##_workers,                          \
-    mozilla::dom::Interface##Binding_workers::NativeType>(cx, obj, value)
-
 // Some callers don't want to set an exception when unwrapping fails
 // (for example, overload resolution uses unwrapping to tell what sort
 // of thing it's looking at).
@@ -405,9 +401,10 @@ DefineUnforgeableAttributes(JSContext* cx, JS::Handle<JSObject*> obj,
                             const Prefable<const JSPropertySpec>* props);
 
 bool
-DefineWebIDLBindingPropertiesOnXPCProto(JSContext* cx,
-                                        JS::Handle<JSObject*> proto,
-                                        const NativeProperties* properties);
+DefineWebIDLBindingPropertiesOnXPCObject(JSContext* cx,
+                                         JS::Handle<JSObject*> obj,
+                                         const NativeProperties* properties,
+                                         bool defineUnforgeableAttributes);
 
 #ifdef _MSC_VER
 #define HAS_MEMBER_CHECK(_name)                                           \
@@ -2291,12 +2288,17 @@ CreateGlobal(JSContext* aCx, T* aObject, nsWrapperCache* aCache,
              const JSClass* aClass, JS::CompartmentOptions& aOptions,
              JSPrincipals* aPrincipal)
 {
+  MOZ_ASSERT(!NS_IsMainThread());
+
   JS::Rooted<JSObject*> global(aCx,
     JS_NewGlobalObject(aCx, aClass, aPrincipal, JS::DontFireOnNewGlobalHook,
                        aOptions));
   if (!global) {
+    NS_WARNING("Failed to create global");
     return nullptr;
   }
+
+  JSAutoCompartment ac(aCx, global);
 
   dom::AllocateProtoAndIfaceCache(global);
 
@@ -2306,17 +2308,18 @@ CreateGlobal(JSContext* aCx, T* aObject, nsWrapperCache* aCache,
   aCache->SetIsDOMBinding();
   aCache->SetWrapper(global);
 
-  JSAutoCompartment ac(aCx, global);
+  /* Intl API is broken and makes this fail intermittently, see bug 934889.
   if (!JS_InitStandardClasses(aCx, global)) {
+    NS_WARNING("Failed to init standard classes");
     return nullptr;
   }
+  */
 
   JS::Handle<JSObject*> proto = ProtoGetter(aCx, global);
-  if (!proto) {
-    return nullptr;
-  }
+  NS_ENSURE_TRUE(proto, nullptr);
 
   if (!JS_SetPrototype(aCx, global, proto)) {
+    NS_WARNING("Failed to set proto");
     return nullptr;
   }
 

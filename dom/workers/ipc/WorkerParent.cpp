@@ -85,7 +85,7 @@ WorkerParent::RecvPIndexedDBConstructor(PIndexedDBParent* aActor,
   nsRefPtr<IDBFactory> factory;
   if (mManagerWorkerPool) {
     if (mWorkerPrivate->IsSharedWorker()) {
-      rv = IDBFactory::Create(aGroup, aASCIIOrigin, nullptr,
+      rv = IDBFactory::Create(aGroup, aASCIIOrigin, mManagerWorkerPool,
                               getter_AddRefs(factory));
     }
     else {
@@ -95,8 +95,8 @@ WorkerParent::RecvPIndexedDBConstructor(PIndexedDBParent* aActor,
         return aActor->SendResponse(false);
       }
 
-      rv = IDBFactory::Create(window, aGroup, aASCIIOrigin, nullptr,
-                            getter_AddRefs(factory));
+      rv = IDBFactory::Create(window, aGroup, aASCIIOrigin, mManagerWorkerPool,
+                              getter_AddRefs(factory));
     }
   }
   else {

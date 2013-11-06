@@ -2224,6 +2224,7 @@ RuntimeService::GarbageCollectAllWorkers(bool aShrinking)
 bool
 RuntimeService::InitIPC()
 {
+printf("rts init ipc\n");
   MOZ_ASSERT(IsMainProcess(), "Wrong process!");
   AssertIsOnMainThread();
 

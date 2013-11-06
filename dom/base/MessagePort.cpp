@@ -287,7 +287,7 @@ PostMessageRunnable::Run()
 }
 
 MessagePortBase::MessagePortBase(nsPIDOMWindow* aWindow)
-: nsDOMEventTargetHelper(aWindow)
+  : nsDOMEventTargetHelper(aWindow)
 {
   // SetIsDOMBinding() is called by nsDOMEventTargetHelper's ctor.
 }

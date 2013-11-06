@@ -31,6 +31,10 @@ namespace dom {
 class ContentParent;
 class IDBOpenDBOptions;
 
+namespace workers {
+class WorkerPoolParent;
+} // namespace workers
+
 namespace indexedDB {
 
 struct DatabaseInfo;
@@ -49,6 +53,7 @@ class IDBFactory MOZ_FINAL : public nsISupports,
   typedef mozilla::dom::quota::PersistenceType PersistenceType;
   typedef nsTArray<nsRefPtr<ObjectStoreInfo> > ObjectStoreInfoArray;
   typedef mozilla::dom::quota::StoragePrivilege StoragePrivilege;
+  typedef mozilla::dom::workers::WorkerPoolParent WorkerPoolParent;
 
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -82,9 +87,15 @@ public:
   static nsresult Create(ContentParent* aContentParent,
                          IDBFactory** aFactory);
 
+  static nsresult Create(nsPIDOMWindow* aWindow,
+                         const nsACString& aGroup,
+                         const nsACString& aASCIIOrigin,
+                         WorkerPoolParent* aWorkerPoolParent,
+                         IDBFactory** aFactory);
+
   static nsresult Create(const nsACString& aGroup,
                          const nsACString& aASCIIOrigin,
-                         ContentParent* aContentParent,
+                         WorkerPoolParent* aWorkerPoolParent,
                          IDBFactory** aFactory);
 
   static already_AddRefed<nsIFileURL>
@@ -151,7 +162,7 @@ public:
   bool
   FromIPC()
   {
-    return !!mContentParent;
+    return !!mContentParent || !!mWorkerPoolParent;
   }
 
   // nsWrapperCache
@@ -213,6 +224,7 @@ private:
   IndexedDBParent* mActorParent;
 
   mozilla::dom::ContentParent* mContentParent;
+  mozilla::dom::workers::WorkerPoolParent* mWorkerPoolParent;
 
   bool mRootedOwningObject;
 };

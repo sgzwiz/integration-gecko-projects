@@ -909,7 +909,7 @@ Load(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
   nsTArray<ScriptLoadInfo> loadInfos;
   loadInfos.SetLength(urlCount);
 
-  for (unsigned index = 0; index < urlCount; index++) {
+  for (uint32_t index = 0; index < urlCount; index++) {
     loadInfos[index].mURL = aScriptURLs[index];
   }
 

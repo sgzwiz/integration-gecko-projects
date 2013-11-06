@@ -8,8 +8,8 @@
 
 #include "Workers.h"
 
-#include "mozilla/dom/BindingDeclarations.h"
 #include "nsDOMEventTargetHelper.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/MessagePort.h"
 
 class nsIDOMEvent;
@@ -46,14 +46,7 @@ public:
   Start() MOZ_OVERRIDE;
 
   virtual void
-  Close() MOZ_OVERRIDE
-  {
-    AssertCorrectThread();
-
-    if (!IsClosed()) {
-      CloseInternal();
-    }
-  }
+  Close() MOZ_OVERRIDE;
 
   uint64_t
   Serial() const
@@ -68,34 +61,13 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(MessagePort, nsDOMEventTargetHelper)
 
   virtual EventHandlerNonNull*
-  GetOnmessage() MOZ_OVERRIDE
-  {
-    AssertCorrectThread();
-
-    return NS_IsMainThread() ? GetEventHandler(nsGkAtoms::onmessage, EmptyString())
-                             : GetEventHandler(nullptr, NS_LITERAL_STRING("message"));
-  }
+  GetOnmessage() MOZ_OVERRIDE;
 
   virtual void
-  SetOnmessage(EventHandlerNonNull* aCallback) MOZ_OVERRIDE
-  {
-    AssertCorrectThread();
-
-    if (NS_IsMainThread()) {
-      SetEventHandler(nsGkAtoms::onmessage, EmptyString(), aCallback);
-    }
-    else {
-      SetEventHandler(nullptr, NS_LITERAL_STRING("message"), aCallback);
-    }
-
-    Start();
-  }
+  SetOnmessage(EventHandlerNonNull* aCallback) MOZ_OVERRIDE;
 
   virtual already_AddRefed<MessagePortBase>
-  Clone() MOZ_OVERRIDE
-  {
-    return nullptr;
-  }
+  Clone() MOZ_OVERRIDE;
 
   bool
   IsClosed() const
@@ -113,7 +85,7 @@ public:
   void
   AssertCorrectThread() const;
 #else
-  inline void
+  void
   AssertCorrectThread() const { }
 #endif
 

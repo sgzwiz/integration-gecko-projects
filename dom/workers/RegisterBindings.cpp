@@ -3,7 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "Workers.h"
+#include "WorkerPrivate.h"
+#include "ChromeWorkerScope.h"
+#include "File.h"
 
 #include "jsapi.h"
 #include "js/OldDebugAPI.h"
@@ -36,8 +38,6 @@
 #include "mozilla/dom/WorkerNavigatorBinding.h"
 #include "mozilla/OSFileConstants.h"
 
-#include "ChromeWorkerScope.h"
-#include "File.h"
 #include "IDBFactorySync.h"
 #include "WorkerPrivate.h"
 

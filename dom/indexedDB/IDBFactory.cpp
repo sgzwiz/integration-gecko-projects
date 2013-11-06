@@ -77,7 +77,8 @@ struct ObjectStoreInfoMap
 
 IDBFactory::IDBFactory()
 : mPrivilege(Content), mOwningObject(nullptr), mActorChild(nullptr),
-  mActorParent(nullptr), mContentParent(nullptr), mRootedOwningObject(false)
+  mActorParent(nullptr), mContentParent(nullptr), mWorkerPoolParent(nullptr),
+  mRootedOwningObject(false)
 {
   SetIsDOMBinding();
 }
@@ -282,14 +283,73 @@ IDBFactory::Create(ContentParent* aContentParent,
 
 // static
 nsresult
+IDBFactory::Create(nsPIDOMWindow* aWindow,
+                   const nsACString& aGroup,
+                   const nsACString& aASCIIOrigin,
+                   WorkerPoolParent* aWorkerPoolParent,
+                   IDBFactory** aFactory)
+{
+  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  NS_ASSERTION(aASCIIOrigin.IsEmpty() || nsContentUtils::IsCallerChrome(),
+               "Non-chrome may not supply their own origin!");
+
+  NS_ENSURE_TRUE(aWindow, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+
+  if (aWindow->IsOuterWindow()) {
+    aWindow = aWindow->GetCurrentInnerWindow();
+    NS_ENSURE_TRUE(aWindow, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+  }
+
+  // Make sure that the manager is up before we do anything here since lots of
+  // decisions depend on which process we're running in.
+  indexedDB::IndexedDatabaseManager* mgr =
+    indexedDB::IndexedDatabaseManager::GetOrCreate();
+  NS_ENSURE_TRUE(mgr, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+
+  nsresult rv;
+
+  nsCString group(aGroup);
+  nsCString origin(aASCIIOrigin);
+  StoragePrivilege privilege;
+  PersistenceType defaultPersistenceType;
+  if (origin.IsEmpty()) {
+    NS_ASSERTION(aGroup.IsEmpty(), "Should be empty too!");
+
+    rv = QuotaManager::GetInfoFromWindow(aWindow, &group, &origin, &privilege,
+                                         &defaultPersistenceType);
+  }
+  else {
+    rv = QuotaManager::GetInfoFromWindow(aWindow, nullptr, nullptr, &privilege,
+                                         &defaultPersistenceType);
+  }
+  if (NS_FAILED(rv)) {
+    // Not allowed.
+    *aFactory = nullptr;
+    return NS_OK;
+  }
+
+  nsRefPtr<IDBFactory> factory = new IDBFactory();
+  factory->mGroup = group;
+  factory->mASCIIOrigin = origin;
+  factory->mPrivilege = privilege;
+  factory->mDefaultPersistenceType = defaultPersistenceType;
+  factory->mWindow = aWindow;
+  factory->mWorkerPoolParent = aWorkerPoolParent;
+
+  factory.forget(aFactory);
+  return NS_OK;
+}
+
+// static
+nsresult
 IDBFactory::Create(const nsACString& aGroup,
                    const nsACString& aASCIIOrigin,
-                   ContentParent* aContentParent,
+                   WorkerPoolParent* aWorkerPoolParent,
                    IDBFactory** aFactory)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   NS_ASSERTION(IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
-  //NS_ASSERTION(aContentParent, "Null ContentParent!");
+  NS_ASSERTION(aWorkerPoolParent, "Null WorkerPoolParent!");
 
   NS_ASSERTION(!nsContentUtils::GetCurrentJSContext(), "Should be called from C++");
 
@@ -326,7 +386,7 @@ IDBFactory::Create(const nsACString& aGroup,
   factory->mPrivilege = Chrome;
   factory->mDefaultPersistenceType = PERSISTENCE_TYPE_PERSISTENT;
   factory->mOwningObject = global;
-  factory->mContentParent = aContentParent;
+  factory->mWorkerPoolParent = aWorkerPoolParent;
 
   mozilla::HoldJSObjects(factory.get());
   factory->mRootedOwningObject = true;

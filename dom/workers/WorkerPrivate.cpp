@@ -1734,6 +1734,7 @@ public:
   bool
   Dispatch(JSContext* aCx)
   {
+printf("dispatch init ipc runnable\n");
     AutoSyncLoopHolder syncLoop(mWorkerPrivate);
     mSyncQueueKey = syncLoop.SyncQueueKey();
 
@@ -1748,6 +1749,7 @@ public:
   NS_IMETHOD
   Run()
   {
+printf("run run run\n");
     AssertIsOnMainThread();
 
     bool result = mWorkerPrivate->GetTopLevelWorker()->InitIPC();
@@ -2200,7 +2202,7 @@ WorkerPrivateParent<Derived>::WorkerPrivateParent(
   mSharedWorkerName(aSharedWorkerName), mBusyCount(0), mMessagePortSerial(0),
   mParentStatus(Pending), mRooted(false), mParentSuspended(false),
   mIsChromeWorker(aIsChromeWorker), mMainThreadObjectsForgotten(false),
-  mWorkerType(aWorkerType)
+  mWorkerType(aWorkerType), mActorParent(nullptr), mActorChild(nullptr)
 {
   SetIsDOMBinding();
 
@@ -3413,6 +3415,7 @@ template <class Derived>
 bool
 WorkerPrivateParent<Derived>::InitIPC()
 {
+printf("wp init ipc\n");
   AssertIsOnMainThread();
 
   MOZ_ASSERT(!mParent, "Should have called GetTopLevelWorker!");
@@ -5609,6 +5612,7 @@ WorkerPrivate::AssertIsOnWorkerThread() const
 bool
 WorkerPrivate::InitIPCFromWorker(JSContext* aCx)
 {
+printf("init ipc from worker\n");
   AssertIsOnWorkerThread();
 
   nsRefPtr<InitIPCRunnable> runnable = new InitIPCRunnable(this);
