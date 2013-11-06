@@ -1793,19 +1793,30 @@ let RIL = {
   /**
    * Get the Short Message Service Center address.
    */
-  getSMSCAddress: function getSMSCAddress() {
-    Buf.simpleRequest(REQUEST_GET_SMSC_ADDRESS);
+  getSmscAddress: function getSmscAddress(options) {
+    if (!this.SMSC) {
+      Buf.simpleRequest(REQUEST_GET_SMSC_ADDRESS, options);
+      return;
+    }
+
+    if (!options || options.rilMessageType !== "getSmscAddress") {
+      return;
+    }
+
+    options.smscAddress = this.SMSC;
+    options.errorMsg = RIL_ERROR_TO_GECKO_ERROR[options.rilRequestError];
+    this.sendChromeMessage(options);
   },
 
   /**
    * Set the Short Message Service Center address.
    *
-   * @param SMSC
+   * @param smscAddress
    *        Short Message Service Center address in PDU format.
    */
-  setSMSCAddress: function setSMSCAddress(options) {
-    Buf.newParcel(REQUEST_SET_SMSC_ADDRESS);
-    Buf.writeString(options.SMSC);
+  setSmscAddress: function setSmscAddress(options) {
+    Buf.newParcel(REQUEST_SET_SMSC_ADDRESS, options);
+    Buf.writeString(options.smscAddress);
     Buf.sendParcel();
   },
 
@@ -3330,7 +3341,7 @@ let RIL = {
     let rs = this.voiceRegistrationState;
     let stateChanged = this._processCREG(rs, state);
     if (stateChanged && rs.connected) {
-      RIL.getSMSCAddress();
+      RIL.getSmscAddress();
     }
 
     let cell = rs.cell;
@@ -5914,11 +5925,15 @@ RIL[REQUEST_EXIT_EMERGENCY_CALLBACK_MODE] = function REQUEST_EXIT_EMERGENCY_CALL
   this.sendChromeMessage(options);
 };
 RIL[REQUEST_GET_SMSC_ADDRESS] = function REQUEST_GET_SMSC_ADDRESS(length, options) {
-  if (options.rilRequestError) {
+  this.SMSC = options.rilRequestError ? null : Buf.readString();
+
+  if (!options || options.rilMessageType !== "getSmscAddress") {
     return;
   }
 
-  this.SMSC = Buf.readString();
+  options.smscAddress = this.SMSC;
+  options.errorMsg = RIL_ERROR_TO_GECKO_ERROR[options.rilRequestError];
+  this.sendChromeMessage(options);
 };
 RIL[REQUEST_SET_SMSC_ADDRESS] = null;
 RIL[REQUEST_REPORT_SMS_MEMORY_STATUS] = null;
@@ -9900,6 +9915,26 @@ let StkCommandParamsFactory = {
     }
 
     return timer;
+  },
+
+   /**
+    * Construct a param for BIP commands.
+    *
+    * @param cmdDetails
+    *        The value object of CommandDetails TLV.
+    * @param ctlvs
+    *        The all TLVs in this proactive command.
+    */
+  processBipMessage: function processBipMessage(cmdDetails, ctlvs) {
+    let bipMsg = {};
+
+    let ctlv = StkProactiveCmdHelper.searchForTag(
+        COMPREHENSIONTLV_TAG_ALPHA_ID, ctlvs);
+    if (ctlv) {
+      bipMsg.text = ctlv.value.identifier;
+    }
+
+    return bipMsg;
   }
 };
 StkCommandParamsFactory[STK_CMD_REFRESH] = function STK_CMD_REFRESH(cmdDetails, ctlvs) {
@@ -9958,6 +9993,18 @@ StkCommandParamsFactory[STK_CMD_PLAY_TONE] = function STK_CMD_PLAY_TONE(cmdDetai
 };
 StkCommandParamsFactory[STK_CMD_TIMER_MANAGEMENT] = function STK_CMD_TIMER_MANAGEMENT(cmdDetails, ctlvs) {
   return this.processTimerManagement(cmdDetails, ctlvs);
+};
+StkCommandParamsFactory[STK_CMD_OPEN_CHANNEL] = function STK_CMD_OPEN_CHANNEL(cmdDetails, ctlvs) {
+  return this.processBipMessage(cmdDetails, ctlvs);
+};
+StkCommandParamsFactory[STK_CMD_CLOSE_CHANNEL] = function STK_CMD_CLOSE_CHANNEL(cmdDetails, ctlvs) {
+  return this.processBipMessage(cmdDetails, ctlvs);
+};
+StkCommandParamsFactory[STK_CMD_RECEIVE_DATA] = function STK_CMD_RECEIVE_DATA(cmdDetails, ctlvs) {
+  return this.processBipMessage(cmdDetails, ctlvs);
+};
+StkCommandParamsFactory[STK_CMD_SEND_DATA] = function STK_CMD_SEND_DATA(cmdDetails, ctlvs) {
+  return this.processBipMessage(cmdDetails, ctlvs);
 };
 
 let StkProactiveCmdHelper = {
