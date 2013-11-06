@@ -1030,6 +1030,8 @@ IDBObjectStoreSync::Init(JSContext* aCx, bool aCreating)
 {
   mProxy = new IDBObjectStoreSyncProxy(this);
 
+  nsRefPtr<IDBObjectStoreSync> kungFuDeathGrip = this;
+
   nsRefPtr<InitRunnable> runnable =
     new InitRunnable(mWorkerPrivate, this, aCreating);
 

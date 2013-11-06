@@ -79,22 +79,15 @@ BlockWorkerThreadRunnable::BlockWorkerThreadRunnable(
 bool
 BlockWorkerThreadRunnable::Dispatch(JSContext* aCx)
 {
-printf("dispatch\n");
   mWorkerPrivate->AssertIsOnWorkerThread();
 
   AutoSyncLoopHolder syncLoop(mWorkerPrivate);
   mSyncQueueKey = syncLoop.SyncQueueKey();
 
   if (RuntimeService::IsMainProcess()) {
-printf("main proc\n");
     MessageLoop* ipcLoop = RuntimeService::IPCMessageLoop();
-if (!ipcLoop) {
-printf("mega shit\n");
-}
-printf("before post task\n");
     ipcLoop->PostTask(FROM_HERE,
                       NewRunnableMethod(this, &BlockWorkerThreadRunnable::Run));
-printf("after post task\n");
   }
   else {
     if (NS_FAILED(NS_DispatchToMainThread(this, NS_DISPATCH_NORMAL))) {
