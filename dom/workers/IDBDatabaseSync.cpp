@@ -464,7 +464,7 @@ IDBDatabaseSync::OnBlocked(uint64_t aOldVersion)
   AssertIsOnIPCThread();
 
   nsRefPtr<UpgradeBlockedRunnable> runnable =
-    new UpgradeBlockedRunnable(mWorkerPrivate, Proxy()->mSyncQueueKey, this,
+    new UpgradeBlockedRunnable(mWorkerPrivate, mProxy->mSyncQueueKey, this,
                                aOldVersion);
 
   runnable->Dispatch(nullptr);

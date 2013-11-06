@@ -79,8 +79,14 @@ protected:
     return NS_OK;
   }
 
+  virtual void
+  PostRun() MOZ_OVERRIDE
+  {
+    mTransaction = nullptr;
+  }
+
 private:
-  nsRefPtr<IDBTransactionSync> mTransaction;
+  IDBTransactionSync* mTransaction;
 };
 
 class FinishRunnable : public BlockWorkerThreadRunnable
@@ -300,6 +306,8 @@ IDBTransactionSync::Abort(JSContext* aCx, ErrorResult& aRv)
 
   mAbortCode = NS_ERROR_DOM_INDEXEDDB_ABORT_ERR;
   mInvalid = true;
+
+  nsRefPtr<IDBTransactionSync> kungFuDeathGrip = this;
 
   nsRefPtr<AbortRunnable> runnable =
     new AbortRunnable(mWorkerPrivate, this);

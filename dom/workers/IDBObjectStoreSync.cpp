@@ -99,8 +99,14 @@ protected:
     return NS_OK;
   }
 
+  virtual void
+  PostRun() MOZ_OVERRIDE
+  {
+    mObjectStore = nullptr;
+  }
+
 private:
-  nsRefPtr<IDBObjectStoreSync> mObjectStore;
+  IDBObjectStoreSync* mObjectStore;
   nsString mIndexName;
 };
 
@@ -814,6 +820,8 @@ IDBObjectStoreSync::DeleteIndex(JSContext* aCx, const nsAString& aIndexName,
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_NOT_FOUND_ERR);
     return;
   }
+
+  nsRefPtr<IDBObjectStoreSync> kungFuDeathGrip = this;
 
   nsRefPtr<DeleteIndexRunnable> runnable =
     new DeleteIndexRunnable(mWorkerPrivate, this, nsString(aIndexName));
