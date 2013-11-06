@@ -8905,8 +8905,15 @@ NS_IMPL_REMOVE_SYSTEM_EVENT_LISTENER(nsGlobalWindow)
 NS_IMETHODIMP
 nsGlobalWindow::DispatchEvent(nsIDOMEvent* aEvent, bool* aRetVal)
 {
-  MOZ_ASSERT(!IsInnerWindow() || IsCurrentInnerWindow(),
-             "We should only fire events on the current inner window.");
+#ifdef DEBUG
+  if (IsInnerWindow() && !IsCurrentInnerWindow()) {
+    nsAutoString msg;
+    aEvent->GetType(msg);
+    msg.Insert(NS_LITERAL_STRING("We should only fire event="), 0);
+    msg.Append(NS_LITERAL_STRING(" on the current inner window"));
+    MOZ_CRASH(NS_ConvertUTF16toUTF8(msg).get());
+  }
+#endif
 
   FORWARD_TO_INNER(DispatchEvent, (aEvent, aRetVal), NS_OK);
 
