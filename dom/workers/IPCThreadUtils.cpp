@@ -105,6 +105,8 @@ BlockWorkerThreadRunnable::Run()
 
   nsresult rv = IPCThreadRun();
 
+  PostRun();
+
   nsRefPtr<StopSyncloopRunnable> runnable =
     new StopSyncloopRunnable(mWorkerPrivate, mSyncQueueKey,
                              WorkerRunnable::SkipWhenClearing, rv, nullptr);

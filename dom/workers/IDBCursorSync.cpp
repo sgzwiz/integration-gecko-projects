@@ -182,9 +182,9 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(IDBCursorSync)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IDBCursorSync,
                                                 IDBObjectSync)
   tmp->ReleaseProxy(ObjectIsGoingAway);
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mObjectStore)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mIndex)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mTransaction)
+//  NS_IMPL_CYCLE_COLLECTION_UNLINK(mObjectStore)
+//  NS_IMPL_CYCLE_COLLECTION_UNLINK(mIndex)
+//  NS_IMPL_CYCLE_COLLECTION_UNLINK(mTransaction)
 
   if (tmp->mHoldingJSVal) {
     tmp->mCachedKey = JSVAL_VOID;

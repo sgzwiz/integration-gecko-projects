@@ -33,6 +33,10 @@ protected:
   virtual nsresult
   IPCThreadRun() = 0;
 
+  virtual void
+  PostRun()
+  { }
+
   WorkerPrivate* mWorkerPrivate;
 
 private:

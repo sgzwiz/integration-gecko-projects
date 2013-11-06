@@ -69,8 +69,14 @@ protected:
     return NS_OK;
   }
 
+  virtual void
+  PostRun() MOZ_OVERRIDE
+  {
+    mObjectStore = nullptr;
+  }
+
 private:
-  nsRefPtr<IDBObjectStoreSync> mObjectStore;
+  IDBObjectStoreSync* mObjectStore;
   bool mCreating;
 };
 
@@ -328,7 +334,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(IDBObjectStoreSync)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IDBObjectStoreSync,
                                                 IDBObjectSync)
   tmp->ReleaseProxy(ObjectIsGoingAway);
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mTransaction)
+//  NS_IMPL_CYCLE_COLLECTION_UNLINK(mTransaction)
 
   tmp->mCreatedIndexes.Clear();
 

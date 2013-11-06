@@ -66,8 +66,14 @@ protected:
     return NS_OK;
   }
 
+  void virtual
+  PostRun() MOZ_OVERRIDE
+  {
+    mIndex = nullptr;
+  }
+
 private:
-  nsRefPtr<IDBIndexSync> mIndex;
+  IDBIndexSync* mIndex;
   IndexInfo* mIndexInfo;
   bool mCreating;
 };
@@ -232,7 +238,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(IDBIndexSync)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IDBIndexSync,
                                                 IDBObjectSync)
   tmp->ReleaseProxy(ObjectIsGoingAway);
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mObjectStore)
+//  NS_IMPL_CYCLE_COLLECTION_UNLINK(mObjectStore)
 
   tmp->mCachedKeyPath = JSVAL_VOID;
 
@@ -602,6 +608,8 @@ bool
 IDBIndexSync::Init(JSContext* aCx, IndexInfo* aIndexInfo, bool aCreating)
 {
   mProxy = new IDBIndexSyncProxy(this);
+
+  nsRefPtr<IDBIndexSync> kungFuDeathGrip = this;
 
   nsRefPtr<InitRunnable> runnable = new InitRunnable(mWorkerPrivate, this,
                                                      aIndexInfo, aCreating);

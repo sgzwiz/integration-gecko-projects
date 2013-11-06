@@ -314,7 +314,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(IDBDatabaseSync)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IDBDatabaseSync,
                                                 IDBObjectSyncEventTarget)
   tmp->ReleaseProxy(ObjectIsGoingAway);
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFactory)
+//  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFactory)
 
   tmp->mWorkerPrivate->UnregisterDatabase(tmp);
   tmp->mRegistered = false;

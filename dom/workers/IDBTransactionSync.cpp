@@ -53,8 +53,14 @@ protected:
     return NS_OK;
   }
 
+  virtual void
+  PostRun() MOZ_OVERRIDE
+  {
+    mTransaction = nullptr;
+  }
+
 private:
-  nsRefPtr<IDBTransactionSync> mTransaction;
+  IDBTransactionSync* mTransaction;
 };
 
 class AbortRunnable : public BlockWorkerThreadRunnable
@@ -134,7 +140,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(IDBTransactionSync)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IDBTransactionSync,
                                                 IDBObjectSync)
   tmp->ReleaseProxy(ObjectIsGoingAway);
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDatabase)
+//  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDatabase)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mCreatedObjectStores)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDeletedObjectStores)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -344,6 +350,8 @@ bool
 IDBTransactionSync::Init(JSContext* aCx)
 {
   mProxy = new IDBTransactionSyncProxy(this);
+
+  nsRefPtr<IDBTransactionSync> kungFuDeathGrip = this;
 
   nsRefPtr<InitRunnable> runnable = new InitRunnable(mWorkerPrivate, this);
 
