@@ -458,6 +458,7 @@
     "content/html/content/test/test_mozaudiochannel.html": "Bug 931116, b2g desktop specific, initial triage",
     "content/html/content/test/test_mozaudiochannel.html": "Bug 931116, b2g desktop specific, initial triage",
     "content/html/content/test/test_mozaudiochannel.html": "Bug 931116, b2g desktop specific, initial triage",
+    "content/html/document/test/test_bug196523.html": "Bug 931116, b2g desktop specific, initial triage",
     "content/html/document/test/test_bug199692.html": "Bug 931116, b2g desktop specific, initial triage",
     "content/html/document/test/test_bug871161.html": "Bug 931116, b2g desktop specific, initial triage",
     "content/xbl/test/test_bug310107.html": "Bug 931116, b2g desktop specific, initial triage",
