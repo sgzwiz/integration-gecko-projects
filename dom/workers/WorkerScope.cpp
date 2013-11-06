@@ -13,16 +13,18 @@
 
 #include "jsapi.h"
 #include "mozilla/dom/FunctionBinding.h"
-#include "mozilla/dom/WorkerGlobalScopeBinding.h"
+#include "mozilla/dom/DedicatedWorkerGlobalScopeBinding.h"
+#include "mozilla/dom/SharedWorkerGlobalScopeBinding.h"
 
 #ifdef ANDROID
 #include <android/log.h>
 #endif
 
+#include "RuntimeService.h" // For WorkersDumpEnabled().
+
 #define UNWRAP_WORKER_OBJECT(Interface, cx, obj, value)                       \
   UnwrapObject<prototypes::id::Interface##_workers,                           \
     mozilla::dom::Interface##Binding_workers::NativeType>(cx, obj, value)
-
 
 using namespace mozilla::dom;
 USING_WORKERS_NAMESPACE
@@ -76,38 +78,46 @@ WorkerGlobalScope::WrapObject(JSContext* aCx, JS::HandleObject aScope)
 already_AddRefed<WorkerLocation>
 WorkerGlobalScope::Location()
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
   if (!mLocation) {
     WorkerPrivate::LocationInfo& info = mWorkerPrivate->GetLocationInfo();
 
     mLocation = WorkerLocation::Create(info);
+    MOZ_ASSERT(mLocation);
   }
 
   nsRefPtr<WorkerLocation> location = mLocation;
-  MOZ_ASSERT(location);
   return location.forget();
 }
 
 already_AddRefed<WorkerNavigator>
 WorkerGlobalScope::Navigator()
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
   if (!mNavigator) {
     mNavigator = WorkerNavigator::Create();
+    MOZ_ASSERT(mNavigator);
   }
 
   nsRefPtr<WorkerNavigator> navigator = mNavigator;
-  MOZ_ASSERT(navigator);
   return navigator.forget();
 }
 
 void
 WorkerGlobalScope::Close(JSContext* aCx)
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
   mWorkerPrivate->CloseInternal(aCx);
 }
 
 OnErrorEventHandlerNonNull*
 WorkerGlobalScope::GetOnerror()
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
   nsEventListenerManager *elm = GetExistingListenerManager();
   return elm ? elm->GetOnErrorEventHandler() : nullptr;
 }
@@ -115,6 +125,8 @@ WorkerGlobalScope::GetOnerror()
 void
 WorkerGlobalScope::SetOnerror(OnErrorEventHandlerNonNull* aHandler)
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
   nsEventListenerManager *elm = GetOrCreateListenerManager();
   if (elm) {
     elm->SetEventHandler(aHandler);
@@ -126,6 +138,7 @@ WorkerGlobalScope::ImportScripts(JSContext* aCx,
                                  const Sequence<nsString>& aScriptURLs,
                                  ErrorResult& aRv)
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
   scriptloader::Load(aCx, mWorkerPrivate, aScriptURLs, aRv);
 }
 
@@ -136,6 +149,7 @@ WorkerGlobalScope::SetTimeout(JSContext* aCx,
                               const Sequence<JS::Value>& aArguments,
                               ErrorResult& aRv)
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
   return mWorkerPrivate->SetTimeout(aCx, &aHandler, EmptyString(), aTimeout,
                                     aArguments, false, aRv);
 }
@@ -145,6 +159,7 @@ WorkerGlobalScope::SetTimeout(const nsAString& aHandler,
                               const int32_t aTimeout,
                               ErrorResult& aRv)
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
   Sequence<JS::Value> dummy;
   return mWorkerPrivate->SetTimeout(GetCurrentThreadJSContext(), nullptr,
                                     aHandler, aTimeout, dummy, false, aRv);
@@ -153,6 +168,7 @@ WorkerGlobalScope::SetTimeout(const nsAString& aHandler,
 void
 WorkerGlobalScope::ClearTimeout(int32_t aHandle, ErrorResult& aRv)
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
   mWorkerPrivate->ClearTimeout(aHandle);
 }
 
@@ -163,6 +179,8 @@ WorkerGlobalScope::SetInterval(JSContext* aCx,
                                const Sequence<JS::Value>& aArguments,
                                ErrorResult& aRv)
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
   int32_t timeout = aTimeout.WasPassed() ? aTimeout.Value() : 0;
 
   return mWorkerPrivate->SetTimeout(aCx, &aHandler, EmptyString(), timeout,
@@ -174,6 +192,8 @@ WorkerGlobalScope::SetInterval(const nsAString& aHandler,
                                const Optional<int32_t>& aTimeout,
                                ErrorResult& aRv)
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
   Sequence<JS::Value> dummy;
 
   int32_t timeout = aTimeout.WasPassed() ? aTimeout.Value() : 0;
@@ -185,25 +205,37 @@ WorkerGlobalScope::SetInterval(const nsAString& aHandler,
 void
 WorkerGlobalScope::ClearInterval(int32_t aHandle, ErrorResult& aRv)
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
   mWorkerPrivate->ClearTimeout(aHandle);
 }
 
 void
 WorkerGlobalScope::Atob(const nsAString& aAtob, nsAString& aOutput, ErrorResult& aRv) const
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
   aRv = nsContentUtils::Atob(aAtob, aOutput);
 }
 
 void
 WorkerGlobalScope::Btoa(const nsAString& aBtoa, nsAString& aOutput, ErrorResult& aRv) const
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
   aRv = nsContentUtils::Btoa(aBtoa, aOutput);
 }
 
 void
 WorkerGlobalScope::Dump(const Optional<nsAString>& aString) const
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
   if (!aString.WasPassed()) {
+    return;
+  }
+
+  RuntimeService* runtimeService = RuntimeService::GetService();
+  MOZ_ASSERT(runtimeService);
+
+  if (!runtimeService->WorkersDumpEnabled()) {
     return;
   }
 
@@ -251,6 +283,7 @@ DedicatedWorkerGlobalScope::PostMessage(JSContext* aCx,
                                         const Optional<Sequence<JS::Value>>& aTransferable,
                                         ErrorResult& aRv)
 {
+  mWorkerPrivate->AssertIsOnWorkerThread();
   mWorkerPrivate->PostMessageToParent(aCx, aMessage, aTransferable, aRv);
 }
 

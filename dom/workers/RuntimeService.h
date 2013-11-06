@@ -276,6 +276,9 @@ public:
   GarbageCollectAllWorkers(bool aShrinking);
 
   bool
+  WorkersDumpEnabled();
+
+  bool
   InitIPC();
 
   static MessageLoop*

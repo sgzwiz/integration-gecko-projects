@@ -42,10 +42,10 @@
 #include "mozilla/dom/ImageDataBinding.h"
 #include "mozilla/dom/MessageEventBinding.h"
 #include "mozilla/dom/MessagePortList.h"
-#include "mozilla/dom/WorkerBinding.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/WorkerBinding.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/Util.h"
 #include "nsAlgorithm.h"
 #include "nsContentUtils.h"
@@ -69,9 +69,9 @@
 
 #include "mozilla/dom/Exceptions.h"
 #include "File.h"
-#include "MessagePort.h"
 #include "IDBDatabaseSync.h"
 #include "IPCThreadUtils.h"
+#include "MessagePort.h"
 #include "Principal.h"
 #include "RuntimeService.h"
 #include "ScriptLoader.h"
@@ -928,7 +928,7 @@ public:
   {
     // Release reference to objects that were AddRef'd for
     // cloning into worker when array goes out of scope.
-    nsTArray<nsCOMPtr<nsISupports> > clonedObjects;
+    nsTArray<nsCOMPtr<nsISupports>> clonedObjects;
     clonedObjects.SwapElements(mClonedObjects);
 
     JS::Rooted<JS::Value> messageData(aCx);
@@ -1255,9 +1255,9 @@ public:
           event.typeString = NS_LITERAL_STRING("error");
 
           nsEventStatus status = nsEventStatus_eIgnore;
-          if (NS_FAILED(
-            nsEventDispatcher::Dispatch(static_cast<nsIDOMEventTarget*>(globalTarget),
-                                        nullptr, &event, nullptr, &status))) {
+          nsIDOMEventTarget* target = static_cast<nsIDOMEventTarget*>(globalTarget);
+          if (NS_FAILED(nsEventDispatcher::Dispatch(target, nullptr, &event,
+                                                    nullptr, &status))) {
             NS_WARNING("Failed to dispatch worker thread error event!");
             status = nsEventStatus_eIgnore;
           }
@@ -2190,7 +2190,7 @@ WorkerPrivateParent<Derived>::WorkerPrivateParent(
                                              WorkerPrivate* aParent,
                                              const nsAString& aScriptURL,
                                              bool aIsChromeWorker,
-                                             bool aIsSharedWorker,
+                                             WorkerType aWorkerType,
                                              const nsAString& aSharedWorkerName,
                                              LoadInfo& aLoadInfo)
 : mMutex("WorkerPrivateParent Mutex"),
@@ -2200,13 +2200,13 @@ WorkerPrivateParent<Derived>::WorkerPrivateParent(
   mSharedWorkerName(aSharedWorkerName), mBusyCount(0), mMessagePortSerial(0),
   mParentStatus(Pending), mRooted(false), mParentSuspended(false),
   mIsChromeWorker(aIsChromeWorker), mMainThreadObjectsForgotten(false),
-  mIsSharedWorker(aIsSharedWorker), mActorParent(nullptr), mActorChild(nullptr)
+  mWorkerType(aWorkerType)
 {
   SetIsDOMBinding();
 
-  MOZ_ASSERT_IF(aIsSharedWorker, !aSharedWorkerName.IsVoid() &&
-                                 NS_IsMainThread());
-  MOZ_ASSERT_IF(!aIsSharedWorker, aSharedWorkerName.IsEmpty());
+  MOZ_ASSERT_IF(IsSharedWorker(), !aSharedWorkerName.IsVoid() &&
+                                  NS_IsMainThread());
+  MOZ_ASSERT_IF(!IsSharedWorker(), aSharedWorkerName.IsEmpty());
 
   if (aLoadInfo.mWindow) {
     AssertIsOnMainThread();
@@ -2233,6 +2233,8 @@ template <class Derived>
 WorkerPrivateParent<Derived>::~WorkerPrivateParent()
 {
   MOZ_ASSERT(!mRooted);
+
+  DropJSObjects(this);
 }
 
 template <class Derived>
@@ -2272,7 +2274,7 @@ JSObject*
 WorkerPrivateParent<Derived>::WrapObject(JSContext* aCx,
                                          JS::Handle<JSObject*> aScope)
 {
-  MOZ_ASSERT(!mIsSharedWorker,
+  MOZ_ASSERT(!IsSharedWorker(),
              "We should never wrap a WorkerPrivate for a SharedWorker");
 
   AssertIsOnParentThread();
@@ -2530,7 +2532,7 @@ WorkerPrivateParent<Derived>::Resume(JSContext* aCx, nsPIDOMWindow* aWindow)
   // could post new messages before we run those that have been queued.
   if (!mQueuedRunnables.IsEmpty()) {
     AssertIsOnMainThread();
-    MOZ_ASSERT(!IsSharedWorker());
+    MOZ_ASSERT(IsDedicatedWorker());
 
     nsTArray<nsRefPtr<WorkerRunnable> > runnables;
     mQueuedRunnables.SwapElements(runnables);
@@ -2559,7 +2561,7 @@ WorkerPrivateParent<Derived>::SynchronizeAndResume(
 {
   AssertIsOnMainThread();
   MOZ_ASSERT(!GetParent());
-  MOZ_ASSERT_IF(!IsSharedWorker(), mParentSuspended);
+  MOZ_ASSERT_IF(IsDedicatedWorker(), mParentSuspended);
 
   // NB: There may be pending unqueued messages.  If we resume here we will
   // execute those messages out of order.  Instead we post an event to the
@@ -3477,20 +3479,20 @@ WorkerPrivateParent<Derived>::GetActorChild() const
 WorkerPrivate::WorkerPrivate(JSContext* aCx,
                              WorkerPrivate* aParent,
                              const nsAString& aScriptURL,
-                             bool aIsChromeWorker, bool aIsSharedWorker,
+                             bool aIsChromeWorker, WorkerType aWorkerType,
                              const nsAString& aSharedWorkerName,
                              LoadInfo& aLoadInfo)
 : WorkerPrivateParent<WorkerPrivate>(aCx, aParent, aScriptURL,
-                                     aIsChromeWorker, aIsSharedWorker,
+                                     aIsChromeWorker, aWorkerType,
                                      aSharedWorkerName, aLoadInfo),
   mJSContext(nullptr), mLastDatabaseSerial(0), mErrorHandlerRecursionCount(0),
-  mNextTimeoutId(1), mStatus(Pending), mSuspended(false), mTimerRunning(false),
+  mNextTimeoutId(1),  mStatus(Pending), mSuspended(false), mTimerRunning(false),
   mRunningExpiredTimeouts(false), mCloseHandlerStarted(false),
   mCloseHandlerFinished(false), mMemoryReporterRunning(false),
   mBlockedForMemoryReporter(false)
 {
-  MOZ_ASSERT_IF(aIsSharedWorker, !aSharedWorkerName.IsVoid());
-  MOZ_ASSERT_IF(!aIsSharedWorker, aSharedWorkerName.IsEmpty());
+  MOZ_ASSERT_IF(IsSharedWorker(), !aSharedWorkerName.IsVoid());
+  MOZ_ASSERT_IF(!IsSharedWorker(), aSharedWorkerName.IsEmpty());
 }
 
 WorkerPrivate::~WorkerPrivate()
@@ -3503,7 +3505,7 @@ WorkerPrivate::Constructor(const GlobalObject& aGlobal,
                            const nsAString& aScriptURL,
                            ErrorResult& aRv)
 {
-  return WorkerPrivate::Constructor(aGlobal, aScriptURL, false, false,
+  return WorkerPrivate::Constructor(aGlobal, aScriptURL, false, WorkerTypeDedicated,
                                     EmptyString(), nullptr, aRv);
 }
 
@@ -3531,7 +3533,7 @@ ChromeWorkerPrivate::Constructor(const GlobalObject& aGlobal,
                                  const nsAString& aScriptURL,
                                  ErrorResult& aRv)
 {
-  return WorkerPrivate::Constructor(aGlobal, aScriptURL, true, false,
+  return WorkerPrivate::Constructor(aGlobal, aScriptURL, true, WorkerTypeDedicated,
                                     EmptyString(), nullptr, aRv).downcast<ChromeWorkerPrivate>();
 }
 
@@ -3548,7 +3550,7 @@ ChromeWorkerPrivate::WorkerAvailable(JSContext* /* unused */, JSObject* /* unuse
 already_AddRefed<WorkerPrivate>
 WorkerPrivate::Constructor(const GlobalObject& aGlobal,
                            const nsAString& aScriptURL,
-                           bool aIsChromeWorker, bool aIsSharedWorker,
+                           bool aIsChromeWorker, WorkerType aWorkerType,
                            const nsAString& aSharedWorkerName,
                            LoadInfo* aLoadInfo, ErrorResult& aRv)
 {
@@ -3563,8 +3565,10 @@ WorkerPrivate::Constructor(const GlobalObject& aGlobal,
 
   JSContext* cx = aGlobal.GetContext();
 
-  MOZ_ASSERT_IF(aIsSharedWorker, !aSharedWorkerName.IsVoid());
-  MOZ_ASSERT_IF(!aIsSharedWorker, aSharedWorkerName.IsEmpty());
+  MOZ_ASSERT_IF(aWorkerType == WorkerTypeShared,
+                !aSharedWorkerName.IsVoid());
+  MOZ_ASSERT_IF(aWorkerType != WorkerTypeShared,
+                aSharedWorkerName.IsEmpty());
 
   mozilla::Maybe<LoadInfo> stackLoadInfo;
   if (!aLoadInfo) {
@@ -3602,7 +3606,7 @@ WorkerPrivate::Constructor(const GlobalObject& aGlobal,
 
   nsRefPtr<WorkerPrivate> worker =
     new WorkerPrivate(cx, parent, aScriptURL, aIsChromeWorker,
-                      aIsSharedWorker, aSharedWorkerName, *aLoadInfo);
+                      aWorkerType, aSharedWorkerName, *aLoadInfo);
 
   nsRefPtr<CompileScriptRunnable> compiler = new CompileScriptRunnable(worker);
   if (!compiler->Dispatch(cx)) {
@@ -4671,12 +4675,13 @@ WorkerPrivate::DestroySyncLoop(uint32_t aSyncLoopKey)
 }
 
 void
-WorkerPrivate::PostMessageToParentInternal(JSContext* aCx,
-                                           JS::Handle<JS::Value> aMessage,
-                                           const Optional<Sequence<JS::Value>>& aTransferable,
-                                           bool aToMessagePort,
-                                           uint64_t aMessagePortSerial,
-                                           ErrorResult& aRv)
+WorkerPrivate::PostMessageToParentInternal(
+                            JSContext* aCx,
+                            JS::Handle<JS::Value> aMessage,
+                            const Optional<Sequence<JS::Value>>& aTransferable,
+                            bool aToMessagePort,
+                            uint64_t aMessagePortSerial,
+                            ErrorResult& aRv)
 {
   AssertIsOnWorkerThread();
 
@@ -4698,7 +4703,7 @@ WorkerPrivate::PostMessageToParentInternal(JSContext* aCx,
     &gChromeWorkerStructuredCloneCallbacks :
     &gWorkerStructuredCloneCallbacks;
 
-  nsTArray<nsCOMPtr<nsISupports> > clonedObjects;
+  nsTArray<nsCOMPtr<nsISupports>> clonedObjects;
 
   JSAutoStructuredCloneBuffer buffer;
   if (!buffer.write(aCx, aMessage, transferable, callbacks, &clonedObjects)) {
@@ -4952,7 +4957,6 @@ WorkerPrivate::SetTimeout(JSContext* aCx,
                           ErrorResult& aRv)
 {
   AssertIsOnWorkerThread();
-  MOZ_ASSERT(aHandler || !aStringHandler.IsEmpty());
 
   const int32_t timerId = mNextTimeoutId++;
 
@@ -4971,6 +4975,7 @@ WorkerPrivate::SetTimeout(JSContext* aCx,
   // If the worker is trying to call setTimeout/setInterval and the parent
   // thread has initiated the close process then just silently fail.
   if (currentStatus >= Closing) {
+    aRv.Throw(NS_ERROR_FAILURE);
     return 0;
   }
 
@@ -4997,6 +5002,7 @@ WorkerPrivate::SetTimeout(JSContext* aCx,
   }
 
   // See if any of the optional arguments were passed.
+  aTimeout = std::max(0, aTimeout);
   newInfo->mInterval = TimeDuration::FromMilliseconds(aTimeout);
 
   uint32_t argc = aArguments.Length();
@@ -5022,7 +5028,7 @@ WorkerPrivate::SetTimeout(JSContext* aCx,
     }
   }
 
-  auto insertedInfo =
+  nsAutoPtr<TimeoutInfo>* insertedInfo =
     mTimeouts.InsertElementSorted(newInfo.forget(), GetAutoPtrComparator(mTimeouts));
 
   // If the timeout we just made is set to fire next then we need to update the
@@ -5466,10 +5472,6 @@ WorkerPrivate::DisconnectMessagePort(uint64_t aMessagePortSerial)
 {
   AssertIsOnWorkerThread();
 
-  // The port may have already been removed from this list since either the main
-  // thread or the worker thread can remove it.
-  // XXXkhuey mWorkerPorts is only touched from the worker thread so what is
-  // this talking about?
   mWorkerPorts.Remove(aMessagePortSerial);
 }
 
@@ -5537,8 +5539,6 @@ WorkerPrivate::CreateGlobalScope(JSContext* aCx)
     globalScope = new DedicatedWorkerGlobalScope(this);
   }
 
-  MOZ_ASSERT(globalScope);
-
   JS::CompartmentOptions options;
   if (IsChromeWorker()) {
     options.setVersion(JSVERSION_LATEST);
@@ -5552,9 +5552,6 @@ WorkerPrivate::CreateGlobalScope(JSContext* aCx)
   JSAutoCompartment ac(aCx, global);
 
   if (!RegisterBindings(aCx, global)) {
-    // If we destroy globalScope, we will release the WorkerPrivate on the
-    // wrong thread. Just leak.
-    globalScope.forget();
     return nullptr;
   }
 

@@ -148,6 +148,12 @@ public:
     mActorParent = aActorParent;
   }
 
+  bool
+  FromIPC()
+  {
+    return !!mContentParent;
+  }
+
   // nsWrapperCache
   virtual JSObject*
   WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;

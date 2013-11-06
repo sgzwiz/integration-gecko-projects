@@ -180,6 +180,28 @@ const char* gStringChars[] = {
 static_assert(NS_ARRAY_LENGTH(gStringChars) == ID_COUNT,
               "gStringChars should have the right length.");
 
+#if !(defined(DEBUG) || defined(MOZ_ENABLE_JS_DUMP))
+#define DUMP_CONTROLLED_BY_PREF 1
+#define PREF_DOM_WINDOW_DUMP_ENABLED "browser.dom.window.dump.enabled"
+
+// Protected by RuntimeService::mMutex.
+// Initialized by DumpPrefChanged via RuntimeService::Init().
+bool gWorkersDumpEnabled;
+
+static int
+DumpPrefChanged(const char* aPrefName, void* aClosure)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  bool enabled = Preferences::GetBool(PREF_DOM_WINDOW_DUMP_ENABLED, false);
+
+  Mutex* mutex = static_cast<Mutex*>(aClosure);
+  MutexAutoLock lock(*mutex);
+  gWorkersDumpEnabled = enabled;
+  return 0;
+}
+#endif
+
 class LiteralRebindingCString : public nsDependentCString
 {
 public:
@@ -1611,6 +1633,12 @@ RuntimeService::Init()
                                         PREF_WORKERS_OPTIONS_PREFIX PREF_GCZEAL,
                                         nullptr)) ||
 #endif
+#if DUMP_CONTROLLED_BY_PREF
+      NS_FAILED(Preferences::RegisterCallbackAndCall(
+                                              DumpPrefChanged,
+                                              PREF_DOM_WINDOW_DUMP_ENABLED,
+                                              &mMutex)) ||
+#endif
       NS_FAILED(Preferences::RegisterCallback(LoadJSContextOptions,
                                               PREF_JS_OPTIONS_PREFIX,
                                               nullptr)) ||
@@ -1779,6 +1807,11 @@ RuntimeService::Cleanup()
         NS_FAILED(Preferences::UnregisterCallback(LoadJSContextOptions,
                                                   PREF_WORKERS_OPTIONS_PREFIX,
                                                   nullptr)) ||
+#if DUMP_CONTROLLED_BY_PREF
+        NS_FAILED(Preferences::UnregisterCallback(DumpPrefChanged,
+                                                  PREF_DOM_WINDOW_DUMP_ENABLED,
+                                                  &mMutex)) ||
+#endif
 #ifdef JS_GC_ZEAL
         NS_FAILED(Preferences::UnregisterCallback(
                                              LoadGCZealOptions,
@@ -2047,7 +2080,8 @@ RuntimeService::CreateSharedWorker(const GlobalObject& aGlobal,
   if (!workerPrivate) {
     ErrorResult rv;
     workerPrivate =
-      WorkerPrivate::Constructor(aGlobal, aScriptURL, false, true, aName,
+      WorkerPrivate::Constructor(aGlobal, aScriptURL, false,
+                                 WorkerPrivate::WorkerTypeShared, aName,
                                  &loadInfo, rv);
     NS_ENSURE_TRUE(workerPrivate, rv.ErrorCode());
 
@@ -2247,4 +2281,18 @@ RuntimeService::Observe(nsISupports* aSubject, const char* aTopic,
 
   NS_NOTREACHED("Unknown observer topic!");
   return NS_OK;
+}
+
+bool
+RuntimeService::WorkersDumpEnabled()
+{
+#if DUMP_CONTROLLED_BY_PREF
+  MutexAutoLock lock(mMutex);
+  // In optimized builds we check a pref that controls if we should
+  // enable output from dump() or not, in debug builds it's always
+  // enabled.
+  return gWorkersDumpEnabled;
+#else
+  return true;
+#endif
 }

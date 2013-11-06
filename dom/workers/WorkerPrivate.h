@@ -303,6 +303,12 @@ public:
     }
   };
 
+  enum WorkerType
+  {
+    WorkerTypeDedicated,
+    WorkerTypeShared
+  };
+
 protected:
   typedef mozilla::ErrorResult ErrorResult;
 
@@ -344,7 +350,7 @@ private:
   bool mParentSuspended;
   bool mIsChromeWorker;
   bool mMainThreadObjectsForgotten;
-  bool mIsSharedWorker;
+  WorkerType mWorkerType;
 
   WorkerParent* mActorParent;
   WorkerChild* mActorChild;
@@ -352,8 +358,8 @@ private:
 protected:
   WorkerPrivateParent(JSContext* aCx, WorkerPrivate* aParent,
                       const nsAString& aScriptURL, bool aIsChromeWorker,
-                      bool aIsSharedWorker, const nsAString& aSharedWorkerName,
-                      LoadInfo& aLoadInfo);
+                      WorkerType aWorkerType,
+                      const nsAString& aSharedWorkerName, LoadInfo& aLoadInfo);
 
   ~WorkerPrivateParent();
 
@@ -382,7 +388,6 @@ private:
                       ErrorResult& aRv);
 
 public:
-
   virtual JSObject*
   WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 
@@ -713,6 +718,8 @@ public:
     aSettings = mJSSettings;
   }
 
+  // The ability to be a chrome worker is orthogonal to the type of
+  // worker [Dedicated|Shared].
   bool
   IsChromeWorker() const
   {
@@ -720,9 +727,15 @@ public:
   }
 
   bool
+  IsDedicatedWorker() const
+  {
+    return mWorkerType == WorkerTypeDedicated;
+  }
+
+  bool
   IsSharedWorker() const
   {
-    return mIsSharedWorker;
+    return mWorkerType == WorkerTypeShared;
   }
 
   const nsString&
@@ -877,8 +890,9 @@ public:
               ErrorResult& aRv);
 
   static already_AddRefed<WorkerPrivate>
+
   Constructor(const GlobalObject& aGlobal, const nsAString& aScriptURL,
-              bool aIsChromeWorker, bool aIsSharedWorker,
+              bool aIsChromeWorker, WorkerType aWorkerType,
               const nsAString& aSharedWorkerName,
               LoadInfo* aLoadInfo, ErrorResult& aRv);
 
@@ -1137,7 +1151,7 @@ public:
 private:
   WorkerPrivate(JSContext* aCx, WorkerPrivate* aParent,
                 const nsAString& aScriptURL, bool aIsChromeWorker,
-                bool aIsSharedWorker, const nsAString& aSharedWorkerName,
+                WorkerType aWorkerType, const nsAString& aSharedWorkerName,
                 LoadInfo& aLoadInfo);
 
   bool
