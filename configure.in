@@ -1777,7 +1777,7 @@ fi
 AC_DEFINE_UNQUOTED(MOZILLA_VERSION,"$MOZILLA_VERSION")
 AC_DEFINE_UNQUOTED(MOZILLA_VERSION_U,$MOZILLA_VERSION)
 AC_DEFINE_UNQUOTED(MOZILLA_UAVERSION,"$MOZILLA_UAVERSION")
-AC_DEFINE_UNQUOTED(MOZILLA_SYMBOLVERSION,"$MOZILLA_SYMBOLVERSION")
+AC_SUBST(MOZILLA_SYMBOLVERSION)
 
 MOZ_DOING_LTO(lto_is_enabled)
 
@@ -2079,8 +2079,11 @@ ia64*-hpux*)
         if test "$_CC_SUITE" -ge "12"; then
             dnl VS2013+ requires -FS when parallel building by make -jN.
             dnl If nothing, compiler sometimes causes C1041 error.
-            CFLAGS="$CFLAGS -FS"
-            CXXFLAGS="$CXXFLAGS -FS"
+            dnl
+            dnl Visual Studio 2013 supports -Gw flags
+            dnl http://blogs.msdn.com/b/vcblog/archive/2013/09/11/introducing-gw-compiler-switch.aspx
+            CFLAGS="$CFLAGS -FS -Gw"
+            CXXFLAGS="$CXXFLAGS -FS -Gw"
         fi
         # khuey says we can safely ignore MSVC warning C4251
         # MSVC warning C4244 (implicit type conversion may lose data) warns
@@ -3664,7 +3667,7 @@ MOZ_ARG_WITH_BOOL(system-nss,
     _USE_SYSTEM_NSS=1 )
 
 if test -n "$_USE_SYSTEM_NSS"; then
-    AM_PATH_NSS(3.15, [MOZ_NATIVE_NSS=1], [AC_MSG_ERROR([you don't have NSS installed or your version is too old])])
+    AM_PATH_NSS(3.15.3, [MOZ_NATIVE_NSS=1], [AC_MSG_ERROR([you don't have NSS installed or your version is too old])])
 fi
 
 if test -n "$MOZ_NATIVE_NSS"; then
@@ -5516,19 +5519,19 @@ if test -n "$MOZ_OPUS"; then
     AC_DEFINE(MOZ_OPUS)
 fi
 
-dnl ========================================================
-dnl = Check alsa availability on Linux if using sydneyaudio
-dnl ========================================================
+dnl ====================================================
+dnl = Check alsa availability on Linux if using libcubeb
+dnl ====================================================
 
-dnl If using sydneyaudio with Linux, ensure that the alsa library is available
+dnl If using libcubeb with Linux, ensure that the alsa library is available
 if test -n "$MOZ_CUBEB" -a "$OS_TARGET" = "Linux"; then
     MOZ_ALSA=1
 fi
 
 MOZ_ARG_ENABLE_BOOL(alsa,
 [  --enable-alsa          Enable Alsa support (default on Linux)],
-MOZ_ALSA=1,
-MOZ_ALSA=)
+   MOZ_ALSA=1,
+   MOZ_ALSA=)
 
 if test -n "$MOZ_ALSA"; then
     AC_DEFINE(MOZ_CUBEB)
@@ -5542,13 +5545,18 @@ AC_SUBST(MOZ_ALSA_CFLAGS)
 AC_SUBST(MOZ_ALSA_LIBS)
 
 dnl ========================================================
-dnl = Enable PulseAudio
+dnl = Disable PulseAudio
 dnl ========================================================
 
-MOZ_ARG_ENABLE_BOOL(pulseaudio,
-[  --enable-pulseaudio          Enable PulseAudio support (experimental)],
-MOZ_PULSEAUDIO=1,
-MOZ_PULSEAUDIO=)
+dnl If using libcubeb with Linux, ensure that the PA library is available
+if test -n "$MOZ_CUBEB" -a "$OS_TARGET" = "Linux" -a -z "$MOZ_B2G"; then
+    MOZ_PULSEAUDIO=1
+fi
+
+MOZ_ARG_DISABLE_BOOL(pulseaudio,
+[  --disable-pulseaudio          Disable PulseAudio support],
+   MOZ_PULSEAUDIO=,
+   MOZ_PULSEAUDIO=1)
 
 if test -n "$MOZ_PULSEAUDIO"; then
     AC_DEFINE(MOZ_CUBEB)
@@ -5558,13 +5566,11 @@ if test -n "$MOZ_PULSEAUDIO"; then
               AC_MSG_ERROR([pulseaudio audio backend requires libpulse development package])])
     else
         MOZ_PULSEAUDIO_CFLAGS="-I$gonkdir/external/pulseaudio/pulseaudio/src"
-        MOZ_PULSEAUDIO_LIBS="-lpulse"
     fi
 fi
 
 AC_SUBST(MOZ_PULSEAUDIO)
 AC_SUBST(MOZ_PULSEAUDIO_CFLAGS)
-AC_SUBST(MOZ_PULSEAUDIO_LIBS)
 
 dnl ========================================================
 dnl = Enable GStreamer
@@ -9129,7 +9135,7 @@ MOZ_ARG_WITH_STRING(intl-api,
     but doesn't use ICU or expose the API to script.  The third doesn't build
     ICU at all.],
     WITH_INTL="--with-intl-api=$withval"
-])
+)
 if test -z "$WITH_INTL"; then
 if test "$MOZ_BUILD_APP" = "browser"; then
     WITH_INTL="--with-intl-api"

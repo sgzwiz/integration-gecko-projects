@@ -4730,8 +4730,10 @@ DoSetElemFallback(JSContext *cx, BaselineFrame *frame, ICSetElem_Fallback *stub,
         if (CanOptimizeDenseSetElem(cx, obj, index.toInt32(), oldShape, oldCapacity, oldInitLength,
                                     &addingCase, &protoDepth))
         {
-            RootedTypeObject type(cx, obj->getType(cx));
             RootedShape shape(cx, obj->lastProperty());
+            RootedTypeObject type(cx, obj->getType(cx));
+            if (!type)
+                return false;
 
             if (addingCase && !DenseSetElemStubExists(cx, ICStub::SetElem_DenseAdd, stub, obj)) {
                 IonSpew(IonSpew_BaselineIC,
@@ -9236,6 +9238,8 @@ ICUpdatedStub *
 ICSetElemDenseAddCompiler::getStubSpecific(ICStubSpace *space, const AutoShapeVector *shapes)
 {
     RootedTypeObject objType(cx, obj_->getType(cx));
+    if (!objType)
+        return nullptr;
     Rooted<IonCode *> stubCode(cx, getStubCode());
     return ICSetElem_DenseAddImpl<ProtoChainDepth>::New(space, stubCode, objType, shapes);
 }
@@ -9326,6 +9330,9 @@ ICUpdatedStub *
 ICSetProp_Native::Compiler::getStub(ICStubSpace *space)
 {
     RootedTypeObject type(cx, obj_->getType(cx));
+    if (!type)
+        return nullptr;
+
     RootedShape shape(cx, obj_->lastProperty());
     ICUpdatedStub *stub = ICSetProp_Native::New(space, getStubCode(), type, shape, offset_);
     if (!stub || !stub->initUpdatingChain(cx, space))
@@ -9455,6 +9462,42 @@ ICGetProp_DOMProxyShadowed::ICGetProp_DOMProxyShadowed(IonCode *stubCode,
     name_(name),
     pcOffset_(pcOffset)
 { }
+
+//
+// Rest_Fallback
+//
+
+static bool DoRestFallback(JSContext *cx, ICRest_Fallback *stub,
+                           BaselineFrame *frame, MutableHandleValue res)
+{
+    unsigned numFormals = frame->numFormalArgs() - 1;
+    unsigned numActuals = frame->numActualArgs();
+    unsigned numRest = numActuals > numFormals ? numActuals - numFormals : 0;
+    Value *rest = frame->argv() + numFormals;
+
+    JSObject *obj = NewDenseCopiedArray(cx, numRest, rest, nullptr);
+    if (!obj)
+        return false;
+    types::FixRestArgumentsType(cx, obj);
+    res.setObject(*obj);
+    return true;
+}
+
+typedef bool (*DoRestFallbackFn)(JSContext *, ICRest_Fallback *, BaselineFrame *,
+                                 MutableHandleValue);
+static const VMFunction DoRestFallbackInfo =
+    FunctionInfo<DoRestFallbackFn>(DoRestFallback);
+
+bool
+ICRest_Fallback::Compiler::generateStubCode(MacroAssembler &masm)
+{
+    EmitRestoreTailCallReg(masm);
+
+    masm.pushBaselineFramePtr(BaselineFrameReg, R0.scratchReg());
+    masm.push(BaselineStubReg);
+
+    return tailCallVM(DoRestFallbackInfo, masm);
+}
 
 } // namespace jit
 } // namespace js

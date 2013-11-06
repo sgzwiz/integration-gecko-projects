@@ -1222,7 +1222,6 @@ IonBuilder::traverseBytecode()
               case JSOP_SETARG:
               case JSOP_SETLOCAL:
               case JSOP_SETRVAL:
-              case JSOP_POPV:
               case JSOP_VOID:
                 // Don't require SSA uses for values popped by these ops.
                 break;
@@ -1271,7 +1270,6 @@ IonBuilder::snoopControlFlow(JSOp op)
         return maybeLoop(op, info().getNote(gsn, pc));
 
       case JSOP_RETURN:
-      case JSOP_STOP:
       case JSOP_RETRVAL:
         return processReturn(op);
 
@@ -1678,7 +1676,6 @@ IonBuilder::inspectOpcode(JSOp op)
         return jsop_in();
 
       case JSOP_SETRVAL:
-      case JSOP_POPV:
         JS_ASSERT(!script()->noScriptRval);
         current->setSlot(info().returnValueSlot(), current->pop());
         return true;
@@ -3478,7 +3475,7 @@ IonBuilder::processReturn(JSOp op)
         def = current->pop();
         break;
 
-      case JSOP_STOP:
+      case JSOP_RETRVAL:
         // Return undefined eagerly if script doesn't use return value.
         if (script()->noScriptRval) {
             MInstruction *ins = MConstant::New(UndefinedValue());
@@ -3487,9 +3484,6 @@ IonBuilder::processReturn(JSOp op)
             break;
         }
 
-        // Fall through
-      case JSOP_RETRVAL:
-        // Return the value in the return value slot.
         def = current->getSlot(info().returnValueSlot());
         break;
 
@@ -4969,19 +4963,17 @@ IonBuilder::jsop_call(uint32_t argc, bool constructing)
     }
     JS_ASSERT_IF(gotLambda, originals.length() <= 1);
 
-    // If any call targets need to be cloned, clone them. Keep track of the
-    // originals as we need to case on them for poly inline.
+    // If any call targets need to be cloned, look for existing clones to use.
+    // Keep track of the originals as we need to case on them for poly inline.
     bool hasClones = false;
     ObjectVector targets;
-    RootedFunction fun(cx);
-    RootedScript scriptRoot(cx, script());
     for (uint32_t i = 0; i < originals.length(); i++) {
-        fun = &originals[i]->as<JSFunction>();
+        JSFunction *fun = &originals[i]->as<JSFunction>();
         if (fun->hasScript() && fun->nonLazyScript()->shouldCloneAtCallsite) {
-            fun = CloneFunctionAtCallsite(cx, fun, scriptRoot, pc);
-            if (!fun)
-                return false;
-            hasClones = true;
+            if (JSFunction *clone = ExistingCloneFunctionAtCallsite(compartment, fun, script(), pc)) {
+                fun = clone;
+                hasClones = true;
+            }
         }
         if (!targets.append(fun))
             return false;
@@ -5933,18 +5925,25 @@ IonBuilder::maybeInsertResume()
 }
 
 static bool
-ClassHasEffectlessLookup(JSCompartment *comp, const Class *clasp, PropertyName *name)
+ClassHasEffectlessLookup(const Class *clasp)
 {
-    if (!clasp->isNative() || clasp->ops.lookupGeneric)
+    return clasp->isNative() && !clasp->ops.lookupGeneric;
+}
+
+static bool
+ClassHasResolveHook(JSCompartment *comp, const Class *clasp, PropertyName *name)
+{
+    if (clasp->resolve == JS_ResolveStub)
         return false;
-    if (clasp->resolve != JS_ResolveStub &&
-        // Note: str_resolve only resolves integers, not names.
-        clasp->resolve != (JSResolveOp)str_resolve &&
-        (clasp->resolve != (JSResolveOp)fun_resolve ||
-         FunctionHasResolveHook(comp->runtimeFromAnyThread(), name)))
-    {
+
+    if (clasp->resolve == (JSResolveOp)str_resolve) {
+        // str_resolve only resolves integers, not names.
         return false;
     }
+
+    if (clasp->resolve == (JSResolveOp)fun_resolve)
+        return FunctionHasResolveHook(comp->runtimeFromAnyThread(), name);
+
     return true;
 }
 
@@ -5966,7 +5965,7 @@ IonBuilder::testSingletonProperty(JSObject *obj, JSObject *singleton, PropertyNa
     // property will change and trigger invalidation.
 
     while (obj) {
-        if (!ClassHasEffectlessLookup(compartment, obj->getClass(), name))
+        if (!ClassHasEffectlessLookup(obj->getClass()))
             return false;
 
         types::TypeObjectKey *objType = types::TypeObjectKey::get(obj);
@@ -5979,6 +5978,9 @@ IonBuilder::testSingletonProperty(JSObject *obj, JSObject *singleton, PropertyNa
                 return property.singleton(constraints()) == singleton;
             return false;
         }
+
+        if (ClassHasResolveHook(compartment, obj->getClass(), name))
+            return false;
 
         obj = obj->getProto();
     }
@@ -6303,9 +6305,14 @@ IonBuilder::setStaticName(JSObject *staticObject, PropertyName *name)
     // If the property has a known type, we may be able to optimize typed stores by not
     // storing the type tag.
     MIRType slotType = MIRType_None;
-    JSValueType knownType = property.knownTypeTag(constraints());
-    if (knownType != JSVAL_TYPE_UNKNOWN)
-        slotType = MIRTypeFromValueType(knownType);
+    {
+        Shape *shape = staticObject->nativeLookup(cx, id);
+        if (!shape || !shape->hasSlot() || !staticObject->getSlot(shape->slot()).isUndefined()) {
+            JSValueType knownType = property.knownTypeTag(constraints());
+            if (knownType != JSVAL_TYPE_UNKNOWN)
+                slotType = MIRTypeFromValueType(knownType);
+        }
+    }
 
     bool needsBarrier = property.needsBarrier(constraints());
     return storeSlot(obj, property.maybeTypes()->definiteSlot(), NumFixedSlots(staticObject),
@@ -6362,11 +6369,8 @@ IonBuilder::jsop_intrinsic(PropertyName *name)
     }
 
     // Bake in the intrinsic. Make sure that TI agrees with us on the type.
-    RootedPropertyName nameRoot(cx, name);
-    RootedValue vp(cx, UndefinedValue());
-    if (!cx->global()->getIntrinsicValue(cx, nameRoot, &vp))
-        return false;
-
+    Value vp;
+    JS_ALWAYS_TRUE(script()->global().maybeGetIntrinsicValue(name, &vp));
     JS_ASSERT(types->hasType(types::GetValueType(vp)));
 
     MConstant *ins = MConstant::New(vp);
@@ -7467,23 +7471,14 @@ IonBuilder::jsop_arguments_length()
     return pushConstant(Int32Value(inlineCallInfo_->argv().length()));
 }
 
-static JSObject *
-CreateRestArgumentsTemplateObject(JSContext *cx, unsigned length)
-{
-    JSObject *templateObject = NewDenseUnallocatedArray(cx, length, nullptr, TenuredObject);
-    if (templateObject)
-        types::FixRestArgumentsType(cx, templateObject);
-    return templateObject;
-}
-
 bool
 IonBuilder::jsop_rest()
 {
-    // We don't know anything about the callee.
+    JSObject *templateObject = inspector->getTemplateObject(pc);
+    JS_ASSERT(templateObject->is<ArrayObject>());
+
     if (inliningDepth_ == 0) {
-        JSObject *templateObject = CreateRestArgumentsTemplateObject(cx, 0);
-        if (!templateObject)
-            return false;
+        // We don't know anything about the callee.
         MArgumentsLength *numActuals = MArgumentsLength::New();
         current->add(numActuals);
 
@@ -7499,9 +7494,6 @@ IonBuilder::jsop_rest()
     unsigned numActuals = inlineCallInfo_->argv().length();
     unsigned numFormals = info().nargs() - 1;
     unsigned numRest = numActuals > numFormals ? numActuals - numFormals : 0;
-    JSObject *templateObject = CreateRestArgumentsTemplateObject(cx, numRest);
-    if (!templateObject)
-        return false;
 
     MNewArray *array = new MNewArray(numRest, templateObject, MNewArray::NewArray_Allocating);
     current->add(array);
@@ -7599,7 +7591,7 @@ IonBuilder::objectsHaveCommonPrototype(types::TemporaryTypeSet *types, PropertyN
                 return false;
 
             const Class *clasp = type->clasp();
-            if (!ClassHasEffectlessLookup(compartment, clasp, name))
+            if (!ClassHasEffectlessLookup(clasp) || ClassHasResolveHook(compartment, clasp, name))
                 return false;
 
             // Look for a getter/setter on the class itself which may need

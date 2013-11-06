@@ -123,7 +123,7 @@
 #include <stdio.h>
 
 #include "mozilla/Likely.h"
-#include "mozilla/mozPoisonWrite.h"
+#include "mozilla/PoisonIOInterposer.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/ThreadLocal.h"
 
@@ -2132,7 +2132,7 @@ nsCycleCollector::MarkRoots(GCGraphBuilder &aBuilder)
     }
 
     if (aBuilder.RanOutOfMemory()) {
-        NS_ASSERTION(false,
+        MOZ_ASSERT(false,
                      "Ran out of memory while building cycle collector graph");
         CC_TELEMETRY(_OOM, true);
     }
@@ -2250,7 +2250,7 @@ nsCycleCollector::ScanWeakMaps()
     } while (anyChanged);
 
     if (failed) {
-        NS_ASSERTION(false, "Ran out of memory in ScanWeakMaps");
+        MOZ_ASSERT(false, "Ran out of memory in ScanWeakMaps");
         CC_TELEMETRY(_OOM, true);
     }
 }
@@ -2267,7 +2267,7 @@ nsCycleCollector::ScanRoots(nsICycleCollectorListener *aListener)
     GraphWalker<scanVisitor>(scanVisitor(mWhiteNodeCount, failed)).WalkFromRoots(mGraph);
 
     if (failed) {
-        NS_ASSERTION(false, "Ran out of memory in ScanRoots");
+        MOZ_ASSERT(false, "Ran out of memory in ScanRoots");
         CC_TELEMETRY(_OOM, true);
     }
 
@@ -2387,20 +2387,13 @@ nsCycleCollector::CollectWhite()
 // Memory reporter
 ////////////////////////
 
-class CycleCollectorReporter MOZ_FINAL : public nsIMemoryReporter
+class CycleCollectorReporter MOZ_FINAL : public MemoryMultiReporter
 {
   public:
     CycleCollectorReporter(nsCycleCollector* aCollector)
-      : mCollector(aCollector)
+        : MemoryMultiReporter("cycle-collector"),
+          mCollector(aCollector)
     {}
-
-    NS_DECL_ISUPPORTS
-
-    NS_IMETHOD GetName(nsACString& name)
-    {
-        name.AssignLiteral("cycle-collector");
-        return NS_OK;
-    }
 
     NS_IMETHOD CollectReports(nsIMemoryReporterCallback* aCb,
                               nsISupports* aClosure)
@@ -2460,8 +2453,6 @@ class CycleCollectorReporter MOZ_FINAL : public nsIMemoryReporter
 
     nsCycleCollector* mCollector;
 };
-
-NS_IMPL_ISUPPORTS1(CycleCollectorReporter, nsIMemoryReporter)
 
 
 ////////////////////////////////////////////////////////////////////////
