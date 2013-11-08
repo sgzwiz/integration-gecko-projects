@@ -2132,8 +2132,7 @@ nsCycleCollector::MarkRoots(GCGraphBuilder &aBuilder)
     }
 
     if (aBuilder.RanOutOfMemory()) {
-        MOZ_ASSERT(false,
-                     "Ran out of memory while building cycle collector graph");
+        MOZ_ASSERT(false, "Ran out of memory while building cycle collector graph");
         CC_TELEMETRY(_OOM, true);
     }
 }
@@ -2267,7 +2266,7 @@ nsCycleCollector::ScanRoots(nsICycleCollectorListener *aListener)
     GraphWalker<scanVisitor>(scanVisitor(mWhiteNodeCount, failed)).WalkFromRoots(mGraph);
 
     if (failed) {
-        MOZ_ASSERT(false, "Ran out of memory in ScanRoots");
+        NS_ASSERTION(false, "Ran out of memory in ScanRoots");
         CC_TELEMETRY(_OOM, true);
     }
 
@@ -2387,20 +2386,13 @@ nsCycleCollector::CollectWhite()
 // Memory reporter
 ////////////////////////
 
-class CycleCollectorReporter MOZ_FINAL : public nsIMemoryReporter
+class CycleCollectorReporter MOZ_FINAL : public MemoryMultiReporter
 {
   public:
     CycleCollectorReporter(nsCycleCollector* aCollector)
-      : mCollector(aCollector)
+        : MemoryMultiReporter("cycle-collector"),
+          mCollector(aCollector)
     {}
-
-    NS_DECL_ISUPPORTS
-
-    NS_IMETHOD GetName(nsACString& name)
-    {
-        name.AssignLiteral("cycle-collector");
-        return NS_OK;
-    }
 
     NS_IMETHOD CollectReports(nsIMemoryReporterCallback* aCb,
                               nsISupports* aClosure)
@@ -2460,8 +2452,6 @@ class CycleCollectorReporter MOZ_FINAL : public nsIMemoryReporter
 
     nsCycleCollector* mCollector;
 };
-
-NS_IMPL_ISUPPORTS1(CycleCollectorReporter, nsIMemoryReporter)
 
 
 ////////////////////////////////////////////////////////////////////////

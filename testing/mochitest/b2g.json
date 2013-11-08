@@ -325,6 +325,7 @@
     "dom/media/tests/mochitest/test_peerConnection_setRemoteAnswerInStable.html":"",
     "dom/media/tests/mochitest/test_peerConnection_setRemoteOfferInHaveLocalOffer.html":"",
     "dom/media/tests/mochitest/test_peerConnection_throwInCallbacks.html":"",
+    "dom/media/tests/ipc/test_ipc.html":"nested ipc not working",
 
     "dom/network/tests/test_networkstats_basics.html":"Will be fixed in bug 858005",
     "dom/permission/tests/test_permission_basics.html":"https not working, bug 907770",
@@ -391,8 +392,6 @@
     "dom/tests/mochitest/sessionstorage/test_sessionStorageBase.html":"",
     "dom/tests/mochitest/sessionstorage/test_sessionStorageHttpHttps.html":"needs https to work",
     "dom/tests/mochitest/webapps/test_bug_779982.html":"",
-    "dom/workers/test/indexedDB":"",
-    "dom/workers/test/test_idbsync_simple.html":"",
     "dom/workers/test/test_suspend.html":"test timed out, might need more time",
     "dom/workers/test/test_xhr_parameters.html":"",
     "dom/workers/test/test_xhr_system.html":"",

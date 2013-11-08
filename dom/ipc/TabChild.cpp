@@ -63,6 +63,7 @@
 #include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
 #include "nsWeakReference.h"
+#include "PermissionMessageUtils.h"
 #include "PCOMContentPermissionRequestChild.h"
 #include "PuppetWidget.h"
 #include "StructuredCloneUtils.h"
@@ -1150,11 +1151,12 @@ TabChild::ArraysToParams(const InfallibleTArray<int>& aIntParams,
 #ifdef DEBUG
 PContentPermissionRequestChild*
 TabChild:: SendPContentPermissionRequestConstructor(PContentPermissionRequestChild* aActor,
-                                                    const InfallibleTArray<PermissionRequest>& aRequests,
+                                                    const nsCString& aType,
+                                                    const nsCString& aAccess,
                                                     const IPC::Principal& aPrincipal)
 {
   PCOMContentPermissionRequestChild* child = static_cast<PCOMContentPermissionRequestChild*>(aActor);
-  PContentPermissionRequestChild* request = PBrowserChild::SendPContentPermissionRequestConstructor(aActor, aRequests, aPrincipal);
+  PContentPermissionRequestChild* request = PBrowserChild::SendPContentPermissionRequestConstructor(aActor, aType, aAccess, aPrincipal);
   child->mIPCOpen = true;
   return request;
 }
@@ -1507,7 +1509,7 @@ TabChild::DispatchMessageManagerMessage(const nsAString& aMessageName,
     nsRefPtr<nsFrameMessageManager> mm =
       static_cast<nsFrameMessageManager*>(mTabChildGlobal->mMessageManager.get());
     mm->ReceiveMessage(static_cast<EventTarget*>(mTabChildGlobal),
-                       aMessageName, false, &cloneData, nullptr, nullptr);
+                       aMessageName, false, &cloneData, nullptr, nullptr, nullptr);
 }
 
 bool
@@ -2009,8 +2011,7 @@ TabChild::DeallocPContentDialogChild(PContentDialogChild* aDialog)
 }
 
 PContentPermissionRequestChild*
-TabChild::AllocPContentPermissionRequestChild(const InfallibleTArray<PermissionRequest>& aRequests,
-                                              const IPC::Principal& aPrincipal)
+TabChild::AllocPContentPermissionRequestChild(const nsCString& aType, const nsCString& aAccess, const IPC::Principal&)
 {
   NS_RUNTIMEABORT("unused");
   return nullptr;
@@ -2073,7 +2074,8 @@ TabChild::RecvLoadRemoteScript(const nsString& aURL)
 bool
 TabChild::RecvAsyncMessage(const nsString& aMessage,
                            const ClonedMessageData& aData,
-                           const InfallibleTArray<CpowEntry>& aCpows)
+                           const InfallibleTArray<CpowEntry>& aCpows,
+                           const IPC::Principal& aPrincipal)
 {
   if (mTabChildGlobal) {
     nsCOMPtr<nsIXPConnectJSObjectHolder> kungFuDeathGrip(GetGlobal());
@@ -2082,7 +2084,7 @@ TabChild::RecvAsyncMessage(const nsString& aMessage,
       static_cast<nsFrameMessageManager*>(mTabChildGlobal->mMessageManager.get());
     CpowIdHolder cpows(static_cast<ContentChild*>(Manager())->GetCPOWManager(), aCpows);
     mm->ReceiveMessage(static_cast<EventTarget*>(mTabChildGlobal),
-                       aMessage, false, &cloneData, &cpows, nullptr);
+                       aMessage, false, &cloneData, &cpows, aPrincipal, nullptr);
   }
   return true;
 }
@@ -2420,6 +2422,7 @@ TabChild::DoSendBlockingMessage(JSContext* aCx,
                                 const nsAString& aMessage,
                                 const StructuredCloneData& aData,
                                 JS::Handle<JSObject *> aCpows,
+                                nsIPrincipal* aPrincipal,
                                 InfallibleTArray<nsString>* aJSONRetVal,
                                 bool aIsSync)
 {
@@ -2434,16 +2437,21 @@ TabChild::DoSendBlockingMessage(JSContext* aCx,
       return false;
     }
   }
-  if (aIsSync)
-    return SendSyncMessage(nsString(aMessage), data, cpows, aJSONRetVal);
-  return CallRpcMessage(nsString(aMessage), data, cpows, aJSONRetVal);
+  if (aIsSync) {
+    return SendSyncMessage(nsString(aMessage), data, cpows, aPrincipal,
+                           aJSONRetVal);
+  }
+
+  return CallRpcMessage(nsString(aMessage), data, cpows, aPrincipal,
+                        aJSONRetVal);
 }
 
 bool
 TabChild::DoSendAsyncMessage(JSContext* aCx,
                              const nsAString& aMessage,
                              const StructuredCloneData& aData,
-                             JS::Handle<JSObject *> aCpows)
+                             JS::Handle<JSObject *> aCpows,
+                             nsIPrincipal* aPrincipal)
 {
   ContentChild* cc = Manager();
   ClonedMessageData data;
@@ -2456,7 +2464,8 @@ TabChild::DoSendAsyncMessage(JSContext* aCx,
       return false;
     }
   }
-  return SendAsyncMessage(nsString(aMessage), data, cpows);
+  return SendAsyncMessage(nsString(aMessage), data, cpows,
+                          aPrincipal);
 }
 
 TabChild*

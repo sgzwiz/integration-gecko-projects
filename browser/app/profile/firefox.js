@@ -1078,7 +1078,7 @@ pref("devtools.commands.dir", "");
 
 // Enable the app manager
 pref("devtools.appmanager.enabled", true);
-pref("devtools.appmanager.firstrun", true);
+pref("devtools.appmanager.lastTab", "help");
 pref("devtools.appmanager.manifestEditor.enabled", false);
 
 // Toolbox preferences
@@ -1299,6 +1299,8 @@ pref("social.manifest.facebook", "{\"origin\":\"https://www.facebook.com\",\"nam
 
 pref("social.sidebar.open", true);
 pref("social.sidebar.unload_timeout_ms", 10000);
+
+pref("social.allowMultipleWorkers", true);
 
 pref("dom.identity.enabled", false);
 

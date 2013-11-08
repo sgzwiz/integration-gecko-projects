@@ -17,7 +17,6 @@ include protocol PWorker;
 include DOMTypes;
 include JavaScriptTypes;
 include URIParams;
-include PContentPermission;
 
 
 using class IPC::Principal from "mozilla/dom/PermissionMessageUtils.h";
@@ -64,7 +63,8 @@ intr protocol PBrowser
     manages PWorker;
 
 both:
-    AsyncMessage(nsString aMessage, ClonedMessageData aData, CpowEntry[] aCpows);
+    AsyncMessage(nsString aMessage, ClonedMessageData aData, CpowEntry[] aCpows,
+                 Principal aPrincipal);
 
 parent:
     /**
@@ -77,10 +77,12 @@ parent:
 
     intr CreateWindow() returns (PBrowser window);
 
-    sync SyncMessage(nsString aMessage, ClonedMessageData aData, CpowEntry[] aCpows)
+    sync SyncMessage(nsString aMessage, ClonedMessageData aData,
+                     CpowEntry[] aCpows, Principal aPrincipal)
       returns (nsString[] retval);
 
-    rpc RpcMessage(nsString aMessage, ClonedMessageData aData, CpowEntry[] aCpows)
+    rpc RpcMessage(nsString aMessage, ClonedMessageData aData,
+                   CpowEntry[] aCpows, Principal aPrincipal)
       returns (nsString[] retval);
 
     /**
@@ -205,8 +207,10 @@ parent:
      * Initiates an asynchronous request for permission for the
      * provided principal.
      *
-     * @param aRequests
-     *   The array of permissions to request.
+     * @param aType
+     *   The type of permission to request.
+     * @param aAccess
+     *   Access type. "read" for example.
      * @param aPrincipal
      *   The principal of the request.
      *
@@ -214,7 +218,7 @@ parent:
      *       principals that can live in the content process should
      *       provided.
      */
-    PContentPermissionRequest(PermissionRequest[] aRequests, Principal aPrincipal);
+    PContentPermissionRequest(nsCString aType, nsCString aAccess, Principal principal);
 
     PContentDialog(uint32_t aType, nsCString aName, nsCString aFeatures,
                    int32_t[] aIntParams, nsString[] aStringParams);

@@ -1460,7 +1460,7 @@ DoTypeUpdateFallback(JSContext *cx, BaselineFrame *frame, ICUpdatedStub *stub, H
         JS_ASSERT(obj->isNative());
         jsbytecode *pc = stub->getChainFallback()->icEntry()->pc(script);
         if (*pc == JSOP_SETALIASEDVAR)
-            id = NameToId(ScopeCoordinateName(cx, script, pc));
+            id = NameToId(ScopeCoordinateName(script, pc));
         else
             id = NameToId(script->getName(pc));
         types::AddTypePropertyId(cx, obj, id, value);
@@ -6843,7 +6843,7 @@ DoSetPropFallback(JSContext *cx, BaselineFrame *frame, ICSetProp_Fallback *stub,
 
     RootedPropertyName name(cx);
     if (op == JSOP_SETALIASEDVAR)
-        name = ScopeCoordinateName(cx, script, pc);
+        name = ScopeCoordinateName(script, pc);
     else
         name = script->getName(pc);
     RootedId id(cx, NameToId(name));
@@ -7439,6 +7439,18 @@ GetTemplateObjectForNative(JSContext *cx, HandleScript script, jsbytecode *pc,
         return true;
     }
 
+    if (native == intrinsic_NewDenseArray) {
+        res.set(NewDenseUnallocatedArray(cx, 0, nullptr, TenuredObject));
+        if (!res)
+            return false;
+
+        types::TypeObject *type = types::TypeScript::InitObject(cx, script, pc, JSProto_Array);
+        if (!type)
+            return false;
+        res->setType(type);
+        return true;
+    }
+
     if (native == js::array_concat) {
         if (args.thisv().isObject() && args.thisv().toObject().is<ArrayObject>() &&
             !args.thisv().toObject().hasSingletonType())
@@ -7451,11 +7463,36 @@ GetTemplateObjectForNative(JSContext *cx, HandleScript script, jsbytecode *pc,
         }
     }
 
+    if (native == js::str_split && args.length() == 1 && args[0].isString()) {
+        res.set(NewDenseUnallocatedArray(cx, 0, nullptr, TenuredObject));
+        if (!res)
+            return false;
+
+        types::TypeObject *type = types::TypeScript::InitObject(cx, script, pc, JSProto_Array);
+        if (!type)
+            return false;
+        res->setType(type);
+        return true;
+    }
+
     if (native == js_String) {
         RootedString emptyString(cx, cx->runtime()->emptyString);
         res.set(StringObject::create(cx, emptyString, TenuredObject));
         if (!res)
             return false;
+        return true;
+    }
+
+    if (native == intrinsic_NewParallelArray || native == ParallelArrayObject::construct) {
+        res.set(ParallelArrayObject::newInstance(cx, TenuredObject));
+        if (!res)
+            return false;
+
+        types::TypeObject *type =
+            types::TypeScript::InitObject(cx, script, pc, JSProto_ParallelArray);
+        if (!type)
+            return false;
+        res->setType(type);
         return true;
     }
 
@@ -9462,6 +9499,42 @@ ICGetProp_DOMProxyShadowed::ICGetProp_DOMProxyShadowed(IonCode *stubCode,
     name_(name),
     pcOffset_(pcOffset)
 { }
+
+//
+// Rest_Fallback
+//
+
+static bool DoRestFallback(JSContext *cx, ICRest_Fallback *stub,
+                           BaselineFrame *frame, MutableHandleValue res)
+{
+    unsigned numFormals = frame->numFormalArgs() - 1;
+    unsigned numActuals = frame->numActualArgs();
+    unsigned numRest = numActuals > numFormals ? numActuals - numFormals : 0;
+    Value *rest = frame->argv() + numFormals;
+
+    JSObject *obj = NewDenseCopiedArray(cx, numRest, rest, nullptr);
+    if (!obj)
+        return false;
+    types::FixRestArgumentsType(cx, obj);
+    res.setObject(*obj);
+    return true;
+}
+
+typedef bool (*DoRestFallbackFn)(JSContext *, ICRest_Fallback *, BaselineFrame *,
+                                 MutableHandleValue);
+static const VMFunction DoRestFallbackInfo =
+    FunctionInfo<DoRestFallbackFn>(DoRestFallback);
+
+bool
+ICRest_Fallback::Compiler::generateStubCode(MacroAssembler &masm)
+{
+    EmitRestoreTailCallReg(masm);
+
+    masm.pushBaselineFramePtr(BaselineFrameReg, R0.scratchReg());
+    masm.push(BaselineStubReg);
+
+    return tailCallVM(DoRestFallbackInfo, masm);
+}
 
 } // namespace jit
 } // namespace js

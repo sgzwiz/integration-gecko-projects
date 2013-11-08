@@ -526,7 +526,6 @@ if CONFIG['MOZ_B2G_RIL']:
         'MozCellBroadcastEvent.webidl',
         'MozEmergencyCbModeEvent.webidl',
         'MozOtaStatusEvent.webidl',
-        'MozStkCommandEvent.webidl',
         'MozVoicemail.webidl',
         'MozVoicemailEvent.webidl',
         'USSDReceivedEvent.webidl',
@@ -571,6 +570,7 @@ GENERATED_EVENTS_WEBIDL_FILES = [
     'MediaStreamEvent.webidl',
     'MozContactChangeEvent.webidl',
     'MozInterAppMessageEvent.webidl',
+    'MozStkCommandEvent.webidl',
     'RTCDataChannelEvent.webidl',
     'RTCPeerConnectionIceEvent.webidl',
     'TrackEvent.webidl',
@@ -583,4 +583,3 @@ if CONFIG['MOZ_GAMEPAD']:
         'GamepadButtonEvent.webidl',
         'GamepadEvent.webidl',
     ]
-

@@ -124,6 +124,7 @@ MOZ_ARG_DISABLE_BOOL(compile-environment,
 [  --disable-compile-environment
                           Disable compiler/library checks.],
     COMPILE_ENVIRONMENT= )
+AC_SUBST(COMPILE_ENVIRONMENT)
 
 dnl Check for Perl first -- needed for win32 SDK checks
 MOZ_PATH_PROGS(PERL, $PERL perl5 perl )
@@ -2089,7 +2090,10 @@ if test "$ENABLE_YARR_JIT"; then
     AC_DEFINE(ENABLE_YARR_JIT)
 fi
 
-MOZ_COMPILER_OPTS
+if test -n "$COMPILE_ENVIRONMENT"; then
+    MOZ_COMPILER_OPTS
+fi
+
 if test -z "$SKIP_COMPILER_CHECKS"; then
 dnl Checks for typedefs, structures, and compiler characteristics.
 dnl ========================================================
@@ -2912,7 +2916,7 @@ if test "$_USE_SYSTEM_NSPR" || (test "$NSPR_CFLAGS" -o "$NSPR_LIBS"); then
 fi
 
 case "$target" in
-  *linux*)
+  *linux*|*darwin*)
     if test -z "$_HAS_NSPR"; then JS_POSIX_NSPR_DEFAULT=1; fi
     ;;
 esac
@@ -4300,16 +4304,9 @@ if test "$JS_HAS_CTYPES" -a -z "$MOZ_NATIVE_FFI"; then
     ac_configure_args="$ac_configure_args --with-pic"
   fi
   if test "$CROSS_COMPILE"; then
-    case "$target" in
-    *-android*|*-linuxandroid*)
-      export AS CC CXX CPP LD AR RANLIB STRIP CPPFLAGS CFLAGS LDFLAGS
+    export AS CC CXX CPP LD AR RANLIB STRIP CPPFLAGS CFLAGS LDFLAGS
 
-      ac_configure_args="$ac_configure_args --build=$build --host=$target HOST_CC=\"$HOST_CC\""
-      ;;
-    *)
-      ac_configure_args="$ac_configure_args --build=$build --host=$target HOST_CC=\"$HOST_CC\" CC=\"$CC\""
-      ;;
-    esac
+    ac_configure_args="$ac_configure_args --build=$build --host=$target HOST_CC=\"$HOST_CC\""
   fi
   if test "$_MSC_VER"; then
     # Use a wrapper script for cl and ml that looks more like gcc.
