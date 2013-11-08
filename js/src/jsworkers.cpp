@@ -105,7 +105,7 @@ FinishOffThreadIonCompile(jit::IonBuilder *builder)
     JS_ASSERT(compartment->runtimeFromAnyThread()->workerThreadState);
     JS_ASSERT(compartment->runtimeFromAnyThread()->workerThreadState->isLocked());
 
-    compartment->ionCompartment()->finishedOffThreadCompilations().append(builder);
+    compartment->jitCompartment()->finishedOffThreadCompilations().append(builder);
 }
 
 static inline bool
@@ -126,8 +126,8 @@ js::CancelOffThreadIonCompile(JSCompartment *compartment, JSScript *script)
 
     WorkerThreadState &state = *rt->workerThreadState;
 
-    jit::IonCompartment *ion = compartment->ionCompartment();
-    if (!ion)
+    jit::JitCompartment *jitComp = compartment->jitCompartment();
+    if (!jitComp)
         return;
 
     AutoLockWorkerThreadState lock(state);
@@ -153,7 +153,7 @@ js::CancelOffThreadIonCompile(JSCompartment *compartment, JSScript *script)
         }
     }
 
-    jit::OffThreadCompilationVector &compilations = ion->finishedOffThreadCompilations();
+    jit::OffThreadCompilationVector &compilations = jitComp->finishedOffThreadCompilations();
 
     /* Cancel code generation for any completed entries. */
     for (size_t i = 0; i < compilations.length(); i++) {
@@ -174,31 +174,29 @@ static const JSClass workerGlobalClass = {
     JS_ConvertStub,   nullptr
 };
 
-ParseTask::ParseTask(ExclusiveContext *cx, const CompileOptions &options,
+ParseTask::ParseTask(ExclusiveContext *cx, JSContext *initCx,
                      const jschar *chars, size_t length, JSObject *scopeChain,
                      JS::OffThreadCompileCallback callback, void *callbackData)
-  : cx(cx), options(options), chars(chars), length(length),
+  : cx(cx), options(initCx), chars(chars), length(length),
     alloc(JSRuntime::TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE), scopeChain(scopeChain),
     callback(callback), callbackData(callbackData), script(nullptr), errors(cx)
 {
     JSRuntime *rt = scopeChain->runtimeFromMainThread();
 
-    if (options.principals())
-        JS_HoldPrincipals(options.principals());
-    if (options.originPrincipals())
-        JS_HoldPrincipals(options.originPrincipals());
     if (!AddObjectRoot(rt, &this->scopeChain, "ParseTask::scopeChain"))
         MOZ_CRASH();
+}
+
+bool
+ParseTask::init(JSContext *cx, const ReadOnlyCompileOptions &options)
+{
+    return this->options.copy(cx, options);
 }
 
 ParseTask::~ParseTask()
 {
     JSRuntime *rt = scopeChain->runtimeFromMainThread();
 
-    if (options.principals())
-        JS_DropPrincipals(rt, options.principals());
-    if (options.originPrincipals())
-        JS_DropPrincipals(rt, options.originPrincipals());
     JS_RemoveObjectRootRT(rt, &scopeChain);
 
     // ParseTask takes over ownership of its input exclusive context.
@@ -209,7 +207,7 @@ ParseTask::~ParseTask()
 }
 
 bool
-js::StartOffThreadParseScript(JSContext *cx, const CompileOptions &options,
+js::StartOffThreadParseScript(JSContext *cx, const ReadOnlyCompileOptions &options,
                               const jschar *chars, size_t length, HandleObject scopeChain,
                               JS::OffThreadCompileCallback callback, void *callbackData)
 {
@@ -267,9 +265,9 @@ js::StartOffThreadParseScript(JSContext *cx, const CompileOptions &options,
     workercx->enterCompartment(global->compartment());
 
     ScopedJSDeletePtr<ParseTask> task(
-        cx->new_<ParseTask>(workercx.get(), options, chars, length,
+        cx->new_<ParseTask>(workercx.get(), cx, chars, length,
                             scopeChain, callback, callbackData));
-    if (!task)
+    if (!task || !task->init(cx, options))
         return false;
 
     workercx.forget();
@@ -658,9 +656,9 @@ WorkerThread::handleAsmJSWorkload(WorkerThreadState &state)
 
     // On failure, signal parent for harvesting in CancelOutstandingJobs().
     if (!success) {
-        asmData = nullptr;
         state.noteAsmJSFailure(asmData->func);
         state.notifyAll(WorkerThreadState::CONSUMER);
+        asmData = nullptr;
         return;
     }
 
@@ -927,7 +925,8 @@ WorkerThread::threadLoop()
     }
 }
 
-AutoPauseWorkersForGC::AutoPauseWorkersForGC(JSRuntime *rt MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+AutoPauseWorkersForTracing::AutoPauseWorkersForTracing(JSRuntime *rt
+                                                       MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
   : runtime(rt), needsUnpause(false), oldExclusiveThreadsPaused(rt->exclusiveThreadsPaused)
 {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
@@ -945,7 +944,7 @@ AutoPauseWorkersForGC::AutoPauseWorkersForGC(JSRuntime *rt MOZ_GUARD_OBJECT_NOTI
 
     AutoLockWorkerThreadState lock(state);
 
-    // Tolerate reentrant use of AutoPauseWorkersForGC.
+    // Tolerate reentrant use of AutoPauseWorkersForTracing.
     if (state.shouldPause) {
         JS_ASSERT(state.numPaused == state.numThreads);
         return;
@@ -961,7 +960,7 @@ AutoPauseWorkersForGC::AutoPauseWorkersForGC(JSRuntime *rt MOZ_GUARD_OBJECT_NOTI
     }
 }
 
-AutoPauseWorkersForGC::~AutoPauseWorkersForGC()
+AutoPauseWorkersForTracing::~AutoPauseWorkersForTracing()
 {
     runtime->exclusiveThreadsPaused = oldExclusiveThreadsPaused;
 
@@ -986,7 +985,7 @@ AutoPauseCurrentWorkerThread::AutoPauseCurrentWorkerThread(ExclusiveContext *cx
     // If the current thread is a worker thread, treat it as paused while
     // the caller is waiting for another worker thread to complete. Otherwise
     // we will not wake up and mark this as paused due to the loop in
-    // AutoPauseWorkersForGC.
+    // AutoPauseWorkersForTracing.
     if (cx->workerThread()) {
         WorkerThreadState &state = *cx->workerThreadState();
         JS_ASSERT(state.isLocked());
@@ -1054,7 +1053,7 @@ js::CancelOffThreadIonCompile(JSCompartment *compartment, JSScript *script)
 }
 
 bool
-js::StartOffThreadParseScript(JSContext *cx, const CompileOptions &options,
+js::StartOffThreadParseScript(JSContext *cx, const ReadOnlyCompileOptions &options,
                               const jschar *chars, size_t length, HandleObject scopeChain,
                               JS::OffThreadCompileCallback callback, void *callbackData)
 {
@@ -1086,12 +1085,13 @@ ScriptSource::getOffThreadCompressionChars(ExclusiveContext *cx)
     return nullptr;
 }
 
-AutoPauseWorkersForGC::AutoPauseWorkersForGC(JSRuntime *rt MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+AutoPauseWorkersForTracing::AutoPauseWorkersForTracing(JSRuntime *rt
+                                                       MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
 {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
 }
 
-AutoPauseWorkersForGC::~AutoPauseWorkersForGC()
+AutoPauseWorkersForTracing::~AutoPauseWorkersForTracing()
 {
 }
 

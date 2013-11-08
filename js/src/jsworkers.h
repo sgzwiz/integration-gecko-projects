@@ -245,7 +245,7 @@ CancelOffThreadIonCompile(JSCompartment *compartment, JSScript *script);
  * alive until the compilation finishes.
  */
 bool
-StartOffThreadParseScript(JSContext *cx, const CompileOptions &options,
+StartOffThreadParseScript(JSContext *cx, const ReadOnlyCompileOptions &options,
                           const jschar *chars, size_t length, HandleObject scopeChain,
                           JS::OffThreadCompileCallback callback, void *callbackData);
 
@@ -328,7 +328,7 @@ WorkerThread::maybePause()
 #endif // JS_WORKER_THREADS
 
 /* Pause any threads that are running jobs off thread during GC activity. */
-class AutoPauseWorkersForGC
+class AutoPauseWorkersForTracing
 {
 #ifdef JS_WORKER_THREADS
     JSRuntime *runtime;
@@ -338,8 +338,8 @@ class AutoPauseWorkersForGC
     MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 
   public:
-    AutoPauseWorkersForGC(JSRuntime *rt MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
-    ~AutoPauseWorkersForGC();
+    AutoPauseWorkersForTracing(JSRuntime *rt MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+    ~AutoPauseWorkersForTracing();
 };
 
 /*
@@ -391,7 +391,7 @@ struct AsmJSParallelTask
 struct ParseTask
 {
     ExclusiveContext *cx;
-    CompileOptions options;
+    OwningCompileOptions options;
     const jschar *chars;
     size_t length;
     LifoAlloc alloc;
@@ -414,9 +414,10 @@ struct ParseTask
     // when finishing the script.
     Vector<frontend::CompileError *> errors;
 
-    ParseTask(ExclusiveContext *cx, const CompileOptions &options,
+    ParseTask(ExclusiveContext *cx, JSContext *initCx,
               const jschar *chars, size_t length, JSObject *scopeChain,
               JS::OffThreadCompileCallback callback, void *callbackData);
+    bool init(JSContext *cx, const ReadOnlyCompileOptions &options);
 
     ~ParseTask();
 };

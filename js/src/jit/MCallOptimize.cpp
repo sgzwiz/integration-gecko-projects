@@ -8,6 +8,7 @@
 
 #include "builtin/ParallelArray.h"
 #include "builtin/TestingFunctions.h"
+#include "jit/BaselineInspector.h"
 #include "jit/IonBuilder.h"
 #include "jit/Lowering.h"
 #include "jit/MIR.h"
@@ -104,6 +105,8 @@ IonBuilder::inlineNativeCall(CallInfo &callInfo, JSNative native)
     // String natives.
     if (native == js_String)
         return inlineStringObject(callInfo);
+    if (native == js::str_split)
+        return inlineStringSplit(callInfo);
     if (native == js_str_charCodeAt)
         return inlineStrCharCodeAt(callInfo);
     if (native == js::str_fromCharCode)
@@ -156,16 +159,10 @@ IonBuilder::inlineNativeCall(CallInfo &callInfo, JSNative native)
     return InliningStatus_NotInlined;
 }
 
-types::StackTypeSet *
-IonBuilder::getOriginalInlineReturnTypeSet()
-{
-    return types::TypeScript::BytecodeTypes(script(), pc);
-}
-
 types::TemporaryTypeSet *
 IonBuilder::getInlineReturnTypeSet()
 {
-    return cloneTypeSet(getOriginalInlineReturnTypeSet());
+    return bytecodeTypes(pc);
 }
 
 MIRType
@@ -189,11 +186,11 @@ IonBuilder::inlineMathFunction(CallInfo &callInfo, MMathFunction::Function funct
     if (!IsNumberType(callInfo.getArg(0)->type()))
         return InliningStatus_NotInlined;
 
-    callInfo.unwrapArgs();
-
-    MathCache *cache = cx->runtime()->getMathCache(cx);
+    MathCache *cache = compartment->runtimeFromAnyThread()->maybeGetMathCache();
     if (!cache)
-        return InliningStatus_Error;
+        return InliningStatus_NotInlined;
+
+    callInfo.unwrapArgs();
 
     MMathFunction *ins = MMathFunction::New(callInfo.getArg(0), function, cache);
     current->add(ins);
@@ -207,21 +204,23 @@ IonBuilder::inlineArray(CallInfo &callInfo)
     uint32_t initLength = 0;
     MNewArray::AllocatingBehaviour allocating = MNewArray::NewArray_Unallocating;
 
+    JSObject *templateObject = inspector->getTemplateObjectForNative(pc, js_Array);
+    if (!templateObject)
+        return InliningStatus_NotInlined;
+    JS_ASSERT(templateObject->is<ArrayObject>());
+
     // Multiple arguments imply array initialization, not just construction.
     if (callInfo.argc() >= 2) {
         initLength = callInfo.argc();
         allocating = MNewArray::NewArray_Allocating;
 
-        types::TypeObject *baseType = types::TypeScript::InitObject(cx, script(), pc, JSProto_Array);
-        if (!baseType)
-            return InliningStatus_Error;
-        types::TypeObjectKey *type = types::TypeObjectKey::get(baseType);
+        types::TypeObjectKey *type = types::TypeObjectKey::get(templateObject);
         if (!type->unknownProperties()) {
             types::HeapTypeSetKey elemTypes = type->property(JSID_VOID);
 
             for (uint32_t i = 0; i < initLength; i++) {
                 MDefinition *value = callInfo.getArg(i);
-                if (!TypeSetIncludes(elemTypes.actualTypes, value->type(), value->resultTypeSet())) {
+                if (!TypeSetIncludes(elemTypes.maybeTypes(), value->type(), value->resultTypeSet())) {
                     elemTypes.freeze(constraints());
                     return InliningStatus_NotInlined;
                 }
@@ -244,10 +243,6 @@ IonBuilder::inlineArray(CallInfo &callInfo)
     }
 
     callInfo.unwrapArgs();
-
-    JSObject *templateObject = getNewArrayTemplateObject(initLength);
-    if (!templateObject)
-        return InliningStatus_Error;
 
     types::TemporaryTypeSet::DoubleConversion conversion =
         getInlineReturnTypeSet()->convertDoubleElements(constraints());
@@ -322,17 +317,16 @@ IonBuilder::inlineArrayPopShift(CallInfo &callInfo, MArrayPopShift::Mode mode)
     if (thisTypes->hasObjectFlags(constraints(), unhandledFlags))
         return InliningStatus_NotInlined;
 
-    RootedScript scriptRoot(cx, script());
-    if (types::ArrayPrototypeHasIndexedProperty(constraints(), scriptRoot))
+    if (types::ArrayPrototypeHasIndexedProperty(constraints(), script()))
         return InliningStatus_NotInlined;
 
     callInfo.unwrapArgs();
 
-    types::StackTypeSet *returnTypes = getOriginalInlineReturnTypeSet();
+    types::TemporaryTypeSet *returnTypes = getInlineReturnTypeSet();
     bool needsHoleCheck = thisTypes->hasObjectFlags(constraints(), types::OBJECT_FLAG_NON_PACKED);
     bool maybeUndefined = returnTypes->hasType(types::Type::UndefinedType());
 
-    bool barrier = PropertyReadNeedsTypeBarrier(cx, constraints(),
+    bool barrier = PropertyReadNeedsTypeBarrier(context(), constraints(),
                                                 callInfo.thisArg(), nullptr, returnTypes);
     if (barrier)
         returnType = MIRType_Value;
@@ -346,7 +340,7 @@ IonBuilder::inlineArrayPopShift(CallInfo &callInfo, MArrayPopShift::Mode mode)
     if (!resumeAfter(ins))
         return InliningStatus_Error;
 
-    if (!pushTypeBarrier(ins, cloneTypeSet(returnTypes), barrier))
+    if (!pushTypeBarrier(ins, returnTypes, barrier))
         return InliningStatus_Error;
 
     return InliningStatus_Inlined;
@@ -381,8 +375,7 @@ IonBuilder::inlineArrayPush(CallInfo &callInfo)
         return InliningStatus_NotInlined;
     }
 
-    RootedScript scriptRoot(cx, script());
-    if (types::ArrayPrototypeHasIndexedProperty(constraints(), scriptRoot))
+    if (types::ArrayPrototypeHasIndexedProperty(constraints(), script()))
         return InliningStatus_NotInlined;
 
     types::TemporaryTypeSet::DoubleConversion conversion =
@@ -450,8 +443,7 @@ IonBuilder::inlineArrayConcat(CallInfo &callInfo)
     }
 
     // Watch out for indexed properties on the prototype.
-    RootedScript scriptRoot(cx, script());
-    if (types::ArrayPrototypeHasIndexedProperty(constraints(), scriptRoot))
+    if (types::ArrayPrototypeHasIndexedProperty(constraints(), script()))
         return InliningStatus_NotInlined;
 
     // Require the 'this' types to have a specific type matching the current
@@ -500,10 +492,10 @@ IonBuilder::inlineArrayConcat(CallInfo &callInfo)
     }
 
     // Inline the call.
-    JSObject *templateObj = NewDenseEmptyArray(cx, thisType->proto().toObject(), TenuredObject);
-    if (!templateObj)
-        return InliningStatus_Error;
-    templateObj->setType(baseThisType);
+    JSObject *templateObj = inspector->getTemplateObjectForNative(pc, js::array_concat);
+    if (!templateObj || templateObj->type() != baseThisType)
+        return InliningStatus_NotInlined;
+    JS_ASSERT(templateObj->is<ArrayObject>());
 
     callInfo.unwrapArgs();
 
@@ -527,18 +519,27 @@ IonBuilder::inlineMathAbs(CallInfo &callInfo)
 
     MIRType returnType = getInlineReturnType();
     MIRType argType = callInfo.getArg(0)->type();
-    if (argType != MIRType_Int32 && argType != MIRType_Double)
+    if (!IsNumberType(argType))
         return InliningStatus_NotInlined;
 
-    if (argType != returnType && returnType != MIRType_Int32)
+    // Either argType == returnType, or
+    //        argType == Double or Float32, returnType == Int, or
+    //        argType == Float32, returnType == Double
+    if (argType != returnType && !(IsFloatingPointType(argType) && returnType == MIRType_Int32)
+        && !(argType == MIRType_Float32 && returnType == MIRType_Double))
+    {
         return InliningStatus_NotInlined;
+    }
 
     callInfo.unwrapArgs();
 
-    MInstruction *ins = MAbs::New(callInfo.getArg(0), argType);
+    // If the arg is a Float32, we specialize the op as double, it will be specialized
+    // as float32 if necessary later.
+    MIRType absType = (argType == MIRType_Float32) ? MIRType_Double : argType;
+    MInstruction *ins = MAbs::New(callInfo.getArg(0), absType);
     current->add(ins);
 
-    if (argType != returnType) {
+    if (IsFloatingPointType(argType) && returnType == MIRType_Int32) {
         MToInt32 *toInt = MToInt32::New(ins);
         toInt->setCanBeNegativeZero(false);
         current->add(toInt);
@@ -552,7 +553,6 @@ IonBuilder::inlineMathAbs(CallInfo &callInfo)
 IonBuilder::InliningStatus
 IonBuilder::inlineMathFloor(CallInfo &callInfo)
 {
-
     if (callInfo.constructing())
         return InliningStatus_NotInlined;
 
@@ -569,7 +569,7 @@ IonBuilder::inlineMathFloor(CallInfo &callInfo)
         return InliningStatus_Inlined;
     }
 
-    if (argType == MIRType_Double && returnType == MIRType_Int32) {
+    if (IsFloatingPointType(argType) && returnType == MIRType_Int32) {
         callInfo.unwrapArgs();
         MFloor *ins = new MFloor(callInfo.getArg(0));
         current->add(ins);
@@ -577,7 +577,7 @@ IonBuilder::inlineMathFloor(CallInfo &callInfo)
         return InliningStatus_Inlined;
     }
 
-    if (argType == MIRType_Double && returnType == MIRType_Double) {
+    if (IsFloatingPointType(argType) && returnType == MIRType_Double) {
         callInfo.unwrapArgs();
         MMathFunction *ins = MMathFunction::New(callInfo.getArg(0), MMathFunction::Floor, nullptr);
         current->add(ins);
@@ -703,11 +703,10 @@ IonBuilder::inlineMathPow(CallInfo &callInfo)
     MDefinition *output = nullptr;
 
     // Optimize some constant powers.
-    if (callInfo.getArg(1)->isConstant()) {
-        double pow;
-        Value v = callInfo.getArg(1)->toConstant()->value();
-        if (!ToNumber(GetIonContext()->cx, v, &pow))
-            return InliningStatus_Error;
+    if (callInfo.getArg(1)->isConstant() &&
+        callInfo.getArg(1)->toConstant()->value().isNumber())
+    {
+        double pow = callInfo.getArg(1)->toConstant()->value().toNumber();
 
         // Math.pow(x, 0.5) is a sqrt with edge-case detection.
         if (pow == 0.5) {
@@ -807,9 +806,9 @@ IonBuilder::inlineMathImul(CallInfo &callInfo)
     if (returnType != MIRType_Int32)
         return InliningStatus_NotInlined;
 
-    if (!IsNumberType(callInfo.getArg(0)->type()) || callInfo.getArg(0)->type() == MIRType_Float32)
+    if (!IsNumberType(callInfo.getArg(0)->type()))
         return InliningStatus_NotInlined;
-    if (!IsNumberType(callInfo.getArg(1)->type()) || callInfo.getArg(1)->type() == MIRType_Float32)
+    if (!IsNumberType(callInfo.getArg(1)->type()))
         return InliningStatus_NotInlined;
 
     callInfo.unwrapArgs();
@@ -896,12 +895,12 @@ IonBuilder::inlineStringObject(CallInfo &callInfo)
     if (type != MIRType_Int32 && type != MIRType_String)
         return InliningStatus_NotInlined;
 
-    callInfo.unwrapArgs();
-
-    RootedString emptyString(cx, cx->runtime()->emptyString);
-    JSObject *templateObj = StringObject::create(cx, emptyString, TenuredObject);
+    JSObject *templateObj = inspector->getTemplateObjectForNative(pc, js_String);
     if (!templateObj)
-        return InliningStatus_Error;
+        return InliningStatus_NotInlined;
+    JS_ASSERT(templateObj->is<StringObject>());
+
+    callInfo.unwrapArgs();
 
     MNewStringObject *ins = MNewStringObject::New(callInfo.getArg(0), templateObj);
     current->add(ins);
@@ -909,6 +908,43 @@ IonBuilder::inlineStringObject(CallInfo &callInfo)
 
     if (!resumeAfter(ins))
         return InliningStatus_Error;
+
+    return InliningStatus_Inlined;
+}
+
+IonBuilder::InliningStatus
+IonBuilder::inlineStringSplit(CallInfo &callInfo)
+{
+    if (callInfo.argc() != 1 || callInfo.constructing())
+        return InliningStatus_NotInlined;
+    if (callInfo.thisArg()->type() != MIRType_String)
+        return InliningStatus_NotInlined;
+    if (callInfo.getArg(0)->type() != MIRType_String)
+        return InliningStatus_NotInlined;
+
+    JSObject *templateObject = inspector->getTemplateObjectForNative(pc, js::str_split);
+    if (!templateObject)
+        return InliningStatus_NotInlined;
+    JS_ASSERT(templateObject->is<ArrayObject>());
+
+    types::TypeObjectKey *retType = types::TypeObjectKey::get(templateObject);
+    if (retType->unknownProperties())
+        return InliningStatus_NotInlined;
+
+    types::HeapTypeSetKey key = retType->property(JSID_VOID);
+    if (!key.maybeTypes())
+        return InliningStatus_NotInlined;
+
+    if (!key.maybeTypes()->hasType(types::Type::StringType())) {
+        key.freeze(constraints());
+        return InliningStatus_NotInlined;
+    }
+
+    callInfo.unwrapArgs();
+
+    MStringSplit *ins = MStringSplit::New(callInfo.thisArg(), callInfo.getArg(0), templateObject);
+    current->add(ins);
+    current->push(ins);
 
     return InliningStatus_Inlined;
 }
@@ -1194,14 +1230,12 @@ IonBuilder::inlineNewParallelArray(CallInfo &callInfo)
 
     types::TemporaryTypeSet *ctorTypes = callInfo.getArg(0)->resultTypeSet();
     JSObject *targetObj = ctorTypes ? ctorTypes->getSingleton() : nullptr;
-    RootedFunction target(cx);
+    JSFunction *target = nullptr;
     if (targetObj && targetObj->is<JSFunction>())
         target = &targetObj->as<JSFunction>();
     if (target && target->isInterpreted() && target->nonLazyScript()->shouldCloneAtCallsite) {
-        RootedScript scriptRoot(cx, script());
-        target = CloneFunctionAtCallsite(cx, target, scriptRoot, pc);
-        if (!target)
-            return InliningStatus_Error;
+        if (JSFunction *clone = ExistingCloneFunctionAtCallsite(compartment, target, script(), pc))
+            target = clone;
     }
     MDefinition *ctor = makeCallsiteClone(
         target,
@@ -1209,7 +1243,8 @@ IonBuilder::inlineNewParallelArray(CallInfo &callInfo)
 
     // Discard the function.
     return inlineParallelArrayTail(callInfo, target, ctor,
-                                   target ? nullptr : ctorTypes, 1);
+                                   target ? nullptr : ctorTypes, 1,
+                                   intrinsic_NewParallelArray);
 }
 
 IonBuilder::InliningStatus
@@ -1219,28 +1254,28 @@ IonBuilder::inlineParallelArray(CallInfo &callInfo)
         return InliningStatus_NotInlined;
 
     uint32_t argc = callInfo.argc();
-    RootedFunction target(cx, ParallelArrayObject::getConstructor(cx, argc));
+    JSFunction *target = ParallelArrayObject::maybeGetConstructor(&script()->global(), argc);
     if (!target)
-        return InliningStatus_Error;
+        return InliningStatus_NotInlined;
 
     JS_ASSERT(target->nonLazyScript()->shouldCloneAtCallsite);
-    RootedScript script(cx, script_);
-    target = CloneFunctionAtCallsite(cx, target, script, pc);
-    if (!target)
-        return InliningStatus_Error;
+    if (JSFunction *clone = ExistingCloneFunctionAtCallsite(compartment, target, script(), pc))
+        target = clone;
 
     MConstant *ctor = MConstant::New(ObjectValue(*target));
     current->add(ctor);
 
-    return inlineParallelArrayTail(callInfo, target, ctor, nullptr, 0);
+    return inlineParallelArrayTail(callInfo, target, ctor, nullptr, 0,
+                                   ParallelArrayObject::construct);
 }
 
 IonBuilder::InliningStatus
 IonBuilder::inlineParallelArrayTail(CallInfo &callInfo,
-                                    HandleFunction target,
+                                    JSFunction *target,
                                     MDefinition *ctor,
                                     types::TemporaryTypeSet *ctorTypes,
-                                    uint32_t discards)
+                                    uint32_t discards,
+                                    Native native)
 {
     // Rewrites either NewParallelArray(...) or new ParallelArray(...) from a
     // call to a native ctor into a call to the relevant function in the
@@ -1258,6 +1293,10 @@ IonBuilder::inlineParallelArrayTail(CallInfo &callInfo,
         return InliningStatus_NotInlined;
     types::TypeObject *typeObject = returnTypes->getTypeObject(0);
     if (!typeObject || typeObject->clasp != &ParallelArrayObject::class_)
+        return InliningStatus_NotInlined;
+
+    JSObject *templateObject = inspector->getTemplateObjectForNative(pc, native);
+    if (!templateObject || templateObject->type() != typeObject)
         return InliningStatus_NotInlined;
 
     // Create the call and add in the non-this arguments.
@@ -1302,10 +1341,6 @@ IonBuilder::inlineParallelArrayTail(CallInfo &callInfo,
 
     // Create the MIR to allocate the new parallel array.  Take the type
     // object is taken from the prediction set.
-    JSObject *templateObject = ParallelArrayObject::newInstance(cx, TenuredObject);
-    if (!templateObject)
-        return InliningStatus_Error;
-    templateObject->setType(typeObject);
     MNewParallelArray *newObject = MNewParallelArray::New(templateObject);
     current->add(newObject);
     MPassArg *newThis = MPassArg::New(newObject);
@@ -1366,10 +1401,9 @@ IonBuilder::inlineNewDenseArrayForParallelExecution(CallInfo &callInfo)
         return InliningStatus_NotInlined;
     types::TypeObject *typeObject = returnTypes->getTypeObject(0);
 
-    JSObject *templateObject = NewDenseAllocatedArray(cx, 0, nullptr, TenuredObject);
-    if (!templateObject)
-        return InliningStatus_Error;
-    templateObject->setType(typeObject);
+    JSObject *templateObject = inspector->getTemplateObjectForNative(pc, intrinsic_NewDenseArray);
+    if (!templateObject || templateObject->type() != typeObject)
+        return InliningStatus_NotInlined;
 
     callInfo.unwrapArgs();
 
@@ -1405,6 +1439,9 @@ IonBuilder::inlineUnsafeSetReservedSlot(CallInfo &callInfo)
     MStoreFixedSlot *store = MStoreFixedSlot::New(callInfo.getArg(0), slot, callInfo.getArg(2));
     current->add(store);
     current->push(store);
+
+    if (NeedsPostBarrier(info(), callInfo.getArg(2)))
+        current->add(MPostWriteBarrier::New(callInfo.thisArg(), callInfo.getArg(2)));
 
     return InliningStatus_Inlined;
 }

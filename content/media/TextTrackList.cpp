@@ -77,10 +77,10 @@ TextTrackList::GetTrackById(const nsAString& aId)
 }
 
 void
-TextTrackList::RemoveTextTrack(TextTrack& aTrack)
+TextTrackList::RemoveTextTrack(TextTrack* aTrack)
 {
-  if (mTextTracks.RemoveElement(&aTrack)) {
-    CreateAndDispatchTrackEventRunner(&aTrack, NS_LITERAL_STRING("removetrack"));
+  if (mTextTracks.RemoveElement(aTrack)) {
+    CreateAndDispatchTrackEventRunner(aTrack, NS_LITERAL_STRING("removetrack"));
   }
 }
 
@@ -120,7 +120,7 @@ void
 TextTrackList::CreateAndDispatchTrackEventRunner(TextTrack* aTrack,
                                                  const nsAString& aEventName)
 {
-  TrackEventInitInitializer eventInit;
+  TrackEventInit eventInit;
   eventInit.mBubbles = false;
   eventInit.mCancelable = false;
   eventInit.mTrack = aTrack;

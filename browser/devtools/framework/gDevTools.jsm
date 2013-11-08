@@ -206,11 +206,13 @@ DevTools.prototype = {
    *        The id of the tool to show
    * @param {Toolbox.HostType} hostType
    *        The type of host (bottom, window, side)
+   * @param {object} hostOptions
+   *        Options for host specifically
    *
    * @return {Toolbox} toolbox
    *        The toolbox that was opened
    */
-  showToolbox: function(target, toolId, hostType) {
+  showToolbox: function(target, toolId, hostType, hostOptions) {
     let deferred = promise.defer();
 
     let toolbox = this._toolboxes.get(target);
@@ -233,7 +235,7 @@ DevTools.prototype = {
     }
     else {
       // No toolbox for target, create one
-      toolbox = new devtools.Toolbox(target, toolId, hostType);
+      toolbox = new devtools.Toolbox(target, toolId, hostType, hostOptions);
 
       this._toolboxes.set(target, toolbox);
 
@@ -545,7 +547,7 @@ let gDevToolsBrowser = {
    */
   _addToolToWindows: function DT_addToolToWindows(toolDefinition) {
     // No menu item or global shortcut is required for options panel.
-    if (toolDefinition.id == "options") {
+    if (!toolDefinition.inMenu) {
       return;
     }
 
@@ -561,7 +563,7 @@ let gDevToolsBrowser = {
     let allDefs = gDevTools.getToolDefinitionArray();
     let prevDef;
     for (let def of allDefs) {
-      if (def.id == "options") {
+      if (!def.inMenu) {
         continue;
       }
       if (def === toolDefinition) {
@@ -630,7 +632,7 @@ let gDevToolsBrowser = {
     let fragMenuItems = doc.createDocumentFragment();
 
     for (let toolDefinition of gDevTools.getToolDefinitionArray()) {
-      if (toolDefinition.id == "options") {
+      if (!toolDefinition.inMenu) {
         continue;
       }
 

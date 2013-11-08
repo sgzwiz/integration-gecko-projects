@@ -2768,6 +2768,7 @@ bool nsWindow::DispatchKeyEvent(MPARAM mp1, MPARAM mp2)
   event.InitBasicModifiers(fsFlags & KC_CTRL, fsFlags & KC_ALT,
                            fsFlags & KC_SHIFT, false);
   event.charCode  = 0;
+  event.mIsRepeat = event.message == NS_KEY_DOWN && CHAR3FROMMP(mp1) != 0;
 
   // Check for a scroll mouse event vs. a keyboard event.  The way we know
   // this is that the repeat count is 0 and the key is not physically down.
@@ -3317,7 +3318,7 @@ bool nsWindow::DispatchActivationEvent(uint32_t aEventType)
 
 bool nsWindow::DispatchScrollEvent(ULONG msg, MPARAM mp1, MPARAM mp2)
 {
-  WheelEvent wheelEvent(true, NS_WHEEL_WHEEL, this);
+  WidgetWheelEvent wheelEvent(true, NS_WHEEL_WHEEL, this);
   InitEvent(wheelEvent);
 
   wheelEvent.InitBasicModifiers(isKeyDown(VK_CTRL),

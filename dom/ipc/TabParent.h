@@ -7,10 +7,10 @@
 #ifndef mozilla_tabs_TabParent_h
 #define mozilla_tabs_TabParent_h
 
+#include "mozilla/EventForwards.h"
 #include "mozilla/dom/PBrowserParent.h"
 #include "mozilla/dom/PContentDialogParent.h"
 #include "mozilla/dom/TabContext.h"
-#include "mozilla/TouchEvents.h"
 #include "nsCOMPtr.h"
 #include "nsIAuthPromptProvider.h"
 #include "nsIBrowserDOMWindow.h"
@@ -22,7 +22,10 @@
 
 struct gfxMatrix;
 class nsFrameLoader;
+class nsIContent;
+class nsIPrincipal;
 class nsIURI;
+class nsIWidget;
 class CpowHolder;
 
 namespace mozilla {
@@ -119,14 +122,17 @@ public:
     virtual bool RecvSyncMessage(const nsString& aMessage,
                                  const ClonedMessageData& aData,
                                  const InfallibleTArray<CpowEntry>& aCpows,
+                                 const IPC::Principal& aPrincipal,
                                  InfallibleTArray<nsString>* aJSONRetVal);
     virtual bool AnswerRpcMessage(const nsString& aMessage,
                                   const ClonedMessageData& aData,
                                   const InfallibleTArray<CpowEntry>& aCpows,
+                                  const IPC::Principal& aPrincipal,
                                   InfallibleTArray<nsString>* aJSONRetVal);
     virtual bool RecvAsyncMessage(const nsString& aMessage,
                                   const ClonedMessageData& aData,
-                                  const InfallibleTArray<CpowEntry>& aCpows);
+                                  const InfallibleTArray<CpowEntry>& aCpows,
+                                  const IPC::Principal& aPrincipal);
     virtual bool RecvNotifyIMEFocus(const bool& aFocus,
                                     nsIMEUpdatePreference* aPreference,
                                     uint32_t* aSeqno);
@@ -162,6 +168,9 @@ public:
                                            const CSSToScreenScale& aMaxZoom);
     virtual bool RecvUpdateScrollOffset(const uint32_t& aPresShellId, const ViewID& aViewId, const CSSIntPoint& aScrollOffset);
     virtual bool RecvContentReceivedTouch(const bool& aPreventDefault);
+    virtual bool RecvRecordingDeviceEvents(const nsString& aRecordingStatus,
+                                           const bool& aIsAudio,
+                                           const bool& aIsVideo);
     virtual PContentDialogParent* AllocPContentDialogParent(const uint32_t& aType,
                                                             const nsCString& aName,
                                                             const nsCString& aFeatures,
@@ -198,7 +207,7 @@ public:
                       int32_t aCharCode, int32_t aModifiers,
                       bool aPreventDefault);
     bool SendRealMouseEvent(mozilla::WidgetMouseEvent& event);
-    bool SendMouseWheelEvent(mozilla::WheelEvent& event);
+    bool SendMouseWheelEvent(mozilla::WidgetWheelEvent& event);
     bool SendRealKeyEvent(mozilla::WidgetKeyboardEvent& event);
     bool SendRealTouchEvent(WidgetTouchEvent& event);
 
@@ -238,11 +247,18 @@ public:
 
     ContentParent* Manager() { return mManager; }
 
+    /**
+     * Let managees query if Destroy() is already called so they don't send out
+     * messages when the PBrowser actor is being destroyed.
+     */
+    bool IsDestroyed() const { return mIsDestroyed; }
+
 protected:
     bool ReceiveMessage(const nsString& aMessage,
                         bool aSync,
                         const StructuredCloneData* aCloneData,
                         CpowHolder* aCpows,
+                        nsIPrincipal* aPrincipal,
                         InfallibleTArray<nsString>* aJSONRetVal = nullptr);
 
     virtual bool Recv__delete__() MOZ_OVERRIDE;

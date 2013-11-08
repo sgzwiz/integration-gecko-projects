@@ -17,14 +17,14 @@ class TestImportScript(MarionetteTestCase):
 
     def check_file_exists(self):
         return self.marionette.execute_script("""
-          let FileUtils = SpecialPowers.Cu.import("resource://gre/modules/FileUtils.jsm").FileUtils;
+          let FileUtils = SpecialPowers.Cu.import("resource://gre/modules/FileUtils.jsm", {}).FileUtils;
           let importedScripts = FileUtils.getFile('TmpD', ['marionetteContentScripts']); 
           return importedScripts.exists();
         """, special_powers=True)
 
     def get_file_size(self):
         return self.marionette.execute_script("""
-          let FileUtils = SpecialPowers.Cu.import("resource://gre/modules/FileUtils.jsm").FileUtils;
+          let FileUtils = SpecialPowers.Cu.import("resource://gre/modules/FileUtils.jsm", {}).FileUtils;
           let importedScripts = FileUtils.getFile('TmpD', ['marionetteContentScripts']); 
           return importedScripts.fileSize;
         """, special_powers=True)
@@ -128,31 +128,15 @@ class TestImportScriptChrome(TestImportScript):
 
     def check_file_exists(self):
         return self.marionette.execute_async_script("""
-          Components.utils.import("resource://gre/modules/FileUtils.jsm");
-          let checkTimer = Components.classes["@mozilla.org/timer;1"].createInstance(Components.interfaces.nsITimer);
-          let f = function() {
-            if (typeof FileUtils === 'undefined') {
-              checkTimer.initWithCallback(f, 100, Components.interfaces.nsITimer.TYPE_ONE_SHOT);
-              return;
-            }
-            let importedScripts = FileUtils.getFile('TmpD', ['marionetteChromeScripts']); 
-            marionetteScriptFinished(importedScripts.exists());
-          };
-          checkTimer.initWithCallback(f, 100, Components.interfaces.nsITimer.TYPE_ONE_SHOT);
+          let FileUtils = Components.utils.import("resource://gre/modules/FileUtils.jsm", {}).FileUtils;
+          let importedScripts = FileUtils.getFile('TmpD', ['marionetteChromeScripts']); 
+          marionetteScriptFinished(importedScripts.exists());
         """)
 
     def get_file_size(self):
         return self.marionette.execute_async_script("""
-          Components.utils.import("resource://gre/modules/FileUtils.jsm");
-          let checkTimer = Components.classes["@mozilla.org/timer;1"].createInstance(Components.interfaces.nsITimer);
-          let f = function() {
-            if (typeof FileUtils === 'undefined') {
-              checkTimer.initWithCallback(f, 100, Components.interfaces.nsITimer.TYPE_ONE_SHOT);
-              return;
-            }
-            let importedScripts = FileUtils.getFile('TmpD', ['marionetteChromeScripts']); 
-            marionetteScriptFinished(importedScripts.fileSize);
-          };
-          checkTimer.initWithCallback(f, 100, Components.interfaces.nsITimer.TYPE_ONE_SHOT);
+          let FileUtils = Components.utils.import("resource://gre/modules/FileUtils.jsm", {}).FileUtils;
+          let importedScripts = FileUtils.getFile('TmpD', ['marionetteChromeScripts']); 
+          marionetteScriptFinished(importedScripts.fileSize);
         """)
 

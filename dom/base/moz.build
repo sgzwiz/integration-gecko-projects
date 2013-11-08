@@ -34,15 +34,14 @@ EXPORTS += [
     'nsIScriptContext.h',
     'nsIScriptExternalNameSet.h',
     'nsIScriptGlobalObject.h',
-    'nsIScriptGlobalObjectOwner.h',
     'nsIScriptNameSpaceManager.h',
     'nsIScriptObjectPrincipal.h',
     'nsIScriptTimeoutHandler.h',
     'nsJSEnvironment.h',
     'nsJSUtils.h',
+    'nsPerformance.h',
     'nsPIDOMWindow.h',
     'nsPIWindowRoot.h',
-    'nsPerformance.h',
     'nsStructuredCloneContainer.h',
     'nsWindowMemoryReporter.h',
     'nsWrapperCache.h',
@@ -63,7 +62,7 @@ EXPORTS.mozilla.dom += [
     'URL.h',
 ]
 
-CPP_SOURCES += [
+SOURCES += [
     'BarProps.cpp',
     'CompositionStringSynthesizer.cpp',
     'Crypto.cpp',
@@ -71,10 +70,10 @@ CPP_SOURCES += [
     'DOMError.cpp',
     'DOMException.cpp',
     'DOMRequest.cpp',
-    'Navigator.cpp',
     'MessageChannel.cpp',
     'MessagePort.cpp',
     'MessagePortList.cpp',
+    'Navigator.cpp',
     'nsContentPermissionHelper.cpp',
     'nsDOMClassInfo.cpp',
     'nsDOMNavigationTiming.cpp',
@@ -125,3 +124,28 @@ MSVC_ENABLE_PGO = True
 
 LIBRARY_NAME = 'jsdombase_s'
 
+LOCAL_INCLUDES += [
+    '../battery',
+    '../bluetooth',
+    '../media',
+    '../network/src',
+    '../src/geolocation',
+    '../src/storage',
+    '../time',
+    '/content/base/src',
+    '/content/events/src',
+    '/content/html/document/src',
+    '/content/xbl/src',
+    '/content/xul/document/src',
+    '/layout/generic',
+    '/layout/style',
+    '/layout/xul/base/src',
+]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
+    LOCAL_INCLUDES += [
+        '../fmradio',
+        '../system/gonk',
+    ]
+
+include('/ipc/chromium/chromium-config.mozbuild')

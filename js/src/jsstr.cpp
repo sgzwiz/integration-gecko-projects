@@ -382,9 +382,9 @@ str_enumerate(JSContext *cx, HandleObject obj)
     return true;
 }
 
-static bool
-str_resolve(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
-            MutableHandleObject objp)
+bool
+js::str_resolve(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
+                MutableHandleObject objp)
 {
     if (!JSID_IS_INT(id))
         return true;
@@ -508,7 +508,7 @@ str_toSource_impl(JSContext *cx, CallArgs args)
     return true;
 }
 
-bool
+static bool
 str_toSource(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
@@ -539,7 +539,7 @@ js_str_toString(JSContext *cx, unsigned argc, Value *vp)
  * Java-like string native methods.
  */
 
-JS_ALWAYS_INLINE bool
+static JS_ALWAYS_INLINE bool
 ValueToIntegerRange(JSContext *cx, HandleValue v, int32_t *out)
 {
     if (v.isInt32()) {
@@ -1788,8 +1788,14 @@ class MOZ_STACK_CLASS StringRegExpGuard
         if (!regExpIsObject())
             return true;
 
-        // Don't use RegExpObject::setLastIndex, because that ignores the
-        // writability of "lastIndex" on this user-controlled RegExp object.
+        // Use a fast path for same-global RegExp objects with writable
+        // lastIndex.
+        if (obj_->is<RegExpObject>() && obj_->nativeLookup(cx, cx->names().lastIndex)->writable()) {
+            obj_->as<RegExpObject>().zeroLastIndex();
+            return true;
+        }
+
+        // Handle everything else generically (including throwing if .lastIndex is non-writable).
         RootedValue zero(cx, Int32Value(0));
         return JSObject::setProperty(cx, obj_, obj_, cx->names().lastIndex, &zero, true);
     }
@@ -2999,7 +3005,7 @@ class SplitMatchResult {
 } /* anonymous namespace */
 
 template<class Matcher>
-static JSObject *
+static ArrayObject *
 SplitHelper(JSContext *cx, Handle<JSLinearString*> str, uint32_t limit, const Matcher &splitMatch,
             Handle<TypeObject*> type)
 {
@@ -3281,6 +3287,28 @@ js::str_split(JSContext *cx, unsigned argc, Value *vp)
     aobj->setType(type);
     args.rval().setObject(*aobj);
     return true;
+}
+
+JSObject *
+js::str_split_string(JSContext *cx, HandleTypeObject type, HandleString str, HandleString sep)
+{
+    Rooted<JSLinearString*> linearStr(cx, str->ensureLinear(cx));
+    if (!linearStr)
+        return nullptr;
+
+    Rooted<JSLinearString*> linearSep(cx, sep->ensureLinear(cx));
+    if (!linearSep)
+        return nullptr;
+
+    uint32_t limit = UINT32_MAX;
+
+    SplitStringMatcher matcher(cx, linearSep);
+    ArrayObject *aobj = SplitHelper(cx, linearStr, limit, matcher, type);
+    if (!aobj)
+        return nullptr;
+
+    aobj->setType(type);
+    return aobj;
 }
 
 static bool
@@ -3658,9 +3686,7 @@ static const JSFunctionSpec string_methods[] = {
     JS_FN("sup",               str_sup,               0,0),
     JS_FN("sub",               str_sub,               0,0),
 #endif
-
-    JS_SELF_HOSTED_FN("@@iterator", "ArrayIterator",  0,0),
-    JS_FN("iterator",          JS_ArrayIterator,      0,0),
+    JS_SELF_HOSTED_FN("@@iterator", "String_iterator", 0,0),
     JS_FS_END
 };
 

@@ -683,6 +683,10 @@ public:
   // change. Call on the main thread only.
   void ChangeState(PlayState aState);
 
+  // Called by |ChangeState|, to update the state machine.
+  // Call on the main thread only and the lock must be obtained.
+  virtual void ApplyStateToStateMachine(PlayState aState);
+
   // May be called by the reader to notify this decoder that the metadata from
   // the media file has been read. Call on the decode thread only.
   void OnReadMetadataCompleted() MOZ_OVERRIDE { }
@@ -767,6 +771,9 @@ public:
 #ifdef MOZ_WEBM
   static bool IsWebMEnabled();
 #endif
+#ifdef MOZ_RTSP
+  static bool IsRtspEnabled();
+#endif
 
 #ifdef MOZ_GSTREAMER
   static bool IsGStreamerEnabled();
@@ -778,10 +785,6 @@ public:
 
 #ifdef MOZ_MEDIA_PLUGINS
   static bool IsMediaPluginsEnabled();
-#endif
-
-#ifdef MOZ_DASH
-  static bool IsDASHEnabled();
 #endif
 
 #ifdef MOZ_WMF

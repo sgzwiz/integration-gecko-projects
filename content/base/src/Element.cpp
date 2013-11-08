@@ -18,6 +18,7 @@
 #include "nsIAtom.h"
 #include "nsIContentInlines.h"
 #include "nsINodeInfo.h"
+#include "nsIDocumentEncoder.h"
 #include "nsIDocumentInlines.h"
 #include "nsIDOMNodeList.h"
 #include "nsIDOMDocument.h"
@@ -82,8 +83,6 @@
 #include "nsIWebNavigation.h"
 #include "nsIBaseWindow.h"
 #include "nsIWidget.h"
-
-#include "jsapi.h"
 
 #include "nsNodeInfoManager.h"
 #include "nsICategoryManager.h"
@@ -501,8 +500,8 @@ Element::GetScrollFrame(nsIFrame **aStyledFrame, bool aFlushLayout)
 
   // menu frames implement GetScrollTargetFrame but we don't want
   // to use it here.  Similar for comboboxes.
-  if (frame->GetType() != nsGkAtoms::menuFrame &&
-      frame->GetType() != nsGkAtoms::comboboxControlFrame) {
+  nsIAtom* type = frame->GetType();
+  if (type != nsGkAtoms::menuFrame && type != nsGkAtoms::comboboxControlFrame) {
     nsIScrollableFrame *scrollFrame = frame->GetScrollTargetFrame();
     if (scrollFrame)
       return scrollFrame;
@@ -1172,7 +1171,9 @@ Element::UnbindFromTree(bool aDeep, bool aNullParent)
       nsIDocument::UnlockPointer();
     }
     if (GetParent()) {
-      NS_RELEASE(mParent);
+      nsINode* p = mParent;
+      mParent = nullptr;
+      NS_RELEASE(p);
     } else {
       mParent = nullptr;
     }
@@ -1448,10 +1449,11 @@ Element::DispatchClickEvent(nsPresContext* aPresContext,
   uint32_t clickCount = 1;
   float pressure = 0;
   uint16_t inputSource = 0;
-  if (aSourceEvent->eventStructType == NS_MOUSE_EVENT) {
-    clickCount = static_cast<WidgetMouseEvent*>(aSourceEvent)->clickCount;
-    pressure = static_cast<WidgetMouseEvent*>(aSourceEvent)->pressure;
-    inputSource = static_cast<WidgetMouseEvent*>(aSourceEvent)->inputSource;
+  WidgetMouseEvent* sourceMouseEvent = aSourceEvent->AsMouseEvent();
+  if (sourceMouseEvent) {
+    clickCount = sourceMouseEvent->clickCount;
+    pressure = sourceMouseEvent->pressure;
+    inputSource = sourceMouseEvent->inputSource;
   } else if (aSourceEvent->eventStructType == NS_KEY_EVENT) {
     inputSource = nsIDOMMouseEvent::MOZ_SOURCE_KEYBOARD;
   }
@@ -1809,7 +1811,7 @@ Element::GetEventListenerManagerForAttr(nsIAtom* aAttrName,
                                         bool* aDefer)
 {
   *aDefer = true;
-  return GetListenerManager(true);
+  return GetOrCreateListenerManager();
 }
 
 Element::nsAttrInfo
@@ -2165,9 +2167,9 @@ Element::PreHandleEventForLinks(nsEventChainPreVisitor& aVisitor)
   case NS_MOUSE_ENTER_SYNTH:
     aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
     // FALL THROUGH
-  case NS_FOCUS_CONTENT:
-    if (aVisitor.mEvent->eventStructType != NS_FOCUS_EVENT ||
-        !static_cast<InternalFocusEvent*>(aVisitor.mEvent)->isRefocus) {
+  case NS_FOCUS_CONTENT: {
+    InternalFocusEvent* focusEvent = aVisitor.mEvent->AsFocusEvent();
+    if (!focusEvent || !focusEvent->isRefocus) {
       nsAutoString target;
       GetLinkTarget(target);
       nsContentUtils::TriggerLink(this, aVisitor.mPresContext, absURI, target,
@@ -2176,7 +2178,7 @@ Element::PreHandleEventForLinks(nsEventChainPreVisitor& aVisitor)
       aVisitor.mEvent->mFlags.mMultipleActionsPrevented = true;
     }
     break;
-
+  }
   case NS_MOUSE_EXIT_SYNTH:
     aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
     // FALL THROUGH
@@ -2222,8 +2224,7 @@ Element::PostHandleEventForLinks(nsEventChainPostVisitor& aVisitor)
   switch (aVisitor.mEvent->message) {
   case NS_MOUSE_BUTTON_DOWN:
     {
-      if (aVisitor.mEvent->eventStructType == NS_MOUSE_EVENT &&
-          static_cast<WidgetMouseEvent*>(aVisitor.mEvent)->button ==
+      if (aVisitor.mEvent->AsMouseEvent()->button ==
             WidgetMouseEvent::eLeftButton) {
         // don't make the link grab the focus if there is no link handler
         nsILinkHandler *handler = aVisitor.mPresContext->GetLinkHandler();
@@ -2244,12 +2245,11 @@ Element::PostHandleEventForLinks(nsEventChainPostVisitor& aVisitor)
     }
     break;
 
-  case NS_MOUSE_CLICK:
-    if (aVisitor.mEvent->IsLeftClickEvent()) {
-      WidgetInputEvent* inputEvent =
-        static_cast<WidgetInputEvent*>(aVisitor.mEvent);
-      if (inputEvent->IsControl() || inputEvent->IsMeta() ||
-          inputEvent->IsAlt() ||inputEvent->IsShift()) {
+  case NS_MOUSE_CLICK: {
+    WidgetMouseEvent* mouseEvent = aVisitor.mEvent->AsMouseEvent();
+    if (mouseEvent->IsLeftClickEvent()) {
+      if (mouseEvent->IsControl() || mouseEvent->IsMeta() ||
+          mouseEvent->IsAlt() ||mouseEvent->IsShift()) {
         break;
       }
 
@@ -2258,7 +2258,7 @@ Element::PostHandleEventForLinks(nsEventChainPostVisitor& aVisitor)
       if (shell) {
         // single-click
         nsEventStatus status = nsEventStatus_eIgnore;
-        InternalUIEvent actEvent(aVisitor.mEvent->mFlags.mIsTrusted,
+        InternalUIEvent actEvent(mouseEvent->mFlags.mIsTrusted,
                                  NS_UI_ACTIVATE, 1);
 
         rv = shell->HandleDOMEventWithTarget(this, &actEvent, &status);
@@ -2268,7 +2268,7 @@ Element::PostHandleEventForLinks(nsEventChainPostVisitor& aVisitor)
       }
     }
     break;
-
+  }
   case NS_UI_ACTIVATE:
     {
       if (aVisitor.mEvent->originalTarget == this) {
@@ -2284,16 +2284,13 @@ Element::PostHandleEventForLinks(nsEventChainPostVisitor& aVisitor)
 
   case NS_KEY_PRESS:
     {
-      if (aVisitor.mEvent->eventStructType == NS_KEY_EVENT) {
-        WidgetKeyboardEvent* keyEvent =
-          static_cast<WidgetKeyboardEvent*>(aVisitor.mEvent);
-        if (keyEvent->keyCode == NS_VK_RETURN) {
-          nsEventStatus status = nsEventStatus_eIgnore;
-          rv = DispatchClickEvent(aVisitor.mPresContext, keyEvent, this,
-                                  false, nullptr, &status);
-          if (NS_SUCCEEDED(rv)) {
-            aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
-          }
+      WidgetKeyboardEvent* keyEvent = aVisitor.mEvent->AsKeyboardEvent();
+      if (keyEvent && keyEvent->keyCode == NS_VK_RETURN) {
+        nsEventStatus status = nsEventStatus_eIgnore;
+        rv = DispatchClickEvent(aVisitor.mPresContext, keyEvent, this,
+                                false, nullptr, &status);
+        if (NS_SUCCEEDED(rv)) {
+          aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
         }
       }
     }
@@ -3120,6 +3117,7 @@ Element::GetMarkup(bool aIncludeSelf, nsAString& aMarkup)
 
   nsAutoString contentType;
   doc->GetContentType(contentType);
+  bool tryToCacheEncoder = !aIncludeSelf;
 
   nsCOMPtr<nsIDocumentEncoder> docEncoder = doc->GetCachedEncoder();
   if (!docEncoder) {
@@ -3134,6 +3132,9 @@ Element::GetMarkup(bool aIncludeSelf, nsAString& aMarkup)
     // again as XML
     contentType.AssignLiteral("application/xml");
     docEncoder = do_CreateInstance(NS_DOC_ENCODER_CONTRACTID_BASE "application/xml");
+    // Don't try to cache the encoder since it would point to a different
+    // contentType once it has been reinitialized.
+    tryToCacheEncoder = false;
   }
 
   NS_ENSURE_TRUE_VOID(docEncoder);
@@ -3164,7 +3165,7 @@ Element::GetMarkup(bool aIncludeSelf, nsAString& aMarkup)
   }
   rv = docEncoder->EncodeToString(aMarkup);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
-  if (!aIncludeSelf) {
+  if (tryToCacheEncoder) {
     doc->SetCachedEncoder(docEncoder.forget());
   }
 }

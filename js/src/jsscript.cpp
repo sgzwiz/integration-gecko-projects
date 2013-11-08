@@ -687,8 +687,8 @@ js::XDRScript(XDRState<mode> *xdr, HandleObject enclosingScope, HandleScript enc
                 if (!innerScript)
                     return false;
                 RootedObject staticScope(cx, innerScript->enclosingStaticScope());
-                StaticScopeIter ssi(cx, staticScope);
-                if (ssi.done() || ssi.type() == StaticScopeIter::FUNCTION) {
+                StaticScopeIter<NoGC> ssi(staticScope);
+                if (ssi.done() || ssi.type() == StaticScopeIter<NoGC>::FUNCTION) {
                     JS_ASSERT(ssi.done() == !fun);
                     funEnclosingScopeIndex = UINT32_MAX;
                 } else {
@@ -1670,7 +1670,7 @@ JSScript::initCompartment(ExclusiveContext *cx)
 
 JSScript *
 JSScript::Create(ExclusiveContext *cx, HandleObject enclosingScope, bool savedCallerFun,
-                 const CompileOptions &options, unsigned staticLevel,
+                 const ReadOnlyCompileOptions &options, unsigned staticLevel,
                  HandleScriptSource sourceObject, uint32_t bufStart, uint32_t bufEnd)
 {
     JS_ASSERT(bufStart <= bufEnd);
@@ -1806,7 +1806,7 @@ JSScript::fullyInitTrivial(ExclusiveContext *cx, Handle<JSScript*> script)
     if (!ssd)
         return false;
 
-    ssd->data[0] = JSOP_STOP;
+    ssd->data[0] = JSOP_RETRVAL;
     ssd->data[1] = SRC_NULL;
     script->length = 1;
     return SaveSharedScriptData(cx, script, ssd, 1);
@@ -2315,9 +2315,9 @@ js::CloneScript(JSContext *cx, HandleObject enclosingScope, HandleFunction fun, 
                             return nullptr;
                     }
                     RootedObject staticScope(cx, innerFun->nonLazyScript()->enclosingStaticScope());
-                    StaticScopeIter ssi(cx, staticScope);
+                    StaticScopeIter<CanGC> ssi(cx, staticScope);
                     RootedObject enclosingScope(cx);
-                    if (!ssi.done() && ssi.type() == StaticScopeIter::BLOCK)
+                    if (!ssi.done() && ssi.type() == StaticScopeIter<CanGC>::BLOCK)
                         enclosingScope = objects[FindBlockIndex(src, ssi.block())];
                     else
                         enclosingScope = fun;
@@ -2942,6 +2942,7 @@ LazyScript::LazyScript(JSFunction *fun, void *table, uint32_t numFreeVariables, 
     directlyInsideEval_(false),
     usesArgumentsAndApply_(false),
     hasBeenCloned_(false),
+    treatAsRunOnce_(false),
     begin_(begin),
     end_(end),
     lineno_(lineno),
@@ -3000,8 +3001,8 @@ LazyScript::Create(ExclusiveContext *cx, HandleFunction fun,
 uint32_t
 LazyScript::staticLevel(JSContext *cx) const
 {
-    for (StaticScopeIter ssi(cx, enclosingScope()); !ssi.done(); ssi++) {
-        if (ssi.type() == StaticScopeIter::FUNCTION)
+    for (StaticScopeIter<NoGC> ssi(enclosingScope()); !ssi.done(); ssi++) {
+        if (ssi.type() == StaticScopeIter<NoGC>::FUNCTION)
             return ssi.funScript()->staticLevel + 1;
     }
     return 1;

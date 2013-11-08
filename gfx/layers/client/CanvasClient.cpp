@@ -87,8 +87,9 @@ CanvasClient2D::Update(gfx::IntSize aSize, ClientCanvasLayer* aLayer)
 
   mBuffer->Unlock();
 
-  if (bufferCreated) {
-    AddTextureClient(mBuffer);
+  if (bufferCreated && !AddTextureClient(mBuffer)) {
+    mBuffer = nullptr;
+    return;
   }
 
   if (surface) {
@@ -98,10 +99,10 @@ CanvasClient2D::Update(gfx::IntSize aSize, ClientCanvasLayer* aLayer)
 }
 
 TemporaryRef<BufferTextureClient>
-CanvasClient2D::CreateBufferTextureClient(gfx::SurfaceFormat aFormat)
+CanvasClient2D::CreateBufferTextureClient(gfx::SurfaceFormat aFormat, TextureFlags aFlags)
 {
   return CompositableClient::CreateBufferTextureClient(aFormat,
-                                                       mTextureInfo.mTextureFlags);
+                                                       mTextureInfo.mTextureFlags | aFlags);
 }
 
 void

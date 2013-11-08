@@ -43,7 +43,7 @@ SurfaceFactory_Gralloc::SurfaceFactory_Gralloc(GLContext* prodGL,
 
     MOZ_ASSERT(allocator);
 
-    mAllocator = allocator;
+    mAllocator = allocator->asWeakPtr();
 }
 
 SharedSurface_Gralloc*
@@ -104,6 +104,12 @@ SharedSurface_Gralloc::Create(GLContext* prodGL,
     GLuint prodTex = 0;
     prodGL->fGenTextures(1, &prodTex);
     ScopedBindTexture autoTex(prodGL, prodTex);
+
+    prodGL->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MIN_FILTER, LOCAL_GL_LINEAR);
+    prodGL->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MAG_FILTER, LOCAL_GL_LINEAR);
+    prodGL->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_WRAP_S, LOCAL_GL_CLAMP_TO_EDGE);
+    prodGL->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_WRAP_T, LOCAL_GL_CLAMP_TO_EDGE);
+
     prodGL->fEGLImageTargetTexture2D(LOCAL_GL_TEXTURE_2D, image);
 
     egl->fDestroyImage(display, image);
@@ -132,7 +138,10 @@ SharedSurface_Gralloc::~SharedSurface_Gralloc()
     mGL->fDeleteTextures(1, (GLuint*)&mProdTex);
 
     SurfaceDescriptor desc(mDesc);
-    mAllocator->DestroySharedSurface(&desc);
+
+    if (mAllocator) {
+        mAllocator->DestroySharedSurface(&desc);
+    }
 }
 
 void

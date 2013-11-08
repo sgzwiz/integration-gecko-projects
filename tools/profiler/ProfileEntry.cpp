@@ -4,7 +4,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <ostream>
-#include "GeckoProfilerImpl.h"
 #include "platform.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
@@ -157,10 +156,11 @@ ThreadProfile::ThreadProfile(const char* aName, int aEntrySize,
   , mThreadId(aThreadId)
   , mIsMainThread(aIsMainThread)
   , mPlatformData(aPlatform)
+  , mGeneration(0)
+  , mPendingGenerationFlush(0)
   , mStackTop(aStackTop)
 {
   mEntries = new ProfileEntry[mEntrySize];
-  mGeneration = 0;
 }
 
 ThreadProfile::~ThreadProfile()
@@ -387,6 +387,13 @@ void ThreadProfile::BuildJSObject(Builder& b,
         {
           if (sample) {
             b.DefineProperty(sample, "responsiveness", entry.mTagFloat);
+          }
+        }
+        break;
+      case 'p':
+        {
+          if (sample) {
+            b.DefineProperty(sample, "power", entry.mTagFloat);
           }
         }
         break;

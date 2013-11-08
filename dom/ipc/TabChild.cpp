@@ -24,6 +24,7 @@
 #include "mozilla/layers/ShadowLayers.h"
 #include "mozilla/layout/RenderFrameChild.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
@@ -61,12 +62,19 @@
 #include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
 #include "nsWeakReference.h"
+#include "PermissionMessageUtils.h"
 #include "PCOMContentPermissionRequestChild.h"
 #include "PuppetWidget.h"
 #include "StructuredCloneUtils.h"
 #include "nsViewportInfo.h"
 #include "JavaScriptChild.h"
 #include "APZCCallbackHelper.h"
+#include "nsILoadContext.h"
+#include "ipc/nsGUIEventIPC.h"
+
+#ifdef DEBUG
+#include "PCOMContentPermissionRequestChild.h"
+#endif /* DEBUG */
 
 #define BROWSER_ELEMENT_CHILD_SCRIPT \
     NS_LITERAL_STRING("chrome://global/content/BrowserElementChild.js")
@@ -86,10 +94,8 @@ NS_IMPL_ISUPPORTS1(ContentListener, nsIDOMEventListener)
 
 static const CSSSize kDefaultViewportSize(980, 480);
 
-static const char CANCEL_DEFAULT_PAN_ZOOM[] = "cancel-default-pan-zoom";
 static const char BROWSER_ZOOM_TO_RECT[] = "browser-zoom-to-rect";
 static const char BEFORE_FIRST_PAINT[] = "before-first-paint";
-static const char DETECT_SCROLLABLE_SUBFRAME[] = "detect-scrollable-subframe";
 
 static bool sCpowsEnabled = false;
 
@@ -352,13 +358,7 @@ TabChild::Observe(nsISupports *aSubject,
                   const char *aTopic,
                   const PRUnichar *aData)
 {
-  if (!strcmp(aTopic, CANCEL_DEFAULT_PAN_ZOOM)) {
-    nsCOMPtr<nsIDocShell> docShell(do_QueryInterface(aSubject));
-    nsCOMPtr<nsITabChild> tabChild(TabChild::GetFrom(docShell));
-    if (tabChild == this) {
-      mRemoteFrame->CancelDefaultPanZoom();
-    }
-  } else if (!strcmp(aTopic, BROWSER_ZOOM_TO_RECT)) {
+  if (!strcmp(aTopic, BROWSER_ZOOM_TO_RECT)) {
     nsCOMPtr<nsIDocShell> docShell(do_QueryInterface(aSubject));
     nsCOMPtr<nsITabChild> tabChild(TabChild::GetFrom(docShell));
     if (tabChild == this) {
@@ -406,12 +406,6 @@ TabChild::Observe(nsISupports *aSubject,
 
         HandlePossibleViewportChange();
       }
-    }
-  } else if (!strcmp(aTopic, DETECT_SCROLLABLE_SUBFRAME)) {
-    nsCOMPtr<nsIDocShell> docShell(do_QueryInterface(aSubject));
-    nsCOMPtr<nsITabChild> tabChild(TabChild::GetFrom(docShell));
-    if (tabChild == this) {
-      mRemoteFrame->DetectScrollableSubframe();
     }
   }
 
@@ -900,7 +894,7 @@ TabChild::GetDimensions(uint32_t aFlags, int32_t* aX,
 NS_IMETHODIMP
 TabChild::SetFocus()
 {
-  NS_NOTREACHED("TabChild::SetFocus not supported in TabChild");
+  NS_WARNING("TabChild::SetFocus not supported in TabChild");
 
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -946,7 +940,7 @@ TabChild::GetSiteWindow(void** aSiteWindow)
 NS_IMETHODIMP
 TabChild::Blur()
 {
-  NS_NOTREACHED("TabChild::Blur not supported in TabChild");
+  NS_WARNING("TabChild::Blur not supported in TabChild");
 
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -1152,6 +1146,20 @@ TabChild::ArraysToParams(const InfallibleTArray<int>& aIntParams,
   }
 }
 
+#ifdef DEBUG
+PContentPermissionRequestChild*
+TabChild:: SendPContentPermissionRequestConstructor(PContentPermissionRequestChild* aActor,
+                                                    const nsCString& aType,
+                                                    const nsCString& aAccess,
+                                                    const IPC::Principal& aPrincipal)
+{
+  PCOMContentPermissionRequestChild* child = static_cast<PCOMContentPermissionRequestChild*>(aActor);
+  PContentPermissionRequestChild* request = PBrowserChild::SendPContentPermissionRequestConstructor(aActor, aType, aAccess, aPrincipal);
+  child->mIPCOpen = true;
+  return request;
+}
+#endif /* DEBUG */
+
 void
 TabChild::DestroyWindow()
 {
@@ -1201,7 +1209,7 @@ TabChild::~TabChild()
     mGlobal = nullptr;
 
     if (mTabChildGlobal) {
-      nsEventListenerManager* elm = mTabChildGlobal->GetListenerManager(false);
+      nsEventListenerManager* elm = mTabChildGlobal->GetExistingListenerManager();
       if (elm) {
         elm->Disconnect();
       }
@@ -1259,7 +1267,7 @@ TabChild::RecvLoadURL(const nsCString& uri)
     nsresult rv = mWebNav->LoadURI(NS_ConvertUTF8toUTF16(uri).get(),
                                    nsIWebNavigation::LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP |
                                    nsIWebNavigation::LOAD_FLAGS_DISALLOW_INHERIT_OWNER,
-                                   NULL, NULL, NULL);
+                                   nullptr, nullptr, nullptr);
     if (NS_FAILED(rv)) {
         NS_WARNING("mWebNav->LoadURI failed. Eating exception, what else can I do?");
     }
@@ -1499,7 +1507,7 @@ TabChild::DispatchMessageManagerMessage(const nsAString& aMessageName,
     nsRefPtr<nsFrameMessageManager> mm =
       static_cast<nsFrameMessageManager*>(mTabChildGlobal->mMessageManager.get());
     mm->ReceiveMessage(static_cast<EventTarget*>(mTabChildGlobal),
-                       aMessageName, false, &cloneData, nullptr, nullptr);
+                       aMessageName, false, &cloneData, nullptr, nullptr, nullptr);
 }
 
 bool
@@ -1539,36 +1547,49 @@ TabChild::ProcessUpdateFrame(const FrameMetrics& aFrameMetrics)
     CSSRect cssCompositedRect = aFrameMetrics.CalculateCompositedRectInCssPixels();
     // The BrowserElementScrolling helper must know about these updated metrics
     // for other functions it performs, such as double tap handling.
+    // Note, %f must not be used because it is locale specific!
     nsCString data;
-    data += nsPrintfCString("{ \"x\" : %d", NS_lround(aFrameMetrics.mScrollOffset.x));
-    data += nsPrintfCString(", \"y\" : %d", NS_lround(aFrameMetrics.mScrollOffset.y));
-    data += nsPrintfCString(", \"viewport\" : ");
-        data += nsPrintfCString("{ \"width\" : %f", aFrameMetrics.mViewport.width);
-        data += nsPrintfCString(", \"height\" : %f", aFrameMetrics.mViewport.height);
-        data += nsPrintfCString(" }");
-    data += nsPrintfCString(", \"displayPort\" : ");
-        data += nsPrintfCString("{ \"x\" : %f", aFrameMetrics.mDisplayPort.x);
-        data += nsPrintfCString(", \"y\" : %f", aFrameMetrics.mDisplayPort.y);
-        data += nsPrintfCString(", \"width\" : %f", aFrameMetrics.mDisplayPort.width);
-        data += nsPrintfCString(", \"height\" : %f", aFrameMetrics.mDisplayPort.height);
-        data += nsPrintfCString(" }");
-    data += nsPrintfCString(", \"compositionBounds\" : ");
-        data += nsPrintfCString("{ \"x\" : %d", aFrameMetrics.mCompositionBounds.x);
-        data += nsPrintfCString(", \"y\" : %d", aFrameMetrics.mCompositionBounds.y);
-        data += nsPrintfCString(", \"width\" : %d", aFrameMetrics.mCompositionBounds.width);
-        data += nsPrintfCString(", \"height\" : %d", aFrameMetrics.mCompositionBounds.height);
-        data += nsPrintfCString(" }");
-    data += nsPrintfCString(", \"cssPageRect\" : ");
-        data += nsPrintfCString("{ \"x\" : %f", aFrameMetrics.mScrollableRect.x);
-        data += nsPrintfCString(", \"y\" : %f", aFrameMetrics.mScrollableRect.y);
-        data += nsPrintfCString(", \"width\" : %f", aFrameMetrics.mScrollableRect.width);
-        data += nsPrintfCString(", \"height\" : %f", aFrameMetrics.mScrollableRect.height);
-        data += nsPrintfCString(" }");
-    data += nsPrintfCString(", \"cssCompositedRect\" : ");
-            data += nsPrintfCString("{ \"width\" : %f", cssCompositedRect.width);
-            data += nsPrintfCString(", \"height\" : %f", cssCompositedRect.height);
-            data += nsPrintfCString(" }");
-    data += nsPrintfCString(" }");
+    data.AppendPrintf("{ \"x\" : %d", NS_lround(aFrameMetrics.mScrollOffset.x));
+    data.AppendPrintf(", \"y\" : %d", NS_lround(aFrameMetrics.mScrollOffset.y));
+    data.AppendLiteral(", \"viewport\" : ");
+        data.AppendLiteral("{ \"width\" : ");
+        data.AppendFloat(aFrameMetrics.mViewport.width);
+        data.AppendLiteral(", \"height\" : ");
+        data.AppendFloat(aFrameMetrics.mViewport.height);
+        data.AppendLiteral(" }");
+    data.AppendLiteral(", \"displayPort\" : ");
+        data.AppendLiteral("{ \"x\" : ");
+        data.AppendFloat(aFrameMetrics.mDisplayPort.x);
+        data.AppendLiteral(", \"y\" : ");
+        data.AppendFloat(aFrameMetrics.mDisplayPort.y);
+        data.AppendLiteral(", \"width\" : ");
+        data.AppendFloat(aFrameMetrics.mDisplayPort.width);
+        data.AppendLiteral(", \"height\" : ");
+        data.AppendFloat(aFrameMetrics.mDisplayPort.height);
+        data.AppendLiteral(" }");
+    data.AppendLiteral(", \"compositionBounds\" : ");
+        data.AppendPrintf("{ \"x\" : %d", aFrameMetrics.mCompositionBounds.x);
+        data.AppendPrintf(", \"y\" : %d", aFrameMetrics.mCompositionBounds.y);
+        data.AppendPrintf(", \"width\" : %d", aFrameMetrics.mCompositionBounds.width);
+        data.AppendPrintf(", \"height\" : %d", aFrameMetrics.mCompositionBounds.height);
+        data.AppendLiteral(" }");
+    data.AppendLiteral(", \"cssPageRect\" : ");
+        data.AppendLiteral("{ \"x\" : ");
+        data.AppendFloat(aFrameMetrics.mScrollableRect.x);
+        data.AppendLiteral(", \"y\" : ");
+        data.AppendFloat(aFrameMetrics.mScrollableRect.y);
+        data.AppendLiteral(", \"width\" : ");
+        data.AppendFloat(aFrameMetrics.mScrollableRect.width);
+        data.AppendLiteral(", \"height\" : ");
+        data.AppendFloat(aFrameMetrics.mScrollableRect.height);
+        data.AppendLiteral(" }");
+    data.AppendLiteral(", \"cssCompositedRect\" : ");
+        data.AppendLiteral("{ \"width\" : ");
+        data.AppendFloat(cssCompositedRect.width);
+        data.AppendLiteral(", \"height\" : ");
+        data.AppendFloat(cssCompositedRect.height);
+        data.AppendLiteral(" }");
+    data.AppendLiteral(" }");
 
     DispatchMessageManagerMessage(NS_LITERAL_STRING("Viewport:Change"), data);
 
@@ -1674,9 +1695,9 @@ TabChild::RecvRealMouseEvent(const WidgetMouseEvent& event)
 }
 
 bool
-TabChild::RecvMouseWheelEvent(const WheelEvent& event)
+TabChild::RecvMouseWheelEvent(const WidgetWheelEvent& event)
 {
-  WheelEvent localEvent(event);
+  WidgetWheelEvent localEvent(event);
   DispatchWidgetEvent(localEvent);
   return true;
 }
@@ -1688,7 +1709,7 @@ TabChild::DispatchSynthesizedMouseEvent(uint32_t aMsg, uint64_t aTime,
   MOZ_ASSERT(aMsg == NS_MOUSE_MOVE || aMsg == NS_MOUSE_BUTTON_DOWN ||
              aMsg == NS_MOUSE_BUTTON_UP);
 
-  WidgetMouseEvent event(true, aMsg, NULL,
+  WidgetMouseEvent event(true, aMsg, nullptr,
                          WidgetMouseEvent::eReal, WidgetMouseEvent::eNormal);
   event.refPoint = LayoutDeviceIntPoint(aRefPoint.x, aRefPoint.y);
   event.time = aTime;
@@ -2051,7 +2072,8 @@ TabChild::RecvLoadRemoteScript(const nsString& aURL)
 bool
 TabChild::RecvAsyncMessage(const nsString& aMessage,
                            const ClonedMessageData& aData,
-                           const InfallibleTArray<CpowEntry>& aCpows)
+                           const InfallibleTArray<CpowEntry>& aCpows,
+                           const IPC::Principal& aPrincipal)
 {
   if (mTabChildGlobal) {
     nsCOMPtr<nsIXPConnectJSObjectHolder> kungFuDeathGrip(GetGlobal());
@@ -2060,7 +2082,7 @@ TabChild::RecvAsyncMessage(const nsString& aMessage,
       static_cast<nsFrameMessageManager*>(mTabChildGlobal->mMessageManager.get());
     CpowIdHolder cpows(static_cast<ContentChild*>(Manager())->GetCPOWManager(), aCpows);
     mm->ReceiveMessage(static_cast<EventTarget*>(mTabChildGlobal),
-                       aMessage, false, &cloneData, &cpows, nullptr);
+                       aMessage, false, &cloneData, &cpows, aPrincipal, nullptr);
   }
   return true;
 }
@@ -2102,12 +2124,10 @@ TabChild::RecvDestroy()
   }
 
   nsCOMPtr<nsIObserverService> observerService =
-    do_GetService(NS_OBSERVERSERVICE_CONTRACTID);
+    mozilla::services::GetObserverService();
 
-  observerService->RemoveObserver(this, CANCEL_DEFAULT_PAN_ZOOM);
   observerService->RemoveObserver(this, BROWSER_ZOOM_TO_RECT);
   observerService->RemoveObserver(this, BEFORE_FIRST_PAINT);
-  observerService->RemoveObserver(this, DETECT_SCROLLABLE_SUBFRAME);
 
   const InfallibleTArray<PIndexedDBChild*>& idbActors =
     ManagedPIndexedDBChild();
@@ -2239,20 +2259,14 @@ TabChild::InitRenderingState()
     mRemoteFrame = remoteFrame;
 
     nsCOMPtr<nsIObserverService> observerService =
-        do_GetService(NS_OBSERVERSERVICE_CONTRACTID);
+        mozilla::services::GetObserverService();
 
     if (observerService) {
-        observerService->AddObserver(this,
-                                     CANCEL_DEFAULT_PAN_ZOOM,
-                                     false);
         observerService->AddObserver(this,
                                      BROWSER_ZOOM_TO_RECT,
                                      false);
         observerService->AddObserver(this,
                                      BEFORE_FIRST_PAINT,
-                                     false);
-        observerService->AddObserver(this,
-                                     DETECT_SCROLLABLE_SUBFRAME,
                                      false);
     }
 
@@ -2365,13 +2379,19 @@ TabChild::GetMessageManager(nsIContentFrameMessageManager** aResult)
   return NS_ERROR_FAILURE;
 }
 
+void
+TabChild::SendRequestFocus(bool aCanFocus)
+{
+  PBrowserChild::SendRequestFocus(aCanFocus);
+}
+
 PIndexedDBChild*
 TabChild::AllocPIndexedDBChild(
                             const nsCString& aGroup,
                             const nsCString& aASCIIOrigin, bool* /* aAllowed */)
 {
   NS_NOTREACHED("Should never get here!");
-  return NULL;
+  return nullptr;
 }
 
 bool
@@ -2386,6 +2406,7 @@ TabChild::DoSendBlockingMessage(JSContext* aCx,
                                 const nsAString& aMessage,
                                 const StructuredCloneData& aData,
                                 JS::Handle<JSObject *> aCpows,
+                                nsIPrincipal* aPrincipal,
                                 InfallibleTArray<nsString>* aJSONRetVal,
                                 bool aIsSync)
 {
@@ -2400,16 +2421,21 @@ TabChild::DoSendBlockingMessage(JSContext* aCx,
       return false;
     }
   }
-  if (aIsSync)
-    return SendSyncMessage(nsString(aMessage), data, cpows, aJSONRetVal);
-  return CallRpcMessage(nsString(aMessage), data, cpows, aJSONRetVal);
+  if (aIsSync) {
+    return SendSyncMessage(nsString(aMessage), data, cpows, aPrincipal,
+                           aJSONRetVal);
+  }
+
+  return CallRpcMessage(nsString(aMessage), data, cpows, aPrincipal,
+                        aJSONRetVal);
 }
 
 bool
 TabChild::DoSendAsyncMessage(JSContext* aCx,
                              const nsAString& aMessage,
                              const StructuredCloneData& aData,
-                             JS::Handle<JSObject *> aCpows)
+                             JS::Handle<JSObject *> aCpows,
+                             nsIPrincipal* aPrincipal)
 {
   ContentChild* cc = Manager();
   ClonedMessageData data;
@@ -2422,7 +2448,8 @@ TabChild::DoSendAsyncMessage(JSContext* aCx,
       return false;
     }
   }
-  return SendAsyncMessage(nsString(aMessage), data, cpows);
+  return SendAsyncMessage(nsString(aMessage), data, cpows,
+                          aPrincipal);
 }
 
 TabChild*

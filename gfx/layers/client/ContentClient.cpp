@@ -479,21 +479,13 @@ ContentClientDoubleBuffered::SyncFrontBufferToBackBuffer()
 
   nsIntRegion updateRegion = mFrontUpdatedRegion;
 
-  int32_t xBoundary = mBufferRect.XMost() - mBufferRotation.x;
-  int32_t yBoundary = mBufferRect.YMost() - mBufferRotation.y;
-
-  // Figure out whether the area we want to copy wraps the edges of our buffer.
-  bool needFullCopy = (xBoundary < updateRegion.GetBounds().XMost() &&
-                       xBoundary > updateRegion.GetBounds().x) ||
-                      (yBoundary < updateRegion.GetBounds().YMost() &&
-                       yBoundary > updateRegion.GetBounds().y);
-  
   // This is a tricky trade off, we're going to get stuff out of our
   // frontbuffer now, but the next PaintThebes might throw it all (or mostly)
   // away if the visible region has changed. This is why in reality we want
   // this code integrated with PaintThebes to always do the optimal thing.
 
-  if (needFullCopy) {
+  if (mDidSelfCopy) {
+    mDidSelfCopy = false;
     // We can't easily draw our front buffer into us, since we're going to be
     // copying stuff around anyway it's easiest if we just move our situation
     // to non-rotated while we're at it. If this situation occurs we'll have
@@ -902,12 +894,14 @@ ContentClientIncremental::BeginPaintBuffer(ThebesLayer* aLayer,
   // although they never cover it. This leads to two draw rects, the narow strip and the actually
   // newly exposed area. It would be wise to fix this glitch in any way to have simpler
   // clip and draw regions.
-  gfxUtils::ClipToRegion(result.mContext, result.mRegionToDraw);
+  result.mClip = CLIP_DRAW;
 
   if (mContentType == GFX_CONTENT_COLOR_ALPHA) {
+    result.mContext->Save();
+    gfxUtils::ClipToRegion(result.mContext, result.mRegionToDraw);
     result.mContext->SetOperator(gfxContext::OPERATOR_CLEAR);
     result.mContext->Paint();
-    result.mContext->SetOperator(gfxContext::OPERATOR_OVER);
+    result.mContext->Restore();
   }
 
   return result;

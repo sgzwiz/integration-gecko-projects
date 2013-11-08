@@ -29,7 +29,7 @@
 # include "assembler/assembler/MacroAssembler.h"
 #endif
 #include "jit/AsmJSSignalHandlers.h"
-#include "jit/IonCompartment.h"
+#include "jit/JitCompartment.h"
 #include "jit/PcScriptCache.h"
 #include "js/MemoryMetrics.h"
 #include "yarr/BumpPointerAllocator.h"
@@ -118,6 +118,8 @@ JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
 #ifdef JS_THREADSAFE
     operationCallbackLock(nullptr),
     operationCallbackOwner(nullptr),
+#else
+    operationCallbackLockTaken(false),
 #endif
 #ifdef JS_WORKER_THREADS
     workerThreadState(nullptr),
@@ -139,11 +141,13 @@ JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
     freeLifoAlloc(TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
     execAlloc_(nullptr),
     bumpAlloc_(nullptr),
-    ionRuntime_(nullptr),
+    jitRuntime_(nullptr),
     selfHostingGlobal_(nullptr),
     nativeStackBase(0),
     cxCallback(nullptr),
     destroyCompartmentCallback(nullptr),
+    destroyZoneCallback(nullptr),
+    sweepZoneCallback(nullptr),
     compartmentNameCallback(nullptr),
     activityCallback(nullptr),
     activityCallbackArg(nullptr),
@@ -294,6 +298,7 @@ JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
     PodZero(&debugHooks);
     PodZero(&atomState);
     PodArrayZero(nativeStackQuota);
+    PodZero(&asmJSCacheOps);
 
 #if JS_STACK_GROWTH_DIRECTION > 0
     nativeStackLimit = UINTPTR_MAX;
@@ -379,9 +384,6 @@ JSRuntime::init(uint32_t maxbytes)
     dateTimeInfo.updateTimeZoneAdjustment();
 
     if (!scriptDataTable_.init())
-        return false;
-
-    if (!threadPool.init())
         return false;
 
     if (!evalCache.init())
@@ -505,9 +507,9 @@ JSRuntime::~JSRuntime()
     js_delete(bumpAlloc_);
     js_delete(mathCache_);
 #ifdef JS_ION
-    js_delete(ionRuntime_);
+    js_delete(jitRuntime_);
 #endif
-    js_delete(execAlloc_);  /* Delete after ionRuntime_. */
+    js_delete(execAlloc_);  /* Delete after jitRuntime_. */
 
     js_delete(ionPcScriptCache);
 
@@ -562,8 +564,8 @@ JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf, JS::Runtim
 #ifdef JS_ION
     {
         AutoLockForOperationCallback lock(this);
-        if (ionRuntime()) {
-            if (JSC::ExecutableAllocator *ionAlloc = ionRuntime()->ionAlloc(this))
+        if (jitRuntime()) {
+            if (JSC::ExecutableAllocator *ionAlloc = jitRuntime()->ionAlloc(this))
                 ionAlloc->addSizeOfCode(&rtSizes->code);
         }
     }

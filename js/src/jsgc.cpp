@@ -1027,6 +1027,13 @@ js_FinishGC(JSRuntime *rt)
     rt->gcChunkPool.expireAndFree(rt, true);
 
     rt->gcRootsHash.clear();
+
+    rt->functionPersistentRooteds.clear();
+    rt->idPersistentRooteds.clear();
+    rt->objectPersistentRooteds.clear();
+    rt->scriptPersistentRooteds.clear();
+    rt->stringPersistentRooteds.clear();
+    rt->valuePersistentRooteds.clear();
 }
 
 template <typename T> struct BarrierOwner {};
@@ -1104,11 +1111,11 @@ js_AddObjectRoot(JSRuntime *rt, JSObject **objp)
 extern JS_FRIEND_API(void)
 js_RemoveObjectRoot(JSRuntime *rt, JSObject **objp)
 {
-    js_RemoveRoot(rt, objp);
+    RemoveRoot(rt, objp);
 }
 
-JS_FRIEND_API(void)
-js_RemoveRoot(JSRuntime *rt, void *rp)
+void
+js::RemoveRoot(JSRuntime *rt, void *rp)
 {
     rt->gcRootsHash.remove(rp);
     rt->gcPoke = true;
@@ -1122,8 +1129,8 @@ static size_t
 ComputeTriggerBytes(Zone *zone, size_t lastBytes, size_t maxBytes, JSGCInvocationKind gckind)
 {
     size_t base = gckind == GC_SHRINK ? lastBytes : Max(lastBytes, zone->runtimeFromMainThread()->gcAllocationThreshold);
-    float trigger = float(base) * zone->gcHeapGrowthFactor;
-    return size_t(Min(float(maxBytes), trigger));
+    double trigger = double(base) * zone->gcHeapGrowthFactor;
+    return size_t(Min(double(maxBytes), trigger));
 }
 
 void
@@ -2607,6 +2614,7 @@ static void
 SweepZones(FreeOp *fop, bool lastGC)
 {
     JSRuntime *rt = fop->runtime();
+    JSZoneCallback callback = rt->destroyZoneCallback;
 
     /* Skip the atomsCompartment zone. */
     Zone **read = rt->zones.begin() + 1;
@@ -2621,6 +2629,8 @@ SweepZones(FreeOp *fop, bool lastGC)
         if (!zone->hold && zone->wasGCStarted()) {
             if (zone->allocator.arenas.arenaListsAreEmpty() || lastGC) {
                 zone->allocator.arenas.checkEmptyFreeLists();
+                if (callback)
+                    callback(zone);
                 SweepCompartments(fop, zone, false, lastGC);
                 JS_ASSERT(zone->compartments.empty());
                 fop->delete_(zone);
@@ -3707,6 +3717,9 @@ BeginSweepingZoneGroup(JSRuntime *rt)
 
         if (rt->isAtomsZone(zone))
             sweepingAtoms = true;
+
+        if (rt->sweepZoneCallback)
+            rt->sweepZoneCallback(zone);
     }
 
     ValidateIncrementalMarking(rt);
@@ -4076,10 +4089,18 @@ EndSweepPhase(JSRuntime *rt, JSGCInvocationKind gckind, bool lastGC)
 namespace {
 
 /* ...while this class is to be used only for garbage collection. */
-class AutoGCSession : AutoTraceSession {
+class AutoGCSession
+{
+    JSRuntime *runtime;
+    AutoPauseWorkersForTracing pause;
+    AutoTraceSession session;
+    bool canceled;
+
   public:
     explicit AutoGCSession(JSRuntime *rt);
     ~AutoGCSession();
+
+    void cancel() { canceled = true; }
 };
 
 } /* anonymous namespace */
@@ -4087,8 +4108,7 @@ class AutoGCSession : AutoTraceSession {
 /* Start a new heap session. */
 AutoTraceSession::AutoTraceSession(JSRuntime *rt, js::HeapState heapState)
   : runtime(rt),
-    prevState(rt->heapState),
-    pause(rt)
+    prevState(rt->heapState)
 {
     JS_ASSERT(!rt->noGCOrAllocationCheck);
     JS_ASSERT(!rt->isHeapBusy());
@@ -4103,7 +4123,10 @@ AutoTraceSession::~AutoTraceSession()
 }
 
 AutoGCSession::AutoGCSession(JSRuntime *rt)
-  : AutoTraceSession(rt, MajorCollecting)
+  : runtime(rt),
+    pause(rt),
+    session(rt, MajorCollecting),
+    canceled(false)
 {
     runtime->gcIsNeeded = false;
     runtime->gcInterFrameGC = true;
@@ -4120,6 +4143,9 @@ AutoGCSession::AutoGCSession(JSRuntime *rt)
 
 AutoGCSession::~AutoGCSession()
 {
+    if (canceled)
+        return;
+
 #ifndef JS_MORE_DETERMINISTIC
     runtime->gcNextFullGCTime = PRMJ_Now() + GC_IDLE_FULL_SPAN;
 #endif
@@ -4494,13 +4520,17 @@ BudgetIncrementalGC(JSRuntime *rt, int64_t *budget)
 }
 
 /*
- * GC, repeatedly if necessary, until we think we have not created any new
- * garbage. We disable inlining to ensure that the bottom of the stack with
- * possible GC roots recorded in MarkRuntime excludes any pointers we use during
- * the marking implementation.
+ * Run one GC "cycle" (either a slice of incremental GC or an entire
+ * non-incremental GC. We disable inlining to ensure that the bottom of the
+ * stack with possible GC roots recorded in MarkRuntime excludes any pointers we
+ * use during the marking implementation.
+ *
+ * Returns true if we "reset" an existing incremental GC, which would force us
+ * to run another cycle.
  */
-static JS_NEVER_INLINE void
-GCCycle(JSRuntime *rt, bool incremental, int64_t budget, JSGCInvocationKind gckind, JS::gcreason::Reason reason)
+static JS_NEVER_INLINE bool
+GCCycle(JSRuntime *rt, bool incremental, int64_t budget,
+        JSGCInvocationKind gckind, JS::gcreason::Reason reason)
 {
     /* If we attempt to invoke the GC while we are running in the GC, assert. */
     JS_ASSERT(!rt->isHeapBusy());
@@ -4518,18 +4548,26 @@ GCCycle(JSRuntime *rt, bool incremental, int64_t budget, JSGCInvocationKind gcki
         rt->gcHelperThread.waitBackgroundSweepOrAllocEnd();
     }
 
-    {
-        if (!incremental) {
-            /* If non-incremental GC was requested, reset incremental GC. */
-            ResetIncrementalGC(rt, "requested");
-            rt->gcStats.nonincremental("requested");
-            budget = SliceBudget::Unlimited;
-        } else {
-            BudgetIncrementalGC(rt, &budget);
-        }
+    State prevState = rt->gcIncrementalState;
 
-        IncrementalCollectSlice(rt, budget, reason, gckind);
+    if (!incremental) {
+        /* If non-incremental GC was requested, reset incremental GC. */
+        ResetIncrementalGC(rt, "requested");
+        rt->gcStats.nonincremental("requested");
+        budget = SliceBudget::Unlimited;
+    } else {
+        BudgetIncrementalGC(rt, &budget);
     }
+
+    /* The GC was reset, so we need a do-over. */
+    if (prevState != NO_INCREMENTAL && rt->gcIncrementalState == NO_INCREMENTAL) {
+        gcsession.cancel();
+        return true;
+    }
+
+    IncrementalCollectSlice(rt, budget, reason, gckind);
+
+    return false;
 }
 
 #ifdef JS_GC_ZEAL
@@ -4657,6 +4695,8 @@ Collect(JSRuntime *rt, bool incremental, int64_t budget,
 
     gcstats::AutoGCSlice agc(rt->gcStats, collectedCount, zoneCount, compartmentCount, reason);
 
+    bool repeat = false;
+
     do {
         /*
          * Let the API user decide to defer a GC if it wants to (unless this
@@ -4669,7 +4709,7 @@ Collect(JSRuntime *rt, bool incremental, int64_t budget,
         }
 
         rt->gcPoke = false;
-        GCCycle(rt, incremental, budget, gckind, reason);
+        bool wasReset = GCCycle(rt, incremental, budget, gckind, reason);
 
         if (rt->gcIncrementalState == NO_INCREMENTAL) {
             gcstats::AutoPhase ap(rt->gcStats, gcstats::PHASE_GC_END);
@@ -4682,10 +4722,13 @@ Collect(JSRuntime *rt, bool incremental, int64_t budget,
             JS::PrepareForFullGC(rt);
 
         /*
-         * On shutdown, iterate until finalizers or the JSGC_END callback
-         * stop creating garbage.
+         * If we reset an existing GC, we need to start a new one. Also, we
+         * repeat GCs that happen during shutdown (the gcShouldCleanUpEverything
+         * case) until we can be sure that no additional garbage is created
+         * (which typically happens if roots are dropped during finalizers).
          */
-    } while (rt->gcPoke && rt->gcShouldCleanUpEverything);
+        repeat = (rt->gcPoke && rt->gcShouldCleanUpEverything) || wasReset;
+    } while (repeat);
 }
 
 void
@@ -4788,6 +4831,7 @@ AutoFinishGC::AutoFinishGC(JSRuntime *rt)
 
 AutoPrepareForTracing::AutoPrepareForTracing(JSRuntime *rt)
   : finish(rt),
+    pause(rt),
     session(rt),
     copy(rt)
 {

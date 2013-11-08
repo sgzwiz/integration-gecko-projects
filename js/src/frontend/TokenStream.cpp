@@ -15,7 +15,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "jsapi.h"
 #include "jsatom.h"
 #include "jscntxt.h"
 #include "jsexn.h"
@@ -261,7 +260,7 @@ TokenStream::SourceCoords::lineNumAndColumnIndex(uint32_t offset, uint32_t *line
 #endif
 
 // Initialize members that aren't initialized in |init|.
-TokenStream::TokenStream(ExclusiveContext *cx, const CompileOptions &options,
+TokenStream::TokenStream(ExclusiveContext *cx, const ReadOnlyCompileOptions &options,
                          const jschar *base, size_t length, StrictModeGetter *smg)
   : srcCoords(cx, options.lineno),
     options_(options),
@@ -273,7 +272,7 @@ TokenStream::TokenStream(ExclusiveContext *cx, const CompileOptions &options,
     linebase(base - options.column),
     prevLinebase(nullptr),
     userbuf(cx, base - options.column, length + options.column), // See comment below
-    filename(options.filename),
+    filename(options.filename()),
     sourceURL_(nullptr),
     sourceMapURL_(nullptr),
     tokenbuf(cx),
@@ -914,7 +913,7 @@ TokenStream::atomize(ExclusiveContext *cx, CharBuffer &cb)
 }
 
 #ifdef DEBUG
-bool
+static bool
 IsTokenSane(Token *tp)
 {
     // Nb: TOK_EOL should never be used in an actual Token;  it should only be
@@ -1123,7 +1122,7 @@ TokenStream::getTokenInternal(Modifier modifier)
 
     // Look for an unambiguous single-char token.
     //
-    if (c1kind < OneChar_Max) {
+    if (c1kind <= OneChar_Max) {
         tp = newToken(-1);
         tp->type = TokenKind(c1kind);
         goto out;

@@ -237,6 +237,35 @@ PathCairo::GetStrokedBounds(const StrokeOptions &aStrokeOptions,
 }
 
 void
+PathCairo::StreamToSink(PathSink *aSink) const
+{
+  for (size_t i = 0; i < mPathData.size(); i++) {
+    switch (mPathData[i].header.type) {
+    case CAIRO_PATH_MOVE_TO:
+      i++;
+      aSink->MoveTo(Point(mPathData[i].point.x, mPathData[i].point.y));
+      break;
+    case CAIRO_PATH_LINE_TO:
+      i++;
+      aSink->LineTo(Point(mPathData[i].point.x, mPathData[i].point.y));
+      break;
+    case CAIRO_PATH_CURVE_TO:
+      aSink->BezierTo(Point(mPathData[i + 1].point.x, mPathData[i + 1].point.y),
+                      Point(mPathData[i + 2].point.x, mPathData[i + 2].point.y),
+                      Point(mPathData[i + 3].point.x, mPathData[i + 3].point.y));
+      i += 3;
+      break;
+    case CAIRO_PATH_CLOSE_PATH:
+      aSink->Close();
+      break;
+    default:
+      // Corrupt path data!
+      MOZ_ASSERT(false);
+    }
+  }
+}
+
+void
 PathCairo::EnsureContainingContext() const
 {
   if (mContainingContext) {
@@ -269,12 +298,12 @@ void
 PathCairo::AppendPathToBuilder(PathBuilderCairo *aBuilder, const Matrix *aTransform) const
 {
   if (aTransform) {
-    int i = 0;
+    size_t i = 0;
     while (i < mPathData.size()) {
       uint32_t pointCount = mPathData[i].header.length - 1;
       aBuilder->mPathData.push_back(mPathData[i]);
       i++;
-      for (int c = 0; c < pointCount; c++) {
+      for (uint32_t c = 0; c < pointCount; c++) {
         cairo_path_data_t data;
         Point newPoint = *aTransform * Point(mPathData[i].point.x, mPathData[i].point.y);
         data.point.x = newPoint.x;
@@ -284,7 +313,7 @@ PathCairo::AppendPathToBuilder(PathBuilderCairo *aBuilder, const Matrix *aTransf
       }
     }
   } else {
-    for (int i = 0; i < mPathData.size(); i++) {
+    for (size_t i = 0; i < mPathData.size(); i++) {
       aBuilder->mPathData.push_back(mPathData[i]);
     }
   }

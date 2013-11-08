@@ -1038,7 +1038,7 @@ nsINode::AddEventListener(const nsAString& aType,
     aWantsUntrusted = true;
   }
 
-  nsEventListenerManager* listener_manager = GetListenerManager(true);
+  nsEventListenerManager* listener_manager = GetOrCreateListenerManager();
   NS_ENSURE_STATE(listener_manager);
   listener_manager->AddEventListener(aType, aListener, aUseCapture,
                                      aWantsUntrusted);
@@ -1059,7 +1059,7 @@ nsINode::AddEventListener(const nsAString& aType,
     wantsUntrusted = aWantsUntrusted.Value();
   }
 
-  nsEventListenerManager* listener_manager = GetListenerManager(true);
+  nsEventListenerManager* listener_manager = GetOrCreateListenerManager();
   if (!listener_manager) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return;
@@ -1095,7 +1095,7 @@ nsINode::RemoveEventListener(const nsAString& aType,
                              nsIDOMEventListener* aListener,
                              bool aUseCapture)
 {
-  nsEventListenerManager* elm = GetListenerManager(false);
+  nsEventListenerManager* elm = GetExistingListenerManager();
   if (elm) {
     elm->RemoveEventListener(aType, aListener, aUseCapture);
   }
@@ -1157,9 +1157,15 @@ nsINode::DispatchDOMEvent(WidgetEvent* aEvent,
 }
 
 nsEventListenerManager*
-nsINode::GetListenerManager(bool aCreateIfNotFound)
+nsINode::GetOrCreateListenerManager()
 {
-  return nsContentUtils::GetListenerManager(this, aCreateIfNotFound);
+  return nsContentUtils::GetListenerManagerForNode(this);
+}
+
+nsEventListenerManager*
+nsINode::GetExistingListenerManager() const
+{
+  return nsContentUtils::GetExistingListenerManagerForNode(this);
 }
 
 nsIScriptContext*
@@ -2164,8 +2170,7 @@ size_t
 nsINode::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
 {
   size_t n = 0;
-  nsEventListenerManager* elm =
-    const_cast<nsINode*>(this)->GetListenerManager(false);
+  nsEventListenerManager* elm = GetExistingListenerManager();
   if (elm) {
     n += elm->SizeOfIncludingThis(aMallocSizeOf);
   }
@@ -2183,13 +2188,13 @@ nsINode::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
 
 #define EVENT(name_, id_, type_, struct_)                                    \
   EventHandlerNonNull* nsINode::GetOn##name_() {                             \
-    nsEventListenerManager *elm = GetListenerManager(false);                 \
+    nsEventListenerManager *elm = GetExistingListenerManager();              \
     return elm ? elm->GetEventHandler(nsGkAtoms::on##name_, EmptyString())   \
                : nullptr;                                                    \
   }                                                                          \
   void nsINode::SetOn##name_(EventHandlerNonNull* handler)                   \
   {                                                                          \
-    nsEventListenerManager *elm = GetListenerManager(true);                  \
+    nsEventListenerManager *elm = GetOrCreateListenerManager();              \
     if (elm) {                                                               \
       elm->SetEventHandler(nsGkAtoms::on##name_, EmptyString(), handler);    \
     }                                                                        \
@@ -2286,8 +2291,7 @@ ParseSelectorList(nsINode* aNode,
                   const nsAString& aSelectorString,
                   nsCSSSelectorList** aSelectorList)
 {
-  NS_ENSURE_ARG(aNode);
-
+  MOZ_ASSERT(aNode);
   nsIDocument* doc = aNode->OwnerDoc();
   nsCSSParser parser(doc->CSSLoader());
 
@@ -2333,25 +2337,44 @@ AddScopeElements(TreeMatchContext& aMatchContext,
 // Actually find elements matching aSelectorList (which must not be
 // null) and which are descendants of aRoot and put them in aList.  If
 // onlyFirstMatch, then stop once the first one is found.
-template<bool onlyFirstMatch, class T>
-inline static nsresult
+template<bool onlyFirstMatch, class Collector, class T>
+MOZ_ALWAYS_INLINE static nsresult
 FindMatchingElements(nsINode* aRoot, const nsAString& aSelector, T &aList)
 {
-  nsAutoPtr<nsCSSSelectorList> selectorList;
-  nsresult rv = ParseSelectorList(aRoot, aSelector,
-                                  getter_Transfers(selectorList));
-  if (NS_FAILED(rv)) {
-    // We hit this for syntax errors, which are quite common, so don't
-    // use NS_ENSURE_SUCCESS.  (For example, jQuery has an extended set
-    // of selectors, but it sees if we can parse them first.)
-    return rv;
+
+  nsIDocument* doc = aRoot->OwnerDoc();
+  nsIDocument::SelectorCache& cache = doc->GetSelectorCache();
+  nsCSSSelectorList* selectorList = nullptr;
+  bool haveCachedList = cache.GetList(aSelector, &selectorList);
+
+  if (!haveCachedList) {
+    nsresult rv = ParseSelectorList(aRoot, aSelector, &selectorList);
+    if (NS_FAILED(rv)) {
+      MOZ_ASSERT(!selectorList);
+      MOZ_ASSERT(rv == NS_ERROR_DOM_SYNTAX_ERR,
+                 "Unexpected error, so cached version won't return it");
+      // We hit this for syntax errors, which are quite common, so don't
+      // use NS_ENSURE_SUCCESS.  (For example, jQuery has an extended set
+      // of selectors, but it sees if we can parse them first.)
+    } else if (!selectorList) {
+      // This is the "only pseudo-element selectors" case, which is
+      // not common, so just don't worry about caching it.  That way a
+      // null cached value can always indicate an invalid selector.
+      // Also don't try to do any matching, of course.
+      return NS_OK;
+    }
+
+    cache.CacheList(aSelector, selectorList);
   }
-  NS_ENSURE_TRUE(selectorList, NS_OK);
+
+  if (!selectorList) {
+    // Invalid selector, since we've already handled the pseudo-element case.
+    return NS_ERROR_DOM_SYNTAX_ERR;
+  }
 
   NS_ASSERTION(selectorList->mSelectors,
                "How can we not have any selectors?");
 
-  nsIDocument* doc = aRoot->OwnerDoc();
   TreeMatchContext matchingContext(false, nsRuleWalker::eRelevantLinkUnvisited,
                                    doc, TreeMatchContext::eNeverMatchVisited);
   doc->FlushPendingLinkUpdates();
@@ -2401,6 +2424,7 @@ FindMatchingElements(nsINode* aRoot, const nsAString& aSelector, T &aList)
     return NS_OK;
   }
 
+  Collector results;
   for (nsIContent* cur = aRoot->GetFirstChild();
        cur;
        cur = cur->GetNextNode(aRoot)) {
@@ -2408,10 +2432,19 @@ FindMatchingElements(nsINode* aRoot, const nsAString& aSelector, T &aList)
         nsCSSRuleProcessor::SelectorListMatches(cur->AsElement(),
                                                 matchingContext,
                                                 selectorList)) {
-      aList.AppendElement(cur->AsElement());
       if (onlyFirstMatch) {
+        aList.AppendElement(cur->AsElement());
         return NS_OK;
       }
+      results.AppendElement(cur->AsElement());
+    }
+  }
+
+  const uint32_t len = results.Length();
+  if (len) {
+    aList.SetCapacity(len);
+    for (uint32_t i = 0; i < len; ++i) {
+      aList.AppendElement(results.ElementAt(i));
     }
   }
 
@@ -2424,6 +2457,10 @@ struct ElementHolder {
     NS_ABORT_IF_FALSE(!mElement, "Should only get one element");
     mElement = aElement;
   }
+  void SetCapacity(uint32_t aCapacity) { MOZ_CRASH("Don't call me!"); }
+  uint32_t Length() { return 0; }
+  Element* ElementAt(uint32_t aIndex) { return nullptr; }
+
   Element* mElement;
 };
 
@@ -2431,7 +2468,7 @@ Element*
 nsINode::QuerySelector(const nsAString& aSelector, ErrorResult& aResult)
 {
   ElementHolder holder;
-  aResult = FindMatchingElements<true>(this, aSelector, holder);
+  aResult = FindMatchingElements<true, ElementHolder>(this, aSelector, holder);
 
   return holder.mElement;
 }
@@ -2441,7 +2478,10 @@ nsINode::QuerySelectorAll(const nsAString& aSelector, ErrorResult& aResult)
 {
   nsRefPtr<nsSimpleContentList> contentList = new nsSimpleContentList(this);
 
-  aResult = FindMatchingElements<false>(this, aSelector, *contentList);
+  aResult =
+    FindMatchingElements<false, nsAutoTArray<Element*, 128>>(this,
+                                                             aSelector,
+                                                             *contentList);
 
   return contentList.forget();
 }

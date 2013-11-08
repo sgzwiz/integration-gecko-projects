@@ -21,9 +21,9 @@ class nsIVolumeMountLock;
 
 BEGIN_BLUETOOTH_NAMESPACE
 
-class BluetoothReplyRunnable;
 class BluetoothSocket;
 class ObexHeaderSet;
+class SendFileBatch;
 
 class BluetoothOppManager : public BluetoothSocketObserver
                           , public BluetoothProfileManagerBase
@@ -47,7 +47,7 @@ public:
 
   bool Listen();
 
-  bool SendFile(const nsAString& aDeviceAddress, BlobParent* aBlob);
+  bool SendFile(const nsAString& aDeviceAddress, BlobParent* aActor);
   bool StopSendingFile();
   bool ConfirmReceivingFile(bool aConfirm);
 
@@ -82,17 +82,6 @@ public:
     aName.AssignLiteral("OPP");
   }
 
-  /*
-   * If an application wants to send a file, first, it needs to
-   * call Connect() to create a valid RFCOMM connection. After
-   * that, call SendFile()/StopSendingFile() to control file-sharing
-   * process. During the file transfering process, the application
-   * will receive several system messages which contain the processed
-   * percentage of file. At the end, the application will get another
-   * system message indicating that the process is complete, then it can
-   * either call Disconnect() to close RFCOMM connection or start another
-   * file-sending thread via calling SendFile() again.
-   */
   virtual void Connect(const nsAString& aDeviceAddress,
                        BluetoothProfileController* aController) MOZ_OVERRIDE;
   virtual void Disconnect(BluetoothProfileController* aController) MOZ_OVERRIDE;
@@ -126,6 +115,10 @@ private:
   void NotifyAboutFileChange();
   bool AcquireSdcardMountLock();
   void SendObexData(uint8_t* aData, uint8_t aOpcode, int aSize);
+  void AppendBlobToSend(const nsAString& aDeviceAddress, BlobParent* aActor);
+  void DiscardBlobsToSend();
+  bool ProcessNextBatch();
+  void ConnectInternal(const nsAString& aDeviceAddress);
 
   /**
    * OBEX session status.
@@ -208,7 +201,7 @@ private:
 
   int mCurrentBlobIndex;
   nsCOMPtr<nsIDOMBlob> mBlob;
-  nsCOMArray<nsIDOMBlob> mBlobs;
+  nsTArray<SendFileBatch> mBatches;
 
   /**
    * A seperate member thread is required because our read calls can block
@@ -218,8 +211,6 @@ private:
   nsCOMPtr<nsIOutputStream> mOutputStream;
   nsCOMPtr<nsIInputStream> mInputStream;
   nsCOMPtr<nsIVolumeMountLock> mMountLock;
-  nsRefPtr<BluetoothReplyRunnable> mRunnable;
-  nsRefPtr<BluetoothProfileController> mController;
   nsRefPtr<DeviceStorageFile> mDsFile;
 
   // If a connection has been established, mSocket will be the socket

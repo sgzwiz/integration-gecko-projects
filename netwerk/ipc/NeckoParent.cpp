@@ -12,11 +12,15 @@
 #include "mozilla/net/WyciwygChannelParent.h"
 #include "mozilla/net/FTPChannelParent.h"
 #include "mozilla/net/WebSocketChannelParent.h"
+#ifdef MOZ_RTSP
+#include "mozilla/net/RtspControllerParent.h"
+#endif
 #include "mozilla/net/RemoteOpenFileParent.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/TabParent.h"
 #include "mozilla/dom/network/TCPSocketParent.h"
 #include "mozilla/dom/network/TCPServerSocketParent.h"
+#include "mozilla/dom/network/UDPSocketParent.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/LoadContext.h"
 #include "mozilla/AppProcessChecker.h"
@@ -25,6 +29,7 @@
 #include "nsIAppsService.h"
 #include "nsEscape.h"
 #include "RemoteOpenFileParent.h"
+#include "SerializedLoadContext.h"
 
 using mozilla::dom::ContentParent;
 using mozilla::dom::TabParent;
@@ -32,6 +37,8 @@ using mozilla::net::PTCPSocketParent;
 using mozilla::dom::TCPSocketParent;
 using mozilla::net::PTCPServerSocketParent;
 using mozilla::dom::TCPServerSocketParent;
+using mozilla::net::PUDPSocketParent;
+using mozilla::dom::UDPSocketParent;
 using IPC::SerializedLoadContext;
 
 namespace mozilla {
@@ -303,6 +310,28 @@ NeckoParent::DeallocPWebSocketParent(PWebSocketParent* actor)
   return true;
 }
 
+PRtspControllerParent*
+NeckoParent::AllocPRtspControllerParent()
+{
+#ifdef MOZ_RTSP
+  RtspControllerParent* p = new RtspControllerParent();
+  p->AddRef();
+  return p;
+#else
+  return nullptr;
+#endif
+}
+
+bool
+NeckoParent::DeallocPRtspControllerParent(PRtspControllerParent* actor)
+{
+#ifdef MOZ_RTSP
+  RtspControllerParent* p = static_cast<RtspControllerParent*>(actor);
+  p->Release();
+#endif
+  return true;
+}
+
 PTCPSocketParent*
 NeckoParent::AllocPTCPSocketParent()
 {
@@ -344,6 +373,37 @@ NeckoParent::DeallocPTCPServerSocketParent(PTCPServerSocketParent* actor)
 {
   TCPServerSocketParent* p = static_cast<TCPServerSocketParent*>(actor);
    p->ReleaseIPDLReference();
+  return true;
+}
+
+PUDPSocketParent*
+NeckoParent::AllocPUDPSocketParent(const nsCString& aHost,
+                                   const uint16_t& aPort)
+{
+  bool enabled = Preferences::GetBool("media.peerconnection.ipc.enabled", false);
+  if (!enabled) {
+    NS_WARNING("Not support UDP socket in content process, aborting subprocess");
+    return nullptr;
+  }
+  UDPSocketParent* p = new UDPSocketParent();
+  p->AddRef();
+  return p;
+
+}
+
+bool
+NeckoParent::RecvPUDPSocketConstructor(PUDPSocketParent* aActor,
+                                       const nsCString& aHost,
+                                       const uint16_t& aPort)
+{
+  return static_cast<UDPSocketParent*>(aActor)->Init(aHost, aPort);
+}
+
+bool
+NeckoParent::DeallocPUDPSocketParent(PUDPSocketParent* actor)
+{
+  UDPSocketParent* p = static_cast<UDPSocketParent*>(actor);
+  p->Release();
   return true;
 }
 

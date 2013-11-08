@@ -169,6 +169,9 @@ InitKeyEvent(WidgetKeyboardEvent &aEvent, QKeyEvent *aQEvent)
                               aQEvent->modifiers() & Qt::AltModifier,
                               aQEvent->modifiers() & Qt::ShiftModifier,
                               aQEvent->modifiers() & Qt::MetaModifier);
+    aEvent.mIsRepeat =
+        (aEvent.message == NS_KEY_DOWN || aEvent.message == NS_KEY_PRESS) &&
+        aQEvent->isAutoRepeat();
     aEvent.time = 0;
 
     if (sAltGrModifier) {
@@ -1915,7 +1918,7 @@ nsEventStatus
 nsWindow::OnScrollEvent(QGraphicsSceneWheelEvent *aEvent)
 {
     // check to see if we should rollup
-    WheelEvent wheelEvent(true, NS_WHEEL_WHEEL, this);
+    WidgetWheelEvent wheelEvent(true, NS_WHEEL_WHEEL, this);
     wheelEvent.deltaMode = nsIDOMWheelEvent::DOM_DELTA_LINE;
 
     // negative values for aEvent->delta indicate downward scrolling;
@@ -2747,9 +2750,7 @@ nsWindow::BeginResizeDrag(WidgetGUIEvent* aEvent,
         return NS_ERROR_INVALID_ARG;
     }
 
-    WidgetMouseEvent* mouse_event = static_cast<WidgetMouseEvent*>(aEvent);
-
-    if (mouse_event->button != WidgetMouseEvent::eLeftButton) {
+    if (aEvent->AsMouseEvent()->button != WidgetMouseEvent::eLeftButton) {
         // you can only begin a resize drag with the left mouse button
         return NS_ERROR_INVALID_ARG;
     }
@@ -2808,6 +2809,14 @@ nsWindow::GetDPI()
     }
 
     return float(rootWindow->height()/heightInches);
+}
+
+nsEventStatus
+nsWindow::DispatchEvent(WidgetGUIEvent* aEvent)
+{
+    nsEventStatus status;
+    DispatchEvent(aEvent, status);
+    return status;
 }
 
 void
@@ -3170,5 +3179,39 @@ nsWindow::GetGLFrameBufferFormat()
         return MozQGLWidgetWrapper::isRGBAContext() ? LOCAL_GL_RGBA : LOCAL_GL_RGB;
     }
     return LOCAL_GL_NONE;
+}
+
+void
+nsWindow::ProcessMotionEvent()
+{
+    if (mPinchEvent.needDispatch) {
+        double distance = DistanceBetweenPoints(mPinchEvent.centerPoint,
+                                                mPinchEvent.touchPoint);
+        distance *= 2;
+        mPinchEvent.delta = distance - mPinchEvent.prevDistance;
+        nsIntPoint centerPoint(mPinchEvent.centerPoint.x(),
+                               mPinchEvent.centerPoint.y());
+        DispatchGestureEvent(NS_SIMPLE_GESTURE_MAGNIFY_UPDATE,
+                             0, mPinchEvent.delta, centerPoint);
+        mPinchEvent.prevDistance = distance;
+    }
+    if (mMoveEvent.needDispatch) {
+        WidgetMouseEvent event(true, NS_MOUSE_MOVE, this,
+                               WidgetMouseEvent::eReal);
+
+        event.refPoint.x = nscoord(mMoveEvent.pos.x());
+        event.refPoint.y = nscoord(mMoveEvent.pos.y());
+
+        event.InitBasicModifiers(mMoveEvent.modifiers & Qt::ControlModifier,
+                                 mMoveEvent.modifiers & Qt::AltModifier,
+                                 mMoveEvent.modifiers & Qt::ShiftModifier,
+                                 mMoveEvent.modifiers & Qt::MetaModifier);
+        event.clickCount      = 0;
+
+        DispatchEvent(&event);
+        mMoveEvent.needDispatch = false;
+    }
+
+    mTimerStarted = false;
 }
 

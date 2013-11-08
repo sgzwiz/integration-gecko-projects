@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <fstream>
 #include <sstream>
-#include "GeckoProfilerImpl.h"
+#include "GeckoProfiler.h"
 #include "SaveProfileTask.h"
 #include "ProfileEntry.h"
 #include "SyncProfile.h"
@@ -429,27 +429,6 @@ void StackWalkCallback(void* aPC, void* aSP, void* aClosure)
 
 void TableTicker::doNativeBacktrace(ThreadProfile &aProfile, TickSample* aSample)
 {
-#ifdef XP_WIN
-  /* For the purpose of SPS it is currently too expensive to call NS_StackWalk()
-     on itself on Windows. For each call to NS_StackWalk(), we currently have to
-     use another thread to suspend the calling thread, obtain its context, and
-     walk its stack. We shouldn't do that every time we need a thread to obtain
-     its own backtrace in SPS.*/
-  if (aSample->isSamplingCurrentThread) {
-    void* ptrs[100];
-    USHORT count = RtlCaptureStackBackTrace(0, 100, ptrs, nullptr);
-    aProfile.addTag(ProfileEntry('s', "(root)"));
-    if (count) {
-      USHORT i = count;
-      do {
-        --i;
-        aProfile.addTag(ProfileEntry('l', ptrs[i]));
-      } while (i != 0);
-    }
-    return;
-  }
-#endif
-
 #ifndef XP_MACOSX
   uintptr_t thread = GetThreadHandle(aSample->threadProfile->GetPlatformData());
   MOZ_ASSERT(thread);
@@ -480,6 +459,11 @@ void TableTicker::doNativeBacktrace(ThreadProfile &aProfile, TickSample* aSample
 #else
   void *platformData = nullptr;
 #ifdef XP_WIN
+  if (aSample->isSamplingCurrentThread) {
+    // In this case we want NS_StackWalk to know that it's walking the
+    // current thread's stack, so we pass 0 as the thread handle.
+    thread = 0;
+  }
   platformData = aSample->context;
 #endif // XP_WIN
 
@@ -546,6 +530,9 @@ void TableTicker::InplaceTick(TickSample* sample)
 
   PseudoStack* stack = currThreadProfile.GetPseudoStack();
   bool recordSample = true;
+#if defined(XP_WIN)
+  bool powerSample = false;
+#endif
 
   /* Don't process the PeudoStack's markers or honour jankOnly if we're
      immediately sampling the current thread. */
@@ -558,6 +545,13 @@ void TableTicker::InplaceTick(TickSample* sample)
       currThreadProfile.addTag(ProfileEntry('m', marker));
     }
     stack->updateGeneration(currThreadProfile.GetGenerationID());
+
+#if defined(XP_WIN)
+    if (mProfilePower) {
+      mIntelPowerGadget->TakeSample();
+      powerSample = true;
+    }
+#endif
 
     if (mJankOnly) {
       // if we are on a different event we can discard any temporary samples
@@ -604,6 +598,12 @@ void TableTicker::InplaceTick(TickSample* sample)
     currThreadProfile.addTag(ProfileEntry('t', delta.ToMilliseconds()));
   }
 
+#if defined(XP_WIN)
+  if (powerSample) {
+    currThreadProfile.addTag(ProfileEntry('p', mIntelPowerGadget->GetTotalPackagePowerInWatts()));
+  }
+#endif
+
   if (sLastFrameNumber != sFrameNumber) {
     currThreadProfile.addTag(ProfileEntry('f', sFrameNumber));
     sLastFrameNumber = sFrameNumber;
@@ -636,11 +636,13 @@ SyncProfile* TableTicker::GetBacktrace()
   TickSample sample;
   sample.threadProfile = profile;
 
+#if defined(HAVE_NATIVE_UNWIND)
 #if defined(XP_WIN) || defined(LINUX)
   tickcontext_t context;
   sample.PopulateContext(&context);
 #elif defined(XP_MACOSX)
   sample.PopulateContext(nullptr);
+#endif
 #endif
 
   sample.isSamplingCurrentThread = true;

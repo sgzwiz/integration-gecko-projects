@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=4 ts=8 et tw=80 : */
+/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -73,11 +73,7 @@ nsEventStatus GestureEventListener::HandleInputEvent(const InputData& aEvent)
         }
       }
 
-      NS_WARN_IF_FALSE(!foundAlreadyExistingTouch, "Tried to add a touch that already exists");
-
       // If we didn't find a touch in our list that matches this, then add it.
-      // If it already existed, we don't want to add it twice because that
-      // messes with our touch move/end code.
       if (!foundAlreadyExistingTouch) {
         mTouches.AppendElement(event.mTouches[i]);
       }
@@ -137,58 +133,56 @@ nsEventStatus GestureEventListener::HandleInputEvent(const InputData& aEvent)
   }
   case MultiTouchInput::MULTITOUCH_END:
   case MultiTouchInput::MULTITOUCH_LEAVE: {
-    bool foundAlreadyExistingTouch = false;
-    for (size_t i = 0; i < event.mTouches.Length() && !foundAlreadyExistingTouch; i++) {
+    for (size_t i = 0; i < event.mTouches.Length(); i++) {
+      bool foundAlreadyExistingTouch = false;
       for (size_t j = 0; j < mTouches.Length() && !foundAlreadyExistingTouch; j++) {
         if (event.mTouches[i].mIdentifier == mTouches[j].mIdentifier) {
           foundAlreadyExistingTouch = true;
           mTouches.RemoveElementAt(j);
         }
       }
+      NS_WARN_IF_FALSE(foundAlreadyExistingTouch, "Touch ended, but not in list");
     }
 
-    NS_WARN_IF_FALSE(foundAlreadyExistingTouch, "Touch ended, but not in list");
-
-    if (event.mTime - mTapStartTime <= MAX_TAP_TIME) {
-      if (mState == GESTURE_WAITING_DOUBLE_TAP &&
-          event.mTime - mLastTapEndTime > MAX_TAP_TIME) {
-        // mDoubleTapTimeoutTask wasn't scheduled in time. We need to run the
-        // task synchronously to confirm the last tap.
-        CancelDoubleTapTimeoutTask();
+    if (mState == GESTURE_WAITING_DOUBLE_TAP) {
+      CancelDoubleTapTimeoutTask();
+      if (mTapStartTime - mLastTapEndTime > MAX_TAP_TIME ||
+          event.mTime - mTapStartTime > MAX_TAP_TIME) {
+        // Either the time between taps or the last tap took too long
+        // confirm previous tap and handle current tap seperately
         TimeoutDoubleTap();
-
-        // Change the state so we can proceed to process the current tap.
         mState = GESTURE_WAITING_SINGLE_TAP;
-      }
-
-      if (mState == GESTURE_WAITING_DOUBLE_TAP) {
-        CancelDoubleTapTimeoutTask();
+      } else {
         // We were waiting for a double tap and it has arrived.
         HandleDoubleTap(event);
         mState = GESTURE_NONE;
-      } else if (mState == GESTURE_WAITING_SINGLE_TAP) {
-        CancelLongTapTimeoutTask();
-        HandleSingleTapUpEvent(event);
-
-        // We were not waiting for anything but a single tap has happened that
-        // may turn into a double tap. Wait a while and if it doesn't turn into
-        // a double tap, send a single tap instead.
-        mState = GESTURE_WAITING_DOUBLE_TAP;
-
-        mDoubleTapTimeoutTask =
-          NewRunnableMethod(this, &GestureEventListener::TimeoutDoubleTap);
-
-        mAsyncPanZoomController->PostDelayedTask(
-          mDoubleTapTimeoutTask,
-          MAX_TAP_TIME);
       }
-
-      mLastTapEndTime = event.mTime;
     }
 
-    if (mState == GESTURE_WAITING_SINGLE_TAP) {
+    if (mState == GESTURE_WAITING_SINGLE_TAP &&
+        event.mTime - mTapStartTime > MAX_TAP_TIME) {
+      // Extended taps are immediately dispatched as single taps
+      CancelLongTapTimeoutTask();
+      HandleSingleTapConfirmedEvent(event);
       mState = GESTURE_NONE;
+    } else if (mState == GESTURE_WAITING_SINGLE_TAP) {
+      CancelLongTapTimeoutTask();
+      HandleSingleTapUpEvent(event);
+
+      // We were not waiting for anything but a single tap has happened that
+      // may turn into a double tap. Wait a while and if it doesn't turn into
+      // a double tap, send a single tap instead.
+      mState = GESTURE_WAITING_DOUBLE_TAP;
+
+      mDoubleTapTimeoutTask =
+        NewRunnableMethod(this, &GestureEventListener::TimeoutDoubleTap);
+
+      mAsyncPanZoomController->PostDelayedTask(
+        mDoubleTapTimeoutTask,
+        MAX_TAP_TIME);
     }
+
+    mLastTapEndTime = event.mTime;
 
     if (!mTouches.Length()) {
       mSpanChange = 0.0f;

@@ -19,11 +19,25 @@ from manifestparser import TestManifest
 from mozhttpd import MozHttpd
 
 from marionette import Marionette
-from moztest.results import TestResultCollection
+from moztest.results import TestResultCollection, TestResult, relevant_line
 from marionette_test import MarionetteJSTestCase, MarionetteTestCase
 
 
+class MarionetteTest(TestResult):
+
+    @property
+    def test_name(self):
+        if self.test_class is not None:
+            return '%s.py %s.%s' % (self.test_class.split('.')[0],
+                                    self.test_class,
+                                    self.name)
+        else:
+            return self.name
+
+
 class MarionetteTestResult(unittest._TextTestResult, TestResultCollection):
+
+    resultClass = MarionetteTest
 
     def __init__(self, *args, **kwargs):
         self.marionette = kwargs.pop('marionette')
@@ -76,8 +90,35 @@ class MarionetteTestResult(unittest._TextTestResult, TestResultCollection):
     def failures(self, value):
         pass
 
+    @property
+    def duration(self):
+        if self.stop_time:
+            return self.stop_time - self.start_time
+        else:
+            return 0
+
+    def add_test_result(self, test, result_expected='PASS',
+                        result_actual='PASS', output='', context=None, **kwargs):
+        def get_class(test):
+            return test.__class__.__module__ + '.' + test.__class__.__name__
+
+        name = str(test).split()[0]
+        test_class = get_class(test)
+        if hasattr(test, 'jsFile'):
+            name = os.path.basename(test.jsFile)
+            test_class = None
+
+        t = self.resultClass(name=name, test_class=test_class,
+                       time_start=test.start_time, result_expected=result_expected,
+                       context=context, **kwargs)
+        t.finish(result_actual,
+                 time_end=time.time() if test.start_time else 0,
+                 reason=relevant_line(output),
+                 output=output)
+        self.append(t)
+
     def addError(self, test, err):
-        self.add_result(test, output=self._exc_info_to_string(err, test), result_actual='ERROR')
+        self.add_test_result(test, output=self._exc_info_to_string(err, test), result_actual='ERROR')
         self._mirrorOutput = True
         if self.showAll:
             self.stream.writeln("ERROR")
@@ -86,7 +127,7 @@ class MarionetteTestResult(unittest._TextTestResult, TestResultCollection):
             self.stream.flush()
 
     def addFailure(self, test, err):
-        self.add_result(test, output=self._exc_info_to_string(err, test), result_actual='UNEXPECTED-FAIL')
+        self.add_test_result(test, output=self._exc_info_to_string(err, test), result_actual='UNEXPECTED-FAIL')
         self._mirrorOutput = True
         if self.showAll:
             self.stream.writeln("FAIL")
@@ -96,7 +137,7 @@ class MarionetteTestResult(unittest._TextTestResult, TestResultCollection):
 
     def addSuccess(self, test):
         self.passed += 1
-        self.add_result(test, result_actual='PASS')
+        self.add_test_result(test, result_actual='PASS')
         if self.showAll:
             self.stream.writeln("ok")
         elif self.dots:
@@ -105,7 +146,7 @@ class MarionetteTestResult(unittest._TextTestResult, TestResultCollection):
 
     def addExpectedFailure(self, test, err):
         """Called when an expected failure/error occured."""
-        self.add_result(test, output=self._exc_info_to_string(err, test),
+        self.add_test_result(test, output=self._exc_info_to_string(err, test),
                         result_actual='KNOWN-FAIL')
         if self.showAll:
             self.stream.writeln("expected failure")
@@ -115,7 +156,7 @@ class MarionetteTestResult(unittest._TextTestResult, TestResultCollection):
 
     def addUnexpectedSuccess(self, test):
         """Called when a test was expected to fail, but succeed."""
-        self.add_result(test, result_actual='UNEXPECTED-PASS')
+        self.add_test_result(test, result_actual='UNEXPECTED-PASS')
         if self.showAll:
             self.stream.writeln("unexpected success")
         elif self.dots:
@@ -123,7 +164,7 @@ class MarionetteTestResult(unittest._TextTestResult, TestResultCollection):
             self.stream.flush()
 
     def addSkip(self, test, reason):
-        self.add_result(test, output=reason, result_actual='SKIPPED')
+        self.add_test_result(test, output=reason, result_actual='SKIPPED')
         if self.showAll:
             self.stream.writeln("skipped {0!r}".format(reason))
         elif self.dots:
@@ -524,7 +565,7 @@ class MarionetteTestRunner(object):
             self.marionette.instance = None
         del self.marionette
 
-    def run_test(self, test):
+    def run_test(self, test, expected='pass'):
         if not self.httpd:
             print "starting httpd"
             self.start_httpd()
@@ -584,13 +625,14 @@ class MarionetteTestRunner(object):
             if self.shuffle:
                 random.shuffle(target_tests)
             for i in target_tests:
-                self.run_test(i["path"])
+                self.run_test(i["path"], i["expected"])
                 if self.marionette.check_for_crash():
                     return
             return
 
         self.logger.info('TEST-START %s' % os.path.basename(test))
 
+        self.test_kwargs['expected'] = expected
         for handler in self.test_handlers:
             if handler.match(os.path.basename(test)):
                 handler.add_tests_to_suite(mod_name,
@@ -632,19 +674,17 @@ class MarionetteTestRunner(object):
 
     def generate_xml(self, results_list):
 
-        def _extract_xml(test, text='', result='passed'):
-            cls_name = test.__class__.__name__
-
+        def _extract_xml(test, result='passed'):
             testcase = doc.createElement('testcase')
-            testcase.setAttribute('classname', cls_name)
-            testcase.setAttribute('name', unicode(test).split()[0])
+            testcase.setAttribute('classname', test.test_class)
+            testcase.setAttribute('name', unicode(test.name).split()[0])
             testcase.setAttribute('time', str(test.duration))
             testsuite.appendChild(testcase)
 
             if result in ['failure', 'error', 'skipped']:
                 f = doc.createElement(result)
                 f.setAttribute('message', 'test %s' % result)
-                f.appendChild(doc.createTextNode(text))
+                f.appendChild(doc.createTextNode(test.reason))
                 testcase.appendChild(f)
 
         doc = dom.Document()
@@ -672,27 +712,27 @@ class MarionetteTestRunner(object):
 
         for results in results_list:
 
-            for tup in results.errors:
-                _extract_xml(tup[0], text=tup[1], result='error')
+            for result in results.errors:
+                _extract_xml(result, result='error')
 
-            for tup in results.failures:
-                _extract_xml(tup[0], text=tup[1], result='failure')
+            for result in results.failures:
+                _extract_xml(result, result='failure')
 
             if hasattr(results, 'unexpectedSuccesses'):
                 for test in results.unexpectedSuccesses:
                     # unexpectedSuccesses is a list of Testcases only, no tuples
-                    _extract_xml(test, text='TEST-UNEXPECTED-PASS', result='failure')
+                    _extract_xml(test, result='failure')
 
             if hasattr(results, 'skipped'):
-                for tup in results.skipped:
-                    _extract_xml(tup[0], text=tup[1], result='skipped')
+                for result in results.skipped:
+                    _extract_xml(result, result='skipped')
 
             if hasattr(results, 'expectedFailures'):
-                for tup in results.expectedFailures:
-                    _extract_xml(tup[0], text=tup[1], result='skipped')
+                for result in results.expectedFailures:
+                    _extract_xml(result, result='skipped')
 
-            for test in results.tests_passed:
-                _extract_xml(test)
+            for result in results.tests_passed:
+                _extract_xml(result)
 
         doc.appendChild(testsuite)
         return doc.toprettyxml(encoding='utf-8')

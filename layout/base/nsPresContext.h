@@ -265,8 +265,8 @@ public:
   /**
    * Support for window.matchMedia()
    */
-  void MatchMedia(const nsAString& aMediaQueryList,
-                  nsIDOMMediaQueryList** aResult);
+  already_AddRefed<nsIDOMMediaQueryList>
+    MatchMedia(const nsAString& aMediaQueryList);
 
   /**
    * Access compatibility mode for this context.  This is the same as
@@ -1000,6 +1000,8 @@ public:
     mExistThrottledUpdates = aExistThrottledUpdates;
   }
 
+  bool IsDeviceSizePageSize();
+
 protected:
   friend class nsRunnableMethod<nsPresContext>;
   NS_HIDDEN_(void) ThemeChangedInternal();
@@ -1247,7 +1249,6 @@ protected:
   unsigned              mPaginated : 1;
   unsigned              mCanPaginatedScroll : 1;
   unsigned              mDoScaledTwips : 1;
-  unsigned              mEnableJapaneseTransform : 1;
   unsigned              mIsRootPaginatedDocument : 1;
   unsigned              mPrefBidiDirection : 1;
   unsigned              mPrefScrollbarSide : 2;

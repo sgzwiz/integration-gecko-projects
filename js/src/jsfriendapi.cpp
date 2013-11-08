@@ -25,6 +25,8 @@
 
 #include "jsobjinlines.h"
 
+#include "vm/ScopeObject-inl.h"
+
 using namespace js;
 using namespace JS;
 
@@ -385,6 +387,20 @@ js::GetGlobalForObjectCrossCompartment(JSObject *obj)
     return &obj->global();
 }
 
+JS_FRIEND_API(void)
+js::AssertSameCompartment(JSContext *cx, JSObject *obj)
+{
+    assertSameCompartment(cx, obj);
+}
+
+#ifdef DEBUG
+JS_FRIEND_API(void)
+js::AssertSameCompartment(JSObject *objA, JSObject *objB)
+{
+    JS_ASSERT(objA->compartment() == objB->compartment());
+}
+#endif
+
 JS_FRIEND_API(JSObject *)
 js::DefaultObjectForContextOrNull(JSContext *cx)
 {
@@ -439,8 +455,8 @@ js::GetOutermostEnclosingFunctionOfScriptedCaller(JSContext *cx)
 
     RootedFunction scriptedCaller(cx, iter.callee());
     RootedScript outermost(cx, scriptedCaller->nonLazyScript());
-    for (StaticScopeIter i(cx, scriptedCaller); !i.done(); i++) {
-        if (i.type() == StaticScopeIter::FUNCTION)
+    for (StaticScopeIter<NoGC> i(scriptedCaller); !i.done(); i++) {
+        if (i.type() == StaticScopeIter<NoGC>::FUNCTION)
             outermost = i.funScript();
     }
     return outermost;
@@ -1018,7 +1034,7 @@ js::GetTestingFunctions(JSContext *cx)
     if (!obj)
         return nullptr;
 
-    if (!DefineTestingFunctions(cx, obj))
+    if (!DefineTestingFunctions(cx, obj, false))
         return nullptr;
 
     return obj;
@@ -1120,11 +1136,7 @@ js::AutoCTypesActivityCallback::AutoCTypesActivityCallback(JSContext *cx,
 JS_FRIEND_API(void)
 js::SetObjectMetadataCallback(JSContext *cx, ObjectMetadataCallback callback)
 {
-    // Clear any jitcode in the runtime, which behaves differently depending on
-    // whether there is a creation callback.
-    ReleaseAllJITCode(cx->runtime()->defaultFreeOp());
-
-    cx->compartment()->objectMetadataCallback = callback;
+    cx->compartment()->setObjectMetadataCallback(callback);
 }
 
 JS_FRIEND_API(bool)

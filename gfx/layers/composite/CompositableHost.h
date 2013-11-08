@@ -41,10 +41,7 @@ struct TiledLayerProperties
 {
   nsIntRegion mVisibleRegion;
   nsIntRegion mValidRegion;
-  gfxRect mDisplayPort;
   gfxSize mEffectiveResolution;
-  gfxRect mCompositionBounds;
-  bool mRetainTiles;
 };
 
 class Layer;
@@ -72,6 +69,7 @@ public:
     MOZ_COUNT_DTOR(CompositableBackendSpecificData);
   }
   virtual void SetCompositor(Compositor* aCompositor) {}
+  virtual void ClearData() {}
 };
 
 /**
@@ -116,7 +114,6 @@ public:
   virtual void Composite(EffectChain& aEffectChain,
                          float aOpacity,
                          const gfx::Matrix4x4& aTransform,
-                         const gfx::Point& aOffset,
                          const gfx::Filter& aFilter,
                          const gfx::Rect& aClipRect,
                          const nsIntRegion* aVisibleRegion = nullptr,
@@ -268,6 +265,9 @@ public:
       SetCompositor(nullptr);
       mAttached = false;
       mKeepAttached = false;
+      if (mBackendData) {
+        mBackendData->ClearData();
+      }
     }
   }
   bool IsAttached() { return mAttached; }

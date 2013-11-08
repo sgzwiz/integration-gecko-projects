@@ -11,7 +11,7 @@
 #ifdef JS_ION
 #include "jit/BaselineJIT.h"
 #include "jit/Ion.h"
-#include "jit/IonCompartment.h"
+#include "jit/JitCompartment.h"
 #endif
 #include "vm/Debugger.h"
 #include "vm/Runtime.h"
@@ -39,6 +39,7 @@ JS::Zone::Zone(JSRuntime *rt)
     maybeAlive(true),
     gcMallocBytes(0),
     gcGrayRoots(),
+    data(nullptr),
     types(this)
 {
     /* Ensure that there are no vtables to mess us up here. */
@@ -224,8 +225,8 @@ Zone::discardJitCode(FreeOp *fop)
 
         for (CompartmentsInZoneIter comp(this); !comp.done(); comp.next()) {
             /* Free optimized baseline stubs. */
-            if (comp->ionCompartment())
-                comp->ionCompartment()->optimizedStubSpace()->free();
+            if (comp->jitCompartment())
+                comp->jitCompartment()->optimizedStubSpace()->free();
 
             comp->types.clearCompilerOutputs(fop);
         }

@@ -11,6 +11,7 @@
 #include "mozilla/PodOperations.h"
 
 #include "jsinfer.h"
+#include "jstypes.h"
 
 #include "gc/Heap.h"
 #include "jit/IonTypes.h"
@@ -188,10 +189,6 @@ struct IonScript
 
     // Number of times this script bailed out without invalidation.
     uint32_t numBailouts_;
-
-    // Number of times this scripted bailed out to enter a catch or
-    // finally block.
-    uint32_t numExceptionBailouts_;
 
     // Flag set when it is likely that one of our (transitive) call
     // targets is not compiled.  Used in ForkJoin.cpp to decide when
@@ -410,12 +407,6 @@ struct IonScript
     }
     bool bailoutExpected() const {
         return numBailouts_ > 0;
-    }
-    void incNumExceptionBailouts() {
-        numExceptionBailouts_++;
-    }
-    uint32_t numExceptionBailouts() const {
-        return numExceptionBailouts_;
     }
     void setHasUncompiledCallTarget() {
         hasUncompiledCallTarget_ = true;
@@ -695,8 +686,8 @@ struct IonScriptCounts
 
 struct VMFunction;
 
-class IonCompartment;
-class IonRuntime;
+class JitCompartment;
+class JitRuntime;
 
 struct AutoFlushCache
 {
@@ -704,14 +695,14 @@ struct AutoFlushCache
     uintptr_t start_;
     uintptr_t stop_;
     const char *name_;
-    IonRuntime *runtime_;
+    JitRuntime *runtime_;
     bool used_;
 
   public:
     void update(uintptr_t p, size_t len);
     static void updateTop(uintptr_t p, size_t len);
     ~AutoFlushCache();
-    AutoFlushCache(const char *nonce, IonRuntime *rt);
+    AutoFlushCache(const char *nonce, JitRuntime *rt);
     void flushAnyway();
 };
 
@@ -726,10 +717,10 @@ struct AutoFlushCache
 struct AutoFlushInhibitor
 {
   private:
-    IonRuntime *runtime_;
+    JitRuntime *runtime_;
     AutoFlushCache *afc;
   public:
-    AutoFlushInhibitor(IonRuntime *rt);
+    AutoFlushInhibitor(JitRuntime *rt);
     ~AutoFlushInhibitor();
 };
 } // namespace jit

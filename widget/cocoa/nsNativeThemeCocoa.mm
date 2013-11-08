@@ -2163,7 +2163,8 @@ nsNativeThemeCocoa::DrawWidgetBackground(nsRenderingContext* aContext,
     case NS_THEME_WINDOW_TITLEBAR: {
       NSWindow* win = NativeWindowForFrame(aFrame);
       BOOL isMain = [win isMainWindow];
-      float unifiedToolbarHeight = [(ToolbarWindow*)win unifiedToolbarHeight];
+      float unifiedToolbarHeight = [win isKindOfClass:[ToolbarWindow class]] ?
+        [(ToolbarWindow*)win unifiedToolbarHeight] : macRect.size.height;
       DrawNativeTitlebar(cgContext, macRect, unifiedToolbarHeight, isMain);
     }
       break;
@@ -2960,6 +2961,7 @@ nsNativeThemeCocoa::WidgetStateChanged(nsIFrame* aFrame, uint8_t aWidgetType,
 {
   // Some widget types just never change state.
   switch (aWidgetType) {
+    case NS_THEME_WINDOW_TITLEBAR:
     case NS_THEME_TOOLBOX:
     case NS_THEME_TOOLBAR:
     case NS_THEME_MOZ_MAC_UNIFIED_TOOLBAR:

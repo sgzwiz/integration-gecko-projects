@@ -80,6 +80,10 @@ js::Nursery::enable()
     JS_ASSERT_IF(runtime()->gcZeal_ != ZealGenerationalGCValue, position_ == start());
     numActiveChunks_ = 1;
     setCurrentChunk(0);
+#ifdef JS_GC_ZEAL
+    if (runtime()->gcZeal_ == ZealGenerationalGCValue)
+        enterZealMode();
+#endif
 }
 
 void
@@ -95,6 +99,7 @@ js::Nursery::disable()
 void *
 js::Nursery::allocate(size_t size)
 {
+    JS_ASSERT(isEnabled());
     JS_ASSERT(!runtime()->isHeapBusy());
 
     /* Ensure there's enough space to replace the contents with a RelocationOverlay. */
@@ -291,9 +296,9 @@ GetObjectAllocKindForCopy(JSRuntime *rt, JSObject *obj)
         return obj->as<JSFunction>().getAllocKind();
 
     AllocKind kind = GetGCObjectFixedSlotsKind(obj->numFixedSlots());
-    if (CanBeFinalizedInBackground(kind, obj->getClass()))
-        kind = GetBackgroundAllocKind(kind);
-    return kind;
+    JS_ASSERT(!IsBackgroundFinalized(kind));
+    JS_ASSERT(CanBeFinalizedInBackground(kind, obj->getClass()));
+    return GetBackgroundAllocKind(kind);
 }
 
 void *
@@ -594,13 +599,13 @@ js::Nursery::collect(JSRuntime *rt, JS::gcreason::Reason reason)
 
     /* Move objects pointed to by roots from the nursery to the major heap. */
     MinorCollectionTracer trc(rt, this);
+    rt->gcStoreBuffer.mark(&trc); // This must happen first.
     MarkRuntime(&trc);
     Debugger::markAll(&trc);
     for (CompartmentsIter comp(rt); !comp.done(); comp.next()) {
         comp->markAllCrossCompartmentWrappers(&trc);
         comp->markAllInitialShapeTableEntries(&trc);
     }
-    rt->gcStoreBuffer.mark(&trc);
     rt->newObjectCache.clearNurseryObjects(rt);
 
     /*

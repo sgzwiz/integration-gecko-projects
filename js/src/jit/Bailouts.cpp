@@ -10,8 +10,8 @@
 
 #include "jit/BaselineJIT.h"
 #include "jit/Ion.h"
-#include "jit/IonCompartment.h"
 #include "jit/IonSpewer.h"
+#include "jit/JitCompartment.h"
 #include "jit/SnapshotReader.h"
 
 #include "jit/IonFrameIterator-inl.h"
@@ -205,11 +205,6 @@ jit::CheckFrequentBailouts(JSContext *cx, JSScript *script)
 
             if (!Invalidate(cx, script))
                 return false;
-        } else {
-            // If we keep bailing out to handle exceptions, invalidate and
-            // forbid compilation.
-            if (ionScript->numExceptionBailouts() >= js_IonOptions.exceptionBailoutThreshold)
-                ForbidCompilation(cx, script);
         }
     }
 

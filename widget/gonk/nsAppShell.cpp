@@ -83,7 +83,7 @@ using namespace mozilla::services;
 using namespace mozilla::widget;
 
 bool gDrawRequest = false;
-static nsAppShell *gAppShell = NULL;
+static nsAppShell *gAppShell = nullptr;
 static int epollfd = 0;
 static int signalfds[2] = {0};
 static bool sDevInputAudioJack;
@@ -145,7 +145,7 @@ struct UserInputData {
 static void
 sendMouseEvent(uint32_t msg, uint64_t timeMs, int x, int y, bool forwardToChildren)
 {
-    WidgetMouseEvent event(true, msg, NULL,
+    WidgetMouseEvent event(true, msg, nullptr,
                            WidgetMouseEvent::eReal, WidgetMouseEvent::eNormal);
 
     event.refPoint.x = x;
@@ -198,7 +198,7 @@ sendTouchEvent(UserInputData& data, bool* captured)
         break;
     }
 
-    WidgetTouchEvent event(true, msg, NULL);
+    WidgetTouchEvent event(true, msg, nullptr);
 
     event.time = data.timeMs;
 
@@ -219,10 +219,12 @@ static nsEventStatus
 sendKeyEventWithMsg(uint32_t keyCode,
                     KeyNameIndex keyNameIndex,
                     uint32_t msg,
-                    uint64_t timeMs)
+                    uint64_t timeMs,
+                    bool isRepeat)
 {
-    WidgetKeyboardEvent event(true, msg, NULL);
+    WidgetKeyboardEvent event(true, msg, nullptr);
     event.keyCode = keyCode;
+    event.mIsRepeat = isRepeat;
     event.mKeyNameIndex = keyNameIndex;
     event.location = nsIDOMKeyEvent::DOM_KEY_LOCATION_MOBILE;
     event.time = timeMs;
@@ -231,25 +233,26 @@ sendKeyEventWithMsg(uint32_t keyCode,
 
 static void
 sendKeyEvent(uint32_t keyCode, KeyNameIndex keyNameIndex, bool down,
-             uint64_t timeMs)
+             uint64_t timeMs, bool isRepeat)
 {
     EventFlags extraFlags;
     nsEventStatus status =
         sendKeyEventWithMsg(keyCode, keyNameIndex,
-                            down ? NS_KEY_DOWN : NS_KEY_UP, timeMs);
+                            down ? NS_KEY_DOWN : NS_KEY_UP, timeMs, isRepeat);
     if (down && status != nsEventStatus_eConsumeNoDefault) {
-        sendKeyEventWithMsg(keyCode, keyNameIndex, NS_KEY_PRESS, timeMs);
+        sendKeyEventWithMsg(keyCode, keyNameIndex, NS_KEY_PRESS, timeMs,
+                            isRepeat);
     }
 }
 
 static void
-maybeSendKeyEvent(int keyCode, bool pressed, uint64_t timeMs)
+maybeSendKeyEvent(int keyCode, bool pressed, uint64_t timeMs, bool isRepeat)
 {
     uint32_t DOMKeyCode =
         (keyCode < ArrayLength(kKeyMapping)) ? kKeyMapping[keyCode] : 0;
     KeyNameIndex DOMKeyNameIndex = GetKeyNameIndex(keyCode);
     if (DOMKeyCode || DOMKeyNameIndex != KEY_NAME_INDEX_Unidentified) {
-        sendKeyEvent(DOMKeyCode, DOMKeyNameIndex, pressed, timeMs);
+        sendKeyEvent(DOMKeyCode, DOMKeyNameIndex, pressed, timeMs, isRepeat);
     } else {
         VERBOSE_LOG("Got unknown key event code. type 0x%04x code 0x%04x value %d",
                     keyCode, pressed);
@@ -393,7 +396,7 @@ deviceId)
     virtual void notifyInputDevicesChanged(const android::Vector<InputDeviceInfo>& inputDevices) {};
     virtual sp<KeyCharacterMap> getKeyboardLayoutOverlay(const String8& inputDeviceDescriptor)
     {
-        return NULL;
+        return nullptr;
     };
     virtual String8 getDeviceAlias(const InputDeviceIdentifier& identifier)
     {
@@ -550,11 +553,16 @@ GeckoInputDispatcher::dispatchOnce()
                        status != nsEventStatus_eConsumeNoDefault);
         break;
     }
-    case UserInputData::KEY_DATA:
+    case UserInputData::KEY_DATA: {
+        bool isPress = data.action == AKEY_EVENT_ACTION_DOWN;
+        bool isRepeat =
+            isPress && (data.flags & AKEY_EVENT_FLAG_LONG_PRESS);
         maybeSendKeyEvent(data.key.keyCode,
-                          data.action == AKEY_EVENT_ACTION_DOWN,
-                          data.timeMs);
+                          isPress,
+                          data.timeMs,
+                          isRepeat);
         break;
+    }
     }
 }
 
@@ -707,7 +715,7 @@ nsAppShell::~nsAppShell()
         if (result)
             LOG("Could not stop reader thread - %d", result);
     }
-    gAppShell = NULL;
+    gAppShell = nullptr;
 }
 
 nsresult

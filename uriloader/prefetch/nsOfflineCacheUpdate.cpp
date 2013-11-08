@@ -1331,7 +1331,7 @@ nsOfflineCacheUpdate::Init(nsIURI *aManifestURI,
     }
 
     rv = nsOfflineCacheUpdateService::OfflineAppPinnedForURI(aDocumentURI,
-                                                             NULL,
+                                                             nullptr,
                                                              &mPinned);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1383,7 +1383,7 @@ nsOfflineCacheUpdate::InitForUpdateCheck(nsIURI *aManifestURI,
     mApplicationCache = mPreviousApplicationCache;
 
     rv = nsOfflineCacheUpdateService::OfflineAppPinnedForURI(aManifestURI,
-                                                             NULL,
+                                                             nullptr,
                                                              &mPinned);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1442,7 +1442,7 @@ nsOfflineCacheUpdate::InitPartial(nsIURI *aManifestURI,
     NS_ENSURE_SUCCESS(rv, rv);
 
     rv = nsOfflineCacheUpdateService::OfflineAppPinnedForURI(aDocumentURI,
-                                                             NULL,
+                                                             nullptr,
                                                              &mPinned);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -2005,6 +2005,12 @@ nsOfflineCacheUpdate::NotifyUpdateAvailability(bool updateAvailable)
 void
 nsOfflineCacheUpdate::AssociateDocuments(nsIApplicationCache* cache)
 {
+    if (!cache) {
+        LOG(("nsOfflineCacheUpdate::AssociateDocuments bypassed"
+             ", no cache provided [this=%p]", this));
+        return;
+    }
+
     nsCOMArray<nsIOfflineCacheUpdateObserver> observers;
     GatherObservers(observers);
 
@@ -2191,7 +2197,7 @@ EvictOneOfCacheGroups(nsIApplicationCacheService *cacheService,
 
         bool pinned;
         rv = nsOfflineCacheUpdateService::OfflineAppPinnedForURI(uri,
-                                                                 NULL,
+                                                                 nullptr,
                                                                  &pinned);
         NS_ENSURE_SUCCESS(rv, rv);
 
