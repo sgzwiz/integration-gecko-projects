@@ -41,8 +41,6 @@ const METAONLY =        1 << 9;
 const RECREATE =        1 << 10;
 // Do not give me the entry
 const NOTWANTED =       1 << 11;
-// Tell the cache to wait for the entry to be completely written first
-const COMPLETE =        1 << 12;
 
 var log_c2 = true;
 function LOG_C2(o, m)
@@ -119,13 +117,8 @@ OpenCallback.prototype =
     do_check_neq(this.behavior & (REVAL|PARTIAL), REVAL|PARTIAL);
 
     if (this.behavior & (REVAL|PARTIAL)) {
-      LOG_C2(this, "onCacheEntryCheck DONE, return ENTRY_NEEDS_REVALIDATION");
+      LOG_C2(this, "onCacheEntryCheck DONE, return REVAL");
       return Ci.nsICacheEntryOpenCallback.ENTRY_NEEDS_REVALIDATION;
-    }
-
-    if (this.behavior & COMPLETE) {
-      LOG_C2(this, "onCacheEntryCheck DONE, return ENTRY_WANTED_COMPLETE");
-      return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED_COMPLETE;
     }
 
     LOG_C2(this, "onCacheEntryCheck DONE, return ENTRY_WANTED");
@@ -224,6 +217,9 @@ OpenCallback.prototype =
         entry.close();
       });
     }
+  },
+  get mainThreadOnly() {
+    return true;
   },
   selfCheck: function()
   {

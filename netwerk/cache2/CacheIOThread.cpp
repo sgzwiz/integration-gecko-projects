@@ -160,17 +160,16 @@ loopStart:
       }
 
       if (EventsPending())
-        goto loopStart;
+        continue;
 
       lock.Wait(waitTime);
 
       if (EventsPending())
-        goto loopStart;
+        continue;
 
     } while (!mShutdown);
 
-    MOZ_ASSERT(mLowestLevelWaiting == LAST_LEVEL);
-    MOZ_ASSERT(!mHasXPCOMEvents);
+    MOZ_ASSERT(!EventsPending());
   } // lock
 
   if (threadInternal)

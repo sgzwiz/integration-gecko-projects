@@ -2003,37 +2003,32 @@ nsHttpChannel::EnsureAssocReq()
 // nsHttpChannel <byte-range>
 //-----------------------------------------------------------------------------
 
-bool
-nsHttpChannel::IsResumable(int64_t partialLen, int64_t contentLength) const
+nsresult
+nsHttpChannel::MaybeSetupByteRangeRequest(int64_t partialLen, int64_t contentLength)
 {
+    nsresult rv = NS_OK;
+
     bool hasContentEncoding =
         mCachedResponseHead->PeekHeader(nsHttp::Content_Encoding)
         != nullptr;
 
-    return (partialLen < contentLength) &&
-           partialLen > 0 &&
-           !hasContentEncoding &&
-           mCachedResponseHead->IsResumable() &&
-           !mCustomConditionalRequest &&
-           !mCachedResponseHead->NoStore();
-}
-
-nsresult
-nsHttpChannel::MaybeSetupByteRangeRequest(int64_t partialLen, int64_t contentLength)
-{
     // Be pesimistic
     mIsPartialRequest = false;
 
-    if (!IsResumable(partialLen, contentLength))
-      return NS_OK;
-
-    // looks like a partial entry we can reuse; add If-Range
-    // and Range headers.
-    nsresult rv = SetupByteRangeRequest(partialLen);
-    if (NS_FAILED(rv)) {
-        // Make the request unconditional again.
-        mRequestHead.ClearHeader(nsHttp::Range);
-        mRequestHead.ClearHeader(nsHttp::If_Range);
+    if ((partialLen < contentLength) &&
+         partialLen > 0 &&
+         !hasContentEncoding &&
+         mCachedResponseHead->IsResumable() &&
+         !mCustomConditionalRequest &&
+         !mCachedResponseHead->NoStore()) {
+        // looks like a partial entry we can reuse; add If-Range
+        // and Range headers.
+        rv = SetupByteRangeRequest(partialLen);
+        if (NS_FAILED(rv)) {
+            // Make the request unconditional again.
+            mRequestHead.ClearHeader(nsHttp::Range);
+            mRequestHead.ClearHeader(nsHttp::If_Range);
+        }
     }
 
     return rv;
@@ -2540,8 +2535,7 @@ nsHttpChannel::OpenCacheEntry(bool usingSSL)
     if (BYPASS_LOCAL_CACHE(mLoadFlags))
         cacheEntryOpenFlags = nsICacheStorage::OPEN_TRUNCATE;
     else
-        cacheEntryOpenFlags = nsICacheStorage::OPEN_NORMALLY
-                            | nsICacheStorage::CHECK_MULTITHREADED;
+        cacheEntryOpenFlags = nsICacheStorage::OPEN_NORMALLY;
 
     if (mLoadAsBlocking || mLoadUnblocked ||
         (mLoadFlags & LOAD_INITIAL_DOCUMENT_URI)) {
@@ -2713,8 +2707,6 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
         return rv;
     }
 
-    bool wantCompleteEntry = false;
-
     if (method != nsHttp::Head && !isCachedRedirect) {
         // If the cached content-length is set and it does not match the data
         // size of the cached content, then the cached response is partial...
@@ -2733,20 +2725,11 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
             if (mLoadFlags & LOAD_BYPASS_LOCAL_CACHE_IF_BUSY) {
                 LOG(("  not interested in the entry, "
                      "LOAD_BYPASS_LOCAL_CACHE_IF_BUSY specified"));
-
                 *aResult = ENTRY_NOT_WANTED;
                 return NS_OK;
             }
 
-            if (!IsResumable(size, contentLength)) {
-                LOG(("  wait for entry completion, "
-                     "response is not resumable"));
-
-                wantCompleteEntry = true;
-            }
-            else {
-                mConcurentCacheAccess = 1;
-            }
+            mConcurentCacheAccess = 1;
         }
         else if (contentLength != int64_t(-1) && contentLength != size) {
             LOG(("Cached data size does not match the Content-Length header "
@@ -2953,8 +2936,6 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
 
     if (mDidReval)
         *aResult = ENTRY_NEEDS_REVALIDATION;
-    else if (wantCompleteEntry)
-        *aResult = ENTRY_WANTED_COMPLETE;
     else
         *aResult = ENTRY_WANTED;
 
@@ -3051,8 +3032,6 @@ nsHttpChannel::OnNormalCacheEntryAvailable(nsICacheEntry *aEntry,
     mCacheEntriesToWaitFor &= ~WAIT_FOR_CACHE_ENTRY;
 
     if (aNew) {
-      mCachedContentIsValid = false;
-
       bool offline = gIOService->IsOffline();
       if ((mLoadFlags & INHIBIT_CACHING) && !offline) {
           // Don't allow caching in this case, just throw the entry away
@@ -3074,11 +3053,6 @@ nsHttpChannel::OnNormalCacheEntryAvailable(nsICacheEntry *aEntry,
             mozilla::Telemetry::Accumulate(Telemetry::HTTP_OFFLINE_CACHE_DOCUMENT_LOAD,
                                            false);
         }
-    }
-    else {
-        // Make sure this flag is dropped.  It may happen the entry is doomed
-        // between OnCacheEntryCheck and OnCacheEntryAvailable.
-        mCachedContentIsValid = false;
     }
 
     return NS_OK;
@@ -3166,6 +3140,16 @@ nsHttpChannel::OnOfflineCacheEntryForWritingAvailable(nsICacheEntry *aEntry,
     }
 
     return aEntryStatus;
+}
+
+NS_IMETHODIMP
+nsHttpChannel::GetMainThreadOnly(bool *aMainThreadOnly)
+{
+    NS_ENSURE_ARG(aMainThreadOnly);
+
+    // This implementation accepts callbacks on any thread
+    *aMainThreadOnly = false;
+    return NS_OK;
 }
 
 // Generates the proper cache-key for this instance of nsHttpChannel
