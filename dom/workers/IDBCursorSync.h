@@ -27,22 +27,13 @@ class Key;
 BEGIN_WORKERS_NAMESPACE
 
 class ContinueHelper;
-class IDBCursorSync;
+class IDBCursorSyncProxy;
 class IDBIndexSync;
 class IDBObjectStoreSync;
 class IDBTransactionSync;
 class IndexedDBCursorWorkerChild;
 class IndexedDBIndexWorkerChild;
 class OpenHelper;
-
-class IDBCursorSyncProxy : public IDBObjectSyncProxy<IndexedDBCursorWorkerChild>
-{
-public:
-  IDBCursorSyncProxy(IDBCursorSync* aCursor);
-
-  IDBCursorSync*
-  Cursor();
-};
 
 class IDBCursorSync : public IDBObjectSync,
                       public indexedDB::IDBCursorBase

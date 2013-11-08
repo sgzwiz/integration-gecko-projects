@@ -14,6 +14,7 @@
 #include "IDBIndexSync.h"
 #include "IDBObjectStoreSync.h"
 #include "IDBTransactionSync.h"
+#include "IndexedDBSyncProxies.h"
 
 USING_WORKERS_NAMESPACE
 

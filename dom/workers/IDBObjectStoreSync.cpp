@@ -16,6 +16,7 @@
 #include "IDBIndexSync.h"
 #include "IDBTransactionSync.h"
 #include "IPCThreadUtils.h"
+#include "IndexedDBSyncProxies.h"
 #include "WorkerPrivate.h"
 
 #include "ipc/IndexedDBWorkerChild.h"
@@ -316,18 +317,6 @@ GetAddInfoCallback(JSContext* aCx, void* aClosure)
 }
 
 } // anonymous namespace
-
-IDBObjectStoreSyncProxy::IDBObjectStoreSyncProxy(
-                                               IDBObjectStoreSync* aObjectStore)
-: IDBObjectSyncProxy<IndexedDBObjectStoreWorkerChild>(aObjectStore)
-{
-}
-
-IDBObjectStoreSync*
-IDBObjectStoreSyncProxy::ObjectStore()
-{
-  return static_cast<IDBObjectStoreSync*>(mObject);
-}
 
 NS_IMPL_ADDREF_INHERITED(IDBObjectStoreSync, IDBObjectSync)
 NS_IMPL_RELEASE_INHERITED(IDBObjectStoreSync, IDBObjectSync)
@@ -1276,7 +1265,10 @@ GetHelper::UnpackResponse(const ResponseValue& aResponseValue)
   const GetResponse& getResponse = aResponseValue.get_GetResponse();
   const SerializedStructuredCloneReadInfo& cloneInfo = getResponse.cloneInfo();
 
-  if (!mCloneBuffer.copy(cloneInfo.data, cloneInfo.dataLength)) {
+  if (!cloneInfo.dataLength) {
+    mCloneBuffer.clear();
+  }
+  else if (!mCloneBuffer.copy(cloneInfo.data, cloneInfo.dataLength)) {
     NS_WARNING("Failed to copy clone buffer!");
     return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
   }

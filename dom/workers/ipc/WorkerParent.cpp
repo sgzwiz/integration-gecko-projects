@@ -13,6 +13,7 @@
 #include "WorkerPrivate.h"
 
 USING_WORKERS_NAMESPACE
+using namespace mozilla::dom;
 using namespace mozilla::dom::indexedDB;
 
 WorkerParent::WorkerParent(WorkerPoolParent* aWorkerPoolParent)

@@ -30,18 +30,9 @@ class IndexRequestParams;
 BEGIN_WORKERS_NAMESPACE
 
 class IDBCursorSync;
-class IDBIndexSync;
+class IDBIndexSyncProxy;
 class IDBObjectStoreSync;
 class IndexedDBIndexWorkerChild;
-
-class IDBIndexSyncProxy : public IDBObjectSyncProxy<IndexedDBIndexWorkerChild>
-{
-public:
-  IDBIndexSyncProxy(IDBIndexSync* aIndex);
-
-  IDBIndexSync*
-  Index();
-};
 
 class IDBIndexSync MOZ_FINAL : public IDBObjectSync,
                                public indexedDB::IDBIndexBase

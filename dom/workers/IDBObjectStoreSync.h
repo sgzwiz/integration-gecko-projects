@@ -35,17 +35,8 @@ BEGIN_WORKERS_NAMESPACE
 
 class IDBCursorSync;
 class IDBIndexSync;
-class IDBObjectStoreSync;
+class IDBObjectStoreSyncProxy;
 class IndexedDBObjectStoreWorkerChild;
-
-class IDBObjectStoreSyncProxy : public IDBObjectSyncProxy<IndexedDBObjectStoreWorkerChild>
-{
-public:
-  IDBObjectStoreSyncProxy(IDBObjectStoreSync* aObjectStore);
-
-  IDBObjectStoreSync*
-  ObjectStore();
-};
 
 class IDBObjectStoreSync MOZ_FINAL : public IDBObjectSync,
                                      public indexedDB::IDBObjectStoreBase

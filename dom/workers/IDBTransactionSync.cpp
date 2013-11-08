@@ -13,6 +13,7 @@
 #include "DatabaseInfoMT.h"
 #include "IDBDatabaseSync.h"
 #include "IDBObjectStoreSync.h"
+#include "IndexedDBSyncProxies.h"
 #include "IPCThreadUtils.h"
 #include "WorkerPrivate.h"
 
@@ -122,18 +123,6 @@ private:
 };
 
 } // anonymous namespace
-
-IDBTransactionSyncProxy::IDBTransactionSyncProxy(
-                                               IDBTransactionSync* aTransaction)
-: IDBObjectSyncProxy<IndexedDBTransactionWorkerChild>(aTransaction)
-{
-}
-
-IDBTransactionSync*
-IDBTransactionSyncProxy::Transaction()
-{
-  return static_cast<IDBTransactionSync*>(mObject);
-}
 
 NS_IMPL_ADDREF_INHERITED(IDBTransactionSync, IDBObjectSync)
 NS_IMPL_RELEASE_INHERITED(IDBTransactionSync, IDBObjectSync)

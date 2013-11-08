@@ -12,6 +12,7 @@
 #include "mozilla/dom/indexedDB/IndexedDatabase.h"
 #include "mozilla/dom/indexedDB/PIndexedDBRequest.h"
 
+#include "IndexedDBSyncProxies.h"
 #include "WorkerPrivate.h"
 
 #include "ipc/IndexedDBWorkerChild.h"
@@ -104,43 +105,10 @@ ConvertCloneReadInfosToArrayInternal(
 
 } // anonymous namespace
 
-BlockingHelperProxy::BlockingHelperProxy(BlockingHelperBase* aHelper)
-: IDBObjectSyncProxyWithActor<IndexedDBRequestWorkerChildBase>(aHelper)
+BlockingHelperProxy*
+BlockingHelperBase::Proxy() const
 {
-}
-
-void
-BlockingHelperProxy::Teardown()
-{
-  AssertIsOnIPCThread();
-  if (mActor) {
-    MaybeUnpinObject();
-
-    mActor->Disconnect();
-    MOZ_ASSERT(!mActor);
-  }
-}
-
-BlockingHelperBase*
-BlockingHelperProxy::Helper()
-{
-  return static_cast<BlockingHelperBase*>(mObject);
-}
-
-void
-BlockingHelperProxy::OnRequestComplete(const ResponseValue& aResponseValue)
-{
-  nsresult rv;
-
-  if (aResponseValue.type() == ResponseValue::Tnsresult) {
-    MOZ_ASSERT(NS_FAILED(aResponseValue.get_nsresult()), "Huh?");
-    rv = aResponseValue.get_nsresult();
-  }
-  else {
-    rv = Helper()->UnpackResponse(aResponseValue);
-  }
-
-  UnblockWorkerThread(rv, false);
+  return static_cast<BlockingHelperProxy*>(mProxy.get());
 }
 
 bool

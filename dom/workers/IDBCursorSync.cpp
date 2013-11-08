@@ -16,6 +16,7 @@
 #include "DatabaseInfoMT.h"
 #include "IDBIndexSync.h"
 #include "IDBObjectStoreSync.h"
+#include "IndexedDBSyncProxies.h"
 #include "IPCThreadUtils.h"
 #include "WorkerPrivate.h"
 
@@ -25,6 +26,7 @@ USING_WORKERS_NAMESPACE
 using namespace mozilla::dom::indexedDB::ipc;
 using mozilla::dom::indexedDB::IDBKeyRange;
 using mozilla::dom::Optional;
+using mozilla::dom::OwningIDBObjectStoreSyncOrIDBIndexSync;
 using mozilla::ErrorResult;
 
 BEGIN_WORKERS_NAMESPACE
@@ -159,17 +161,6 @@ private:
 };
 
 END_WORKERS_NAMESPACE
-
-IDBCursorSyncProxy::IDBCursorSyncProxy(IDBCursorSync* aCursor)
-: IDBObjectSyncProxy<IndexedDBCursorWorkerChild>(aCursor)
-{
-}
-
-IDBCursorSync*
-IDBCursorSyncProxy::Cursor()
-{
-  return static_cast<IDBCursorSync*>(mObject);
-}
 
 NS_IMPL_ADDREF_INHERITED(IDBCursorSync, IDBObjectSync)
 NS_IMPL_RELEASE_INHERITED(IDBCursorSync, IDBObjectSync)

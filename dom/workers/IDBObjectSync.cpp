@@ -6,8 +6,9 @@
 
 #include "IDBObjectSync.h"
 
-#include "base/thread.h"
+#include "base/message_loop.h"
 
+#include "IndexedDBSyncProxies.h"
 #include "RuntimeService.h"
 #include "WorkerPrivate.h"
 
@@ -82,94 +83,7 @@ public:
   }
 };
 
-class UnpinRunnable : public WorkerControlRunnable
-{
-  IDBObjectSyncBase* mObject;
-
-public:
-  UnpinRunnable(WorkerPrivate* aWorkerPrivate, IDBObjectSyncBase* aObject)
-  : WorkerControlRunnable(aWorkerPrivate, WorkerThread, UnchangedBusyCount),
-    mObject(aObject)
-  { }
-
-  bool
-  PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
-  {
-    AssertIsOnIPCThread();
-    return true;
-  }
-
-  void
-  PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
-               bool aDispatchResult)
-  {
-    AssertIsOnIPCThread();
-  }
-
-  bool
-  WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
-  {
-    mObject->Unpin();
-    return true;
-  }
-};
-
 } // anonymous namespace
-
-void
-IDBObjectSyncProxyBase::OnUnblockRequested()
-{
-  AssertIsOnIPCThread();
-
-  mExpectingResponse = false;
-
-  mWorkerPrivate = nullptr;
-  mSyncQueueKey = UINT32_MAX;
-}
-
-void
-IDBObjectSyncProxyBase::OnUnblockPerformed(WorkerPrivate* aWorkerPrivate)
-{
-  aWorkerPrivate->AssertIsOnWorkerThread();
-
-  mObject->Unpin();
-}
-
-void
-IDBObjectSyncProxyBase::UnblockWorkerThread(nsresult aErrorCode, bool aDispatch)
-{
-  nsRefPtr<UnblockWorkerThreadRunnable> runnable =
-    new UnblockWorkerThreadRunnable(mWorkerPrivate, mSyncQueueKey,
-                                    aErrorCode, this);
-
-  if (aDispatch) {
-    if (!runnable->Dispatch()) {
-      NS_WARNING("Failed to dispatch runnable!");
-    }
-  }
-  else {
-    runnable->RunImmediatelly();
-  }
-}
-
-void
-IDBObjectSyncProxyBase::MaybeUnpinObject()
-{
-  AssertIsOnIPCThread();
-
-  if (mExpectingResponse) {
-    mExpectingResponse = false;
-
-    nsRefPtr<UnpinRunnable> runnable =
-      new UnpinRunnable(mWorkerPrivate, mObject);
-    if (!runnable->Dispatch(nullptr)) {
-      NS_RUNTIMEABORT("We're going to hang at shutdown anyways.");
-    }
-
-    mWorkerPrivate = nullptr;
-    mSyncQueueKey = UINT32_MAX;
-  }
-}
 
 IDBObjectSyncBase::IDBObjectSyncBase(WorkerPrivate* aWorkerPrivate)
 : mWorkerPrivate(aWorkerPrivate), mRooted(false), mCanceled(false)
@@ -190,15 +104,15 @@ IDBObjectSyncBase::Unpin()
 {
   mWorkerPrivate->AssertIsOnWorkerThread();
 
-  MOZ_ASSERT(mRooted);
+  MOZ_ASSERT(mRooted, "Mismatched calls to Unpin!");
 
   JSContext* cx = GetCurrentThreadJSContext();
-
-  NS_RELEASE_THIS();
 
   mWorkerPrivate->RemoveFeature(cx, this);
 
   mRooted = false;
+
+  NS_RELEASE_THIS();
 }
 
 bool

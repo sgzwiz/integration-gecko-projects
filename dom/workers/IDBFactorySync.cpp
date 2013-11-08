@@ -11,6 +11,7 @@
 #include "mozilla/dom/IDBFactorySyncBinding.h"
 
 #include "IDBDatabaseSync.h"
+#include "IndexedDBSyncProxies.h"
 #include "IPCThreadUtils.h"
 #include "RuntimeService.h"
 #include "WorkerPrivate.h"
@@ -104,11 +105,6 @@ protected:
 };
 
 } // anonymous namespace
-
-IDBFactorySyncProxy::IDBFactorySyncProxy(IDBFactorySync* aFactory)
-: IDBObjectSyncProxy<IndexedDBWorkerChild>(aFactory)
-{
-}
 
 NS_IMPL_ADDREF_INHERITED(IDBFactorySync, IDBObjectSync)
 NS_IMPL_RELEASE_INHERITED(IDBFactorySync, IDBObjectSync)
@@ -301,23 +297,6 @@ IDBFactorySync::DeleteDatabase(JSContext* aCx, const nsAString& aName,
   }
 
   mDeleteDatabaseHelper = nullptr;
-}
-
-DeleteDatabaseProxy::DeleteDatabaseProxy(DeleteDatabaseHelper* aHelper)
-: IDBObjectSyncProxyWithActor<IndexedDBDeleteDatabaseRequestWorkerChild>(aHelper)
-{
-}
-
-void
-DeleteDatabaseProxy::Teardown()
-{
-  AssertIsOnIPCThread();
-  if (mActor) {
-    MaybeUnpinObject();
-
-    mActor->Disconnect();
-    MOZ_ASSERT(!mActor);
-  }
 }
 
 bool

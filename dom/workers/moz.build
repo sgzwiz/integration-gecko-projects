@@ -53,6 +53,7 @@ SOURCES += [
     'IDBObjectStoreSync.cpp',
     'IDBObjectSync.cpp',
     'IDBTransactionSync.cpp',
+    'IndexedDBSyncProxies.cpp',
     'IPCThreadUtils.cpp',
     'Location.cpp',
     'MessagePort.cpp',

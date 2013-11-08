@@ -16,6 +16,7 @@
 #include "IDBFactorySync.h"
 #include "IDBObjectStoreSync.h"
 #include "IDBTransactionSync.h"
+#include "IndexedDBSyncProxies.h"
 #include "IPCThreadUtils.h"
 #include "WorkerPrivate.h"
 
@@ -25,6 +26,7 @@ USING_WORKERS_NAMESPACE
 using mozilla::dom::DOMStringList;
 using mozilla::dom::IDBTransactionCallback;
 using mozilla::dom::IDBTransactionMode;
+using mozilla::dom::IDBVersionChangeBlockedCallback;
 using mozilla::dom::IDBVersionChangeCallback;
 using mozilla::dom::indexedDB::IDBTransactionBase;
 using mozilla::dom::indexedDB::IDBVersionChangeEvent;
@@ -91,8 +93,14 @@ protected:
     return NS_OK;
   }
 
+  virtual void
+  PostRun() MOZ_OVERRIDE
+  {
+    mDatabase = nullptr;
+  }
+
 private:
-  nsRefPtr<IDBDatabaseSync> mDatabase;
+  IDBDatabaseSync* mDatabase;
 };
 
 class DeleteObjectStoreRunnable : public BlockWorkerThreadRunnable
@@ -291,17 +299,6 @@ private:
 };
 
 } // anonymous namespace
-
-IDBDatabaseSyncProxy::IDBDatabaseSyncProxy(IDBDatabaseSync* aDatabase)
-: IDBObjectSyncProxy<IndexedDBDatabaseWorkerChild>(aDatabase)
-{
-}
-
-IDBDatabaseSync*
-IDBDatabaseSyncProxy::Database()
-{
-  return static_cast<IDBDatabaseSync*>(mObject);
-}
 
 NS_IMPL_ADDREF_INHERITED(IDBDatabaseSync, nsDOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(IDBDatabaseSync, nsDOMEventTargetHelper)
@@ -680,6 +677,8 @@ IDBDatabaseSync::Close(JSContext* aCx, ErrorResult& aRv)
       Proxy()->Actor()->SendClose(false);
     }
     else {
+      nsRefPtr<IDBDatabaseSync> kungFuDeathGrip = this;
+
       nsRefPtr<CloseRunnable> runnable =
         new CloseRunnable(mWorkerPrivate, this);
 

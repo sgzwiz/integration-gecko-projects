@@ -14,6 +14,7 @@
 
 #include "IDBCursorSync.h"
 #include "IDBObjectStoreSync.h"
+#include "IndexedDBSyncProxies.h"
 #include "IPCThreadUtils.h"
 #include "WorkerPrivate.h"
 
@@ -215,17 +216,6 @@ private:
 };
 
 } // anonymous namespace
-
-IDBIndexSyncProxy::IDBIndexSyncProxy(IDBIndexSync* aIndex)
-: IDBObjectSyncProxy<IndexedDBIndexWorkerChild>(aIndex)
-{
-}
-
-IDBIndexSync*
-IDBIndexSyncProxy::Index()
-{
-  return static_cast<IDBIndexSync*>(mObject);
-}
 
 NS_IMPL_ADDREF_INHERITED(IDBIndexSync, IDBObjectSync)
 NS_IMPL_RELEASE_INHERITED(IDBIndexSync, IDBObjectSync)

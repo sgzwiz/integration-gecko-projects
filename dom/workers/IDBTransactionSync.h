@@ -28,18 +28,9 @@ BEGIN_WORKERS_NAMESPACE
 struct DatabaseInfoMT;
 class IDBDatabaseSync;
 class IDBObjectStoreSync;
-class IDBTransactionSync;
+class IDBTransactionSyncProxy;
 class IndexedDBDatabaseWorkerChild;
 class IndexedDBTransactionWorkerChild;
-
-class IDBTransactionSyncProxy : public IDBObjectSyncProxy<IndexedDBTransactionWorkerChild>
-{
-public:
-  IDBTransactionSyncProxy(IDBTransactionSync* aTransaction);
-
-  IDBTransactionSync*
-  Transaction();
-};
 
 class IDBTransactionSync MOZ_FINAL : public IDBObjectSync,
                                      public indexedDB::IDBTransactionBase

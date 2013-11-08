@@ -32,20 +32,11 @@ struct ObjectStoreInfo;
 
 BEGIN_WORKERS_NAMESPACE
 
-class IDBDatabaseSync;
+class IDBDatabaseSyncProxy;
 class IDBFactorySync;
 class IDBObjectStoreSync;
 class IDBTransactionSync;
 class IndexedDBDatabaseWorkerChild;
-
-class IDBDatabaseSyncProxy : public IDBObjectSyncProxy<IndexedDBDatabaseWorkerChild>
-{
-public:
-  IDBDatabaseSyncProxy(IDBDatabaseSync* aDatabase);
-
-  IDBDatabaseSync*
-  Database();
-};
 
 class IDBDatabaseSync MOZ_FINAL : public IDBObjectSyncEventTarget,
                                   public indexedDB::IDBDatabaseBase

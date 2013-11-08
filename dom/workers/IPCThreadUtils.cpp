@@ -6,7 +6,7 @@
 
 #include "IPCThreadUtils.h"
 
-#include "base/thread.h"
+#include "base/message_loop.h"
 #include "mozilla/dom/Exceptions.h"
 
 #include "RuntimeService.h"

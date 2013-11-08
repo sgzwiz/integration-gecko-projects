@@ -44,6 +44,9 @@
 #include "mozilla/dom/MessagePortList.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/TabChild.h"
+#ifdef CreateFile
+#undef CreateFile
+#endif
 #include "mozilla/dom/WorkerBinding.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Util.h"
@@ -83,14 +86,6 @@
 #include "ipc/WorkerParent.h"
 #include "ipc/WorkerPoolChild.h"
 #include "ipc/WorkerPoolParent.h"
-
-#ifdef CreateFile
-#undef CreateFile
-#endif
-
-#ifdef PostMessage
-#undef PostMessage
-#endif
 
 // GC will run once every thirty seconds during normal execution.
 #define NORMAL_GC_TIMER_DELAY_MS 30000

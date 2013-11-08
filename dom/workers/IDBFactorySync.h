@@ -27,16 +27,11 @@ class IDBVersionChangeBlockedCallback;
 BEGIN_WORKERS_NAMESPACE
 
 class DeleteDatabaseHelper;
+class DeleteDatabaseProxy;
 class IDBDatabaseSync;
-class IDBFactorySync;
+class IDBFactorySyncProxy;
 class IndexedDBDeleteDatabaseRequestWorkerChild;
 class IndexedDBWorkerChild;
-
-class IDBFactorySyncProxy : public IDBObjectSyncProxy<IndexedDBWorkerChild>
-{
-public:
-  IDBFactorySyncProxy(IDBFactorySync* aFactory);
-};
 
 class IDBFactorySync MOZ_FINAL : public IDBObjectSync,
                                  public indexedDB::IDBFactoryBase
@@ -92,15 +87,6 @@ private:
   nsRefPtr<DeleteDatabaseHelper> mDeleteDatabaseHelper;
 };
 
-class DeleteDatabaseProxy : public IDBObjectSyncProxyWithActor<IndexedDBDeleteDatabaseRequestWorkerChild>
-{
-public:
-  DeleteDatabaseProxy(DeleteDatabaseHelper* aHelper);
-
-  virtual void
-  Teardown() MOZ_OVERRIDE;
-};
-
 class DeleteDatabaseHelper : public IDBObjectSyncBase
 {
 public:
@@ -115,10 +101,7 @@ public:
   { }
 
   DeleteDatabaseProxy*
-  Proxy() const
-  {
-    return static_cast<DeleteDatabaseProxy*>(mProxy.get());
-  }
+  Proxy() const;
 
   bool
   Run(JSContext* aCx);

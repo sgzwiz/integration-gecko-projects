@@ -23,26 +23,9 @@ class ResponseValue;
 
 BEGIN_WORKERS_NAMESPACE
 
-class BlockingHelperBase;
+class BlockingHelperProxy;
 class IDBObjectSync;
 class IndexedDBRequestWorkerChildBase;
-
-class BlockingHelperProxy : public IDBObjectSyncProxyWithActor<IndexedDBRequestWorkerChildBase>
-{
-public:
-  typedef mozilla::dom::indexedDB::ipc::ResponseValue ResponseValue;
-
-  BlockingHelperProxy(BlockingHelperBase* aHelper);
-
-  virtual void
-  Teardown() MOZ_OVERRIDE;
-
-  BlockingHelperBase*
-  Helper();
-
-  void
-  OnRequestComplete(const ResponseValue& aResponseValue);
-};
 
 class BlockingHelperBase : public IDBObjectSyncBase
 {
@@ -54,10 +37,7 @@ public:
   NS_INLINE_DECL_REFCOUNTING(BlockingHelperBase)
 
   BlockingHelperProxy*
-  Proxy() const
-  {
-    return static_cast<BlockingHelperProxy*>(mProxy.get());
-  }
+  Proxy() const;
 
   virtual IDBObjectSync*
   Object() const
