@@ -649,7 +649,10 @@ GetHelper::UnpackResponse(const ResponseValue& aResponseValue)
   const GetResponse& getResponse = aResponseValue.get_GetResponse();
   const SerializedStructuredCloneReadInfo& cloneInfo = getResponse.cloneInfo();
 
-  mCloneBuffer.copy(cloneInfo.data, cloneInfo.dataLength);
+  if (cloneInfo.dataLength &&
+      !mCloneBuffer.copy(cloneInfo.data, cloneInfo.dataLength)) {
+    return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+  }
 
   return NS_OK;
 }

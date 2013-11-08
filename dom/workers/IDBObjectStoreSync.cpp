@@ -411,11 +411,6 @@ IDBObjectStoreSync::DeserializeValue(JSContext* aCx,
 {
   MOZ_ASSERT(aCx, "A JSContext is required!");
 
-  if (!aBuffer.nbytes()) {
-    aValue.setUndefined();
-    return true;
-  }
-
   if (!aBuffer.data()) {
     aValue.setUndefined();
     return true;
