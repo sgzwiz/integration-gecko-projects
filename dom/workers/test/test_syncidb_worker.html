@@ -29,7 +29,7 @@ Tests of IndexedDB synchronous API (Bug 798875)
     indexData: { name: "nameIndex", key: "name" }
   };
 
-  var request = window.indexedDB.open(data.name, 1);
+  var request = indexedDB.open(data.name, 1);
 
   request.onupgradeneeded = function(event) {
     var db = event.target.result;

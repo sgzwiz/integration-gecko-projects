@@ -21,7 +21,7 @@
   };
 
   // Create db using async API.
-  let request = window.indexedDB.open(data.name, 1);
+  let request = indexedDB.open(data.name, 1);
 
   request.onupgradeneeded = function(event) {
     info("Initialization");

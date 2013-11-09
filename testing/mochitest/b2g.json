@@ -392,6 +392,7 @@
     "dom/tests/mochitest/sessionstorage/test_sessionStorageBase.html":"",
     "dom/tests/mochitest/sessionstorage/test_sessionStorageHttpHttps.html":"needs https to work",
     "dom/tests/mochitest/webapps/test_bug_779982.html":"",
+    "dom/workers/ipc/test_ipc.html":"nested ipc not working",
     "dom/workers/test/test_suspend.html":"test timed out, might need more time",
     "dom/workers/test/test_xhr_parameters.html":"",
     "dom/workers/test/test_xhr_system.html":"",
