@@ -82,6 +82,7 @@
     "content/events/test/test_bug667919-2.html":"bug 900969, 5 tests",
 
     "content/html/content/test/test_bug561636.html":"observerservice not working",
+    "content/html/content/test/forms/test_input_range_mouse_and_touch_events.html":"Assertions",
     "content/base/test/test_bug548193.html":"observerservice issue",
     "content/base/test/test_x-frame-options.html":"observerservice issue",
 
@@ -200,6 +201,7 @@
 
     "dom/indexedDB/ipc/test_ipc.html":"nested ipc not working",
     "dom/indexedDB/test/test_lowDiskSpace.html":"this needs probably modification for notifyObserversInParentProcess to be similar as pushPermissions",
+    "dom/indexedDB/test/test_success_events_after_abort.html":"Times out",
 
     "content/base/test/test_object.html":"needs plugin support",
     "content/base/test/test_bug827160.html": "needs plugin support",
@@ -326,6 +328,8 @@
     "dom/media/tests/mochitest/test_peerConnection_setRemoteAnswerInStable.html":"",
     "dom/media/tests/mochitest/test_peerConnection_setRemoteOfferInHaveLocalOffer.html":"",
     "dom/media/tests/mochitest/test_peerConnection_throwInCallbacks.html":"",
+    "dom/media/tests/ipc/test_ipc.html":"Type error comp.classes",
+    "dom/media/tests/mochitest/test_getUserMedia_playVideoAudioTwice.html":"Unexpected callback with message undefined",
 
     "dom/network/tests/test_networkstats_basics.html":"Will be fixed in bug 858005",
     "dom/permission/tests/test_permission_basics.html":"https not working, bug 907770",
@@ -388,6 +392,8 @@
     "dom/tests/mochitest/sessionstorage/test_cookieSession.html":"",
     "dom/tests/mochitest/sessionstorage/test_sessionStorageBaseSessionOnly.html":"",
 
+    "dom/apps/tests/test_app_update.html":"Permission Assertions",
+
     "dom/tests/mochitest/pointerlock/test_pointerlock-api.html":"window.open focus issues (using fullscreen)",
     "dom/tests/mochitest/sessionstorage/test_sessionStorageBase.html":"",
     "dom/tests/mochitest/sessionstorage/test_sessionStorageHttpHttps.html":"needs https to work",
@@ -424,6 +430,9 @@
 
     "layout/style/test/test_rule_insertion.html":"monospace and serif text have sufficiently different widths",
     "layout/style/test/test_transitions_per_property.html":"times out, needs more time + various failures",
+    "layout/style/test/test_media_queries.html":"Times out",
+    "layout/style/test/test_selectors.html":"Times out",
+    "layout/style/test/test_value_cloning.html":"Times out",
 
     "content/html/content/test/test_bug209275.xhtml":"timed out, 47 tests, bug 870262, :visited support",
     "content/html/content/test/test_bug481335.xhtml":"timed out, bug 870262, :visited support",
