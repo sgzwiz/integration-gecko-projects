@@ -16,6 +16,7 @@
 #include "mozilla/dom/IDBDatabaseBinding.h"
 #include "mozilla/dom/ipc/Blob.h"
 #include "mozilla/dom/TabParent.h"
+#include "mozilla/dom/workers/WorkerParent.h"
 #include "mozilla/unused.h"
 #include "mozilla/Util.h"
 #include "nsCxPusher.h"
@@ -129,6 +130,7 @@ IndexedDBParent::CloneProtocol(Channel* aChannel,
 {
   MOZ_ASSERT(mManagerContent != nullptr);
   MOZ_ASSERT(mManagerTab == nullptr);
+  MOZ_ASSERT(mManagerWorker == nullptr);
   MOZ_ASSERT(!mDisconnected);
   MOZ_ASSERT(IndexedDatabaseManager::Get());
   MOZ_ASSERT(IndexedDatabaseManager::IsMainProcess());
@@ -157,7 +159,9 @@ IndexedDBParent::CheckPermissionInternal(const nsAString& aDatabaseName,
     if ((mManagerContent &&
          !AssertAppProcessPermission(mManagerContent, fullPermission.get())) ||
         (mManagerTab &&
-         !AssertAppProcessPermission(mManagerTab, fullPermission.get()))) {
+         !AssertAppProcessPermission(mManagerTab, fullPermission.get())) ||
+        (mManagerWorker &&
+         !AssertAppProcessPermission(mManagerWorker, fullPermission.get()))) {
       return false;
     }
   }

@@ -110,6 +110,9 @@ public:
     virtual PIndexedDBChild* AllocPIndexedDBChild();
     virtual bool DeallocPIndexedDBChild(PIndexedDBChild* aActor);
 
+    virtual PWorkerChild* AllocPWorkerChild();
+    virtual bool DeallocPWorkerChild(PWorkerChild* aActor);
+
     virtual PMemoryReportRequestChild*
     AllocPMemoryReportRequestChild(const uint32_t& generation);
 

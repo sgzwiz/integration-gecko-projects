@@ -98,6 +98,11 @@ public:
                          WorkerPoolParent* aWorkerPoolParent,
                          IDBFactory** aFactory);
 
+  static nsresult Create(const nsACString& aGroup,
+                         const nsACString& aASCIIOrigin,
+                         ContentParent* aContentParent,
+                         IDBFactory** aFactory);
+
   static already_AddRefed<nsIFileURL>
   GetDatabaseFileURL(nsIFile* aDatabaseFile,
                      PersistenceType aPersistenceType,

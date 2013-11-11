@@ -17,6 +17,9 @@ namespace mozilla {
 namespace dom {
 class PBrowserParent;
 class PContentParent;
+namespace workers {
+class PWorkerParent;
+}
 }
 
 namespace hal_sandbox {
@@ -59,6 +62,11 @@ AssertAppStatus(mozilla::dom::PContentParent* aActor,
 
 bool
 AssertAppProcess(mozilla::hal_sandbox::PHalParent* aActor,
+                 AssertAppProcessType aType,
+                 const char* aCapability);
+
+bool
+AssertAppProcess(mozilla::dom::workers::PWorkerParent* aActor,
                  AssertAppProcessType aType,
                  const char* aCapability);
 

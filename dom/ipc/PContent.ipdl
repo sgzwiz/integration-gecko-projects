@@ -15,6 +15,7 @@ include protocol PFMRadio;
 include protocol PHal;
 include protocol PImageBridge;
 include protocol PIndexedDB;
+include protocol PWorker;
 include protocol PMemoryReportRequest;
 include protocol PNecko;
 include protocol PSms;
@@ -184,6 +185,7 @@ intr protocol PContent
     manages PFMRadio;
     manages PHal;
     manages PIndexedDB;
+    manages PWorker;
     manages PMemoryReportRequest;
     manages PNecko;
     manages PSms;
@@ -341,6 +343,8 @@ parent:
     PHal();
 
     PIndexedDB();
+
+    PWorker();
 
     PNecko();
 

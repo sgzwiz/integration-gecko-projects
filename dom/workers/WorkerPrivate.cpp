@@ -34,6 +34,7 @@
 #include "js/MemoryMetrics.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/Likely.h"
+#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ErrorEvent.h"
 #include "mozilla/dom/ErrorEventBinding.h"
@@ -3430,14 +3431,19 @@ WorkerPrivateParent<Derived>::InitIPC()
       return true;
     }
 
-    TabChild* tabActor = TabChild::GetFrom(GetWindow());
-    if (!tabActor) {
-      return false;
-    }
-
     WorkerChild* actor = new WorkerChild();
-    tabActor->SendPWorkerConstructor(actor);
+    if (IsSharedWorker()) {
+      ContentChild* contentActor = ContentChild::GetSingleton();
+      NS_ENSURE_TRUE(contentActor, false);
 
+      contentActor->SendPWorkerConstructor(actor);
+    }
+    else {
+      TabChild* tabActor = TabChild::GetFrom(GetWindow());
+      NS_ENSURE_TRUE(tabActor, false);
+
+      tabActor->SendPWorkerConstructor(actor);
+    }
     actor->SetWorkerPrivate(ParentAsWorkerPrivate());
   }
 

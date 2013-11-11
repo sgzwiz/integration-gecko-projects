@@ -5,6 +5,10 @@
 
 MODULE = 'dom'
 
+EXPORTS.mozilla.dom.workers += [
+    'WorkerParent.h',
+]
+
 SOURCES += [
     'IndexedDBWorkerChild.cpp',
     'WorkerChild.cpp',

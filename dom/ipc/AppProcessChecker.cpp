@@ -18,10 +18,12 @@
 #include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
 #include "TabParent.h"
+#include "WorkerParent.h"
 
 #include <algorithm>
 
 using namespace mozilla::dom;
+using namespace mozilla::dom::workers;
 using namespace mozilla::hal_sandbox;
 using namespace mozilla::services;
 #else
@@ -141,6 +143,24 @@ AssertAppProcess(PHalParent* aActor,
                  const char* aCapability)
 {
   return AssertAppProcess(aActor->Manager(), aType, aCapability);
+}
+
+bool
+AssertAppProcess(PWorkerParent* aActor,
+                 AssertAppProcessType aType,
+                 const char* aCapability)
+{
+  WorkerParent* workerParent = static_cast<WorkerParent*>(aActor);
+
+  if (workerParent->ManagerTab()) {
+    return AssertAppProcess(workerParent->ManagerTab(), aType, aCapability);
+  }
+
+  if (workerParent->ManagerContent()) {
+    return AssertAppProcess(workerParent->ManagerContent(), aType, aCapability);
+  }
+
+  return true;
 }
 
 bool
@@ -278,6 +298,14 @@ AssertAppStatus(mozilla::dom::PContentParent* aActor,
 
 bool
 AssertAppProcess(mozilla::hal_sandbox::PHalParent* aActor,
+                 AssertAppProcessType aType,
+                 const char* aCapability)
+{
+  return true;
+}
+
+bool
+AssertAppProcess(mozilla::dom::workers::PWorkerParent* aActor,
                  AssertAppProcessType aType,
                  const char* aCapability)
 {

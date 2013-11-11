@@ -11,6 +11,7 @@
 
 namespace mozilla {
 namespace dom {
+class ContentParent;
 class TabParent;
 } // namespace dom
 } // namespace mozilla
@@ -27,6 +28,8 @@ public:
 
   WorkerParent(TabParent* aTabParent);
 
+  WorkerParent(ContentParent* aTabParent);
+
   virtual ~WorkerParent();
 
   WorkerPoolParent*
@@ -39,6 +42,12 @@ public:
   ManagerTab() const
   {
     return mManagerTab;
+  }
+
+  ContentParent*
+  ManagerContent() const
+  {
+    return mManagerContent;
   }
 
   void
@@ -62,6 +71,7 @@ private:
 
   WorkerPoolParent* mManagerWorkerPool;
   TabParent* mManagerTab;
+  ContentParent* mManagerContent;
 
   WorkerPrivate* mWorkerPrivate;
 };

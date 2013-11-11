@@ -396,6 +396,61 @@ IDBFactory::Create(const nsACString& aGroup,
 }
 
 // static
+nsresult
+IDBFactory::Create(const nsACString& aGroup,
+                   const nsACString& aASCIIOrigin,
+                   ContentParent* aContentParent,
+                   IDBFactory** aFactory)
+{
+  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  NS_ASSERTION(IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
+  NS_ASSERTION(aContentParent, "Null ContentParent!");
+
+  NS_ASSERTION(!nsContentUtils::GetCurrentJSContext(), "Should be called from C++");
+
+  nsCOMPtr<nsIPrincipal> principal =
+    do_CreateInstance("@mozilla.org/nullprincipal;1");
+  NS_ENSURE_TRUE(principal, NS_ERROR_FAILURE);
+
+  AutoSafeJSContext cx;
+
+  nsIXPConnect* xpc = nsContentUtils::XPConnect();
+  NS_ASSERTION(xpc, "This should never be null!");
+
+  nsCOMPtr<nsIXPConnectJSObjectHolder> globalHolder;
+  nsresult rv = xpc->CreateSandbox(cx, principal, getter_AddRefs(globalHolder));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  JS::Rooted<JSObject*> global(cx, globalHolder->GetJSObject());
+  NS_ENSURE_STATE(global);
+
+  // The CreateSandbox call returns a proxy to the actual sandbox object. We
+  // don't need a proxy here.
+  global = js::UncheckedUnwrap(global);
+
+  JSAutoCompartment ac(cx, global);
+
+  nsRefPtr<IDBFactory> factory = new IDBFactory();
+  factory->mGroup = aGroup;
+  factory->mASCIIOrigin = aASCIIOrigin;
+  // FIXME: We should get privilege and defaultPersistenceType from quota
+  // manager somehow.
+  //
+  // FIXME: This should really be Content, we need to fix CheckPermissionsHelper
+  // and other stuff to deal with shared workers which are basically windowless
+  factory->mPrivilege = Chrome;
+  factory->mDefaultPersistenceType = PERSISTENCE_TYPE_PERSISTENT;
+  factory->mOwningObject = global;
+  factory->mContentParent = aContentParent;
+
+  mozilla::HoldJSObjects(factory.get());
+  factory->mRootedOwningObject = true;
+
+  factory.forget(aFactory);
+  return NS_OK;
+}
+
+// static
 already_AddRefed<nsIFileURL>
 IDBFactory::GetDatabaseFileURL(nsIFile* aDatabaseFile,
                                PersistenceType aPersistenceType,

@@ -179,6 +179,8 @@ public:
     virtual bool
     RecvPIndexedDBConstructor(PIndexedDBParent* aActor) MOZ_OVERRIDE;
 
+    virtual PWorkerParent* AllocPWorkerParent() MOZ_OVERRIDE;
+
     virtual PCrashReporterParent*
     AllocPCrashReporterParent(const NativeThreadId& tid,
                         const uint32_t& processType) MOZ_OVERRIDE;
@@ -336,6 +338,8 @@ private:
     virtual bool DeallocPHalParent(PHalParent*) MOZ_OVERRIDE;
 
     virtual bool DeallocPIndexedDBParent(PIndexedDBParent* aActor);
+
+    virtual bool DeallocPWorkerParent(PWorkerParent* aActor);
 
     virtual PMemoryReportRequestParent* AllocPMemoryReportRequestParent(const uint32_t& generation);
     virtual bool DeallocPMemoryReportRequestParent(PMemoryReportRequestParent* actor);

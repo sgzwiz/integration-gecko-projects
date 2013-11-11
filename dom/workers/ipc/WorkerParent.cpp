@@ -6,6 +6,7 @@
 
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/indexedDB/IDBFactory.h"
+#include "mozilla/dom/indexedDB/IndexedDatabaseManager.h"
 #include "mozilla/dom/indexedDB/IndexedDBParent.h"
 #include "mozilla/dom/TabParent.h"
 
@@ -18,13 +19,21 @@ using namespace mozilla::dom::indexedDB;
 
 WorkerParent::WorkerParent(WorkerPoolParent* aWorkerPoolParent)
 : mManagerWorkerPool(aWorkerPoolParent), mManagerTab(nullptr),
-  mWorkerPrivate(nullptr)
+  mManagerContent(nullptr), mWorkerPrivate(nullptr)
 {
   MOZ_COUNT_CTOR(WorkerParent);
 }
 
 WorkerParent::WorkerParent(TabParent* aTabParent)
-: mManagerWorkerPool(nullptr), mManagerTab(aTabParent), mWorkerPrivate(NULL)
+: mManagerWorkerPool(nullptr), mManagerTab(aTabParent),
+  mManagerContent(nullptr), mWorkerPrivate(NULL)
+{
+  MOZ_COUNT_CTOR(WorkerParent);
+}
+
+WorkerParent::WorkerParent(ContentParent* aContentParent)
+: mManagerWorkerPool(nullptr), mManagerTab(nullptr),
+  mManagerContent(aContentParent), mWorkerPrivate(NULL)
 {
   MOZ_COUNT_CTOR(WorkerParent);
 }
@@ -79,8 +88,6 @@ WorkerParent::RecvPIndexedDBConstructor(PIndexedDBParent* aActor,
     NS_RUNTIMEABORT("Not supported yet!");
   }
 
-  // XXXjanv security checks go here
-
   nsresult rv;
 
   nsRefPtr<IDBFactory> factory;
@@ -100,7 +107,30 @@ WorkerParent::RecvPIndexedDBConstructor(PIndexedDBParent* aActor,
                               getter_AddRefs(factory));
     }
   }
-  else {
+  else if (mManagerTab) {
+    // XXXbent Need to make sure we have a whitelist for chrome databases!
+
+    // Verify that the child is requesting to access a database it's allowed to
+    // see.  (aASCIIOrigin here specifies a TabContext + a website origin, and
+    // we're checking that the TabContext may access it.)
+    //
+    // We have to check IsBrowserOrApp() because TabContextMayAccessOrigin will
+    // fail if we're not a browser-or-app, since aASCIIOrigin will be a plain
+    // URI, but TabContextMayAccessOrigin will construct an extended origin
+    // using app-id 0.  Note that as written below, we allow a non
+    // browser-or-app child to read any database.  That's a security hole, but
+    // we don't ship a configuration which creates non browser-or-app children,
+    // so it's not a big deal.
+    if (!aASCIIOrigin.EqualsLiteral("chrome") &&
+         mManagerTab->IsBrowserOrApp() &&
+        !IndexedDatabaseManager::TabContextMayAccessOrigin(*mManagerTab,
+                                                           aASCIIOrigin)) {
+
+      NS_WARNING("App attempted to open databases that it does not have "
+                 "permission to access!");
+      return aActor->SendResponse(false);
+    }
+
     nsCOMPtr<nsINode> node =
       do_QueryInterface(mManagerTab->GetOwnerElement());
     if (!node) {
@@ -131,6 +161,12 @@ WorkerParent::RecvPIndexedDBConstructor(PIndexedDBParent* aActor,
     MOZ_ASSERT(contentParent, "Null manager of manager?!");
 
     rv = IDBFactory::Create(window, aGroup, aASCIIOrigin, contentParent,
+                            getter_AddRefs(factory));
+  }
+  else {
+    // XXXjanv verify that the child is requesting to access a database it's
+    // allowed to see...
+    rv = IDBFactory::Create(aGroup, aASCIIOrigin, mManagerContent,
                             getter_AddRefs(factory));
   }
 

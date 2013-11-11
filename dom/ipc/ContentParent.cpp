@@ -23,6 +23,7 @@
 #include "IHistory.h"
 #include "IDBFactory.h"
 #include "IndexedDBParent.h"
+#include "WorkerParent.h"
 #include "IndexedDatabaseManager.h"
 #include "mozIApplication.h"
 #include "mozilla/ClearOnShutdown.h"
@@ -147,6 +148,7 @@ using base::KillProcess;
 using namespace mozilla::dom::bluetooth;
 using namespace mozilla::dom::devicestorage;
 using namespace mozilla::dom::indexedDB;
+using namespace mozilla::dom::workers;
 using namespace mozilla::dom::power;
 using namespace mozilla::dom::mobilemessage;
 using namespace mozilla::dom::telephony;
@@ -2435,6 +2437,19 @@ ContentParent::RecvPIndexedDBConstructor(PIndexedDBParent* aActor)
   actor->mFactory = factory;
   actor->mASCIIOrigin = factory->GetASCIIOrigin();
 
+  return true;
+}
+
+PWorkerParent*
+ContentParent::AllocPWorkerParent()
+{
+  return new WorkerParent(this);
+}
+
+bool
+ContentParent::DeallocPWorkerParent(PWorkerParent* aActor)
+{
+  delete aActor;
   return true;
 }
 
