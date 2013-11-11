@@ -2172,6 +2172,9 @@ public:
 
   virtual nsHTMLDocument* AsHTMLDocument() { return nullptr; }
 
+  virtual JSObject* WrapObject(JSContext *aCx,
+                               JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
+
 private:
   uint64_t mWarnedAbout;
   SelectorCache mSelectorCache;
