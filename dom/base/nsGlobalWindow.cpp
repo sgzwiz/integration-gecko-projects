@@ -8945,12 +8945,17 @@ nsGlobalWindow::DispatchEvent(nsIDOMEvent* aEvent, bool* aRetVal)
     aEvent->GetType(msg);
     msg.Insert(NS_LITERAL_STRING("We should only fire event="), 0);
     msg.Append(NS_LITERAL_STRING(" on the current inner window"));
-    MOZ_ReportCrash(NS_ConvertUTF16toUTF8(msg).get(), __FILE__, __LINE__);
-    MOZ_CRASH();
+    NS_WARNING(NS_ConvertUTF16toUTF8(msg).get());
   }
 #endif
 
   FORWARD_TO_INNER(DispatchEvent, (aEvent, aRetVal), NS_OK);
+
+  if (!IsCurrentInnerWindow()) {
+    NS_WARNING("DispatchEvent called on non-current inner window, dropping. "
+               "Please check the window in the caller instead.");
+    return NS_ERROR_FAILURE;
+  }
 
   if (!mDoc) {
     return NS_ERROR_FAILURE;
