@@ -128,7 +128,7 @@ class RefTest(object):
     if profileDir:
       shutil.rmtree(profileDir, True)
 
-  def runTests(self, testPath, options, cmdlineArgs = None):
+  def runTests(self, testPath, options, cmdlineArgs = None, onLaunch=None):
     debuggerInfo = getDebuggerInfo(self.oldcwd, options.debugger, options.debuggerArgs,
         options.debuggerInteractive);
 
@@ -152,7 +152,8 @@ class RefTest(object):
                                  symbolsPath=options.symbolsPath,
                                  # give the JS harness 30 seconds to deal
                                  # with its own timeouts
-                                 timeout=options.timeout + 30.0)
+                                 timeout=options.timeout + 30.0,
+                                 onLaunch=onLaunch)
       processLeakLog(self.leakLogFile, options.leakThreshold)
       self.automation.log.info("\nREFTEST INFO | runreftest.py | Running tests: end.")
     finally:
@@ -181,15 +182,15 @@ class RefTest(object):
 class ReftestOptions(OptionParser):
 
   def __init__(self, automation):
-    self._automation = automation
+    self.automation = automation
     OptionParser.__init__(self)
     defaults = {}
 
     # we want to pass down everything from automation.__all__
     addCommonOptions(self, 
-                     defaults=dict(zip(self._automation.__all__, 
-                            [getattr(self._automation, x) for x in self._automation.__all__])))
-    self._automation.addCommonOptions(self)
+                     defaults=dict(zip(self.automation.__all__, 
+                            [getattr(self.automation, x) for x in self.automation.__all__])))
+    self.automation.addCommonOptions(self)
     self.add_option("--appname",
                     action = "store", type = "string", dest = "app",
                     default = os.path.join(SCRIPT_DIRECTORY, automation.DEFAULT_APP),
@@ -211,10 +212,10 @@ class ReftestOptions(OptionParser):
                            "than the given number")
     self.add_option("--utility-path",
                     action = "store", type = "string", dest = "utilityPath",
-                    default = self._automation.DIST_BIN,
+                    default = self.automation.DIST_BIN,
                     help = "absolute path to directory containing utility "
                            "programs (xpcshell, ssltunnel, certutil)")
-    defaults["utilityPath"] = self._automation.DIST_BIN
+    defaults["utilityPath"] = self.automation.DIST_BIN
 
     self.add_option("--total-chunks",
                     type = "int", dest = "totalChunks",
