@@ -47,7 +47,7 @@ bool
 nsAutoWindowStateHelper::DispatchEventToChrome(const char *aEventName)
 {
   nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(mWindow);
-  if (!window) {
+  if (!window || !window->IsCurrentInnerWindow()) {
     return true;
   }
 
