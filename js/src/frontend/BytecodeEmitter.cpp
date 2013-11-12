@@ -1144,12 +1144,8 @@ TryConvertFreeName(BytecodeEmitter *bce, ParseNode *pn)
         // The only statements within a lazy function which can push lexical
         // scopes are try/catch blocks. Use generic ops in this case.
         for (StmtInfoBCE *stmt = bce->topStmt; stmt; stmt = stmt->down) {
-            switch (stmt->type) {
-              case STMT_TRY:
-              case STMT_FINALLY:
+            if (stmt->type == STMT_CATCH)
                 return true;
-              default:;
-            }
         }
 
         size_t hops = 0;
@@ -6448,6 +6444,7 @@ frontend::EmitTree(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
         break;
 
       case PNK_IMPORT:
+      case PNK_EXPORT:
        // TODO: Implement emitter support for modules
        bce->reportError(nullptr, JSMSG_MODULES_NOT_IMPLEMENTED);
        return false;
