@@ -43,7 +43,7 @@ interface nsICacheStorage : nsISupports
   const uint32_t OPEN_BYPASS_IF_BUSY = 1 << 3;
 
   /**
-   * Do cache check (onCacheEntryCHeck) on any thread for optimal
+   * Do cache check (onCacheEntryCheck) on any thread for optimal
    * perfomance optimization.
    */
   const uint32_t CHECK_MULTITHREADED = 1 << 4;

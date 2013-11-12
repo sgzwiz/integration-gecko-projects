@@ -9,9 +9,11 @@
 #include "nsILoadGroup.h"
 #include "nsNetUtil.h"
 #include "LoadContextInfo.h"
+#include "nsICacheService.h" // only to initialize
 #include "nsICacheStorageService.h"
 #include "nsICacheStorage.h"
 #include "nsICacheEntry.h"
+#include "CacheObserver.h"
 #include "nsCharsetSource.h"
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
@@ -118,6 +120,16 @@ nsWyciwygChannel::Init(nsIURI* uri)
   NS_ENSURE_ARG_POINTER(uri);
 
   nsresult rv;
+
+  if (!mozilla::net::CacheObserver::UseNewCache()) {
+    // Since nsWyciwygChannel can use the new cache API off the main thread
+    // and that API normally does this initiation, we need to take care
+    // of initiating the old cache service here manually.  Will be removed
+    // with bug 913828.
+    MOZ_ASSERT(NS_IsMainThread());
+    nsCOMPtr<nsICacheService> service =
+      do_GetService(NS_CACHESERVICE_CONTRACTID, &rv);
+  }
 
   mURI = uri;
   mOriginalURI = uri;

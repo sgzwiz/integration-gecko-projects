@@ -525,6 +525,10 @@ nsresult _OldCacheLoad::Start()
 
   nsresult rv;
 
+  // Consumers that can invoke this code as first and off the main thread
+  // are responsible for initiating these two services on the main thread.
+  // Currently this is only nsWyciwygChannel.
+
   // XXX: Start the cache service; otherwise DispatchToCacheIOThread will
   // fail.
   nsCOMPtr<nsICacheService> service =
@@ -588,7 +592,7 @@ _OldCacheLoad::Run()
 
       bool bypassBusy = mFlags & nsICacheStorage::OPEN_BYPASS_IF_BUSY;
 
-      if (cacheAccess == nsICache::ACCESS_WRITE) {
+      if (mSync && cacheAccess == nsICache::ACCESS_WRITE) {
         nsCOMPtr<nsICacheEntryDescriptor> entry;
         rv = session->OpenCacheEntry(mCacheKey, cacheAccess, bypassBusy,
           getter_AddRefs(entry));

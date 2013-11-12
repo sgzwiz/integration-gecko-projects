@@ -436,10 +436,9 @@ void CacheEntry::InvokeCallbacks()
 
   LOG(("CacheEntry::InvokeCallbacks BEGIN [this=%p]", this));
 
-  if (!InvokeCallbacks(false))
-    return;
-
-  InvokeCallbacks(true);
+  // Invoke first all r/w callbacks, then all r/o callbacks.
+  if (InvokeCallbacks(false))
+    InvokeCallbacks(true);
 
   LOG(("CacheEntry::InvokeCallbacks END [this=%p]", this));
 }
@@ -485,7 +484,11 @@ bool CacheEntry::InvokeCallbacks(bool aReadOnly)
     mCallbacks.RemoveElementAt(i);
 
     if (NS_SUCCEEDED(rv) && !InvokeCallback(callback)) {
-      // Callback didn't fire, put it back and go to another one in line
+      // Callback didn't fire, put it back and go to another one in line.
+      // Only reason InvokeCallback returns false is that onCacheEntryCheck
+      // returns ENTRY_WANTED_COMPLETE.  If we would stop the loop, other
+      // readers or potential writers would be unnecessarily kept from being
+      // invoked.
       mCallbacks.InsertElementAt(i, callback);
       ++i;
     }
