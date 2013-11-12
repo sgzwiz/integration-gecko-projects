@@ -124,19 +124,19 @@ OpenCallback.prototype =
     }
 
     if (this.behavior & COMPLETE) {
-      LOG_C2(this, "onCacheEntryCheck DONE, return ENTRY_WANTED_COMPLETE");
+      LOG_C2(this, "onCacheEntryCheck DONE, return RECHECK_AFTER_WRITE_FINISHED");
       if (newCacheBackEndUsed()) {
         // Specific to the new backend because of concurrent read/write:
-        // when a consumer returns ENTRY_WANTED_COMPLETE from onCacheEntryCheck
+        // when a consumer returns RECHECK_AFTER_WRITE_FINISHED from onCacheEntryCheck
         // the cache calls this callback again after the entry write has finished.
         // This gives the consumer a chance to recheck completeness of the entry
         // again.
         // Thus, we reset state as onCheck would have never been called.
         this.onCheckPassed = false;
-        // Don't return ENTRY_WANTED_COMPLETE on second call of onCacheEntryCheck.
+        // Don't return RECHECK_AFTER_WRITE_FINISHED on second call of onCacheEntryCheck.
         this.behavior &= ~COMPLETE;
       }
-      return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED_COMPLETE;
+      return Ci.nsICacheEntryOpenCallback.RECHECK_AFTER_WRITE_FINISHED;
     }
 
     LOG_C2(this, "onCacheEntryCheck DONE, return ENTRY_WANTED");
