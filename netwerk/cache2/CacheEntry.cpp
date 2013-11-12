@@ -224,12 +224,15 @@ void CacheEntry::AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags
 
   mozilla::MutexAutoLock lock(mLock);
 
-  if (Load(truncate, priority) ||
-      PendingCallbacks() ||
-      !InvokeCallback(callback)) {
-    // Load in progress or callback bypassed...
-    RememberCallback(callback);
+  RememberCallback(callback);
+
+  // Load() opens the lock
+  if (Load(truncate, priority)) {
+    // Loading is in progress...
+    return;
   }
+
+  InvokeCallbacks();
 }
 
 bool CacheEntry::Load(bool aTruncate, bool aPriority)
@@ -407,10 +410,6 @@ void CacheEntry::TransferCallbacks(CacheEntry & aFromEntry)
 
 void CacheEntry::RememberCallback(Callback const& aCallback)
 {
-  // AsyncOpen can be called w/o a callback reference (when this is a new/truncated entry)
-  if (!aCallback.mCallback)
-    return;
-
   LOG(("CacheEntry::RememberCallback [this=%p, cb=%p]", this, aCallback.mCallback.get()));
 
   mLock.AssertCurrentThreadOwns();
