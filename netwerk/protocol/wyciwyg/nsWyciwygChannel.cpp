@@ -9,9 +9,11 @@
 #include "nsILoadGroup.h"
 #include "nsNetUtil.h"
 #include "LoadContextInfo.h"
+#include "nsICacheService.h" // only to initialize
 #include "nsICacheStorageService.h"
 #include "nsICacheStorage.h"
 #include "nsICacheEntry.h"
+#include "CacheObserver.h"
 #include "nsCharsetSource.h"
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
@@ -118,6 +120,16 @@ nsWyciwygChannel::Init(nsIURI* uri)
   NS_ENSURE_ARG_POINTER(uri);
 
   nsresult rv;
+
+  if (!mozilla::net::CacheObserver::UseNewCache()) {
+    // Since nsWyciwygChannel can use the new cache API off the main thread
+    // and that API normally does this initiation, we need to take care
+    // of initiating the old cache service here manually.  Will be removed
+    // with bug 913828.
+    MOZ_ASSERT(NS_IsMainThread());
+    nsCOMPtr<nsICacheService> service =
+      do_GetService(NS_CACHESERVICE_CONTRACTID, &rv);
+  }
 
   mURI = uri;
   mOriginalURI = uri;
@@ -395,7 +407,7 @@ nsWyciwygChannel::AsyncOpen(nsIStreamListener *listener, nsISupports *ctx)
   // mIsPending set to true since OnCacheEntryAvailable may be called
   // synchronously and fails when mIsPending found false.
   mIsPending = true;
-  nsresult rv = OpenCacheEntry(mURI, nsICacheStorage::OPEN_NORMALLY |
+  nsresult rv = OpenCacheEntry(mURI, nsICacheStorage::OPEN_READONLY |
                                      nsICacheStorage::CHECK_MULTITHREADED);
   if (NS_FAILED(rv)) {
     LOG(("nsWyciwygChannel::OpenCacheEntry failed [rv=%x]\n", rv));
@@ -403,6 +415,9 @@ nsWyciwygChannel::AsyncOpen(nsIStreamListener *listener, nsISupports *ctx)
     return rv;
   }
 
+  // There is no code path that would invoke the listener sooner then
+  // we get to this line in case OnCacheEntryAvailable is invoked
+  // synchronously.
   mListener = listener;
   mListenerContext = ctx;
 
@@ -432,13 +447,9 @@ nsWyciwygChannel::WriteToCacheEntryInternal(const nsAString &aData)
   nsresult rv;
 
   if (mCacheEntry && !mCacheEntryIsWriteOnly) {
-    nsCOMPtr<nsICacheEntry> currentEntry;
-    currentEntry.swap(mCacheEntry);
-    rv = currentEntry->Recreate(getter_AddRefs(mCacheEntry));
-    if (NS_SUCCEEDED(rv)) {
-      LOG(("  cache entry successfully recreted for write"));
-      mCacheEntryIsWriteOnly = true;
-    }
+    LOG(("  demand to write, but current cache entry open only for reading"));
+    MOZ_ASSERT(false);
+    return NS_ERROR_UNEXPECTED;
   }
 
   if (!mCacheEntry) {
