@@ -248,6 +248,7 @@ BluetoothAdapter::SetPropertyByValue(const BluetoothNamedValue& aValue)
     nsresult rv;
     nsIScriptContext* sc = GetContextForEventHandlers(&rv);
     NS_ENSURE_SUCCESS_VOID(rv);
+    NS_ENSURE_TRUE_VOID(sc);
 
     AutoPushJSContext cx(sc->GetNativeContext());
     JS::Rooted<JSObject*> uuids(cx);
@@ -260,14 +261,10 @@ BluetoothAdapter::SetPropertyByValue(const BluetoothNamedValue& aValue)
   } else if (name.EqualsLiteral("Devices")) {
     mDeviceAddresses = value.get_ArrayOfnsString();
 
-    uint32_t length = mDeviceAddresses.Length();
-    for (int i = 0; i < length; i++) {
-      mDeviceAddresses[i] = GetAddressFromObjectPath(mDeviceAddresses[i]);
-    }
-
     nsresult rv;
     nsIScriptContext* sc = GetContextForEventHandlers(&rv);
     NS_ENSURE_SUCCESS_VOID(rv);
+    NS_ENSURE_TRUE_VOID(sc);
 
     AutoPushJSContext cx(sc->GetNativeContext());
     JS::Rooted<JSObject*> deviceAddresses(cx);

@@ -15,6 +15,7 @@
 #include "mozilla/dom/mobilemessage/Constants.h" // For MessageType
 #include "mozilla/dom/mobilemessage/SmsTypes.h"
 #include "nsDOMFile.h"
+#include "nsCxPusher.h"
 
 using namespace mozilla::idl;
 using namespace mozilla::dom::mobilemessage;
@@ -34,7 +35,8 @@ NS_IMPL_ADDREF(MmsMessage)
 NS_IMPL_RELEASE(MmsMessage)
 
 MmsMessage::MmsMessage(int32_t                          aId,
-                       const uint64_t                   aThreadId,
+                       uint64_t                         aThreadId,
+                       const nsAString&                 aIccId,
                        DeliveryState                    aDelivery,
                        const nsTArray<MmsDeliveryInfo>& aDeliveryInfo,
                        const nsAString&                 aSender,
@@ -44,9 +46,11 @@ MmsMessage::MmsMessage(int32_t                          aId,
                        const nsAString&                 aSubject,
                        const nsAString&                 aSmil,
                        const nsTArray<MmsAttachment>&   aAttachments,
-                       uint64_t                         aExpiryDate)
+                       uint64_t                         aExpiryDate,
+                       bool                             aIsReadReportRequested)
   : mId(aId),
     mThreadId(aThreadId),
+    mIccId(aIccId),
     mDelivery(aDelivery),
     mDeliveryInfo(aDeliveryInfo),
     mSender(aSender),
@@ -56,13 +60,15 @@ MmsMessage::MmsMessage(int32_t                          aId,
     mSubject(aSubject),
     mSmil(aSmil),
     mAttachments(aAttachments),
-    mExpiryDate(aExpiryDate)
+    mExpiryDate(aExpiryDate),
+    mIsReadReportRequested(aIsReadReportRequested)
 {
 }
 
 MmsMessage::MmsMessage(const mobilemessage::MmsMessageData& aData)
   : mId(aData.id())
   , mThreadId(aData.threadId())
+  , mIccId(aData.iccId())
   , mDelivery(aData.delivery())
   , mSender(aData.sender())
   , mReceivers(aData.receivers())
@@ -71,6 +77,7 @@ MmsMessage::MmsMessage(const mobilemessage::MmsMessageData& aData)
   , mSubject(aData.subject())
   , mSmil(aData.smil())
   , mExpiryDate(aData.expiryDate())
+  , mIsReadReportRequested(aData.isReadReportRequested())
 {
   uint32_t len = aData.attachments().Length();
   mAttachments.SetCapacity(len);
@@ -94,8 +101,11 @@ MmsMessage::MmsMessage(const mobilemessage::MmsMessageData& aData)
   for (uint32_t i = 0; i < len; i++) {
     MmsDeliveryInfo info;
     const MmsDeliveryInfoData &infoData = aData.deliveryInfo()[i];
+
+    // Prepare |info.receiver|.
     info.receiver = infoData.receiver();
 
+    // Prepare |info.deliveryStatus|.
     nsString statusStr;
     switch (infoData.deliveryStatus()) {
       case eDeliveryStatus_NotApplicable:
@@ -121,6 +131,20 @@ MmsMessage::MmsMessage(const mobilemessage::MmsMessageData& aData)
         MOZ_CRASH("We shouldn't get any other delivery status!");
     }
     info.deliveryStatus = statusStr;
+
+    // Prepare |info.deliveryTimestamp|.
+    info.deliveryTimestamp = JSVAL_NULL;
+    if (infoData.deliveryTimestamp() != 0) {
+      AutoJSContext cx;
+      JS::Rooted<JSObject*>
+        dateObj(cx, JS_NewDateObjectMsec(cx, infoData.deliveryTimestamp()));
+      if (!dateObj) {
+        NS_WARNING("MmsMessage: Unable to create Date for deliveryTimestamp.");
+      } else {
+        info.deliveryTimestamp = OBJECT_TO_JSVAL(dateObj);
+      }
+    }
+
     mDeliveryInfo.AppendElement(info);
   }
 }
@@ -160,7 +184,8 @@ convertTimeToInt(JSContext* aCx, const JS::Value& aTime, uint64_t& aReturn)
 
 /* static */ nsresult
 MmsMessage::Create(int32_t               aId,
-                   const uint64_t        aThreadId,
+                   uint64_t              aThreadId,
+                   const nsAString&      aIccId,
                    const nsAString&      aDelivery,
                    const JS::Value&      aDeliveryInfo,
                    const nsAString&      aSender,
@@ -171,6 +196,7 @@ MmsMessage::Create(int32_t               aId,
                    const nsAString&      aSmil,
                    const JS::Value&      aAttachments,
                    const JS::Value&      aExpiryDate,
+                   bool                  aIsReadReportRequested,
                    JSContext*            aCx,
                    nsIDOMMozMmsMessage** aMessage)
 {
@@ -280,6 +306,7 @@ MmsMessage::Create(int32_t               aId,
 
   nsCOMPtr<nsIDOMMozMmsMessage> message = new MmsMessage(aId,
                                                          aThreadId,
+                                                         aIccId,
                                                          delivery,
                                                          deliveryInfo,
                                                          aSender,
@@ -289,7 +316,8 @@ MmsMessage::Create(int32_t               aId,
                                                          aSubject,
                                                          aSmil,
                                                          attachments,
-                                                         expiryDate);
+                                                         expiryDate,
+                                                         aIsReadReportRequested);
   message.forget(aMessage);
   return NS_OK;
 }
@@ -302,6 +330,7 @@ MmsMessage::GetData(ContentParent* aParent,
 
   aData.id() = mId;
   aData.threadId() = mThreadId;
+  aData.iccId() = mIccId;
   aData.delivery() = mDelivery;
   aData.sender().Assign(mSender);
   aData.receivers() = mReceivers;
@@ -310,13 +339,17 @@ MmsMessage::GetData(ContentParent* aParent,
   aData.subject() = mSubject;
   aData.smil() = mSmil;
   aData.expiryDate() = mExpiryDate;
+  aData.isReadReportRequested() = mIsReadReportRequested;
 
   aData.deliveryInfo().SetCapacity(mDeliveryInfo.Length());
   for (uint32_t i = 0; i < mDeliveryInfo.Length(); i++) {
     MmsDeliveryInfoData infoData;
     const MmsDeliveryInfo &info = mDeliveryInfo[i];
+
+    // Prepare |infoData.receiver|.
     infoData.receiver().Assign(info.receiver);
 
+    // Prepare |infoData.deliveryStatus|.
     DeliveryStatus status;
     if (info.deliveryStatus.Equals(DELIVERY_STATUS_NOT_APPLICABLE)) {
       status = eDeliveryStatus_NotApplicable;
@@ -334,6 +367,15 @@ MmsMessage::GetData(ContentParent* aParent,
       return false;
     }
     infoData.deliveryStatus() = status;
+
+    // Prepare |infoData.deliveryTimestamp|.
+    if (info.deliveryTimestamp == JSVAL_NULL) {
+      infoData.deliveryTimestamp() = 0;
+    } else {
+      AutoJSContext cx;
+      convertTimeToInt(cx, info.deliveryTimestamp, infoData.deliveryTimestamp());
+    }
+
     aData.deliveryInfo().AppendElement(infoData);
   }
 
@@ -384,6 +426,13 @@ NS_IMETHODIMP
 MmsMessage::GetThreadId(uint64_t* aThreadId)
 {
   *aThreadId = mThreadId;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+MmsMessage::GetIccId(nsAString& aIccId)
+{
+  aIccId = mIccId;
   return NS_OK;
 }
 
@@ -449,7 +498,7 @@ MmsMessage::GetDeliveryInfo(JSContext* aCx, JS::Value* aDeliveryInfo)
 
     tmpJsVal.setString(tmpJsStr);
     if (!JS_DefineProperty(aCx, infoJsObj, "receiver", tmpJsVal,
-                           NULL, NULL, JSPROP_ENUMERATE)) {
+                           nullptr, nullptr, JSPROP_ENUMERATE)) {
       return NS_ERROR_FAILURE;
     }
 
@@ -461,7 +510,14 @@ MmsMessage::GetDeliveryInfo(JSContext* aCx, JS::Value* aDeliveryInfo)
 
     tmpJsVal.setString(tmpJsStr);
     if (!JS_DefineProperty(aCx, infoJsObj, "deliveryStatus", tmpJsVal,
-                           NULL, NULL, JSPROP_ENUMERATE)) {
+                           nullptr, nullptr, JSPROP_ENUMERATE)) {
+      return NS_ERROR_FAILURE;
+    }
+
+    // Get |info.deliveryTimestamp|.
+    if (!JS_DefineProperty(aCx, infoJsObj,
+                           "deliveryTimestamp", info.deliveryTimestamp,
+                           nullptr, nullptr, JSPROP_ENUMERATE)) {
       return NS_ERROR_FAILURE;
     }
 
@@ -600,6 +656,14 @@ MmsMessage::GetExpiryDate(JSContext* cx, JS::Value* aDate)
   *aDate = OBJECT_TO_JSVAL(obj);
   return NS_OK;
 }
+
+NS_IMETHODIMP
+MmsMessage::GetIsReadReportRequested(bool* aIsReadReportRequested)
+{
+  *aIsReadReportRequested = mIsReadReportRequested;
+  return NS_OK;
+}
+
 
 } // namespace dom
 } // namespace mozilla

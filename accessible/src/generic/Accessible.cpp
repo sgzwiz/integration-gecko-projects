@@ -1013,7 +1013,7 @@ Accessible::TakeSelection()
   Accessible* select = nsAccUtils::GetSelectableContainer(this, State());
   if (select) {
     if (select->State() & states::MULTISELECTABLE)
-      select->ClearSelection();
+      select->UnselectAll();
     return SetSelected(true);
   }
 
@@ -2332,118 +2332,6 @@ Accessible::ScrollToPoint(uint32_t aCoordinateType, int32_t aX, int32_t aY)
   return NS_OK;
 }
 
-// nsIAccessibleSelectable
-NS_IMETHODIMP
-Accessible::GetSelectedChildren(nsIArray** aSelectedAccessibles)
-{
-  NS_ENSURE_ARG_POINTER(aSelectedAccessibles);
-  *aSelectedAccessibles = nullptr;
-
-  if (IsDefunct() || !IsSelect())
-    return NS_ERROR_FAILURE;
-
-  nsCOMPtr<nsIArray> items = SelectedItems();
-  if (items) {
-    uint32_t length = 0;
-    items->GetLength(&length);
-    if (length)
-      items.swap(*aSelectedAccessibles);
-  }
-
-  return NS_OK;
-}
-
-// return the nth selected descendant nsIAccessible object
-NS_IMETHODIMP
-Accessible::RefSelection(int32_t aIndex, nsIAccessible** aSelected)
-{
-  NS_ENSURE_ARG_POINTER(aSelected);
-  *aSelected = nullptr;
-
-  if (IsDefunct() || !IsSelect())
-    return NS_ERROR_FAILURE;
-
-  if (aIndex < 0) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  *aSelected = GetSelectedItem(aIndex);
-  if (*aSelected) {
-    NS_ADDREF(*aSelected);
-    return NS_OK;
-  }
-
-  return NS_ERROR_INVALID_ARG;
-}
-
-NS_IMETHODIMP
-Accessible::GetSelectionCount(int32_t* aSelectionCount)
-{
-  NS_ENSURE_ARG_POINTER(aSelectionCount);
-  *aSelectionCount = 0;
-
-  if (IsDefunct() || !IsSelect())
-    return NS_ERROR_FAILURE;
-
-  *aSelectionCount = SelectedItemCount();
-  return NS_OK;
-}
-
-NS_IMETHODIMP Accessible::AddChildToSelection(int32_t aIndex)
-{
-  if (IsDefunct() || !IsSelect())
-    return NS_ERROR_FAILURE;
-
-  return aIndex >= 0 && AddItemToSelection(aIndex) ?
-    NS_OK : NS_ERROR_INVALID_ARG;
-}
-
-NS_IMETHODIMP Accessible::RemoveChildFromSelection(int32_t aIndex)
-{
-  if (IsDefunct() || !IsSelect())
-    return NS_ERROR_FAILURE;
-
-  return aIndex >=0 && RemoveItemFromSelection(aIndex) ?
-    NS_OK : NS_ERROR_INVALID_ARG;
-}
-
-NS_IMETHODIMP Accessible::IsChildSelected(int32_t aIndex, bool *aIsSelected)
-{
-  NS_ENSURE_ARG_POINTER(aIsSelected);
-  *aIsSelected = false;
-
-  if (IsDefunct() || !IsSelect())
-    return NS_ERROR_FAILURE;
-
-  NS_ENSURE_TRUE(aIndex >= 0, NS_ERROR_FAILURE);
-
-  *aIsSelected = IsItemSelected(aIndex);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-Accessible::ClearSelection()
-{
-  if (IsDefunct() || !IsSelect())
-    return NS_ERROR_FAILURE;
-
-  UnselectAll();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-Accessible::SelectAllSelection(bool* aIsMultiSelect)
-{
-  NS_ENSURE_ARG_POINTER(aIsMultiSelect);
-  *aIsMultiSelect = false;
-
-  if (IsDefunct() || !IsSelect())
-    return NS_ERROR_FAILURE;
-
-  *aIsMultiSelect = SelectAll();
-  return NS_OK;
-}
-
 // nsIAccessibleHyperLink
 // Because of new-atk design, any embedded object in text can implement
 // nsIAccessibleHyperLink, which helps determine where it is located
@@ -2535,21 +2423,6 @@ Accessible::GetValid(bool *aValid)
 
   *aValid = IsLinkValid();
   return NS_OK;
-}
-
-// readonly attribute boolean nsIAccessibleHyperLink::selected
-NS_IMETHODIMP
-Accessible::GetSelected(bool *aSelected)
-{
-  NS_ENSURE_ARG_POINTER(aSelected);
-  *aSelected = false;
-
-  if (IsDefunct())
-    return NS_ERROR_FAILURE;
-
-  *aSelected = IsLinkSelected();
-  return NS_OK;
-
 }
 
 void
@@ -2889,14 +2762,6 @@ Accessible::EndOffset()
 
   HyperTextAccessible* hyperText = mParent ? mParent->AsHyperText() : nullptr;
   return hyperText ? (hyperText->GetChildOffset(this) + 1) : 0;
-}
-
-bool
-Accessible::IsLinkSelected()
-{
-  NS_PRECONDITION(IsLink(),
-                  "IsLinkSelected() called on something that is not a hyper link!");
-  return FocusMgr()->IsFocused(this);
 }
 
 uint32_t

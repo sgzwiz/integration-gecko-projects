@@ -1360,16 +1360,7 @@ gfxFontFamily::AddSizeOfIncludingThis(MallocSizeOf aMallocSizeOf,
  * shaped-word caches to free up memory.
  */
 
-NS_IMPL_ISUPPORTS1(gfxFontCache::MemoryReporter, nsIMemoryReporter)
-
 NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN(FontCacheMallocSizeOf)
-
-NS_IMETHODIMP
-gfxFontCache::MemoryReporter::GetName(nsACString &aName)
-{
-    aName.AssignLiteral("font-cache");
-    return NS_OK;
-}
 
 NS_IMETHODIMP
 gfxFontCache::MemoryReporter::CollectReports
@@ -2647,7 +2638,10 @@ gfxFont::Draw(gfxTextRun *aTextRun, uint32_t aStart, uint32_t aEnd,
       DrawOptions drawOptions;
       drawOptions.mAntialiasMode = Get2DAAMode(mAntialiasOption);
 
-      if (mScaledFont) {
+      // The cairo DrawTarget backend uses the cairo_scaled_font directly
+      // and so has the font skew matrix applied already.
+      if (mScaledFont &&
+          dt->GetType() != BACKEND_CAIRO) {
         cairo_matrix_t matrix;
         cairo_scaled_font_get_font_matrix(mScaledFont, &matrix);
         if (matrix.xy != 0) {
@@ -3350,11 +3344,14 @@ gfxFont::ShapeTextWithoutWordCache(gfxContext *aContext,
         }
 
         // fragment was terminated by an invalid char: skip it,
+        // unless it's a control char that we want to show as a hexbox,
         // but record where TAB or NEWLINE occur
         if (ch == '\t') {
             aTextRun->SetIsTab(aOffset + i);
         } else if (ch == '\n') {
             aTextRun->SetIsNewline(aOffset + i);
+        } else if ((ch & 0x7f) < 0x20 || ch == 0x7f) {
+            aTextRun->SetMissingGlyph(aOffset + i, ch, this);
         }
         fragStart = i + 1;
     }
@@ -3491,11 +3488,14 @@ gfxFont::SplitAndInitTextRun(gfxContext *aContext,
                      "how did we get here except via an invalid char?");
 
         // word was terminated by an invalid char: skip it,
+        // unless it's a control char that we want to show as a hexbox,
         // but record where TAB or NEWLINE occur
         if (ch == '\t') {
             aTextRun->SetIsTab(aRunStart + i);
         } else if (ch == '\n') {
             aTextRun->SetIsNewline(aRunStart + i);
+        } else if ((ch & 0x7f) < 0x20 || ch == 0x7f) {
+            aTextRun->SetMissingGlyph(aRunStart + i, ch, this);
         }
 
         hash = 0;

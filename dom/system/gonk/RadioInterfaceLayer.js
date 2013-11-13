@@ -527,8 +527,7 @@ CdmaIccInfo.prototype = {
 
   // nsIDOMMozCdmaIccInfo
 
-  mdn: null,
-  min: null
+  mdn: null
 };
 
 function RadioInterfaceLayer() {
@@ -581,6 +580,21 @@ RadioInterfaceLayer.prototype = {
 
   getRadioInterface: function getRadioInterface(clientId) {
     return this.radioInterfaces[clientId];
+  },
+
+  getClientIdByIccId: function getClientIdByIccId(iccId) {
+    if (!iccId) {
+      throw Cr.NS_ERROR_INVALID_ARG;
+    }
+
+    for (let clientId = 0; clientId < this.numRadioInterfaces; clientId++) {
+      let radioInterface = this.radioInterfaces[clientId];
+      if (radioInterface.rilContext.iccInfo.iccid == iccId) {
+        return clientId;
+      }
+    }
+
+    throw Cr.NS_ERROR_NOT_AVAILABLE;
   }
 };
 
@@ -732,13 +746,14 @@ function RadioInterface(options) {
     roamingEnabled: false
   };
 
-  // apnSettings is used to keep all APN settings.
-  // byApn[] makes it easier to get the APN settings via APN, user
-  // name, and password.
-  // byType[] makes it easier to get the APN settings via APN types.
+  // This matrix is used to keep all the APN settings.
+  //   - |byApn| object makes it easier to get the corresponding APN setting
+  //     via a given set of APN, user name and password.
+  //   - |byType| object makes it easier to get the corresponding APN setting
+  //     via a given APN type.
   this.apnSettings = {
-      byType: {},
-      byAPN: {}
+    byType: {},
+    byApn: {}
   };
 
   this.rilContext = {
@@ -1021,6 +1036,10 @@ RadioInterface.prototype = {
                                                       message.callIndex,
                                                       message.notification);
         break;
+      case "conferenceError":
+        gTelephonyProvider.notifyConferenceError(message.errorName,
+                                                 message.errorMsg);
+        break;
       case "emergencyCbModeChange":
         this.handleEmergencyCbModeChange(message);
         break;
@@ -1140,7 +1159,29 @@ RadioInterface.prototype = {
     if (number === undefined || number === "undefined") {
       return null;
     }
+
     return number;
+  },
+
+  /**
+   * A utility function to get the ICC ID of the SIM card (if installed).
+   */
+  getIccId: function getIccId() {
+    let iccInfo = this.rilContext.iccInfo;
+
+    if (!iccInfo || !(iccInfo instanceof GsmIccInfo)) {
+      return null;
+    }
+
+    let iccId = iccInfo.iccid;
+
+    // Workaround an xpconnect issue with undefined string objects.
+    // See bug 808220
+    if (iccId === undefined || iccId === "undefined") {
+      return null;
+    }
+
+    return iccId;
   },
 
   updateNetworkInfo: function updateNetworkInfo(message) {
@@ -1506,7 +1547,7 @@ RadioInterface.prototype = {
    */
   powerOffRadioSafely: function powerOffRadioSafely() {
     let dataDisconnecting = false;
-    for each (let apnSetting in this.apnSettings.byAPN) {
+    for each (let apnSetting in this.apnSettings.byApn) {
       for each (let type in apnSetting.types) {
         if (this.getDataCallStateByType(type) ==
             RIL.GECKO_NETWORK_STATE_CONNECTED) {
@@ -1528,23 +1569,22 @@ RadioInterface.prototype = {
 
   /**
    * This function will do the following steps:
-   * 1. Clear the old APN settings.
-   * 2. Combine APN, user name, and password as the key of byAPN{} and store
-   *    corresponding APN setting into byApn{}, which makes it easiler to get
-   *    the APN setting.
-   * 3. Use APN type as the index of byType{} and store the link of
-   *    corresponding APN setting into byType{}, which makes it easier to get
-   *    the APN setting via APN types.
+   *   1. Clear the cached APN settings in the RIL.
+   *   2. Combine APN, user name, and password as the key of |byApn| object to
+   *      refer to the corresponding APN setting.
+   *   3. Use APN type as the index of |byType| object to refer to the
+   *      corresponding APN setting.
+   *   4. Create RilNetworkInterface for each APN setting created at step 2.
    */
   updateApnSettings: function updateApnSettings(allApnSettings) {
-    let thisSimApnSettings = allApnSettings[this.clientId];
-    if (!thisSimApnSettings) {
+    let simApnSettings = allApnSettings[this.clientId];
+    if (!simApnSettings) {
       return;
     }
 
-    // Clear old APN settings.
-    for each (let apnSetting in this.apnSettings.byAPN) {
-      // Clear all connections of this APN settings.
+    // Clear the cached APN settings in the RIL.
+    for each (let apnSetting in this.apnSettings.byApn) {
+      // Clear all existing connections based on APN types.
       for each (let type in apnSetting.types) {
         if (this.getDataCallStateByType(type) ==
             RIL.GECKO_NETWORK_STATE_CONNECTED) {
@@ -1557,32 +1597,39 @@ RadioInterface.prototype = {
       this.unregisterDataCallCallback(apnSetting.iface);
       delete apnSetting.iface;
     }
-    this.apnSettings.byAPN = {};
+    this.apnSettings.byApn = {};
     this.apnSettings.byType = {};
 
-    // Create new APN settings.
-    for (let apnIndex = 0; thisSimApnSettings[apnIndex]; apnIndex++) {
-      let inputApnSetting = thisSimApnSettings[apnIndex];
+    // Cache the APN settings by APNs and by types in the RIL.
+    for (let i = 0; simApnSettings[i]; i++) {
+      let inputApnSetting = simApnSettings[i];
       if (!this.validateApnSetting(inputApnSetting)) {
         continue;
       }
 
-      // Combine APN, user name, and password as the key of byAPN{} to get
-      // the corresponding APN setting.
-      let apnKey = inputApnSetting.apn + (inputApnSetting.user || '') +
+      // Combine APN, user name, and password as the key of |byApn| object to
+      // refer to the corresponding APN setting.
+      let apnKey = inputApnSetting.apn +
+                   (inputApnSetting.user || '') +
                    (inputApnSetting.password || '');
-      if (!this.apnSettings.byAPN[apnKey]) {
-        this.apnSettings.byAPN[apnKey] = {};
-        this.apnSettings.byAPN[apnKey] = inputApnSetting;
-        this.apnSettings.byAPN[apnKey].iface =
-          new RILNetworkInterface(this, this.apnSettings.byAPN[apnKey]);
+
+      if (!this.apnSettings.byApn[apnKey]) {
+        this.apnSettings.byApn[apnKey] = inputApnSetting;
       } else {
-        this.apnSettings.byAPN[apnKey].types.push(inputApnSetting.types);
+        this.apnSettings.byApn[apnKey].types =
+          this.apnSettings.byApn[apnKey].types.concat(inputApnSetting.types);
       }
+
+      // Use APN type as the index of |byType| object to refer to the
+      // corresponding APN setting.
       for each (let type in inputApnSetting.types) {
-        this.apnSettings.byType[type] = {};
-        this.apnSettings.byType[type] = this.apnSettings.byAPN[apnKey];
+        this.apnSettings.byType[type] = this.apnSettings.byApn[apnKey];
       }
+    }
+
+    // Create RilNetworkInterface for each APN setting that just cached.
+    for each (let apnSetting in this.apnSettings.byApn) {
+      apnSetting.iface = new RILNetworkInterface(this, apnSetting);
     }
   },
 
@@ -1731,6 +1778,7 @@ RadioInterface.prototype = {
       sourcePort: message.header.originatorPort,
       destinationAddress: this.rilContext.iccInfo.msisdn,
       destinationPort: message.header.destinationPort,
+      serviceId: this.clientId
     };
     WAP.WapPushManager.receiveWdpPDU(message.fullData, message.fullData.length,
                                      0, options);
@@ -1752,17 +1800,18 @@ RadioInterface.prototype = {
     // because the system message mechamism will rewrap the object
     // based on the content window, which needs to know the properties.
     gSystemMessenger.broadcastMessage(aName, {
-      type:           aDomMessage.type,
-      id:             aDomMessage.id,
-      threadId:       aDomMessage.threadId,
-      delivery:       aDomMessage.delivery,
-      deliveryStatus: aDomMessage.deliveryStatus,
-      sender:         aDomMessage.sender,
-      receiver:       aDomMessage.receiver,
-      body:           aDomMessage.body,
-      messageClass:   aDomMessage.messageClass,
-      timestamp:      aDomMessage.timestamp,
-      read:           aDomMessage.read
+      type:              aDomMessage.type,
+      id:                aDomMessage.id,
+      threadId:          aDomMessage.threadId,
+      delivery:          aDomMessage.delivery,
+      deliveryStatus:    aDomMessage.deliveryStatus,
+      sender:            aDomMessage.sender,
+      receiver:          aDomMessage.receiver,
+      body:              aDomMessage.body,
+      messageClass:      aDomMessage.messageClass,
+      timestamp:         aDomMessage.timestamp,
+      deliveryTimestamp: aDomMessage.deliveryTimestamp,
+      read:              aDomMessage.read
     });
   },
 
@@ -1830,6 +1879,7 @@ RadioInterface.prototype = {
     message.receiver = this.getPhoneNumber();
     message.body = message.fullBody = message.fullBody || null;
     message.timestamp = Date.now();
+    message.iccId = this.getIccId();
 
     if (gSmsService.isSilentNumber(message.sender)) {
       message.id = -1;
@@ -1841,6 +1891,7 @@ RadioInterface.prototype = {
       let domMessage =
         gMobileMessageService.createSmsMessage(message.id,
                                                message.threadId,
+                                               message.iccId,
                                                message.delivery,
                                                message.deliveryStatus,
                                                message.sender,
@@ -1848,6 +1899,7 @@ RadioInterface.prototype = {
                                                message.body,
                                                message.messageClass,
                                                message.timestamp,
+                                               0,
                                                message.read);
 
       Services.obs.notifyObservers(domMessage,
@@ -1888,7 +1940,7 @@ RadioInterface.prototype = {
         return;
       }
 
-      this.broadcastSmsSystemMessage("sms-received", domMessage);
+      this.broadcastSmsSystemMessage(kSmsReceivedObserverTopic, domMessage);
       Services.obs.notifyObservers(domMessage, kSmsReceivedObserverTopic, null);
     }.bind(this);
 
@@ -1905,6 +1957,7 @@ RadioInterface.prototype = {
       let domMessage =
         gMobileMessageService.createSmsMessage(message.id,
                                                message.threadId,
+                                               message.iccId,
                                                message.delivery,
                                                message.deliveryStatus,
                                                message.sender,
@@ -1912,6 +1965,7 @@ RadioInterface.prototype = {
                                                message.body,
                                                message.messageClass,
                                                message.timestamp,
+                                               0,
                                                message.read);
 
       notifyReceived(Cr.NS_OK, domMessage);
@@ -1952,7 +2006,7 @@ RadioInterface.prototype = {
     if (datacall.state == RIL.GECKO_NETWORK_STATE_UNKNOWN &&
         this._changingRadioPower) {
       let anyDataConnected = false;
-      for each (let apnSetting in this.apnSettings.byAPN) {
+      for each (let apnSetting in this.apnSettings.byApn) {
         for each (let type in apnSetting.types) {
           if (this.getDataCallStateByType(type) == RIL.GECKO_NETWORK_STATE_CONNECTED) {
             anyDataConnected = true;
@@ -2182,7 +2236,7 @@ RadioInterface.prototype = {
         this._releaseSmsHandledWakeLock();
 
         // Shutdown all RIL network interfaces
-        for each (let apnSetting in this.apnSettings.byAPN) {
+        for each (let apnSetting in this.apnSettings.byApn) {
           if (apnSetting.iface) {
             apnSetting.iface.shutdown();
           }
@@ -2202,27 +2256,12 @@ RadioInterface.prototype = {
         break;
       case kNetworkInterfaceStateChangedTopic:
         let network = subject.QueryInterface(Ci.nsINetworkInterface);
-        if (network.state != Ci.nsINetworkInterface.NETWORK_STATE_CONNECTED) {
-          return;
-        }
-
-        // SNTP can only update when we have mobile or Wifi connections.
-        if (network.type != Ci.nsINetworkInterface.NETWORK_TYPE_WIFI &&
-            network.type != Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE) {
-          return;
-        }
-
-        // If the network comes from RIL, make sure the RIL service is matched.
-        if (subject instanceof Ci.nsIRilNetworkInterface) {
-          network = subject.QueryInterface(Ci.nsIRilNetworkInterface);
-          if (network.serviceId != this.clientId) {
-            return;
+        if (network.state == Ci.nsINetworkInterface.NETWORK_STATE_CONNECTED) {
+          // Check SNTP when we have data connection, this may not take
+          // effect immediately before the setting get enabled.
+          if (this._sntp.isExpired()) {
+            this._sntp.request();
           }
-        }
-
-        // SNTP won't update unless the SNTP is already expired.
-        if (this._sntp.isExpired()) {
-          this._sntp.request();
         }
         break;
       case kScreenStateChangedTopic:
@@ -2387,7 +2426,7 @@ RadioInterface.prototype = {
     this.dataCallSettings.roamingEnabled = false;
     this.apnSettings = {
       byType: {},
-      byAPN: {},
+      byApn: {},
     };
   },
 
@@ -2885,6 +2924,18 @@ RadioInterface.prototype = {
     request.notifySegmentInfoForTextGot(result);
   },
 
+  getSmscAddress: function getSmscAddress(request) {
+    this.workerMessenger.send("getSmscAddress",
+                              null,
+                              (function(response) {
+      if (!response.errorMsg) {
+        request.notifyGetSmscAddress(response.smscAddress);
+      } else {
+        request.notifyGetSmscAddressFailed(response.errorMsg);
+      }
+    }).bind(this));
+  },
+
   sendSMS: function sendSMS(number, message, silent, request) {
     let strict7BitEncoding;
     try {
@@ -2998,13 +3049,22 @@ RadioInterface.prototype = {
                                            context.sms.delivery,
                                            response.deliveryStatus,
                                            null,
-                                           function notifyResult(rv, domMessage) {
+                                           (function notifyResult(rv, domMessage) {
             // TODO bug 832140 handle !Components.isSuccessCode(rv)
-            let topic = (response.deliveryStatus == RIL.GECKO_SMS_DELIVERY_STATUS_SUCCESS)
+
+            let topic = (response.deliveryStatus ==
+                         RIL.GECKO_SMS_DELIVERY_STATUS_SUCCESS)
                         ? kSmsDeliverySuccessObserverTopic
                         : kSmsDeliveryErrorObserverTopic;
+
+            // Broadcasting a 'sms-delivery-success' system message to open apps.
+            if (topic == kSmsDeliverySuccessObserverTopic) {
+              this.broadcastSmsSystemMessage(topic, domMessage);
+            }
+
+            // Notifying observers the delivery status is updated.
             Services.obs.notifyObservers(domMessage, topic, null);
-          });
+          }).bind(this));
 
           // Send transaction has ended completely.
           return false;
@@ -3012,13 +3072,14 @@ RadioInterface.prototype = {
 
         // Message sent.
         if (context.silent) {
-          // There is no way to modify nsIDOMMozSmsMessage attributes as they are
-          // read only so we just create a new sms instance to send along with
-          // the notification.
+          // There is no way to modify nsIDOMMozSmsMessage attributes as they
+          // are read only so we just create a new sms instance to send along
+          // with the notification.
           let sms = context.sms;
           context.request.notifyMessageSent(
             gMobileMessageService.createSmsMessage(sms.id,
                                                    sms.threadId,
+                                                   sms.iccId,
                                                    DOM_MOBILE_MESSAGE_DELIVERY_SENT,
                                                    sms.deliveryStatus,
                                                    sms.sender,
@@ -3026,6 +3087,7 @@ RadioInterface.prototype = {
                                                    sms.body,
                                                    sms.messageClass,
                                                    sms.timestamp,
+                                                   0,
                                                    sms.read));
           // We don't wait for SMS-DELIVER-REPORT for silent one.
           return false;
@@ -3039,12 +3101,12 @@ RadioInterface.prototype = {
                                          null,
                                          (function notifyResult(rv, domMessage) {
           // TODO bug 832140 handle !Components.isSuccessCode(rv)
-          this.broadcastSmsSystemMessage("sms-sent", domMessage);
 
           if (context.requestStatusReport) {
             context.sms = domMessage;
           }
 
+          this.broadcastSmsSystemMessage(kSmsSentObserverTopic, domMessage);
           context.request.notifyMessageSent(domMessage);
           Services.obs.notifyObservers(domMessage, kSmsSentObserverTopic, null);
         }).bind(this));
@@ -3060,7 +3122,8 @@ RadioInterface.prototype = {
       receiver: number,
       body: message,
       deliveryStatusRequested: options.requestStatusReport,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      iccId: this.getIccId()
     };
 
     if (silent) {
@@ -3069,6 +3132,7 @@ RadioInterface.prototype = {
       let domMessage =
         gMobileMessageService.createSmsMessage(-1, // id
                                                0,  // threadId
+                                               sendingMessage.iccId,
                                                delivery,
                                                deliveryStatus,
                                                sendingMessage.sender,
@@ -3076,6 +3140,7 @@ RadioInterface.prototype = {
                                                sendingMessage.body,
                                                "normal", // message class
                                                sendingMessage.timestamp,
+                                               0,
                                                false);
       notifyResult(Cr.NS_OK, domMessage);
       return;
@@ -3270,8 +3335,6 @@ RILNetworkInterface.prototype = {
   NETWORK_STATE_DISCONNECTING: Ci.nsINetworkInterface.DISCONNECTING,
   NETWORK_STATE_DISCONNECTED:  Ci.nsINetworkInterface.DISCONNECTED,
 
-  state: Ci.nsINetworkInterface.NETWORK_STATE_UNKNOWN,
-
   NETWORK_TYPE_WIFI:        Ci.nsINetworkInterface.NETWORK_TYPE_WIFI,
   NETWORK_TYPE_MOBILE:      Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE,
   NETWORK_TYPE_MOBILE_MMS:  Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_MMS,
@@ -3291,6 +3354,12 @@ RILNetworkInterface.prototype = {
 
   // Event timer for connection retries
   timer: null,
+
+  /**
+   * nsINetworkInterface Implementation
+   */
+
+  state: Ci.nsINetworkInterface.NETWORK_STATE_UNKNOWN,
 
   get type() {
     if (this.connectedTypes.indexOf("default") != -1) {
@@ -3325,6 +3394,10 @@ RILNetworkInterface.prototype = {
     return this.apnSetting.port || '';
   },
 
+  /**
+   * nsIRilNetworkInterface Implementation
+   */
+
   get serviceId() {
     return this.radioInterface.clientId;
   },
@@ -3332,6 +3405,60 @@ RILNetworkInterface.prototype = {
   get iccId() {
     let iccInfo = this.radioInterface.rilContext.iccInfo;
     return iccInfo && iccInfo.iccid;
+  },
+
+  get mmsc() {
+    if (!this.inConnectedTypes("mms")) {
+      if (DEBUG) this.debug("Error! Only MMS network can get MMSC.");
+      throw Cr.NS_ERROR_UNEXPECTED;
+    }
+
+    let mmsc = this.apnSetting.mmsc;
+    if (!mmsc) {
+      try {
+        mmsc = Services.prefs.getCharPref("ril.mms.mmsc");
+      } catch (e) {
+        mmsc = "";
+      }
+    }
+
+    return mmsc;
+  },
+
+  get mmsProxy() {
+    if (!this.inConnectedTypes("mms")) {
+      if (DEBUG) this.debug("Error! Only MMS network can get MMS proxy.");
+      throw Cr.NS_ERROR_UNEXPECTED;
+    }
+
+    let proxy = this.apnSetting.mmsproxy;
+    if (!proxy) {
+      try {
+        proxy = Services.prefs.getCharPref("ril.mms.mmsproxy");
+      } catch (e) {
+        proxy = "";
+      }
+    }
+
+    return proxy;
+  },
+
+  get mmsPort() {
+    if (!this.inConnectedTypes("mms")) {
+      if (DEBUG) this.debug("Error! Only MMS network can get MMS port.");
+      throw Cr.NS_ERROR_UNEXPECTED;
+    }
+
+    let port = this.apnSetting.mmsport;
+    if (!port) {
+      try {
+        port = Services.prefs.getIntPref("ril.mms.mmsport");
+      } catch (e) {
+        port = -1;
+      }
+    }
+
+    return port;
   },
 
   debug: function debug(s) {

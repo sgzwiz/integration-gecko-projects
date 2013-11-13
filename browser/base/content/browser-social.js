@@ -591,6 +591,12 @@ SocialShare = {
       return this.panel.lastChild;
   },
 
+  uninit: function () {
+    if (this.iframe) {
+      this.iframe.remove();
+    }
+  },
+
   _createFrame: function() {
     let panel = this.panel;
     if (!SocialUI.enabled || this.iframe)
@@ -1508,6 +1514,7 @@ SocialStatus = {
           "class": "social-panel-frame",
           "id": notificationFrameId,
           "tooltip": "aHTMLTooltip",
+          "context": "contentAreaContextMenu",
 
           // work around bug 793057 - by making the panel roughly the final size
           // we are more likely to have the anchor in the correct position.

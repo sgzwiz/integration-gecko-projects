@@ -56,6 +56,7 @@
 #include "mozilla/dom/workers/Workers.h"
 #include "nsJSPrincipals.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Debug.h"
 #include "mozilla/MouseEvents.h"
 
 // Interfaces Needed
@@ -64,19 +65,7 @@
 #include "nsIWidget.h"
 #include "nsIWidgetListener.h"
 #include "nsIBaseWindow.h"
-#include "nsDeviceSensors.h"
-
-#ifdef XP_WIN
-// Thanks so much, Microsoft and the people who pull in windows.h via
-// random silly headers! :(
-#ifdef GetClassName
-#undef GetClassName
-#endif // GetClassName
-#ifdef CreateEvent
-#undef CreateEvent
-#endif
-#endif // XP_WIN
-
+#include "nsIDeviceSensors.h"
 #include "nsIContent.h"
 #include "nsIDocShell.h"
 #include "nsIDocCharset.h"
@@ -183,7 +172,6 @@
 #include "GeneratedEvents.h"
 #include "GeneratedEventClasses.h"
 #include "mozIThirdPartyUtil.h"
-
 #ifdef MOZ_LOGGING
 // so we can get logging even in release builds
 #define FORCE_PR_LOG 1
@@ -219,7 +207,7 @@
 #include "mozilla/dom/BrowserElementDictionariesBinding.h"
 #include "mozilla/dom/FunctionBinding.h"
 #include "mozilla/dom/WindowBinding.h"
-#include "mozilla/dom/TabChild.h"
+#include "nsITabChild.h"
 #include "nsIDOMMediaQueryList.h"
 
 #ifdef MOZ_WEBSPEECH
@@ -247,6 +235,15 @@ class nsIScriptTimeoutHandler;
 
 #ifdef PR_LOGGING
 static PRLogModuleInfo* gDOMLeakPRLog;
+#endif
+
+#ifdef XP_LINUX
+#include <unistd.h> // for getpid()
+#endif
+
+#ifdef XP_WIN
+#include <process.h>
+#define getpid _getpid
 #endif
 
 static const char kStorageEnabled[] = "dom.storage.enabled";
@@ -616,6 +613,11 @@ public:
   virtual bool enumerate(JSContext *cx, JS::Handle<JSObject*> proxy,
                          JS::AutoIdVector &props) MOZ_OVERRIDE;
 
+  virtual bool watch(JSContext *cx, JS::Handle<JSObject*> proxy,
+                     JS::Handle<jsid> id, JS::Handle<JSObject*> callable) MOZ_OVERRIDE;
+  virtual bool unwatch(JSContext *cx, JS::Handle<JSObject*> proxy,
+                       JS::Handle<jsid> id) MOZ_OVERRIDE;
+
   // Derived traps
   virtual bool has(JSContext *cx, JS::Handle<JSObject*> proxy,
                    JS::Handle<jsid> id, bool *bp) MOZ_OVERRIDE;
@@ -965,6 +967,20 @@ nsOuterWindowProxy::AppendIndexedPropertyNames(JSContext *cx, JSObject *proxy,
   return true;
 }
 
+bool
+nsOuterWindowProxy::watch(JSContext *cx, JS::Handle<JSObject*> proxy,
+                          JS::Handle<jsid> id, JS::Handle<JSObject*> callable)
+{
+  return js::WatchGuts(cx, proxy, id, callable);
+}
+
+bool
+nsOuterWindowProxy::unwatch(JSContext *cx, JS::Handle<JSObject*> proxy,
+                            JS::Handle<jsid> id)
+{
+  return js::UnwatchGuts(cx, proxy, id);
+}
+
 nsOuterWindowProxy
 nsOuterWindowProxy::singleton;
 
@@ -1133,10 +1149,12 @@ nsGlobalWindow::nsGlobalWindow(nsGlobalWindow *aOuterWindow)
 
 #ifdef DEBUG
   if (!PR_GetEnv("MOZ_QUIET")) {
-    printf("++DOMWINDOW == %d (%p) [serial = %d] [outer = %p]\n", gRefCnt,
-           static_cast<void*>(static_cast<nsIScriptGlobalObject*>(this)),
-           gSerialCounter,
-           static_cast<void*>(static_cast<nsIScriptGlobalObject*>(aOuterWindow)));
+    printf_stderr("++DOMWINDOW == %d (%p) [pid = %d] [serial = %d] [outer = %p]\n",
+                  gRefCnt,
+                  static_cast<void*>(static_cast<nsIScriptGlobalObject*>(this)),
+                  getpid(),
+                  gSerialCounter,
+                  static_cast<void*>(static_cast<nsIScriptGlobalObject*>(aOuterWindow)));
   }
 #endif
 
@@ -1209,9 +1227,13 @@ nsGlobalWindow::~nsGlobalWindow()
     }
 
     nsGlobalWindow* outer = static_cast<nsGlobalWindow*>(mOuterWindow.get());
-    printf("--DOMWINDOW == %d (%p) [serial = %d] [outer = %p] [url = %s]\n",
-           gRefCnt, static_cast<void*>(static_cast<nsIScriptGlobalObject*>(this)),
-           mSerial, static_cast<void*>(static_cast<nsIScriptGlobalObject*>(outer)), url.get());
+    printf_stderr("--DOMWINDOW == %d (%p) [pid = %d] [serial = %d] [outer = %p] [url = %s]\n",
+                  gRefCnt,
+                  static_cast<void*>(static_cast<nsIScriptGlobalObject*>(this)),
+                  getpid(),
+                  mSerial,
+                  static_cast<void*>(static_cast<nsIScriptGlobalObject*>(outer)),
+                  url.get());
   }
 #endif
 
@@ -1509,7 +1531,6 @@ nsGlobalWindow::FreeInnerObjects()
   }
 
   // Remove our reference to the document and the document principal.
-  mDoc = nullptr;
   mFocusedNode = nullptr;
 
   if (mApplicationCache) {
@@ -1958,6 +1979,8 @@ nsGlobalWindow::SetInitialPrincipalToSubject()
 PopupControlState
 PushPopupControlState(PopupControlState aState, bool aForce)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   PopupControlState oldState = gPopupControlState;
 
   if (aState < gPopupControlState || aForce) {
@@ -1970,6 +1993,8 @@ PushPopupControlState(PopupControlState aState, bool aForce)
 void
 PopPopupControlState(PopupControlState aState)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+
   gPopupControlState = aState;
 }
 
@@ -1989,6 +2014,7 @@ nsGlobalWindow::PopPopupControlState(PopupControlState aState) const
 PopupControlState
 nsGlobalWindow::GetPopupControlState() const
 {
+  MOZ_ASSERT(NS_IsMainThread());
   return gPopupControlState;
 }
 
@@ -3762,7 +3788,7 @@ nsGlobalWindow::GetScriptableContent(JSContext* aCx, JS::Value* aVal)
   ErrorResult rv;
   JS::Rooted<JSObject*> content(aCx, GetContent(aCx, rv));
   if (!rv.Failed()) {
-    *aVal = JS::ObjectValue(*content);
+    *aVal = JS::ObjectOrNullValue(content);
   }
 
   return rv.ErrorCode();
@@ -5680,9 +5706,7 @@ nsGlobalWindow::Dump(const nsAString& aStr)
 
   if (cstr) {
 #ifdef XP_WIN
-    if (IsDebuggerPresent()) {
-      OutputDebugStringA(cstr);
-    }
+    PrintToDebugger(cstr);
 #endif
 #ifdef ANDROID
     __android_log_write(ANDROID_LOG_INFO, "GeckoDump", cstr);
@@ -6229,7 +6253,7 @@ nsGlobalWindow::Focus(ErrorResult& aError)
     }
     return;
   }
-  if (TabChild *child = TabChild::GetFrom(this)) {
+  if (nsCOMPtr<nsITabChild> child = do_GetInterface(mDocShell)) {
     child->SendRequestFocus(canFocus);
     return;
   }
@@ -6938,27 +6962,23 @@ nsGlobalWindow::SetResizable(bool aResizable)
   return NS_OK;
 }
 
-static void
-ReportUseOfDeprecatedMethod(nsGlobalWindow* aWindow, const char* aWarning)
-{
-  nsCOMPtr<nsIDocument> doc = aWindow->GetExtantDoc();
-  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
-                                  NS_LITERAL_CSTRING("DOM Events"), doc,
-                                  nsContentUtils::eDOM_PROPERTIES,
-                                  aWarning);
-}
-
 NS_IMETHODIMP
 nsGlobalWindow::CaptureEvents(int32_t aEventFlags)
 {
-  ReportUseOfDeprecatedMethod(this, "UseOfCaptureEventsWarning");
+  if (mDoc) {
+    mDoc->WarnOnceAbout(nsIDocument::eUseOfCaptureEvents);
+  }
+
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsGlobalWindow::ReleaseEvents(int32_t aEventFlags)
 {
-  ReportUseOfDeprecatedMethod(this, "UseOfReleaseEventsWarning");
+  if (mDoc) {
+    mDoc->WarnOnceAbout(nsIDocument::eUseOfReleaseEvents);
+  }
+
   return NS_OK;
 }
 
@@ -7486,7 +7506,7 @@ PostMessageReadStructuredClone(JSContext* cx,
   if (MessageChannel::PrefEnabled() && tag == SCTAG_DOM_MESSAGEPORT) {
     NS_ASSERTION(!data, "Data should be empty");
 
-    MessagePort* port;
+    MessagePortBase* port;
     if (JS_ReadBytes(reader, &port, sizeof(port))) {
       JS::Rooted<JSObject*> global(cx, JS::CurrentGlobalOrNull(cx));
       if (global) {
@@ -7540,10 +7560,14 @@ PostMessageWriteStructuredClone(JSContext* cx,
   }
 
   if (MessageChannel::PrefEnabled()) {
-    MessagePort* port = nullptr;
+    MessagePortBase* port = nullptr;
     nsresult rv = UNWRAP_OBJECT(MessagePort, cx, obj, port);
     if (NS_SUCCEEDED(rv) && scInfo->subsumes) {
-      nsRefPtr<MessagePort> newPort = port->Clone();
+      nsRefPtr<MessagePortBase> newPort = port->Clone();
+
+      if (!newPort) {
+        return false;
+      }
 
       return JS_WriteUint32Pair(writer, SCTAG_DOM_MESSAGEPORT, 0) &&
              JS_WriteBytes(writer, &newPort, sizeof(newPort)) &&
@@ -8586,6 +8610,10 @@ already_AddRefed<nsIVariant>
 nsGlobalWindow::ShowModalDialog(const nsAString& aUrl, nsIVariant* aArgument,
                                 const nsAString& aOptions, ErrorResult& aError)
 {
+  if (mDoc) {
+    mDoc->WarnOnceAbout(nsIDocument::eShowModalDialog);
+  }
+
   FORWARD_TO_OUTER_OR_THROW(ShowModalDialog,
                             (aUrl, aArgument, aOptions, aError), aError,
                             nullptr);
@@ -8911,6 +8939,9 @@ NS_IMPL_REMOVE_SYSTEM_EVENT_LISTENER(nsGlobalWindow)
 NS_IMETHODIMP
 nsGlobalWindow::DispatchEvent(nsIDOMEvent* aEvent, bool* aRetVal)
 {
+  MOZ_ASSERT(!IsInnerWindow() || IsCurrentInnerWindow(),
+             "We should only fire events on the current inner window.");
+
   FORWARD_TO_INNER(DispatchEvent, (aEvent, aRetVal), NS_OK);
 
   if (!mDoc) {
@@ -9040,10 +9071,7 @@ nsIScriptContext*
 nsGlobalWindow::GetContextForEventHandlers(nsresult* aRv)
 {
   *aRv = NS_ERROR_UNEXPECTED;
-  if (IsInnerWindow()) {
-    nsPIDOMWindow* outer = GetOuterWindow();
-    NS_ENSURE_TRUE(outer && outer->GetCurrentInnerWindow() == this, nullptr);
-  }
+  NS_ENSURE_TRUE(!IsInnerWindow() || IsCurrentInnerWindow(), nullptr);
 
   nsIScriptContext* scx;
   if ((scx = GetContext())) {
@@ -9563,7 +9591,7 @@ nsGlobalWindow::FireHashchange(const nsAString &aOldURL,
     return NS_OK;
 
   // Get a presentation shell for use in creating the hashchange event.
-  NS_ENSURE_STATE(mDoc);
+  NS_ENSURE_STATE(IsCurrentInnerWindow());
 
   nsIPresShell *shell = mDoc->GetShell();
   nsRefPtr<nsPresContext> presContext;
@@ -10120,7 +10148,7 @@ nsGlobalWindow::GetInterface(const nsIID & aIID, void **aSink)
 void
 nsGlobalWindow::FireOfflineStatusEvent()
 {
-  if (!mDoc)
+  if (!IsCurrentInnerWindow())
     return;
   nsAutoString name;
   if (NS_IsOffline()) {
@@ -10364,7 +10392,7 @@ nsGlobalWindow::ShowSlowScriptDialog()
   NS_ENSURE_TRUE(prompt, KillSlowScript);
 
   // Check if we should offer the option to debug
-  JS::RootedScript script(cx);
+  JS::Rooted<JSScript*> script(cx);
   unsigned lineno;
   bool hasFrame = JS_DescribeScriptedCaller(cx, &script, &lineno);
 
@@ -10699,7 +10727,7 @@ nsGlobalWindow::Observe(nsISupports* aSubject, const char* aTopic,
       // need to fire only one idle event while the window is frozen.
       mNotifyIdleObserversIdleOnThaw = true;
       mNotifyIdleObserversActiveOnThaw = false;
-    } else if (mOuterWindow && mOuterWindow->GetCurrentInnerWindow() == this) {
+    } else if (IsCurrentInnerWindow()) {
       HandleIdleActiveEvent();
     }
     return NS_OK;
@@ -10710,13 +10738,17 @@ nsGlobalWindow::Observe(nsISupports* aSubject, const char* aTopic,
     if (IsFrozen()) {
       mNotifyIdleObserversActiveOnThaw = true;
       mNotifyIdleObserversIdleOnThaw = false;
-    } else if (mOuterWindow && mOuterWindow->GetCurrentInnerWindow() == this) {
+    } else if (IsCurrentInnerWindow()) {
       ScheduleActiveTimerCallback();
     }
     return NS_OK;
   }
 
-  if (IsInnerWindow() && !nsCRT::strcmp(aTopic, "dom-storage2-changed")) {
+  if (!nsCRT::strcmp(aTopic, "dom-storage2-changed")) {
+    if (!IsInnerWindow() || !IsCurrentInnerWindow()) {
+      return NS_OK;
+    }
+
     nsIPrincipal *principal;
     nsresult rv;
 
@@ -10838,6 +10870,11 @@ nsGlobalWindow::Observe(nsISupports* aSubject, const char* aTopic,
 #ifdef MOZ_B2G
   if (!nsCRT::strcmp(aTopic, NS_NETWORK_ACTIVITY_BLIP_UPLOAD_TOPIC) ||
       !nsCRT::strcmp(aTopic, NS_NETWORK_ACTIVITY_BLIP_DOWNLOAD_TOPIC)) {
+    MOZ_ASSERT(IsInnerWindow());
+    if (!IsCurrentInnerWindow()) {
+      return NS_OK;
+    }
+
     nsCOMPtr<nsIDOMEvent> event;
     NS_NewDOMEvent(getter_AddRefs(event), this, nullptr, nullptr);
     nsresult rv = event->InitEvent(
@@ -12556,13 +12593,13 @@ nsGlobalWindow::SetHasGamepadEventListener(bool aHasGamepad/* = true*/)
 void
 nsGlobalWindow::EnableTimeChangeNotifications()
 {
-  nsSystemTimeChangeObserver::AddWindowListener(this);
+  mozilla::time::AddWindowListener(this);
 }
 
 void
 nsGlobalWindow::DisableTimeChangeNotifications()
 {
-  nsSystemTimeChangeObserver::RemoveWindowListener(this);
+  mozilla::time::RemoveWindowListener(this);
 }
 
 static PLDHashOperator
@@ -13204,3 +13241,7 @@ nsGlobalWindow::DisableNetworkEvent(uint32_t aType)
 #undef BEFOREUNLOAD_EVENT
 #undef ERROR_EVENT
 #undef EVENT
+
+#ifdef _WINDOWS_
+#error "Never include windows.h in this file!"
+#endif

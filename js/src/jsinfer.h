@@ -353,27 +353,10 @@ enum {
         TYPE_FLAG_OBJECT_COUNT_MASK >> TYPE_FLAG_OBJECT_COUNT_SHIFT,
 
     /* Whether the contents of this type set are totally unknown. */
-    TYPE_FLAG_UNKNOWN             = 0x00010000,
+    TYPE_FLAG_UNKNOWN             = 0x00002000,
 
     /* Mask of normal type flags on a type set. */
-    TYPE_FLAG_BASE_MASK           = 0x000100ff,
-
-    /*
-     * Flags describing the kind of type set this is.
-     *
-     * - StackTypeSet are associated with TypeScripts, for arguments and values
-     *   observed at property reads. These are implicitly frozen on compilation
-     *   and do not have constraints attached to them.
-     *
-     * - HeapTypeSet are associated with the properties of TypeObjects. These
-     *   may have constraints added to them to trigger invalidation of compiled
-     *   code.
-     *
-     * - TemporaryTypeSet are created during compilation and do not outlive
-     *   that compilation.
-     */
-    TYPE_FLAG_STACK_SET           = 0x00020000,
-    TYPE_FLAG_HEAP_SET            = 0x00040000,
+    TYPE_FLAG_BASE_MASK           = 0x000020ff,
 
     /* Additional flags for HeapTypeSet sets. */
 
@@ -382,19 +365,19 @@ enum {
      * differently from a normal native property (e.g. made non-writable or
      * given a scripted getter or setter).
      */
-    TYPE_FLAG_CONFIGURED_PROPERTY = 0x00080000,
+    TYPE_FLAG_CONFIGURED_PROPERTY = 0x00010000,
 
     /*
      * Whether the property is definitely in a particular slot on all objects
      * from which it has not been deleted or reconfigured. For singletons
      * this may be a fixed or dynamic slot, and for other objects this will be
      * a fixed slot.
+     *
+     * If the property is definite, mask and shift storing the slot + 1.
+     * Otherwise these bits are clear.
      */
-    TYPE_FLAG_DEFINITE_PROPERTY   = 0x00100000,
-
-    /* If the property is definite, mask and shift storing the slot. */
-    TYPE_FLAG_DEFINITE_MASK       = 0xffe00000,
-    TYPE_FLAG_DEFINITE_SHIFT      = 21
+    TYPE_FLAG_DEFINITE_MASK       = 0xfffe0000,
+    TYPE_FLAG_DEFINITE_SHIFT      = 17
 };
 typedef uint32_t TypeFlags;
 
@@ -485,7 +468,21 @@ class StackTypeSet;
 class HeapTypeSet;
 class TemporaryTypeSet;
 
-/* Information about the set of types associated with an lvalue. */
+/*
+ * Information about the set of types associated with an lvalue. There are
+ * three kinds of type sets:
+ *
+ * - StackTypeSet are associated with TypeScripts, for arguments and values
+ *   observed at property reads. These are implicitly frozen on compilation
+ *   and do not have constraints attached to them.
+ *
+ * - HeapTypeSet are associated with the properties of TypeObjects. These
+ *   may have constraints added to them to trigger invalidation of compiled
+ *   code.
+ *
+ * - TemporaryTypeSet are created during compilation and do not outlive
+ *   that compilation.
+ */
 class TypeSet
 {
   protected:
@@ -497,16 +494,11 @@ class TypeSet
 
   public:
 
-    /* Chain of constraints which propagate changes out from this type set. */
-    TypeConstraint *constraintList;
-
     TypeSet()
-      : flags(0), objectSet(nullptr), constraintList(nullptr)
+      : flags(0), objectSet(nullptr)
     {}
 
     void print();
-
-    inline void sweep(JS::Zone *zone);
 
     /* Whether this set contains a specific type. */
     inline bool hasType(Type type) const;
@@ -524,10 +516,10 @@ class TypeSet
     bool configuredProperty() const {
         return flags & TYPE_FLAG_CONFIGURED_PROPERTY;
     }
-    bool definiteProperty() const { return flags & TYPE_FLAG_DEFINITE_PROPERTY; }
+    bool definiteProperty() const { return flags & TYPE_FLAG_DEFINITE_MASK; }
     unsigned definiteSlot() const {
         JS_ASSERT(definiteProperty());
-        return flags >> TYPE_FLAG_DEFINITE_SHIFT;
+        return (flags >> TYPE_FLAG_DEFINITE_SHIFT) - 1;
     }
 
     /* Join two type sets into a new set. The result should not be modified further. */
@@ -535,15 +527,6 @@ class TypeSet
 
     /* Add a type to this set using the specified allocator. */
     inline bool addType(Type type, LifoAlloc *alloc, bool *padded = nullptr);
-
-    /*
-     * Add a type to this set, calling any constraint handlers if this is a new
-     * possible type.
-     */
-    inline void addType(ExclusiveContext *cx, Type type);
-
-    /* Mark this type set as representing a configured property. */
-    inline void setConfiguredProperty(ExclusiveContext *cx);
 
     /* Get a list of all types in this set. */
     typedef Vector<Type, 1, SystemAllocPolicy> TypeList;
@@ -567,18 +550,11 @@ class TypeSet
         flags |= TYPE_FLAG_CONFIGURED_PROPERTY;
     }
     bool canSetDefinite(unsigned slot) {
-        return slot <= (TYPE_FLAG_DEFINITE_MASK >> TYPE_FLAG_DEFINITE_SHIFT);
+        return (slot + 1) <= (TYPE_FLAG_DEFINITE_MASK >> TYPE_FLAG_DEFINITE_SHIFT);
     }
     void setDefinite(unsigned slot) {
         JS_ASSERT(canSetDefinite(slot));
-        flags |= TYPE_FLAG_DEFINITE_PROPERTY | (slot << TYPE_FLAG_DEFINITE_SHIFT);
-    }
-
-    bool isStackSet() {
-        return flags & TYPE_FLAG_STACK_SET;
-    }
-    bool isHeapSet() {
-        return flags & TYPE_FLAG_HEAP_SET;
+        flags |= ((slot + 1) << TYPE_FLAG_DEFINITE_SHIFT);
     }
 
     /* Whether any values in this set might have the specified type. */
@@ -593,12 +569,6 @@ class TypeSet
     /* Forward all types in this set to the specified constraint. */
     void addTypesToConstraint(JSContext *cx, TypeConstraint *constraint);
 
-    /* Add a new constraint to this set. */
-    void add(JSContext *cx, TypeConstraint *constraint, bool callExisting = true);
-
-    inline StackTypeSet *toStackSet();
-    inline HeapTypeSet *toHeapSet();
-
     // Clone a type set into an arbitrary allocator.
     TemporaryTypeSet *clone(LifoAlloc *alloc) const;
     bool clone(LifoAlloc *alloc, TemporaryTypeSet *result) const;
@@ -612,16 +582,37 @@ class TypeSet
     inline void clearObjects();
 };
 
-class StackTypeSet : public TypeSet
+/* Superclass common to stack and heap type sets. */
+class ConstraintTypeSet : public TypeSet
 {
   public:
-    StackTypeSet() { flags |= TYPE_FLAG_STACK_SET; }
+    /* Chain of constraints which propagate changes out from this type set. */
+    TypeConstraint *constraintList;
+
+    ConstraintTypeSet() : constraintList(nullptr) {}
+
+    /*
+     * Add a type to this set, calling any constraint handlers if this is a new
+     * possible type.
+     */
+    inline void addType(ExclusiveContext *cx, Type type);
+
+    /* Add a new constraint to this set. */
+    void add(JSContext *cx, TypeConstraint *constraint, bool callExisting = true);
+
+    inline void sweep(JS::Zone *zone);
 };
 
-class HeapTypeSet : public TypeSet
+class StackTypeSet : public ConstraintTypeSet
 {
   public:
-    HeapTypeSet() { flags |= TYPE_FLAG_HEAP_SET; }
+};
+
+class HeapTypeSet : public ConstraintTypeSet
+{
+  public:
+    /* Mark this type set as representing a configured property. */
+    inline void setConfiguredProperty(ExclusiveContext *cx);
 };
 
 class CompilerConstraintList;
@@ -638,7 +629,6 @@ class TemporaryTypeSet : public TypeSet
     TemporaryTypeSet(uint32_t flags, TypeObjectKey **objectSet) {
         this->flags = flags;
         this->objectSet = objectSet;
-        JS_ASSERT(!isStackSet() && !isHeapSet());
     }
 
     /*
@@ -724,20 +714,6 @@ class TemporaryTypeSet : public TypeSet
      */
     DoubleConversion convertDoubleElements(CompilerConstraintList *constraints);
 };
-
-inline StackTypeSet *
-TypeSet::toStackSet()
-{
-    JS_ASSERT(isStackSet());
-    return (StackTypeSet *) this;
-}
-
-inline HeapTypeSet *
-TypeSet::toHeapSet()
-{
-    JS_ASSERT(isHeapSet());
-    return (HeapTypeSet *) this;
-}
 
 bool
 AddClearDefiniteGetterSetterForPrototypeChain(JSContext *cx, TypeObject *type, jsid id);
@@ -1140,7 +1116,7 @@ UseNewTypeForClone(JSFunction *fun);
  * indexed property.
  */
 bool
-ArrayPrototypeHasIndexedProperty(CompilerConstraintList *constraints, HandleScript script);
+ArrayPrototypeHasIndexedProperty(CompilerConstraintList *constraints, JSScript *script);
 
 /* Whether obj or any of its prototypes have an indexed property. */
 bool
@@ -1281,7 +1257,8 @@ struct TypeObjectKey
     void watchStateChangeForInlinedCall(CompilerConstraintList *constraints);
     void watchStateChangeForNewScriptTemplate(CompilerConstraintList *constraints);
     void watchStateChangeForTypedArrayBuffer(CompilerConstraintList *constraints);
-    HeapTypeSetKey property(jsid id, JSContext *maybecx = nullptr);
+    HeapTypeSetKey property(jsid id);
+    void ensureTrackedProperty(JSContext *cx, jsid id);
 
     TypeObject *maybeType();
 };
@@ -1398,7 +1375,7 @@ struct TypeCompartment
     struct PendingWork
     {
         TypeConstraint *constraint;
-        TypeSet *source;
+        ConstraintTypeSet *source;
         Type type;
     };
     PendingWork *pendingArray;
@@ -1441,7 +1418,8 @@ struct TypeCompartment
     inline JSCompartment *compartment();
 
     /* Add a type to register with a list of constraints. */
-    inline void addPending(JSContext *cx, TypeConstraint *constraint, TypeSet *source, Type type);
+    inline void addPending(JSContext *cx, TypeConstraint *constraint,
+                           ConstraintTypeSet *source, Type type);
     bool growPendingArray(JSContext *cx);
 
     /* Resolve pending type registrations, excluding delayed ones. */
