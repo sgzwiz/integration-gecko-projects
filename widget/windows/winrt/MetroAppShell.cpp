@@ -209,7 +209,7 @@ MetroAppShell::Run(void)
       }
 
       if (!appStartup || NS_FAILED(appStartup->GetRestarting(&restarting))) {
-        Log("appStartup->GetRestarting() unsuccessful");
+        WinUtils::Log("appStartup->GetRestarting() unsuccessful");
       }
 
       // This calls XRE_metroShutdown() in xre. This will also destroy
