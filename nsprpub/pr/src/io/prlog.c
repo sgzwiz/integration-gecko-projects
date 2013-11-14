@@ -187,8 +187,7 @@ void _PR_InitLog(void)
 
     _pr_logLock = PR_NewLock();
 
-    //ev = PR_GetEnv("NSPR_LOG_MODULES");
-    ev = "threadnames,nsHttp:5,cache2:5,nsWyciwygChannel:5,timestamp";
+    ev = PR_GetEnv("NSPR_LOG_MODULES");
     if (ev && ev[0]) {
         char module[64];  /* Security-Critical: If you change this
                            * size, you must also change the sscanf
@@ -312,8 +311,7 @@ static void _PR_SetLogModuleLevel( PRLogModuleInfo *lm )
 {
     char *ev;
 
-    //ev = PR_GetEnv("NSPR_LOG_MODULES");
-    ev = "threadnames,nsHttp:5,cache2:5,nsWyciwygChannel:5,timestamp";
+    ev = PR_GetEnv("NSPR_LOG_MODULES");
     if (ev && ev[0]) {
         char module[64];  /* Security-Critical: If you change this
                            * size, you must also change the sscanf
