@@ -31,6 +31,8 @@
 
 #include "nsIConsoleService.h"
 
+#include "nsDebug.h"
+
 #define ENSURE_MAIN_PROCESS(message, pref) do {                                  \
   if (GetContentChild()) {                                                       \
     char *msg = PR_smprintf("ENSURE_MAIN_PROCESS failed. %s %s", message, pref); \
