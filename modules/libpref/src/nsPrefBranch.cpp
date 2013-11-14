@@ -31,7 +31,7 @@
 
 #include "nsIConsoleService.h"
 
-#include "nsDebug.h"
+#include "prprf.h"
 
 #define ENSURE_MAIN_PROCESS(message, pref) do {                                  \
   if (GetContentChild()) {                                                       \
