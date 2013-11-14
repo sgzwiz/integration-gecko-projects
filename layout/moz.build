@@ -26,15 +26,6 @@ if CONFIG['NS_PRINTING']:
 if CONFIG['MOZ_XUL']:
     PARALLEL_DIRS += ['xul/tree', 'xul/grid']
 
-if CONFIG['ENABLE_TESTS']:
-    PARALLEL_DIRS += [
-        'inspector/tests',
-        'inspector/tests/chrome',
-        'mathml/tests',
-        'xul/test',
-        'xul/base/test',
-    ]
-
 TEST_TOOL_DIRS += [
     'tools/reftest',
     'reftests/fonts',
