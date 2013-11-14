@@ -48,6 +48,8 @@
 #include "nsIMemoryReporter.h"
 #include "nsThreadUtils.h"
 
+#include "prprf.h"
+
 class PrefCallback;
 
 #define ENSURE_MAIN_PROCESS(message, pref) do {                                  \
